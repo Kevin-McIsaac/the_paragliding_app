@@ -1,0 +1,445 @@
+{
+   "models": [
+      {
+         "guid": "AAB7DD8B-612F-6E85-DA32-0D74E1330AA0",
+         "name": "String",
+         "parentGuid": null,
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "ABB7DD8B-612F-6E85-DA32-0D74E1330AA1",
+         "name": "Number",
+         "parentGuid": null,
+         "reference": null,
+         "type": "number"
+      },
+      {
+         "guid": "ACB7DD8B-612F-6E85-DA32-0D74E1330AA2",
+         "name": "Boolean",
+         "parentGuid": null,
+         "reference": null,
+         "type": "boolean"
+      },
+      {
+         "guid": "ADB7DD8B-612F-6E85-DA32-0D74E1330AA3",
+         "name": "Any",
+         "parentGuid": null,
+         "reference": null,
+         "type": "any"
+      },
+      {
+         "guid": "ADB7DD8B-612F-6E85-DA32-0D74E1330AA4",
+         "name": "Function",
+         "parentGuid": null,
+         "reference": null,
+         "type": "Function"
+      },
+      {
+         "guid": "ADB7DD8B-612F-6E85-DA32-0D74E1330AA5",
+         "name": "Promise",
+         "parentGuid": null,
+         "reference": null,
+         "type": "Promise"
+      },
+      {
+         "guid": "ADB7DD8B-612F-6E85-DA32-0D74E1330AA6",
+         "name": "Observable",
+         "parentGuid": null,
+         "reference": null,
+         "type": "Observable"
+      },
+      {
+         "guid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "name": "logEntry",
+         "parentGuid": "",
+         "reference": null,
+         "type": "object"
+      },
+      {
+         "guid": "F92A9471-EE53-A50F-C672-21279A5029C9",
+         "name": "site",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "7F160EAC-1CAE-EB79-2A14-C655B519A8DD",
+         "name": "elevation",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "number"
+      },
+      {
+         "guid": "CCEF41A0-7049-3612-C4DF-1119295399FB",
+         "name": "date",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "540B0370-64EE-059F-6E24-D9F5D7E7AD69",
+         "name": "time",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "E02EFF2B-22A7-4D6D-F470-8D79E2E9361E",
+         "name": "when",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "117E7522-BEF7-A9D1-8A3E-EC0A63850492",
+         "name": "tzOffset",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "number"
+      },
+      {
+         "guid": "800C5890-00A3-5C6F-89D7-04C5A2A0D3B9",
+         "name": "duration",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "2899B375-22A4-3361-C4DE-B7799919C439",
+         "name": "wing",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "49E94CFB-2986-527F-6716-40A05F99FD27",
+         "name": "distance",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "number"
+      },
+      {
+         "guid": "85D7E02C-E3AE-AFAD-0378-F608AAAB6D64",
+         "name": "notes",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "43C037FA-7864-0BD1-4942-87FF364D5516",
+         "name": "maxAltitude",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "number"
+      },
+      {
+         "guid": "093CA2E2-8561-4EE0-E776-A61F6A9935FF",
+         "name": "maxClimb",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "number"
+      },
+      {
+         "guid": "B1F2E9BC-7D96-E00B-643E-255300231D9F",
+         "name": "maxSink",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "number"
+      },
+      {
+         "guid": "A926D330-A104-72AF-6D67-52158AC21086",
+         "name": "launch",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "BE52AAEA-2D47-8479-9FE3-636E70082261",
+         "name": "landing",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "F4144D6D-423E-BE6A-A36C-CDA84F9455B4",
+         "name": "type",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "AF1FA3FD-DF05-A928-D350-989FE2D5B2A2",
+         "name": "soar",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "boolean"
+      },
+      {
+         "guid": "CC3C701D-37BD-024E-5485-C3AA53034960",
+         "name": "thermal",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "boolean"
+      },
+      {
+         "guid": "B041CA1D-CDDC-B895-8B6B-28DFECB8F162",
+         "name": "hikeFly",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "boolean"
+      },
+      {
+         "guid": "D8E46890-4DFF-7C06-556A-4A2DE94C6DD1",
+         "name": "comp",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "boolean"
+      },
+      {
+         "guid": "DA6C5485-8CA6-0B03-EE6E-F15AD5F00787",
+         "name": "reserve",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "boolean"
+      },
+      {
+         "guid": "1A3220F0-3501-6675-AF8A-E7CE613CB065",
+         "name": "IGC",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": "6A2B031F-889F-15D6-16FE-E396E81F6DFC",
+         "type": "reference"
+      },
+      {
+         "guid": "2B0A6B9B-9B94-B422-E49F-5FF84DDB057A",
+         "name": "_id",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "EA13757B-43B6-3C6C-487A-A1B8A5D2BDA0",
+         "name": "_createdAt",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "A4FCFE77-47B8-E74F-8529-F830D827385F",
+         "name": "_updatedAt",
+         "parentGuid": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "ED753B4C-879E-38C0-5B80-F90906320235",
+         "name": "logTable",
+         "parentGuid": "",
+         "reference": null,
+         "type": "array"
+      },
+      {
+         "guid": "06A4832A-5EAF-E2D1-7F9F-385CA8D82CBC",
+         "name": "i",
+         "parentGuid": "ED753B4C-879E-38C0-5B80-F90906320235",
+         "reference": "8504E6A7-9493-71F2-16AE-478488A91B20",
+         "type": "reference"
+      },
+      {
+         "guid": "8CF39AEF-BF67-E4AF-4E74-3311A27D753D",
+         "name": "units",
+         "parentGuid": "",
+         "reference": null,
+         "type": "object"
+      },
+      {
+         "guid": "437CD818-5CB6-C5C7-5A7A-8386275E4E76",
+         "name": "altitude",
+         "parentGuid": "8CF39AEF-BF67-E4AF-4E74-3311A27D753D",
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "A277FEB6-4C59-5AFD-FC02-0A8BE529661D",
+         "name": "distance",
+         "parentGuid": "8CF39AEF-BF67-E4AF-4E74-3311A27D753D",
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "4847CDB3-FA25-E9C3-C591-D082A71D3D8E",
+         "name": "climbRate",
+         "parentGuid": "8CF39AEF-BF67-E4AF-4E74-3311A27D753D",
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "780D22EC-9370-F9A8-E4BE-3DE92D4D5DBC",
+         "name": "wind",
+         "parentGuid": "8CF39AEF-BF67-E4AF-4E74-3311A27D753D",
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "F3F74ACD-5B5A-7854-CA03-7B5AB45AC026",
+         "name": "temp",
+         "parentGuid": "8CF39AEF-BF67-E4AF-4E74-3311A27D753D",
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "41702D25-AC7B-01D4-B168-EA6A1E07A3F6",
+         "name": "settings",
+         "parentGuid": "",
+         "reference": null,
+         "type": "object"
+      },
+      {
+         "guid": "447F3ACE-8752-CAAA-D6F0-AA10C7E5C542",
+         "name": "units",
+         "parentGuid": "41702D25-AC7B-01D4-B168-EA6A1E07A3F6",
+         "reference": "8CF39AEF-BF67-E4AF-4E74-3311A27D753D",
+         "type": "reference"
+      },
+      {
+         "guid": "FEDABC26-6701-AAC9-9E66-1586DFA22F30",
+         "name": "name",
+         "parentGuid": "41702D25-AC7B-01D4-B168-EA6A1E07A3F6",
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "C54CA656-FAF6-72A2-C7A4-F0ABD2B4A5D4",
+         "name": "unloggedLandings",
+         "parentGuid": "41702D25-AC7B-01D4-B168-EA6A1E07A3F6",
+         "reference": null,
+         "type": "number"
+      },
+      {
+         "guid": "DB926A0D-DED5-30A9-E919-4F45762F98F3",
+         "name": "unloggedHours",
+         "parentGuid": "41702D25-AC7B-01D4-B168-EA6A1E07A3F6",
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "826983B9-6C0A-0CFC-5D14-AE6E9CEBD436",
+         "name": "ratePeriod",
+         "parentGuid": "41702D25-AC7B-01D4-B168-EA6A1E07A3F6",
+         "reference": null,
+         "type": "number"
+      },
+      {
+         "guid": "2AB0C6F4-56D3-2E4E-EB07-61FE11635191",
+         "name": "flights",
+         "parentGuid": "",
+         "reference": null,
+         "type": "object"
+      },
+      {
+         "guid": "9D2F686E-EA4F-51C8-0E07-419DAFFF5394",
+         "name": "latLon",
+         "parentGuid": "",
+         "reference": null,
+         "type": "object"
+      },
+      {
+         "guid": "671C268B-318E-CDD4-F8FE-383FA6F915E5",
+         "name": "latitude",
+         "parentGuid": "9D2F686E-EA4F-51C8-0E07-419DAFFF5394",
+         "reference": null,
+         "type": "number"
+      },
+      {
+         "guid": "35B9CC24-2A7E-755B-9223-4C95E7F890DA",
+         "name": "longitude",
+         "parentGuid": "9D2F686E-EA4F-51C8-0E07-419DAFFF5394",
+         "reference": null,
+         "type": "number"
+      },
+      {
+         "guid": "28F730ED-DDAA-8D6D-49A1-BE7EE792F0AD",
+         "name": "site",
+         "parentGuid": "",
+         "reference": null,
+         "type": "object"
+      },
+      {
+         "guid": "A557CE11-9D3D-6291-C84F-8231BDD635A1",
+         "name": "siteName",
+         "parentGuid": "28F730ED-DDAA-8D6D-49A1-BE7EE792F0AD",
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "FC9A10D9-13C5-6EAD-C2BC-F1EA5FF2C744",
+         "name": "latLon",
+         "parentGuid": "28F730ED-DDAA-8D6D-49A1-BE7EE792F0AD",
+         "reference": "9D2F686E-EA4F-51C8-0E07-419DAFFF5394",
+         "type": "reference"
+      },
+      {
+         "guid": "6A2B031F-889F-15D6-16FE-E396E81F6DFC",
+         "name": "IGC",
+         "parentGuid": "",
+         "reference": null,
+         "type": "object"
+      },
+      {
+         "guid": "83F3255C-2CF4-680B-DC5D-17C3457A6F40",
+         "name": "filename",
+         "parentGuid": "6A2B031F-889F-15D6-16FE-E396E81F6DFC",
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "E2A22BC7-53C8-B508-EFCD-83BE22324047",
+         "name": "file",
+         "parentGuid": "6A2B031F-889F-15D6-16FE-E396E81F6DFC",
+         "reference": null,
+         "type": "any"
+      },
+      {
+         "guid": "6AD9B234-FC43-1E25-14C8-D8043AD5652F",
+         "name": "content",
+         "parentGuid": "6A2B031F-889F-15D6-16FE-E396E81F6DFC",
+         "reference": null,
+         "type": "string"
+      },
+      {
+         "guid": "F34E093C-DF22-4DCE-F16C-ECC2D081014B",
+         "name": "logRate",
+         "parentGuid": "6A2B031F-889F-15D6-16FE-E396E81F6DFC",
+         "reference": null,
+         "type": "number"
+      },
+      {
+         "guid": "A138D6E9-FDF8-5B76-D6CF-23EE4F37F5DD",
+         "name": "pctValid",
+         "parentGuid": "6A2B031F-889F-15D6-16FE-E396E81F6DFC",
+         "reference": null,
+         "type": "number"
+      },
+      {
+         "guid": "AEB48373-02E5-FB2C-3D76-FFC561D597AE",
+         "name": "fixes",
+         "parentGuid": "6A2B031F-889F-15D6-16FE-E396E81F6DFC",
+         "reference": null,
+         "type": "any"
+      }
+   ],
+   "storages": [
+      {
+         "guid": "29C4F2D8-4C0D-44CA-64EE-E15B01F8E831",
+         "name": "LogStorage",
+         "storage": "storage_value",
+         "reference": "ED753B4C-879E-38C0-5B80-F90906320235"
+      },
+      {
+         "guid": "D3FAC1BA-C40D-E8A7-9FD6-44BCB14A8B05",
+         "name": "SettingsStorage",
+         "storage": "storage_value",
+         "reference": "41702D25-AC7B-01D4-B168-EA6A1E07A3F6"
+      }
+   ]
+}

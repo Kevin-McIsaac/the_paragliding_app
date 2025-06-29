@@ -1,0 +1,1847 @@
+{"bean": {
+   "nonvisualchildren": "",
+   "controller": {
+      "dependency": {
+         "internal": [],
+         "custom": []
+      },
+      "scss": ".smallStats * {\nfont-size: 98%;\n}",
+      "function": [],
+      "module": {},
+      "variable": [{
+         "addDI": false,
+         "name": "settings",
+         "id": "3F80DCE9-FE37-9D1A-419B-8283E3E37BD0",
+         "type": "41702D25-AC7B-01D4-B168-EA6A1E07A3F6",
+         "value": "{units: {altitude: \"m\", distance: \"km\", climbRate: \"m/s\", wind: \"km/hr\", temp: \"°C\"}, name: \"\", unloggedLandings:0, unloggedHours:\"00:00\", ratePeriod:10}"
+      }]
+   },
+   "children": {"bean": [
+      {
+         "children": {"bean": [
+            {
+               "children": {"bean": [{
+                  "children": {"bean": [
+                     {
+                        "children": {"bean": []},
+                        "@type": "Ionic5CardItemTitleBean",
+                        "property": {
+                           "mode": "",
+                           "color": "primary",
+                           "className": "",
+                           "wrapper": "ion-card-title",
+                           "text": "Units",
+                           "componentName": "CardItemTitle3",
+                           "aio_visible": "true"
+                        },
+                        "@id": "13E1F3EF-5AA4-6C5A-AAEB-6A8A8573E0F7",
+                        "events": ""
+                     },
+                     {
+                        "children": {"bean": [
+                           {
+                              "children": {"bean": [
+                                 {
+                                    "children": {"bean": [{
+                                       "children": {"bean": [{
+                                          "children": {"bean": [
+                                             {
+                                                "children": {"bean": []},
+                                                "@type": "Ionic5SelectOptionBean",
+                                                "property": {
+                                                   "className": "",
+                                                   "disabled": "",
+                                                   "text": "m",
+                                                   "componentName": "SelectOption8",
+                                                   "value": "m",
+                                                   "aio_visible": "",
+                                                   "visible": "true"
+                                                },
+                                                "@id": "3B558440-2EA5-AFF6-F850-597D93C2226D",
+                                                "events": ""
+                                             },
+                                             {
+                                                "children": {"bean": []},
+                                                "@type": "Ionic5SelectOptionBean",
+                                                "property": {
+                                                   "className": "",
+                                                   "disabled": "",
+                                                   "text": "ft",
+                                                   "componentName": "SelectOption11",
+                                                   "value": "ft",
+                                                   "aio_visible": "",
+                                                   "visible": "true"
+                                                },
+                                                "@id": "F6F06201-34F0-4E20-C6C0-F68E9CF1708B",
+                                                "events": ""
+                                             }
+                                          ]},
+                                          "@type": "Ionic5SelectItemBean",
+                                          "property": {
+                                             "formCtrlOptions": {
+                                                "standalone": "false",
+                                                "updateOn": ""
+                                             },
+                                             "selectedText": "",
+                                             "multiple": "false",
+                                             "className": "",
+                                             "opened": "false",
+                                             "angularID": "",
+                                             "slot": "",
+                                             "interface": "",
+                                             "interfaceOptions": "",
+                                             "aio_visible": "true",
+                                             "mode": "",
+                                             "ngModel": "",
+                                             "advancedProperties": {
+                                                "(ionChange)": "",
+                                                "[(ngModel)]": "settings.units.altitude"
+                                             },
+                                             "cancelText": "",
+                                             "name": "SelectItemWrapper3",
+                                             "formCtrlDivider": "",
+                                             "disabled": "",
+                                             "placeholder": "Select",
+                                             "componentName": "Select3",
+                                             "okText": "",
+                                             "value": "m",
+                                             "compareWith": "",
+                                             "validation": {
+                                                "showErrors": "false",
+                                                "className": "",
+                                                "required": "false",
+                                                "requiredmessage": ""
+                                             }
+                                          },
+                                          "@id": "98934F37-9D1D-BF04-F1EB-522ABA0E7762",
+                                          "events": ""
+                                       }]},
+                                       "@type": "Ionic5SelectBean",
+                                       "property": {
+                                          "mode": "",
+                                          "ion4Label": {
+                                             "mode": "",
+                                             "color": "",
+                                             "className": "",
+                                             "text": "Altitude",
+                                             "position": "fixed",
+                                             "slot": ""
+                                          },
+                                          "color": "",
+                                          "className": "",
+                                          "disabled": "",
+                                          "availableSlots": {
+                                             "": "Not selected",
+                                             "start": "Start",
+                                             "end": "End"
+                                          },
+                                          "slot": "",
+                                          "componentName": "SelectItemWrapper3",
+                                          "ion4Reorder": {
+                                             "style": "__default",
+                                             "slot": "",
+                                             "customIcon": "-1",
+                                             "reorderType": ""
+                                          },
+                                          "lines": "",
+                                          "showItemWrapper": "true",
+                                          "aio_visible": "true",
+                                          "visible": "true"
+                                       },
+                                       "@id": "01B02F4A-EAAD-BF65-D283-06885BF21199",
+                                       "events": ""
+                                    }]},
+                                    "@type": "Ionic5GridCellBean",
+                                    "property": {
+                                       "padding": "",
+                                       "pull": {
+                                          "pull": "",
+                                          "xl": "",
+                                          "md": "",
+                                          "sm": "",
+                                          "xs": "",
+                                          "lg": ""
+                                       },
+                                       "alignSelf": "",
+                                       "size": {
+                                          "size": "",
+                                          "xl": "",
+                                          "md": "",
+                                          "sm": "",
+                                          "xs": "",
+                                          "lg": ""
+                                       },
+                                       "offset": {
+                                          "offset": "",
+                                          "xl": "",
+                                          "md": "",
+                                          "sm": "",
+                                          "xs": "",
+                                          "lg": ""
+                                       },
+                                       "textAlignment": "",
+                                       "className": "",
+                                       "componentName": "GridCell3",
+                                       "push": {
+                                          "xl": "",
+                                          "md": "",
+                                          "sm": "",
+                                          "xs": "",
+                                          "lg": "",
+                                          "push": ""
+                                       },
+                                       "aio_visible": "true",
+                                       "visible": "true"
+                                    },
+                                    "@id": "085284BE-A4CA-B8F8-46BF-D5EC70D81C37",
+                                    "events": ""
+                                 },
+                                 {
+                                    "children": {"bean": [{
+                                       "children": {"bean": [{
+                                          "children": {"bean": [
+                                             {
+                                                "children": {"bean": []},
+                                                "@type": "Ionic5SelectOptionBean",
+                                                "property": {
+                                                   "className": "",
+                                                   "disabled": "",
+                                                   "text": "km",
+                                                   "componentName": "SelectOption9",
+                                                   "value": "km",
+                                                   "aio_visible": "",
+                                                   "visible": "true"
+                                                },
+                                                "@id": "A0130164-E517-2CAF-07C9-C6F955BC2325",
+                                                "events": ""
+                                             },
+                                             {
+                                                "children": {"bean": []},
+                                                "@type": "Ionic5SelectOptionBean",
+                                                "property": {
+                                                   "className": "",
+                                                   "disabled": "",
+                                                   "text": "mi",
+                                                   "componentName": "SelectOption12",
+                                                   "value": "mi",
+                                                   "aio_visible": "",
+                                                   "visible": "true"
+                                                },
+                                                "@id": "FC8BE3E1-5AB5-BCCB-CFC1-62A820972A53",
+                                                "events": ""
+                                             }
+                                          ]},
+                                          "@type": "Ionic5SelectItemBean",
+                                          "property": {
+                                             "formCtrlOptions": {
+                                                "standalone": "false",
+                                                "updateOn": ""
+                                             },
+                                             "selectedText": "",
+                                             "multiple": "false",
+                                             "className": "",
+                                             "opened": "false",
+                                             "angularID": "",
+                                             "slot": "",
+                                             "interface": "",
+                                             "interfaceOptions": "",
+                                             "aio_visible": "true",
+                                             "mode": "",
+                                             "ngModel": "",
+                                             "advancedProperties": {
+                                                "(ionChange)": "",
+                                                "[(ngModel)]": "settings.units.distance"
+                                             },
+                                             "cancelText": "",
+                                             "name": "SelectItemWrapper4",
+                                             "formCtrlDivider": "",
+                                             "disabled": "",
+                                             "placeholder": "Select",
+                                             "componentName": "Select4",
+                                             "okText": "",
+                                             "value": "km",
+                                             "compareWith": "",
+                                             "validation": {
+                                                "showErrors": "false",
+                                                "className": "",
+                                                "required": "false",
+                                                "requiredmessage": ""
+                                             }
+                                          },
+                                          "@id": "20C97B68-D7B4-04E9-8F52-2AD91139B326",
+                                          "events": ""
+                                       }]},
+                                       "@type": "Ionic5SelectBean",
+                                       "property": {
+                                          "mode": "",
+                                          "ion4Label": {
+                                             "mode": "",
+                                             "color": "",
+                                             "className": "",
+                                             "text": "Distance",
+                                             "position": "fixed",
+                                             "slot": ""
+                                          },
+                                          "color": "",
+                                          "className": "",
+                                          "disabled": "",
+                                          "availableSlots": {
+                                             "": "Not selected",
+                                             "start": "Start",
+                                             "end": "End"
+                                          },
+                                          "slot": "",
+                                          "componentName": "SelectItemWrapper4",
+                                          "ion4Reorder": {
+                                             "style": "__default",
+                                             "slot": "",
+                                             "customIcon": "-1",
+                                             "reorderType": ""
+                                          },
+                                          "lines": "",
+                                          "showItemWrapper": "true",
+                                          "aio_visible": "true",
+                                          "visible": "true"
+                                       },
+                                       "@id": "344456A7-47C8-9C17-ADE5-49E5BCE553D2",
+                                       "events": ""
+                                    }]},
+                                    "@type": "Ionic5GridCellBean",
+                                    "property": {
+                                       "padding": "",
+                                       "pull": {
+                                          "pull": "",
+                                          "xl": "",
+                                          "md": "",
+                                          "sm": "",
+                                          "xs": "",
+                                          "lg": ""
+                                       },
+                                       "alignSelf": "",
+                                       "size": {
+                                          "size": "",
+                                          "xl": "",
+                                          "md": "",
+                                          "sm": "",
+                                          "xs": "",
+                                          "lg": ""
+                                       },
+                                       "offset": {
+                                          "offset": "",
+                                          "xl": "",
+                                          "md": "",
+                                          "sm": "",
+                                          "xs": "",
+                                          "lg": ""
+                                       },
+                                       "textAlignment": "",
+                                       "className": "",
+                                       "componentName": "GridCell3_copy",
+                                       "push": {
+                                          "xl": "",
+                                          "md": "",
+                                          "sm": "",
+                                          "xs": "",
+                                          "lg": "",
+                                          "push": ""
+                                       },
+                                       "aio_visible": "true",
+                                       "visible": "true"
+                                    },
+                                    "@id": "D1BCEE8A-3E2E-4D91-FC2D-2BF656442E2C",
+                                    "events": ""
+                                 },
+                                 {
+                                    "children": {"bean": [{
+                                       "children": {"bean": [{
+                                          "children": {"bean": [
+                                             {
+                                                "children": {"bean": []},
+                                                "@type": "Ionic5SelectOptionBean",
+                                                "property": {
+                                                   "className": "",
+                                                   "disabled": "",
+                                                   "text": "m/s",
+                                                   "componentName": "SelectOption10",
+                                                   "value": "m/s",
+                                                   "aio_visible": "",
+                                                   "visible": "true"
+                                                },
+                                                "@id": "CDD9996F-2B7C-7B08-78F0-8EAE175C4AAC",
+                                                "events": ""
+                                             },
+                                             {
+                                                "children": {"bean": []},
+                                                "@type": "Ionic5SelectOptionBean",
+                                                "property": {
+                                                   "className": "",
+                                                   "disabled": "",
+                                                   "text": "ft/s",
+                                                   "componentName": "SelectOption13",
+                                                   "value": "ft/s",
+                                                   "aio_visible": "",
+                                                   "visible": "true"
+                                                },
+                                                "@id": "F1BACB77-BDC2-BB2F-AEAD-B2632CF9F179",
+                                                "events": ""
+                                             }
+                                          ]},
+                                          "@type": "Ionic5SelectItemBean",
+                                          "property": {
+                                             "formCtrlOptions": {
+                                                "standalone": "false",
+                                                "updateOn": ""
+                                             },
+                                             "selectedText": "",
+                                             "multiple": "false",
+                                             "className": "",
+                                             "opened": "false",
+                                             "angularID": "",
+                                             "slot": "",
+                                             "interface": "",
+                                             "interfaceOptions": "",
+                                             "aio_visible": "true",
+                                             "mode": "",
+                                             "ngModel": "",
+                                             "advancedProperties": {
+                                                "(ionChange)": "",
+                                                "[(ngModel)]": "settings.units.climbRate"
+                                             },
+                                             "cancelText": "",
+                                             "name": "SelectItemWrapper5",
+                                             "formCtrlDivider": "",
+                                             "disabled": "",
+                                             "placeholder": "Select",
+                                             "componentName": "Select5",
+                                             "okText": "",
+                                             "value": "m/s",
+                                             "compareWith": "",
+                                             "validation": {
+                                                "showErrors": "false",
+                                                "className": "",
+                                                "required": "false",
+                                                "requiredmessage": ""
+                                             }
+                                          },
+                                          "@id": "5FB1757C-FE2F-AD2C-4B37-29C6DB95FCFD",
+                                          "events": ""
+                                       }]},
+                                       "@type": "Ionic5SelectBean",
+                                       "property": {
+                                          "mode": "",
+                                          "ion4Label": {
+                                             "mode": "",
+                                             "color": "",
+                                             "className": "",
+                                             "text": "Climb Rate",
+                                             "position": "fixed",
+                                             "slot": ""
+                                          },
+                                          "color": "",
+                                          "className": "",
+                                          "disabled": "",
+                                          "availableSlots": {
+                                             "": "Not selected",
+                                             "start": "Start",
+                                             "end": "End"
+                                          },
+                                          "slot": "",
+                                          "componentName": "SelectItemWrapper5",
+                                          "ion4Reorder": {
+                                             "style": "__default",
+                                             "slot": "",
+                                             "customIcon": "-1",
+                                             "reorderType": ""
+                                          },
+                                          "lines": "",
+                                          "showItemWrapper": "true",
+                                          "aio_visible": "true",
+                                          "visible": "true"
+                                       },
+                                       "@id": "26A2C05C-AA70-3098-D723-09FA4B56885A",
+                                       "events": ""
+                                    }]},
+                                    "@type": "Ionic5GridCellBean",
+                                    "property": {
+                                       "padding": "",
+                                       "pull": {
+                                          "pull": "",
+                                          "xl": "",
+                                          "md": "",
+                                          "sm": "",
+                                          "xs": "",
+                                          "lg": ""
+                                       },
+                                       "alignSelf": "",
+                                       "size": {
+                                          "size": "",
+                                          "xl": "",
+                                          "md": "",
+                                          "sm": "",
+                                          "xs": "",
+                                          "lg": ""
+                                       },
+                                       "offset": {
+                                          "offset": "",
+                                          "xl": "",
+                                          "md": "",
+                                          "sm": "",
+                                          "xs": "",
+                                          "lg": ""
+                                       },
+                                       "textAlignment": "",
+                                       "className": "",
+                                       "componentName": "GridCell10",
+                                       "push": {
+                                          "xl": "",
+                                          "md": "",
+                                          "sm": "",
+                                          "xs": "",
+                                          "lg": "",
+                                          "push": ""
+                                       },
+                                       "aio_visible": "true",
+                                       "visible": "true"
+                                    },
+                                    "@id": "777C5CF5-D917-B6C5-EFE6-4952D95A35D0",
+                                    "events": ""
+                                 }
+                              ]},
+                              "@type": "Ionic5GridRowBean",
+                              "property": {
+                                 "alignItems": "",
+                                 "className": "",
+                                 "componentName": "GridRow2",
+                                 "wrap": "",
+                                 "justifyContent": "",
+                                 "aio_visible": "true",
+                                 "visible": "true"
+                              },
+                              "@id": "71F537BD-0F9F-31D9-C751-327E41C8BD67",
+                              "events": ""
+                           },
+                           {
+                              "children": {"bean": [
+                                 {
+                                    "children": {"bean": [{
+                                       "children": {"bean": [{
+                                          "children": {"bean": [
+                                             {
+                                                "children": {"bean": []},
+                                                "@type": "Ionic5SelectOptionBean",
+                                                "property": {
+                                                   "className": "",
+                                                   "disabled": "",
+                                                   "text": "km/hr",
+                                                   "componentName": "SelectOption3",
+                                                   "value": "km/hr",
+                                                   "aio_visible": "",
+                                                   "visible": "true"
+                                                },
+                                                "@id": "170C4F28-8C5C-0E55-A3FD-9ABCE8E62878",
+                                                "events": ""
+                                             },
+                                             {
+                                                "children": {"bean": []},
+                                                "@type": "Ionic5SelectOptionBean",
+                                                "property": {
+                                                   "className": "",
+                                                   "disabled": "",
+                                                   "text": "m/s",
+                                                   "componentName": "SelectOption4",
+                                                   "value": "m/s",
+                                                   "aio_visible": "",
+                                                   "visible": "true"
+                                                },
+                                                "@id": "EA4B873D-D410-8D1D-A2D0-A11226BF10E5",
+                                                "events": ""
+                                             },
+                                             {
+                                                "children": {"bean": []},
+                                                "@type": "Ionic5SelectOptionBean",
+                                                "property": {
+                                                   "className": "",
+                                                   "disabled": "",
+                                                   "text": "mi/hr",
+                                                   "componentName": "SelectOption5",
+                                                   "value": "mi/hr",
+                                                   "aio_visible": "",
+                                                   "visible": "true"
+                                                },
+                                                "@id": "25745861-A5DA-D6F2-651A-A5EA29A7A8D5",
+                                                "events": ""
+                                             },
+                                             {
+                                                "children": {"bean": []},
+                                                "@type": "Ionic5SelectOptionBean",
+                                                "property": {
+                                                   "className": "",
+                                                   "disabled": "",
+                                                   "text": "ft/s",
+                                                   "componentName": "SelectOption6",
+                                                   "value": "ft/s",
+                                                   "aio_visible": "",
+                                                   "visible": "true"
+                                                },
+                                                "@id": "3F38EB40-0C83-026A-34A8-F1421B808E37",
+                                                "events": ""
+                                             },
+                                             {
+                                                "children": {"bean": []},
+                                                "@type": "Ionic5SelectOptionBean",
+                                                "property": {
+                                                   "className": "",
+                                                   "disabled": "",
+                                                   "text": "knts",
+                                                   "componentName": "SelectOption7",
+                                                   "value": "knts",
+                                                   "aio_visible": "",
+                                                   "visible": "true"
+                                                },
+                                                "@id": "0152CFAE-4474-97D7-0250-8C292991EE3C",
+                                                "events": ""
+                                             }
+                                          ]},
+                                          "@type": "Ionic5SelectItemBean",
+                                          "property": {
+                                             "formCtrlOptions": {
+                                                "standalone": "false",
+                                                "updateOn": ""
+                                             },
+                                             "selectedText": "",
+                                             "multiple": "false",
+                                             "className": "",
+                                             "opened": "false",
+                                             "angularID": "",
+                                             "slot": "",
+                                             "interface": "",
+                                             "interfaceOptions": "",
+                                             "aio_visible": "true",
+                                             "mode": "",
+                                             "ngModel": "",
+                                             "advancedProperties": {
+                                                "(ionChange)": "",
+                                                "[(ngModel)]": "settings.units.wind"
+                                             },
+                                             "cancelText": "",
+                                             "name": "SelectItemWrapper2",
+                                             "formCtrlDivider": "",
+                                             "disabled": "",
+                                             "placeholder": "Select",
+                                             "componentName": "Select2",
+                                             "okText": "",
+                                             "value": "km/hr",
+                                             "compareWith": "",
+                                             "validation": {
+                                                "showErrors": "false",
+                                                "className": "",
+                                                "required": "false",
+                                                "requiredmessage": ""
+                                             }
+                                          },
+                                          "@id": "21A55B08-6752-977A-E536-8DF93A53D598",
+                                          "events": ""
+                                       }]},
+                                       "@type": "Ionic5SelectBean",
+                                       "property": {
+                                          "mode": "",
+                                          "ion4Label": {
+                                             "mode": "",
+                                             "color": "",
+                                             "className": "",
+                                             "text": "Wind",
+                                             "position": "fixed",
+                                             "slot": ""
+                                          },
+                                          "color": "",
+                                          "className": "",
+                                          "disabled": "",
+                                          "availableSlots": {
+                                             "": "Not selected",
+                                             "start": "Start",
+                                             "end": "End"
+                                          },
+                                          "slot": "",
+                                          "componentName": "SelectItemWrapper2",
+                                          "ion4Reorder": {
+                                             "style": "__default",
+                                             "slot": "",
+                                             "customIcon": "-1",
+                                             "reorderType": ""
+                                          },
+                                          "lines": "",
+                                          "showItemWrapper": "true",
+                                          "aio_visible": "true",
+                                          "visible": "true"
+                                       },
+                                       "@id": "F21AA56D-B440-3FD1-648B-F997B839E962",
+                                       "events": ""
+                                    }]},
+                                    "@type": "Ionic5GridCellBean",
+                                    "property": {
+                                       "padding": "",
+                                       "pull": {
+                                          "pull": "",
+                                          "xl": "",
+                                          "md": "",
+                                          "sm": "",
+                                          "xs": "",
+                                          "lg": ""
+                                       },
+                                       "alignSelf": "",
+                                       "size": {
+                                          "size": "",
+                                          "xl": "",
+                                          "md": "",
+                                          "sm": "",
+                                          "xs": "",
+                                          "lg": ""
+                                       },
+                                       "offset": {
+                                          "offset": "",
+                                          "xl": "",
+                                          "md": "",
+                                          "sm": "",
+                                          "xs": "",
+                                          "lg": ""
+                                       },
+                                       "textAlignment": "",
+                                       "className": "",
+                                       "componentName": "GridCell8",
+                                       "push": {
+                                          "xl": "",
+                                          "md": "",
+                                          "sm": "",
+                                          "xs": "",
+                                          "lg": "",
+                                          "push": ""
+                                       },
+                                       "aio_visible": "true",
+                                       "visible": "true"
+                                    },
+                                    "@id": "1EB0602F-524F-4975-64B2-4C947AFF6941",
+                                    "events": ""
+                                 },
+                                 {
+                                    "children": {"bean": [{
+                                       "children": {"bean": [{
+                                          "children": {"bean": [
+                                             {
+                                                "children": {"bean": []},
+                                                "@type": "Ionic5SelectOptionBean",
+                                                "property": {
+                                                   "className": "",
+                                                   "disabled": "",
+                                                   "text": "°C",
+                                                   "componentName": "SelectOption1",
+                                                   "value": "°C",
+                                                   "aio_visible": "",
+                                                   "visible": "true"
+                                                },
+                                                "@id": "914C1542-13CA-ADB3-E133-4ED26D3F133E",
+                                                "events": ""
+                                             },
+                                             {
+                                                "children": {"bean": []},
+                                                "@type": "Ionic5SelectOptionBean",
+                                                "property": {
+                                                   "className": "",
+                                                   "disabled": "",
+                                                   "text": "°F",
+                                                   "componentName": "SelectOption2",
+                                                   "value": "°F",
+                                                   "aio_visible": "",
+                                                   "visible": "true"
+                                                },
+                                                "@id": "678A4F5D-340B-5BE9-2F4C-E4AA757EC3AF",
+                                                "events": ""
+                                             }
+                                          ]},
+                                          "@type": "Ionic5SelectItemBean",
+                                          "property": {
+                                             "formCtrlOptions": {
+                                                "standalone": "false",
+                                                "updateOn": ""
+                                             },
+                                             "selectedText": "",
+                                             "multiple": "false",
+                                             "className": "",
+                                             "opened": "false",
+                                             "angularID": "",
+                                             "slot": "",
+                                             "interface": "",
+                                             "interfaceOptions": "",
+                                             "aio_visible": "true",
+                                             "mode": "",
+                                             "ngModel": "",
+                                             "advancedProperties": {
+                                                "(ionChange)": "",
+                                                "[(ngModel)]": "settings.units.temp"
+                                             },
+                                             "cancelText": "",
+                                             "name": "SelectItemWrapper1",
+                                             "formCtrlDivider": "",
+                                             "disabled": "",
+                                             "placeholder": "",
+                                             "componentName": "Select1",
+                                             "okText": "",
+                                             "value": "°C",
+                                             "compareWith": "",
+                                             "validation": {
+                                                "showErrors": "false",
+                                                "className": "",
+                                                "required": "false",
+                                                "requiredmessage": ""
+                                             }
+                                          },
+                                          "@id": "97997037-7B04-24C6-DF24-CE2180B2EA8B",
+                                          "events": ""
+                                       }]},
+                                       "@type": "Ionic5SelectBean",
+                                       "property": {
+                                          "mode": "",
+                                          "ion4Label": {
+                                             "mode": "",
+                                             "color": "",
+                                             "className": "",
+                                             "text": "Temperature",
+                                             "position": "fixed",
+                                             "slot": ""
+                                          },
+                                          "color": "",
+                                          "className": "",
+                                          "disabled": "",
+                                          "availableSlots": {
+                                             "": "Not selected",
+                                             "start": "Start",
+                                             "end": "End"
+                                          },
+                                          "slot": "",
+                                          "componentName": "SelectItemWrapper1",
+                                          "ion4Reorder": {
+                                             "style": "__default",
+                                             "slot": "",
+                                             "customIcon": "-1",
+                                             "reorderType": ""
+                                          },
+                                          "lines": "",
+                                          "showItemWrapper": "true",
+                                          "aio_visible": "true",
+                                          "visible": "true"
+                                       },
+                                       "@id": "637F8486-610D-0963-E4FB-2BCEEAEF4C28",
+                                       "events": ""
+                                    }]},
+                                    "@type": "Ionic5GridCellBean",
+                                    "property": {
+                                       "padding": "",
+                                       "pull": {
+                                          "pull": "",
+                                          "xl": "",
+                                          "md": "",
+                                          "sm": "",
+                                          "xs": "",
+                                          "lg": ""
+                                       },
+                                       "alignSelf": "",
+                                       "size": {
+                                          "size": "",
+                                          "xl": "",
+                                          "md": "",
+                                          "sm": "",
+                                          "xs": "",
+                                          "lg": ""
+                                       },
+                                       "offset": {
+                                          "offset": "",
+                                          "xl": "",
+                                          "md": "",
+                                          "sm": "",
+                                          "xs": "",
+                                          "lg": ""
+                                       },
+                                       "textAlignment": "",
+                                       "className": "",
+                                       "componentName": "GridCell9",
+                                       "push": {
+                                          "xl": "",
+                                          "md": "",
+                                          "sm": "",
+                                          "xs": "",
+                                          "lg": "",
+                                          "push": ""
+                                       },
+                                       "aio_visible": "true",
+                                       "visible": "true"
+                                    },
+                                    "@id": "70BC1C2D-20A3-E262-ABDB-564C784022D6",
+                                    "events": ""
+                                 }
+                              ]},
+                              "@type": "Ionic5GridRowBean",
+                              "property": {
+                                 "alignItems": "",
+                                 "className": "",
+                                 "componentName": "GridRow5",
+                                 "wrap": "",
+                                 "justifyContent": "",
+                                 "aio_visible": "true",
+                                 "visible": "true"
+                              },
+                              "@id": "B8E797FA-8F11-EC3C-D53C-02F2125352A6",
+                              "events": ""
+                           }
+                        ]},
+                        "@type": "Ionic5GridBean",
+                        "property": {
+                           "ion4Padding": "",
+                           "className": "",
+                           "wrapper": "true",
+                           "fixed": "false",
+                           "slot": "",
+                           "componentName": "Grid2",
+                           "aio_visible": "true",
+                           "visible": "true"
+                        },
+                        "@id": "603CA8AC-EB17-49D3-9BE6-2473F7B9309D",
+                        "events": ""
+                     }
+                  ]},
+                  "@type": "Ionic5CardItemBean",
+                  "property": {
+                     "mode": "",
+                     "translucent": "false",
+                     "color": "",
+                     "className": "",
+                     "wrapper": "ion-card-content",
+                     "text": "Item text",
+                     "componentName": "CardItem3",
+                     "aio_visible": "true",
+                     "visible": "true"
+                  },
+                  "@id": "2EBBA944-A42B-C2EC-48AE-BBE33B6B0C19",
+                  "events": ""
+               }]},
+               "@type": "Ionic5CardBean",
+               "property": {
+                  "mode": "",
+                  "ion4Routing": {
+                     "route": "",
+                     "routerDirection": "",
+                     "params": ""
+                  },
+                  "isButton": "false",
+                  "color": "",
+                  "linkFeatures": {
+                     "rel": "",
+                     "href": "",
+                     "type": "",
+                     "target": ""
+                  },
+                  "className": "ion-no-margin",
+                  "disabled": "",
+                  "slot": "",
+                  "componentName": "UnitsCard",
+                  "aio_visible": "true",
+                  "visible": "true"
+               },
+               "@id": "DEEE2FD7-B7D1-4E34-00C8-0255DB35D073",
+               "events": ""
+            },
+            {
+               "children": {"bean": [{
+                  "children": {"bean": [
+                     {
+                        "children": {"bean": []},
+                        "@type": "Ionic5CardItemTitleBean",
+                        "property": {
+                           "mode": "",
+                           "color": "primary",
+                           "className": "",
+                           "wrapper": "ion-card-title",
+                           "text": "Unlogged Flights",
+                           "componentName": "CardItemTitle1",
+                           "aio_visible": "true"
+                        },
+                        "@id": "74E5589D-8255-18F3-E736-723F434D0F1D",
+                        "events": ""
+                     },
+                     {
+                        "children": {"bean": [{
+                           "children": {"bean": [
+                              {
+                                 "children": {"bean": [{
+                                    "children": {"bean": []},
+                                    "@type": "Ionic5InputBean",
+                                    "property": {
+                                       "color": "",
+                                       "icon": {
+                                          "color": "",
+                                          "name": "",
+                                          "style": "none",
+                                          "className": "",
+                                          "slot": "",
+                                          "customIcon": "-1"
+                                       },
+                                       "className": "",
+                                       "slot": "",
+                                       "type": "number",
+                                       "required": "",
+                                       "mode": "",
+                                       "debounce": "",
+                                       "features": {
+                                          "minlength": "",
+                                          "clearInput": "",
+                                          "autocomplete": "",
+                                          "max": "",
+                                          "maxlength": "",
+                                          "multiple": "false",
+                                          "pattern": "",
+                                          "autofocus": "",
+                                          "autocapitalize": "",
+                                          "accept": "",
+                                          "autocorrect": "",
+                                          "min": "",
+                                          "clearOnEdit": "",
+                                          "size": "",
+                                          "spellcheck": "",
+                                          "step": ""
+                                       },
+                                       "ngModel": "",
+                                       "ion4Label": {
+                                          "mode": "",
+                                          "color": "",
+                                          "className": "",
+                                          "text": "Landings:",
+                                          "position": "",
+                                          "slot": ""
+                                       },
+                                       "readonly": "",
+                                       "disabled": "",
+                                       "placeholder": "Number ",
+                                       "componentName": "Input1",
+                                       "ion4Reorder": {
+                                          "style": "__default",
+                                          "slot": "",
+                                          "customIcon": "-1",
+                                          "reorderType": ""
+                                       },
+                                       "value": "",
+                                       "formCtrlOptions": {
+                                          "standalone": "false",
+                                          "updateOn": ""
+                                       },
+                                       "inputmode": "",
+                                       "angularID": "",
+                                       "aio_visible": "true",
+                                       "advancedProperties": {
+                                          "(ionInput)": "",
+                                          "(ionChange)": "",
+                                          "[(ngModel)]": "settings.unloggedLandings",
+                                          "(ionFocus)": ""
+                                       },
+                                       "name": "Input1",
+                                       "formCtrlDivider": "",
+                                       "ion4Item": {
+                                          "mode": "",
+                                          "color": "",
+                                          "disabled": "",
+                                          "className": "",
+                                          "slot": "",
+                                          "lines": ""
+                                       },
+                                       "showItemWrapper": "true",
+                                       "enterkeyhint": "",
+                                       "validation": {
+                                          "showErrors": "false",
+                                          "className": "",
+                                          "required": "",
+                                          "requiredmessage": "",
+                                          "min": "",
+                                          "minmessage": "",
+                                          "max": "",
+                                          "maxmessage": "",
+                                          "minlength": "",
+                                          "minlengthmessage": "",
+                                          "maxlength": "",
+                                          "maxlengthmessage": "",
+                                          "pattern": "",
+                                          "patternmessage": ""
+                                       },
+                                       "stylePadding": {
+                                          "all": "",
+                                          "top": "",
+                                          "right": "",
+                                          "bottom": "",
+                                          "left": ""
+                                       },
+                                       "styleMargin": {
+                                          "all": "",
+                                          "top": "",
+                                          "right": "",
+                                          "bottom": "",
+                                          "left": ""
+                                       },
+                                       "styleBackgroundColor": "",
+                                       "visible": "true"
+                                    },
+                                    "@id": "1593B6AF-0CB1-01BF-D9DC-65E2CE2DEBD1",
+                                    "events": ""
+                                 }]},
+                                 "@type": "Ionic5GridCellBean",
+                                 "property": {
+                                    "padding": "",
+                                    "pull": {
+                                       "pull": "",
+                                       "xl": "",
+                                       "md": "",
+                                       "sm": "",
+                                       "xs": "",
+                                       "lg": ""
+                                    },
+                                    "alignSelf": "",
+                                    "size": {
+                                       "size": "",
+                                       "xl": "",
+                                       "md": "",
+                                       "sm": "",
+                                       "xs": "",
+                                       "lg": ""
+                                    },
+                                    "offset": {
+                                       "offset": "",
+                                       "xl": "",
+                                       "md": "",
+                                       "sm": "",
+                                       "xs": "",
+                                       "lg": ""
+                                    },
+                                    "textAlignment": "",
+                                    "className": "",
+                                    "componentName": "GridCell6",
+                                    "push": {
+                                       "xl": "",
+                                       "md": "",
+                                       "sm": "",
+                                       "xs": "",
+                                       "lg": "",
+                                       "push": ""
+                                    },
+                                    "aio_visible": "true",
+                                    "visible": "true"
+                                 },
+                                 "@id": "7BE6492B-0740-30C3-F752-E29DA58E0040",
+                                 "events": ""
+                              },
+                              {
+                                 "children": {"bean": [{
+                                    "children": {"bean": []},
+                                    "@type": "Ionic5InputBean",
+                                    "property": {
+                                       "color": "",
+                                       "icon": {
+                                          "color": "",
+                                          "name": "",
+                                          "style": "none",
+                                          "className": "",
+                                          "slot": "",
+                                          "customIcon": "-1"
+                                       },
+                                       "className": "",
+                                       "slot": "",
+                                       "type": "text",
+                                       "required": "",
+                                       "mode": "",
+                                       "debounce": "",
+                                       "features": {
+                                          "minlength": "",
+                                          "clearInput": "",
+                                          "autocomplete": "",
+                                          "max": "",
+                                          "maxlength": "",
+                                          "multiple": "false",
+                                          "pattern": "[0-9]+:[0-9][0-9]",
+                                          "autofocus": "",
+                                          "autocapitalize": "",
+                                          "accept": "",
+                                          "autocorrect": "",
+                                          "min": "",
+                                          "clearOnEdit": "",
+                                          "size": "",
+                                          "spellcheck": "",
+                                          "step": ""
+                                       },
+                                       "ngModel": "",
+                                       "ion4Label": {
+                                          "mode": "",
+                                          "color": "",
+                                          "className": "",
+                                          "text": "Hours:",
+                                          "position": "",
+                                          "slot": ""
+                                       },
+                                       "readonly": "",
+                                       "disabled": "",
+                                       "placeholder": "h:mm",
+                                       "componentName": "Input2",
+                                       "ion4Reorder": {
+                                          "style": "__default",
+                                          "slot": "",
+                                          "customIcon": "-1",
+                                          "reorderType": ""
+                                       },
+                                       "value": "",
+                                       "formCtrlOptions": {
+                                          "standalone": "false",
+                                          "updateOn": ""
+                                       },
+                                       "inputmode": "",
+                                       "angularID": "",
+                                       "aio_visible": "true",
+                                       "advancedProperties": {
+                                          "(ionInput)": "",
+                                          "(ionChange)": "",
+                                          "[(ngModel)]": "settings.unloggedHours",
+                                          "(ionFocus)": ""
+                                       },
+                                       "name": "Input2",
+                                       "formCtrlDivider": "",
+                                       "ion4Item": {
+                                          "mode": "",
+                                          "color": "",
+                                          "disabled": "",
+                                          "className": "",
+                                          "slot": "",
+                                          "lines": ""
+                                       },
+                                       "showItemWrapper": "true",
+                                       "enterkeyhint": "",
+                                       "validation": {
+                                          "showErrors": "false",
+                                          "className": "",
+                                          "required": "",
+                                          "requiredmessage": "",
+                                          "min": "",
+                                          "minmessage": "",
+                                          "max": "",
+                                          "maxmessage": "",
+                                          "minlength": "",
+                                          "minlengthmessage": "",
+                                          "maxlength": "",
+                                          "maxlengthmessage": "",
+                                          "pattern": "",
+                                          "patternmessage": ""
+                                       },
+                                       "stylePadding": {
+                                          "all": "",
+                                          "top": "",
+                                          "right": "",
+                                          "bottom": "",
+                                          "left": ""
+                                       },
+                                       "styleMargin": {
+                                          "all": "",
+                                          "top": "",
+                                          "right": "",
+                                          "bottom": "",
+                                          "left": ""
+                                       },
+                                       "styleBackgroundColor": "",
+                                       "visible": "true"
+                                    },
+                                    "@id": "7C763396-F6D1-E863-1A49-61B225E803B9",
+                                    "events": ""
+                                 }]},
+                                 "@type": "Ionic5GridCellBean",
+                                 "property": {
+                                    "padding": "",
+                                    "pull": {
+                                       "pull": "",
+                                       "xl": "",
+                                       "md": "",
+                                       "sm": "",
+                                       "xs": "",
+                                       "lg": ""
+                                    },
+                                    "alignSelf": "",
+                                    "size": {
+                                       "size": "",
+                                       "xl": "",
+                                       "md": "",
+                                       "sm": "",
+                                       "xs": "",
+                                       "lg": ""
+                                    },
+                                    "offset": {
+                                       "offset": "",
+                                       "xl": "",
+                                       "md": "",
+                                       "sm": "",
+                                       "xs": "",
+                                       "lg": ""
+                                    },
+                                    "textAlignment": "",
+                                    "className": "",
+                                    "componentName": "GridCell7",
+                                    "push": {
+                                       "xl": "",
+                                       "md": "",
+                                       "sm": "",
+                                       "xs": "",
+                                       "lg": "",
+                                       "push": ""
+                                    },
+                                    "aio_visible": "true",
+                                    "visible": "true"
+                                 },
+                                 "@id": "CAD2C476-7522-6D65-D216-2C1FB626196F",
+                                 "events": ""
+                              }
+                           ]},
+                           "@type": "Ionic5GridRowBean",
+                           "property": {
+                              "alignItems": "",
+                              "className": "",
+                              "componentName": "GridRow4",
+                              "wrap": "",
+                              "justifyContent": "",
+                              "aio_visible": "true",
+                              "visible": "true"
+                           },
+                           "@id": "9D899496-BA8A-06F5-E735-5161963926AF",
+                           "events": ""
+                        }]},
+                        "@type": "Ionic5GridBean",
+                        "property": {
+                           "ion4Padding": "",
+                           "className": "",
+                           "wrapper": "true",
+                           "fixed": "false",
+                           "slot": "",
+                           "componentName": "Grid3",
+                           "aio_visible": "true",
+                           "visible": "true"
+                        },
+                        "@id": "84FCD075-842B-A399-F10A-8C8C9CDDA661",
+                        "events": ""
+                     }
+                  ]},
+                  "@type": "Ionic5CardItemBean",
+                  "property": {
+                     "mode": "",
+                     "translucent": "false",
+                     "color": "",
+                     "className": "",
+                     "wrapper": "ion-card-content",
+                     "text": "Item text",
+                     "componentName": "CardItem1",
+                     "aio_visible": "true",
+                     "visible": "true"
+                  },
+                  "@id": "16639B3D-6B8C-1D7E-0B9D-3A70CAD4AA38",
+                  "events": ""
+               }]},
+               "@type": "Ionic5CardBean",
+               "property": {
+                  "mode": "",
+                  "ion4Routing": {
+                     "route": "",
+                     "routerDirection": "",
+                     "params": ""
+                  },
+                  "isButton": "false",
+                  "color": "",
+                  "linkFeatures": {
+                     "rel": "",
+                     "href": "",
+                     "type": "",
+                     "target": ""
+                  },
+                  "className": "ion-no-margin",
+                  "disabled": "",
+                  "slot": "",
+                  "componentName": "Card1",
+                  "aio_visible": "true",
+                  "visible": "true"
+               },
+               "@id": "E1457C2E-892E-BA3B-C384-8502EB7CCFCB",
+               "events": ""
+            },
+            {
+               "children": {"bean": [{
+                  "children": {"bean": [
+                     {
+                        "children": {"bean": []},
+                        "@type": "Ionic5CardItemTitleBean",
+                        "property": {
+                           "mode": "",
+                           "color": "primary",
+                           "className": "",
+                           "wrapper": "ion-card-title",
+                           "text": "Other",
+                           "componentName": "Other",
+                           "aio_visible": "true"
+                        },
+                        "@id": "6F296C51-B9C9-53B0-2EBB-B663A5BDA5C8",
+                        "events": ""
+                     },
+                     {
+                        "children": {"bean": []},
+                        "@type": "Ionic5InputBean",
+                        "property": {
+                           "color": "",
+                           "icon": {
+                              "color": "",
+                              "name": "",
+                              "style": "none",
+                              "className": "",
+                              "slot": "",
+                              "customIcon": "-1"
+                           },
+                           "className": "",
+                           "slot": "",
+                           "type": "number",
+                           "required": "",
+                           "mode": "",
+                           "debounce": "",
+                           "features": {
+                              "minlength": "",
+                              "clearInput": "",
+                              "autocomplete": "",
+                              "max": "",
+                              "maxlength": "",
+                              "multiple": "false",
+                              "pattern": "",
+                              "autofocus": "",
+                              "autocapitalize": "",
+                              "accept": "",
+                              "autocorrect": "",
+                              "min": "1",
+                              "clearOnEdit": "",
+                              "size": "",
+                              "spellcheck": "",
+                              "step": ""
+                           },
+                           "ngModel": "",
+                           "ion4Label": {
+                              "mode": "",
+                              "color": "",
+                              "className": "",
+                              "text": "Climb rate avg (s):",
+                              "position": "",
+                              "slot": ""
+                           },
+                           "readonly": "",
+                           "disabled": "",
+                           "placeholder": "Period to average climb rate over",
+                           "componentName": "RatePeriod",
+                           "ion4Reorder": {
+                              "style": "__default",
+                              "slot": "",
+                              "customIcon": "-1",
+                              "reorderType": ""
+                           },
+                           "value": "",
+                           "formCtrlOptions": {
+                              "standalone": "false",
+                              "updateOn": ""
+                           },
+                           "inputmode": "",
+                           "angularID": "",
+                           "aio_visible": "true",
+                           "advancedProperties": {
+                              "(ionInput)": "",
+                              "(ionChange)": "",
+                              "[(ngModel)]": "settings.ratePeriod",
+                              "(ionFocus)": ""
+                           },
+                           "name": "Input3",
+                           "formCtrlDivider": "",
+                           "ion4Item": {
+                              "mode": "",
+                              "color": "",
+                              "disabled": "",
+                              "className": "",
+                              "slot": "",
+                              "lines": ""
+                           },
+                           "showItemWrapper": "true",
+                           "enterkeyhint": "",
+                           "validation": {
+                              "showErrors": "false",
+                              "className": "",
+                              "required": "",
+                              "requiredmessage": "",
+                              "min": "",
+                              "minmessage": "",
+                              "max": "",
+                              "maxmessage": "",
+                              "minlength": "",
+                              "minlengthmessage": "",
+                              "maxlength": "",
+                              "maxlengthmessage": "",
+                              "pattern": "",
+                              "patternmessage": ""
+                           },
+                           "stylePadding": {
+                              "all": "",
+                              "top": "",
+                              "right": "",
+                              "bottom": "",
+                              "left": ""
+                           },
+                           "styleMargin": {
+                              "all": "",
+                              "top": "",
+                              "right": "",
+                              "bottom": "",
+                              "left": ""
+                           },
+                           "styleBackgroundColor": "",
+                           "visible": "true"
+                        },
+                        "@id": "529533E3-0D3C-FADC-7582-83A7750D9F00",
+                        "events": ""
+                     }
+                  ]},
+                  "@type": "Ionic5CardItemBean",
+                  "property": {
+                     "mode": "",
+                     "translucent": "false",
+                     "color": "",
+                     "className": "",
+                     "wrapper": "ion-card-content",
+                     "text": "Item text",
+                     "componentName": "CardItem4",
+                     "aio_visible": "true",
+                     "visible": "true"
+                  },
+                  "@id": "123B45EB-BFB7-7691-EE10-F59A38FCEAAA",
+                  "events": ""
+               }]},
+               "@type": "Ionic5CardBean",
+               "property": {
+                  "mode": "",
+                  "ion4Routing": {
+                     "route": "",
+                     "routerDirection": "",
+                     "params": ""
+                  },
+                  "isButton": "false",
+                  "color": "",
+                  "linkFeatures": {
+                     "rel": "",
+                     "href": "",
+                     "type": "",
+                     "target": ""
+                  },
+                  "className": "ion-no-margin",
+                  "disabled": "",
+                  "slot": "",
+                  "componentName": "Card3",
+                  "aio_visible": "true",
+                  "visible": "true"
+               },
+               "@id": "83535E6B-D07A-6659-7B40-DE24DCD91045",
+               "events": ""
+            },
+            {
+               "children": {"bean": []},
+               "@type": "Ionic5ButtonBean",
+               "property": {
+                  "ion4Routing": {
+                     "route": "",
+                     "routerDirection": "",
+                     "params": ""
+                  },
+                  "strong": "false",
+                  "color": "danger",
+                  "shape": "",
+                  "icon": {
+                     "color": "",
+                     "name": "",
+                     "style": "trash",
+                     "className": "",
+                     "slot": "",
+                     "customIcon": "-1"
+                  },
+                  "className": "",
+                  "slot": "",
+                  "fill": "",
+                  "aio_visible": "true",
+                  "mode": "",
+                  "advancedProperties": {"(click)": ""},
+                  "expand": "block",
+                  "component": "ion-button",
+                  "buttonType": "",
+                  "size": "",
+                  "ionMenuButton": {
+                     "icon": "__default",
+                     "autoHide": "",
+                     "menu": "",
+                     "customIcon": "-1",
+                     "type": ""
+                  },
+                  "linkFeatures": {
+                     "rel": "",
+                     "href": "",
+                     "type": "",
+                     "target": ""
+                  },
+                  "disabled": "",
+                  "text": "Delete All Flights",
+                  "componentName": "DeleteAll",
+                  "ionBackButton": {
+                     "defaultHref": "",
+                     "icon": "__default",
+                     "text": "",
+                     "customIcon": "-1",
+                     "type": ""
+                  },
+                  "styleBorderColor": "",
+                  "styleBorderRadius": {
+                     "all": "",
+                     "topLeft": "",
+                     "topRight": "",
+                     "bottomLeft": "",
+                     "bottomRight": ""
+                  },
+                  "styleBorderStyle": "",
+                  "styleBorderWidth": {
+                     "all": "",
+                     "top": "",
+                     "right": "",
+                     "bottom": "",
+                     "left": ""
+                  },
+                  "styleColor": "",
+                  "styleMargin": {
+                     "all": "",
+                     "top": "",
+                     "right": "",
+                     "bottom": "",
+                     "left": ""
+                  },
+                  "visible": "true"
+               },
+               "@id": "1C35BD80-6F6E-553C-744C-23A4CB57A423",
+               "events": {"click": {
+                  "@id": "",
+                  "@readOnly": "false",
+                  "actions": {"customjs": {
+                     "@readOnly": false,
+                     "@index": 0,
+                     "@id": "CustomJSAction36412",
+                     "isActive": true,
+                     "script": "//Delete exiting data.\nconsole.group(\"Click - Delete All \");\nconst alert = await this.Apperyio.getController(\"AlertController\").create({\n    header: \"Confirm Delete?\",\n    message: \"This will delete all your logged flights!\",\n    buttons: [{\n        text: 'Cancel',\n        role: 'cancel',\n        cssClass: 'secondary',\n    }, {\n        text: 'Confirm',\n        handler: async (res) => {\n            await this.Apperyio.data.setStorage(\"LogStorage\", []);\n            await this.Apperyio.data.setVariable(\"LogStorage\", []);\n            this.Apperyio.navigateTo(\"Home\");\n        }\n    }]\n});\n\nawait alert.present();\nconsole.groupEnd()"
+                  }}
+               }}
+            }
+         ]},
+         "@type": "Ionic5ContentBean",
+         "property": {
+            "advancedProperties": {"(ionScroll)": ""},
+            "color": "",
+            "fullscreen": "false",
+            "forceOverscroll": "",
+            "scrollY": "",
+            "className": "ion-no-margin",
+            "availableSlots": {
+               "": "Not selected",
+               "fixed": "Fixed"
+            },
+            "componentName": "Content1",
+            "scrollEvents": "",
+            "scrollX": "",
+            "stylePadding": {
+               "all": "",
+               "top": "",
+               "right": "",
+               "bottom": "",
+               "left": ""
+            },
+            "styleTextAlign": "",
+            "": ""
+         },
+         "@id": "89248A00-877F-92E5-299D-8FABC397732A",
+         "events": ""
+      },
+      {
+         "children": {"bean": [{
+            "children": {"bean": [
+               {
+                  "children": {"bean": [{
+                     "children": {"bean": []},
+                     "@type": "Ionic5ButtonBean",
+                     "property": {
+                        "ion4Routing": {
+                           "route": "",
+                           "routerDirection": "",
+                           "params": ""
+                        },
+                        "strong": "false",
+                        "color": "",
+                        "shape": "",
+                        "icon": {
+                           "color": "",
+                           "name": "",
+                           "style": "none",
+                           "className": "",
+                           "slot": "",
+                           "customIcon": "-1"
+                        },
+                        "className": "",
+                        "slot": "",
+                        "fill": "",
+                        "aio_visible": "true",
+                        "mode": "",
+                        "advancedProperties": {"(click)": ""},
+                        "expand": "block",
+                        "component": "ion-back-button",
+                        "buttonType": "",
+                        "size": "",
+                        "ionMenuButton": {
+                           "icon": "__default",
+                           "autoHide": "",
+                           "menu": "",
+                           "customIcon": "-1",
+                           "type": ""
+                        },
+                        "linkFeatures": {
+                           "rel": "",
+                           "href": "",
+                           "type": "",
+                           "target": ""
+                        },
+                        "disabled": "",
+                        "text": "Button",
+                        "componentName": "BackButton",
+                        "ionBackButton": {
+                           "icon": "close",
+                           "customIcon": "-1",
+                           "text": "",
+                           "type": "",
+                           "defaultHref": "tabs"
+                        },
+                        "styleBorderColor": "",
+                        "styleBorderRadius": {
+                           "all": "",
+                           "topLeft": "",
+                           "topRight": "",
+                           "bottomLeft": "",
+                           "bottomRight": ""
+                        },
+                        "styleBorderStyle": "",
+                        "styleBorderWidth": {
+                           "all": "",
+                           "top": "",
+                           "right": "",
+                           "bottom": "",
+                           "left": ""
+                        },
+                        "styleColor": "",
+                        "styleMargin": {
+                           "all": "",
+                           "top": "",
+                           "right": "",
+                           "bottom": "",
+                           "left": ""
+                        },
+                        "visible": "true"
+                     },
+                     "@id": "BE1076D4-B722-A044-6307-A71BD59E2A4C",
+                     "events": {"click": {
+                        "@id": "",
+                        "@readOnly": "false",
+                        "actions": {"customjs": {
+                           "@readOnly": false,
+                           "@index": 0,
+                           "@id": "CustomJSAction50381",
+                           "isActive": true,
+                           "script": "console.group(\"Back button - Settings\");\nconsole.debug(\"Save Settings\");\nawait this.Apperyio.data.setStorage(\"SettingsStorage\", this.settings);\nawait this.Apperyio.data.setVariable(\"SettingsStorage\", this.settings);\nconsole.groupEnd()"
+                        }}
+                     }}
+                  }]},
+                  "@type": "Ionic5ToolbarButtonsBean",
+                  "property": {
+                     "className": "",
+                     "slot": "start",
+                     "componentName": "ToolbarButtons1",
+                     "aio_visible": "true",
+                     "collapse": "true"
+                  },
+                  "@id": "8800CCF3-DFD5-2496-124E-B8BA1E075150",
+                  "events": ""
+               },
+               {
+                  "children": {"bean": []},
+                  "@type": "Ionic5ToolbarTitleBean",
+                  "property": {
+                     "color": "primary",
+                     "className": "",
+                     "text": "Settings",
+                     "componentName": "ToolbarTitle1",
+                     "aio_visible": "true",
+                     "size": ""
+                  },
+                  "@id": "8E4983B6-20EB-0947-67FB-16CDE51C7581",
+                  "events": ""
+               }
+            ]},
+            "@type": "Ionic5ToolbarBean",
+            "property": {
+               "mode": "",
+               "isTitle": "true",
+               "color": "",
+               "className": "",
+               "availableSlots": {
+                  "": "Not selected",
+                  "secondary": "Secondary",
+                  "start": "Start",
+                  "end": "End",
+                  "primary": "Primary"
+               },
+               "slot": "",
+               "componentName": "Toolbar1",
+               "aio_visible": "true",
+               "visible": "true"
+            },
+            "@id": "DF4DF667-603A-D669-45E6-6744AC93EB5D",
+            "events": ""
+         }]},
+         "@type": "Ionic5HeaderBean",
+         "property": {
+            "mode": "",
+            "translucent": "false",
+            "className": "",
+            "noBorder": "false",
+            "componentName": "Header1",
+            "aio_visible": "true"
+         },
+         "@id": "AEBC8955-9769-9DD5-0F62-BD35BC62FEC0",
+         "events": ""
+      }
+   ]},
+   "@type": "MobileScreenBean",
+   "property": {
+      "isTabs": "false",
+      "platformMode": "md",
+      "showHeader": "true",
+      "theme": "",
+      "componentName": "Page",
+      "showFooter": "false",
+      "isModal": "false"
+   },
+   "@id": "F2211942-B53A-61EC-0A3E-11FF48E3237C",
+   "events": {"ionViewWillEnter": {
+      "@id": "",
+      "@readOnly": "false",
+      "actions": {"customjs": {
+         "@readOnly": false,
+         "@index": 0,
+         "@id": "CustomJSAction27984",
+         "isActive": true,
+         "script": "//loading settings\nconsole.group(\"Before page showing - Settings\");\nconsole.time(\"Load settings\");\n//this.settings = await this.Apperyio.data.getStorage(\"SettingsStorage\");\nthis.settings = await this.Apperyio.data.getVariable(\"SettingsStorage\");\nconsole.timeEnd(\"Load settings\");\nconsole.groupEnd();"
+      }}
+   }}
+}}

@@ -1,0 +1,206 @@
+{"bean": {
+   "nonvisualchildren": "",
+   "controller": {
+      "dependency": {
+         "internal": [],
+         "custom": []
+      },
+      "scss": "",
+      "function": [],
+      "module": {},
+      "variable": []
+   },
+   "children": {"bean": [{
+      "children": {"bean": [{
+         "children": {"bean": [
+            {
+               "children": {"bean": []},
+               "@type": "Ionic5TabButtonBean",
+               "property": {
+                  "tabChildRoutes": "[{\"path\": \"flightdetails\",\"screenName\": \"FlightDetails\"}, <br>{\"path\": \"settings\",\"screenName\": \"SettingsPage\"},<br>{\"path\": \"importigc\",\"screenName\": \"ImportIGC\"},<br>{\"path\": \"importparajournal\",\"screenName\": \"ImportParaJournal\"},<br>{\"path\": \"importexport\",\"screenName\": \"ImportExport\"}]<br>",
+                  "icon": {
+                     "color": "",
+                     "name": "",
+                     "style": "airplane",
+                     "className": "",
+                     "customIcon": "-1",
+                     "mode": ""
+                  },
+                  "className": "",
+                  "label": {
+                     "mode": "",
+                     "color": "",
+                     "className": "",
+                     "text": "Flight Log"
+                  },
+                  "layout": "",
+                  "mode": "",
+                  "badge": {
+                     "mode": "",
+                     "color": "",
+                     "className": "",
+                     "text": ""
+                  },
+                  "tab": 17738707,
+                  "tabPath": "flightlog",
+                  "disabled": "",
+                  "href": "",
+                  "componentName": "TabButton1",
+                  "selected": ""
+               },
+               "@id": "84810155-BB78-7DD3-B477-5BB9785518DB",
+               "events": ""
+            },
+            {
+               "children": {"bean": []},
+               "@type": "Ionic5TabButtonBean",
+               "property": {
+                  "tabChildRoutes": "[{\"path\": \"settings\",\"screenName\": \"SettingsPage\"},{\"path\": \"importigc\",\"screenName\": \"ImportIGC\"},{\"path\": \"importparajournal\",\"screenName\": \"ImportParaJournal\"}]",
+                  "icon": {
+                     "color": "",
+                     "name": "",
+                     "style": "stats-chart",
+                     "className": "",
+                     "customIcon": "-1",
+                     "mode": ""
+                  },
+                  "className": "",
+                  "label": {
+                     "mode": "",
+                     "color": "",
+                     "className": "",
+                     "text": "Stats"
+                  },
+                  "layout": "",
+                  "mode": "",
+                  "badge": {
+                     "mode": "",
+                     "color": "",
+                     "className": "",
+                     "text": ""
+                  },
+                  "tab": 17738712,
+                  "tabPath": "statistics",
+                  "disabled": "",
+                  "href": "",
+                  "componentName": "TabStatistics",
+                  "selected": ""
+               },
+               "@id": "2C19538A-E9F7-1495-34ED-D8FA0BD5C88E",
+               "events": ""
+            },
+            {
+               "children": {"bean": []},
+               "@type": "Ionic5TabButtonBean",
+               "property": {
+                  "tabChildRoutes": "[{\"path\": \"flightdetails\",\"screenName\": \"FlightDetails\"},<br>{\"path\": \"settings\",\"screenName\": \"SettingsPage\"},{\"path\": \"importigc\",\"screenName\": \"ImportIGC\"},{\"path\": \"importparajournal\",\"screenName\": \"ImportParaJournal\"}]",
+                  "icon": {
+                     "color": "",
+                     "name": "",
+                     "style": "compass",
+                     "className": "",
+                     "customIcon": "-1",
+                     "mode": ""
+                  },
+                  "className": "",
+                  "label": {
+                     "mode": "",
+                     "color": "",
+                     "className": "",
+                     "text": "Sites"
+                  },
+                  "layout": "",
+                  "mode": "",
+                  "badge": {
+                     "mode": "",
+                     "color": "",
+                     "className": "",
+                     "text": ""
+                  },
+                  "tab": 17738698,
+                  "tabPath": "sites",
+                  "disabled": "",
+                  "href": "",
+                  "componentName": "TabSites",
+                  "selected": ""
+               },
+               "@id": "94A23FEE-877D-4462-1389-5DDAE985D0B0",
+               "events": ""
+            },
+            {
+               "children": {"bean": []},
+               "@type": "Ionic5TabButtonBean",
+               "property": {
+                  "tabChildRoutes": "[{\"path\": \"settings\",\"screenName\": \"SettingsPage\"},{\"path\": \"importigc\",\"screenName\": \"ImportIGC\"},{\"path\": \"importparajournal\",\"screenName\": \"ImportParaJournal\"}]",
+                  "icon": {
+                     "color": "",
+                     "name": "",
+                     "style": "airplane",
+                     "className": "",
+                     "customIcon": "-1",
+                     "mode": ""
+                  },
+                  "className": "",
+                  "label": {
+                     "mode": "",
+                     "color": "",
+                     "className": "",
+                     "text": "Wings"
+                  },
+                  "layout": "",
+                  "mode": "",
+                  "badge": {
+                     "mode": "",
+                     "color": "",
+                     "className": "",
+                     "text": ""
+                  },
+                  "tab": 17738721,
+                  "tabPath": "wings",
+                  "disabled": "",
+                  "href": "",
+                  "componentName": "TabWIngs",
+                  "selected": ""
+               },
+               "@id": "D34B3CCC-A798-A18B-8F46-E2FF44E04A6F",
+               "events": ""
+            }
+         ]},
+         "@type": "Ionic5TabBarBean",
+         "property": {
+            "mode": "",
+            "translucent": "true",
+            "color": "",
+            "className": "",
+            "slot": "bottom",
+            "componentName": "TabBar1",
+            "selectedTab": 0
+         },
+         "@id": "2066C830-0E5D-664B-8F2F-0A38665D889B",
+         "events": ""
+      }]},
+      "@type": "Ionic5TabsBean",
+      "property": {
+         "advancedProperties": {
+            "(ionTabsWillChange)": "",
+            "(ionTabsDidChange)": ""
+         },
+         "className": "",
+         "componentName": "Tabs1"
+      },
+      "@id": "CF7F3FBC-6C55-CF81-B7A4-0F2E4DA1D7AB",
+      "events": ""
+   }]},
+   "@type": "MobileScreenBean",
+   "property": {
+      "isTabs": "true",
+      "platformMode": "md",
+      "showHeader": "false",
+      "theme": "",
+      "componentName": "Page",
+      "showFooter": "false",
+      "isModal": "false"
+   },
+   "@id": "3D07CB1C-E13E-BD57-9B68-E9795D62B835",
+   "events": ""
+}}

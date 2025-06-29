@@ -1,0 +1,1109 @@
+{"bean": {
+   "nonvisualchildren": "",
+   "controller": {
+      "dependency": {
+         "internal": [
+            "4E21F3C5-F88D-FF7E-651D-890586DC1E1C",
+            "DF5E8686-8E0D-AE2F-1B79-C0624AB6D061"
+         ],
+         "custom": [
+            {
+               "path": "@ionic-native/chooser/ngx",
+               "name": "{Chooser}",
+               "id": "D6B1EBCF-690F-14B1-1323-D24FE3DB2B30"
+            },
+            {
+               "path": "@ionic-native/file-path/ngx",
+               "name": "{FilePath}",
+               "id": "95EC67F8-745C-D953-C259-93D3FF9ECC1E"
+            }
+         ]
+      },
+      "scss": ".spinner {\n    stroke: #ff0000;\n    fill: #8b0000;\n    position: fixed;\n    z-index: 999;\n    height: 5em;\n    width: em;\n    overflow: show;\n    margin: auto;\n    top: 0;\n    left: 0;\n    bottom: 0;\n    right: 0;\n}\n\nion-spinner * {\n    stroke: #ff0000;\n    fill: #8b0000;\n    position: fixed;\n    z-index: 999;\n    height: 5em;\n    width: em;\n    overflow: show;\n    margin: auto;\n    top: 0;\n    left: 0;\n    bottom: 0;\n    right: 0;\n  }\n  \nion-card-content div {\n    color: black;\n}\n\nion-card-content div h1, ion-card-content div h2{\n    margin-top: revert;\n}\n\nion-card-content div p {\n    margin-top: bottom;\n}",
+      "function": [
+         {
+            "argument": [
+               "str",
+               "delimiter"
+            ],
+            "name": "convertCSVToJSON",
+            "id": "0FC96BE0-4D97-1FD3-B4E9-5396A61A6AB4",
+            "body": "const titles = str.slice(0, str.indexOf('\\n')).split(delimiter);\nconst rows = str.slice(str.indexOf('\\n') + 1).split('\\n').filter(row => row.length > 0);\nreturn rows.map(row => {\n    const values = row.split(delimiter);\n    return titles.reduce((object, curr, i) => (object[curr] = values[i], object), {})\n});",
+            "type": "method"
+         },
+         {
+            "argument": [],
+            "name": "uuidv4",
+            "id": "CC054997-19C3-38D3-FF1F-9A4A37C9F404",
+            "body": "return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {\n    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);\n    return v.toString(16);\n  });\n",
+            "type": "method"
+         },
+         {
+            "argument": ["time"],
+            "name": "to24hr",
+            "id": "BBD6A981-004B-B94E-30D5-FD5F37D0A973",
+            "body": "//convert a 12hr time with am/pm to 24 hours\n//https://stackoverflow.com/questions/15083548/convert-12-hour-hhmm-am-pm-to-24-hour-hhmm\nconst d = new Date(\"1/1/2013 \" + time); \nreturn d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');",
+            "type": "method"
+         },
+         {
+            "argument": ["d"],
+            "name": "toDateString",
+            "id": "211A341D-51F9-164B-B82D-EA82ADD16B10",
+            "body": "//Convert to IOS string but using the local TZ\n//https://stackoverflow.com/questions/23593052/format-javascript-date-as-yyyy-mm-dd\nvar date = new Date(d);\nvar dateString = new Date(date.getTime() - (date.getTimezoneOffset() * 60000 ))\n                    .toISOString()\n                    .split(\"T\")[0];\nreturn dateString",
+            "type": "method"
+         },
+         {
+            "argument": ["data"],
+            "name": "mapParajournaltoJSON",
+            "id": "DA75E9B4-4FB2-E712-2C39-55A834DE92EC",
+            "body": "//Converst CSV to JSON and map from parajoural column names\nconsole.group('mapParajournaltoJSON')\nvar logData = this.convertCSVToJSON(data, ';');\n\nlogData = logData.map(row => { try { return this.mapParajounal(row)} \n                               catch (error) { console.error(\"Mapping error: \", error); return null}\n                             }\n                      );\nconsole.groupEnd();\nreturn logData;",
+            "type": "method"
+         },
+         {
+            "argument": ["row"],
+            "name": "mapParajounal",
+            "id": "AF34A85A-1409-D7E3-1F1E-89F0908F6839",
+            "body": "//Map the parajournal columns to our columns\nconst timeStamp = (new Date()).toISOString();\nreturn {  site:         row['Start site'], \n          date:         this.toDateString(row.Date), \n          time:         this.to24hr(row.Time), \n          when:         `${this.toDateString(row.Date)} ${this.to24hr(row.Time)}`,\n          duration:     this.to24hr(row.Duration),\n          wing:         row.Wing, \n          distance:     row.Distance,\n          notes:        row.Notes, \n          maxAltitude:  row[\"Highest altitude\"], \n          maxClimb:     row[\"Max climb\"], \n          maxSink:      row[\"Max sink\"], \n          landing:      (row[\"Top landed\"] == 1) ? \"Topland\":\"Outland\", \n          launch:       row[\"Start method\"],\n          type:         (row.Tandem == 1) ? \"Tandem\" : \"Solo\", //PPG not in CSV\n          hikeFly:      row[\"Hike-Fly\"] == 1, \n          comp:         row.Comp == 1,\n          soar:         row.Soar == 1, \n          thermal:      false, \n          reserve:      row.Reserve == 1, \n          IGCData:      null,\n         _id:           this.uuidv4(), \n         _createdAt:    timeStamp, \n         _updatedAt:    timeStamp\n        }",
+            "type": "method"
+         },
+         {
+            "argument": [],
+            "name": "isCordova",
+            "id": "D0099CAC-9841-E5F8-EEAF-D1CD7189DBA5",
+            "body": "\nreturn this.platform.platforms().includes('cordova')",
+            "type": "method"
+         }
+      ],
+      "module": {},
+      "variable": [
+         {
+            "addDI": false,
+            "name": "logData",
+            "id": "7075F08D-6404-F60C-54A7-3ADBB221AC5D",
+            "type": "ED753B4C-879E-38C0-5B80-F90906320235",
+            "value": "[]"
+         },
+         {
+            "addDI": true,
+            "name": "pathConverter",
+            "id": "B13B2ABF-5919-8B22-0CFB-E28CB214F762",
+            "type": "95EC67F8-745C-D953-C259-93D3FF9ECC1E",
+            "value": ""
+         },
+         {
+            "addDI": true,
+            "name": "myFile",
+            "id": "D9996EAF-8F6E-C217-AF02-B6ECCD6A5522",
+            "type": "DF5E8686-8E0D-AE2F-1B79-C0624AB6D061",
+            "value": ""
+         },
+         {
+            "addDI": true,
+            "name": "platform",
+            "id": "765BC90E-AD4F-BF24-C3EB-B0EC66E8F9D4",
+            "type": "4E21F3C5-F88D-FF7E-651D-890586DC1E1C",
+            "value": ""
+         },
+         {
+            "addDI": true,
+            "name": "chooser",
+            "id": "889F4AE6-4B1C-DF17-F89D-F2FC2776434A",
+            "type": "D6B1EBCF-690F-14B1-1323-D24FE3DB2B30",
+            "value": ""
+         },
+         {
+            "addDI": false,
+            "name": "showSpinner",
+            "id": "31A40FF1-74D0-09AA-E30F-2D851F34A12C",
+            "type": "ACB7DD8B-612F-6E85-DA32-0D74E1330AA2",
+            "value": "false"
+         }
+      ]
+   },
+   "children": {"bean": [
+      {
+         "children": {"bean": [
+            {
+               "children": {"bean": []},
+               "@type": "Ionic5InputBean",
+               "property": {
+                  "color": "",
+                  "icon": {
+                     "color": "",
+                     "name": "",
+                     "style": "none",
+                     "className": "",
+                     "slot": "",
+                     "customIcon": "-1"
+                  },
+                  "className": "",
+                  "slot": "",
+                  "type": "file",
+                  "required": "",
+                  "mode": "",
+                  "debounce": "",
+                  "features": {
+                     "minlength": "",
+                     "clearInput": "",
+                     "autocomplete": "",
+                     "max": "",
+                     "maxlength": "",
+                     "multiple": "false",
+                     "pattern": "",
+                     "autofocus": "",
+                     "autocapitalize": "",
+                     "accept": "",
+                     "autocorrect": "",
+                     "min": "",
+                     "clearOnEdit": "",
+                     "size": "",
+                     "spellcheck": "",
+                     "step": ""
+                  },
+                  "ngModel": "",
+                  "ion4Label": {
+                     "mode": "",
+                     "color": "",
+                     "className": "",
+                     "text": "Select Parajournal CSV",
+                     "position": "",
+                     "slot": ""
+                  },
+                  "readonly": "",
+                  "disabled": "",
+                  "placeholder": "Enter text",
+                  "componentName": "HTMLFileChooserButton",
+                  "ion4Reorder": {
+                     "style": "__default",
+                     "slot": "",
+                     "customIcon": "-1",
+                     "reorderType": ""
+                  },
+                  "value": "",
+                  "formCtrlOptions": {
+                     "standalone": "false",
+                     "updateOn": ""
+                  },
+                  "inputmode": "",
+                  "angularID": "",
+                  "aio_visible": "true",
+                  "advancedProperties": {
+                     "(ionInput)": "",
+                     "*ngIf": "! isCordova()",
+                     "(ionChange)": "",
+                     "[(ngModel)]": "",
+                     "(ionFocus)": "",
+                     "accept": ".csv"
+                  },
+                  "name": "Input1",
+                  "formCtrlDivider": "",
+                  "ion4Item": {
+                     "mode": "",
+                     "color": "",
+                     "disabled": "",
+                     "className": "",
+                     "slot": "",
+                     "lines": ""
+                  },
+                  "showItemWrapper": "true",
+                  "enterkeyhint": "",
+                  "validation": {
+                     "showErrors": "false",
+                     "className": "",
+                     "required": "",
+                     "requiredmessage": "",
+                     "min": "",
+                     "minmessage": "",
+                     "max": "",
+                     "maxmessage": "",
+                     "minlength": "",
+                     "minlengthmessage": "",
+                     "maxlength": "",
+                     "maxlengthmessage": "",
+                     "pattern": "",
+                     "patternmessage": ""
+                  },
+                  "stylePadding": {
+                     "all": "",
+                     "top": "",
+                     "right": "",
+                     "bottom": "",
+                     "left": ""
+                  },
+                  "styleMargin": {
+                     "all": "",
+                     "top": "",
+                     "right": "",
+                     "bottom": "",
+                     "left": ""
+                  },
+                  "styleBackgroundColor": "",
+                  "visible": "true"
+               },
+               "@id": "075F0692-5DC6-80BE-89A0-24F996579C9A",
+               "events": {"ionChange": {
+                  "@id": "Ionic5Event16985",
+                  "@readOnly": "false",
+                  "actions": {"customjs": {
+                     "@readOnly": false,
+                     "@index": 0,
+                     "@id": "CustomJSAction68897",
+                     "isActive": true,
+                     "script": "//Select a file, load CSV and convert from parajournal format\nconsole.group(\"ChooseFileButton: Change\");\nconst file = event.target.children[0].files[0]; \n\n//https://stackoverflow.com/questions/13729301/html5-file-api-how-to-see-the-result-of-readastext\nfunction readFile(file) {\n  return new Promise((resolve, reject) => {\n    const reader = new FileReader();\n\n    reader.onload  = (e) => {resolve(reader.result as string);}; \n    reader.onerror = (e) => {console.error(e); reject(); } \n\n    reader.readAsText(file);\n  });\n}\n\nconst contents = await readFile(file);\nthis.logData = this.mapParajournaltoJSON(contents);\n\nconsole.groupEnd();"
+                  }}
+               }}
+            },
+            {
+               "children": {"bean": []},
+               "@type": "Ionic5ButtonBean",
+               "property": {
+                  "ion4Routing": {
+                     "route": "",
+                     "routerDirection": "",
+                     "params": ""
+                  },
+                  "strong": "false",
+                  "color": "tertiary",
+                  "shape": "",
+                  "icon": {
+                     "color": "",
+                     "name": "",
+                     "style": "none",
+                     "className": "",
+                     "slot": "",
+                     "customIcon": "-1"
+                  },
+                  "className": "",
+                  "slot": "",
+                  "fill": "",
+                  "aio_visible": "true",
+                  "mode": "",
+                  "advancedProperties": {
+                     "(click)": "",
+                     "[hidden]": "logData.length == 0"
+                  },
+                  "expand": "block",
+                  "component": "ion-button",
+                  "buttonType": "",
+                  "size": "",
+                  "ionMenuButton": {
+                     "icon": "__default",
+                     "autoHide": "",
+                     "menu": "",
+                     "customIcon": "-1",
+                     "type": ""
+                  },
+                  "linkFeatures": {
+                     "rel": "",
+                     "href": "",
+                     "type": "",
+                     "target": ""
+                  },
+                  "disabled": "false",
+                  "text": "Add Flights",
+                  "componentName": "AddFlightsButton",
+                  "ionBackButton": {
+                     "defaultHref": "",
+                     "icon": "__default",
+                     "text": "",
+                     "customIcon": "-1",
+                     "type": ""
+                  },
+                  "styleBorderColor": "",
+                  "styleBorderRadius": {
+                     "all": "",
+                     "topLeft": "",
+                     "topRight": "",
+                     "bottomLeft": "",
+                     "bottomRight": ""
+                  },
+                  "styleBorderStyle": "",
+                  "styleBorderWidth": {
+                     "all": "",
+                     "top": "",
+                     "right": "",
+                     "bottom": "",
+                     "left": ""
+                  },
+                  "styleColor": "",
+                  "styleMargin": {
+                     "all": "",
+                     "top": "",
+                     "right": "",
+                     "bottom": "",
+                     "left": ""
+                  },
+                  "visible": "true"
+               },
+               "@id": "12E5B52F-EE88-A2D3-7B10-EC9285724CF5",
+               "events": {"click": {
+                  "@id": "ClickEvent67874",
+                  "@readOnly": "false",
+                  "actions": {"customjs": {
+                     "@readOnly": false,
+                     "@index": 0,
+                     "@id": "CustomJSAction25906",
+                     "isActive": true,
+                     "script": "//Wite the imported logData to storeage, overwriting the exiting data.\n\nconsole.group(\"Click - Add Flights\");\nconst alert = await this.Apperyio.getController(\"AlertController\").create({\n    header: \"Confirm append?\",\n    message: \"This will append these flights to your existing logged flights.\",\n    buttons: [{\n        text: 'Cancel',\n        role: 'cancel',\n        cssClass: 'secondary',\n    }, {\n        text: 'Confirm',\n        handler: async (res) => {\n            console.debug(\"Add confirmed\");\n            console.time('Load LogStorage');\n            //let logTable = await this.Apperyio.data.getStorage(\"LogStorage\"); \n            let logTable = await this.Apperyio.data.getVariable(\"LogStorage\"); \n            console.timeEnd('Load LogStorage');\n            logTable = (logTable == null) ? [] : logTable; \n            logTable.push(...this.logData);\n            console.time('Save LogStorage');\n            await this.Apperyio.data.setStorage(\"LogStorage\", logTable);\n            await this.Apperyio.data.setVariable(\"LogStorage\", logTable);\n            console.timeEnd('Save LogStorage');\n            this.logData = [];\n            this.Apperyio.navigateTo(\"Home\"); \n        }\n    }]\n});\nconsole.groupEnd();\nawait alert.present();"
+                  }}
+               }}
+            },
+            {
+               "children": {"bean": [
+                  {
+                     "children": {"bean": []},
+                     "@type": "Ionic5DataTableColBean",
+                     "property": {
+                        "cellTemplate": "{{value}}",
+                        "checkboxable": "",
+                        "flexGrow": "",
+                        "cellTemplate_postfix": "",
+                        "frozenLeft": "",
+                        "cellTemplate_prefix": "",
+                        "canAutoResize": "true",
+                        "minWidth": "100",
+                        "cellClass": "",
+                        "sortable": "true",
+                        "headerCheckboxable": "",
+                        "headerClass": "",
+                        "frozenRight": "",
+                        "headerTemplate_postfix": "",
+                        "draggable": "true",
+                        "prop": "site",
+                        "name": "Site",
+                        "width": "200",
+                        "headerTemplate_prefix": "",
+                        "resizeable": "true",
+                        "componentName": "Site",
+                        "headerTemplate": "",
+                        "maxWidth": "",
+                        "aio_visible": ""
+                     },
+                     "@id": "69FE2688-4830-B593-5A00-B071FD0A97AD",
+                     "events": ""
+                  },
+                  {
+                     "children": {"bean": []},
+                     "@type": "Ionic5DataTableColBean",
+                     "property": {
+                        "cellTemplate": "{{value}}",
+                        "checkboxable": "",
+                        "flexGrow": "",
+                        "cellTemplate_postfix": "",
+                        "frozenLeft": "",
+                        "cellTemplate_prefix": "",
+                        "canAutoResize": "true",
+                        "minWidth": "",
+                        "cellClass": "",
+                        "sortable": "true",
+                        "headerCheckboxable": "",
+                        "headerClass": "",
+                        "frozenRight": "false",
+                        "headerTemplate_postfix": "",
+                        "draggable": "true",
+                        "prop": "when",
+                        "name": "When",
+                        "width": "115",
+                        "headerTemplate_prefix": "",
+                        "resizeable": "true",
+                        "componentName": "Date",
+                        "headerTemplate": "",
+                        "maxWidth": "",
+                        "aio_visible": ""
+                     },
+                     "@id": "92D046E0-E2F1-BC8A-2A05-ED6F276E05B2",
+                     "events": ""
+                  },
+                  {
+                     "children": {"bean": []},
+                     "@type": "Ionic5DataTableColBean",
+                     "property": {
+                        "cellTemplate": "{{value}}",
+                        "checkboxable": "",
+                        "flexGrow": "",
+                        "cellTemplate_postfix": "",
+                        "frozenLeft": "",
+                        "cellTemplate_prefix": "",
+                        "canAutoResize": "true",
+                        "minWidth": "",
+                        "cellClass": "",
+                        "sortable": "true",
+                        "headerCheckboxable": "",
+                        "headerClass": "",
+                        "frozenRight": "false",
+                        "headerTemplate_postfix": "",
+                        "draggable": "true",
+                        "prop": "duration",
+                        "name": "Duration",
+                        "width": "60",
+                        "headerTemplate_prefix": "",
+                        "resizeable": "true",
+                        "componentName": "Duration_copy",
+                        "headerTemplate": "",
+                        "maxWidth": "",
+                        "aio_visible": ""
+                     },
+                     "@id": "798247ED-E641-A068-791B-1F4750BEDC36",
+                     "events": ""
+                  },
+                  {
+                     "children": {"bean": []},
+                     "@type": "Ionic5DataTableColBean",
+                     "property": {
+                        "cellTemplate": "{{value}}",
+                        "checkboxable": "",
+                        "flexGrow": "",
+                        "cellTemplate_postfix": "",
+                        "frozenLeft": "",
+                        "cellTemplate_prefix": "",
+                        "canAutoResize": "true",
+                        "minWidth": "",
+                        "cellClass": "",
+                        "sortable": "true",
+                        "headerCheckboxable": "",
+                        "headerClass": "",
+                        "frozenRight": "false",
+                        "headerTemplate_postfix": "",
+                        "draggable": "true",
+                        "prop": "distance",
+                        "name": "Distance",
+                        "width": "65",
+                        "headerTemplate_prefix": "",
+                        "resizeable": "true",
+                        "componentName": "Distance_copy",
+                        "headerTemplate": "",
+                        "maxWidth": "",
+                        "aio_visible": ""
+                     },
+                     "@id": "002C2D9E-17A2-622A-9340-875A9C856A91",
+                     "events": ""
+                  },
+                  {
+                     "children": {"bean": []},
+                     "@type": "Ionic5DataTableColBean",
+                     "property": {
+                        "cellTemplate": "{{value}}",
+                        "checkboxable": "",
+                        "flexGrow": "",
+                        "cellTemplate_postfix": "",
+                        "frozenLeft": "",
+                        "cellTemplate_prefix": "",
+                        "canAutoResize": "true",
+                        "minWidth": "",
+                        "cellClass": "",
+                        "sortable": "true",
+                        "headerCheckboxable": "",
+                        "headerClass": "",
+                        "frozenRight": "false",
+                        "headerTemplate_postfix": "",
+                        "draggable": "true",
+                        "prop": "maxAltitude",
+                        "name": "Alt",
+                        "width": "55",
+                        "headerTemplate_prefix": "",
+                        "resizeable": "true",
+                        "componentName": "MaxAltitude",
+                        "headerTemplate": "",
+                        "maxWidth": "",
+                        "aio_visible": ""
+                     },
+                     "@id": "873D5F0B-739E-4C4D-B0BA-593C0110521C",
+                     "events": ""
+                  },
+                  {
+                     "children": {"bean": []},
+                     "@type": "Ionic5DataTableColBean",
+                     "property": {
+                        "cellTemplate": "{{value}}",
+                        "checkboxable": "",
+                        "flexGrow": "",
+                        "cellTemplate_postfix": "",
+                        "frozenLeft": "",
+                        "cellTemplate_prefix": "",
+                        "canAutoResize": "true",
+                        "minWidth": "",
+                        "cellClass": "",
+                        "sortable": "true",
+                        "headerCheckboxable": "",
+                        "headerClass": "",
+                        "frozenRight": "false",
+                        "headerTemplate_postfix": "",
+                        "draggable": "true",
+                        "prop": "maxClimb",
+                        "name": "Climb",
+                        "width": "55",
+                        "headerTemplate_prefix": "",
+                        "resizeable": "true",
+                        "componentName": "MaxClimb",
+                        "headerTemplate": "",
+                        "maxWidth": "",
+                        "aio_visible": ""
+                     },
+                     "@id": "45BD2B89-6461-F14E-79B5-76024975E5A8",
+                     "events": ""
+                  },
+                  {
+                     "children": {"bean": []},
+                     "@type": "Ionic5DataTableColBean",
+                     "property": {
+                        "cellTemplate": "{{value}}",
+                        "checkboxable": "",
+                        "flexGrow": "",
+                        "cellTemplate_postfix": "",
+                        "frozenLeft": "",
+                        "cellTemplate_prefix": "",
+                        "canAutoResize": "true",
+                        "minWidth": "",
+                        "cellClass": "",
+                        "sortable": "true",
+                        "headerCheckboxable": "",
+                        "headerClass": "",
+                        "frozenRight": "false",
+                        "headerTemplate_postfix": "",
+                        "draggable": "true",
+                        "prop": "maxSink",
+                        "name": "Sink",
+                        "width": "55",
+                        "headerTemplate_prefix": "",
+                        "resizeable": "true",
+                        "componentName": "MaxSink",
+                        "headerTemplate": "",
+                        "maxWidth": "",
+                        "aio_visible": ""
+                     },
+                     "@id": "37C08F49-4657-F9BD-BC55-E6400CDCD9E4",
+                     "events": ""
+                  },
+                  {
+                     "children": {"bean": []},
+                     "@type": "Ionic5DataTableColBean",
+                     "property": {
+                        "cellTemplate": "{{value}}",
+                        "checkboxable": "",
+                        "flexGrow": "",
+                        "cellTemplate_postfix": "",
+                        "frozenLeft": "",
+                        "cellTemplate_prefix": "",
+                        "canAutoResize": "true",
+                        "minWidth": "",
+                        "cellClass": "",
+                        "sortable": "true",
+                        "headerCheckboxable": "",
+                        "headerClass": "",
+                        "frozenRight": "",
+                        "headerTemplate_postfix": "",
+                        "draggable": "true",
+                        "prop": "IGC.filename",
+                        "name": "File",
+                        "width": "",
+                        "headerTemplate_prefix": "",
+                        "resizeable": "true",
+                        "componentName": "DataTableCol16",
+                        "headerTemplate": "",
+                        "maxWidth": "",
+                        "aio_visible": ""
+                     },
+                     "@id": "01120796-1822-529A-D4D2-518F1EF83705",
+                     "events": ""
+                  }
+               ]},
+               "@type": "Ionic5DataTableBean",
+               "property": {
+                  "cssClasses": {
+                     "sortDescending": "",
+                     "pagerRightArrow": "",
+                     "sortAscending": "",
+                     "pagerLeftArrow": "",
+                     "pagerPrevious": "",
+                     "pagerNext": ""
+                  },
+                  "scrollbarV": "false",
+                  "className": "",
+                  "tableHeight": "height-100-header-footer",
+                  "displayCheck": "",
+                  "selectionType": "single",
+                  "reorderable": "false",
+                  "limit": "",
+                  "theme": "bootstrap",
+                  "componentName": "ParajournalDataTable",
+                  "scrollbarH": "false",
+                  "sorts": {
+                     "prop": "when",
+                     "dir": "desc"
+                  },
+                  "rowHeight": "40",
+                  "externalSorting": "false",
+                  "columnMode": "",
+                  "footerHeight": "false",
+                  "offset": "",
+                  "count": "",
+                  "rows": "7075F08D-6404-F60C-54A7-3ADBB221AC5D",
+                  "aio_visible": "true",
+                  "advancedProperties": {"*ngIf": "logData.length > 0"},
+                  "dataMode": {
+                     "mode": "clientInfinite",
+                     "serviceName": ""
+                  },
+                  "rowClass": "",
+                  "messages": {
+                     "emptyMessage": "Click on the plus icon to add your first flight",
+                     "totalMessage": "",
+                     "selectedMessage": ""
+                  },
+                  "headerHeight": "40",
+                  "visible": "true"
+               },
+               "@id": "E88D4D6B-BE39-67EF-EB95-7D8608A507E1",
+               "events": ""
+            },
+            {
+               "children": {"bean": [{
+                  "children": {"bean": [
+                     {
+                        "children": {"bean": []},
+                        "@type": "Ionic5CardItemTitleBean",
+                        "property": {
+                           "mode": "",
+                           "color": "dark",
+                           "className": "",
+                           "wrapper": "ion-card-title",
+                           "text": "How to use",
+                           "componentName": "CardItemTitle3",
+                           "aio_visible": "true"
+                        },
+                        "@id": "DAB38B11-9CD9-3AF3-1286-A682D59479F5",
+                        "events": ""
+                     },
+                     {
+                        "children": {"bean": []},
+                        "@type": "Ionic5HtmlBean",
+                        "property": {
+                           "container": "div",
+                           "html_prefix": "",
+                           "wrapperStyle": {
+                              "backgroundColor": "",
+                              "display": "default",
+                              "width": "",
+                              "style": "",
+                              "height": ""
+                           },
+                           "className": "",
+                           "html": "%children%\nThis page enables you to import your flights from a Parajournal CSV export.\n<ul>\n  <li>Click \"Choose file\" and select the Parajournal CSV.<\/li>\n  <li>You will then see the the flights in a table.<\/li>\n  <li>Click the \"X\" at the top of the screen to cancel and return to the home page.<\/li>\n  <li>Click the \"Add Flights\" button and then confim the action to add these flights to your log. <\/li>\n<\/ul>\nNote: If you first want to remove all the existing flights, go to settings and use the Delete flights buttons.",
+                           "slot": "",
+                           "componentName": "Html1",
+                           "aio_visible": "true",
+                           "html_postfix": "\nThis page enables you to import your flights from a Parajournal CSV export.\n<ul>\n  <li>Click \"Choose file\" and select the Parajournal CSV.<\/li>\n  <li>You will then see the the flights in a table.<\/li>\n  <li>Click the \"X\" at the top of the screen to cancel and return to the home page.<\/li>\n  <li>Click the \"Add Flights\" button and then confim the action to add these flights to your log. <\/li>\n<\/ul>\nNote: If you first want to remove all the existing flights, go to settings and use the Delete flights buttons.",
+                           "styleColor": "",
+                           "styleBackgroundColor": "",
+                           "styleBorderColor": "",
+                           "styleBorderRadius": {
+                              "all": "",
+                              "topLeft": "",
+                              "topRight": "",
+                              "bottomLeft": "",
+                              "bottomRight": ""
+                           },
+                           "styleBorderStyle": "",
+                           "styleBorderWidth": {
+                              "all": "",
+                              "top": "",
+                              "right": "",
+                              "bottom": "",
+                              "left": ""
+                           },
+                           "styleDisplay": "",
+                           "styleFontSize": "",
+                           "styleFontStyle": "",
+                           "styleFontWeight": "",
+                           "styleHeight": "",
+                           "styleLineHeight": "",
+                           "styleMargin": {
+                              "all": "",
+                              "top": "",
+                              "right": "",
+                              "bottom": "",
+                              "left": ""
+                           },
+                           "styleMaxWidth": "",
+                           "styleMaxHeight": "",
+                           "styleMinHeight": "",
+                           "styleMinWidth": "",
+                           "styleOpacity": "",
+                           "stylePadding": {
+                              "all": "",
+                              "top": "",
+                              "right": "",
+                              "bottom": "",
+                              "left": ""
+                           },
+                           "stylePosition": {
+                              "type": "",
+                              "top": "",
+                              "right": "",
+                              "bottom": "",
+                              "left": ""
+                           },
+                           "styleTextAlign": "",
+                           "styleTextDecoration": "",
+                           "styleVerticalAlign": "",
+                           "styleWidth": "",
+                           "visible": "true"
+                        },
+                        "@id": "2C6F5985-3F6B-7FBC-E05A-8400E7EB0800",
+                        "events": ""
+                     }
+                  ]},
+                  "@type": "Ionic5CardItemBean",
+                  "property": {
+                     "mode": "",
+                     "translucent": "false",
+                     "color": "",
+                     "className": "",
+                     "wrapper": "ion-card-content",
+                     "text": "Item text",
+                     "componentName": "CardItem3",
+                     "aio_visible": "true",
+                     "visible": "true"
+                  },
+                  "@id": "DF89490D-BAFB-06EF-45CE-F7C58C2BBD6B",
+                  "events": ""
+               }]},
+               "@type": "Ionic5CardBean",
+               "property": {
+                  "mode": "",
+                  "ion4Routing": {
+                     "route": "",
+                     "routerDirection": "",
+                     "params": ""
+                  },
+                  "advancedProperties": {"[hidden]": "logData.length > 0"},
+                  "isButton": "false",
+                  "color": "",
+                  "linkFeatures": {
+                     "rel": "",
+                     "href": "",
+                     "type": "",
+                     "target": ""
+                  },
+                  "className": "",
+                  "disabled": "",
+                  "slot": "",
+                  "componentName": "HowToUseCard",
+                  "aio_visible": "true",
+                  "visible": "true"
+               },
+               "@id": "F576B014-3BA9-6183-9582-6091DE022F59",
+               "events": ""
+            },
+            {
+               "children": {"bean": []},
+               "@type": "Ionic5SpinnerBean",
+               "property": {
+                  "duration": "",
+                  "advancedProperties": {"*ngIf": "this.showSpinner"},
+                  "paused": "",
+                  "color": "primary",
+                  "name": "lines",
+                  "className": "spinner",
+                  "slot": "",
+                  "componentName": "Spinner1",
+                  "aio_visible": "true",
+                  "visible": "true"
+               },
+               "@id": "54F31D1C-6A77-98E7-88A0-88B698D06B5D",
+               "events": ""
+            }
+         ]},
+         "@type": "Ionic5ContentBean",
+         "property": {
+            "advancedProperties": {"(ionScroll)": ""},
+            "color": "",
+            "fullscreen": "false",
+            "forceOverscroll": "",
+            "scrollY": "",
+            "className": "",
+            "availableSlots": {
+               "": "Not selected",
+               "fixed": "Fixed"
+            },
+            "componentName": "Content1",
+            "scrollEvents": "",
+            "scrollX": "",
+            "stylePadding": {
+               "all": "",
+               "top": "",
+               "right": "",
+               "bottom": "",
+               "left": ""
+            },
+            "styleTextAlign": "",
+            "": ""
+         },
+         "@id": "71EA18B8-B4AD-4A74-F5F6-59365D68010A",
+         "events": ""
+      },
+      {
+         "children": {"bean": [
+            {
+               "children": {"bean": [
+                  {
+                     "children": {"bean": [{
+                        "children": {"bean": []},
+                        "@type": "Ionic5ButtonBean",
+                        "property": {
+                           "ion4Routing": {
+                              "route": "",
+                              "routerDirection": "",
+                              "params": ""
+                           },
+                           "strong": "false",
+                           "color": "",
+                           "shape": "",
+                           "icon": {
+                              "color": "",
+                              "name": "",
+                              "style": "none",
+                              "className": "",
+                              "slot": "",
+                              "customIcon": "-1"
+                           },
+                           "className": "",
+                           "slot": "",
+                           "fill": "",
+                           "aio_visible": "true",
+                           "mode": "",
+                           "advancedProperties": {"(click)": ""},
+                           "expand": "block",
+                           "component": "ion-back-button",
+                           "buttonType": "",
+                           "size": "",
+                           "ionMenuButton": {
+                              "icon": "__default",
+                              "autoHide": "",
+                              "menu": "",
+                              "customIcon": "-1",
+                              "type": ""
+                           },
+                           "linkFeatures": {
+                              "rel": "",
+                              "href": "",
+                              "type": "",
+                              "target": ""
+                           },
+                           "disabled": "",
+                           "text": "Button",
+                           "componentName": "Button3",
+                           "ionBackButton": {
+                              "defaultHref": "tabs",
+                              "icon": "close",
+                              "text": "",
+                              "customIcon": "-1",
+                              "type": ""
+                           },
+                           "styleBorderColor": "",
+                           "styleBorderRadius": {
+                              "all": "",
+                              "topLeft": "",
+                              "topRight": "",
+                              "bottomLeft": "",
+                              "bottomRight": ""
+                           },
+                           "styleBorderStyle": "",
+                           "styleBorderWidth": {
+                              "all": "",
+                              "top": "",
+                              "right": "",
+                              "bottom": "",
+                              "left": ""
+                           },
+                           "styleColor": "",
+                           "styleMargin": {
+                              "all": "",
+                              "top": "",
+                              "right": "",
+                              "bottom": "",
+                              "left": ""
+                           },
+                           "visible": "true"
+                        },
+                        "@id": "24E8E764-1683-227C-59FA-28BBBE13C3A3",
+                        "events": ""
+                     }]},
+                     "@type": "Ionic5ToolbarButtonsBean",
+                     "property": {
+                        "className": "",
+                        "slot": "start",
+                        "componentName": "ToolbarButtons1",
+                        "aio_visible": "true",
+                        "collapse": "true"
+                     },
+                     "@id": "EBAA34EF-5E4A-62DD-5247-131F55B3EDF3",
+                     "events": ""
+                  },
+                  {
+                     "children": {"bean": []},
+                     "@type": "Ionic5ToolbarTitleBean",
+                     "property": {
+                        "color": "primary",
+                        "className": "",
+                        "text": "Import Parajournal flights",
+                        "componentName": "Import",
+                        "aio_visible": "true",
+                        "size": ""
+                     },
+                     "@id": "94BFF5D1-12E2-4A10-7F03-7CCACC92DD35",
+                     "events": ""
+                  }
+               ]},
+               "@type": "Ionic5ToolbarBean",
+               "property": {
+                  "mode": "",
+                  "isTitle": "true",
+                  "color": "",
+                  "className": "",
+                  "availableSlots": {
+                     "": "Not selected",
+                     "secondary": "Secondary",
+                     "start": "Start",
+                     "end": "End",
+                     "primary": "Primary"
+                  },
+                  "slot": "",
+                  "componentName": "Toolbar1",
+                  "aio_visible": "true",
+                  "visible": "true"
+               },
+               "@id": "893A4861-1391-A7AD-4ABE-BEE545C1E6E8",
+               "events": ""
+            },
+            {
+               "children": {"bean": []},
+               "@type": "Ionic5ButtonBean",
+               "property": {
+                  "ion4Routing": {
+                     "route": "",
+                     "routerDirection": "",
+                     "params": ""
+                  },
+                  "strong": "false",
+                  "color": "primary",
+                  "shape": "",
+                  "icon": {
+                     "color": "",
+                     "name": "",
+                     "style": "none",
+                     "className": "",
+                     "slot": "",
+                     "customIcon": "-1"
+                  },
+                  "className": "",
+                  "slot": "",
+                  "fill": "",
+                  "aio_visible": "true",
+                  "mode": "",
+                  "advancedProperties": {
+                     "*ngIf": "isCordova()",
+                     "(click)": ""
+                  },
+                  "expand": "block",
+                  "component": "ion-button",
+                  "buttonType": "",
+                  "size": "",
+                  "ionMenuButton": {
+                     "icon": "__default",
+                     "autoHide": "",
+                     "menu": "",
+                     "customIcon": "-1",
+                     "type": ""
+                  },
+                  "linkFeatures": {
+                     "rel": "",
+                     "href": "",
+                     "type": "",
+                     "target": ""
+                  },
+                  "disabled": "",
+                  "text": "Select Parajournal CSV",
+                  "componentName": "NativeFileChooserButton",
+                  "ionBackButton": {
+                     "defaultHref": "",
+                     "icon": "__default",
+                     "text": "",
+                     "customIcon": "-1",
+                     "type": ""
+                  },
+                  "styleBorderColor": "",
+                  "styleBorderRadius": {
+                     "all": "",
+                     "topLeft": "",
+                     "topRight": "",
+                     "bottomLeft": "",
+                     "bottomRight": ""
+                  },
+                  "styleBorderStyle": "",
+                  "styleBorderWidth": {
+                     "all": "",
+                     "top": "",
+                     "right": "",
+                     "bottom": "",
+                     "left": ""
+                  },
+                  "styleColor": "",
+                  "styleMargin": {
+                     "all": "",
+                     "top": "",
+                     "right": "",
+                     "bottom": "",
+                     "left": ""
+                  },
+                  "visible": "true"
+               },
+               "@id": "B63559E1-61B3-D121-3262-00001CAC3500",
+               "events": {"click": {
+                  "@id": "",
+                  "@readOnly": "false",
+                  "actions": {"customjs": [
+                     {
+                        "@readOnly": false,
+                        "@index": 0,
+                        "@id": "CustomJSAction37781",
+                        "isActive": false,
+                        "script": "//Select a file, load CSV and convert from parajournal format\n//ToDo: allow multi-select \n//https://stackoverflow.com/questions/19513556/select-multiple-files-with-intent-action-get-content/48824844\n//https://docs.appery.io/docs/ionic-4-file-upload-app-using-cordova-plugins#part-3-creating-app\nconsole.group(\"Native File Chooser\");\nconst fileOption = { \"mime\": \"text/csv\" };\nconst fileUri     = await this.getFile.open();//User file chooser\nconst entry       = await this.myFile.resolveLocalFilesystemUrl(fileUri);\nconst filePath   = await this.pathConverter.resolveNativePath(fileUri); \nconst fileDir    = filePath.substring(0, filePath.lastIndexOf('/'));\nconst fileName   = filePath.substring(filePath.lastIndexOf('/'), filePath.length).replace(\"/\", \"\");\n\n\n//https://stackoverflow.com/questions/13729301/html5-file-api-how-to-see-the-result-of-readastext\nasync function readFile(entry) {\n    return new Promise((resolve, reject) => {\n    const reader = new FileReader();\n    \n    reader.onload = (e) => {console.debug(\"readFile sucess\"); resolve(reader.result as string);}; \n    reader.onerror = (e) => {console.error(reader.error); reject(\"\"); } \n    \n    var win = function(file) { reader.readAsText(file);};\n    var fail = function(file) { console.log(\"Fail: \", file);};\n    entry.file(win, fail);\n    });\n}\n\n\nconst content = await readFile(entry);\nconsole.debug(\"readfile - done\");\nthis.logData = this.mapParajournaltoJSON(content);\n\nconsole.groupEnd();"
+                     },
+                     {
+                        "@readOnly": false,
+                        "@index": 1,
+                        "@id": "CustomJSAction16898",
+                        "isActive": true,
+                        "script": "//https://docs.appery.io/docs/ionic-4-file-upload-app-using-cordova-plugins#part-3-creating-app\nconsole.group(\"Native Simple File Chooser\");\nthis.showSpinner = true;\n\n//https://stackoverflow.com/questions/13729301/html5-file-api-how-to-see-the-result-of-readastext\nasync function readFile(entry, reader) {\n    return new Promise((resolve, reject) => {\n\n    reader.onload = (e) => {resolve(reader.result as string);}; \n    reader.onerror = (e) => {console.error(\"readFile: \", e); reject(e); } \n    \n    var win = function(file) {reader.readAsText(file);};\n    var fail = function(file) { console.error(\"Entry fail: \", file);};\n    entry.file(win, fail);\n    });\n}\n\ntry { \n    //Use \"text/comma-separated-values\",as \"text/csv\" but does not work on android\n    let fileList = (await this.chooser.getFile(\"text/comma-separated-values\")) as any;\n    \n//    let log = [];\n//    let counter = 0;\n    const reader = new FileReader() ; // Try using one reader for multiple files to fix GDrive locking issue.\n    for (const file of fileList) {\n        const entry = await this.myFile.resolveLocalFilesystemUrl(file.uri);\n        const contents = await readFile(entry, reader);\n        this.logData = this.mapParajournaltoJSON(contents);\n        //let logEntry = await this.mapToLogEntry(contents, file.name, entry); \n        //log.push(logEntry);\n        //counter ++;\n        //this.progress = counter/fileList.length;\n    };\n    \n//    this.logData = log;\n} catch (err) {\n        console.error(err);\n}\n\nthis.showSpinner = false;\nconsole.groupEnd();\n\n//const content = await readFile(entry);\n//console.debug(\"readfile - done\");\n//this.logData = this.mapParajournaltoJSON(content);\n"
+                     }
+                  ]}
+               }}
+            }
+         ]},
+         "@type": "Ionic5HeaderBean",
+         "property": {
+            "mode": "",
+            "translucent": "false",
+            "className": "",
+            "noBorder": "false",
+            "componentName": "Header1",
+            "aio_visible": "true"
+         },
+         "@id": "958B7A31-B694-4659-F6C0-BB199815E35E",
+         "events": ""
+      }
+   ]},
+   "@type": "MobileScreenBean",
+   "property": {
+      "isTabs": "false",
+      "platformMode": "md",
+      "showHeader": "true",
+      "theme": "",
+      "componentName": "Page",
+      "showFooter": "false",
+      "isModal": "false"
+   },
+   "@id": "D2ED0D7C-D472-7A04-B19F-911EA8B6A0E0",
+   "events": ""
+}}

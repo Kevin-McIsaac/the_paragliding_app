@@ -1,0 +1,581 @@
+{"bean": {
+   "@id": "56C24670-517A-779C-4326-D781D3E39AE2",
+   "@type": "MobileScreenBean",
+   "children": {"bean": [
+      {
+         "@id": "4E8C12DB-5832-04EC-95F2-B3563491FCEB",
+         "@type": "Ionic5ContentBean",
+         "children": {"bean": [
+            {
+               "@id": "CF7C444D-F219-C0BC-D4BF-9B71A0CFC52B",
+               "@type": "Ionic5ButtonBean",
+               "children": {"bean": []},
+               "property": {
+                  "text": "Export",
+                  "slot": "",
+                  "buttonType": "",
+                  "disabled": "{{!isCordova()}}",
+                  "icon": {
+                     "style": "download-outline",
+                     "name": "",
+                     "color": "primary",
+                     "className": "",
+                     "slot": "",
+                     "customIcon": "-1"
+                  },
+                  "component": "ion-button",
+                  "ionMenuButton": {
+                     "autoHide": "",
+                     "menu": "",
+                     "icon": "__default",
+                     "customIcon": "-1",
+                     "type": ""
+                  },
+                  "ionBackButton": {
+                     "icon": "__default",
+                     "customIcon": "-1",
+                     "text": "",
+                     "type": "",
+                     "defaultHref": ""
+                  },
+                  "className": "",
+                  "color": "primary",
+                  "expand": "block",
+                  "fill": "",
+                  "mode": "",
+                  "shape": "",
+                  "size": "",
+                  "strong": "false",
+                  "styleBorderColor": "",
+                  "styleBorderRadius": {
+                     "all": "",
+                     "topLeft": "",
+                     "topRight": "",
+                     "bottomLeft": "",
+                     "bottomRight": ""
+                  },
+                  "styleBorderStyle": "",
+                  "styleBorderWidth": {
+                     "all": "",
+                     "top": "",
+                     "right": "",
+                     "bottom": "",
+                     "left": ""
+                  },
+                  "styleColor": "#ffffff",
+                  "styleMargin": {
+                     "all": "",
+                     "top": "",
+                     "right": "",
+                     "bottom": "",
+                     "left": ""
+                  },
+                  "advancedProperties": {"(click)": ""},
+                  "componentName": "ExportJSON",
+                  "ion4Routing": {
+                     "route": "",
+                     "params": "",
+                     "routerDirection": ""
+                  },
+                  "linkFeatures": {
+                     "href": "",
+                     "type": "",
+                     "target": "",
+                     "rel": ""
+                  },
+                  "aio_visible": "true",
+                  "visible": "true"
+               },
+               "events": {"click": {
+                  "@id": "ClickEvent80224",
+                  "@readOnly": "false",
+                  "actions": {"customjs": [
+                     {
+                        "script": "//Write out logTable as JSON\nconsole.group(\"ImportExport: Export\");\n\nconsole.time(\"Loading LogStorage\");\nconst logTable = await this.Apperyio.data.getVariable(\"LogStorage\");\nconsole.timeEnd(\"Loading LogStorage\");\n\n\ntry {\n    const dir = this.myFile.externalRootDirectory + \"Download\"; // externalRootDirectory vs dataDirectory\n    const fileName = 'FreeFlightLog.json'\n    console.log(`Writing ${logTable.length} tracks to /download/${fileName}`)\n    this.showSpinner = true;\n\n    var fileEntry = await this.myFile.createFile(dir, fileName, true);\n    console.log('createFile ', fileEntry);\n    const blob = new Blob([JSON.stringify(logTable)], { type:  'text/plain'});  //'application/json' vs 'text/plain'\n    fileEntry = await this.myFile.writeFile(dir, fileName, blob, {replace: true, append: false});\n    console.log('writeFile ', fileEntry);\n    \n    this.Apperyio.getController(\"ToastController\").create({\n            header: 'Sucess',\n            message: `${logTable.length} tracks exported to /download/${fileName}`,\n            position: 'top',\n            duration: 2000\n        }).then(toast => toast.present());\n} catch (error) {\n    console.error(error);\n    this.Apperyio.getController(\"ToastController\").create({\n            header: 'Failure ',\n            message: `Export of tracklog failed due to error: ${error.message}(${error.code})`,\n            position: 'top',\n            buttons: [{text: 'Close', role: 'cancel' }]\n        }).then(toast => toast.present());\n}\nthis.showSpinner = false;\nconsole.groupEnd();",
+                        "@id": "CustomJSAction34287",
+                        "@index": 0,
+                        "@readOnly": false,
+                        "isActive": false
+                     },
+                     {
+                        "script": "//Write out logTable as JSON\nconsole.group(\"ImportExport: Export\");\n\nthis.showSpinner = true;\nconsole.time(\"Loading LogStorage\");\nconst logTable = await this.Apperyio.data.getVariable(\"LogStorage\");\nconst settings = await this.Apperyio.data.getVariable(\"SettingsStorage\");\nconsole.timeEnd(\"Loading LogStorage\");\n\nconst blob = new Blob([JSON.stringify({\"logTable\": logTable, \"settings\":settings})], { type:  \"application/json\"});\nconst dir = this.myFile.externalRootDirectory + \"Download/\"; // externalRootDirectory vs dataDirectory\nvar fileName = 'FreeFlightLog.json'; \n\nlet i = 1\nlet written = false\nwhile (!written && i < 100) {// if unable to overwite file, add a number and try again\n    try {\n        await this.myFile.writeFile(dir, fileName, blob, {replace: true, append: false}); \n        console.debug(`Wrote ${logTable.length} tracks to ${dir}${fileName}`)\n        written = true; //suceeded, end while loop\n\n        this.showSpinner = false;\n    \n        this.Apperyio.getController(\"ToastController\").create({\n                header: 'Sucess',\n                message: `${logTable.length} tracks exported to ${fileName}`,\n                position: 'top',\n                duration: 3000\n            }).then(toast => toast.present());\n        this.Apperyio.navigateTo(\"Home\");\n    } catch (error) { // failed, try another filename\n        console.error(\"Failed \", fileName, \"error \", error);\n        fileName = `FreeFlightLog-${i++}.json`;\n    }\n}\n\nthis.showSpinner = false;\nif (!written) {\n    this.Apperyio.getController(\"ToastController\").create({\n            header: 'Failure ',\n            message: `Unable to write tracks. Try removing FreeFlightLog.json in download`,\n            position: 'top',\n            duration: 4000\n        }).then(toast => toast.present());\n}\n\nconsole.groupEnd();",
+                        "@id": "CustomJSAction72481",
+                        "@index": 1,
+                        "@readOnly": false,
+                        "isActive": true
+                     }
+                  ]}
+               }}
+            },
+            {
+               "@id": "64FBD1F6-3300-E8BC-0F83-13A5355FD77D",
+               "@type": "Ionic5CardBean",
+               "children": {"bean": [{
+                  "@id": "8E98BC2F-A50F-E751-4926-466425A76831",
+                  "@type": "Ionic5CardItemBean",
+                  "children": {"bean": []},
+                  "property": {
+                     "className": "",
+                     "mode": "",
+                     "color": "",
+                     "wrapper": "ion-card-content",
+                     "translucent": "false",
+                     "text": "Export all your flight data as JSON /Download/FreeFightLog.json.",
+                     "componentName": "CardItem2",
+                     "aio_visible": "true",
+                     "visible": "true"
+                  },
+                  "events": ""
+               }]},
+               "property": {
+                  "className": "",
+                  "slot": "",
+                  "color": "",
+                  "mode": "",
+                  "isButton": "false",
+                  "disabled": "",
+                  "componentName": "Card2",
+                  "ion4Routing": {
+                     "route": "",
+                     "params": "",
+                     "routerDirection": ""
+                  },
+                  "linkFeatures": {
+                     "href": "",
+                     "type": "",
+                     "target": "",
+                     "rel": ""
+                  },
+                  "aio_visible": "true",
+                  "visible": "true"
+               },
+               "events": ""
+            },
+            {
+               "@id": "76A4E70E-54EF-6649-15E6-985240213AB1",
+               "@type": "Ionic5ButtonBean",
+               "children": {"bean": []},
+               "property": {
+                  "text": "Import",
+                  "slot": "",
+                  "buttonType": "",
+                  "disabled": "{{!isCordova()}}",
+                  "icon": {
+                     "style": "none",
+                     "name": "",
+                     "color": "",
+                     "className": "",
+                     "slot": "",
+                     "customIcon": "-1"
+                  },
+                  "component": "ion-button",
+                  "ionMenuButton": {
+                     "autoHide": "",
+                     "menu": "",
+                     "icon": "__default",
+                     "customIcon": "-1",
+                     "type": ""
+                  },
+                  "ionBackButton": {
+                     "icon": "__default",
+                     "customIcon": "-1",
+                     "text": "",
+                     "type": "",
+                     "defaultHref": ""
+                  },
+                  "className": "",
+                  "color": "",
+                  "expand": "block",
+                  "fill": "",
+                  "mode": "",
+                  "shape": "",
+                  "size": "",
+                  "strong": "false",
+                  "styleBorderColor": "",
+                  "styleBorderRadius": {
+                     "all": "",
+                     "topLeft": "",
+                     "topRight": "",
+                     "bottomLeft": "",
+                     "bottomRight": ""
+                  },
+                  "styleBorderStyle": "",
+                  "styleBorderWidth": {
+                     "all": "",
+                     "top": "",
+                     "right": "",
+                     "bottom": "",
+                     "left": ""
+                  },
+                  "styleColor": "",
+                  "styleMargin": {
+                     "all": "",
+                     "top": "",
+                     "right": "",
+                     "bottom": "",
+                     "left": ""
+                  },
+                  "advancedProperties": {"(click)": ""},
+                  "componentName": "ImportJSON",
+                  "ion4Routing": {
+                     "route": "",
+                     "params": "",
+                     "routerDirection": ""
+                  },
+                  "linkFeatures": {
+                     "href": "",
+                     "type": "",
+                     "target": "",
+                     "rel": ""
+                  },
+                  "aio_visible": "true",
+                  "visible": "true"
+               },
+               "events": {"click": {
+                  "@id": "ClickEvent4039",
+                  "@readOnly": "false",
+                  "actions": {"customjs": [
+                     {
+                        "script": "//Write out logTable as JSON\nconsole.group(\"ImportExport: Import\");\n\ntry {\n    this.showSpinner = true;\n    const dir = this.myFile.externalRootDirectory + \"Download\"; // externalRootDirectory vs dataDirectory\n    const json: string | any  = await this.myFile.readAsText(dir, \"FreeFlightLog.json\");\n    console.log(\"readAsText \", json);\n    var logData = JSON.parse(json);\n    logData = (logData == null) ? [] : logData; \n    console.log(logData);\n    \n    this.showSpinner = false;\n    \n    const alert = await this.Apperyio.getController(\"AlertController\").create({\n        header: \"Confirm append?\",\n        message: `This will append ${logData.length} flights to your existing logged flights.`,\n        buttons: [{\n            text: 'Cancel',\n            role: 'cancel',\n            cssClass: 'secondary',\n        }, {\n            text: 'Confirm',\n            handler: async (res) => {\n                console.debug(\"Add confirmed\");\n                this.showSpinner = true;\n                console.time('Load LogStorage');\n                let logTable = await this.Apperyio.data.getVariable(\"LogStorage\"); \n                console.timeEnd('Load LogStorage');\n                logTable = (logTable == null) ? [] : logTable; \n    \n                logTable.push(...logData);\n                console.time('Save LogStorage');\n                await this.Apperyio.data.setStorage(\"LogStorage\", logTable);\n                await this.Apperyio.data.setVariable(\"LogStorage\", logTable);\n                console.timeEnd('Save LogStorage');\n                this.showSpinner = false;\n                this.Apperyio.navigateTo(\"Home\");\n            }\n        }]\n    });\n    await alert.present();\n    \n} catch (error) {\n    console.error(error);\n    this.Apperyio.getController(\"ToastController\").create({\n            header: 'Failure ',\n            message: `Import of tracklog failed due to error: ${error.message} (${error.code})`,\n            position: 'top',\n            buttons: [{text: 'Close', role: 'cancel' }]\n        }).then(toast => toast.present());\n}\nthis.showSpinner = false;\nconsole.groupEnd();",
+                        "@id": "CustomJSAction74521",
+                        "@index": 0,
+                        "@readOnly": false,
+                        "isActive": false
+                     },
+                     {
+                        "script": "//https://docs.appery.io/docs/ionic-4-file-upload-app-using-cordova-plugins#part-3-creating-app\nconsole.group(\"Import\");\nthis.showSpinner = true;\n\n//https://stackoverflow.com/questions/13729301/html5-file-api-how-to-see-the-result-of-readastext\nasync function readFile(entry, reader) {\n    return new Promise((resolve, reject) => {\n\n    reader.onload = (e) => {resolve(reader.result as string);}; \n    reader.onerror = (e) => {console.error(\"readFile: \", e); reject(e); } \n    \n    var win = function(file) {reader.readAsText(file);};\n    var fail = function(file) { console.error(\"Entry fail: \", file);};\n    entry.file(win, fail);\n    });\n}\n\ntry { \n    let fileList = (await this.chooser.getFile(\"application/json\")) as any;\n\n    const reader = new FileReader() ; // Try using one reader for multiple files to fix GDrive locking issue.\n    for (const file of fileList) {\n        const entry = await this.myFile.resolveLocalFilesystemUrl(file.uri);\n        console.debug(\"entry: \", entry);\n        const json: string | any  = await readFile(entry, reader);\n        const data = JSON.parse(json);\n        const logData = (data.logTable == null) ? [] : data.logTable;\n        const settings = data.settings;\n        \n        console.log(\"logData:\", logData);\n        console.log(\"settings:\", settings);\n        const alert = await this.Apperyio.getController(\"AlertController\").create({\n            header: \"Confirm append?\",\n            message: `This will append ${logData.length} flights to your existing logged flights.`,\n            buttons: [{\n                text: 'Cancel',\n                role: 'cancel',\n                cssClass: 'secondary',\n            }, {\n                text: 'Confirm',\n                handler: async (res) => {\n                    console.debug(\"Add confirmed\");\n                    this.showSpinner = true;\n                    console.time('Load LogStorage');\n                    let logTable = await this.Apperyio.data.getVariable(\"LogStorage\"); \n                    \n                    console.timeEnd('Load LogStorage');\n                    logTable = (logTable == null) ? [] : logTable; \n        \n                    logTable.push(...logData);\n                    console.time('Save LogStorage');\n                    await this.Apperyio.data.setStorage(\"LogStorage\", logTable);\n                    await this.Apperyio.data.setVariable(\"LogStorage\", logTable);\n                    await this.Apperyio.data.setStorage(\"SettingsStorage\", settings);\n                    await this.Apperyio.data.setVariable(\"SettingsStorage\", settings);\n                    console.timeEnd('Save LogStorage');\n                    this.showSpinner = false;\n                    this.Apperyio.navigateTo(\"Home\");\n                            \n                    this.Apperyio.getController(\"ToastController\").create({\n                            header: 'Sucess',\n                            message: `${logData.length} tracks appended to your log`,\n                            position: 'top',\n                            duration: 3000\n                        }).then(toast => toast.present());\n                }\n            }]\n        });\n        await alert.present();\n        };\n} catch (error) {\n    console.error(error);\n    this.Apperyio.getController(\"ToastController\").create({\n            header: 'Failure ',\n            message: `Import of tracklog failed due to error: ${error.message} (${error.code})`,\n            position: 'top',\n            buttons: [{text: 'Close', role: 'cancel' }]\n        }).then(toast => toast.present());\n}\nthis.showSpinner = false;\nconsole.groupEnd();",
+                        "@id": "CustomJSAction36299",
+                        "@index": 1,
+                        "@readOnly": false,
+                        "isActive": true
+                     }
+                  ]}
+               }}
+            },
+            {
+               "@id": "38D3A84C-4016-D46B-B4D6-15EDCCA64749",
+               "@type": "Ionic5CardBean",
+               "children": {"bean": [{
+                  "@id": "8444172E-0D9F-6311-A1D8-13D67E9D647F",
+                  "@type": "Ionic5CardItemBean",
+                  "children": {"bean": []},
+                  "property": {
+                     "className": "",
+                     "mode": "",
+                     "color": "",
+                     "wrapper": "ion-card-content",
+                     "translucent": "false",
+                     "text": " Append a  FreeFlightLog JSON export to your log.",
+                     "componentName": "CardItem3",
+                     "aio_visible": "true",
+                     "visible": "true"
+                  },
+                  "events": ""
+               }]},
+               "property": {
+                  "className": "",
+                  "slot": "",
+                  "color": "",
+                  "mode": "",
+                  "isButton": "false",
+                  "disabled": "",
+                  "componentName": "Card3",
+                  "ion4Routing": {
+                     "route": "",
+                     "params": "",
+                     "routerDirection": ""
+                  },
+                  "linkFeatures": {
+                     "href": "",
+                     "type": "",
+                     "target": "",
+                     "rel": ""
+                  },
+                  "aio_visible": "true",
+                  "visible": "true"
+               },
+               "events": ""
+            },
+            {
+               "@id": "5DD33ABD-A1C3-49F5-48E5-C3F53F27F477",
+               "@type": "Ionic5SpinnerBean",
+               "children": {"bean": []},
+               "property": {
+                  "className": "spinner",
+                  "slot": "",
+                  "name": "lines",
+                  "paused": "",
+                  "duration": "",
+                  "color": "primary",
+                  "componentName": "Spinner1",
+                  "aio_visible": "true",
+                  "visible": "true",
+                  "advancedProperties": {"*ngIf": "this.showSpinner"}
+               },
+               "events": ""
+            }
+         ]},
+         "property": {
+            "availableSlots": {
+               "": "Not selected",
+               "fixed": "Fixed"
+            },
+            "forceOverscroll": "",
+            "fullscreen": "false",
+            "scrollEvents": "",
+            "scrollX": "",
+            "scrollY": "",
+            "className": "",
+            "color": "",
+            "stylePadding": {
+               "all": "",
+               "top": "",
+               "right": "",
+               "bottom": "",
+               "left": ""
+            },
+            "styleTextAlign": "",
+            "advancedProperties": {"(ionScroll)": ""},
+            "componentName": "Content1",
+            "": ""
+         },
+         "events": ""
+      },
+      {
+         "@id": "13867E92-B41B-4EF2-43B5-608560245ABD",
+         "@type": "Ionic5HeaderBean",
+         "children": {"bean": [{
+            "@id": "EAA37E06-2AF6-E2D1-5107-2109B5BB322F",
+            "@type": "Ionic5ToolbarBean",
+            "children": {"bean": [
+               {
+                  "@id": "0C5C3C47-078B-8722-1684-7FC5023D13EA",
+                  "@type": "Ionic5ToolbarButtonsBean",
+                  "children": {"bean": [{
+                     "@id": "45E3F2BA-80E8-E403-3A45-98C851B366BB",
+                     "@type": "Ionic5ButtonBean",
+                     "children": {"bean": []},
+                     "property": {
+                        "text": "Button",
+                        "slot": "",
+                        "buttonType": "",
+                        "disabled": "",
+                        "icon": {
+                           "style": "none",
+                           "name": "",
+                           "color": "",
+                           "className": "",
+                           "slot": "",
+                           "customIcon": "-1"
+                        },
+                        "component": "ion-back-button",
+                        "ionMenuButton": {
+                           "autoHide": "",
+                           "menu": "",
+                           "icon": "__default",
+                           "customIcon": "-1",
+                           "type": ""
+                        },
+                        "ionBackButton": {
+                           "icon": "close",
+                           "customIcon": "-1",
+                           "text": "",
+                           "type": "",
+                           "defaultHref": ""
+                        },
+                        "className": "",
+                        "color": "",
+                        "expand": "block",
+                        "fill": "",
+                        "mode": "",
+                        "shape": "",
+                        "size": "",
+                        "strong": "false",
+                        "styleBorderColor": "",
+                        "styleBorderRadius": {
+                           "all": "",
+                           "topLeft": "",
+                           "topRight": "",
+                           "bottomLeft": "",
+                           "bottomRight": ""
+                        },
+                        "styleBorderStyle": "",
+                        "styleBorderWidth": {
+                           "all": "",
+                           "top": "",
+                           "right": "",
+                           "bottom": "",
+                           "left": ""
+                        },
+                        "styleColor": "",
+                        "styleMargin": {
+                           "all": "",
+                           "top": "",
+                           "right": "",
+                           "bottom": "",
+                           "left": ""
+                        },
+                        "advancedProperties": {"(click)": ""},
+                        "componentName": "Button3",
+                        "ion4Routing": {
+                           "route": "",
+                           "params": "",
+                           "routerDirection": ""
+                        },
+                        "linkFeatures": {
+                           "href": "",
+                           "type": "",
+                           "target": "",
+                           "rel": ""
+                        },
+                        "aio_visible": "true",
+                        "visible": "true"
+                     },
+                     "events": ""
+                  }]},
+                  "property": {
+                     "className": "",
+                     "slot": "start",
+                     "collapse": "true",
+                     "componentName": "ToolbarButtons1",
+                     "aio_visible": "true"
+                  },
+                  "events": ""
+               },
+               {
+                  "@id": "AF3B7015-185F-BF66-8E88-452E83DABC80",
+                  "@type": "Ionic5ToolbarTitleBean",
+                  "children": {"bean": []},
+                  "property": {
+                     "className": "",
+                     "text": "Toolbar title",
+                     "color": "",
+                     "size": "",
+                     "componentName": "ToolbarTitle1",
+                     "aio_visible": "true"
+                  },
+                  "events": ""
+               }
+            ]},
+            "property": {
+               "className": "",
+               "availableSlots": {
+                  "": "Not selected",
+                  "start": "Start",
+                  "end": "End",
+                  "primary": "Primary",
+                  "secondary": "Secondary"
+               },
+               "slot": "",
+               "isTitle": "true",
+               "color": "",
+               "mode": "",
+               "componentName": "Toolbar1",
+               "aio_visible": "true",
+               "visible": "true"
+            },
+            "events": ""
+         }]},
+         "property": {
+            "mode": "",
+            "noBorder": "false",
+            "componentName": "Header1",
+            "className": "",
+            "translucent": "false",
+            "aio_visible": "true"
+         },
+         "events": ""
+      },
+      {
+         "@id": "EC1898C6-3ABF-2736-F282-EEC2CAC578E9",
+         "@type": "Ionic5FooterBean",
+         "children": {"bean": []},
+         "property": {
+            "mode": "",
+            "noBorder": "false",
+            "componentName": "Footer1",
+            "className": "",
+            "translucent": "false",
+            "aio_visible": "false"
+         },
+         "events": ""
+      }
+   ]},
+   "controller": {
+      "function": [{
+         "id": "FC003C8E-A0EE-25FA-E60E-EB5184AC2BC7",
+         "name": "isCordova",
+         "body": "\nreturn this.platform.platforms().includes('cordova')",
+         "argument": [],
+         "type": "method"
+      }],
+      "variable": [
+         {
+            "id": "B2141AB7-2B9E-069A-F749-1124E3423EF5",
+            "name": "myFile",
+            "type": "DF5E8686-8E0D-AE2F-1B79-C0624AB6D061",
+            "value": "",
+            "addDI": true
+         },
+         {
+            "id": "D13831B9-B55D-CD86-1F91-D70966B4F9AC",
+            "name": "platform",
+            "type": "4E21F3C5-F88D-FF7E-651D-890586DC1E1C",
+            "value": "",
+            "addDI": true
+         },
+         {
+            "id": "42219777-BEBD-F7FD-E9C2-1943058220E3",
+            "name": "showSpinner",
+            "type": "ACB7DD8B-612F-6E85-DA32-0D74E1330AA2",
+            "value": "false",
+            "addDI": false
+         },
+         {
+            "id": "7248141B-61FB-5F89-901B-85AD5DCA2818",
+            "name": "pathConverter",
+            "type": "7073F533-5832-3871-E5F9-9719F967FBC6",
+            "value": "",
+            "addDI": true
+         },
+         {
+            "id": "C60077F7-ECCE-A046-46AD-C95E2DD4354D",
+            "name": "chooser",
+            "type": "E3E41169-4E4F-9F24-F8FC-C4AB566C33E9",
+            "value": "",
+            "addDI": true
+         }
+      ],
+      "dependency": {
+         "internal": [
+            "4E21F3C5-F88D-FF7E-651D-890586DC1E1C",
+            "DF5E8686-8E0D-AE2F-1B79-C0624AB6D061"
+         ],
+         "custom": [
+            {
+               "id": "E3E41169-4E4F-9F24-F8FC-C4AB566C33E9",
+               "name": "{Chooser}",
+               "path": "@ionic-native/chooser/ngx"
+            },
+            {
+               "id": "7073F533-5832-3871-E5F9-9719F967FBC6",
+               "name": "{FilePath}",
+               "path": "@ionic-native/file-path/ngx"
+            }
+         ]
+      },
+      "scss": ".spinner {\n    stroke: #ff0000;\n    fill: #8b0000;\n    position: fixed;\n    z-index: 999;\n    height: 5em;\n    width: em;\n    overflow: show;\n    margin: auto;\n    top: 0;\n    left: 0;\n    bottom: 0;\n    right: 0;\n}\n  \nion-card-content div {\n    color: black;\n}\n\nion-card-content div h1, ion-card-content div h2{\n    margin-top: revert;\n}\n\nion-card-content div p {\n    margin-top: bottom;\n}",
+      "module": {}
+   },
+   "property": {
+      "componentName": "Page",
+      "platformMode": "md",
+      "theme": "",
+      "showHeader": "true",
+      "showFooter": "true",
+      "isTabs": "false",
+      "isModal": "false"
+   },
+   "nonvisualchildren": "",
+   "events": ""
+}}

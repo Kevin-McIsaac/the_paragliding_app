@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<project name="Free Flight Log" systemTags="1" description="Make logging your Paraglider, Hang Glider or Microlight flights quick and easy so you can focus on flying:&#10;- Automatically create a log entry from your flight computer (ICG).&#10;- Look up site name from the GPS coordinates, learn what you call this and use that in future.&#10;- Manually create a log entry with a few keystrokes.&#10;- Play back your flight path in 2D, showing the climb rate and altitude.&#10;&#10;Flight Log&#10;========&#10;Shows the key information (i.e., sitename, date/time, duration, max altitude, max climb rate) for every flight in a scrollable, sortable table. Quickly find any flight and drill into the details to see an altitude chart or track log map. Correct the data and save data with just a few keystrokes on your phone or tablet.&#10;&#10;Track Logs (IGC)&#10;=============&#10;Read in all your track logs and have the key information and statistics calculated for you, i.e., site name, max altitude, max climb/sink. See a map of your flight track in 2D (animated Google Maps) and 3D (Google Earth). &#10;&#10;Statistics&#10;=======&#10;See key flight statistics at a glance for compliance with aviation reporting&#10;- Track your total number of flights and flight time &#10;- Break this down by site or wing.&#10;- Keep track of your XC  progress.&#10;&#10;Parajournal&#10;==========&#10;Designed as a  replacement for the now unsupported Parajournal android app. Read your existing logs from the Parajournal CSV or simply load all your IGC track logs." system="2" subsystem="11" openedwith="JS_EDITOR" backupVersion="2.0" withCertificates="false" modelVersion="84">
+    <asset compressed="false" id="17738809" name="ImportExport" type="50"/>
+    <asset compressed="false" id="17738739" name="FlightDetails" type="50"/>
+    <asset compressed="false" id="17738721" name="Wings" type="50"/>
+    <asset compressed="false" id="17738720" name="reverseGeocodeService" type="90"/>
+    <asset compressed="false" id="17738719" name="ImportIGC" type="50"/>
+    <asset compressed="false" id="17738718" name="Routing" type="390"/>
+    <asset compressed="false" id="17738717" name="Project Descriptor-33" type="120"/>
+    <asset compressed="false" id="17738716" name="app" type="50"/>
+    <asset compressed="false" id="17738715" name="Model and Storage" type="380"/>
+    <asset compressed="false" id="17738714" name="Project metadata" type="230"/>
+    <asset compressed="false" id="17738713" name="variables" type="180"/>
+    <asset compressed="false" id="17738712" name="Statistics" type="50"/>
+    <asset compressed="false" id="17738711" name="Tabs" type="50"/>
+    <asset compressed="true" id="17738710" name="tabs.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="61"/>
+        <property name="WIDTH" value="61"/>
+    </asset>
+    <asset compressed="true" id="17738709" name="Plugin thumbnail" type="10"/>
+    <asset compressed="false" id="17738707" name="FlightLog" type="50"/>
+    <asset compressed="false" id="17738706" name="SettingsPage" type="50"/>
+    <asset compressed="false" id="17738705" name="ImportParaJournal" type="50"/>
+    <asset compressed="true" id="17738704" name="fileread.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="242"/>
+        <property name="WIDTH" value="242"/>
+    </asset>
+    <asset compressed="true" id="17738703" name="fileread_Take_photo_and_upload_into_appery_database.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="242"/>
+        <property name="WIDTH" value="242"/>
+    </asset>
+    <asset compressed="true" id="17738702" name="nophoto.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="512"/>
+        <property name="WIDTH" value="512"/>
+    </asset>
+    <asset compressed="true" id="17738701" name="fileread_File_Read.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="242"/>
+        <property name="WIDTH" value="242"/>
+    </asset>
+    <asset compressed="true" id="17738700" name="fileread_File_Read_2.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="242"/>
+        <property name="WIDTH" value="242"/>
+    </asset>
+    <asset compressed="true" id="17738699" name="Parajournal.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="512"/>
+        <property name="WIDTH" value="512"/>
+    </asset>
+    <asset compressed="false" id="17738698" name="Sites" type="50"/>
+    <asset compressed="true" id="17738697" name="noun_wings_634206_1603084731.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="700"/>
+        <property name="WIDTH" value="700"/>
+    </asset>
+    <asset compressed="true" id="17738696" name="wings_1.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="546"/>
+        <property name="WIDTH" value="546"/>
+    </asset>
+    <asset compressed="true" id="17738695" name="wings2.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="546"/>
+        <property name="WIDTH" value="546"/>
+    </asset>
+    <asset compressed="true" id="17738694" name="wings2_1603085403.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="546"/>
+        <property name="WIDTH" value="546"/>
+    </asset>
+    <asset compressed="true" id="17738693" name="wings2_1603085418.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="546"/>
+        <property name="WIDTH" value="546"/>
+    </asset>
+    <asset compressed="true" id="17738692" name="noun_wings_634206.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="700"/>
+        <property name="WIDTH" value="700"/>
+    </asset>
+    <asset compressed="true" id="17738691" name="wings2_1603085480.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="546"/>
+        <property name="WIDTH" value="546"/>
+    </asset>
+    <asset compressed="true" id="17738690" name="AWings.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="72"/>
+        <property name="WIDTH" value="72"/>
+    </asset>
+    <asset compressed="true" id="17738689" name="AWings_1603085654.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="48"/>
+        <property name="WIDTH" value="48"/>
+    </asset>
+    <asset compressed="true" id="17738688" name="AWings_1603085686.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="144"/>
+        <property name="WIDTH" value="144"/>
+    </asset>
+    <asset compressed="true" id="17738687" name="AWings_1603085693.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="192"/>
+        <property name="WIDTH" value="192"/>
+    </asset>
+    <asset compressed="true" id="17738686" name="AWings_1603085704.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="96"/>
+        <property name="WIDTH" value="96"/>
+    </asset>
+    <asset compressed="true" id="17738685" name="wings9Patch.9.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="72"/>
+        <property name="WIDTH" value="196"/>
+    </asset>
+    <asset compressed="true" id="17738684" name="wings9Patch.9_1603086289.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="49"/>
+        <property name="WIDTH" value="131"/>
+    </asset>
+    <asset compressed="true" id="17738683" name="wings9Patch.9_1603086296.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="95"/>
+        <property name="WIDTH" value="260"/>
+    </asset>
+    <asset compressed="true" id="17738682" name="wings9Patch.9_1603086306.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="95"/>
+        <property name="WIDTH" value="260"/>
+    </asset>
+    <asset compressed="true" id="17738681" name="wings9Patch.9_1603086317.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="141"/>
+        <property name="WIDTH" value="389"/>
+    </asset>
+    <asset compressed="true" id="17738680" name="wings9Patch.9_1603086321.png" type="10">
+        <property name="FORMAT" value="png"/>
+        <property name="HEIGHT" value="187"/>
+        <property name="WIDTH" value="517"/>
+    </asset>
+    <asset compressed="false" id="17738679" name="Help" type="50"/>
+    <asset compressed="false" id="17738678" name="Settings" type="220"/>
+    <asset compressed="true" id="17738677" name="Google_Earth_icon.svg" type="10">
+        <property name="FORMAT" value="svg"/>
+        <property name="HEIGHT" value="400"/>
+        <property name="WIDTH" value="400"/>
+    </asset>
+    <asset compressed="true" id="17738676" name="Google_Maps_icon__2020_.svg" type="10">
+        <property name="FORMAT" value="svg"/>
+        <property name="HEIGHT" value="400"/>
+        <property name="WIDTH" value="400"/>
+    </asset>
+    <source id="563573175" path="/" sourceType="user" hidden="false" readOnly="false" compressed="false" platform="CORDOVA"/>
+    <source id="563573176" path="/" sourceType="user" hidden="false" readOnly="false" compressed="false" platform="IONIC"/>
+</project>

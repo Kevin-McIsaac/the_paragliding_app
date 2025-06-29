@@ -1,0 +1,823 @@
+{"bean": {
+   "nonvisualchildren": "",
+   "controller": {
+      "dependency": {
+         "internal": [],
+         "custom": []
+      },
+      "scss": ".ngx-datatable.bootstrap .datatable-header {\n    background: #424242;\n    color: #ededed;\n}\n\n.content {\n    --padding-end: 0;\n    --padding-start: 0;\n}\n\n.spinner {\n    stroke: #ff0000;\n    fill: #8b0000;\n    position: fixed;\n    z-index: 999;\n    height: 5em;\n    width: em;\n    overflow: show;\n    margin: auto;\n    top: 0;\n    left: 0;\n    bottom: 0;\n    right: 0;\n}",
+      "function": [],
+      "module": {},
+      "variable": [
+         {
+            "addDI": false,
+            "name": "logTable",
+            "id": "8057A8E1-31E2-D311-D4DE-A9F3431EA78C",
+            "type": "ED753B4C-879E-38C0-5B80-F90906320235",
+            "value": "[]"
+         },
+         {
+            "addDI": false,
+            "name": "units",
+            "id": "6567391D-FB37-ED95-9E2C-28DF2BF5EFFF",
+            "type": "8CF39AEF-BF67-E4AF-4E74-3311A27D753D",
+            "value": "{altitude: \"m\", distance: \"km\", climbRate: \"m/s\", wind: \"km/hr\", temp: \"°C\"}"
+         },
+         {
+            "id": "B04DC94E-055F-66B7-5FFE-7FA6EC7BB56F",
+            "name": "showSpinner",
+            "type": "ACB7DD8B-612F-6E85-DA32-0D74E1330AA2",
+            "value": "false",
+            "addDI": false
+         }
+      ]
+   },
+   "children": {"bean": [
+      {
+         "children": {"bean": [
+            {
+               "children": {"bean": [{
+                  "children": {"bean": [
+                     {
+                        "children": {"bean": []},
+                        "@type": "Ionic5CardItemTitleBean",
+                        "property": {
+                           "mode": "",
+                           "color": "",
+                           "className": "",
+                           "wrapper": "ion-card-title",
+                           "text": "Getting Started",
+                           "componentName": "GettingStarted",
+                           "aio_visible": "true"
+                        },
+                        "@id": "21FF1FEC-09CC-2E17-9AB5-7BB978CAC1DA",
+                        "events": ""
+                     },
+                     {
+                        "children": {"bean": []},
+                        "@type": "Ionic5HtmlBean",
+                        "property": {
+                           "container": "div",
+                           "html_prefix": "<p>Free Flight Log is designed to simplify the recording of your flights. The first thing you need to do is add your past flights to the log using one of the following methods:<\/p>\n<ol>\n<li>Import your flight computer track logs (IGC files) using the \u201cImport IGC\u201d menu item. This reads one or more files and automatically calculates the flight summary, i.e., Site name, Wing, Duration, Distance, Max altitude, Max climb rate, Max sink. This also creates visualisation of altitude, climb rate and 2/3D maps of the tracks and keeps the track log for later use.<\/li>\n<li>If your flights are logged in Parajournal export them as a CSV file then use the \u201cImport Parajournal\u201d menu item. This fills in the summary information but as the CSV does not include the flight track it does not show the visualisations.<\/li>\n<li>Manually add a flight by clicking on the \u201c+\u201d symbol in the heading bar and fill out the flight summary.<\/li>\n<\/ol>\n<p>We highly recommend usign \"Import IGC\" as this is the quickest and easiest method and it captures the most information.<\/p>\n\n",
+                           "wrapperStyle": {
+                              "backgroundColor": "",
+                              "display": "default",
+                              "width": "",
+                              "style": "",
+                              "height": ""
+                           },
+                           "className": "",
+                           "html": "<p>Free Flight Log is designed to simplify the recording of your flights. The first thing you need to do is add your past flights to the log using one of the following methods:<\/p>\n<ol>\n<li>Import your flight computer track logs (IGC files) using the \u201cImport IGC\u201d menu item. This reads one or more files and automatically calculates the flight summary, i.e., Site name, Wing, Duration, Distance, Max altitude, Max climb rate, Max sink. This also creates visualisation of altitude, climb rate and 2/3D maps of the tracks and keeps the track log for later use.<\/li>\n<li>If your flights are logged in Parajournal export them as a CSV file then use the \u201cImport Parajournal\u201d menu item. This fills in the summary information but as the CSV does not include the flight track it does not show the visualisations.<\/li>\n<li>Manually add a flight by clicking on the \u201c+\u201d symbol in the heading bar and fill out the flight summary.<\/li>\n<\/ol>\n<p>We highly recommend usign \"Import IGC\" as this is the quickest and easiest method and it captures the most information.<\/p>\n\n%children%",
+                           "slot": "",
+                           "componentName": "Html1",
+                           "aio_visible": "true",
+                           "html_postfix": "",
+                           "styleColor": "",
+                           "styleBackgroundColor": "",
+                           "styleBorderColor": "",
+                           "styleBorderRadius": {
+                              "all": "",
+                              "topLeft": "",
+                              "topRight": "",
+                              "bottomLeft": "",
+                              "bottomRight": ""
+                           },
+                           "styleBorderStyle": "",
+                           "styleBorderWidth": {
+                              "all": "",
+                              "top": "",
+                              "right": "",
+                              "bottom": "",
+                              "left": ""
+                           },
+                           "styleDisplay": "",
+                           "styleFontSize": "",
+                           "styleFontStyle": "",
+                           "styleFontWeight": "",
+                           "styleHeight": "",
+                           "styleLineHeight": "",
+                           "styleMargin": {
+                              "all": "",
+                              "top": "",
+                              "right": "",
+                              "bottom": "",
+                              "left": ""
+                           },
+                           "styleMaxWidth": "",
+                           "styleMaxHeight": "",
+                           "styleMinHeight": "",
+                           "styleMinWidth": "",
+                           "styleOpacity": "",
+                           "stylePadding": {
+                              "all": "",
+                              "top": "",
+                              "right": "",
+                              "bottom": "",
+                              "left": ""
+                           },
+                           "stylePosition": {
+                              "type": "",
+                              "top": "",
+                              "right": "",
+                              "bottom": "",
+                              "left": ""
+                           },
+                           "styleTextAlign": "",
+                           "styleTextDecoration": "",
+                           "styleVerticalAlign": "",
+                           "styleWidth": "",
+                           "visible": "true"
+                        },
+                        "@id": "3809E52D-9BCE-D2F0-0B36-FF0597CAA7A9",
+                        "events": ""
+                     }
+                  ]},
+                  "@type": "Ionic5CardItemBean",
+                  "property": {
+                     "mode": "",
+                     "translucent": "false",
+                     "color": "",
+                     "className": "",
+                     "wrapper": "ion-card-content",
+                     "text": "Item text",
+                     "componentName": "CardItem1",
+                     "aio_visible": "true",
+                     "visible": "true"
+                  },
+                  "@id": "70B66CAF-3CF5-C51F-1914-38DD547B9836",
+                  "events": ""
+               }]},
+               "@type": "Ionic5CardBean",
+               "property": {
+                  "mode": "",
+                  "ion4Routing": {
+                     "route": "",
+                     "routerDirection": "",
+                     "params": ""
+                  },
+                  "advancedProperties": {"*ngIf": "logTable.length == 0"},
+                  "isButton": "false",
+                  "color": "",
+                  "linkFeatures": {
+                     "rel": "",
+                     "href": "",
+                     "type": "",
+                     "target": ""
+                  },
+                  "className": "ion-no-margin",
+                  "disabled": "",
+                  "slot": "",
+                  "componentName": "Card1",
+                  "aio_visible": "true",
+                  "visible": "true"
+               },
+               "@id": "4ED98459-D5F6-E382-B3DD-27082021BCDC",
+               "events": ""
+            },
+            {
+               "children": {"bean": [
+                  {
+                     "children": {"bean": []},
+                     "@type": "Ionic5DataTableColBean",
+                     "property": {
+                        "cellTemplate": "{{value}}",
+                        "checkboxable": "",
+                        "flexGrow": "",
+                        "cellTemplate_postfix": "",
+                        "frozenLeft": "",
+                        "cellTemplate_prefix": "",
+                        "canAutoResize": "true",
+                        "minWidth": "50",
+                        "cellClass": "",
+                        "sortable": "true",
+                        "headerCheckboxable": "",
+                        "headerClass": "",
+                        "frozenRight": "",
+                        "headerTemplate_postfix": "",
+                        "draggable": "true",
+                        "prop": "site",
+                        "name": "Site",
+                        "width": "200",
+                        "headerTemplate_prefix": "",
+                        "resizeable": "true",
+                        "componentName": "Site",
+                        "headerTemplate": "",
+                        "maxWidth": "",
+                        "aio_visible": ""
+                     },
+                     "@id": "D49A3F1B-BF31-6FD3-E873-3EA690BC745F",
+                     "events": ""
+                  },
+                  {
+                     "children": {"bean": []},
+                     "@type": "Ionic5DataTableColBean",
+                     "property": {
+                        "cellTemplate": "{{value}}",
+                        "checkboxable": "",
+                        "flexGrow": "",
+                        "cellTemplate_postfix": "",
+                        "frozenLeft": "",
+                        "cellTemplate_prefix": "",
+                        "canAutoResize": "true",
+                        "minWidth": "",
+                        "cellClass": "",
+                        "sortable": "true",
+                        "headerCheckboxable": "",
+                        "headerClass": "",
+                        "frozenRight": "false",
+                        "headerTemplate_postfix": "",
+                        "draggable": "true",
+                        "prop": "when",
+                        "name": "When",
+                        "width": "115",
+                        "headerTemplate_prefix": "",
+                        "resizeable": "true",
+                        "componentName": "Date",
+                        "headerTemplate": "",
+                        "maxWidth": "",
+                        "aio_visible": ""
+                     },
+                     "@id": "272E96B5-EF6F-0DC0-A192-2AF13392ABA1",
+                     "events": ""
+                  },
+                  {
+                     "children": {"bean": []},
+                     "@type": "Ionic5DataTableColBean",
+                     "property": {
+                        "cellTemplate": "{{value}}",
+                        "checkboxable": "",
+                        "flexGrow": "",
+                        "cellTemplate_postfix": "",
+                        "frozenLeft": "",
+                        "cellTemplate_prefix": "",
+                        "canAutoResize": "true",
+                        "minWidth": "",
+                        "cellClass": "",
+                        "sortable": "true",
+                        "headerCheckboxable": "",
+                        "headerClass": "",
+                        "frozenRight": "false",
+                        "headerTemplate_postfix": "",
+                        "draggable": "true",
+                        "prop": "duration",
+                        "name": "Duration",
+                        "width": "60",
+                        "headerTemplate_prefix": "",
+                        "resizeable": "true",
+                        "componentName": "Duration",
+                        "headerTemplate": "",
+                        "maxWidth": "",
+                        "aio_visible": ""
+                     },
+                     "@id": "33CEC556-D79E-AC68-3702-852700623275",
+                     "events": ""
+                  },
+                  {
+                     "children": {"bean": []},
+                     "@type": "Ionic5DataTableColBean",
+                     "property": {
+                        "cellTemplate": "{{value}}",
+                        "checkboxable": "",
+                        "flexGrow": "",
+                        "cellTemplate_postfix": "",
+                        "frozenLeft": "",
+                        "cellTemplate_prefix": "",
+                        "canAutoResize": "true",
+                        "minWidth": "",
+                        "cellClass": "",
+                        "sortable": "true",
+                        "headerCheckboxable": "",
+                        "headerClass": "",
+                        "frozenRight": "false",
+                        "headerTemplate_postfix": "",
+                        "draggable": "true",
+                        "prop": "distance",
+                        "name": "Distance",
+                        "width": "65",
+                        "headerTemplate_prefix": "",
+                        "resizeable": "true",
+                        "componentName": "Distance",
+                        "headerTemplate": "",
+                        "maxWidth": "",
+                        "aio_visible": ""
+                     },
+                     "@id": "8A64B6CE-C86E-27F7-9D5B-FDCBA7FA15B9",
+                     "events": ""
+                  },
+                  {
+                     "children": {"bean": []},
+                     "@type": "Ionic5DataTableColBean",
+                     "property": {
+                        "cellTemplate": "{{value}}",
+                        "checkboxable": "",
+                        "flexGrow": "",
+                        "cellTemplate_postfix": "",
+                        "frozenLeft": "",
+                        "cellTemplate_prefix": "",
+                        "canAutoResize": "true",
+                        "minWidth": "",
+                        "cellClass": "",
+                        "sortable": "true",
+                        "headerCheckboxable": "",
+                        "headerClass": "",
+                        "frozenRight": "false",
+                        "headerTemplate_postfix": "",
+                        "draggable": "true",
+                        "prop": "maxAltitude",
+                        "name": "Alt",
+                        "width": "55",
+                        "headerTemplate_prefix": "",
+                        "resizeable": "true",
+                        "componentName": "MaxAltitude",
+                        "headerTemplate": "",
+                        "maxWidth": "",
+                        "aio_visible": ""
+                     },
+                     "@id": "96B3BD68-B845-FBA0-3963-985A70EA673E",
+                     "events": ""
+                  },
+                  {
+                     "children": {"bean": []},
+                     "@type": "Ionic5DataTableColBean",
+                     "property": {
+                        "cellTemplate": "{{value}}",
+                        "checkboxable": "",
+                        "flexGrow": "",
+                        "cellTemplate_postfix": "",
+                        "frozenLeft": "",
+                        "cellTemplate_prefix": "",
+                        "canAutoResize": "true",
+                        "minWidth": "",
+                        "cellClass": "",
+                        "sortable": "true",
+                        "headerCheckboxable": "",
+                        "headerClass": "",
+                        "frozenRight": "false",
+                        "headerTemplate_postfix": "",
+                        "draggable": "true",
+                        "prop": "maxClimb",
+                        "name": "Climb",
+                        "width": "55",
+                        "headerTemplate_prefix": "",
+                        "resizeable": "true",
+                        "componentName": "MaxClimb",
+                        "headerTemplate": "",
+                        "maxWidth": "",
+                        "aio_visible": ""
+                     },
+                     "@id": "A998EDB1-E6E4-6879-CB4F-6CA662F3E5DC",
+                     "events": ""
+                  },
+                  {
+                     "children": {"bean": []},
+                     "@type": "Ionic5DataTableColBean",
+                     "property": {
+                        "cellTemplate": "{{value}}",
+                        "checkboxable": "",
+                        "flexGrow": "",
+                        "cellTemplate_postfix": "",
+                        "frozenLeft": "",
+                        "cellTemplate_prefix": "",
+                        "canAutoResize": "true",
+                        "minWidth": "",
+                        "cellClass": "",
+                        "sortable": "true",
+                        "headerCheckboxable": "",
+                        "headerClass": "",
+                        "frozenRight": "false",
+                        "headerTemplate_postfix": "",
+                        "draggable": "true",
+                        "prop": "maxSink",
+                        "name": "Sink",
+                        "width": "55",
+                        "headerTemplate_prefix": "",
+                        "resizeable": "true",
+                        "componentName": "MaxSink",
+                        "headerTemplate": "",
+                        "maxWidth": "",
+                        "aio_visible": ""
+                     },
+                     "@id": "973D7D3D-9FB3-3DFC-6A22-6E924625896D",
+                     "events": ""
+                  }
+               ]},
+               "@type": "Ionic5DataTableBean",
+               "property": {
+                  "cssClasses": {
+                     "sortDescending": "",
+                     "pagerRightArrow": "",
+                     "sortAscending": "",
+                     "pagerLeftArrow": "",
+                     "pagerPrevious": "",
+                     "pagerNext": ""
+                  },
+                  "scrollbarV": "false",
+                  "className": "",
+                  "tableHeight": "height-100-header-footer",
+                  "displayCheck": "",
+                  "selectionType": "single",
+                  "reorderable": "false",
+                  "limit": "",
+                  "theme": "bootstrap",
+                  "componentName": "FlightLogDataTable",
+                  "scrollbarH": "false",
+                  "sorts": {
+                     "prop": "when",
+                     "dir": "desc"
+                  },
+                  "rowHeight": "41",
+                  "externalSorting": "false",
+                  "columnMode": "",
+                  "footerHeight": "false",
+                  "offset": "",
+                  "count": "",
+                  "rows": "8057A8E1-31E2-D311-D4DE-A9F3431EA78C",
+                  "aio_visible": "true",
+                  "advancedProperties": {"*ngIf": "logTable.length > 0 "},
+                  "dataMode": {
+                     "mode": "clientInfinite",
+                     "serviceName": ""
+                  },
+                  "rowClass": "",
+                  "messages": {
+                     "emptyMessage": "Click on the plus icon to add your first flight",
+                     "totalMessage": "",
+                     "selectedMessage": ""
+                  },
+                  "headerHeight": "41",
+                  "visible": "true"
+               },
+               "@id": "5EA2465E-1C3D-02D1-BCC2-EE59DA5ABA12",
+               "events": {"select": {
+                  "@id": "",
+                  "@readOnly": "false",
+                  "actions": {
+                     "setrouting": {
+                        "@readOnly": false,
+                        "route": "7C6A272B-1139-4627-9A33-E9857407018E",
+                        "@index": 0,
+                        "@id": "SetRoutingAction54781",
+                        "params": "'Update', event.selected[0]._id",
+                        "isActive": false
+                     },
+                     "customjs": {
+                        "@readOnly": false,
+                        "@index": 1,
+                        "@id": "CustomJSAction21696",
+                        "isActive": true,
+                        "script": "//Work around for tabs not woking with child with parameters\n\nthis.Apperyio.data.setVariable(\"operation\", 'Update');\nthis.Apperyio.data.setVariable(\"id\",  event.selected[0]._id);\nthis.Apperyio.navigateTo(\"FlightDetails\");"
+                     }
+                  }
+               }}
+            },
+            {
+               "@id": "5041B8DB-5F08-4FF5-3009-9FF6DBBC1F96",
+               "@type": "Ionic5SpinnerBean",
+               "children": {"bean": []},
+               "property": {
+                  "className": "spinner",
+                  "slot": "",
+                  "name": "lines",
+                  "paused": "",
+                  "duration": "",
+                  "color": "primary",
+                  "componentName": "Spinner1",
+                  "aio_visible": "true",
+                  "visible": "true",
+                  "advancedProperties": {"*ngIf": "this.showSpinner"}
+               },
+               "events": ""
+            }
+         ]},
+         "@type": "Ionic5ContentBean",
+         "property": {
+            "color": "",
+            "fullscreen": "false",
+            "forceOverscroll": "",
+            "className": "ion-no-margin",
+            "scrollY": "",
+            "componentName": "Content1",
+            "availableSlots": {
+               "": "Not selected",
+               "fixed": "Fixed"
+            },
+            "scrollEvents": "",
+            "scrollX": "",
+            "stylePadding": {
+               "all": "",
+               "top": "",
+               "right": "",
+               "bottom": "",
+               "left": ""
+            },
+            "styleTextAlign": "",
+            "": ""
+         },
+         "@id": "973EE338-A1CA-40C4-8166-716652F25B4F",
+         "events": ""
+      },
+      {
+         "children": {"bean": [{
+            "children": {"bean": [
+               {
+                  "children": {"bean": [
+                     {
+                        "children": {"bean": []},
+                        "@type": "Ionic5ButtonBean",
+                        "property": {
+                           "ion4Routing": {
+                              "route": "",
+                              "routerDirection": "",
+                              "params": ""
+                           },
+                           "strong": "false",
+                           "color": "",
+                           "shape": "",
+                           "icon": {
+                              "color": "",
+                              "name": "",
+                              "style": "none",
+                              "className": "",
+                              "slot": "",
+                              "customIcon": "-1"
+                           },
+                           "className": "",
+                           "slot": "",
+                           "fill": "",
+                           "aio_visible": "true",
+                           "mode": "",
+                           "advancedProperties": {
+                              "(click)": "",
+                              "title": "Menu"
+                           },
+                           "expand": "block",
+                           "component": "ion-menu-button",
+                           "buttonType": "",
+                           "size": "",
+                           "ionMenuButton": {
+                              "icon": "__default",
+                              "autoHide": "",
+                              "menu": "",
+                              "customIcon": "-1",
+                              "type": ""
+                           },
+                           "linkFeatures": {
+                              "rel": "",
+                              "href": "",
+                              "type": "",
+                              "target": ""
+                           },
+                           "disabled": "",
+                           "text": "Button",
+                           "componentName": "MenuButton",
+                           "ionBackButton": {
+                              "defaultHref": "",
+                              "icon": "__default",
+                              "text": "",
+                              "customIcon": "-1",
+                              "type": ""
+                           },
+                           "styleBorderColor": "",
+                           "styleBorderRadius": {
+                              "all": "",
+                              "topLeft": "",
+                              "topRight": "",
+                              "bottomLeft": "",
+                              "bottomRight": ""
+                           },
+                           "styleBorderStyle": "",
+                           "styleBorderWidth": {
+                              "all": "",
+                              "top": "",
+                              "right": "",
+                              "bottom": "",
+                              "left": ""
+                           },
+                           "styleColor": "",
+                           "styleMargin": {
+                              "all": "",
+                              "top": "",
+                              "right": "",
+                              "bottom": "",
+                              "left": ""
+                           },
+                           "visible": "true"
+                        },
+                        "@id": "4031B074-0E67-A8AD-D664-D118E1F55687",
+                        "events": ""
+                     },
+                     {
+                        "children": {"bean": []},
+                        "@type": "Ionic5ButtonBean",
+                        "property": {
+                           "ion4Routing": {
+                              "route": "",
+                              "routerDirection": "",
+                              "params": ""
+                           },
+                           "strong": "false",
+                           "color": "",
+                           "shape": "",
+                           "icon": {
+                              "color": "primary",
+                              "name": "",
+                              "style": "add",
+                              "className": "",
+                              "slot": "icon-only",
+                              "customIcon": "-1"
+                           },
+                           "className": "",
+                           "slot": "",
+                           "fill": "",
+                           "aio_visible": "false",
+                           "mode": "",
+                           "advancedProperties": {"Title": "Add a new flight record"},
+                           "expand": "block",
+                           "component": "ion-button",
+                           "buttonType": "",
+                           "size": "",
+                           "ionMenuButton": {
+                              "icon": "__default",
+                              "autoHide": "",
+                              "menu": "",
+                              "customIcon": "-1",
+                              "type": ""
+                           },
+                           "linkFeatures": {
+                              "rel": "",
+                              "href": "",
+                              "type": "",
+                              "target": ""
+                           },
+                           "disabled": "",
+                           "text": "",
+                           "componentName": "AddButton",
+                           "ionBackButton": {
+                              "defaultHref": "",
+                              "icon": "__default",
+                              "text": "",
+                              "customIcon": "-1",
+                              "type": ""
+                           },
+                           "styleBorderColor": "",
+                           "styleBorderRadius": {
+                              "all": "",
+                              "topLeft": "",
+                              "topRight": "",
+                              "bottomLeft": "",
+                              "bottomRight": ""
+                           },
+                           "styleBorderStyle": "",
+                           "styleBorderWidth": {
+                              "all": "",
+                              "top": "",
+                              "right": "",
+                              "bottom": "",
+                              "left": ""
+                           },
+                           "styleColor": "",
+                           "styleMargin": {
+                              "all": "",
+                              "top": "",
+                              "right": "",
+                              "bottom": "",
+                              "left": ""
+                           },
+                           "visible": "true"
+                        },
+                        "@id": "A5B00C85-8414-4D20-80DA-D6CE98154A36",
+                        "events": {"click": {
+                           "@id": "ClickEvent43825",
+                           "@readOnly": "false",
+                           "actions": {
+                              "setrouting": {
+                                 "@readOnly": false,
+                                 "route": "7C6A272B-1139-4627-9A33-E9857407018E",
+                                 "@index": 0,
+                                 "@id": "SetRoutingAction50206",
+                                 "params": "'New', 0",
+                                 "isActive": false
+                              },
+                              "customjs": {
+                                 "@readOnly": false,
+                                 "@index": 1,
+                                 "@id": "CustomJSAction99033",
+                                 "isActive": true,
+                                 "script": "this.Apperyio.data.setVariable(\"operation\", \"New\");\nthis.Apperyio.data.setVariable(\"id\", null);\nthis.Apperyio.navigateTo(\"FlightDetails\");"
+                              }
+                           }
+                        }}
+                     }
+                  ]},
+                  "@type": "Ionic5ToolbarButtonsBean",
+                  "property": {
+                     "className": "",
+                     "slot": "start",
+                     "componentName": "ToolbarButtons1",
+                     "aio_visible": "true",
+                     "collapse": "true"
+                  },
+                  "@id": "0C0A0646-1992-416C-847B-7BB016F2357A",
+                  "events": ""
+               },
+               {
+                  "children": {"bean": []},
+                  "@type": "Ionic5ToolbarTitleBean",
+                  "property": {
+                     "color": "primary",
+                     "className": "",
+                     "text": "Flight Log",
+                     "componentName": "ToolbarTitle1",
+                     "aio_visible": "true",
+                     "size": ""
+                  },
+                  "@id": "3D923695-3488-4284-A84D-7E138C5C04FC",
+                  "events": ""
+               },
+               {
+                  "children": {"bean": []},
+                  "@type": "Ionic5IconBean",
+                  "property": {
+                     "advancedProperties": {"title": "Help"},
+                     "color": "medium",
+                     "size": "large",
+                     "className": "",
+                     "style": "help-circle-outline",
+                     "slot": "end",
+                     "componentName": "Help",
+                     "customIcon": "-1",
+                     "aio_visible": "true",
+                     "visible": "true"
+                  },
+                  "@id": "8B3EF38F-BDC1-2D14-E771-ED02CA68B937",
+                  "events": {"click": {
+                     "@id": "ClickEvent5321",
+                     "@readOnly": "false",
+                     "actions": {"setrouting": {
+                        "@readOnly": false,
+                        "route": "62CE2756-7406-ECBA-7ABA-AB6E1F128344",
+                        "@index": 0,
+                        "@id": "SetRoutingAction66592",
+                        "params": "",
+                        "isActive": true
+                     }}
+                  }}
+               }
+            ]},
+            "@type": "Ionic5ToolbarBean",
+            "property": {
+               "mode": "",
+               "isTitle": "true",
+               "color": "",
+               "className": "",
+               "availableSlots": {
+                  "": "Not selected",
+                  "secondary": "Secondary",
+                  "start": "Start",
+                  "end": "End",
+                  "primary": "Primary"
+               },
+               "componentName": "Toolbar1",
+               "slot": "",
+               "aio_visible": "true",
+               "visible": "true"
+            },
+            "@id": "4667FF55-56E7-429A-9BC4-C4FC04100AB2",
+            "events": ""
+         }]},
+         "@type": "Ionic5HeaderBean",
+         "property": {
+            "mode": "",
+            "translucent": "false",
+            "className": "",
+            "noBorder": "false",
+            "componentName": "Header1",
+            "aio_visible": "true"
+         },
+         "@id": "629DC0B3-FCE3-4784-B5B4-0E790799F28C",
+         "events": ""
+      }
+   ]},
+   "@type": "MobileScreenBean",
+   "property": {
+      "isTabs": "false",
+      "platformMode": "md",
+      "showHeader": "true",
+      "theme": "",
+      "componentName": "Page",
+      "showFooter": "false",
+      "isModal": "false"
+   },
+   "@id": "CE6906F6-A4C2-4A6F-9BA0-6BB5D54E2CD7",
+   "events": {"ionViewDidEnter": {
+      "@id": "Ionic5Event71201",
+      "@readOnly": "false",
+      "actions": {"customjs": {
+         "@readOnly": false,
+         "@index": 0,
+         "@id": "CustomJSAction59169",
+         "isActive": true,
+         "script": "//get LogStorage into variable logStorage\nconsole.group(\"After page showing - Flight Log\");\nconsole.time('Loading LogStorage');\nthis.showSpinner = true;\n//If we use getVariable the table is not updated for FlightDetails back button \nthis.logTable  = await this.Apperyio.data.getStorage(\"LogStorage\");\n//this.logTable = await this.Apperyio.data.getVariable(\"LogStorage\");\n//console.assert(JSON.stringify(this.logTable) === JSON.stringify(data1), 'Variable not same as Storage');\nconsole.timeEnd('Loading LogStorage');\nconsole.time('Loading SettingsStorage');\n//const settings = await this.Apperyio.data.getStorage(\"SettingsStorage\");\nconst settings = await this.Apperyio.data.getVariable(\"SettingsStorage\");\nconsole.timeEnd('Loading SettingsStorage');\n\nif (settings != null) {\n    this.units = settings.units;\n}\nthis.showSpinner = false;\nconsole.groupEnd();"
+      }}
+   }}
+}}
