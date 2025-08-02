@@ -7,6 +7,9 @@ import '../../data/repositories/flight_repository.dart';
 import '../../data/repositories/site_repository.dart';
 import '../../data/repositories/wing_repository.dart';
 import 'edit_flight_screen.dart';
+import 'flight_track_screen.dart';
+import 'flight_track_canvas_screen.dart';
+import 'dart:io' show Platform;
 
 class FlightDetailScreen extends StatefulWidget {
   final Flight flight;
@@ -391,13 +394,48 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                             const SizedBox(height: 16),
                             ListTile(
                               leading: const Icon(Icons.show_chart),
-                              title: const Text('IGC Track Available'),
-                              subtitle: const Text('Imported from IGC file'),
+                              title: const Text('View Flight Track'),
+                              subtitle: const Text('GPS track from IGC file'),
                               trailing: const Icon(Icons.chevron_right),
                               onTap: () {
-                                // TODO: Navigate to track view/chart screen
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Track visualization coming soon!')),
+                                // Show options for track visualization
+                                showModalBottomSheet(
+                                  context: context,
+                                  builder: (BuildContext context) {
+                                    return SafeArea(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          ListTile(
+                                            leading: const Icon(Icons.map),
+                                            title: const Text('Google Maps View'),
+                                            subtitle: const Text('Interactive map with satellite imagery'),
+                                            onTap: () {
+                                              Navigator.pop(context);
+                                              Navigator.of(context).push(
+                                                MaterialPageRoute(
+                                                  builder: (context) => FlightTrackScreen(flight: _flight),
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                          ListTile(
+                                            leading: const Icon(Icons.show_chart),
+                                            title: const Text('Canvas Track View'),
+                                            subtitle: const Text('Custom track visualization with altitude colors'),
+                                            onTap: () {
+                                              Navigator.pop(context);
+                                              Navigator.of(context).push(
+                                                MaterialPageRoute(
+                                                  builder: (context) => FlightTrackCanvasScreen(flight: _flight),
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
                                 );
                               },
                             ),

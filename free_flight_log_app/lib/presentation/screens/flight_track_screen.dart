@@ -1,0 +1,391 @@
+import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../../data/models/flight.dart';
+import '../../data/models/igc_file.dart';
+import '../../services/igc_import_service.dart';
+
+class FlightTrackScreen extends StatefulWidget {
+  final Flight flight;
+
+  const FlightTrackScreen({super.key, required this.flight});
+
+  @override
+  State<FlightTrackScreen> createState() => _FlightTrackScreenState();
+}
+
+class _FlightTrackScreenState extends State<FlightTrackScreen> {
+  GoogleMapController? _mapController;
+  final IgcImportService _igcService = IgcImportService();
+  
+  List<IgcPoint> _trackPoints = [];
+  Set<Polyline> _polylines = {};
+  Set<Marker> _markers = {};
+  bool _isLoading = true;
+  String? _error;
+  
+  // Map display options
+  bool _showAltitudeColors = true;
+  bool _showMarkers = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTrackData();
+  }
+
+  Future<void> _loadTrackData() async {
+    if (widget.flight.trackLogPath == null) {
+      setState(() {
+        _error = 'No track data available for this flight';
+        _isLoading = false;
+      });
+      return;
+    }
+
+    try {
+      final trackPoints = await _igcService.getTrackPoints(widget.flight.trackLogPath!);
+      
+      if (trackPoints.isEmpty) {
+        setState(() {
+          _error = 'No track points found';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      setState(() {
+        _trackPoints = trackPoints;
+        _isLoading = false;
+      });
+      
+      _createPolylines();
+      _createMarkers();
+      _fitMapToBounds();
+      
+    } catch (e) {
+      setState(() {
+        _error = 'Error loading track data: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _createPolylines() {
+    if (_trackPoints.isEmpty) return;
+
+    // Create main track polyline
+    final trackCoordinates = _trackPoints
+        .map((point) => LatLng(point.latitude, point.longitude))
+        .toList();
+
+    final polyline = Polyline(
+      polylineId: const PolylineId('flight_track'),
+      points: trackCoordinates,
+      color: _showAltitudeColors ? Colors.blue : Colors.red,
+      width: 3,
+      patterns: [],
+    );
+
+    // TODO: Add altitude-based coloring in future update
+    setState(() {
+      _polylines = {polyline};
+    });
+  }
+
+  void _createMarkers() {
+    if (_trackPoints.isEmpty || !_showMarkers) {
+      setState(() {
+        _markers = {};
+      });
+      return;
+    }
+
+    final startPoint = _trackPoints.first;
+    final endPoint = _trackPoints.last;
+    
+    // Find highest point
+    final highestPoint = _trackPoints.reduce(
+      (a, b) => a.gpsAltitude > b.gpsAltitude ? a : b
+    );
+
+    final markers = <Marker>{
+      Marker(
+        markerId: const MarkerId('launch'),
+        position: LatLng(startPoint.latitude, startPoint.longitude),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+        infoWindow: InfoWindow(
+          title: 'Launch',
+          snippet: 'Alt: ${startPoint.gpsAltitude}m\nTime: ${_formatTime(startPoint.timestamp)}',
+        ),
+      ),
+      Marker(
+        markerId: const MarkerId('landing'),
+        position: LatLng(endPoint.latitude, endPoint.longitude),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+        infoWindow: InfoWindow(
+          title: 'Landing',
+          snippet: 'Alt: ${endPoint.gpsAltitude}m\nTime: ${_formatTime(endPoint.timestamp)}',
+        ),
+      ),
+      Marker(
+        markerId: const MarkerId('highest'),
+        position: LatLng(highestPoint.latitude, highestPoint.longitude),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+        infoWindow: InfoWindow(
+          title: 'Highest Point',
+          snippet: 'Alt: ${highestPoint.gpsAltitude}m\nTime: ${_formatTime(highestPoint.timestamp)}',
+        ),
+      ),
+    };
+
+    setState(() {
+      _markers = markers;
+    });
+  }
+
+  void _fitMapToBounds() {
+    if (_mapController == null || _trackPoints.isEmpty) return;
+
+    final latitudes = _trackPoints.map((p) => p.latitude);
+    final longitudes = _trackPoints.map((p) => p.longitude);
+    
+    final minLat = latitudes.reduce((a, b) => a < b ? a : b);
+    final maxLat = latitudes.reduce((a, b) => a > b ? a : b);
+    final minLng = longitudes.reduce((a, b) => a < b ? a : b);
+    final maxLng = longitudes.reduce((a, b) => a > b ? a : b);
+
+    final bounds = LatLngBounds(
+      southwest: LatLng(minLat, minLng),
+      northeast: LatLng(maxLat, maxLng),
+    );
+
+    _mapController!.animateCamera(
+      CameraUpdate.newLatLngBounds(bounds, 50.0),
+    );
+  }
+
+  String _formatTime(DateTime time) {
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _formatDuration(int minutes) {
+    final hours = minutes ~/ 60;
+    final mins = minutes % 60;
+    if (hours > 0) {
+      return '${hours}h ${mins}m';
+    }
+    return '${mins}m';
+  }
+
+  void _toggleAltitudeColors() {
+    setState(() {
+      _showAltitudeColors = !_showAltitudeColors;
+    });
+    _createPolylines();
+  }
+
+  void _toggleMarkers() {
+    setState(() {
+      _showMarkers = !_showMarkers;
+    });
+    _createMarkers();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Flight Track'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              switch (value) {
+                case 'markers':
+                  _toggleMarkers();
+                  break;
+                case 'colors':
+                  _toggleAltitudeColors();
+                  break;
+                case 'fit':
+                  _fitMapToBounds();
+                  break;
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'markers',
+                child: Row(
+                  children: [
+                    Icon(_showMarkers ? Icons.visibility : Icons.visibility_off),
+                    const SizedBox(width: 8),
+                    Text('${_showMarkers ? 'Hide' : 'Show'} Markers'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'colors',
+                child: Row(
+                  children: [
+                    Icon(_showAltitudeColors ? Icons.palette : Icons.palette_outlined),
+                    const SizedBox(width: 8),
+                    Text('${_showAltitudeColors ? 'Simple' : 'Altitude'} Colors'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'fit',
+                child: Row(
+                  children: [
+                    Icon(Icons.fit_screen),
+                    SizedBox(width: 8),
+                    Text('Fit to Track'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? _buildErrorState()
+              : Column(
+                  children: [
+                    _buildStatsBar(),
+                    Expanded(child: _buildMap()),
+                  ],
+                ),
+    );
+  }
+
+  Widget _buildErrorState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.error_outline,
+            size: 64,
+            color: Colors.grey[400],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Track Not Available',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _error!,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Colors.grey[600],
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatsBar() {
+    if (_trackPoints.isEmpty) return const SizedBox.shrink();
+
+    final startPoint = _trackPoints.first;
+    final endPoint = _trackPoints.last;
+    final duration = _formatDuration(widget.flight.duration);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _buildStatItem(
+            'Duration',
+            duration,
+            Icons.access_time,
+          ),
+          _buildStatItem(
+            'Distance',
+            widget.flight.distance != null 
+                ? '${widget.flight.distance!.toStringAsFixed(1)} km'
+                : 'N/A',
+            Icons.timeline,
+          ),
+          _buildStatItem(
+            'Max Alt',
+            widget.flight.maxAltitude != null
+                ? '${widget.flight.maxAltitude!.toInt()} m'
+                : 'N/A',
+            Icons.height,
+          ),
+          _buildStatItem(
+            'Points',
+            _trackPoints.length.toString(),
+            Icons.gps_fixed,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatItem(String label, String value, IconData icon) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            color: Colors.grey[600],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMap() {
+    return GoogleMap(
+      onMapCreated: (GoogleMapController controller) {
+        _mapController = controller;
+        if (_trackPoints.isNotEmpty) {
+          _fitMapToBounds();
+        }
+      },
+      initialCameraPosition: CameraPosition(
+        target: _trackPoints.isNotEmpty
+            ? LatLng(_trackPoints.first.latitude, _trackPoints.first.longitude)
+            : const LatLng(0, 0),
+        zoom: 14,
+      ),
+      polylines: _polylines,
+      markers: _markers,
+      mapType: MapType.terrain,
+      myLocationButtonEnabled: false,
+      zoomControlsEnabled: true,
+      compassEnabled: true,
+      rotateGesturesEnabled: true,
+      scrollGesturesEnabled: true,
+      tiltGesturesEnabled: true,
+      zoomGesturesEnabled: true,
+    );
+  }
+}
