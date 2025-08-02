@@ -27,6 +27,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
   Site? _landingSite;
   Wing? _wing;
   bool _isLoading = true;
+  bool _flightModified = false;
 
   @override
   void initState() {
@@ -65,6 +66,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
     if (updatedFlight != null) {
       setState(() {
         _flight = updatedFlight;
+        _flightModified = true;
       });
       _loadFlightDetails();
     }
@@ -125,6 +127,10 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
       appBar: AppBar(
         title: Text('Flight ${_formatDate(_flight.date)}'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(_flightModified),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.edit),
