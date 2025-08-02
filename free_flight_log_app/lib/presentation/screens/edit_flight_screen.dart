@@ -6,6 +6,7 @@ import '../../data/models/wing.dart';
 import '../../data/repositories/flight_repository.dart';
 import '../../data/repositories/site_repository.dart';
 import '../../data/repositories/wing_repository.dart';
+import 'edit_wing_screen.dart';
 
 class EditFlightScreen extends StatefulWidget {
   final Flight flight;
@@ -187,6 +188,31 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
   }
 
+  Future<void> _addNewWing() async {
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (context) => const EditWingScreen(),
+      ),
+    );
+
+    if (result == true) {
+      // Reload wings and select the newly created wing
+      final oldWingsCount = _wings.length;
+      await _loadSitesAndWings();
+      
+      // If we have more wings than before, select the newest one
+      if (_wings.length > oldWingsCount) {
+        // Get the wing with the highest ID (assuming auto-increment)
+        final newestWing = _wings.reduce((a, b) => 
+          (a.id ?? 0) > (b.id ?? 0) ? a : b
+        );
+        setState(() {
+          _selectedWing = newestWing;
+        });
+      }
+    }
+  }
+
   Future<void> _saveFlight() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -205,7 +231,7 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
         duration: _calculateDuration(),
         launchSiteId: _selectedLaunchSite?.id,
         landingSiteId: _selectedLandingSite?.id,
-        wingId: _selectedWing?.id,
+        wingId: (_selectedWing?.name == '__ADD_NEW__') ? null : _selectedWing?.id,
         maxAltitude: _maxAltitudeController.text.isNotEmpty
             ? double.tryParse(_maxAltitudeController.text)
             : null,
@@ -421,13 +447,30 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
                                 ),
                                 ..._wings.map((wing) => DropdownMenuItem<Wing>(
                                   value: wing,
-                                  child: Text('${wing.manufacturer} ${wing.model}'),
+                                  child: Text('${wing.manufacturer ?? ''} ${wing.model ?? ''}'.trim().isEmpty 
+                                    ? wing.name 
+                                    : '${wing.manufacturer ?? ''} ${wing.model ?? ''}'.trim()),
                                 )),
+                                DropdownMenuItem<Wing>(
+                                  value: Wing(name: '__ADD_NEW__'), // Special marker wing
+                                  child: const Row(
+                                    children: [
+                                      Icon(Icons.add, size: 16),
+                                      SizedBox(width: 8),
+                                      Text('Add New Wing'),
+                                    ],
+                                  ),
+                                ),
                               ],
-                              onChanged: (Wing? value) {
-                                setState(() {
-                                  _selectedWing = value;
-                                });
+                              onChanged: (Wing? value) async {
+                                if (value?.name == '__ADD_NEW__') {
+                                  // Handle add new wing
+                                  await _addNewWing();
+                                } else {
+                                  setState(() {
+                                    _selectedWing = value;
+                                  });
+                                }
                               },
                             ),
                           ],
