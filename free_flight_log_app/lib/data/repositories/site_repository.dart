@@ -85,4 +85,38 @@ class SiteRepository {
     );
     return result.first['count'] == 0;
   }
+
+  Future<Site> findOrCreateSite({
+    required double latitude,
+    required double longitude,
+    double? altitude,
+    required String name,
+    double tolerance = 0.01,
+  }) async {
+    // First try to find existing site
+    Site? existingSite = await findSiteByCoordinates(latitude, longitude, tolerance: tolerance);
+    
+    if (existingSite != null) {
+      return existingSite;
+    }
+    
+    // Create new site
+    final newSite = Site(
+      name: name,
+      latitude: latitude,
+      longitude: longitude,
+      altitude: altitude,
+      customName: false,
+    );
+    
+    final id = await insertSite(newSite);
+    return Site(
+      id: id,
+      name: name,
+      latitude: latitude,
+      longitude: longitude,
+      altitude: altitude,
+      customName: false,
+    );
+  }
 }

@@ -45,6 +45,7 @@ dependencies:
   fl_chart: ^0.65.0         # Charts for altitude/climb rate
   intl: ^0.18.0             # Date/time formatting
   path: ^1.8.0              # Database path utilities
+  path_provider: ^2.1.0     # App directory paths
 
 dev_dependencies:
   flutter_test:
