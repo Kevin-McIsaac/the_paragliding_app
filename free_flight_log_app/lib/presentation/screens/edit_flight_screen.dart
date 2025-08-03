@@ -24,13 +24,6 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
   final WingRepository _wingRepository = WingRepository();
 
   late TextEditingController _notesController;
-  late TextEditingController _maxAltitudeController;
-  late TextEditingController _distanceController;
-  late TextEditingController _straightDistanceController;
-  late TextEditingController _maxClimbRateController;
-  late TextEditingController _maxSinkRateController;
-  late TextEditingController _maxClimbRate5SecController;
-  late TextEditingController _maxSinkRate5SecController;
 
   late DateTime _selectedDate;
   late TimeOfDay _launchTime;
@@ -66,24 +59,6 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
     );
 
     _notesController = TextEditingController(text: widget.flight.notes ?? '');
-    _maxAltitudeController = TextEditingController(
-      text: widget.flight.maxAltitude?.toStringAsFixed(0) ?? '',
-    );
-    _distanceController = TextEditingController(
-      text: widget.flight.distance?.toStringAsFixed(1) ?? '',
-    );
-    _maxClimbRateController = TextEditingController(
-      text: widget.flight.maxClimbRate?.toStringAsFixed(1) ?? '',
-    );
-    _maxSinkRateController = TextEditingController(
-      text: widget.flight.maxSinkRate?.toStringAsFixed(1) ?? '',
-    );
-    _maxClimbRate5SecController = TextEditingController(
-      text: widget.flight.maxClimbRate5Sec?.toStringAsFixed(1) ?? '',
-    );
-    _maxSinkRate5SecController = TextEditingController(
-      text: widget.flight.maxSinkRate5Sec?.toStringAsFixed(1) ?? '',
-    );
   }
 
   Future<void> _loadSitesAndWings() async {
@@ -241,24 +216,13 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
         launchSiteId: _selectedLaunchSite?.id,
         landingSiteId: _selectedLandingSite?.id,
         wingId: (_selectedWing?.name == '__ADD_NEW__') ? null : _selectedWing?.id,
-        maxAltitude: _maxAltitudeController.text.isNotEmpty
-            ? double.tryParse(_maxAltitudeController.text)
-            : null,
-        distance: _distanceController.text.isNotEmpty
-            ? double.tryParse(_distanceController.text)
-            : null,
-        maxClimbRate: _maxClimbRateController.text.isNotEmpty
-            ? double.tryParse(_maxClimbRateController.text)
-            : null,
-        maxSinkRate: _maxSinkRateController.text.isNotEmpty
-            ? double.tryParse(_maxSinkRateController.text)
-            : null,
-        maxClimbRate5Sec: _maxClimbRate5SecController.text.isNotEmpty
-            ? double.tryParse(_maxClimbRate5SecController.text)
-            : null,
-        maxSinkRate5Sec: _maxSinkRate5SecController.text.isNotEmpty
-            ? double.tryParse(_maxSinkRate5SecController.text)
-            : null,
+        maxAltitude: widget.flight.maxAltitude,
+        distance: widget.flight.distance,
+        straightDistance: widget.flight.straightDistance,
+        maxClimbRate: widget.flight.maxClimbRate,
+        maxSinkRate: widget.flight.maxSinkRate,
+        maxClimbRate5Sec: widget.flight.maxClimbRate5Sec,
+        maxSinkRate5Sec: widget.flight.maxSinkRate5Sec,
         notes: _notesController.text.isEmpty ? null : _notesController.text,
         trackLogPath: widget.flight.trackLogPath,
         source: widget.flight.source,
@@ -285,12 +249,6 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
   @override
   void dispose() {
     _notesController.dispose();
-    _maxAltitudeController.dispose();
-    _distanceController.dispose();
-    _maxClimbRateController.dispose();
-    _maxSinkRateController.dispose();
-    _maxClimbRate5SecController.dispose();
-    _maxSinkRate5SecController.dispose();
     super.dispose();
   }
 
@@ -489,108 +447,6 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
                                   });
                                 }
                               },
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Flight Statistics Section
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Flight Statistics',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            const SizedBox(height: 16),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextFormField(
-                                    controller: _maxAltitudeController,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Max Altitude (m)',
-                                      prefixIcon: Icon(Icons.height),
-                                    ),
-                                    keyboardType: TextInputType.number,
-                                    validator: (value) {
-                                      if (value != null && value.isNotEmpty) {
-                                        if (double.tryParse(value) == null) {
-                                          return 'Enter valid number';
-                                        }
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: TextFormField(
-                                    controller: _distanceController,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Distance (km)',
-                                      prefixIcon: Icon(Icons.timeline),
-                                    ),
-                                    keyboardType: TextInputType.number,
-                                    validator: (value) {
-                                      if (value != null && value.isNotEmpty) {
-                                        if (double.tryParse(value) == null) {
-                                          return 'Enter valid number';
-                                        }
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextFormField(
-                                    controller: _maxClimbRateController,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Max Climb (m/s)',
-                                      prefixIcon: Icon(Icons.trending_up),
-                                    ),
-                                    keyboardType: TextInputType.number,
-                                    validator: (value) {
-                                      if (value != null && value.isNotEmpty) {
-                                        if (double.tryParse(value) == null) {
-                                          return 'Enter valid number';
-                                        }
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: TextFormField(
-                                    controller: _maxSinkRateController,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Max Sink (m/s)',
-                                      prefixIcon: Icon(Icons.trending_down),
-                                    ),
-                                    keyboardType: TextInputType.number,
-                                    validator: (value) {
-                                      if (value != null && value.isNotEmpty) {
-                                        if (double.tryParse(value) == null) {
-                                          return 'Enter valid number';
-                                        }
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                ),
-                              ],
                             ),
                           ],
                         ),

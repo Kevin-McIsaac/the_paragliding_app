@@ -35,6 +35,11 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
   bool _isLoading = true;
   bool _flightModified = false;
   
+  // Inline editing state
+  bool _isEditingNotes = false;
+  bool _isSaving = false;
+  late TextEditingController _notesController;
+  
   // Map-related state
   MapController? _mapController;
   List<IgcPoint> _trackPoints = [];
@@ -47,6 +52,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
   void initState() {
     super.initState();
     _flight = widget.flight;
+    _notesController = TextEditingController(text: _flight.notes ?? '');
     _loadFlightDetails();
     _loadTrackData();
   }
@@ -303,6 +309,449 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
     return '${mins}m';
   }
 
+  Future<void> _saveNotes() async {
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      final updatedFlight = Flight(
+        id: _flight.id,
+        date: _flight.date,
+        launchTime: _flight.launchTime,
+        landingTime: _flight.landingTime,
+        duration: _flight.duration,
+        launchSiteId: _flight.launchSiteId,
+        landingSiteId: _flight.landingSiteId,
+        wingId: _flight.wingId,
+        maxAltitude: _flight.maxAltitude,
+        maxClimbRate: _flight.maxClimbRate,
+        maxSinkRate: _flight.maxSinkRate,
+        maxClimbRate5Sec: _flight.maxClimbRate5Sec,
+        maxSinkRate5Sec: _flight.maxSinkRate5Sec,
+        distance: _flight.distance,
+        straightDistance: _flight.straightDistance,
+        trackLogPath: _flight.trackLogPath,
+        source: _flight.source,
+        notes: _notesController.text.isEmpty ? null : _notesController.text,
+        createdAt: _flight.createdAt,
+      );
+
+      await _flightRepository.updateFlight(updatedFlight);
+      
+      setState(() {
+        _flight = updatedFlight;
+        _flightModified = true;
+        _isEditingNotes = false;
+        _isSaving = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Notes updated successfully')),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isSaving = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error saving notes: $e')),
+        );
+      }
+    }
+  }
+
+  void _cancelNotesEdit() {
+    setState(() {
+      _notesController.text = _flight.notes ?? '';
+      _isEditingNotes = false;
+    });
+  }
+
+  Future<void> _editDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _flight.date,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+    );
+    
+    if (picked != null && picked != _flight.date) {
+      await _updateFlightField('date', picked);
+    }
+  }
+
+  Future<void> _editTime(bool isLaunchTime) async {
+    final currentTime = isLaunchTime ? _flight.launchTime : _flight.landingTime;
+    final timeParts = currentTime.split(':');
+    final currentTimeOfDay = TimeOfDay(
+      hour: int.parse(timeParts[0]),
+      minute: int.parse(timeParts[1]),
+    );
+
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: currentTimeOfDay,
+    );
+    
+    if (picked != null) {
+      final formattedTime = '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+      await _updateFlightField(isLaunchTime ? 'launchTime' : 'landingTime', formattedTime);
+    }
+  }
+
+  Future<void> _updateFlightField(String field, dynamic value) async {
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      // Calculate new duration if times changed
+      int newDuration = _flight.duration;
+      String newLaunchTime = _flight.launchTime;
+      String newLandingTime = _flight.landingTime;
+      DateTime newDate = _flight.date;
+
+      if (field == 'date') {
+        newDate = value as DateTime;
+      } else if (field == 'launchTime') {
+        newLaunchTime = value as String;
+      } else if (field == 'landingTime') {
+        newLandingTime = value as String;
+      }
+
+      // Recalculate duration if times changed
+      if (field == 'launchTime' || field == 'landingTime') {
+        newDuration = _calculateDurationFromTimes(newDate, newLaunchTime, newLandingTime);
+      }
+
+      final updatedFlight = Flight(
+        id: _flight.id,
+        date: newDate,
+        launchTime: newLaunchTime,
+        landingTime: newLandingTime,
+        duration: newDuration,
+        launchSiteId: _flight.launchSiteId,
+        landingSiteId: _flight.landingSiteId,
+        wingId: _flight.wingId,
+        maxAltitude: _flight.maxAltitude,
+        maxClimbRate: _flight.maxClimbRate,
+        maxSinkRate: _flight.maxSinkRate,
+        maxClimbRate5Sec: _flight.maxClimbRate5Sec,
+        maxSinkRate5Sec: _flight.maxSinkRate5Sec,
+        distance: _flight.distance,
+        straightDistance: _flight.straightDistance,
+        trackLogPath: _flight.trackLogPath,
+        source: _flight.source,
+        notes: _flight.notes,
+        createdAt: _flight.createdAt,
+      );
+
+      await _flightRepository.updateFlight(updatedFlight);
+      
+      setState(() {
+        _flight = updatedFlight;
+        _flightModified = true;
+        _isSaving = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${field == 'date' ? 'Date' : field == 'launchTime' ? 'Launch time' : 'Landing time'} updated successfully')),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isSaving = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error updating flight: $e')),
+        );
+      }
+    }
+  }
+
+  int _calculateDurationFromTimes(DateTime date, String launchTime, String landingTime) {
+    final launchParts = launchTime.split(':');
+    final landingParts = landingTime.split(':');
+    
+    final launchDateTime = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      int.parse(launchParts[0]),
+      int.parse(launchParts[1]),
+    );
+    
+    var landingDateTime = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      int.parse(landingParts[0]),
+      int.parse(landingParts[1]),
+    );
+    
+    // Handle case where landing is next day
+    if (landingDateTime.isBefore(launchDateTime)) {
+      landingDateTime = landingDateTime.add(const Duration(days: 1));
+    }
+    
+    return landingDateTime.difference(launchDateTime).inMinutes;
+  }
+
+  Future<void> _editSite(bool isLaunchSite) async {
+    final sites = await _siteRepository.getAllSites();
+    final currentSite = isLaunchSite ? _launchSite : _landingSite;
+    
+    if (!mounted) return;
+    
+    final Site? selectedSite = await showDialog<Site>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Select ${isLaunchSite ? 'Launch' : 'Landing'} Site'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                title: const Text('No site'),
+                leading: Radio<Site?>(
+                  value: null,
+                  groupValue: currentSite,
+                  onChanged: (Site? value) {
+                    Navigator.of(context).pop(value);
+                  },
+                ),
+                onTap: () => Navigator.of(context).pop(null),
+              ),
+              const Divider(),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: sites.length,
+                  itemBuilder: (context, index) {
+                    final site = sites[index];
+                    return ListTile(
+                      title: Text(site.name),
+                      subtitle: site.altitude != null 
+                          ? Text('${site.altitude!.toInt()} m')
+                          : null,
+                      leading: Radio<Site>(
+                        value: site,
+                        groupValue: currentSite,
+                        onChanged: (Site? value) {
+                          Navigator.of(context).pop(value);
+                        },
+                      ),
+                      onTap: () => Navigator.of(context).pop(site),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+
+    if (selectedSite != currentSite) {
+      await _updateFlightSite(isLaunchSite, selectedSite);
+    }
+  }
+
+  Future<void> _editWing() async {
+    final wings = await _wingRepository.getAllWings();
+    
+    if (!mounted) return;
+    
+    final Wing? selectedWing = await showDialog<Wing>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Select Wing'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                title: const Text('No wing'),
+                leading: Radio<Wing?>(
+                  value: null,
+                  groupValue: _wing,
+                  onChanged: (Wing? value) {
+                    Navigator.of(context).pop(value);
+                  },
+                ),
+                onTap: () => Navigator.of(context).pop(null),
+              ),
+              const Divider(),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: wings.length,
+                  itemBuilder: (context, index) {
+                    final wing = wings[index];
+                    final displayName = '${wing.manufacturer ?? ''} ${wing.model ?? ''}'.trim();
+                    return ListTile(
+                      title: Text(displayName.isEmpty ? wing.name : displayName),
+                      subtitle: wing.size != null ? Text('Size: ${wing.size}') : null,
+                      leading: Radio<Wing>(
+                        value: wing,
+                        groupValue: _wing,
+                        onChanged: (Wing? value) {
+                          Navigator.of(context).pop(value);
+                        },
+                      ),
+                      onTap: () => Navigator.of(context).pop(wing),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+
+    if (selectedWing != _wing) {
+      await _updateFlightWing(selectedWing);
+    }
+  }
+
+  Future<void> _updateFlightSite(bool isLaunchSite, Site? newSite) async {
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      final updatedFlight = Flight(
+        id: _flight.id,
+        date: _flight.date,
+        launchTime: _flight.launchTime,
+        landingTime: _flight.landingTime,
+        duration: _flight.duration,
+        launchSiteId: isLaunchSite ? newSite?.id : _flight.launchSiteId,
+        landingSiteId: isLaunchSite ? _flight.landingSiteId : newSite?.id,
+        wingId: _flight.wingId,
+        maxAltitude: _flight.maxAltitude,
+        maxClimbRate: _flight.maxClimbRate,
+        maxSinkRate: _flight.maxSinkRate,
+        maxClimbRate5Sec: _flight.maxClimbRate5Sec,
+        maxSinkRate5Sec: _flight.maxSinkRate5Sec,
+        distance: _flight.distance,
+        straightDistance: _flight.straightDistance,
+        trackLogPath: _flight.trackLogPath,
+        source: _flight.source,
+        notes: _flight.notes,
+        createdAt: _flight.createdAt,
+      );
+
+      await _flightRepository.updateFlight(updatedFlight);
+      
+      setState(() {
+        _flight = updatedFlight;
+        _flightModified = true;
+        _isSaving = false;
+        if (isLaunchSite) {
+          _launchSite = newSite;
+        } else {
+          _landingSite = newSite;
+        }
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${isLaunchSite ? 'Launch' : 'Landing'} site updated successfully')),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isSaving = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error updating site: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateFlightWing(Wing? newWing) async {
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      final updatedFlight = Flight(
+        id: _flight.id,
+        date: _flight.date,
+        launchTime: _flight.launchTime,
+        landingTime: _flight.landingTime,
+        duration: _flight.duration,
+        launchSiteId: _flight.launchSiteId,
+        landingSiteId: _flight.landingSiteId,
+        wingId: newWing?.id,
+        maxAltitude: _flight.maxAltitude,
+        maxClimbRate: _flight.maxClimbRate,
+        maxSinkRate: _flight.maxSinkRate,
+        maxClimbRate5Sec: _flight.maxClimbRate5Sec,
+        maxSinkRate5Sec: _flight.maxSinkRate5Sec,
+        distance: _flight.distance,
+        straightDistance: _flight.straightDistance,
+        trackLogPath: _flight.trackLogPath,
+        source: _flight.source,
+        notes: _flight.notes,
+        createdAt: _flight.createdAt,
+      );
+
+      await _flightRepository.updateFlight(updatedFlight);
+      
+      setState(() {
+        _flight = updatedFlight;
+        _flightModified = true;
+        _isSaving = false;
+        _wing = newWing;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Wing updated successfully')),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isSaving = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error updating wing: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _notesController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -406,8 +855,8 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
 
                   const SizedBox(height: 16),
 
-                  // Notes Card (Full Width)
-                  if (_flight.notes?.isNotEmpty == true)
+                  // Notes Card (Full Width) - Always show if has notes or in edit mode
+                  if (_flight.notes?.isNotEmpty == true || _isEditingNotes)
                     SizedBox(
                       width: double.infinity,
                       child: Card(
@@ -416,14 +865,133 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                'Notes',
-                                style: Theme.of(context).textTheme.titleLarge,
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Notes',
+                                    style: Theme.of(context).textTheme.titleLarge,
+                                  ),
+                                  if (!_isEditingNotes)
+                                    IconButton(
+                                      onPressed: () {
+                                        setState(() {
+                                          _isEditingNotes = true;
+                                        });
+                                      },
+                                      icon: const Icon(Icons.edit, size: 20),
+                                      tooltip: 'Edit notes',
+                                    ),
+                                ],
                               ),
                               const SizedBox(height: 16),
-                              Text(
-                                _flight.notes!,
-                                style: Theme.of(context).textTheme.bodyMedium,
+                              if (_isEditingNotes) ...[
+                                TextFormField(
+                                  controller: _notesController,
+                                  decoration: const InputDecoration(
+                                    hintText: 'Enter flight notes...',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  maxLines: 4,
+                                  autofocus: true,
+                                ),
+                                const SizedBox(height: 12),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    TextButton(
+                                      onPressed: _isSaving ? null : _cancelNotesEdit,
+                                      child: const Text('Cancel'),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    ElevatedButton(
+                                      onPressed: _isSaving ? null : _saveNotes,
+                                      child: _isSaving
+                                          ? const SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child: CircularProgressIndicator(strokeWidth: 2),
+                                            )
+                                          : const Text('Save'),
+                                    ),
+                                  ],
+                                ),
+                              ] else ...[
+                                GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      _isEditingNotes = true;
+                                    });
+                                  },
+                                  child: Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(vertical: 8),
+                                    child: Text(
+                                      _flight.notes!,
+                                      style: Theme.of(context).textTheme.bodyMedium,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  
+                  // Add Notes Card (if no notes exist and not editing)
+                  if (_flight.notes?.isEmpty != false && !_isEditingNotes)
+                    SizedBox(
+                      width: double.infinity,
+                      child: Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Notes',
+                                    style: Theme.of(context).textTheme.titleLarge,
+                                  ),
+                                  IconButton(
+                                    onPressed: () {
+                                      setState(() {
+                                        _isEditingNotes = true;
+                                      });
+                                    },
+                                    icon: const Icon(Icons.add, size: 20),
+                                    tooltip: 'Add notes',
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    _isEditingNotes = true;
+                                  });
+                                },
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[100],
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.grey[300]!),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      'Tap to add notes',
+                                      style: TextStyle(
+                                        color: Colors.grey[600],
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               ),
                             ],
                           ),
@@ -696,12 +1264,75 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                 text: TextSpan(
                   style: Theme.of(context).textTheme.bodyMedium,
                   children: [
-                    TextSpan(text: _formatDate(_flight.date)),
+                    WidgetSpan(
+                      child: GestureDetector(
+                        onTap: _isSaving ? null : _editDate,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(
+                                color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                                width: 1,
+                              ),
+                            ),
+                          ),
+                          child: Text(
+                            _formatDate(_flight.date),
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                     const TextSpan(text: ' for '),
                     TextSpan(text: _formatDuration(_flight.duration)),
                     if (_wing != null) ...[
                       const TextSpan(text: ' using '),
-                      TextSpan(text: '${_wing!.manufacturer ?? 'Unknown'} ${_wing!.model ?? 'Unknown'}'),
+                      WidgetSpan(
+                        child: GestureDetector(
+                          onTap: _isSaving ? null : _editWing,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                            child: Text(
+                              '${_wing!.manufacturer ?? 'Unknown'} ${_wing!.model ?? 'Unknown'}',
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ] else ...[
+                      WidgetSpan(
+                        child: GestureDetector(
+                          onTap: _isSaving ? null : _editWing,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                            child: Text(
+                              ' (tap to set equipment)',
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ],
                 ),
@@ -723,17 +1354,95 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                   style: Theme.of(context).textTheme.bodyMedium,
                   children: [
                     if (_launchSite != null) ...[
-                      TextSpan(text: _launchSite!.name),
+                      WidgetSpan(
+                        child: GestureDetector(
+                          onTap: _isSaving ? null : () => _editSite(true),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                            child: Text(
+                              _launchSite!.name,
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                       const TextSpan(
                         text: ' @ ',
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
-                      TextSpan(text: _flight.launchTime),
+                      WidgetSpan(
+                        child: GestureDetector(
+                          onTap: _isSaving ? null : () => _editTime(true),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                            child: Text(
+                              _flight.launchTime,
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                     ] else ...[
-                      TextSpan(text: _flight.launchTime),
-                      const TextSpan(
-                        text: ' (location not recorded)',
-                        style: TextStyle(fontStyle: FontStyle.italic),
+                      WidgetSpan(
+                        child: GestureDetector(
+                          onTap: _isSaving ? null : () => _editTime(true),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                            child: Text(
+                              _flight.launchTime,
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      WidgetSpan(
+                        child: GestureDetector(
+                          onTap: _isSaving ? null : () => _editSite(true),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                            child: Text(
+                              ' (tap to set location)',
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ],
@@ -756,17 +1465,95 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                   style: Theme.of(context).textTheme.bodyMedium,
                   children: [
                     if (_landingSite != null) ...[
-                      TextSpan(text: _landingSite!.name),
+                      WidgetSpan(
+                        child: GestureDetector(
+                          onTap: _isSaving ? null : () => _editSite(false),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                            child: Text(
+                              _landingSite!.name,
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                       const TextSpan(
                         text: ' @ ',
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
-                      TextSpan(text: _flight.landingTime),
+                      WidgetSpan(
+                        child: GestureDetector(
+                          onTap: _isSaving ? null : () => _editTime(false),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                            child: Text(
+                              _flight.landingTime,
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                     ] else ...[
-                      TextSpan(text: _flight.landingTime),
-                      const TextSpan(
-                        text: ' (location not recorded)',
-                        style: TextStyle(fontStyle: FontStyle.italic),
+                      WidgetSpan(
+                        child: GestureDetector(
+                          onTap: _isSaving ? null : () => _editTime(false),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                            child: Text(
+                              _flight.landingTime,
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      WidgetSpan(
+                        child: GestureDetector(
+                          onTap: _isSaving ? null : () => _editSite(false),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                            child: Text(
+                              ' (tap to set location)',
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ],
