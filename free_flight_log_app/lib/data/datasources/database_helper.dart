@@ -4,7 +4,7 @@ import 'package:path/path.dart';
 
 class DatabaseHelper {
   static const _databaseName = "FlightLog.db";
-  static const _databaseVersion = 2;
+  static const _databaseVersion = 3;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -43,6 +43,7 @@ class DatabaseHelper {
         notes TEXT,
         track_log_path TEXT,
         source TEXT CHECK(source IN ('manual', 'igc', 'parajournal')),
+        timezone TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (launch_site_id) REFERENCES sites (id),
@@ -94,6 +95,18 @@ class DatabaseHelper {
         print('Successfully added new climb rate columns');
       } catch (e) {
         print('Error during migration: $e');
+        // If migration fails, we might need to recreate the database
+        throw e;
+      }
+    }
+    
+    if (oldVersion < 3) {
+      try {
+        // Add timezone column for proper timezone support
+        await db.execute('ALTER TABLE flights ADD COLUMN timezone TEXT');
+        print('Successfully added timezone column');
+      } catch (e) {
+        print('Error during timezone migration: $e');
         // If migration fails, we might need to recreate the database
         throw e;
       }

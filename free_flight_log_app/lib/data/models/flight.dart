@@ -17,6 +17,7 @@ class Flight {
   final String? notes;
   final String? trackLogPath;
   final String source;
+  final String? timezone; // Timezone offset (e.g., "+10:00", "-05:30", null for UTC)
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -39,6 +40,7 @@ class Flight {
     this.notes,
     this.trackLogPath,
     this.source = 'manual',
+    this.timezone,
     this.createdAt,
     this.updatedAt,
   });
@@ -63,6 +65,7 @@ class Flight {
       'notes': notes,
       'track_log_path': trackLogPath,
       'source': source,
+      'timezone': timezone,
       'created_at': createdAt?.toIso8601String(),
       'updated_at': updatedAt?.toIso8601String(),
     };
@@ -88,6 +91,7 @@ class Flight {
       notes: map['notes'],
       trackLogPath: map['track_log_path'],
       source: map['source'] ?? 'manual',
+      timezone: map['timezone'],
       createdAt: map['created_at'] != null ? DateTime.parse(map['created_at']) : null,
       updatedAt: map['updated_at'] != null ? DateTime.parse(map['updated_at']) : null,
     );
@@ -112,6 +116,7 @@ class Flight {
     String? notes,
     String? trackLogPath,
     String? source,
+    String? timezone,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -134,6 +139,7 @@ class Flight {
       notes: notes ?? this.notes,
       trackLogPath: trackLogPath ?? this.trackLogPath,
       source: source ?? this.source,
+      timezone: timezone ?? this.timezone,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

@@ -226,6 +226,7 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
         notes: _notesController.text.isEmpty ? null : _notesController.text,
         trackLogPath: widget.flight.trackLogPath,
         source: widget.flight.source,
+        timezone: widget.flight.timezone,
       );
 
       await _flightRepository.updateFlight(updatedFlight);

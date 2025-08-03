@@ -111,6 +111,14 @@ class _FlightListScreenState extends State<FlightListScreen> {
     return '${hours}h ${mins}m';
   }
 
+  /// Format time with timezone information
+  String _formatTimeWithTimezone(String time, String? timezone) {
+    if (timezone != null) {
+      return '$time $timezone';
+    }
+    return time;
+  }
+
   void _toggleSelectionMode() {
     setState(() {
       _isSelectionMode = !_isSelectionMode;
@@ -467,7 +475,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                   Text(
                     '${flight.date.day.toString().padLeft(2, '0')}/'
                     '${flight.date.month.toString().padLeft(2, '0')}/'
-                    '${flight.date.year} ${flight.launchTime}',
+                    '${flight.date.year} ${_formatTimeWithTimezone(flight.launchTime, flight.timezone)}',
                   ),
                   onTap: _isSelectionMode 
                       ? null 

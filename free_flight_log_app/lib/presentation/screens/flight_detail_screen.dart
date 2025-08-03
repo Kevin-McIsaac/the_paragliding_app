@@ -293,6 +293,14 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
     return '${mins}m';
   }
 
+  /// Format time with timezone information
+  String _formatTimeWithTimezone(String time, String? timezone) {
+    if (timezone != null) {
+      return '$time $timezone';
+    }
+    return time;
+  }
+
   Future<void> _saveNotes() async {
     setState(() {
       _isSaving = true;
@@ -317,6 +325,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
         straightDistance: _flight.straightDistance,
         trackLogPath: _flight.trackLogPath,
         source: _flight.source,
+        timezone: _flight.timezone,
         notes: _notesController.text.isEmpty ? null : _notesController.text,
         createdAt: _flight.createdAt,
       );
@@ -429,6 +438,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
         straightDistance: _flight.straightDistance,
         trackLogPath: _flight.trackLogPath,
         source: _flight.source,
+        timezone: _flight.timezone,
         notes: _flight.notes,
         createdAt: _flight.createdAt,
       );
@@ -642,6 +652,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
         straightDistance: _flight.straightDistance,
         trackLogPath: _flight.trackLogPath,
         source: _flight.source,
+        timezone: _flight.timezone,
         notes: _flight.notes,
         createdAt: _flight.createdAt,
       );
@@ -700,6 +711,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
         straightDistance: _flight.straightDistance,
         trackLogPath: _flight.trackLogPath,
         source: _flight.source,
+        timezone: _flight.timezone,
         notes: _flight.notes,
         createdAt: _flight.createdAt,
       );
@@ -1422,7 +1434,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                               ),
                             ),
                             child: Text(
-                              _flight.launchTime,
+                              _formatTimeWithTimezone(_flight.launchTime, _flight.timezone),
                               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                 color: Theme.of(context).colorScheme.primary,
                               ),
@@ -1444,7 +1456,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                               ),
                             ),
                             child: Text(
-                              _flight.launchTime,
+                              _formatTimeWithTimezone(_flight.launchTime, _flight.timezone),
                               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                 color: Theme.of(context).colorScheme.primary,
                               ),
@@ -1533,7 +1545,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                               ),
                             ),
                             child: Text(
-                              _flight.landingTime,
+                              _formatTimeWithTimezone(_flight.landingTime, _flight.timezone),
                               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                 color: Theme.of(context).colorScheme.primary,
                               ),
@@ -1555,7 +1567,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                               ),
                             ),
                             child: Text(
-                              _flight.landingTime,
+                              _formatTimeWithTimezone(_flight.landingTime, _flight.timezone),
                               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                 color: Theme.of(context).colorScheme.primary,
                               ),

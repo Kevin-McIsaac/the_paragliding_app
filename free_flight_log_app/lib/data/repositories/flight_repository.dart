@@ -15,12 +15,14 @@ class FlightRepository {
       return await db.insert('flights', map);
     } catch (e) {
       if (e.toString().contains('max_climb_rate_5_sec') || 
-          e.toString().contains('max_sink_rate_5_sec')) {
+          e.toString().contains('max_sink_rate_5_sec') ||
+          e.toString().contains('timezone')) {
         print('Database migration needed. Attempting to recreate database...');
         
         // Remove the new fields and try again with legacy format
         map.remove('max_climb_rate_5_sec');
         map.remove('max_sink_rate_5_sec');
+        map.remove('timezone');
         
         try {
           return await db.insert('flights', map);

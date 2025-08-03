@@ -100,6 +100,7 @@ class IgcImportService {
           straightDistance: flight.straightDistance,
           trackLogPath: flight.trackLogPath,
           source: flight.source,
+          timezone: flight.timezone,
           notes: flight.notes,
           createdAt: existingFlight.createdAt, // Keep original creation time
         );
@@ -195,6 +196,7 @@ class IgcImportService {
       straightDistance: straightDistance,
       trackLogPath: trackLogPath,
       source: 'igc',
+      timezone: igcData.timezone,
       notes: 'Imported from IGC file${igcData.pilot.isNotEmpty ? '\nPilot: ${igcData.pilot}' : ''}${igcData.gliderType.isNotEmpty ? '\nGlider: ${igcData.gliderType}' : ''}',
     );
   }
@@ -234,6 +236,7 @@ class IgcImportService {
       notes: flight.notes,
       trackLogPath: flight.trackLogPath,
       source: flight.source,
+      timezone: flight.timezone,
     );
   }
 

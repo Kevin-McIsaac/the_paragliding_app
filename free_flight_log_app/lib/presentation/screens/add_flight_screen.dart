@@ -117,6 +117,7 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
             : null,
         notes: _notesController.text.isNotEmpty ? _notesController.text : null,
         source: 'manual',
+        timezone: null, // Manual flights don't have timezone info
       );
 
       await _flightRepository.insertFlight(flight);

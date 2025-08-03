@@ -24,6 +24,7 @@ class IgcParser {
     String pilot = '';
     String gliderType = '';
     String gliderID = '';
+    String? timezone;
 
     for (final line in lines) {
       if (line.isEmpty) continue;
@@ -44,12 +45,14 @@ class IgcParser {
             gliderType = _extractHeaderValue(line, 'HFGTYGLIDERTYPE');
           } else if (line.startsWith('HFGIDGLIDERID')) {
             gliderID = _extractHeaderValue(line, 'HFGIDGLIDERID');
+          } else if (line.startsWith('HFTZNUTCOFFSET') || line.startsWith('HFTZN')) {
+            timezone = _parseTimezone(line);
           }
           break;
           
         case 'B':
           // B record (track point)
-          final point = _parseBRecord(line, flightDate ?? DateTime.now());
+          final point = _parseBRecord(line, flightDate ?? DateTime.now(), timezone);
           if (point != null) {
             trackPoints.add(point);
           }
@@ -73,6 +76,7 @@ class IgcParser {
       gliderID: gliderID,
       trackPoints: trackPoints,
       headers: headers,
+      timezone: timezone,
     );
   }
 
@@ -99,6 +103,46 @@ class IgcParser {
     return value;
   }
 
+  /// Parse timezone offset from HFTZNUTCOFFSET or similar header
+  /// Converts formats like "+10.00h", "-05.30h" to standard "+10:00", "-05:30"
+  String? _parseTimezone(String line) {
+    try {
+      String value = _extractHeaderValue(line, line.startsWith('HFTZNUTCOFFSET') ? 'HFTZNUTCOFFSET' : 'HFTZN');
+      
+      if (value.isEmpty) return null;
+      
+      // Remove trailing 'h' if present
+      value = value.replaceAll(RegExp(r'h$'), '').trim();
+      
+      // Handle formats like "+10.00", "-05.30", "10.00"
+      final regex = RegExp(r'^([+-]?)(\d{1,2})\.(\d{2})$');
+      final match = regex.firstMatch(value);
+      
+      if (match != null) {
+        final sign = match.group(1) ?? '+'; // Default to positive if no sign
+        final hours = match.group(2)!.padLeft(2, '0');
+        final minutes = match.group(3)!;
+        
+        return '$sign$hours:$minutes';
+      }
+      
+      // Try simple integer format like "+10", "-5"
+      final simpleRegex = RegExp(r'^([+-]?)(\d{1,2})$');
+      final simpleMatch = simpleRegex.firstMatch(value);
+      
+      if (simpleMatch != null) {
+        final sign = simpleMatch.group(1) ?? '+';
+        final hours = simpleMatch.group(2)!.padLeft(2, '0');
+        return '$sign$hours:00';
+      }
+      
+      return null;
+    } catch (e) {
+      print('Error parsing timezone: $e');
+      return null;
+    }
+  }
+
   /// Parse date from HFDTE record
   DateTime? _parseDate(String line) {
     // HFDTEDDMMYY where DD is day, MM is month, YY is year
@@ -118,7 +162,7 @@ class IgcParser {
   }
 
   /// Parse B record (track point)
-  IgcPoint? _parseBRecord(String line, DateTime flightDate) {
+  IgcPoint? _parseBRecord(String line, DateTime flightDate, String? timezone) {
     // B record format: B HHMMSS DDMMmmmN DDDMMmmmE V PPPPP GGGGG
     // Example: B1101355206343N00006198WA0058700558
     
@@ -158,7 +202,7 @@ class IgcParser {
       final gpsAlt = int.parse(line.substring(30, 35));
       
       // Create timestamp
-      final timestamp = DateTime(
+      DateTime timestamp = DateTime(
         flightDate.year,
         flightDate.month,
         flightDate.day,
@@ -166,6 +210,11 @@ class IgcParser {
         minutes,
         seconds,
       );
+      
+      // Apply timezone offset if available
+      if (timezone != null) {
+        timestamp = _applyTimezoneOffset(timestamp, timezone);
+      }
       
       return IgcPoint(
         timestamp: timestamp,
@@ -178,6 +227,34 @@ class IgcParser {
     } catch (e) {
       print('Error parsing B record: $e');
       return null;
+    }
+  }
+
+  /// Apply timezone offset to a DateTime
+  /// Takes a timezone string like "+10:00" or "-05:30" and applies the offset
+  DateTime _applyTimezoneOffset(DateTime dateTime, String timezone) {
+    try {
+      // Parse timezone offset (e.g., "+10:00", "-05:30")
+      final regex = RegExp(r'^([+-])(\d{2}):(\d{2})$');
+      final match = regex.firstMatch(timezone);
+      
+      if (match == null) {
+        return dateTime; // Return original if timezone format is invalid
+      }
+      
+      final isPositive = match.group(1) == '+';
+      final hours = int.parse(match.group(2)!);
+      final minutes = int.parse(match.group(3)!);
+      
+      final offsetMinutes = (hours * 60) + minutes;
+      final duration = Duration(minutes: isPositive ? -offsetMinutes : offsetMinutes);
+      
+      // Convert local time to UTC by subtracting the offset
+      // If timezone is +10:00, the local time is 10 hours ahead of UTC
+      return dateTime.add(duration);
+    } catch (e) {
+      print('Error applying timezone offset: $e');
+      return dateTime;
     }
   }
 }

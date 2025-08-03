@@ -8,6 +8,7 @@ class IgcFile {
   final String gliderID;
   final List<IgcPoint> trackPoints;
   final Map<String, String> headers;
+  final String? timezone; // Timezone offset (e.g., "+10:00", "-05:30", null for UTC)
   
   IgcFile({
     required this.date,
@@ -16,6 +17,7 @@ class IgcFile {
     required this.gliderID,
     required this.trackPoints,
     required this.headers,
+    this.timezone,
   });
 
   /// Get launch time from first track point
@@ -29,7 +31,15 @@ class IgcFile {
       : date;
 
   /// Calculate flight duration in minutes
-  int get duration => landingTime.difference(launchTime).inMinutes;
+  /// If duration is negative, assume flight crossed midnight and add 24 hours
+  int get duration {
+    final rawDuration = landingTime.difference(launchTime).inMinutes;
+    if (rawDuration < 0) {
+      // Flight crossed midnight - add 24 hours (1440 minutes)
+      return rawDuration + (24 * 60);
+    }
+    return rawDuration;
+  }
 
   /// Find maximum altitude
   double get maxAltitude => trackPoints.isEmpty 
