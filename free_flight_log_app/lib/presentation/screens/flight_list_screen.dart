@@ -5,6 +5,7 @@ import 'add_flight_screen.dart';
 import 'igc_import_screen.dart';
 import 'flight_detail_screen.dart';
 import 'wing_management_screen.dart';
+import 'statistics_screen.dart';
 
 class FlightListScreen extends StatefulWidget {
   const FlightListScreen({super.key});
@@ -223,9 +224,25 @@ class _FlightListScreenState extends State<FlightListScreen> {
                         builder: (context) => const WingManagementScreen(),
                       ),
                     );
+                  } else if (value == 'statistics') {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const StatisticsScreen(),
+                      ),
+                    );
                   }
                 },
                 itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'statistics',
+                    child: Row(
+                      children: [
+                        Icon(Icons.bar_chart),
+                        SizedBox(width: 8),
+                        Text('Statistics'),
+                      ],
+                    ),
+                  ),
                   if (_flights.isNotEmpty)
                     const PopupMenuItem(
                       value: 'select',

@@ -159,4 +159,93 @@ class FlightRepository {
       'highestAltitude': maxAltitudeResult.first['highest_altitude'] ?? 0.0,
     };
   }
+
+  /// Get flights grouped by year with total hours
+  Future<Map<int, double>> getFlightHoursByYear() async {
+    Database db = await _databaseHelper.database;
+    
+    List<Map<String, dynamic>> results = await db.rawQuery('''
+      SELECT 
+        CAST(strftime('%Y', date) AS INTEGER) as year,
+        SUM(duration) as total_minutes,
+        COUNT(*) as flight_count
+      FROM flights
+      GROUP BY year
+      ORDER BY year DESC
+    ''');
+    
+    Map<int, double> hoursByYear = {};
+    for (final row in results) {
+      final year = row['year'] as int;
+      final totalMinutes = (row['total_minutes'] as int?) ?? 0;
+      hoursByYear[year] = totalMinutes / 60.0; // Convert to hours
+    }
+    
+    return hoursByYear;
+  }
+
+  /// Get flight statistics grouped by year
+  Future<List<Map<String, dynamic>>> getYearlyStatistics() async {
+    Database db = await _databaseHelper.database;
+    
+    List<Map<String, dynamic>> results = await db.rawQuery('''
+      SELECT 
+        CAST(strftime('%Y', date) AS INTEGER) as year,
+        COUNT(*) as flight_count,
+        SUM(duration) as total_minutes,
+        MAX(max_altitude) as max_altitude
+      FROM flights
+      GROUP BY year
+      ORDER BY year DESC
+    ''');
+    
+    return results.map((row) {
+      final totalMinutes = (row['total_minutes'] as int?) ?? 0;
+      return {
+        'year': row['year'],
+        'flight_count': row['flight_count'] ?? 0,
+        'total_hours': totalMinutes / 60.0,
+        'max_altitude': row['max_altitude'] ?? 0,
+      };
+    }).toList();
+  }
+
+  /// Get total flight hours by wing (grouped by manufacturer and model)
+  Future<List<Map<String, dynamic>>> getWingStatistics() async {
+    Database db = await _databaseHelper.database;
+    
+    // First query groups by manufacturer and model combination
+    List<Map<String, dynamic>> results = await db.rawQuery('''
+      SELECT 
+        CASE 
+          WHEN w.manufacturer IS NOT NULL AND w.manufacturer != '' 
+               AND w.model IS NOT NULL AND w.model != ''
+          THEN w.manufacturer || ' ' || w.model
+          ELSE COALESCE(w.name, 'Unknown')
+        END as wing_name,
+        COUNT(f.id) as flight_count,
+        SUM(f.duration) as total_minutes,
+        MAX(f.max_altitude) as max_altitude,
+        COUNT(DISTINCT w.id) as wing_count
+      FROM wings w
+      LEFT JOIN flights f ON f.wing_id = w.id
+      WHERE f.id IS NOT NULL
+      GROUP BY wing_name
+      ORDER BY total_minutes DESC
+    ''');
+    
+    return results.map((row) {
+      final displayName = row['wing_name'] as String? ?? 'Unknown';
+      final totalMinutes = (row['total_minutes'] as int?) ?? 0;
+      final wingCount = (row['wing_count'] as int?) ?? 1;
+      
+      return {
+        'name': displayName,
+        'flight_count': row['flight_count'] ?? 0,
+        'total_hours': totalMinutes / 60.0,
+        'max_altitude': row['max_altitude'] ?? 0,
+        'wing_count': wingCount, // Number of individual wings of this type
+      };
+    }).toList();
+  }
 }
