@@ -21,6 +21,10 @@ class _FlightListScreenState extends State<FlightListScreen> {
   bool _isSelectionMode = false;
   Set<int> _selectedFlightIds = {};
   bool _isDeleting = false;
+  
+  // Sorting state
+  String _sortColumn = 'datetime';
+  bool _sortAscending = false; // Default to reverse (newest first)
 
   @override
   void initState() {
@@ -32,7 +36,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
     try {
       final flights = await _flightRepository.getAllFlights();
       setState(() {
-        _flights = flights;
+        _flights = _sortFlights(flights);
         _isLoading = false;
       });
     } catch (e) {
@@ -45,6 +49,60 @@ class _FlightListScreenState extends State<FlightListScreen> {
         );
       }
     }
+  }
+  
+  List<Flight> _sortFlights(List<Flight> flights) {
+    flights.sort((a, b) {
+      int comparison;
+      
+      switch (_sortColumn) {
+        case 'datetime':
+          // Combine date and time for sorting
+          final aDateTime = DateTime(
+            a.date.year, a.date.month, a.date.day,
+            int.parse(a.launchTime.split(':')[0]),
+            int.parse(a.launchTime.split(':')[1]),
+          );
+          final bDateTime = DateTime(
+            b.date.year, b.date.month, b.date.day,
+            int.parse(b.launchTime.split(':')[0]),
+            int.parse(b.launchTime.split(':')[1]),
+          );
+          comparison = aDateTime.compareTo(bDateTime);
+          break;
+        case 'duration':
+          comparison = a.duration.compareTo(b.duration);
+          break;
+        case 'distance':
+          final aDist = a.straightDistance ?? 0.0;
+          final bDist = b.straightDistance ?? 0.0;
+          comparison = aDist.compareTo(bDist);
+          break;
+        case 'altitude':
+          final aAlt = a.maxAltitude ?? 0.0;
+          final bAlt = b.maxAltitude ?? 0.0;
+          comparison = aAlt.compareTo(bAlt);
+          break;
+        default:
+          comparison = 0;
+      }
+      
+      return _sortAscending ? comparison : -comparison;
+    });
+    
+    return flights;
+  }
+  
+  void _sort(String column) {
+    setState(() {
+      if (_sortColumn == column) {
+        _sortAscending = !_sortAscending;
+      } else {
+        _sortColumn = column;
+        _sortAscending = true;
+      }
+      _flights = _sortFlights(_flights);
+    });
   }
 
   String _formatDuration(int minutes) {
@@ -353,15 +411,135 @@ class _FlightListScreenState extends State<FlightListScreen> {
           ),
         ),
         Expanded(
-          child: ListView.builder(
-            itemCount: _flights.length,
-            itemBuilder: (context, index) {
-              final flight = _flights[index];
-              return _buildFlightCard(flight);
-            },
-          ),
+          child: _buildFlightTable(),
         ),
       ],
+    );
+  }
+  
+  Widget _buildFlightTable() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: SingleChildScrollView(
+        child: DataTable(
+          showCheckboxColumn: _isSelectionMode,
+          sortColumnIndex: _sortColumn == 'datetime' ? 0 
+              : _sortColumn == 'duration' ? 1
+              : _sortColumn == 'distance' ? 2
+              : _sortColumn == 'altitude' ? 3
+              : 0,
+          sortAscending: _sortAscending,
+          columns: [
+            DataColumn(
+              label: const Text('Launch Date & Time'),
+              onSort: (columnIndex, ascending) => _sort('datetime'),
+            ),
+            DataColumn(
+              label: const Text('Duration'),
+              onSort: (columnIndex, ascending) => _sort('duration'),
+            ),
+            DataColumn(
+              label: const Text('Distance (km)'),
+              numeric: true,
+              onSort: (columnIndex, ascending) => _sort('distance'),
+            ),
+            DataColumn(
+              label: const Text('Max Alt (m)'),
+              numeric: true,
+              onSort: (columnIndex, ascending) => _sort('altitude'),
+            ),
+          ],
+          rows: _flights.map((flight) {
+            final isSelected = _selectedFlightIds.contains(flight.id);
+            return DataRow(
+              selected: isSelected,
+              onSelectChanged: _isSelectionMode 
+                  ? (selected) => _toggleFlightSelection(flight.id!)
+                  : null,
+              onLongPress: () {
+                if (!_isSelectionMode) {
+                  _toggleSelectionMode();
+                  _toggleFlightSelection(flight.id!);
+                }
+              },
+              cells: [
+                DataCell(
+                  Text(
+                    '${flight.date.day.toString().padLeft(2, '0')}/'
+                    '${flight.date.month.toString().padLeft(2, '0')}/'
+                    '${flight.date.year} ${flight.launchTime}',
+                  ),
+                  onTap: _isSelectionMode 
+                      ? null 
+                      : () async {
+                          final result = await Navigator.of(context).push<bool>(
+                            MaterialPageRoute(
+                              builder: (context) => FlightDetailScreen(flight: flight),
+                            ),
+                          );
+                          if (result == true) {
+                            _loadFlights(); // Reload if flight was deleted or modified
+                          }
+                        },
+                ),
+                DataCell(
+                  Text(_formatDuration(flight.duration)),
+                  onTap: _isSelectionMode 
+                      ? null 
+                      : () async {
+                          final result = await Navigator.of(context).push<bool>(
+                            MaterialPageRoute(
+                              builder: (context) => FlightDetailScreen(flight: flight),
+                            ),
+                          );
+                          if (result == true) {
+                            _loadFlights(); // Reload if flight was deleted or modified
+                          }
+                        },
+                ),
+                DataCell(
+                  Text(
+                    flight.straightDistance != null 
+                        ? flight.straightDistance!.toStringAsFixed(1)
+                        : '-',
+                  ),
+                  onTap: _isSelectionMode 
+                      ? null 
+                      : () async {
+                          final result = await Navigator.of(context).push<bool>(
+                            MaterialPageRoute(
+                              builder: (context) => FlightDetailScreen(flight: flight),
+                            ),
+                          );
+                          if (result == true) {
+                            _loadFlights(); // Reload if flight was deleted or modified
+                          }
+                        },
+                ),
+                DataCell(
+                  Text(
+                    flight.maxAltitude != null 
+                        ? flight.maxAltitude!.toInt().toString()
+                        : '-',
+                  ),
+                  onTap: _isSelectionMode 
+                      ? null 
+                      : () async {
+                          final result = await Navigator.of(context).push<bool>(
+                            MaterialPageRoute(
+                              builder: (context) => FlightDetailScreen(flight: flight),
+                            ),
+                          );
+                          if (result == true) {
+                            _loadFlights(); // Reload if flight was deleted or modified
+                          }
+                        },
+                ),
+              ],
+            );
+          }).toList(),
+        ),
+      ),
     );
   }
 
@@ -385,70 +563,4 @@ class _FlightListScreenState extends State<FlightListScreen> {
     );
   }
 
-  Widget _buildFlightCard(Flight flight) {
-    final isSelected = _selectedFlightIds.contains(flight.id);
-    
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      color: isSelected ? Theme.of(context).colorScheme.primaryContainer : null,
-      child: ListTile(
-        leading: _isSelectionMode 
-          ? Checkbox(
-              value: isSelected,
-              onChanged: (selected) => _toggleFlightSelection(flight.id!),
-            )
-          : CircleAvatar(
-              backgroundColor: Theme.of(context).colorScheme.primary,
-              child: Icon(
-                flight.source == 'igc' ? Icons.gps_fixed : Icons.flight_takeoff,
-                color: Colors.white,
-              ),
-            ),
-        title: Text(
-          '${flight.date.day}/${flight.date.month}/${flight.date.year}',
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('${flight.launchTime} - ${flight.landingTime}'),
-            Text(
-              'Duration: ${_formatDuration(flight.duration)}',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.primary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            if (flight.maxAltitude != null)
-              Text('Max altitude: ${flight.maxAltitude!.toInt()}m'),
-            if (flight.distance != null)
-              Text('Ground track: ${flight.distance!.toStringAsFixed(1)}km'),
-            if (flight.straightDistance != null)
-              Text('Straight: ${flight.straightDistance!.toStringAsFixed(1)}km'),
-          ],
-        ),
-        trailing: _isSelectionMode 
-          ? null 
-          : const Icon(Icons.chevron_right),
-        onTap: () async {
-          if (_isSelectionMode) {
-            _toggleFlightSelection(flight.id!);
-          } else {
-            final result = await Navigator.of(context).push<bool>(
-              MaterialPageRoute(
-                builder: (context) => FlightDetailScreen(flight: flight),
-              ),
-            );
-            if (result == true) {
-              _loadFlights(); // Reload if flight was deleted
-            }
-          }
-        },
-        onLongPress: _isSelectionMode ? null : () {
-          _toggleSelectionMode();
-          _toggleFlightSelection(flight.id!);
-        },
-      ),
-    );
-  }
 }
