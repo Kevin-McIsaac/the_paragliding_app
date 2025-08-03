@@ -408,7 +408,7 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
         color: Theme.of(context).colorScheme.surface,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -583,9 +583,7 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
   }
 
   Widget _buildMap() {
-    if (_mapController == null) {
-      _mapController = MapController();
-    }
+    _mapController ??= MapController();
     
     return FlutterMap(
       mapController: _mapController,

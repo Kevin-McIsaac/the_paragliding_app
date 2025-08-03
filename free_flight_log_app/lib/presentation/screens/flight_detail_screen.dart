@@ -346,61 +346,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Flight Overview Card
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Flight Overview',
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildInfoTile(
-                                  'Date',
-                                  _formatDate(_flight.date),
-                                  Icons.calendar_today,
-                                ),
-                              ),
-                              Expanded(
-                                child: _buildInfoTile(
-                                  'Duration',
-                                  _formatDuration(_flight.duration),
-                                  Icons.access_time,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildInfoTile(
-                                  'Launch',
-                                  _flight.launchTime,
-                                  Icons.flight_takeoff,
-                                ),
-                              ),
-                              Expanded(
-                                child: _buildInfoTile(
-                                  'Landing',
-                                  _flight.landingTime,
-                                  Icons.flight_land,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
 
                   // Flight Track with Statistics Card
                   if (_flight.trackLogPath != null && _flight.source == 'igc')
@@ -441,7 +386,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
 
                   const SizedBox(height: 16),
 
-                  // Sites Card
+                  // Flight Details Card (Combined Overview, Sites, and Equipment)
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),
@@ -449,67 +394,15 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Sites',
+                            'Flight Details',
                             style: Theme.of(context).textTheme.titleLarge,
                           ),
                           const SizedBox(height: 16),
-                          if (_launchSite != null)
-                            ListTile(
-                              leading: const Icon(Icons.flight_takeoff),
-                              title: const Text('Launch Site'),
-                              subtitle: Text(_launchSite!.name),
-                              trailing: Text(
-                                '${_launchSite!.latitude.toStringAsFixed(4)}, ${_launchSite!.longitude.toStringAsFixed(4)}',
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                            ),
-                          if (_landingSite != null)
-                            ListTile(
-                              leading: const Icon(Icons.flight_land),
-                              title: const Text('Landing Site'),
-                              subtitle: Text(_landingSite!.name),
-                              trailing: Text(
-                                '${_landingSite!.latitude.toStringAsFixed(4)}, ${_landingSite!.longitude.toStringAsFixed(4)}',
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                            ),
-                          if (_launchSite == null && _landingSite == null)
-                            const ListTile(
-                              leading: Icon(Icons.location_off),
-                              title: Text('No site information'),
-                              subtitle: Text('Sites were not recorded for this flight'),
-                            ),
+                          _buildFlightDetailsContent(),
                         ],
                       ),
                     ),
                   ),
-
-                  const SizedBox(height: 16),
-
-
-                  // Equipment Card
-                  if (_wing != null)
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Equipment',
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                            const SizedBox(height: 16),
-                            ListTile(
-                              leading: const Icon(Icons.paragliding),
-                              title: Text(_wing!.manufacturer ?? 'Unknown'),
-                              subtitle: Text(_wing!.model ?? 'Unknown'),
-                              trailing: Text(_wing!.size ?? ''),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
 
                   const SizedBox(height: 16),
 
@@ -788,21 +681,132 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
     );
   }
 
-  Widget _buildInfoTile(String label, String value, IconData icon) {
+  Widget _buildFlightDetailsContent() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, color: Theme.of(context).colorScheme.primary),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12, color: Colors.grey),
+        // Line 1: Date and Duration
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.calendar_today, size: 18, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: RichText(
+                text: TextSpan(
+                  style: Theme.of(context).textTheme.bodyMedium,
+                  children: [
+                    const TextSpan(
+                      text: 'Date: ',
+                      style: TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    TextSpan(text: _formatDate(_flight.date)),
+                    const TextSpan(text: ' • '),
+                    const TextSpan(
+                      text: 'Duration: ',
+                      style: TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    TextSpan(text: _formatDuration(_flight.duration)),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        const SizedBox(height: 12),
+        
+        // Line 2: Launch Time and Site
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.flight_takeoff, size: 18, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: RichText(
+                text: TextSpan(
+                  style: Theme.of(context).textTheme.bodyMedium,
+                  children: [
+                    const TextSpan(
+                      text: 'Launch: ',
+                      style: TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    TextSpan(text: _flight.launchTime),
+                    if (_launchSite != null) ...[
+                      const TextSpan(text: ' at '),
+                      TextSpan(text: _launchSite!.name),
+                    ] else
+                      const TextSpan(
+                        text: ' (location not recorded)',
+                        style: TextStyle(fontStyle: FontStyle.italic),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
+        const SizedBox(height: 12),
+        
+        // Line 3: Landing Time and Site
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.flight_land, size: 18, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: RichText(
+                text: TextSpan(
+                  style: Theme.of(context).textTheme.bodyMedium,
+                  children: [
+                    const TextSpan(
+                      text: 'Landing: ',
+                      style: TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    TextSpan(text: _flight.landingTime),
+                    if (_landingSite != null) ...[
+                      const TextSpan(text: ' at '),
+                      TextSpan(text: _landingSite!.name),
+                    ] else
+                      const TextSpan(
+                        text: ' (location not recorded)',
+                        style: TextStyle(fontStyle: FontStyle.italic),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        
+        // Line 4: Equipment (if available)
+        if (_wing != null) ...[
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.paragliding, size: 18, color: Theme.of(context).colorScheme.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: RichText(
+                  text: TextSpan(
+                    style: Theme.of(context).textTheme.bodyMedium,
+                    children: [
+                      const TextSpan(
+                        text: 'Equipment: ',
+                        style: TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                      TextSpan(
+                        text: '${_wing!.manufacturer ?? 'Unknown'} ${_wing!.model ?? 'Unknown'}',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }
+
 }
