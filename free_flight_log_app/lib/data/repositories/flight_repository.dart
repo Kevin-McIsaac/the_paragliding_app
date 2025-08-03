@@ -118,6 +118,26 @@ class FlightRepository {
     return List.generate(maps.length, (i) => Flight.fromMap(maps[i]));
   }
 
+  /// Find flight by date and launch time to check for duplicates
+  Future<Flight?> findFlightByDateTime(DateTime date, String launchTime) async {
+    Database db = await _databaseHelper.database;
+    
+    // Format date as ISO string for database comparison
+    final dateStr = date.toIso8601String().split('T')[0]; // Get just the date part
+    
+    List<Map<String, dynamic>> maps = await db.query(
+      'flights',
+      where: 'DATE(date) = ? AND launch_time = ?',
+      whereArgs: [dateStr, launchTime],
+      limit: 1,
+    );
+    
+    if (maps.isNotEmpty) {
+      return Flight.fromMap(maps.first);
+    }
+    return null;
+  }
+
   Future<Map<String, dynamic>> getFlightStatistics() async {
     Database db = await _databaseHelper.database;
     

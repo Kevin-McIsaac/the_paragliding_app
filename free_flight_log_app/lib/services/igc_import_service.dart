@@ -5,6 +5,7 @@ import '../data/models/flight.dart';
 import '../data/models/site.dart';
 import '../data/models/wing.dart';
 import '../data/models/igc_file.dart';
+import '../data/models/import_result.dart';
 import '../data/repositories/flight_repository.dart';
 import '../data/repositories/site_repository.dart';
 import '../data/repositories/wing_repository.dart';
@@ -15,17 +16,125 @@ class IgcImportService {
   final FlightRepository _flightRepository = FlightRepository();
   final SiteRepository _siteRepository = SiteRepository();
   final WingRepository _wingRepository = WingRepository();
-  final IgcParser _parser = IgcParser();
+  final IgcParser parser = IgcParser();
 
-  /// Import an IGC file and create a flight record
-  Future<Flight> importIgcFile(String filePath) async {
-    // Parse IGC file
-    final igcData = await _parser.parseFile(filePath);
-    
-    if (igcData.trackPoints.isEmpty) {
-      throw Exception('No track points found in IGC file');
+  /// Check if a flight with the same date and time already exists
+  Future<Flight?> checkForDuplicate(String filePath) async {
+    try {
+      // Parse IGC file to get flight details
+      final igcData = await parser.parseFile(filePath);
+      
+      if (igcData.trackPoints.isEmpty) {
+        return null;
+      }
+
+      // Format launch time to match database format
+      final launchTime = _formatTime(igcData.launchTime);
+      
+      // Check for existing flight with same date and launch time
+      return await _flightRepository.findFlightByDateTime(igcData.date, launchTime);
+    } catch (e) {
+      // If we can't parse the file, we can't check for duplicates
+      return null;
     }
+  }
 
+  /// Import an IGC file with duplicate handling
+  /// Returns ImportResult indicating what action was taken
+  Future<ImportResult> importIgcFileWithDuplicateHandling(
+    String filePath, {
+    bool replace = false,
+  }) async {
+    final fileName = path.basename(filePath);
+    
+    try {
+      // Parse IGC file
+      final igcData = await parser.parseFile(filePath);
+      
+      if (igcData.trackPoints.isEmpty) {
+        return ImportResult.failed(
+          fileName: fileName,
+          errorMessage: 'No track points found in IGC file',
+        );
+      }
+
+      // Format launch time to match database format
+      final launchTime = _formatTime(igcData.launchTime);
+      
+      // Check for existing flight
+      final existingFlight = await _flightRepository.findFlightByDateTime(
+        igcData.date, 
+        launchTime,
+      );
+
+      if (existingFlight != null && !replace) {
+        // Duplicate found and user chose to skip
+        return ImportResult.skipped(
+          fileName: fileName,
+          flightDate: igcData.date,
+          flightTime: launchTime,
+          duration: igcData.duration,
+        );
+      }
+
+      // Create flight record (either new or replacement)
+      final flight = await _createFlightFromIgcData(igcData, filePath);
+      
+      if (existingFlight != null && replace) {
+        // Replace existing flight
+        final updatedFlight = Flight(
+          id: existingFlight.id,
+          date: flight.date,
+          launchTime: flight.launchTime,
+          landingTime: flight.landingTime,
+          duration: flight.duration,
+          launchSiteId: flight.launchSiteId,
+          landingSiteId: flight.landingSiteId,
+          wingId: flight.wingId,
+          maxAltitude: flight.maxAltitude,
+          maxClimbRate: flight.maxClimbRate,
+          maxSinkRate: flight.maxSinkRate,
+          maxClimbRate5Sec: flight.maxClimbRate5Sec,
+          maxSinkRate5Sec: flight.maxSinkRate5Sec,
+          distance: flight.distance,
+          straightDistance: flight.straightDistance,
+          trackLogPath: flight.trackLogPath,
+          source: flight.source,
+          notes: flight.notes,
+          createdAt: existingFlight.createdAt, // Keep original creation time
+        );
+        
+        await _flightRepository.updateFlight(updatedFlight);
+        
+        return ImportResult.replaced(
+          fileName: fileName,
+          flightId: existingFlight.id,
+          flightDate: igcData.date,
+          flightTime: launchTime,
+          duration: igcData.duration,
+        );
+      } else {
+        // Import as new flight
+        final savedFlightId = await _flightRepository.insertFlight(flight);
+        
+        return ImportResult.imported(
+          fileName: fileName,
+          flightId: savedFlightId,
+          flightDate: igcData.date,
+          flightTime: launchTime,
+          duration: igcData.duration,
+        );
+      }
+    } catch (e) {
+      return ImportResult.failed(
+        fileName: fileName,
+        errorMessage: e.toString(),
+      );
+    }
+  }
+
+  /// Create a flight record from IGC data (shared between import methods)
+  Future<Flight> _createFlightFromIgcData(IgcFile igcData, String filePath) async {
     // Calculate flight statistics
     final groundTrackDistance = igcData.calculateGroundTrackDistance();
     final straightDistance = igcData.calculateLaunchToLandingDistance();
@@ -58,9 +167,6 @@ class IgcImportService {
 
     // Get or create wing from glider information
     Wing? wing;
-    print('=== DEBUG: IGC Import ===');
-    print('gliderType: "${igcData.gliderType}"');
-    print('gliderID: "${igcData.gliderID}"');
     if (igcData.gliderType.isNotEmpty || igcData.gliderID.isNotEmpty) {
       wing = await _findOrCreateWing(
         gliderType: igcData.gliderType,
@@ -72,7 +178,7 @@ class IgcImportService {
     final trackLogPath = await _saveIgcFile(filePath);
 
     // Create flight record
-    final flight = Flight(
+    return Flight(
       date: igcData.date,
       launchTime: _formatTime(igcData.launchTime),
       landingTime: _formatTime(igcData.landingTime),
@@ -91,6 +197,19 @@ class IgcImportService {
       source: 'igc',
       notes: 'Imported from IGC file${igcData.pilot.isNotEmpty ? '\nPilot: ${igcData.pilot}' : ''}${igcData.gliderType.isNotEmpty ? '\nGlider: ${igcData.gliderType}' : ''}',
     );
+  }
+
+  /// Import an IGC file and create a flight record (legacy method)
+  Future<Flight> importIgcFile(String filePath) async {
+    // Parse IGC file
+    final igcData = await parser.parseFile(filePath);
+    
+    if (igcData.trackPoints.isEmpty) {
+      throw Exception('No track points found in IGC file');
+    }
+
+    // Create flight record
+    final flight = await _createFlightFromIgcData(igcData, filePath);
 
     // Save to database
     final savedFlightId = await _flightRepository.insertFlight(flight);
@@ -111,6 +230,7 @@ class IgcImportService {
       maxClimbRate5Sec: flight.maxClimbRate5Sec,
       maxSinkRate5Sec: flight.maxSinkRate5Sec,
       distance: flight.distance,
+      straightDistance: flight.straightDistance,
       notes: flight.notes,
       trackLogPath: flight.trackLogPath,
       source: flight.source,
@@ -154,7 +274,7 @@ class IgcImportService {
   /// Get track points from saved IGC file
   Future<List<IgcPoint>> getTrackPoints(String trackLogPath) async {
     try {
-      final igcData = await _parser.parseFile(trackLogPath);
+      final igcData = await parser.parseFile(trackLogPath);
       return igcData.trackPoints;
     } catch (e) {
       print('Error reading track points: $e');
@@ -164,7 +284,7 @@ class IgcImportService {
 
   /// Get full IGC file data from saved file
   Future<IgcFile> getIgcFile(String trackLogPath) async {
-    return await _parser.parseFile(trackLogPath);
+    return await parser.parseFile(trackLogPath);
   }
 
   /// Find existing wing or create new one from IGC glider information

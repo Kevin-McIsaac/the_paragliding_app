@@ -4,6 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import '../../services/igc_import_service.dart';
 import '../../data/models/flight.dart';
+import '../../data/models/import_result.dart';
+import '../widgets/duplicate_flight_dialog.dart';
 
 class IgcImportScreen extends StatefulWidget {
   const IgcImportScreen({super.key});
@@ -17,10 +19,13 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
   bool _isLoading = false;
   List<String> _selectedFilePaths = [];
   String? _errorMessage;
-  List<Flight> _importedFlights = [];
-  Map<String, String> _importErrors = {};
+  List<ImportResult> _importResults = [];
   String? _currentlyProcessingFile;
   String? _lastFolder;
+  
+  // User preferences for handling duplicates
+  bool _skipAllDuplicates = false;
+  bool _replaceAllDuplicates = false;
   
   static const String _lastFolderKey = 'last_igc_import_folder';
   
@@ -92,9 +97,11 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
         setState(() {
           _selectedFilePaths = validPaths;
           _errorMessage = null;
-          _importErrors.clear();
-          _importedFlights.clear();
+          _importResults.clear();
           _currentlyProcessingFile = null;
+          // Reset duplicate handling preferences for new batch
+          _skipAllDuplicates = false;
+          _replaceAllDuplicates = false;
         });
       }
     } catch (e) {
@@ -110,12 +117,11 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
-      _importErrors.clear();
-      _importedFlights.clear();
+      _importResults.clear();
+      // Reset preferences for this import session
+      _skipAllDuplicates = false;
+      _replaceAllDuplicates = false;
     });
-
-    int successCount = 0;
-    int failureCount = 0;
 
     for (final filePath in _selectedFilePaths) {
       setState(() {
@@ -123,77 +129,235 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
       });
       
       try {
-        final flight = await _importService.importIgcFile(filePath);
+        // Check for duplicates first
+        final existingFlight = await _importService.checkForDuplicate(filePath);
+        bool shouldReplace = false;
+        
+        if (existingFlight != null) {
+          // Duplicate found - check user preferences
+          if (_skipAllDuplicates) {
+            // User chose skip all, create skipped result
+            final result = await _importService.importIgcFileWithDuplicateHandling(
+              filePath,
+              replace: false,
+            );
+            setState(() {
+              _importResults.add(result);
+            });
+            continue;
+          } else if (_replaceAllDuplicates) {
+            shouldReplace = true;
+          } else {
+            // Show dialog to user
+            final action = await _showDuplicateDialog(existingFlight, filePath);
+            
+            if (action == DuplicateAction.skip) {
+              // Skip this file
+              final result = await _importService.importIgcFileWithDuplicateHandling(
+                filePath,
+                replace: false,
+              );
+              setState(() {
+                _importResults.add(result);
+              });
+              continue;
+            } else if (action == DuplicateAction.skipAll) {
+              // Skip this and all remaining duplicates
+              setState(() {
+                _skipAllDuplicates = true;
+              });
+              final result = await _importService.importIgcFileWithDuplicateHandling(
+                filePath,
+                replace: false,
+              );
+              setState(() {
+                _importResults.add(result);
+              });
+              continue;
+            } else if (action == DuplicateAction.replace) {
+              shouldReplace = true;
+            } else if (action == DuplicateAction.replaceAll) {
+              // Replace this and all remaining duplicates
+              setState(() {
+                _replaceAllDuplicates = true;
+              });
+              shouldReplace = true;
+            }
+          }
+        }
+        
+        // Import the file (either new or replace)
+        final result = await _importService.importIgcFileWithDuplicateHandling(
+          filePath,
+          replace: shouldReplace,
+        );
+        
         setState(() {
-          _importedFlights.add(flight);
+          _importResults.add(result);
         });
-        successCount++;
+        
       } catch (e) {
+        final result = ImportResult.failed(
+          fileName: filePath.split('/').last,
+          errorMessage: e.toString(),
+        );
         setState(() {
-          _importErrors[filePath.split('/').last] = e.toString();
+          _importResults.add(result);
         });
-        failureCount++;
       }
     }
 
     setState(() {
       _currentlyProcessingFile = null;
-    });
-
-    setState(() {
       _isLoading = false;
     });
 
+    // Show results dialog
     if (mounted) {
-      showDialog(
+      await _showResultsDialog();
+    }
+  }
+
+  /// Show duplicate handling dialog to user
+  Future<DuplicateAction?> _showDuplicateDialog(Flight existingFlight, String filePath) async {
+    // Parse the IGC file to get details for comparison
+    try {
+      final igcData = await _importService.parser.parseFile(filePath);
+      
+      return await showDialog<DuplicateAction>(
         context: context,
-        builder: (context) => AlertDialog(
-          title: Text(failureCount == 0 ? 'Import Successful' : 'Import Complete'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Imported $successCount flight${successCount != 1 ? 's' : ''} successfully!'),
-                if (failureCount > 0) ...[
-                  const SizedBox(height: 8),
-                  Text('$failureCount file${failureCount != 1 ? 's' : ''} failed to import.'),
-                ],
-                const SizedBox(height: 16),
-                if (_importedFlights.isNotEmpty) ...[
-                  const Text('Successfully imported:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  ..._importedFlights.map((flight) => Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text('• ${_formatDate(flight.date)} - ${flight.duration} min'),
-                  )),
-                ],
-                if (_importErrors.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  const Text('Failed imports:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
-                  const SizedBox(height: 8),
-                  ..._importErrors.entries.map((entry) => Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text('• ${entry.key}: ${entry.value}', style: const TextStyle(color: Colors.red)),
-                  )),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                if (successCount > 0) {
-                  Navigator.of(context).pop(true); // Return to flight list
-                }
-              },
-              child: const Text('OK'),
-            ),
-          ],
+        barrierDismissible: false,
+        builder: (context) => DuplicateFlightDialog(
+          existingFlight: existingFlight,
+          newFileName: filePath.split('/').last,
+          newFlightDate: igcData.date,
+          newFlightTime: _formatTime(igcData.launchTime),
+          newFlightDuration: igcData.duration,
         ),
       );
+    } catch (e) {
+      // If we can't parse the file, default to skip
+      return DuplicateAction.skip;
     }
+  }
+
+  /// Show final results dialog
+  Future<void> _showResultsDialog() async {
+    final summary = ImportSummary(_importResults);
+    
+    return showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(summary.failedCount == 0 ? 'Import Complete' : 'Import Complete with Errors'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                summary.summaryMessage,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 16),
+              
+              // Imported flights
+              if (summary.imported.isNotEmpty) ...[
+                Text(
+                  'Successfully Imported (${summary.importedCount}):',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green.shade700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ...summary.imported.map((result) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    '• ${result.fileName} - ${result.flightInfo}',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                )),
+                const SizedBox(height: 12),
+              ],
+              
+              // Replaced flights
+              if (summary.replaced.isNotEmpty) ...[
+                Text(
+                  'Replaced Existing (${summary.replacedCount}):',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.orange.shade700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ...summary.replaced.map((result) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    '• ${result.fileName} - ${result.flightInfo}',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                )),
+                const SizedBox(height: 12),
+              ],
+              
+              // Skipped flights
+              if (summary.skipped.isNotEmpty) ...[
+                Text(
+                  'Skipped (${summary.skippedCount}):',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ...summary.skipped.map((result) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    '• ${result.fileName} - ${result.flightInfo}',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                )),
+                const SizedBox(height: 12),
+              ],
+              
+              // Failed imports
+              if (summary.failed.isNotEmpty) ...[
+                Text(
+                  'Failed (${summary.failedCount}):',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.red,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ...summary.failed.map((result) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    '• ${result.fileName}: ${result.errorMessage}',
+                    style: const TextStyle(fontSize: 12, color: Colors.red),
+                  ),
+                )),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              if (summary.successCount > 0) {
+                Navigator.of(context).pop(true); // Return to flight list
+              }
+            },
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatTime(DateTime time) {
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
   }
 
   String _formatDate(DateTime date) {
@@ -294,9 +458,10 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
                         onPressed: () {
                           setState(() {
                             _selectedFilePaths.clear();
-                            _importErrors.clear();
-                            _importedFlights.clear();
+                            _importResults.clear();
                             _currentlyProcessingFile = null;
+                            _skipAllDuplicates = false;
+                            _replaceAllDuplicates = false;
                           });
                         },
                       ),
@@ -367,7 +532,7 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
                       Text('Processing: $_currentlyProcessingFile'),
                       const SizedBox(height: 4),
                       Text(
-                        'Imported ${_importedFlights.length} of ${_selectedFilePaths.length} files',
+                        'Processed ${_importResults.length} of ${_selectedFilePaths.length} files',
                         style: const TextStyle(fontSize: 12, color: Colors.grey),
                       ),
                     ],

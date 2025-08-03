@@ -275,9 +275,12 @@ flutter upgrade
 
 ## Recent Updates
 
-### August 2025 - IGC Date Format Fix
+### August 2025 - IGC Import Enhancements
 - **HFDTE Parsing Correction**: Fixed IGC date parsing from incorrect YYMMDD to correct DDMMYY format
 - **Date Accuracy**: Ensures flight dates are parsed correctly from IGC file headers
+- **Duplicate Detection**: Added comprehensive duplicate flight detection during IGC import
+- **User Choice Options**: Implemented Skip/Skip All/Replace/Replace All options for duplicate handling
+- **Enhanced Results**: Detailed import results showing imported, replaced, skipped, and failed files
 - **Parser Update**: Updated `IgcParser._parseDate()` method with correct format interpretation
 
 ### December 2024 - Enhanced Climb Rate Analysis
@@ -290,10 +293,14 @@ flutter upgrade
 
 ### Key Files Updated
 - `lib/services/igc_parser.dart`: Fixed HFDTE date format parsing (DDMMYY)
+- `lib/data/models/import_result.dart`: New models for tracking import results (NEW)
+- `lib/data/repositories/flight_repository.dart`: Added duplicate detection method
+- `lib/presentation/widgets/duplicate_flight_dialog.dart`: User choice dialog for duplicates (NEW)
+- `lib/services/igc_import_service.dart`: Enhanced IGC processing with duplicate handling
+- `lib/presentation/screens/igc_import_screen.dart`: Updated UI for duplicate handling
 - `lib/data/models/igc_file.dart`: Core climb rate calculation algorithms
 - `lib/data/models/flight.dart`: Added 15-second climb rate fields
 - `lib/data/datasources/database_helper.dart`: Database migration support
 - `lib/presentation/screens/flight_detail_screen.dart`: Enhanced statistics display
 - `lib/presentation/screens/flight_track_screen.dart`: Updated track visualization
-- `lib/services/igc_import_service.dart`: Enhanced IGC processing
 - Test files: Updated for 15-second calculations
