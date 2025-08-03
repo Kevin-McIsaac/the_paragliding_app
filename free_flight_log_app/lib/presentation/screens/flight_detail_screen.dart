@@ -685,7 +685,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Line 1: Date and Duration
+        // Line 1: Date, Duration, and Equipment
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -696,17 +696,13 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                 text: TextSpan(
                   style: Theme.of(context).textTheme.bodyMedium,
                   children: [
-                    const TextSpan(
-                      text: 'Date: ',
-                      style: TextStyle(fontWeight: FontWeight.w500),
-                    ),
                     TextSpan(text: _formatDate(_flight.date)),
-                    const TextSpan(text: ' • '),
-                    const TextSpan(
-                      text: 'Duration: ',
-                      style: TextStyle(fontWeight: FontWeight.w500),
-                    ),
+                    const TextSpan(text: ' for '),
                     TextSpan(text: _formatDuration(_flight.duration)),
+                    if (_wing != null) ...[
+                      const TextSpan(text: ' using '),
+                      TextSpan(text: '${_wing!.manufacturer ?? 'Unknown'} ${_wing!.model ?? 'Unknown'}'),
+                    ],
                   ],
                 ),
               ),
@@ -726,19 +722,20 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                 text: TextSpan(
                   style: Theme.of(context).textTheme.bodyMedium,
                   children: [
-                    const TextSpan(
-                      text: 'Launch: ',
-                      style: TextStyle(fontWeight: FontWeight.w500),
-                    ),
-                    TextSpan(text: _flight.launchTime),
                     if (_launchSite != null) ...[
-                      const TextSpan(text: ' at '),
                       TextSpan(text: _launchSite!.name),
-                    ] else
+                      const TextSpan(
+                        text: ' @ ',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      TextSpan(text: _flight.launchTime),
+                    ] else ...[
+                      TextSpan(text: _flight.launchTime),
                       const TextSpan(
                         text: ' (location not recorded)',
                         style: TextStyle(fontStyle: FontStyle.italic),
                       ),
+                    ],
                   ],
                 ),
               ),
@@ -758,53 +755,26 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                 text: TextSpan(
                   style: Theme.of(context).textTheme.bodyMedium,
                   children: [
-                    const TextSpan(
-                      text: 'Landing: ',
-                      style: TextStyle(fontWeight: FontWeight.w500),
-                    ),
-                    TextSpan(text: _flight.landingTime),
                     if (_landingSite != null) ...[
-                      const TextSpan(text: ' at '),
                       TextSpan(text: _landingSite!.name),
-                    ] else
+                      const TextSpan(
+                        text: ' @ ',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      TextSpan(text: _flight.landingTime),
+                    ] else ...[
+                      TextSpan(text: _flight.landingTime),
                       const TextSpan(
                         text: ' (location not recorded)',
                         style: TextStyle(fontStyle: FontStyle.italic),
                       ),
+                    ],
                   ],
                 ),
               ),
             ),
           ],
         ),
-        
-        // Line 4: Equipment (if available)
-        if (_wing != null) ...[
-          const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(Icons.paragliding, size: 18, color: Theme.of(context).colorScheme.primary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: RichText(
-                  text: TextSpan(
-                    style: Theme.of(context).textTheme.bodyMedium,
-                    children: [
-                      const TextSpan(
-                        text: 'Equipment: ',
-                        style: TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                      TextSpan(
-                        text: '${_wing!.manufacturer ?? 'Unknown'} ${_wing!.model ?? 'Unknown'}',
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
       ],
     );
   }
