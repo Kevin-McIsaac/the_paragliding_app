@@ -10,7 +10,6 @@ import '../../data/repositories/flight_repository.dart';
 import '../../data/repositories/site_repository.dart';
 import '../../data/repositories/wing_repository.dart';
 import '../../services/igc_import_service.dart';
-import 'edit_flight_screen.dart';
 import 'flight_track_screen.dart';
 
 class FlightDetailScreen extends StatefulWidget {
@@ -244,21 +243,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
     );
   }
 
-  Future<void> _editFlight() async {
-    final updatedFlight = await Navigator.of(context).push<Flight>(
-      MaterialPageRoute(
-        builder: (context) => EditFlightScreen(flight: _flight),
-      ),
-    );
-
-    if (updatedFlight != null) {
-      setState(() {
-        _flight = updatedFlight;
-        _flightModified = true;
-      });
-      _loadFlightDetails();
-    }
-  }
 
   Future<void> _deleteFlight() async {
     final confirmed = await showDialog<bool>(
@@ -763,10 +747,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
           onPressed: () => Navigator.of(context).pop(_flightModified),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.edit),
-            onPressed: _editFlight,
-          ),
           PopupMenuButton<String>(
             onSelected: (value) {
               if (value == 'delete') {

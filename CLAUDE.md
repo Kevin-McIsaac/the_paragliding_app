@@ -104,11 +104,12 @@ lib/
 - **Wing Repository**: Equipment tracking with usage stats
 - **Flight List Screen**: Material Design 3 UI with empty states
 - **Add Flight Form**: Comprehensive form with validation
-- **Flight Detail Screen**: Complete flight information with climb rate statistics
+- **Flight Detail Screen**: Complete flight information with inline editing capabilities
 - **IGC Import Service**: Full IGC file parsing with climb rate calculations
 - **IGC Import Screen**: File selection with folder memory and batch import
 - **Flight Track Visualization**: OpenStreetMap (flutter_map) and canvas-based track display
 - **Navigation**: Screen transitions with result callbacks
+- **Inline Editing**: Direct editing of flight details without separate edit screens
 
 ## Development Status
 
@@ -120,7 +121,7 @@ lib/
 5. ✅ Local SQLite persistence with cross-platform support
 6. ✅ IGC file import and parsing with climb rate calculations
 7. ✅ OpenStreetMap integration for cross-platform track visualization
-8. ✅ Flight detail view with edit capability and comprehensive statistics
+8. ✅ Flight detail view with inline editing capability and comprehensive statistics
 9. ✅ Wing/equipment management with automatic creation from IGC data
 10. ✅ Database migrations for schema updates
 
@@ -276,6 +277,20 @@ flutter upgrade
 
 ## Recent Updates
 
+### August 2025 - Inline Editing Implementation
+- **Complete Inline Editing**: Implemented comprehensive inline editing for all flight details
+- **Notes Editing**: Click-to-edit notes with TextFormField, save/cancel buttons, and empty state handling
+- **Flight Details Editing**: Tap-to-edit functionality for all fields:
+  - **Date**: Tap date → DatePicker dialog
+  - **Times**: Tap launch/landing times → TimePicker dialogs with auto-duration calculation
+  - **Sites**: Tap site names → Site selection dialogs with radio button interface
+  - **Equipment**: Tap wing name → Wing selection dialog
+- **Visual Indicators**: Underlined editable fields with theme colors for clear interaction cues
+- **Simplified Interface**: Removed separate EditFlightScreen and edit button for streamlined UX
+- **Error Handling**: Comprehensive try-catch with user feedback via SnackBar messages
+- **State Management**: Proper loading states and optimistic UI updates
+- **Data Integrity**: All existing flight data preserved during inline updates
+
 ### August 2025 - IGC Import Enhancements & Flight Track Visualization
 - **HFDTE Parsing Correction**: Fixed IGC date parsing from incorrect YYMMDD to correct DDMMYY format
 - **Date Accuracy**: Ensures flight dates are parsed correctly from IGC file headers
@@ -304,6 +319,8 @@ flutter upgrade
 - **Folder Memory**: IGC import now remembers last used folder for improved workflow
 
 ### Key Files Updated
+- `lib/presentation/screens/flight_detail_screen.dart`: Complete inline editing implementation with dialog-based selection
+- `lib/presentation/screens/edit_flight_screen.dart`: Simplified to only show fields visible in Flight Details card
 - `lib/services/igc_parser.dart`: Fixed HFDTE date format parsing (DDMMYY)
 - `lib/data/models/import_result.dart`: New models for tracking import results (NEW)
 - `lib/data/repositories/flight_repository.dart`: Added duplicate detection method
@@ -315,5 +332,4 @@ flutter upgrade
 - `lib/data/models/igc_file.dart`: Core climb rate calculation algorithms
 - `lib/data/models/flight.dart`: Added 15-second climb rate fields
 - `lib/data/datasources/database_helper.dart`: Database migration support
-- `lib/presentation/screens/flight_detail_screen.dart`: Enhanced statistics display
 - Test files: Updated for 15-second calculations
