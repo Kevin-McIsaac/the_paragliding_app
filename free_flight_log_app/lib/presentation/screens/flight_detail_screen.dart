@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import '../../data/models/flight.dart';
 import '../../data/models/site.dart';
 import '../../data/models/wing.dart';
+import '../../data/models/igc_file.dart';
 import '../../data/repositories/flight_repository.dart';
 import '../../data/repositories/site_repository.dart';
 import '../../data/repositories/wing_repository.dart';
+import '../../services/igc_import_service.dart';
 import 'edit_flight_screen.dart';
 import 'flight_track_screen.dart';
-import 'flight_track_canvas_screen.dart';
-import 'dart:io' show Platform;
 
 class FlightDetailScreen extends StatefulWidget {
   final Flight flight;
@@ -24,6 +26,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
   final FlightRepository _flightRepository = FlightRepository();
   final SiteRepository _siteRepository = SiteRepository();
   final WingRepository _wingRepository = WingRepository();
+  final IgcImportService _igcService = IgcImportService();
   
   late Flight _flight;
   Site? _launchSite;
@@ -31,12 +34,21 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
   Wing? _wing;
   bool _isLoading = true;
   bool _flightModified = false;
+  
+  // Map-related state
+  MapController? _mapController;
+  List<IgcPoint> _trackPoints = [];
+  List<Polyline> _polylines = [];
+  List<Marker> _markers = [];
+  bool _isTrackLoading = false;
+  String? _trackError;
 
   @override
   void initState() {
     super.initState();
     _flight = widget.flight;
     _loadFlightDetails();
+    _loadTrackData();
   }
 
   Future<void> _loadFlightDetails() async {
@@ -57,6 +69,173 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  Future<void> _loadTrackData() async {
+    if (_flight.trackLogPath == null) {
+      return;
+    }
+
+    setState(() {
+      _isTrackLoading = true;
+      _trackError = null;
+    });
+
+    try {
+      final trackPoints = await _igcService.getTrackPoints(_flight.trackLogPath!);
+      
+      if (trackPoints.isEmpty) {
+        setState(() {
+          _trackError = 'No track points found';
+          _isTrackLoading = false;
+        });
+        return;
+      }
+
+      setState(() {
+        _trackPoints = trackPoints;
+        _isTrackLoading = false;
+      });
+      
+      _createPolylines();
+      _createMarkers();
+      
+    } catch (e) {
+      setState(() {
+        _trackError = 'Error loading track data: $e';
+        _isTrackLoading = false;
+      });
+    }
+  }
+
+  void _createPolylines() {
+    if (_trackPoints.isEmpty) return;
+
+    final polylines = <Polyline>[];
+
+    // Create main track polyline
+    final trackCoordinates = _trackPoints
+        .map((point) => LatLng(point.latitude, point.longitude))
+        .toList();
+
+    final trackPolyline = Polyline(
+      points: trackCoordinates,
+      color: Colors.blue,
+      strokeWidth: 3.0,
+    );
+    polylines.add(trackPolyline);
+
+    // Create straight line polyline if we have enough points
+    if (_trackPoints.length >= 2 && _flight.straightDistance != null) {
+      final launchPoint = LatLng(_trackPoints.first.latitude, _trackPoints.first.longitude);
+      final landingPoint = LatLng(_trackPoints.last.latitude, _trackPoints.last.longitude);
+      
+      final straightLinePolyline = Polyline(
+        points: [launchPoint, landingPoint],
+        color: Colors.orange,
+        strokeWidth: 4.0,
+        isDotted: true,
+      );
+      polylines.add(straightLinePolyline);
+    }
+
+    setState(() {
+      _polylines = polylines;
+    });
+  }
+
+  void _createMarkers() {
+    if (_trackPoints.isEmpty) {
+      setState(() {
+        _markers = [];
+      });
+      return;
+    }
+
+    final startPoint = _trackPoints.first;
+    final endPoint = _trackPoints.last;
+    
+    // Find highest point
+    final highestPoint = _trackPoints.reduce(
+      (a, b) => a.gpsAltitude > b.gpsAltitude ? a : b
+    );
+
+    final markers = <Marker>[
+      Marker(
+        point: LatLng(startPoint.latitude, startPoint.longitude),
+        child: _buildMarkerIcon(Colors.green, 'L'),
+        width: 40,
+        height: 40,
+      ),
+      Marker(
+        point: LatLng(endPoint.latitude, endPoint.longitude),
+        child: _buildMarkerIcon(Colors.red, 'X'),
+        width: 40,
+        height: 40,
+      ),
+      Marker(
+        point: LatLng(highestPoint.latitude, highestPoint.longitude),
+        child: _buildMarkerIcon(Colors.blue, 'H'),
+        width: 40,
+        height: 40,
+      ),
+    ];
+
+    // Add straight distance marker at midpoint if showing straight line
+    if (_trackPoints.length >= 2 && _flight.straightDistance != null) {
+      final startPoint = _trackPoints.first;
+      final endPoint = _trackPoints.last;
+      final midLat = (startPoint.latitude + endPoint.latitude) / 2;
+      final midLng = (startPoint.longitude + endPoint.longitude) / 2;
+      
+      markers.add(
+        Marker(
+          point: LatLng(midLat, midLng),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.orange,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.white, width: 1),
+            ),
+            child: Text(
+              '${_flight.straightDistance!.toStringAsFixed(1)} km',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 8,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          width: 60,
+          height: 20,
+        ),
+      );
+    }
+
+    setState(() {
+      _markers = markers;
+    });
+  }
+
+  Widget _buildMarkerIcon(Color color, String label) {
+    return Container(
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2),
+      ),
+      child: Center(
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _editFlight() async {
@@ -358,6 +537,43 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
 
                   const SizedBox(height: 16),
 
+                  // Track Log Card with Embedded Map
+                  if (_flight.trackLogPath != null && _flight.source == 'igc')
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Flight Track',
+                                  style: Theme.of(context).textTheme.titleLarge,
+                                ),
+                                TextButton.icon(
+                                  onPressed: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (context) => FlightTrackScreen(flight: _flight),
+                                      ),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.fullscreen),
+                                  label: const Text('Full Screen'),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            _buildEmbeddedMap(),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                  const SizedBox(height: 16),
+
                   // Equipment Card
                   if (_wing != null)
                     Card(
@@ -384,94 +600,175 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
 
                   const SizedBox(height: 16),
 
-                  // Notes Card
+                  // Notes Card (Full Width)
                   if (_flight.notes?.isNotEmpty == true)
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Notes',
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(_flight.notes!),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                  const SizedBox(height: 16),
-
-                  // Track Log Card
-                  if (_flight.trackLogPath != null && _flight.source == 'igc')
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Track Log',
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                            const SizedBox(height: 16),
-                            ListTile(
-                              leading: const Icon(Icons.show_chart),
-                              title: const Text('View Flight Track'),
-                              subtitle: const Text('GPS track from IGC file'),
-                              trailing: const Icon(Icons.chevron_right),
-                              onTap: () {
-                                // Show options for track visualization
-                                showModalBottomSheet(
-                                  context: context,
-                                  builder: (BuildContext context) {
-                                    return SafeArea(
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          ListTile(
-                                            leading: const Icon(Icons.map),
-                                            title: const Text('Google Maps View'),
-                                            subtitle: const Text('Interactive map with satellite imagery'),
-                                            onTap: () {
-                                              Navigator.pop(context);
-                                              Navigator.of(context).push(
-                                                MaterialPageRoute(
-                                                  builder: (context) => FlightTrackScreen(flight: _flight),
-                                                ),
-                                              );
-                                            },
-                                          ),
-                                          ListTile(
-                                            leading: const Icon(Icons.show_chart),
-                                            title: const Text('Canvas Track View'),
-                                            subtitle: const Text('Custom track visualization with altitude colors'),
-                                            onTap: () {
-                                              Navigator.pop(context);
-                                              Navigator.of(context).push(
-                                                MaterialPageRoute(
-                                                  builder: (context) => FlightTrackCanvasScreen(flight: _flight),
-                                                ),
-                                              );
-                                            },
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  },
-                                );
-                              },
-                            ),
-                          ],
+                    SizedBox(
+                      width: double.infinity,
+                      child: Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Notes',
+                                style: Theme.of(context).textTheme.titleLarge,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                _flight.notes!,
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _buildEmbeddedMap() {
+    if (_isTrackLoading) {
+      return Container(
+        height: 250,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          color: Colors.grey[100],
+        ),
+        child: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Loading track data...'),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_trackError != null) {
+      return Container(
+        height: 250,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          color: Colors.grey[100],
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.error_outline, size: 48, color: Colors.grey[400]),
+              const SizedBox(height: 16),
+              Text(
+                'Track Not Available',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _trackError!,
+                style: TextStyle(color: Colors.grey[600]),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_trackPoints.isEmpty) {
+      return Container(
+        height: 250,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          color: Colors.grey[100],
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.map_outlined, size: 48, color: Colors.grey[400]),
+              const SizedBox(height: 16),
+              Text(
+                'No Track Data',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    _mapController ??= MapController();
+
+    return Container(
+      height: 250,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[300]!),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: FlutterMap(
+          mapController: _mapController,
+          options: MapOptions(
+            initialCenter: _trackPoints.isNotEmpty
+                ? LatLng(_trackPoints.first.latitude, _trackPoints.first.longitude)
+                : const LatLng(0, 0),
+            initialZoom: 12,
+            onMapReady: () {
+              _fitMapToBounds();
+            },
+          ),
+          children: [
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.example.free_flight_log_app',
+            ),
+            if (_polylines.isNotEmpty)
+              PolylineLayer(
+                polylines: _polylines,
+              ),
+            if (_markers.isNotEmpty)
+              MarkerLayer(
+                markers: _markers,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _fitMapToBounds() {
+    if (_trackPoints.isEmpty || _mapController == null) return;
+
+    final latitudes = _trackPoints.map((p) => p.latitude);
+    final longitudes = _trackPoints.map((p) => p.longitude);
+    
+    final minLat = latitudes.reduce((a, b) => a < b ? a : b);
+    final maxLat = latitudes.reduce((a, b) => a > b ? a : b);
+    final minLng = longitudes.reduce((a, b) => a < b ? a : b);
+    final maxLng = longitudes.reduce((a, b) => a > b ? a : b);
+
+    final bounds = LatLngBounds(
+      LatLng(minLat, minLng),
+      LatLng(maxLat, maxLng),
+    );
+
+    _mapController!.fitCamera(
+      CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(20.0)),
     );
   }
 
