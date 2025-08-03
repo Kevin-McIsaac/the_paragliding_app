@@ -906,9 +906,38 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                                   child: Container(
                                     width: double.infinity,
                                     padding: const EdgeInsets.symmetric(vertical: 8),
-                                    child: Text(
-                                      _flight.notes!,
-                                      style: Theme.of(context).textTheme.bodyMedium,
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        if (_flight.notes!.isNotEmpty) ...[
+                                          Text(
+                                            _flight.notes!,
+                                            style: Theme.of(context).textTheme.bodyMedium,
+                                          ),
+                                          if (_flight.source == 'igc' && _flight.trackLogPath != null) ...[
+                                            const SizedBox(height: 12),
+                                            const Divider(),
+                                            const SizedBox(height: 8),
+                                          ],
+                                        ],
+                                        if (_flight.source == 'igc' && _flight.trackLogPath != null) ...[
+                                          Text(
+                                            'IGC Source:',
+                                            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.grey[600],
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          SelectableText(
+                                            _flight.trackLogPath!,
+                                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                              fontFamily: 'monospace',
+                                              color: Colors.grey[700],
+                                            ),
+                                          ),
+                                        ],
+                                      ],
                                     ),
                                   ),
                                 ),
@@ -948,6 +977,27 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                                 ],
                               ),
                               const SizedBox(height: 8),
+                              
+                              // Show IGC source info if available, even without user notes
+                              if (_flight.source == 'igc' && _flight.trackLogPath != null) ...[
+                                Text(
+                                  'IGC Source:',
+                                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                SelectableText(
+                                  _flight.trackLogPath!,
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    fontFamily: 'monospace',
+                                    color: Colors.grey[700],
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                              ],
+                              
                               GestureDetector(
                                 onTap: () {
                                   setState(() {
