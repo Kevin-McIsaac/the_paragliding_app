@@ -23,6 +23,7 @@ class _FlightTrackCanvasScreenState extends State<FlightTrackCanvasScreen> {
   // Display options
   bool _showAltitudeColors = true;
   bool _showMarkers = true;
+  bool _showStraightLine = true;
 
   @override
   void initState() {
@@ -88,6 +89,12 @@ class _FlightTrackCanvasScreenState extends State<FlightTrackCanvasScreen> {
     });
   }
 
+  void _toggleStraightLine() {
+    setState(() {
+      _showStraightLine = !_showStraightLine;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -103,6 +110,9 @@ class _FlightTrackCanvasScreenState extends State<FlightTrackCanvasScreen> {
                   break;
                 case 'colors':
                   _toggleAltitudeColors();
+                  break;
+                case 'straight_line':
+                  _toggleStraightLine();
                   break;
               }
             },
@@ -124,6 +134,16 @@ class _FlightTrackCanvasScreenState extends State<FlightTrackCanvasScreen> {
                     Icon(_showAltitudeColors ? Icons.palette : Icons.palette_outlined),
                     const SizedBox(width: 8),
                     Text('${_showAltitudeColors ? 'Simple' : 'Altitude'} Colors'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'straight_line',
+                child: Row(
+                  children: [
+                    Icon(_showStraightLine ? Icons.timeline : Icons.timeline_outlined),
+                    const SizedBox(width: 8),
+                    Text('${_showStraightLine ? 'Hide' : 'Show'} Straight Line'),
                   ],
                 ),
               ),
@@ -193,33 +213,56 @@ class _FlightTrackCanvasScreenState extends State<FlightTrackCanvasScreen> {
           ),
         ],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+      child: Column(
         children: [
-          _buildStatItem(
-            'Duration',
-            duration,
-            Icons.access_time,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildStatItem(
+                'Duration',
+                duration,
+                Icons.access_time,
+              ),
+              _buildStatItem(
+                'Track Distance',
+                widget.flight.distance != null 
+                    ? '${widget.flight.distance!.toStringAsFixed(1)} km'
+                    : 'N/A',
+                Icons.timeline,
+              ),
+              _buildStatItem(
+                'Max Alt',
+                widget.flight.maxAltitude != null
+                    ? '${widget.flight.maxAltitude!.toInt()} m'
+                    : 'N/A',
+                Icons.height,
+              ),
+              _buildStatItem(
+                'Points',
+                _trackPoints.length.toString(),
+                Icons.gps_fixed,
+              ),
+            ],
           ),
-          _buildStatItem(
-            'Distance',
-            widget.flight.distance != null 
-                ? '${widget.flight.distance!.toStringAsFixed(1)} km'
-                : 'N/A',
-            Icons.timeline,
-          ),
-          _buildStatItem(
-            'Max Alt',
-            widget.flight.maxAltitude != null
-                ? '${widget.flight.maxAltitude!.toInt()} m'
-                : 'N/A',
-            Icons.height,
-          ),
-          _buildStatItem(
-            'Points',
-            _trackPoints.length.toString(),
-            Icons.gps_fixed,
-          ),
+          // Add straight distance row
+          if (widget.flight.straightDistance != null) ...[
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildStatItem(
+                  'Straight Distance',
+                  '${widget.flight.straightDistance!.toStringAsFixed(1)} km',
+                  Icons.straight,
+                ),
+                const SizedBox(width: 60), // Spacer for alignment
+                const SizedBox(width: 60), // Spacer for alignment
+                const SizedBox(width: 60), // Spacer for alignment
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -255,6 +298,8 @@ class _FlightTrackCanvasScreenState extends State<FlightTrackCanvasScreen> {
           trackPoints: _trackPoints,
           showAltitudeColors: _showAltitudeColors,
           showMarkers: _showMarkers,
+          showStraightLine: _showStraightLine,
+          straightDistance: widget.flight.straightDistance,
         ),
       ),
     );
@@ -265,11 +310,15 @@ class FlightTrackPainter extends CustomPainter {
   final List<IgcPoint> trackPoints;
   final bool showAltitudeColors;
   final bool showMarkers;
+  final bool showStraightLine;
+  final double? straightDistance;
 
   FlightTrackPainter({
     required this.trackPoints,
     required this.showAltitudeColors,
     required this.showMarkers,
+    required this.showStraightLine,
+    this.straightDistance,
   });
 
   @override
@@ -300,6 +349,11 @@ class FlightTrackPainter extends CustomPainter {
       return Offset(x, y);
     }).toList();
 
+    // Draw straight line (behind the track)
+    if (showStraightLine && screenPoints.length >= 2) {
+      _drawStraightLine(canvas, screenPoints.first, screenPoints.last);
+    }
+
     // Draw track line
     if (screenPoints.length > 1) {
       if (showAltitudeColors) {
@@ -316,6 +370,87 @@ class FlightTrackPainter extends CustomPainter {
 
     // Draw scale and info
     _drawScale(canvas, size, minLat, maxLat, minLng, maxLng);
+  }
+
+  void _drawStraightLine(Canvas canvas, Offset start, Offset end) {
+    final paint = Paint()
+      ..color = Colors.orange
+      ..strokeWidth = 4.0
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    // Create dashed line effect
+    const dashWidth = 20.0;
+    const dashSpace = 10.0;
+    
+    final path = Path();
+    final distance = (end - start).distance;
+    final direction = (end - start) / distance;
+    
+    double currentDistance = 0;
+    while (currentDistance < distance) {
+      final startPoint = start + direction * currentDistance;
+      final endPoint = start + direction * (currentDistance + dashWidth).clamp(0, distance);
+      
+      path.moveTo(startPoint.dx, startPoint.dy);
+      path.lineTo(endPoint.dx, endPoint.dy);
+      
+      currentDistance += dashWidth + dashSpace;
+    }
+    
+    canvas.drawPath(path, paint);
+
+    // Draw distance text at midpoint if available
+    if (straightDistance != null) {
+      final midPoint = Offset(
+        (start.dx + end.dx) / 2,
+        (start.dy + end.dy) / 2,
+      );
+
+      _drawDistanceText(canvas, midPoint, '${straightDistance!.toStringAsFixed(1)} km');
+    }
+  }
+
+  void _drawDistanceText(Canvas canvas, Offset position, String text) {
+    // Draw background rectangle for text
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    
+    textPainter.layout();
+    
+    // Background rectangle
+    final backgroundRect = Rect.fromCenter(
+      center: position,
+      width: textPainter.width + 12,
+      height: textPainter.height + 8,
+    );
+    
+    final backgroundPaint = Paint()
+      ..color = Colors.orange
+      ..style = PaintingStyle.fill;
+    
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(backgroundRect, const Radius.circular(6)),
+      backgroundPaint,
+    );
+    
+    // Text
+    textPainter.paint(
+      canvas,
+      Offset(
+        position.dx - textPainter.width / 2,
+        position.dy - textPainter.height / 2,
+      ),
+    );
   }
 
   void _drawSimpleTrack(Canvas canvas, List<Offset> screenPoints) {
@@ -484,6 +619,8 @@ class FlightTrackPainter extends CustomPainter {
   bool shouldRepaint(FlightTrackPainter oldDelegate) {
     return trackPoints != oldDelegate.trackPoints ||
            showAltitudeColors != oldDelegate.showAltitudeColors ||
-           showMarkers != oldDelegate.showMarkers;
+           showMarkers != oldDelegate.showMarkers ||
+           showStraightLine != oldDelegate.showStraightLine ||
+           straightDistance != oldDelegate.straightDistance;
   }
 }

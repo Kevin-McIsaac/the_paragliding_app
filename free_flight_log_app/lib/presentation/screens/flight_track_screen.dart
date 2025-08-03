@@ -29,6 +29,7 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
   // Map display options
   bool _showAltitudeColors = true;
   bool _showMarkers = true;
+  bool _showStraightLine = true;
   
   // Currently selected track point for climb rate display
   int? _selectedPointIndex;
@@ -86,22 +87,43 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
   void _createPolylines() {
     if (_trackPoints.isEmpty) return;
 
+    final polylines = <Polyline>{};
+
     // Create main track polyline
     final trackCoordinates = _trackPoints
         .map((point) => LatLng(point.latitude, point.longitude))
         .toList();
 
-    final polyline = Polyline(
+    final trackPolyline = Polyline(
       polylineId: const PolylineId('flight_track'),
       points: trackCoordinates,
       color: _showAltitudeColors ? Colors.blue : Colors.red,
       width: 3,
       patterns: [],
     );
+    polylines.add(trackPolyline);
+
+    // Create straight line polyline if enabled
+    if (_showStraightLine && _trackPoints.length >= 2) {
+      final launchPoint = LatLng(_trackPoints.first.latitude, _trackPoints.first.longitude);
+      final landingPoint = LatLng(_trackPoints.last.latitude, _trackPoints.last.longitude);
+      
+      final straightLinePolyline = Polyline(
+        polylineId: const PolylineId('straight_line'),
+        points: [launchPoint, landingPoint],
+        color: Colors.orange,
+        width: 4,
+        patterns: [
+          PatternItem.dash(20),
+          PatternItem.gap(10),
+        ],
+      );
+      polylines.add(straightLinePolyline);
+    }
 
     // TODO: Add altitude-based coloring in future update
     setState(() {
-      _polylines = {polyline};
+      _polylines = polylines;
     });
   }
 
@@ -176,6 +198,26 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
       );
     }
 
+    // Add straight distance marker at midpoint if showing straight line
+    if (_showStraightLine && _trackPoints.length >= 2 && widget.flight.straightDistance != null) {
+      final startPoint = _trackPoints.first;
+      final endPoint = _trackPoints.last;
+      final midLat = (startPoint.latitude + endPoint.latitude) / 2;
+      final midLng = (startPoint.longitude + endPoint.longitude) / 2;
+      
+      markers.add(
+        Marker(
+          markerId: const MarkerId('straight_distance'),
+          position: LatLng(midLat, midLng),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
+          infoWindow: InfoWindow(
+            title: 'Straight Distance',
+            snippet: '${widget.flight.straightDistance!.toStringAsFixed(1)} km',
+          ),
+        ),
+      );
+    }
+
     setState(() {
       _markers = markers;
     });
@@ -229,6 +271,13 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
     _createMarkers();
   }
 
+  void _toggleStraightLine() {
+    setState(() {
+      _showStraightLine = !_showStraightLine;
+    });
+    _createPolylines();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -244,6 +293,9 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
                   break;
                 case 'colors':
                   _toggleAltitudeColors();
+                  break;
+                case 'straight_line':
+                  _toggleStraightLine();
                   break;
                 case 'fit':
                   _fitMapToBounds();
@@ -268,6 +320,16 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
                     Icon(_showAltitudeColors ? Icons.palette : Icons.palette_outlined),
                     const SizedBox(width: 8),
                     Text('${_showAltitudeColors ? 'Simple' : 'Altitude'} Colors'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'straight_line',
+                child: Row(
+                  children: [
+                    Icon(_showStraightLine ? Icons.timeline : Icons.timeline_outlined),
+                    const SizedBox(width: 8),
+                    Text('${_showStraightLine ? 'Hide' : 'Show'} Straight Line'),
                   ],
                 ),
               ),
@@ -358,7 +420,7 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
                 Icons.access_time,
               ),
               _buildStatItem(
-                'Distance',
+                'Track Distance',
                 widget.flight.distance != null 
                     ? '${widget.flight.distance!.toStringAsFixed(1)} km'
                     : 'N/A',
@@ -378,6 +440,25 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
               ),
             ],
           ),
+          // Add straight distance row
+          if (widget.flight.straightDistance != null) ...[
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildStatItem(
+                  'Straight Distance',
+                  '${widget.flight.straightDistance!.toStringAsFixed(1)} km',
+                  Icons.straight,
+                ),
+                const SizedBox(width: 60), // Spacer for alignment
+                const SizedBox(width: 60), // Spacer for alignment
+                const SizedBox(width: 60), // Spacer for alignment
+              ],
+            ),
+          ],
           if (widget.flight.maxClimbRate != null || widget.flight.maxClimbRate5Sec != null) ...[
             const SizedBox(height: 12),
             const Divider(height: 1),

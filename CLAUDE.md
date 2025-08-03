@@ -275,12 +275,17 @@ flutter upgrade
 
 ## Recent Updates
 
-### August 2025 - IGC Import Enhancements
+### August 2025 - IGC Import Enhancements & Flight Track Visualization
 - **HFDTE Parsing Correction**: Fixed IGC date parsing from incorrect YYMMDD to correct DDMMYY format
 - **Date Accuracy**: Ensures flight dates are parsed correctly from IGC file headers
 - **Duplicate Detection**: Added comprehensive duplicate flight detection during IGC import
 - **User Choice Options**: Implemented Skip/Skip All/Replace/Replace All options for duplicate handling
 - **Enhanced Results**: Detailed import results showing imported, replaced, skipped, and failed files
+- **Straight Line Visualization**: Added straight-line distance overlay on both Google Maps and Canvas flight track views
+- **Distance Labels**: Straight distance displayed directly on the visualization line (marker for Maps, text overlay for Canvas)
+- **Enhanced Statistics**: Shows track distance and straight distance (removed efficiency calculation)
+- **Interactive Controls**: Toggle visibility of straight line via popup menu in both map and canvas views
+- **Consistent Experience**: Both map and canvas views now offer identical functionality and visual design
 - **Parser Update**: Updated `IgcParser._parseDate()` method with correct format interpretation
 
 ### December 2024 - Enhanced Climb Rate Analysis
@@ -298,9 +303,10 @@ flutter upgrade
 - `lib/presentation/widgets/duplicate_flight_dialog.dart`: User choice dialog for duplicates (NEW)
 - `lib/services/igc_import_service.dart`: Enhanced IGC processing with duplicate handling
 - `lib/presentation/screens/igc_import_screen.dart`: Updated UI for duplicate handling
+- `lib/presentation/screens/flight_track_screen.dart`: Added straight line visualization and enhanced statistics
+- `lib/presentation/screens/flight_track_canvas_screen.dart`: Added matching straight line visualization for canvas view
 - `lib/data/models/igc_file.dart`: Core climb rate calculation algorithms
 - `lib/data/models/flight.dart`: Added 15-second climb rate fields
 - `lib/data/datasources/database_helper.dart`: Database migration support
 - `lib/presentation/screens/flight_detail_screen.dart`: Enhanced statistics display
-- `lib/presentation/screens/flight_track_screen.dart`: Updated track visualization
 - Test files: Updated for 15-second calculations
