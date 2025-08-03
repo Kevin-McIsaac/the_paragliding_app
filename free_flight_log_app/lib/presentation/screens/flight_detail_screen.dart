@@ -250,9 +250,17 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                                 if (_flight.distance != null)
                                   Expanded(
                                     child: _buildInfoTile(
-                                      'Distance',
+                                      'Ground Track',
                                       '${_flight.distance!.toStringAsFixed(1)} km',
                                       Icons.timeline,
+                                    ),
+                                  ),
+                                if (_flight.straightDistance != null)
+                                  Expanded(
+                                    child: _buildInfoTile(
+                                      'Straight Distance',
+                                      '${_flight.straightDistance!.toStringAsFixed(1)} km',
+                                      Icons.straighten,
                                     ),
                                   ),
                               ],

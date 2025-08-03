@@ -36,8 +36,8 @@ class IgcFile {
       ? 0 
       : trackPoints.map((p) => p.gpsAltitude).reduce(max).toDouble();
 
-  /// Calculate total distance in kilometers
-  double calculateDistance() {
+  /// Calculate total ground track distance in kilometers (following the actual flight path)
+  double calculateGroundTrackDistance() {
     if (trackPoints.length < 2) return 0;
     
     double totalDistance = 0;
@@ -49,6 +49,17 @@ class IgcFile {
     }
     return totalDistance;
   }
+
+  /// Calculate straight-line distance from launch to landing in kilometers
+  double calculateLaunchToLandingDistance() {
+    if (trackPoints.length < 2) return 0;
+    
+    return _haversineDistance(trackPoints.first, trackPoints.last);
+  }
+
+  /// Legacy method - use calculateGroundTrackDistance() instead
+  @deprecated
+  double calculateDistance() => calculateGroundTrackDistance();
 
   /// Calculate climb rates
   Map<String, double> calculateClimbRates() {
@@ -65,8 +76,10 @@ class IgcFile {
           .inSeconds;
       
       if (timeDiff > 0) {
-        final altDiff = trackPoints[i].gpsAltitude - 
-                        trackPoints[i - 1].gpsAltitude;
+        // Use pressure altitude for climb rate if available (more accurate for vertical speed)
+        final altDiff = (trackPoints[i].pressureAltitude > 0 && trackPoints[i - 1].pressureAltitude > 0)
+            ? trackPoints[i].pressureAltitude - trackPoints[i - 1].pressureAltitude
+            : trackPoints[i].gpsAltitude - trackPoints[i - 1].gpsAltitude;
         final climbRate = altDiff / timeDiff; // m/s
         
         if (climbRate > maxClimb) maxClimb = climbRate;

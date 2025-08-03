@@ -35,6 +35,7 @@ class DatabaseHelper {
         max_climb_rate REAL,
         max_sink_rate REAL,
         distance REAL,
+        straight_distance REAL,
         wing_id INTEGER,
         notes TEXT,
         track_log_path TEXT,

@@ -26,6 +26,7 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
   late TextEditingController _notesController;
   late TextEditingController _maxAltitudeController;
   late TextEditingController _distanceController;
+  late TextEditingController _straightDistanceController;
   late TextEditingController _maxClimbRateController;
   late TextEditingController _maxSinkRateController;
 

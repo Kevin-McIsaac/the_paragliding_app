@@ -391,6 +391,10 @@ class _FlightListScreenState extends State<FlightListScreen> {
             ),
             if (flight.maxAltitude != null)
               Text('Max altitude: ${flight.maxAltitude!.toInt()}m'),
+            if (flight.distance != null)
+              Text('Ground track: ${flight.distance!.toStringAsFixed(1)}km'),
+            if (flight.straightDistance != null)
+              Text('Straight: ${flight.straightDistance!.toStringAsFixed(1)}km'),
           ],
         ),
         trailing: _isSelectionMode 

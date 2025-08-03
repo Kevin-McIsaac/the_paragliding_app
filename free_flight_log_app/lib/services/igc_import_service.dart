@@ -27,7 +27,8 @@ class IgcImportService {
     }
 
     // Calculate flight statistics
-    final distance = igcData.calculateDistance();
+    final groundTrackDistance = igcData.calculateGroundTrackDistance();
+    final straightDistance = igcData.calculateLaunchToLandingDistance();
     final climbRates = igcData.calculateClimbRates();
     
     // Get or create launch site
@@ -81,7 +82,8 @@ class IgcImportService {
       maxAltitude: igcData.maxAltitude,
       maxClimbRate: climbRates['maxClimb'],
       maxSinkRate: climbRates['maxSink'],
-      distance: distance,
+      distance: groundTrackDistance,
+      straightDistance: straightDistance,
       trackLogPath: trackLogPath,
       source: 'igc',
       notes: 'Imported from IGC file${igcData.pilot.isNotEmpty ? '\nPilot: ${igcData.pilot}' : ''}${igcData.gliderType.isNotEmpty ? '\nGlider: ${igcData.gliderType}' : ''}',

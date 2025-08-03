@@ -18,6 +18,7 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
   final _notesController = TextEditingController();
   final _maxAltitudeController = TextEditingController();
   final _distanceController = TextEditingController();
+  final _straightDistanceController = TextEditingController();
   
   // Form data
   DateTime _selectedDate = DateTime.now();
@@ -30,6 +31,7 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
     _notesController.dispose();
     _maxAltitudeController.dispose();
     _distanceController.dispose();
+    _straightDistanceController.dispose();
     super.dispose();
   }
 
@@ -109,6 +111,9 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
             : null,
         distance: _distanceController.text.isNotEmpty
             ? double.tryParse(_distanceController.text)
+            : null,
+        straightDistance: _straightDistanceController.text.isNotEmpty
+            ? double.tryParse(_straightDistanceController.text)
             : null,
         notes: _notesController.text.isNotEmpty ? _notesController.text : null,
         source: 'manual',
@@ -259,8 +264,32 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
             TextFormField(
               controller: _distanceController,
               decoration: const InputDecoration(
-                labelText: 'Distance (km)',
+                labelText: 'Ground Track Distance (km)',
                 hintText: 'e.g. 25.5',
+                prefixIcon: Icon(Icons.timeline),
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.number,
+              validator: (value) {
+                if (value != null && value.isNotEmpty) {
+                  final distance = double.tryParse(value);
+                  if (distance == null) {
+                    return 'Please enter a valid number';
+                  }
+                  if (distance < 0 || distance > 1000) {
+                    return 'Distance must be between 0 and 1,000km';
+                  }
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+
+            TextFormField(
+              controller: _straightDistanceController,
+              decoration: const InputDecoration(
+                labelText: 'Straight Distance (km)',
+                hintText: 'e.g. 15.2',
                 prefixIcon: Icon(Icons.straighten),
                 border: OutlineInputBorder(),
               ),

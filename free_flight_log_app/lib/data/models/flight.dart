@@ -10,6 +10,7 @@ class Flight {
   final double? maxClimbRate;
   final double? maxSinkRate;
   final double? distance;
+  final double? straightDistance;
   final int? wingId;
   final String? notes;
   final String? trackLogPath;
@@ -29,6 +30,7 @@ class Flight {
     this.maxClimbRate,
     this.maxSinkRate,
     this.distance,
+    this.straightDistance,
     this.wingId,
     this.notes,
     this.trackLogPath,
@@ -50,6 +52,7 @@ class Flight {
       'max_climb_rate': maxClimbRate,
       'max_sink_rate': maxSinkRate,
       'distance': distance,
+      'straight_distance': straightDistance,
       'wing_id': wingId,
       'notes': notes,
       'track_log_path': trackLogPath,
@@ -72,6 +75,7 @@ class Flight {
       maxClimbRate: map['max_climb_rate']?.toDouble(),
       maxSinkRate: map['max_sink_rate']?.toDouble(),
       distance: map['distance']?.toDouble(),
+      straightDistance: map['straight_distance']?.toDouble(),
       wingId: map['wing_id'],
       notes: map['notes'],
       trackLogPath: map['track_log_path'],
@@ -93,6 +97,7 @@ class Flight {
     double? maxClimbRate,
     double? maxSinkRate,
     double? distance,
+    double? straightDistance,
     int? wingId,
     String? notes,
     String? trackLogPath,
@@ -112,6 +117,7 @@ class Flight {
       maxClimbRate: maxClimbRate ?? this.maxClimbRate,
       maxSinkRate: maxSinkRate ?? this.maxSinkRate,
       distance: distance ?? this.distance,
+      straightDistance: straightDistance ?? this.straightDistance,
       wingId: wingId ?? this.wingId,
       notes: notes ?? this.notes,
       trackLogPath: trackLogPath ?? this.trackLogPath,
