@@ -30,6 +30,7 @@ class IgcImportService {
     final groundTrackDistance = igcData.calculateGroundTrackDistance();
     final straightDistance = igcData.calculateLaunchToLandingDistance();
     final climbRates = igcData.calculateClimbRates();
+    final climbRates15Sec = igcData.calculate15SecondMaxClimbRates();
     
     // Get or create launch site
     Site? launchSite;
@@ -82,6 +83,8 @@ class IgcImportService {
       maxAltitude: igcData.maxAltitude,
       maxClimbRate: climbRates['maxClimb'],
       maxSinkRate: climbRates['maxSink'],
+      maxClimbRate5Sec: climbRates15Sec['maxClimb15Sec'],
+      maxSinkRate5Sec: climbRates15Sec['maxSink15Sec'],
       distance: groundTrackDistance,
       straightDistance: straightDistance,
       trackLogPath: trackLogPath,
@@ -105,6 +108,8 @@ class IgcImportService {
       maxAltitude: flight.maxAltitude,
       maxClimbRate: flight.maxClimbRate,
       maxSinkRate: flight.maxSinkRate,
+      maxClimbRate5Sec: flight.maxClimbRate5Sec,
+      maxSinkRate5Sec: flight.maxSinkRate5Sec,
       distance: flight.distance,
       notes: flight.notes,
       trackLogPath: flight.trackLogPath,
@@ -155,6 +160,11 @@ class IgcImportService {
       print('Error reading track points: $e');
       return [];
     }
+  }
+
+  /// Get full IGC file data from saved file
+  Future<IgcFile> getIgcFile(String trackLogPath) async {
+    return await _parser.parseFile(trackLogPath);
   }
 
   /// Find existing wing or create new one from IGC glider information

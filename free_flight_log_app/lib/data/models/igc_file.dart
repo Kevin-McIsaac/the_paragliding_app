@@ -61,7 +61,7 @@ class IgcFile {
   @deprecated
   double calculateDistance() => calculateGroundTrackDistance();
 
-  /// Calculate climb rates
+  /// Calculate instantaneous climb rates (between consecutive points)
   Map<String, double> calculateClimbRates() {
     if (trackPoints.length < 2) {
       return {'maxClimb': 0, 'maxSink': 0};
@@ -91,6 +91,170 @@ class IgcFile {
       'maxClimb': maxClimb,
       'maxSink': maxSink.abs(),
     };
+  }
+
+  /// Calculate maximum 15-second average climb rates
+  Map<String, double> calculate15SecondMaxClimbRates() {
+    if (trackPoints.length < 2) {
+      return {'maxClimb15Sec': 0, 'maxSink15Sec': 0};
+    }
+
+    final fifteenSecRates = calculate15SecondClimbRates();
+    
+    if (fifteenSecRates.isEmpty) {
+      return {'maxClimb15Sec': 0, 'maxSink15Sec': 0};
+    }
+    
+    double maxClimb15Sec = 0;
+    double maxSink15Sec = 0;
+
+    for (final rate in fifteenSecRates) {
+      if (rate > maxClimb15Sec) maxClimb15Sec = rate;
+      if (rate < maxSink15Sec) maxSink15Sec = rate;
+    }
+
+    return {
+      'maxClimb15Sec': maxClimb15Sec,
+      'maxSink15Sec': maxSink15Sec.abs(),
+    };
+  }
+  
+  /// Deprecated: Use calculate15SecondMaxClimbRates instead
+  @deprecated
+  Map<String, double> calculate5SecondMaxClimbRates() {
+    final result = calculate15SecondMaxClimbRates();
+    return {
+      'maxClimb5Sec': result['maxClimb15Sec'] ?? 0,
+      'maxSink5Sec': result['maxSink15Sec'] ?? 0,
+    };
+  }
+  
+  /// Deprecated: Use calculate15SecondClimbRates instead
+  @deprecated
+  List<double> calculate5SecondClimbRates() {
+    return calculate15SecondClimbRates();
+  }
+
+  /// Calculate instantaneous climb rates for each point
+  List<double> calculateInstantaneousClimbRates() {
+    if (trackPoints.length < 2) return [];
+
+    final climbRates = <double>[];
+    
+    // First point has no previous point, so climb rate is 0
+    climbRates.add(0.0);
+
+    for (int i = 1; i < trackPoints.length; i++) {
+      final timeDiff = trackPoints[i].timestamp
+          .difference(trackPoints[i - 1].timestamp)
+          .inSeconds;
+      
+      if (timeDiff > 0) {
+        final altDiff = (trackPoints[i].pressureAltitude > 0 && trackPoints[i - 1].pressureAltitude > 0)
+            ? trackPoints[i].pressureAltitude - trackPoints[i - 1].pressureAltitude
+            : trackPoints[i].gpsAltitude - trackPoints[i - 1].gpsAltitude;
+        final climbRate = altDiff / timeDiff; // m/s
+        climbRates.add(climbRate);
+      } else {
+        climbRates.add(0.0);
+      }
+    }
+
+    return climbRates;
+  }
+
+  /// Calculate 15-second average climb rates for each point
+  List<double> calculate15SecondClimbRates() {
+    if (trackPoints.length < 2) return [];
+
+    final climbRates = <double>[];
+    
+    for (int i = 0; i < trackPoints.length; i++) {
+      // Look for points within a 15-second window centered on current point
+      // Or if at edges, use available points
+      final currentTime = trackPoints[i].timestamp;
+      
+      // Determine window bounds
+      final windowStart = currentTime.subtract(const Duration(milliseconds: 7500));
+      final windowEnd = currentTime.add(const Duration(milliseconds: 7500));
+      
+      // Find first and last points within window
+      IgcPoint? firstInWindow;
+      IgcPoint? lastInWindow;
+      
+      for (final point in trackPoints) {
+        final pointTime = point.timestamp;
+        
+        // Check if point is within window
+        if (!pointTime.isBefore(windowStart) && !pointTime.isAfter(windowEnd)) {
+          firstInWindow ??= point;
+          lastInWindow = point;
+        }
+      }
+      
+      // If we don't have at least 2 distinct points, try expanding the window
+      if (firstInWindow == null || lastInWindow == null || firstInWindow == lastInWindow) {
+        // Use instantaneous rate for this point as fallback
+        if (i > 0) {
+          final timeDiff = (trackPoints[i].timestamp.millisecondsSinceEpoch - 
+                           trackPoints[i-1].timestamp.millisecondsSinceEpoch) / 1000.0;
+          if (timeDiff > 0) {
+            final altDiff = _getAltitudeDifference(trackPoints[i], trackPoints[i-1]);
+            climbRates.add(altDiff / timeDiff);
+          } else {
+            climbRates.add(0.0);
+          }
+        } else {
+          climbRates.add(0.0);
+        }
+        continue;
+      }
+      
+      // Calculate climb rate over the window
+      final timeDiffSeconds = (lastInWindow.timestamp.millisecondsSinceEpoch - 
+                              firstInWindow.timestamp.millisecondsSinceEpoch) / 1000.0;
+      
+      if (timeDiffSeconds > 0) {
+        final altDiff = _getAltitudeDifference(lastInWindow, firstInWindow);
+        climbRates.add(altDiff / timeDiffSeconds);
+      } else {
+        climbRates.add(0.0);
+      }
+    }
+
+    return climbRates;
+  }
+  
+  double _getAltitudeDifference(IgcPoint point1, IgcPoint point2) {
+    // Use pressure altitude if available (more accurate for vertical speed)
+    if (point1.pressureAltitude > 0 && point2.pressureAltitude > 0) {
+      return (point1.pressureAltitude - point2.pressureAltitude).toDouble();
+    }
+    return (point1.gpsAltitude - point2.gpsAltitude).toDouble();
+  }
+
+  /// Get climb rate at specific point index
+  double getInstantaneousClimbRateAt(int index) {
+    final rates = calculateInstantaneousClimbRates();
+    if (index >= 0 && index < rates.length) {
+      return rates[index];
+    }
+    return 0.0;
+  }
+
+  /// Get 15-second average climb rate at specific point index
+  double get15SecondClimbRateAt(int index) {
+    final rates = calculate15SecondClimbRates();
+    if (index >= 0 && index < rates.length) {
+      return rates[index];
+    }
+    return 0.0;
+  }
+  
+  /// Deprecated: Use get15SecondClimbRateAt instead
+  @deprecated
+  double get5SecondClimbRateAt(int index) {
+    return get15SecondClimbRateAt(index);
   }
 
   /// Calculate distance between two points using Haversine formula

@@ -9,6 +9,8 @@ class Flight {
   final double? maxAltitude;
   final double? maxClimbRate;
   final double? maxSinkRate;
+  final double? maxClimbRate5Sec;
+  final double? maxSinkRate5Sec;
   final double? distance;
   final double? straightDistance;
   final int? wingId;
@@ -29,6 +31,8 @@ class Flight {
     this.maxAltitude,
     this.maxClimbRate,
     this.maxSinkRate,
+    this.maxClimbRate5Sec,
+    this.maxSinkRate5Sec,
     this.distance,
     this.straightDistance,
     this.wingId,
@@ -51,6 +55,8 @@ class Flight {
       'max_altitude': maxAltitude,
       'max_climb_rate': maxClimbRate,
       'max_sink_rate': maxSinkRate,
+      'max_climb_rate_5_sec': maxClimbRate5Sec,
+      'max_sink_rate_5_sec': maxSinkRate5Sec,
       'distance': distance,
       'straight_distance': straightDistance,
       'wing_id': wingId,
@@ -74,6 +80,8 @@ class Flight {
       maxAltitude: map['max_altitude']?.toDouble(),
       maxClimbRate: map['max_climb_rate']?.toDouble(),
       maxSinkRate: map['max_sink_rate']?.toDouble(),
+      maxClimbRate5Sec: map['max_climb_rate_5_sec']?.toDouble(),
+      maxSinkRate5Sec: map['max_sink_rate_5_sec']?.toDouble(),
       distance: map['distance']?.toDouble(),
       straightDistance: map['straight_distance']?.toDouble(),
       wingId: map['wing_id'],
@@ -96,6 +104,8 @@ class Flight {
     double? maxAltitude,
     double? maxClimbRate,
     double? maxSinkRate,
+    double? maxClimbRate5Sec,
+    double? maxSinkRate5Sec,
     double? distance,
     double? straightDistance,
     int? wingId,
@@ -116,6 +126,8 @@ class Flight {
       maxAltitude: maxAltitude ?? this.maxAltitude,
       maxClimbRate: maxClimbRate ?? this.maxClimbRate,
       maxSinkRate: maxSinkRate ?? this.maxSinkRate,
+      maxClimbRate5Sec: maxClimbRate5Sec ?? this.maxClimbRate5Sec,
+      maxSinkRate5Sec: maxSinkRate5Sec ?? this.maxSinkRate5Sec,
       distance: distance ?? this.distance,
       straightDistance: straightDistance ?? this.straightDistance,
       wingId: wingId ?? this.wingId,

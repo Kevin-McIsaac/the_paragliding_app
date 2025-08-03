@@ -29,6 +29,8 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
   late TextEditingController _straightDistanceController;
   late TextEditingController _maxClimbRateController;
   late TextEditingController _maxSinkRateController;
+  late TextEditingController _maxClimbRate5SecController;
+  late TextEditingController _maxSinkRate5SecController;
 
   late DateTime _selectedDate;
   late TimeOfDay _launchTime;
@@ -75,6 +77,12 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
     );
     _maxSinkRateController = TextEditingController(
       text: widget.flight.maxSinkRate?.toStringAsFixed(1) ?? '',
+    );
+    _maxClimbRate5SecController = TextEditingController(
+      text: widget.flight.maxClimbRate5Sec?.toStringAsFixed(1) ?? '',
+    );
+    _maxSinkRate5SecController = TextEditingController(
+      text: widget.flight.maxSinkRate5Sec?.toStringAsFixed(1) ?? '',
     );
   }
 
@@ -245,6 +253,12 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
         maxSinkRate: _maxSinkRateController.text.isNotEmpty
             ? double.tryParse(_maxSinkRateController.text)
             : null,
+        maxClimbRate5Sec: _maxClimbRate5SecController.text.isNotEmpty
+            ? double.tryParse(_maxClimbRate5SecController.text)
+            : null,
+        maxSinkRate5Sec: _maxSinkRate5SecController.text.isNotEmpty
+            ? double.tryParse(_maxSinkRate5SecController.text)
+            : null,
         notes: _notesController.text.isEmpty ? null : _notesController.text,
         trackLogPath: widget.flight.trackLogPath,
         source: widget.flight.source,
@@ -275,6 +289,8 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
     _distanceController.dispose();
     _maxClimbRateController.dispose();
     _maxSinkRateController.dispose();
+    _maxClimbRate5SecController.dispose();
+    _maxSinkRate5SecController.dispose();
     super.dispose();
   }
 

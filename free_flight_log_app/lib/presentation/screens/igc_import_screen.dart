@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:io';
 import '../../services/igc_import_service.dart';
 import '../../data/models/flight.dart';
 
@@ -18,13 +20,62 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
   List<Flight> _importedFlights = [];
   Map<String, String> _importErrors = {};
   String? _currentlyProcessingFile;
+  String? _lastFolder;
+  
+  static const String _lastFolderKey = 'last_igc_import_folder';
+  
+  @override
+  void initState() {
+    super.initState();
+    _loadLastFolder();
+  }
+  
+  Future<void> _loadLastFolder() async {
+    final folder = await _getLastFolder();
+    if (mounted) {
+      setState(() {
+        _lastFolder = folder;
+      });
+    }
+  }
+
+  Future<String?> _getLastFolder() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_lastFolderKey);
+  }
+
+  Future<void> _saveLastFolder(String filePath) async {
+    final prefs = await SharedPreferences.getInstance();
+    final directory = File(filePath).parent.path;
+    await prefs.setString(_lastFolderKey, directory);
+    setState(() {
+      _lastFolder = directory;
+    });
+  }
+  
+  Future<void> _clearLastFolder() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_lastFolderKey);
+    setState(() {
+      _lastFolder = null;
+    });
+  }
 
   Future<void> _pickIgcFiles() async {
     try {
+      // Get the last used folder
+      String? initialDirectory = await _getLastFolder();
+      
+      // Verify the directory still exists
+      if (initialDirectory != null && !Directory(initialDirectory).existsSync()) {
+        initialDirectory = null;
+      }
+      
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['igc', 'IGC'],
         allowMultiple: true,
+        initialDirectory: initialDirectory,
       );
 
       if (result != null && result.files.isNotEmpty) {
@@ -32,6 +83,11 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
             .where((file) => file.path != null)
             .map((file) => file.path!)
             .toList();
+        
+        // Save the folder of the first selected file for next time
+        if (validPaths.isNotEmpty) {
+          await _saveLastFolder(validPaths.first);
+        }
         
         setState(() {
           _selectedFilePaths = validPaths;
@@ -174,6 +230,43 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
                       'Import flight data from IGC files recorded by your flight instrument. You can select multiple files at once.',
                       style: TextStyle(color: Colors.grey),
                     ),
+                    if (_lastFolder != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surface,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.folder,
+                              size: 20,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Default folder: ${_lastFolder!.split('/').last}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Theme.of(context).colorScheme.onSurface,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.clear, size: 20),
+                              onPressed: _clearLastFolder,
+                              tooltip: 'Clear default folder',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     ElevatedButton.icon(
                       onPressed: _isLoading ? null : _pickIgcFiles,

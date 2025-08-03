@@ -23,6 +23,11 @@ Free Flight Log is a cross-platform application for logging paraglider, hang gli
 - Flight list with statistics display
 - Repository pattern architecture implementation
 - Database initialization for all platforms
+- IGC file import with flight track visualization
+- Climb rate calculations (instantaneous and 15-second averaged)
+- Flight detail screens with comprehensive statistics
+- Google Maps integration for track display
+- Folder memory for IGC import workflow
 
 📋 **Planning Documents** (for reference):
 - Complete functional requirements (FUNCTIONAL_SPECIFICATION.md)
@@ -91,13 +96,17 @@ lib/
 ```
 
 ### Implemented Features
-- **Flight Model**: Complete data model with validation
-- **Database Helper**: SQLite initialization for all platforms  
+- **Flight Model**: Complete data model with validation and climb rate fields
+- **Database Helper**: SQLite initialization for all platforms with migration support
 - **Flight Repository**: Full CRUD operations with statistics
 - **Site Repository**: Location management with coordinate search
 - **Wing Repository**: Equipment tracking with usage stats
 - **Flight List Screen**: Material Design 3 UI with empty states
 - **Add Flight Form**: Comprehensive form with validation
+- **Flight Detail Screen**: Complete flight information with climb rate statistics
+- **IGC Import Service**: Full IGC file parsing with climb rate calculations
+- **IGC Import Screen**: File selection with folder memory and batch import
+- **Flight Track Visualization**: Google Maps and canvas-based track display
 - **Navigation**: Screen transitions with result callbacks
 
 ## Development Status
@@ -108,30 +117,43 @@ lib/
 3. ✅ Basic CRUD operations (Create, Read, Update, Delete)
 4. ✅ Simple statistics (total flights/hours/max altitude)
 5. ✅ Local SQLite persistence with cross-platform support
+6. ✅ IGC file import and parsing with climb rate calculations
+7. ✅ Google Maps integration for track visualization
+8. ✅ Flight detail view with edit capability and comprehensive statistics
+9. ✅ Wing/equipment management with automatic creation from IGC data
+10. ✅ Database migrations for schema updates
 
 ### 🚀 Next Features (Post-MVP)
-1. 📋 IGC file import and parsing
-2. 📋 Google Maps integration for track visualization
-3. 📋 Altitude and climb rate charts (fl_chart ready)
-4. 📋 Site recognition via reverse geocoding
-5. 📋 Export functionality (CSV, KML)
-6. 📋 Provider state management implementation
-7. 📋 Flight detail view with edit capability
-8. 📋 Wing/equipment management screens
+1. 📋 Altitude and climb rate charts (fl_chart ready)
+2. 📋 Site recognition via reverse geocoding
+3. 📋 Export functionality (CSV, KML)
+4. 📋 Provider state management implementation
+5. 📋 Advanced flight analysis and statistics
+6. 📋 Flight comparison and trend analysis
 
 ## Key Technical Considerations
 
 ### IGC File Format
 - International Gliding Commission standard for flight tracks
 - Contains GPS coordinates, altitude, timestamps
-- Parser needs to extract launch/landing sites, max altitude, climb rates
-- Store complete track data for visualization
+- Parser extracts launch/landing sites, max altitude, climb rates
+- Supports both pressure and GPS altitude data
+- Calculates instantaneous and 15-second averaged climb rates
+- Stores complete track data for visualization
 
 ### Database Schema
-Three main tables as defined in TECHNICAL_DESIGN.md:
-- `flights`: Core flight records with stats
-- `sites`: Launch/landing locations with custom names
-- `wings`: Equipment tracking
+Three main tables with current implementation:
+- `flights`: Core flight records with comprehensive statistics including climb rates
+- `sites`: Launch/landing locations with custom names and coordinates
+- `wings`: Equipment tracking with automatic creation from IGC data
+- Database version 2 with migration support for climb rate fields
+
+### Climb Rate Calculations
+- **Instantaneous rates**: Point-to-point climb/sink calculations
+- **15-second averaged rates**: Smoothed rates using ±7.5 second window
+- **Pressure altitude priority**: Uses barometric altitude when available for accuracy
+- **GPS fallback**: Falls back to GPS altitude when pressure data unavailable
+- **Thermal analysis**: 15-second window filters GPS noise for realistic thermal readings
 
 ### Performance Goals
 - Support 10,000+ flight records
@@ -206,6 +228,10 @@ flutter upgrade
 ✅ **CRUD operations verified** with database persistence  
 ✅ **Form validation tested** with edge cases  
 ✅ **Cross-platform verified** on Linux desktop  
+✅ **IGC import tested** with real flight data
+✅ **Climb rate calculations tested** with unit tests for 15-second averaging
+✅ **Database migration tested** from v1 to v2 schema
+✅ **Flight track visualization tested** on Google Maps
 
 ### Recommended Testing
 1. Test flight entry with various time combinations
@@ -213,6 +239,8 @@ flutter upgrade
 3. Test form validation edge cases (e.g., landing before launch)
 4. Performance testing with multiple flight entries
 5. Cross-platform testing (Linux, Android, iOS)
+6. IGC import with various file formats and sizes
+7. Climb rate accuracy with real flight instrument data
 
 ## Known Issues and Troubleshooting
 
@@ -240,4 +268,26 @@ flutter upgrade
 - All data stored on device in SQLite database
 - Cross-platform support: Linux ✅, Android ✅, iOS ✅, macOS ✅, Windows ✅
 - Material Design 3 UI with proper theming
-- Database schema supports advanced features (IGC import, site management, wing tracking)
+- Full IGC import and flight track visualization capability
+- Comprehensive climb rate analysis with 15-second averaging
+- Database migration support for schema updates
+- Remembers last IGC import folder for improved workflow
+
+## Recent Updates
+
+### December 2024 - Enhanced Climb Rate Analysis
+- **15-Second Averaging**: Upgraded from 5-second to 15-second climb rate calculations for more stable readings
+- **Dual Rate Display**: Shows both instantaneous and 15-second averaged climb/sink rates
+- **Database Migration**: Added support for new climb rate fields with automatic migration
+- **UI Improvements**: Enhanced flight statistics display with consolidated climb rate information
+- **Test Coverage**: Added comprehensive unit tests for climb rate calculations
+- **Folder Memory**: IGC import now remembers last used folder for improved workflow
+
+### Key Files Updated
+- `lib/data/models/igc_file.dart`: Core climb rate calculation algorithms
+- `lib/data/models/flight.dart`: Added 15-second climb rate fields
+- `lib/data/datasources/database_helper.dart`: Database migration support
+- `lib/presentation/screens/flight_detail_screen.dart`: Enhanced statistics display
+- `lib/presentation/screens/flight_track_screen.dart`: Updated track visualization
+- `lib/services/igc_import_service.dart`: Enhanced IGC processing
+- Test files: Updated for 15-second calculations

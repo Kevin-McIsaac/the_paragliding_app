@@ -4,7 +4,7 @@ import 'package:path/path.dart';
 
 class DatabaseHelper {
   static const _databaseName = "FlightLog.db";
-  static const _databaseVersion = 1;
+  static const _databaseVersion = 2;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -18,6 +18,7 @@ class DatabaseHelper {
       path,
       version: _databaseVersion,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
   }
 
@@ -34,6 +35,8 @@ class DatabaseHelper {
         max_altitude REAL,
         max_climb_rate REAL,
         max_sink_rate REAL,
+        max_climb_rate_5_sec REAL,
+        max_sink_rate_5_sec REAL,
         distance REAL,
         straight_distance REAL,
         wing_id INTEGER,
@@ -78,6 +81,40 @@ class DatabaseHelper {
     await db.execute('CREATE INDEX idx_flights_date ON flights(date)');
     await db.execute('CREATE INDEX idx_flights_launch_site ON flights(launch_site_id)');
     await db.execute('CREATE INDEX idx_flights_wing ON flights(wing_id)');
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    print('Upgrading database from version $oldVersion to $newVersion');
+    
+    if (oldVersion < 2) {
+      try {
+        // Add 5-second average climb rate columns
+        await db.execute('ALTER TABLE flights ADD COLUMN max_climb_rate_5_sec REAL');
+        await db.execute('ALTER TABLE flights ADD COLUMN max_sink_rate_5_sec REAL');
+        print('Successfully added new climb rate columns');
+      } catch (e) {
+        print('Error during migration: $e');
+        // If migration fails, we might need to recreate the database
+        throw e;
+      }
+    }
+  }
+
+  /// Force recreation of the database (use when migration fails)
+  Future<void> recreateDatabase() async {
+    final path = join(await getDatabasesPath(), _databaseName);
+    
+    // Close existing connection
+    if (_database != null) {
+      await _database!.close();
+      _database = null;
+    }
+    
+    // Delete the database file
+    await deleteDatabase(path);
+    
+    // Recreate the database
+    _database = await _initDatabase();
   }
 
   Future<void> close() async {

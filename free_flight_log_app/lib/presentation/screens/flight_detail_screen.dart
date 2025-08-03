@@ -225,7 +225,8 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
 
                   // Flight Statistics Card
                   if (_flight.maxAltitude != null || _flight.distance != null || 
-                      _flight.maxClimbRate != null || _flight.maxSinkRate != null)
+                      _flight.maxClimbRate != null || _flight.maxSinkRate != null ||
+                      _flight.maxClimbRate5Sec != null || _flight.maxSinkRate5Sec != null)
                     Card(
                       child: Padding(
                         padding: const EdgeInsets.all(16.0),
@@ -265,7 +266,8 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                                   ),
                               ],
                             ),
-                            if (_flight.maxClimbRate != null || _flight.maxSinkRate != null) ...[
+                            if (_flight.maxClimbRate != null || _flight.maxSinkRate != null ||
+                                _flight.maxClimbRate5Sec != null || _flight.maxSinkRate5Sec != null) ...[
                               const SizedBox(height: 16),
                               Row(
                                 children: [
@@ -282,6 +284,22 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                                       child: _buildInfoTile(
                                         'Max Sink',
                                         '${_flight.maxSinkRate!.toStringAsFixed(1)} m/s',
+                                        Icons.trending_down,
+                                      ),
+                                    ),
+                                  if (_flight.maxClimbRate5Sec != null)
+                                    Expanded(
+                                      child: _buildInfoTile(
+                                        'Max Climb (15s)',
+                                        '${_flight.maxClimbRate5Sec!.toStringAsFixed(1)} m/s',
+                                        Icons.trending_up,
+                                      ),
+                                    ),
+                                  if (_flight.maxSinkRate5Sec != null)
+                                    Expanded(
+                                      child: _buildInfoTile(
+                                        'Max Sink (15s)',
+                                        '${_flight.maxSinkRate5Sec!.toStringAsFixed(1)} m/s',
                                         Icons.trending_down,
                                       ),
                                     ),

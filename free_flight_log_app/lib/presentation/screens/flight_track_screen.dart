@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../data/models/flight.dart';
@@ -18,6 +19,8 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
   final IgcImportService _igcService = IgcImportService();
   
   List<IgcPoint> _trackPoints = [];
+  List<double> _instantaneousRates = [];
+  List<double> _fifteenSecondRates = [];
   Set<Polyline> _polylines = {};
   Set<Marker> _markers = {};
   bool _isLoading = true;
@@ -26,6 +29,9 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
   // Map display options
   bool _showAltitudeColors = true;
   bool _showMarkers = true;
+  
+  // Currently selected track point for climb rate display
+  int? _selectedPointIndex;
 
   @override
   void initState() {
@@ -53,8 +59,15 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
         return;
       }
 
+      // Calculate climb rates from IGC data
+      final igcFile = await _igcService.getIgcFile(widget.flight.trackLogPath!);
+      final instantaneousRates = igcFile.calculateInstantaneousClimbRates();
+      final fifteenSecondRates = igcFile.calculate15SecondClimbRates();
+
       setState(() {
         _trackPoints = trackPoints;
+        _instantaneousRates = instantaneousRates;
+        _fifteenSecondRates = fifteenSecondRates;
         _isLoading = false;
       });
       
@@ -137,6 +150,31 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
         ),
       ),
     };
+
+    // Add selected point marker if one is selected
+    if (_selectedPointIndex != null && _selectedPointIndex! < _trackPoints.length) {
+      final selectedPoint = _trackPoints[_selectedPointIndex!];
+      final instantRate = _selectedPointIndex! < _instantaneousRates.length
+          ? _instantaneousRates[_selectedPointIndex!]
+          : 0.0;
+      final fifteenSecRate = _selectedPointIndex! < _fifteenSecondRates.length
+          ? _fifteenSecondRates[_selectedPointIndex!]
+          : 0.0;
+
+      markers.add(
+        Marker(
+          markerId: const MarkerId('selected'),
+          position: LatLng(selectedPoint.latitude, selectedPoint.longitude),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+          infoWindow: InfoWindow(
+            title: 'Selected Point ${_selectedPointIndex! + 1}',
+            snippet: 'Alt: ${selectedPoint.gpsAltitude}m\n'
+                     'Instant: ${instantRate.toStringAsFixed(1)}m/s\n'
+                     '15-sec: ${fifteenSecRate.toStringAsFixed(1)}m/s',
+          ),
+        ),
+      );
+    }
 
     setState(() {
       _markers = markers;
@@ -309,35 +347,155 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
           ),
         ],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+      child: Column(
         children: [
-          _buildStatItem(
-            'Duration',
-            duration,
-            Icons.access_time,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildStatItem(
+                'Duration',
+                duration,
+                Icons.access_time,
+              ),
+              _buildStatItem(
+                'Distance',
+                widget.flight.distance != null 
+                    ? '${widget.flight.distance!.toStringAsFixed(1)} km'
+                    : 'N/A',
+                Icons.timeline,
+              ),
+              _buildStatItem(
+                'Max Alt',
+                widget.flight.maxAltitude != null
+                    ? '${widget.flight.maxAltitude!.toInt()} m'
+                    : 'N/A',
+                Icons.height,
+              ),
+              _buildStatItem(
+                'Points',
+                _trackPoints.length.toString(),
+                Icons.gps_fixed,
+              ),
+            ],
           ),
-          _buildStatItem(
-            'Distance',
-            widget.flight.distance != null 
-                ? '${widget.flight.distance!.toStringAsFixed(1)} km'
-                : 'N/A',
-            Icons.timeline,
-          ),
-          _buildStatItem(
-            'Max Alt',
-            widget.flight.maxAltitude != null
-                ? '${widget.flight.maxAltitude!.toInt()} m'
-                : 'N/A',
-            Icons.height,
-          ),
-          _buildStatItem(
-            'Points',
-            _trackPoints.length.toString(),
-            Icons.gps_fixed,
-          ),
+          if (widget.flight.maxClimbRate != null || widget.flight.maxClimbRate5Sec != null) ...[
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                if (widget.flight.maxClimbRate != null)
+                  _buildStatItem(
+                    'Max Climb (Inst)',
+                    '${widget.flight.maxClimbRate!.toStringAsFixed(1)} m/s',
+                    Icons.trending_up,
+                  ),
+                if (widget.flight.maxSinkRate != null)
+                  _buildStatItem(
+                    'Max Sink (Inst)',
+                    '${widget.flight.maxSinkRate!.toStringAsFixed(1)} m/s',
+                    Icons.trending_down,
+                  ),
+                if (widget.flight.maxClimbRate5Sec != null)
+                  _buildStatItem(
+                    'Max Climb (15s)',
+                    '${widget.flight.maxClimbRate5Sec!.toStringAsFixed(1)} m/s',
+                    Icons.trending_up,
+                  ),
+                if (widget.flight.maxSinkRate5Sec != null)
+                  _buildStatItem(
+                    'Max Sink (15s)',
+                    '${widget.flight.maxSinkRate5Sec!.toStringAsFixed(1)} m/s',
+                    Icons.trending_down,
+                  ),
+              ],
+            ),
+          ],
+          if (_selectedPointIndex != null) ...[
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            const SizedBox(height: 12),
+            _buildClimbRateDisplay(),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _buildClimbRateDisplay() {
+    if (_selectedPointIndex == null || 
+        _selectedPointIndex! >= _trackPoints.length ||
+        _instantaneousRates.isEmpty ||
+        _fifteenSecondRates.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final point = _trackPoints[_selectedPointIndex!];
+    final instantRate = _selectedPointIndex! < _instantaneousRates.length
+        ? _instantaneousRates[_selectedPointIndex!]
+        : 0.0;
+    final fifteenSecRate = _selectedPointIndex! < _fifteenSecondRates.length
+        ? _fifteenSecondRates[_selectedPointIndex!]
+        : 0.0;
+
+    return Column(
+      children: [
+        Text(
+          'Point ${_selectedPointIndex! + 1} - ${_formatTime(point.timestamp)}',
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _buildClimbRateItem(
+              'Instant',
+              '${instantRate.toStringAsFixed(1)} m/s',
+              instantRate >= 0 ? Icons.trending_up : Icons.trending_down,
+              instantRate >= 0 ? Colors.green : Colors.red,
+            ),
+            _buildClimbRateItem(
+              '15-sec Avg',
+              '${fifteenSecRate.toStringAsFixed(1)} m/s',
+              fifteenSecRate >= 0 ? Icons.trending_up : Icons.trending_down,
+              fifteenSecRate >= 0 ? Colors.green : Colors.red,
+            ),
+            _buildStatItem(
+              'Altitude',
+              '${point.gpsAltitude} m',
+              Icons.height,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildClimbRateItem(String label, String value, IconData icon, Color color) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 20, color: color),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: TextStyle(
+            fontWeight: FontWeight.bold, 
+            fontSize: 12,
+            color: color,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            color: Colors.grey[600],
+          ),
+        ),
+      ],
     );
   }
 
@@ -370,6 +528,9 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
           _fitMapToBounds();
         }
       },
+      onTap: (LatLng tappedPoint) {
+        _handleMapTap(tappedPoint);
+      },
       initialCameraPosition: CameraPosition(
         target: _trackPoints.isNotEmpty
             ? LatLng(_trackPoints.first.latitude, _trackPoints.first.longitude)
@@ -387,5 +548,54 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
       tiltGesturesEnabled: true,
       zoomGesturesEnabled: true,
     );
+  }
+
+  void _handleMapTap(LatLng tappedPoint) {
+    if (_trackPoints.isEmpty) return;
+
+    // Find the closest track point to the tapped location
+    double minDistance = double.infinity;
+    int closestIndex = 0;
+
+    for (int i = 0; i < _trackPoints.length; i++) {
+      final point = _trackPoints[i];
+      final distance = _calculateDistance(
+        tappedPoint.latitude,
+        tappedPoint.longitude,
+        point.latitude,
+        point.longitude,
+      );
+
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestIndex = i;
+      }
+    }
+
+    // Only update if the tap is reasonably close to the track (within 1km)
+    if (minDistance < 1.0) {
+      setState(() {
+        _selectedPointIndex = closestIndex;
+      });
+
+      // Update markers to show selected point
+      _createMarkers();
+    }
+  }
+
+  double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+    const double earthRadius = 6371; // km
+    final lat1Rad = lat1 * pi / 180;
+    final lat2Rad = lat2 * pi / 180;
+    final deltaLat = (lat2 - lat1) * pi / 180;
+    final deltaLon = (lon2 - lon1) * pi / 180;
+
+    final a = sin(deltaLat / 2) * sin(deltaLat / 2) +
+        cos(lat1Rad) * cos(lat2Rad) *
+        sin(deltaLon / 2) * sin(deltaLon / 2);
+    
+    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    
+    return earthRadius * c;
   }
 }

@@ -10,7 +10,36 @@ class FlightRepository {
     var map = flight.toMap();
     map.remove('id');
     map['updated_at'] = DateTime.now().toIso8601String();
-    return await db.insert('flights', map);
+    
+    try {
+      return await db.insert('flights', map);
+    } catch (e) {
+      if (e.toString().contains('max_climb_rate_5_sec') || 
+          e.toString().contains('max_sink_rate_5_sec')) {
+        print('Database migration needed. Attempting to recreate database...');
+        
+        // Remove the new fields and try again with legacy format
+        map.remove('max_climb_rate_5_sec');
+        map.remove('max_sink_rate_5_sec');
+        
+        try {
+          return await db.insert('flights', map);
+        } catch (e2) {
+          // If that also fails, recreate the database
+          await _databaseHelper.recreateDatabase();
+          db = await _databaseHelper.database;
+          
+          // Restore the full map with new fields for the fresh database
+          map = flight.toMap();
+          map.remove('id');
+          map['updated_at'] = DateTime.now().toIso8601String();
+          
+          return await db.insert('flights', map);
+        }
+      } else {
+        rethrow;
+      }
+    }
   }
 
   Future<List<Flight>> getAllFlights() async {
