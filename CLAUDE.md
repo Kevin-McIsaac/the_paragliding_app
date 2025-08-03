@@ -275,6 +275,11 @@ flutter upgrade
 
 ## Recent Updates
 
+### August 2025 - IGC Date Format Fix
+- **HFDTE Parsing Correction**: Fixed IGC date parsing from incorrect YYMMDD to correct DDMMYY format
+- **Date Accuracy**: Ensures flight dates are parsed correctly from IGC file headers
+- **Parser Update**: Updated `IgcParser._parseDate()` method with correct format interpretation
+
 ### December 2024 - Enhanced Climb Rate Analysis
 - **15-Second Averaging**: Upgraded from 5-second to 15-second climb rate calculations for more stable readings
 - **Dual Rate Display**: Shows both instantaneous and 15-second averaged climb/sink rates
@@ -284,6 +289,7 @@ flutter upgrade
 - **Folder Memory**: IGC import now remembers last used folder for improved workflow
 
 ### Key Files Updated
+- `lib/services/igc_parser.dart`: Fixed HFDTE date format parsing (DDMMYY)
 - `lib/data/models/igc_file.dart`: Core climb rate calculation algorithms
 - `lib/data/models/flight.dart`: Added 15-second climb rate fields
 - `lib/data/datasources/database_helper.dart`: Database migration support

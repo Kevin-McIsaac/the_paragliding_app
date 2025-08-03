@@ -101,14 +101,14 @@ class IgcParser {
 
   /// Parse date from HFDTE record
   DateTime? _parseDate(String line) {
-    // HFDTEYYMMDD where YY is year, MM is month, DD is day
+    // HFDTEDDMMYY where DD is day, MM is month, YY is year
     if (line.length < 11) return null;
     
     try {
-      final dateStr = line.substring(5, 11); // YYMMDD
-      final year = 2000 + int.parse(dateStr.substring(0, 2));
+      final dateStr = line.substring(5, 11); // DDMMYY
+      final day = int.parse(dateStr.substring(0, 2));
       final month = int.parse(dateStr.substring(2, 4));
-      final day = int.parse(dateStr.substring(4, 6));
+      final year = 2000 + int.parse(dateStr.substring(4, 6));
       
       return DateTime(year, month, day);
     } catch (e) {
