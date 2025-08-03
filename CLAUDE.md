@@ -26,7 +26,7 @@ Free Flight Log is a cross-platform application for logging paraglider, hang gli
 - IGC file import with flight track visualization
 - Climb rate calculations (instantaneous and 15-second averaged)
 - Flight detail screens with comprehensive statistics
-- Google Maps integration for track display
+- OpenStreetMap integration for cross-platform track display
 - Folder memory for IGC import workflow
 
 📋 **Planning Documents** (for reference):
@@ -66,7 +66,8 @@ dependencies:
   sqflite_common_ffi: ^2.3.0         # SQLite for desktop platforms
   shared_preferences: ^2.2.0         # Settings storage
   provider: ^6.1.0                   # State management
-  google_maps_flutter: ^2.5.0        # Map visualization (for future use)
+  flutter_map: ^6.1.0                # Cross-platform map visualization with OpenStreetMap
+  latlong2: ^0.9.1                   # Coordinate handling for flutter_map
   file_picker: ^6.0.0                # IGC file import (for future use)
   fl_chart: ^0.65.0                  # Charts for altitude/climb rate
   intl: ^0.18.0                      # Date/time formatting
@@ -106,7 +107,7 @@ lib/
 - **Flight Detail Screen**: Complete flight information with climb rate statistics
 - **IGC Import Service**: Full IGC file parsing with climb rate calculations
 - **IGC Import Screen**: File selection with folder memory and batch import
-- **Flight Track Visualization**: Google Maps and canvas-based track display
+- **Flight Track Visualization**: OpenStreetMap (flutter_map) and canvas-based track display
 - **Navigation**: Screen transitions with result callbacks
 
 ## Development Status
@@ -118,7 +119,7 @@ lib/
 4. ✅ Simple statistics (total flights/hours/max altitude)
 5. ✅ Local SQLite persistence with cross-platform support
 6. ✅ IGC file import and parsing with climb rate calculations
-7. ✅ Google Maps integration for track visualization
+7. ✅ OpenStreetMap integration for cross-platform track visualization
 8. ✅ Flight detail view with edit capability and comprehensive statistics
 9. ✅ Wing/equipment management with automatic creation from IGC data
 10. ✅ Database migrations for schema updates
@@ -231,7 +232,7 @@ flutter upgrade
 ✅ **IGC import tested** with real flight data
 ✅ **Climb rate calculations tested** with unit tests for 15-second averaging
 ✅ **Database migration tested** from v1 to v2 schema
-✅ **Flight track visualization tested** on Google Maps
+✅ **Flight track visualization tested** on OpenStreetMap (flutter_map)
 
 ### Recommended Testing
 1. Test flight entry with various time combinations
@@ -281,12 +282,18 @@ flutter upgrade
 - **Duplicate Detection**: Added comprehensive duplicate flight detection during IGC import
 - **User Choice Options**: Implemented Skip/Skip All/Replace/Replace All options for duplicate handling
 - **Enhanced Results**: Detailed import results showing imported, replaced, skipped, and failed files
-- **Straight Line Visualization**: Added straight-line distance overlay on both Google Maps and Canvas flight track views
+- **Straight Line Visualization**: Added straight-line distance overlay on both OpenStreetMap and Canvas flight track views
 - **Distance Labels**: Straight distance displayed directly on the visualization line (marker for Maps, text overlay for Canvas)
 - **Enhanced Statistics**: Shows track distance and straight distance (removed efficiency calculation)
 - **Interactive Controls**: Toggle visibility of straight line via popup menu in both map and canvas views
 - **Consistent Experience**: Both map and canvas views now offer identical functionality and visual design
 - **Parser Update**: Updated `IgcParser._parseDate()` method with correct format interpretation
+
+### August 2025 - Cross-Platform Map Migration
+- **OpenStreetMap Migration**: Migrated from Google Maps to flutter_map with OpenStreetMap for full cross-platform compatibility
+- **Linux Desktop Support**: Flight track visualization now works natively on Linux desktop without dependencies
+- **Maintained Functionality**: All existing map features preserved including straight-line distance visualization
+- **Enhanced Compatibility**: Single codebase now supports maps on all platforms (Linux, Android, iOS, macOS, Windows)
 
 ### December 2024 - Enhanced Climb Rate Analysis
 - **15-Second Averaging**: Upgraded from 5-second to 15-second climb rate calculations for more stable readings

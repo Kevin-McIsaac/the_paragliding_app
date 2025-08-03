@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import '../../data/models/flight.dart';
 import '../../data/models/igc_file.dart';
 import '../../services/igc_import_service.dart';
@@ -15,14 +16,14 @@ class FlightTrackScreen extends StatefulWidget {
 }
 
 class _FlightTrackScreenState extends State<FlightTrackScreen> {
-  GoogleMapController? _mapController;
+  MapController? _mapController;
   final IgcImportService _igcService = IgcImportService();
   
   List<IgcPoint> _trackPoints = [];
   List<double> _instantaneousRates = [];
   List<double> _fifteenSecondRates = [];
-  Set<Polyline> _polylines = {};
-  Set<Marker> _markers = {};
+  List<Polyline> _polylines = [];
+  List<Marker> _markers = [];
   bool _isLoading = true;
   String? _error;
   
@@ -87,7 +88,7 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
   void _createPolylines() {
     if (_trackPoints.isEmpty) return;
 
-    final polylines = <Polyline>{};
+    final polylines = <Polyline>[];
 
     // Create main track polyline
     final trackCoordinates = _trackPoints
@@ -95,11 +96,9 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
         .toList();
 
     final trackPolyline = Polyline(
-      polylineId: const PolylineId('flight_track'),
       points: trackCoordinates,
       color: _showAltitudeColors ? Colors.blue : Colors.red,
-      width: 3,
-      patterns: [],
+      strokeWidth: 3.0,
     );
     polylines.add(trackPolyline);
 
@@ -109,14 +108,10 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
       final landingPoint = LatLng(_trackPoints.last.latitude, _trackPoints.last.longitude);
       
       final straightLinePolyline = Polyline(
-        polylineId: const PolylineId('straight_line'),
         points: [launchPoint, landingPoint],
         color: Colors.orange,
-        width: 4,
-        patterns: [
-          PatternItem.dash(20),
-          PatternItem.gap(10),
-        ],
+        strokeWidth: 4.0,
+        isDotted: true,
       );
       polylines.add(straightLinePolyline);
     }
@@ -130,7 +125,7 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
   void _createMarkers() {
     if (_trackPoints.isEmpty || !_showMarkers) {
       setState(() {
-        _markers = {};
+        _markers = [];
       });
       return;
     }
@@ -143,57 +138,37 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
       (a, b) => a.gpsAltitude > b.gpsAltitude ? a : b
     );
 
-    final markers = <Marker>{
+    final markers = <Marker>[
       Marker(
-        markerId: const MarkerId('launch'),
-        position: LatLng(startPoint.latitude, startPoint.longitude),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-        infoWindow: InfoWindow(
-          title: 'Launch',
-          snippet: 'Alt: ${startPoint.gpsAltitude}m\nTime: ${_formatTime(startPoint.timestamp)}',
-        ),
+        point: LatLng(startPoint.latitude, startPoint.longitude),
+        child: _buildMarkerIcon(Colors.green, 'L'),
+        width: 40,
+        height: 40,
       ),
       Marker(
-        markerId: const MarkerId('landing'),
-        position: LatLng(endPoint.latitude, endPoint.longitude),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-        infoWindow: InfoWindow(
-          title: 'Landing',
-          snippet: 'Alt: ${endPoint.gpsAltitude}m\nTime: ${_formatTime(endPoint.timestamp)}',
-        ),
+        point: LatLng(endPoint.latitude, endPoint.longitude),
+        child: _buildMarkerIcon(Colors.red, 'X'),
+        width: 40,
+        height: 40,
       ),
       Marker(
-        markerId: const MarkerId('highest'),
-        position: LatLng(highestPoint.latitude, highestPoint.longitude),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
-        infoWindow: InfoWindow(
-          title: 'Highest Point',
-          snippet: 'Alt: ${highestPoint.gpsAltitude}m\nTime: ${_formatTime(highestPoint.timestamp)}',
-        ),
+        point: LatLng(highestPoint.latitude, highestPoint.longitude),
+        child: _buildMarkerIcon(Colors.blue, 'H'),
+        width: 40,
+        height: 40,
       ),
-    };
+    ];
 
     // Add selected point marker if one is selected
     if (_selectedPointIndex != null && _selectedPointIndex! < _trackPoints.length) {
       final selectedPoint = _trackPoints[_selectedPointIndex!];
-      final instantRate = _selectedPointIndex! < _instantaneousRates.length
-          ? _instantaneousRates[_selectedPointIndex!]
-          : 0.0;
-      final fifteenSecRate = _selectedPointIndex! < _fifteenSecondRates.length
-          ? _fifteenSecondRates[_selectedPointIndex!]
-          : 0.0;
-
+      
       markers.add(
         Marker(
-          markerId: const MarkerId('selected'),
-          position: LatLng(selectedPoint.latitude, selectedPoint.longitude),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
-          infoWindow: InfoWindow(
-            title: 'Selected Point ${_selectedPointIndex! + 1}',
-            snippet: 'Alt: ${selectedPoint.gpsAltitude}m\n'
-                     'Instant: ${instantRate.toStringAsFixed(1)}m/s\n'
-                     '15-sec: ${fifteenSecRate.toStringAsFixed(1)}m/s',
-          ),
+          point: LatLng(selectedPoint.latitude, selectedPoint.longitude),
+          child: _buildMarkerIcon(Colors.orange, 'S'),
+          width: 40,
+          height: 40,
         ),
       );
     }
@@ -207,13 +182,25 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
       
       markers.add(
         Marker(
-          markerId: const MarkerId('straight_distance'),
-          position: LatLng(midLat, midLng),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
-          infoWindow: InfoWindow(
-            title: 'Straight Distance',
-            snippet: '${widget.flight.straightDistance!.toStringAsFixed(1)} km',
+          point: LatLng(midLat, midLng),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.orange,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white, width: 2),
+            ),
+            child: Text(
+              '${widget.flight.straightDistance!.toStringAsFixed(1)} km',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
+          width: 80,
+          height: 30,
         ),
       );
     }
@@ -223,8 +210,28 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
     });
   }
 
+  Widget _buildMarkerIcon(Color color, String label) {
+    return Container(
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2),
+      ),
+      child: Center(
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+
   void _fitMapToBounds() {
-    if (_mapController == null || _trackPoints.isEmpty) return;
+    if (_trackPoints.isEmpty || _mapController == null) return;
 
     final latitudes = _trackPoints.map((p) => p.latitude);
     final longitudes = _trackPoints.map((p) => p.longitude);
@@ -235,12 +242,12 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
     final maxLng = longitudes.reduce((a, b) => a > b ? a : b);
 
     final bounds = LatLngBounds(
-      southwest: LatLng(minLat, minLng),
-      northeast: LatLng(maxLat, maxLng),
+      LatLng(minLat, minLng),
+      LatLng(maxLat, maxLng),
     );
 
-    _mapController!.animateCamera(
-      CameraUpdate.newLatLngBounds(bounds, 50.0),
+    _mapController!.fitCamera(
+      CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(50.0)),
     );
   }
 
@@ -393,8 +400,6 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
   Widget _buildStatsBar() {
     if (_trackPoints.isEmpty) return const SizedBox.shrink();
 
-    final startPoint = _trackPoints.first;
-    final endPoint = _trackPoints.last;
     final duration = _formatDuration(widget.flight.duration);
 
     return Container(
@@ -433,32 +438,8 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
                     : 'N/A',
                 Icons.height,
               ),
-              _buildStatItem(
-                'Points',
-                _trackPoints.length.toString(),
-                Icons.gps_fixed,
-              ),
             ],
           ),
-          // Add straight distance row
-          if (widget.flight.straightDistance != null) ...[
-            const SizedBox(height: 12),
-            const Divider(height: 1),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildStatItem(
-                  'Straight Distance',
-                  '${widget.flight.straightDistance!.toStringAsFixed(1)} km',
-                  Icons.straight,
-                ),
-                const SizedBox(width: 60), // Spacer for alignment
-                const SizedBox(width: 60), // Spacer for alignment
-                const SizedBox(width: 60), // Spacer for alignment
-              ],
-            ),
-          ],
           if (widget.flight.maxClimbRate != null || widget.flight.maxClimbRate5Sec != null) ...[
             const SizedBox(height: 12),
             const Divider(height: 1),
@@ -602,32 +583,40 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
   }
 
   Widget _buildMap() {
-    return GoogleMap(
-      onMapCreated: (GoogleMapController controller) {
-        _mapController = controller;
-        if (_trackPoints.isNotEmpty) {
-          _fitMapToBounds();
-        }
-      },
-      onTap: (LatLng tappedPoint) {
-        _handleMapTap(tappedPoint);
-      },
-      initialCameraPosition: CameraPosition(
-        target: _trackPoints.isNotEmpty
+    if (_mapController == null) {
+      _mapController = MapController();
+    }
+    
+    return FlutterMap(
+      mapController: _mapController,
+      options: MapOptions(
+        initialCenter: _trackPoints.isNotEmpty
             ? LatLng(_trackPoints.first.latitude, _trackPoints.first.longitude)
             : const LatLng(0, 0),
-        zoom: 14,
+        initialZoom: 14,
+        onTap: (tapPosition, point) {
+          _handleMapTap(point);
+        },
+        onMapReady: () {
+          if (_trackPoints.isNotEmpty) {
+            _fitMapToBounds();
+          }
+        },
       ),
-      polylines: _polylines,
-      markers: _markers,
-      mapType: MapType.terrain,
-      myLocationButtonEnabled: false,
-      zoomControlsEnabled: true,
-      compassEnabled: true,
-      rotateGesturesEnabled: true,
-      scrollGesturesEnabled: true,
-      tiltGesturesEnabled: true,
-      zoomGesturesEnabled: true,
+      children: [
+        TileLayer(
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'com.example.free_flight_log_app',
+        ),
+        if (_polylines.isNotEmpty)
+          PolylineLayer(
+            polylines: _polylines,
+          ),
+        if (_markers.isNotEmpty)
+          MarkerLayer(
+            markers: _markers,
+          ),
+      ],
     );
   }
 

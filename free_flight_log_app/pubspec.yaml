@@ -40,7 +40,8 @@ dependencies:
   sqflite_common_ffi: ^2.3.0 # SQLite for desktop platforms
   shared_preferences: ^2.2.0 # Settings storage
   provider: ^6.1.0          # State management
-  google_maps_flutter: ^2.5.0 # Map visualization
+  flutter_map: ^6.1.0         # Cross-platform map visualization with OpenStreetMap
+  latlong2: ^0.9.1            # Coordinate handling for flutter_map
   file_picker: ^6.0.0       # IGC file import
   fl_chart: ^0.65.0         # Charts for altitude/climb rate
   intl: ^0.18.0             # Date/time formatting
