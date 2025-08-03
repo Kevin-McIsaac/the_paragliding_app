@@ -28,6 +28,9 @@ Free Flight Log is a cross-platform application for logging paraglider, hang gli
 - Flight detail screens with comprehensive statistics
 - OpenStreetMap integration for cross-platform track display
 - Folder memory for IGC import workflow
+- Timezone support for IGC imports with proper time display
+- Track distance column in flight list for comprehensive flight analysis
+- Midnight crossing flight duration handling
 
 📋 **Planning Documents** (for reference):
 - Complete functional requirements (FUNCTIONAL_SPECIFICATION.md)
@@ -148,7 +151,7 @@ Three main tables with current implementation:
 - `flights`: Core flight records with comprehensive statistics including climb rates
 - `sites`: Launch/landing locations with custom names and coordinates
 - `wings`: Equipment tracking with automatic creation from IGC data
-- Database version 2 with migration support for climb rate fields
+- Database version 3 with migration support for climb rate fields and timezone information
 
 ### Climb Rate Calculations
 - **Instantaneous rates**: Point-to-point climb/sink calculations
@@ -232,7 +235,7 @@ flutter upgrade
 ✅ **Cross-platform verified** on Linux desktop  
 ✅ **IGC import tested** with real flight data
 ✅ **Climb rate calculations tested** with unit tests for 15-second averaging
-✅ **Database migration tested** from v1 to v2 schema
+✅ **Database migration tested** from v1 to v3 schema (climb rates + timezone)
 ✅ **Flight track visualization tested** on OpenStreetMap (flutter_map)
 
 ### Recommended Testing
@@ -274,6 +277,9 @@ flutter upgrade
 - Comprehensive climb rate analysis with 15-second averaging
 - Database migration support for schema updates
 - Remembers last IGC import folder for improved workflow
+- Timezone-aware time display for international flight logging
+- Automatic midnight crossing duration correction
+- Track distance analysis with sortable flight list columns
 
 ## Recent Updates
 

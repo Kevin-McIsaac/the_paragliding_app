@@ -78,6 +78,11 @@ class _FlightListScreenState extends State<FlightListScreen> {
           final bDist = b.straightDistance ?? 0.0;
           comparison = aDist.compareTo(bDist);
           break;
+        case 'track_distance':
+          final aTrackDist = a.distance ?? 0.0;
+          final bTrackDist = b.distance ?? 0.0;
+          comparison = aTrackDist.compareTo(bTrackDist);
+          break;
         case 'altitude':
           final aAlt = a.maxAltitude ?? 0.0;
           final bAlt = b.maxAltitude ?? 0.0;
@@ -433,8 +438,9 @@ class _FlightListScreenState extends State<FlightListScreen> {
           showCheckboxColumn: _isSelectionMode,
           sortColumnIndex: _sortColumn == 'datetime' ? 0 
               : _sortColumn == 'duration' ? 1
-              : _sortColumn == 'distance' ? 2
-              : _sortColumn == 'altitude' ? 3
+              : _sortColumn == 'track_distance' ? 2
+              : _sortColumn == 'distance' ? 3
+              : _sortColumn == 'altitude' ? 4
               : 0,
           sortAscending: _sortAscending,
           columns: [
@@ -447,7 +453,12 @@ class _FlightListScreenState extends State<FlightListScreen> {
               onSort: (columnIndex, ascending) => _sort('duration'),
             ),
             DataColumn(
-              label: const Text('Distance (km)'),
+              label: const Text('Track Dist (km)'),
+              numeric: true,
+              onSort: (columnIndex, ascending) => _sort('track_distance'),
+            ),
+            DataColumn(
+              label: const Text('Straight Dist (km)'),
               numeric: true,
               onSort: (columnIndex, ascending) => _sort('distance'),
             ),
@@ -492,6 +503,25 @@ class _FlightListScreenState extends State<FlightListScreen> {
                 ),
                 DataCell(
                   Text(_formatDuration(flight.duration)),
+                  onTap: _isSelectionMode 
+                      ? null 
+                      : () async {
+                          final result = await Navigator.of(context).push<bool>(
+                            MaterialPageRoute(
+                              builder: (context) => FlightDetailScreen(flight: flight),
+                            ),
+                          );
+                          if (result == true) {
+                            _loadFlights(); // Reload if flight was deleted or modified
+                          }
+                        },
+                ),
+                DataCell(
+                  Text(
+                    flight.distance != null 
+                        ? flight.distance!.toStringAsFixed(1)
+                        : '-',
+                  ),
                   onTap: _isSelectionMode 
                       ? null 
                       : () async {
