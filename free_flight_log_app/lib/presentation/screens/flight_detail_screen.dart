@@ -402,89 +402,38 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
 
                   const SizedBox(height: 16),
 
-                  // Flight Statistics Card
-                  if (_flight.maxAltitude != null || _flight.distance != null || 
-                      _flight.maxClimbRate != null || _flight.maxSinkRate != null ||
-                      _flight.maxClimbRate5Sec != null || _flight.maxSinkRate5Sec != null)
+                  // Flight Track with Statistics Card
+                  if (_flight.trackLogPath != null && _flight.source == 'igc')
                     Card(
                       child: Padding(
                         padding: const EdgeInsets.all(16.0),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'Flight Statistics',
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                            const SizedBox(height: 16),
                             Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                if (_flight.maxAltitude != null)
-                                  Expanded(
-                                    child: _buildInfoTile(
-                                      'Max Altitude',
-                                      '${_flight.maxAltitude!.toStringAsFixed(0)} m',
-                                      Icons.height,
-                                    ),
-                                  ),
-                                if (_flight.distance != null)
-                                  Expanded(
-                                    child: _buildInfoTile(
-                                      'Ground Track',
-                                      '${_flight.distance!.toStringAsFixed(1)} km',
-                                      Icons.timeline,
-                                    ),
-                                  ),
-                                if (_flight.straightDistance != null)
-                                  Expanded(
-                                    child: _buildInfoTile(
-                                      'Straight Distance',
-                                      '${_flight.straightDistance!.toStringAsFixed(1)} km',
-                                      Icons.straighten,
-                                    ),
-                                  ),
+                                Text(
+                                  'Flight Track',
+                                  style: Theme.of(context).textTheme.titleLarge,
+                                ),
+                                TextButton.icon(
+                                  onPressed: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (context) => FlightTrackScreen(flight: _flight),
+                                      ),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.fullscreen),
+                                  label: const Text('Full Screen'),
+                                ),
                               ],
                             ),
-                            if (_flight.maxClimbRate != null || _flight.maxSinkRate != null ||
-                                _flight.maxClimbRate5Sec != null || _flight.maxSinkRate5Sec != null) ...[
-                              const SizedBox(height: 16),
-                              Row(
-                                children: [
-                                  if (_flight.maxClimbRate != null)
-                                    Expanded(
-                                      child: _buildInfoTile(
-                                        'Max Climb',
-                                        '${_flight.maxClimbRate!.toStringAsFixed(1)} m/s',
-                                        Icons.trending_up,
-                                      ),
-                                    ),
-                                  if (_flight.maxSinkRate != null)
-                                    Expanded(
-                                      child: _buildInfoTile(
-                                        'Max Sink',
-                                        '${_flight.maxSinkRate!.toStringAsFixed(1)} m/s',
-                                        Icons.trending_down,
-                                      ),
-                                    ),
-                                  if (_flight.maxClimbRate5Sec != null)
-                                    Expanded(
-                                      child: _buildInfoTile(
-                                        'Max Climb (15s)',
-                                        '${_flight.maxClimbRate5Sec!.toStringAsFixed(1)} m/s',
-                                        Icons.trending_up,
-                                      ),
-                                    ),
-                                  if (_flight.maxSinkRate5Sec != null)
-                                    Expanded(
-                                      child: _buildInfoTile(
-                                        'Max Sink (15s)',
-                                        '${_flight.maxSinkRate5Sec!.toStringAsFixed(1)} m/s',
-                                        Icons.trending_down,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ],
+                            const SizedBox(height: 16),
+                            if (_trackPoints.isNotEmpty) _buildStatsBar(),
+                            const SizedBox(height: 16),
+                            _buildEmbeddedMap(),
                           ],
                         ),
                       ),
@@ -537,42 +486,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
 
                   const SizedBox(height: 16),
 
-                  // Track Log Card with Embedded Map
-                  if (_flight.trackLogPath != null && _flight.source == 'igc')
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  'Flight Track',
-                                  style: Theme.of(context).textTheme.titleLarge,
-                                ),
-                                TextButton.icon(
-                                  onPressed: () {
-                                    Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (context) => FlightTrackScreen(flight: _flight),
-                                      ),
-                                    );
-                                  },
-                                  icon: const Icon(Icons.fullscreen),
-                                  label: const Text('Full Screen'),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            _buildEmbeddedMap(),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                  const SizedBox(height: 16),
 
                   // Equipment Card
                   if (_wing != null)
@@ -769,6 +682,109 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
 
     _mapController!.fitCamera(
       CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(20.0)),
+    );
+  }
+
+  Widget _buildStatsBar() {
+    final duration = _formatDuration(_flight.duration);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildStatItem(
+                'Duration',
+                duration,
+                Icons.access_time,
+              ),
+              _buildStatItem(
+                'Track Distance',
+                _flight.distance != null 
+                    ? '${_flight.distance!.toStringAsFixed(1)} km'
+                    : 'N/A',
+                Icons.timeline,
+              ),
+              _buildStatItem(
+                'Max Alt',
+                _flight.maxAltitude != null
+                    ? '${_flight.maxAltitude!.toInt()} m'
+                    : 'N/A',
+                Icons.height,
+              ),
+            ],
+          ),
+          if (_flight.maxClimbRate != null || _flight.maxSinkRate != null ||
+              _flight.maxClimbRate5Sec != null || _flight.maxSinkRate5Sec != null) ...[
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                if (_flight.maxClimbRate != null)
+                  _buildStatItem(
+                    'Max Climb (Inst)',
+                    '${_flight.maxClimbRate!.toStringAsFixed(1)} m/s',
+                    Icons.trending_up,
+                  ),
+                if (_flight.maxSinkRate != null)
+                  _buildStatItem(
+                    'Max Sink (Inst)',
+                    '${_flight.maxSinkRate!.toStringAsFixed(1)} m/s',
+                    Icons.trending_down,
+                  ),
+                if (_flight.maxClimbRate5Sec != null)
+                  _buildStatItem(
+                    'Max Climb (15s)',
+                    '${_flight.maxClimbRate5Sec!.toStringAsFixed(1)} m/s',
+                    Icons.trending_up,
+                  ),
+                if (_flight.maxSinkRate5Sec != null)
+                  _buildStatItem(
+                    'Max Sink (15s)',
+                    '${_flight.maxSinkRate5Sec!.toStringAsFixed(1)} m/s',
+                    Icons.trending_down,
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatItem(String label, String value, IconData icon) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            color: Colors.grey[600],
+          ),
+        ),
+      ],
     );
   }
 
