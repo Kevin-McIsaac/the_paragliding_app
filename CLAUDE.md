@@ -284,6 +284,28 @@ flutter upgrade
 
 ## Recent Updates
 
+### January 2025 - Site Management and UI Improvements
+- **Timezone Caching Implementation**: Eliminated duplicate timezone detection messages during IGC import
+  - **Coordinate-Based Caching**: Uses GPS coordinates as cache key to prevent duplicate detections
+  - **Performance Improvement**: Caches timezone results per coordinate location for faster subsequent imports
+  - **Clean Debug Output**: Only prints timezone detection message on first occurrence
+- **Comprehensive Site Management**: Added full site management functionality
+  - **ManageSitesScreen**: Complete interface for viewing, editing, and managing flight sites
+  - **Search and Filter**: Real-time site search with instant filtering capabilities
+  - **Edit Sites**: Full form validation for coordinates, altitude, and site names
+  - **Delete Protection**: Sites used in flights cannot be deleted (safety feature)
+  - **Site Statistics**: Shows usage counts and comprehensive site information
+- **Improved Navigation Structure**: Reorganized menu system for better user experience
+  - **Main Menu Integration**: Moved site management to main menu under "Manage Wings"
+  - **Import/Refresh in Menu**: Moved Import IGC and Refresh buttons from app bar to main menu
+  - **Cleaner App Bar**: Reduced clutter in app bar, focusing on essential selection actions
+  - **Logical Grouping**: Actions (Import/Refresh) at top, then management features, then settings
+- **ParaglidingEarth.com API Integration**: Real-time site lookup with intelligent fallback
+  - **API-First Approach**: Uses ParaglidingEarth.com API for comprehensive site database
+  - **Personalized Fallback**: Falls back to user's actual flight sites when API unavailable
+  - **Caching System**: 24-hour cache for API responses to reduce network calls
+  - **Connection Testing**: Built-in API connectivity testing in Database Settings
+
 ### January 2025 - GPS-Based Timezone Detection
 - **GPS Coordinate Timezone Detection**: System now always uses launch GPS coordinates to determine timezone
   - **HFTZNUTCOFFSET Override**: Intentionally ignores timezone headers in IGC files

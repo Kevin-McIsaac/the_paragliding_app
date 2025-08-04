@@ -263,33 +263,24 @@ class _FlightListScreenState extends State<FlightListScreen> {
                 ),
             ]
           : [
-              IconButton(
-                icon: const Icon(Icons.upload_file),
-                tooltip: 'Import IGC',
-                onPressed: () async {
-                  final result = await Navigator.of(context).push<bool>(
-                    MaterialPageRoute(
-                      builder: (context) => const IgcImportScreen(),
-                    ),
-                  );
-                  
-                  if (result == true) {
-                    _loadFlights();
-                  }
-                },
-              ),
-              IconButton(
-                icon: const Icon(Icons.refresh),
-                onPressed: () {
-                  setState(() {
-                    _isLoading = true;
-                  });
-                  _loadFlights();
-                },
-              ),
               PopupMenuButton<String>(
-                onSelected: (value) {
-                  if (value == 'select') {
+                onSelected: (value) async {
+                  if (value == 'import') {
+                    final result = await Navigator.of(context).push<bool>(
+                      MaterialPageRoute(
+                        builder: (context) => const IgcImportScreen(),
+                      ),
+                    );
+                    
+                    if (result == true) {
+                      _loadFlights();
+                    }
+                  } else if (value == 'refresh') {
+                    setState(() {
+                      _isLoading = true;
+                    });
+                    _loadFlights();
+                  } else if (value == 'select') {
                     _toggleSelectionMode();
                   } else if (value == 'wings') {
                     Navigator.of(context).push(
@@ -318,6 +309,27 @@ class _FlightListScreenState extends State<FlightListScreen> {
                   }
                 },
                 itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'import',
+                    child: Row(
+                      children: [
+                        Icon(Icons.upload_file),
+                        SizedBox(width: 8),
+                        Text('Import IGC'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'refresh',
+                    child: Row(
+                      children: [
+                        Icon(Icons.refresh),
+                        SizedBox(width: 8),
+                        Text('Refresh'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuDivider(),
                   const PopupMenuItem(
                     value: 'statistics',
                     child: Row(
