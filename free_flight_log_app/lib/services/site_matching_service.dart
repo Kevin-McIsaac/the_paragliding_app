@@ -1,0 +1,322 @@
+import 'dart:convert';
+import 'dart:math';
+import 'package:flutter/services.dart';
+import '../data/models/paragliding_site.dart';
+import 'paragliding_earth_api.dart';
+
+class SiteMatchingService {
+  static SiteMatchingService? _instance;
+  static SiteMatchingService get instance => _instance ??= SiteMatchingService._();
+  
+  SiteMatchingService._();
+
+  List<ParaglidingSite>? _sites;
+  bool _isInitialized = false;
+  bool _useApi = true; // Enable API by default, can be configured
+
+  /// Initialize the service by loading popular sites from assets
+  Future<void> initialize() async {
+    if (_isInitialized) return;
+
+    try {
+      // Load popular sites from JSON asset file
+      final String jsonString = await rootBundle.loadString('assets/popular_paragliding_sites.json');
+      final Map<String, dynamic> jsonData = jsonDecode(jsonString);
+      
+      // Extract the sites array from the wrapper object
+      final List<dynamic> jsonList = jsonData['sites'] as List<dynamic>;
+      
+      _sites = jsonList.map((json) => ParaglidingSite.fromJson(json)).toList();
+      _isInitialized = true;
+      
+      print('Loaded ${_sites!.length} popular paragliding sites from ${jsonData['source']} (version ${jsonData['version']})');
+    } catch (e) {
+      print('Error loading paragliding sites: $e');
+      // Initialize with empty list if loading fails
+      _sites = [];
+      _isInitialized = true;
+    }
+  }
+
+  /// Find the nearest paragliding site to given coordinates
+  /// Uses API first, then falls back to local database
+  /// Returns null if no site found within maxDistance (meters)
+  Future<ParaglidingSite?> findNearestSite(
+    double latitude, 
+    double longitude, {
+    double maxDistance = 1000, // 1km default
+    String? preferredType, // 'launch', 'landing', or null for any
+  }) async {
+    // Try API first if enabled
+    if (_useApi) {
+      try {
+        final apiSite = await ParaglidingEarthApi.instance.findNearestSite(
+          latitude,
+          longitude,
+          maxDistanceKm: maxDistance / 1000.0, // Convert meters to km
+          preferredType: preferredType,
+        );
+        
+        if (apiSite != null) {
+          print('SiteMatching: Found site via API: ${apiSite.name}');
+          return apiSite;
+        }
+      } catch (e) {
+        print('SiteMatching: API lookup failed, falling back to local database: $e');
+      }
+    }
+
+    // Fallback to local database
+    return _findNearestSiteLocal(latitude, longitude, maxDistance: maxDistance, preferredType: preferredType);
+  }
+
+  /// Find the nearest site using local database only
+  /// Returns null if no site found within maxDistance (meters)
+  ParaglidingSite? _findNearestSiteLocal(
+    double latitude, 
+    double longitude, {
+    double maxDistance = 1000, // 1km default
+    String? preferredType, // 'launch', 'landing', or null for any
+  }) {
+    if (!_isInitialized || _sites == null || _sites!.isEmpty) {
+      return null;
+    }
+
+    ParaglidingSite? nearestSite;
+    double nearestDistance = double.infinity;
+
+    for (final site in _sites!) {
+      // Filter by type if specified
+      if (preferredType != null && 
+          site.siteType != preferredType && 
+          site.siteType != 'both') {
+        continue;
+      }
+
+      final distance = site.distanceTo(latitude, longitude);
+      
+      if (distance <= maxDistance && distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestSite = site;
+      }
+    }
+
+    return nearestSite;
+  }
+
+  /// Find the nearest launch site
+  Future<ParaglidingSite?> findNearestLaunchSite(
+    double latitude, 
+    double longitude, {
+    double maxDistance = 500, // 500m for launches (more precise)
+  }) async {
+    return await findNearestSite(
+      latitude, 
+      longitude, 
+      maxDistance: maxDistance,
+      preferredType: 'launch',
+    );
+  }
+
+  /// Find the nearest landing site
+  Future<ParaglidingSite?> findNearestLandingSite(
+    double latitude, 
+    double longitude, {
+    double maxDistance = 1000, // 1km for landings (more flexible)
+  }) async {
+    return await findNearestSite(
+      latitude, 
+      longitude, 
+      maxDistance: maxDistance,
+      preferredType: 'landing',
+    );
+  }
+
+  /// Find all sites within a given radius
+  List<ParaglidingSite> findSitesInRadius(
+    double latitude,
+    double longitude,
+    double radiusMeters,
+  ) {
+    if (!_isInitialized || _sites == null) {
+      return [];
+    }
+
+    final nearbyStites = <ParaglidingSite>[];
+
+    for (final site in _sites!) {
+      final distance = site.distanceTo(latitude, longitude);
+      if (distance <= radiusMeters) {
+        nearbyStites.add(site);
+      }
+    }
+
+    // Sort by distance
+    nearbyStites.sort((a, b) {
+      final distanceA = a.distanceTo(latitude, longitude);
+      final distanceB = b.distanceTo(latitude, longitude);
+      return distanceA.compareTo(distanceB);
+    });
+
+    return nearbyStites;
+  }
+
+  /// Search sites by name (case-insensitive)
+  List<ParaglidingSite> searchByName(String query) {
+    if (!_isInitialized || _sites == null || query.trim().isEmpty) {
+      return [];
+    }
+
+    final queryLower = query.toLowerCase().trim();
+    final matches = <ParaglidingSite>[];
+
+    for (final site in _sites!) {
+      if (site.name.toLowerCase().contains(queryLower) ||
+          (site.country?.toLowerCase().contains(queryLower) ?? false) ||
+          (site.region?.toLowerCase().contains(queryLower) ?? false)) {
+        matches.add(site);
+      }
+    }
+
+    // Sort by relevance: exact matches first, then partial matches
+    matches.sort((a, b) {
+      final aNameLower = a.name.toLowerCase();
+      final bNameLower = b.name.toLowerCase();
+
+      // Exact name match gets highest priority
+      if (aNameLower == queryLower && bNameLower != queryLower) return -1;
+      if (bNameLower == queryLower && aNameLower != queryLower) return 1;
+
+      // Name starts with query gets second priority
+      final aStartsWith = aNameLower.startsWith(queryLower);
+      final bStartsWith = bNameLower.startsWith(queryLower);
+      if (aStartsWith && !bStartsWith) return -1;
+      if (bStartsWith && !aStartsWith) return 1;
+
+      // Sort by popularity, then rating, then name
+      final aScore = a.popularity ?? 0;
+      final bScore = b.popularity ?? 0;
+      if (aScore != bScore) return bScore.compareTo(aScore);
+
+      if (a.rating != b.rating) return b.rating.compareTo(a.rating);
+
+      return a.name.compareTo(b.name);
+    });
+
+    return matches;
+  }
+
+  /// Get sites by country
+  List<ParaglidingSite> getSitesByCountry(String country) {
+    if (!_isInitialized || _sites == null) {
+      return [];
+    }
+
+    return _sites!
+        .where((site) => site.country?.toLowerCase() == country.toLowerCase())
+        .toList();
+  }
+
+  /// Get statistics about loaded sites
+  Map<String, dynamic> getStatistics() {
+    if (!_isInitialized || _sites == null) {
+      return {'total': 0};
+    }
+
+    final stats = <String, dynamic>{
+      'total': _sites!.length,
+      'launch_sites': _sites!.where((s) => s.siteType == 'launch' || s.siteType == 'both').length,
+      'landing_sites': _sites!.where((s) => s.siteType == 'landing' || s.siteType == 'both').length,
+      'countries': _sites!.map((s) => s.country).where((c) => c != null).toSet().length,
+      'rated_sites': _sites!.where((s) => s.rating > 0).length,
+    };
+
+    // Top countries by site count
+    final countryCount = <String, int>{};
+    for (final site in _sites!) {
+      if (site.country != null) {
+        countryCount[site.country!] = (countryCount[site.country!] ?? 0) + 1;
+      }
+    }
+
+    stats['top_countries'] = countryCount.entries
+        .toList()
+        ..sort((a, b) => b.value.compareTo(a.value))
+        ..take(10)
+        .map((e) => {'country': e.key, 'count': e.value})
+        .toList();
+
+    return stats;
+  }
+
+  /// Get a site name suggestion for given coordinates
+  /// Returns either a matched site name or a formatted coordinate string
+  /// Now uses API with fallback to local database
+  Future<String> getSiteNameSuggestion(
+    double latitude, 
+    double longitude, {
+    String prefix = '',
+    String? siteType,
+  }) async {
+    // Try to find a matching paragliding site (API + fallback)
+    final matchingSite = await findNearestSite(
+      latitude, 
+      longitude,
+      maxDistance: siteType == 'launch' ? 500 : 1000,
+      preferredType: siteType,
+    );
+
+    if (matchingSite != null) {
+      final siteName = prefix.isNotEmpty ? '$prefix ${matchingSite.name}' : matchingSite.name;
+      print('SiteMatching: Using site name: $siteName');
+      return siteName;
+    }
+
+    // Fallback to coordinate-based name
+    final latStr = '${latitude.toStringAsFixed(3)}°${latitude >= 0 ? 'N' : 'S'}';
+    final lonStr = '${longitude.abs().toStringAsFixed(3)}°${longitude >= 0 ? 'E' : 'W'}';
+    final coordName = '$latStr $lonStr';
+    final finalName = prefix.isNotEmpty ? '$prefix $coordName' : coordName;
+    
+    print('SiteMatching: No site found, using coordinates: $finalName');
+    return finalName;
+  }
+
+  /// Check if service is initialized and ready to use
+  bool get isReady => _isInitialized;
+
+  /// Get the number of loaded sites
+  int get siteCount => _sites?.length ?? 0;
+
+  /// Reload sites from assets (useful for testing or updates)
+  Future<void> reload() async {
+    _isInitialized = false;
+    _sites = null;
+    await initialize();
+  }
+
+  /// Enable or disable API usage
+  void setApiEnabled(bool enabled) {
+    _useApi = enabled;
+    print('SiteMatching: API usage ${enabled ? 'enabled' : 'disabled'}');
+  }
+
+  /// Check if API is enabled
+  bool get isApiEnabled => _useApi;
+
+  /// Test API connectivity
+  Future<bool> testApiConnection() async {
+    if (!_useApi) return false;
+    return await ParaglidingEarthApi.instance.testConnection();
+  }
+
+  /// Get API cache statistics  
+  Map<String, dynamic> getApiCacheStats() {
+    return ParaglidingEarthApi.instance.getCacheStats();
+  }
+
+  /// Clear API cache
+  void clearApiCache() {
+    ParaglidingEarthApi.instance.clearCache();
+  }
+}

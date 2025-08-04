@@ -74,6 +74,7 @@ dependencies:
   file_picker: ^6.0.0                # IGC file import (for future use)
   fl_chart: ^0.65.0                  # Charts for altitude/climb rate
   intl: ^0.18.0                      # Date/time formatting
+  timezone: ^0.9.2                   # Timezone database and GPS-based timezone detection
 ```
 
 ## Architecture Overview (Implemented)
@@ -283,6 +284,24 @@ flutter upgrade
 
 ## Recent Updates
 
+### January 2025 - GPS-Based Timezone Detection
+- **GPS Coordinate Timezone Detection**: System now always uses launch GPS coordinates to determine timezone
+  - **HFTZNUTCOFFSET Override**: Intentionally ignores timezone headers in IGC files
+  - **Location-Based Accuracy**: Ensures times reflect actual flight location timezone
+  - **Automatic Detection**: Maps GPS coordinates to nearest timezone region
+  - **Fallback Logic**: Uses longitude-based estimation for remote locations
+- **B Record UTC Handling**: Correctly treats B records as UTC time per IGC specification
+  - **Fixed Time Conversion**: B records parsed as UTC, then converted to local time
+  - **Proper UTC to Local**: Changed from incorrect local-to-UTC to correct UTC-to-local conversion
+  - **Standards Compliance**: Aligns with official IGC file format specification
+- **Timezone Service Implementation**: New service for coordinate-to-timezone mapping
+  - **Major Cities Database**: Covers global timezone regions with radius-based matching
+  - **Timezone Offset Conversion**: Converts timezone IDs to offset strings (e.g., "Europe/Zurich" → "+02:00")
+  - **Seasonal Awareness**: Handles daylight saving time based on flight date
+- **Enhanced Reliability**: GPS-based detection eliminates unreliable manual timezone settings
+  - **Console Logging**: Reports when overriding file timezone with GPS-detected timezone
+  - **Test Coverage**: Comprehensive tests for timezone detection and UTC conversion
+
 ### August 2025 - Timezone Support & Enhanced Flight Analysis
 - **Comprehensive Timezone Support**: Full implementation of timezone handling for IGC imports
   - **HFTZNUTCOFFSET Parsing**: Extracts timezone information from IGC headers (e.g., "+10.00h" → "+10:00")
@@ -346,14 +365,17 @@ flutter upgrade
 - `lib/data/models/flight.dart`: Added timezone field and midnight crossing duration logic
 - `lib/data/models/igc_file.dart`: Enhanced with timezone support and smart duration calculation
 - `lib/data/datasources/database_helper.dart`: Database v3 migration for timezone column
-- `lib/services/igc_parser.dart`: HFTZNUTCOFFSET parsing and timezone-aware timestamps
+- `lib/services/igc_parser.dart`: GPS-based timezone detection, B record UTC handling, HFTZNUTCOFFSET override
+- `lib/services/timezone_service.dart`: GPS coordinate to timezone mapping service (NEW)
 - `lib/services/igc_import_service.dart`: Timezone preservation during IGC import
 - `lib/data/repositories/flight_repository.dart`: Timezone field support and migration handling
 - `lib/presentation/screens/flight_detail_screen.dart`: Timezone-aware time display and IGC source info
 - `lib/presentation/screens/flight_list_screen.dart`: Enhanced table with track distance column and timezone display
 - `lib/presentation/screens/edit_flight_screen.dart`: Timezone field preservation during edits
 - `lib/presentation/screens/add_flight_screen.dart`: Explicit null timezone for manual flights
+- `lib/main.dart`: Timezone database initialization on app startup
 - `test/midnight_crossing_test.dart`: Comprehensive unit tests for midnight crossing scenarios (NEW)
+- `test/timezone_test.dart`: Tests for GPS-based timezone detection and UTC conversion (NEW)
 - `lib/presentation/widgets/duplicate_flight_dialog.dart`: User choice dialog for duplicates
 - `lib/presentation/screens/flight_track_screen.dart`: Added straight line visualization and enhanced statistics
 - `lib/presentation/screens/flight_track_canvas_screen.dart`: Added matching straight line visualization for canvas view

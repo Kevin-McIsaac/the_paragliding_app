@@ -46,10 +46,15 @@ class FlightRepository {
 
   Future<List<Flight>> getAllFlights() async {
     Database db = await _databaseHelper.database;
-    List<Map<String, dynamic>> maps = await db.query(
-      'flights',
-      orderBy: 'date DESC, launch_time DESC',
-    );
+    List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT f.*, 
+             ls.name as launch_site_name,
+             land.name as landing_site_name
+      FROM flights f
+      LEFT JOIN sites ls ON f.launch_site_id = ls.id
+      LEFT JOIN sites land ON f.landing_site_id = land.id
+      ORDER BY f.date DESC, f.launch_time DESC
+    ''');
     return List.generate(maps.length, (i) => Flight.fromMap(maps[i]));
   }
 

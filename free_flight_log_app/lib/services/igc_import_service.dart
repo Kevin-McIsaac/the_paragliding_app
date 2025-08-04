@@ -10,6 +10,7 @@ import '../data/repositories/flight_repository.dart';
 import '../data/repositories/site_repository.dart';
 import '../data/repositories/wing_repository.dart';
 import 'igc_parser.dart';
+import 'site_matching_service.dart';
 
 /// Service for importing IGC files into the flight log
 class IgcImportService {
@@ -142,27 +143,39 @@ class IgcImportService {
     final climbRates = igcData.calculateClimbRates();
     final climbRates15Sec = igcData.calculate15SecondMaxClimbRates();
     
-    // Get or create launch site
+    // Get or create launch site with paragliding site matching
     Site? launchSite;
     if (igcData.launchSite != null) {
       final launchPoint = igcData.launchSite!;
+      final siteName = await _getSiteName(
+        launchPoint.latitude,
+        launchPoint.longitude,
+        siteType: 'launch',
+      );
+      
       launchSite = await _siteRepository.findOrCreateSite(
         latitude: launchPoint.latitude,
         longitude: launchPoint.longitude,
         altitude: launchPoint.gpsAltitude.toDouble(),
-        name: 'Launch ${_formatCoordinate(launchPoint.latitude, launchPoint.longitude)}',
+        name: siteName,
       );
     }
 
-    // Get or create landing site
+    // Get or create landing site with paragliding site matching
     Site? landingSite;
     if (igcData.landingSite != null) {
       final landingPoint = igcData.landingSite!;
+      final siteName = await _getSiteName(
+        landingPoint.latitude,
+        landingPoint.longitude,
+        siteType: 'landing',
+      );
+      
       landingSite = await _siteRepository.findOrCreateSite(
         latitude: landingPoint.latitude,
         longitude: landingPoint.longitude,
         altitude: landingPoint.gpsAltitude.toDouble(),
-        name: 'Landing ${_formatCoordinate(landingPoint.latitude, landingPoint.longitude)}',
+        name: siteName,
       );
     }
 
@@ -267,7 +280,28 @@ class IgcImportService {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
   }
 
-  /// Format coordinate for display
+  /// Get site name using paragliding site matching or fallback to coordinates
+  Future<String> _getSiteName(
+    double latitude,
+    double longitude, {
+    String? siteType,
+  }) async {
+    // Ensure site matching service is initialized
+    final siteMatchingService = SiteMatchingService.instance;
+    if (!siteMatchingService.isReady) {
+      await siteMatchingService.initialize();
+    }
+
+    // Try to get a paragliding site name (without prefix to avoid redundant "Launch"/"Landing")
+    return await siteMatchingService.getSiteNameSuggestion(
+      latitude,
+      longitude,
+      prefix: '', // Remove prefix to avoid "Launch 47.123°N" - coordinates already indicate position
+      siteType: siteType,
+    );
+  }
+
+  /// Format coordinate for display (fallback method)
   String _formatCoordinate(double lat, double lon) {
     final latDir = lat >= 0 ? 'N' : 'S';
     final lonDir = lon >= 0 ? 'E' : 'W';

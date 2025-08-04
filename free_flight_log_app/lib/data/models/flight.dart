@@ -6,6 +6,8 @@ class Flight {
   final int duration;
   final int? launchSiteId;
   final int? landingSiteId;
+  final String? launchSiteName;  // From JOIN with sites table
+  final String? landingSiteName; // From JOIN with sites table
   final double? maxAltitude;
   final double? maxClimbRate;
   final double? maxSinkRate;
@@ -29,6 +31,8 @@ class Flight {
     required this.duration,
     this.launchSiteId,
     this.landingSiteId,
+    this.launchSiteName,
+    this.landingSiteName,
     this.maxAltitude,
     this.maxClimbRate,
     this.maxSinkRate,
@@ -54,6 +58,7 @@ class Flight {
       'duration': duration,
       'launch_site_id': launchSiteId,
       'landing_site_id': landingSiteId,
+      // Note: launchSiteName and landingSiteName are not stored in flights table
       'max_altitude': maxAltitude,
       'max_climb_rate': maxClimbRate,
       'max_sink_rate': maxSinkRate,
@@ -80,6 +85,8 @@ class Flight {
       duration: map['duration'],
       launchSiteId: map['launch_site_id'],
       landingSiteId: map['landing_site_id'],
+      launchSiteName: map['launch_site_name'], // From JOIN query
+      landingSiteName: map['landing_site_name'], // From JOIN query
       maxAltitude: map['max_altitude']?.toDouble(),
       maxClimbRate: map['max_climb_rate']?.toDouble(),
       maxSinkRate: map['max_sink_rate']?.toDouble(),
@@ -105,6 +112,8 @@ class Flight {
     int? duration,
     int? launchSiteId,
     int? landingSiteId,
+    String? launchSiteName,
+    String? landingSiteName,
     double? maxAltitude,
     double? maxClimbRate,
     double? maxSinkRate,
@@ -128,6 +137,8 @@ class Flight {
       duration: duration ?? this.duration,
       launchSiteId: launchSiteId ?? this.launchSiteId,
       landingSiteId: landingSiteId ?? this.landingSiteId,
+      launchSiteName: launchSiteName ?? this.launchSiteName,
+      landingSiteName: landingSiteName ?? this.landingSiteName,
       maxAltitude: maxAltitude ?? this.maxAltitude,
       maxClimbRate: maxClimbRate ?? this.maxClimbRate,
       maxSinkRate: maxSinkRate ?? this.maxSinkRate,

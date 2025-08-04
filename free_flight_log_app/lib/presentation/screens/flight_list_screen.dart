@@ -6,6 +6,7 @@ import 'igc_import_screen.dart';
 import 'flight_detail_screen.dart';
 import 'wing_management_screen.dart';
 import 'statistics_screen.dart';
+import 'database_settings_screen.dart';
 
 class FlightListScreen extends StatefulWidget {
   const FlightListScreen({super.key});
@@ -301,6 +302,12 @@ class _FlightListScreenState extends State<FlightListScreen> {
                         builder: (context) => const StatisticsScreen(),
                       ),
                     );
+                  } else if (value == 'database') {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const DatabaseSettingsScreen(),
+                      ),
+                    );
                   }
                 },
                 itemBuilder: (context) => [
@@ -332,6 +339,16 @@ class _FlightListScreenState extends State<FlightListScreen> {
                         Icon(Icons.paragliding),
                         SizedBox(width: 8),
                         Text('Manage Wings'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'database',
+                    child: Row(
+                      children: [
+                        Icon(Icons.storage),
+                        SizedBox(width: 8),
+                        Text('Database Settings'),
                       ],
                     ),
                   ),
@@ -436,14 +453,19 @@ class _FlightListScreenState extends State<FlightListScreen> {
       child: SingleChildScrollView(
         child: DataTable(
           showCheckboxColumn: _isSelectionMode,
-          sortColumnIndex: _sortColumn == 'datetime' ? 0 
-              : _sortColumn == 'duration' ? 1
-              : _sortColumn == 'track_distance' ? 2
-              : _sortColumn == 'distance' ? 3
-              : _sortColumn == 'altitude' ? 4
+          sortColumnIndex: _sortColumn == 'launch_site' ? 0
+              : _sortColumn == 'datetime' ? 1
+              : _sortColumn == 'duration' ? 2
+              : _sortColumn == 'track_distance' ? 3
+              : _sortColumn == 'distance' ? 4
+              : _sortColumn == 'altitude' ? 5
               : 0,
           sortAscending: _sortAscending,
           columns: [
+            DataColumn(
+              label: const Text('Launch Site'),
+              onSort: (columnIndex, ascending) => _sort('launch_site'),
+            ),
             DataColumn(
               label: const Text('Launch Date & Time'),
               onSort: (columnIndex, ascending) => _sort('datetime'),
@@ -482,6 +504,24 @@ class _FlightListScreenState extends State<FlightListScreen> {
                 }
               },
               cells: [
+                DataCell(
+                  Text(
+                    flight.launchSiteName ?? 'Unknown Site',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onTap: _isSelectionMode 
+                      ? null 
+                      : () async {
+                          final result = await Navigator.of(context).push<bool>(
+                            MaterialPageRoute(
+                              builder: (context) => FlightDetailScreen(flight: flight),
+                            ),
+                          );
+                          if (result == true) {
+                            _loadFlights(); // Reload if flight was deleted or modified
+                          }
+                        },
+                ),
                 DataCell(
                   Text(
                     '${flight.date.day.toString().padLeft(2, '0')}/'
