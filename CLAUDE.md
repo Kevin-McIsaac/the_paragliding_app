@@ -401,3 +401,24 @@ flutter upgrade
 - `lib/presentation/widgets/duplicate_flight_dialog.dart`: User choice dialog for duplicates
 - `lib/presentation/screens/flight_track_screen.dart`: Added straight line visualization and enhanced statistics
 - `lib/presentation/screens/flight_track_canvas_screen.dart`: Added matching straight line visualization for canvas view
+
+### January 2025 - Landing Sites Redesign & Site Management
+- **Landing Sites Conceptual Redesign**: Separated launch sites (named, reusable) from landing locations (coordinates)
+  - **Database v4 Migration**: Added landing coordinate columns (latitude, longitude, altitude, description)
+  - **Removed landing_site_id**: Landing locations no longer stored as "sites"
+  - **Flight Model Update**: Uses direct landing coordinates instead of site references
+  - **IGC Import Optimization**: No longer creates landing "sites" or queries API for landing locations
+  - **UI Improvements**: Landing locations show coordinates with optional custom descriptions
+  - **Site Management Cleanup**: "Manage Sites" now only shows launch sites (much cleaner)
+- **Launch Site Handling**: 
+  - **Unknown Site Fallback**: Launch sites without matches now use "Unknown" instead of coordinate strings
+  - **ParaglidingEarth API**: Continues to work for launch site identification only
+  - **Personalized Fallback**: Uses sites from user's flight log when API unavailable
+- **Fixed SQL Errors**: Updated all queries to remove references to removed landing_site_id column
+  - `getSitesUsedInFlights()`: Now only queries launch sites
+  - `canDeleteSite()`: Only checks launch site usage
+  - `getFlightsBySite()`: Returns flights launched from site
+- **ParaglidingEarth API Notes**:
+  - **No Rate Limiting Handler**: Current implementation lacks explicit rate limit handling
+  - **24-Hour Cache**: Reduces API calls significantly
+  - **Launch Sites Only**: API no longer queried for landing locations (performance improvement)

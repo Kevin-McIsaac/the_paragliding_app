@@ -58,6 +58,12 @@ class _FlightListScreenState extends State<FlightListScreen> {
       int comparison;
       
       switch (_sortColumn) {
+        case 'launch_site':
+          // Sort by launch site name
+          final aSite = a.launchSiteName ?? 'Unknown';
+          final bSite = b.launchSiteName ?? 'Unknown';
+          comparison = aSite.compareTo(bSite);
+          break;
         case 'datetime':
           // Combine date and time for sorting
           final aDateTime = DateTime(
