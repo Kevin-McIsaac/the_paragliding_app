@@ -283,6 +283,24 @@ flutter upgrade
 
 ## Recent Updates
 
+### August 2025 - Timezone Support & Enhanced Flight Analysis
+- **Comprehensive Timezone Support**: Full implementation of timezone handling for IGC imports
+  - **HFTZNUTCOFFSET Parsing**: Extracts timezone information from IGC headers (e.g., "+10.00h" → "+10:00")
+  - **Timezone-Aware Timestamps**: All track points converted to proper timezone-aware DateTime objects
+  - **Database Schema**: Added timezone field to flights table with v3 migration
+  - **Display Enhancement**: Times shown with timezone indicators (e.g., "14:30 +10:00") for imported flights
+  - **International Support**: Accurate time representation for flights logged in different timezones
+- **Enhanced Flight List Table**: Comprehensive flight analysis at a glance
+  - **Track Distance Column**: Added ground track distance column showing actual flight path distance
+  - **Distance Distinction**: Clear separation between track distance (flight path) and straight distance (direct line)
+  - **Sortable Columns**: All distance metrics sortable for performance analysis
+  - **Professional Layout**: 5-column table with Launch Date/Time, Duration, Track Distance, Straight Distance, Max Altitude
+- **Midnight Crossing Fix**: Automatic detection and correction of negative durations
+  - **Smart Duration Calculation**: Detects when landing time appears before launch time
+  - **24-Hour Adjustment**: Automatically adds 24 hours for flights crossing midnight
+  - **Test Coverage**: Comprehensive unit tests for edge cases and midnight scenarios
+- **IGC Source Traceability**: Display of source IGC file path in flight notes for full traceability
+
 ### August 2025 - Inline Editing Implementation
 - **Complete Inline Editing**: Implemented comprehensive inline editing for all flight details
 - **Notes Editing**: Click-to-edit notes with TextFormField, save/cancel buttons, and empty state handling
@@ -325,17 +343,17 @@ flutter upgrade
 - **Folder Memory**: IGC import now remembers last used folder for improved workflow
 
 ### Key Files Updated
-- `lib/presentation/screens/flight_detail_screen.dart`: Complete inline editing implementation with dialog-based selection
-- `lib/presentation/screens/edit_flight_screen.dart`: Simplified to only show fields visible in Flight Details card
-- `lib/services/igc_parser.dart`: Fixed HFDTE date format parsing (DDMMYY)
-- `lib/data/models/import_result.dart`: New models for tracking import results (NEW)
-- `lib/data/repositories/flight_repository.dart`: Added duplicate detection method
-- `lib/presentation/widgets/duplicate_flight_dialog.dart`: User choice dialog for duplicates (NEW)
-- `lib/services/igc_import_service.dart`: Enhanced IGC processing with duplicate handling
-- `lib/presentation/screens/igc_import_screen.dart`: Updated UI for duplicate handling
+- `lib/data/models/flight.dart`: Added timezone field and midnight crossing duration logic
+- `lib/data/models/igc_file.dart`: Enhanced with timezone support and smart duration calculation
+- `lib/data/datasources/database_helper.dart`: Database v3 migration for timezone column
+- `lib/services/igc_parser.dart`: HFTZNUTCOFFSET parsing and timezone-aware timestamps
+- `lib/services/igc_import_service.dart`: Timezone preservation during IGC import
+- `lib/data/repositories/flight_repository.dart`: Timezone field support and migration handling
+- `lib/presentation/screens/flight_detail_screen.dart`: Timezone-aware time display and IGC source info
+- `lib/presentation/screens/flight_list_screen.dart`: Enhanced table with track distance column and timezone display
+- `lib/presentation/screens/edit_flight_screen.dart`: Timezone field preservation during edits
+- `lib/presentation/screens/add_flight_screen.dart`: Explicit null timezone for manual flights
+- `test/midnight_crossing_test.dart`: Comprehensive unit tests for midnight crossing scenarios (NEW)
+- `lib/presentation/widgets/duplicate_flight_dialog.dart`: User choice dialog for duplicates
 - `lib/presentation/screens/flight_track_screen.dart`: Added straight line visualization and enhanced statistics
 - `lib/presentation/screens/flight_track_canvas_screen.dart`: Added matching straight line visualization for canvas view
-- `lib/data/models/igc_file.dart`: Core climb rate calculation algorithms
-- `lib/data/models/flight.dart`: Added 15-second climb rate fields
-- `lib/data/datasources/database_helper.dart`: Database migration support
-- Test files: Updated for 15-second calculations

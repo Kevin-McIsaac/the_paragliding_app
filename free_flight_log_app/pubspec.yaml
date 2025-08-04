@@ -47,6 +47,7 @@ dependencies:
   intl: ^0.18.0             # Date/time formatting
   path: ^1.8.0              # Database path utilities
   path_provider: ^2.1.0     # App directory paths
+  timezone: ^0.9.2          # Timezone database and lookup
 
 dev_dependencies:
   flutter_test:

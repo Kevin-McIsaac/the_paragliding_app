@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'dart:io' show Platform;
 import 'presentation/screens/flight_list_screen.dart';
+import 'services/timezone_service.dart';
 
 void main() {
   // Initialize sqflite for desktop platforms
@@ -9,6 +10,9 @@ void main() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   }
+  
+  // Initialize timezone database
+  TimezoneService.initialize();
   
   runApp(const FreeFlightLogApp());
 }

@@ -486,7 +486,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                   Text(
                     '${flight.date.day.toString().padLeft(2, '0')}/'
                     '${flight.date.month.toString().padLeft(2, '0')}/'
-                    '${flight.date.year} ${_formatTimeWithTimezone(flight.launchTime, flight.timezone)}',
+                    '${flight.date.year} ${flight.launchTime}',
                   ),
                   onTap: _isSelectionMode 
                       ? null 

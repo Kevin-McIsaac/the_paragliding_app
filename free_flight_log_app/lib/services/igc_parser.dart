@@ -1,5 +1,6 @@
 import 'dart:io';
 import '../data/models/igc_file.dart';
+import 'timezone_service.dart';
 
 /// Parser for IGC (International Gliding Commission) file format
 class IgcParser {
@@ -45,14 +46,16 @@ class IgcParser {
             gliderType = _extractHeaderValue(line, 'HFGTYGLIDERTYPE');
           } else if (line.startsWith('HFGIDGLIDERID')) {
             gliderID = _extractHeaderValue(line, 'HFGIDGLIDERID');
-          } else if (line.startsWith('HFTZNUTCOFFSET') || line.startsWith('HFTZN')) {
-            timezone = _parseTimezone(line);
-          }
+          } 
+          // Commented out - always use GPS-based timezone detection instead
+          // else if (line.startsWith('HFTZNUTCOFFSET') || line.startsWith('HFTZN')) {
+          //   timezone = _parseTimezone(line);
+          // }
           break;
           
         case 'B':
-          // B record (track point)
-          final point = _parseBRecord(line, flightDate ?? DateTime.now(), timezone);
+          // B record (track point) - parse as UTC initially, will convert later
+          final point = _parseBRecord(line, flightDate ?? DateTime.now(), null);
           if (point != null) {
             trackPoints.add(point);
           }
@@ -67,6 +70,61 @@ class IgcParser {
     // If no date found in headers, try to extract from first B record
     if (flightDate == null && trackPoints.isNotEmpty) {
       flightDate = trackPoints.first.timestamp;
+    }
+    
+    // Always detect timezone from GPS coordinates (override any HFTZNUTCOFFSET)
+    if (trackPoints.isNotEmpty) {
+      final firstPoint = trackPoints.first;
+      final detectedTimezone = TimezoneService.getTimezoneFromCoordinates(
+        firstPoint.latitude,
+        firstPoint.longitude,
+      );
+      
+      if (detectedTimezone != null) {
+        // Convert timezone identifier to offset string
+        final newTimezone = TimezoneService.getOffsetStringFromTimezone(
+          detectedTimezone,
+          flightDate ?? DateTime.now(),
+        );
+        
+        if (newTimezone != null) {
+          // Log if we're overriding an existing timezone
+          if (timezone != null && timezone != newTimezone) {
+            print('Overriding HFTZNUTCOFFSET ($timezone) with GPS-detected timezone: $detectedTimezone ($newTimezone)');
+          } else {
+            print('Detected timezone from GPS: $detectedTimezone ($newTimezone)');
+          }
+          
+          timezone = newTimezone;
+          
+          // Re-process all track points with the detected timezone
+          // Since B records are in UTC, we need to convert them to local time
+          for (int i = 0; i < trackPoints.length; i++) {
+            final point = trackPoints[i];
+            // The timestamp is currently in UTC, convert to local
+            final localTime = _convertUtcToLocal(
+              DateTime.utc(
+                point.timestamp.year,
+                point.timestamp.month,
+                point.timestamp.day,
+                point.timestamp.hour,
+                point.timestamp.minute,
+                point.timestamp.second,
+              ),
+              timezone!,
+            );
+            
+            trackPoints[i] = IgcPoint(
+              timestamp: localTime,
+              latitude: point.latitude,
+              longitude: point.longitude,
+              pressureAltitude: point.pressureAltitude,
+              gpsAltitude: point.gpsAltitude,
+              isValid: point.isValid,
+            );
+          }
+        }
+      }
     }
 
     return IgcFile(
@@ -119,7 +177,8 @@ class IgcParser {
       final match = regex.firstMatch(value);
       
       if (match != null) {
-        final sign = match.group(1) ?? '+'; // Default to positive if no sign
+        String sign = match.group(1) ?? '';
+        if (sign.isEmpty) sign = '+'; // Explicitly add + if no sign
         final hours = match.group(2)!.padLeft(2, '0');
         final minutes = match.group(3)!;
         
@@ -131,7 +190,8 @@ class IgcParser {
       final simpleMatch = simpleRegex.firstMatch(value);
       
       if (simpleMatch != null) {
-        final sign = simpleMatch.group(1) ?? '+';
+        String sign = simpleMatch.group(1) ?? '';
+        if (sign.isEmpty) sign = '+'; // Explicitly add + if no sign
         final hours = simpleMatch.group(2)!.padLeft(2, '0');
         return '$sign$hours:00';
       }
@@ -162,14 +222,16 @@ class IgcParser {
   }
 
   /// Parse B record (track point)
+  /// B records contain UTC time according to IGC specification
   IgcPoint? _parseBRecord(String line, DateTime flightDate, String? timezone) {
     // B record format: B HHMMSS DDMMmmmN DDDMMmmmE V PPPPP GGGGG
     // Example: B1101355206343N00006198WA0058700558
+    // Time is in UTC according to IGC specification
     
     if (line.length < 35) return null;
     
     try {
-      // Time (HHMMSS)
+      // Time (HHMMSS) - UTC time
       final hours = int.parse(line.substring(1, 3));
       final minutes = int.parse(line.substring(3, 5));
       final seconds = int.parse(line.substring(5, 7));
@@ -201,8 +263,8 @@ class IgcParser {
       // GPS altitude
       final gpsAlt = int.parse(line.substring(30, 35));
       
-      // Create timestamp
-      DateTime timestamp = DateTime(
+      // Create UTC timestamp
+      DateTime timestamp = DateTime.utc(
         flightDate.year,
         flightDate.month,
         flightDate.day,
@@ -211,10 +273,11 @@ class IgcParser {
         seconds,
       );
       
-      // Apply timezone offset if available
+      // Convert UTC to local time if timezone is known
       if (timezone != null) {
-        timestamp = _applyTimezoneOffset(timestamp, timezone);
+        timestamp = _convertUtcToLocal(timestamp, timezone);
       }
+      // If no timezone provided, keep as UTC
       
       return IgcPoint(
         timestamp: timestamp,
@@ -230,16 +293,16 @@ class IgcParser {
     }
   }
 
-  /// Apply timezone offset to a DateTime
-  /// Takes a timezone string like "+10:00" or "-05:30" and applies the offset
-  DateTime _applyTimezoneOffset(DateTime dateTime, String timezone) {
+  /// Convert UTC time to local time using timezone offset
+  /// Takes a UTC DateTime and converts it to local time using the timezone offset
+  DateTime _convertUtcToLocal(DateTime utcTime, String timezone) {
     try {
       // Parse timezone offset (e.g., "+10:00", "-05:30")
       final regex = RegExp(r'^([+-])(\d{2}):(\d{2})$');
       final match = regex.firstMatch(timezone);
       
       if (match == null) {
-        return dateTime; // Return original if timezone format is invalid
+        return utcTime; // Return original if timezone format is invalid
       }
       
       final isPositive = match.group(1) == '+';
@@ -247,14 +310,14 @@ class IgcParser {
       final minutes = int.parse(match.group(3)!);
       
       final offsetMinutes = (hours * 60) + minutes;
-      final duration = Duration(minutes: isPositive ? -offsetMinutes : offsetMinutes);
+      final duration = Duration(minutes: isPositive ? offsetMinutes : -offsetMinutes);
       
-      // Convert local time to UTC by subtracting the offset
-      // If timezone is +10:00, the local time is 10 hours ahead of UTC
-      return dateTime.add(duration);
+      // Convert UTC to local time by adding the offset
+      // If timezone is +10:00, local time is UTC + 10 hours
+      return utcTime.add(duration);
     } catch (e) {
-      print('Error applying timezone offset: $e');
-      return dateTime;
+      print('Error converting UTC to local time: $e');
+      return utcTime;
     }
   }
 }
