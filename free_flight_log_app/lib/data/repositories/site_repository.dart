@@ -120,44 +120,6 @@ class SiteRepository {
     );
   }
 
-  /// Clean up site names that have redundant "Launch" or "Landing" prefixes
-  /// This method removes prefixes from coordinate-based site names
-  Future<int> cleanupSiteNamePrefixes() async {
-    Database db = await _databaseHelper.database;
-    
-    // Find sites with "Launch " or "Landing " prefix followed by coordinates
-    final sitesToUpdate = await db.rawQuery('''
-      SELECT id, name FROM sites 
-      WHERE (name LIKE 'Launch %°%' OR name LIKE 'Landing %°%')
-      AND custom_name = 0
-    ''');
-    
-    int updatedCount = 0;
-    
-    for (final siteData in sitesToUpdate) {
-      final id = siteData['id'] as int;
-      final currentName = siteData['name'] as String;
-      
-      String newName = currentName;
-      if (currentName.startsWith('Launch ')) {
-        newName = currentName.substring(7); // Remove "Launch " prefix
-      } else if (currentName.startsWith('Landing ')) {
-        newName = currentName.substring(8); // Remove "Landing " prefix
-      }
-      
-      if (newName != currentName) {
-        await db.update(
-          'sites',
-          {'name': newName},
-          where: 'id = ?',
-          whereArgs: [id],
-        );
-        updatedCount++;
-      }
-    }
-    
-    return updatedCount;
-  }
 
   /// Get all sites that have been used in flights (for personalized fallback)
   /// Returns sites ordered by usage frequency (most used first)

@@ -168,49 +168,6 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
     );
   }
 
-  Future<void> _cleanupSiteNames() async {
-    // Show confirmation dialog
-    final confirmed = await _showConfirmationDialog(
-      'Clean Up Site Names',
-      'This will remove redundant "Launch" and "Landing" prefixes from coordinate-based site names.\n\n'
-      'For example:\n'
-      '"Launch 47.123°N 8.456°E" → "47.123°N 8.456°E"\n\n'
-      'Custom site names will not be affected.\n\n'
-      'Continue?',
-    );
-
-    if (!confirmed) return;
-
-    // Show loading
-    _showLoadingDialog('Cleaning up site names...');
-
-    try {
-      final siteRepository = SiteRepository();
-      final updatedCount = await siteRepository.cleanupSiteNamePrefixes();
-      
-      // Close loading dialog
-      if (mounted) Navigator.of(context).pop();
-      
-      // Refresh statistics
-      await _loadDatabaseStats();
-      
-      // Show success
-      if (mounted) {
-        _showSuccessDialog(
-          'Site Names Cleaned',
-          'Successfully cleaned up $updatedCount site name${updatedCount != 1 ? 's' : ''}.',
-        );
-      }
-    } catch (e) {
-      // Close loading dialog  
-      if (mounted) Navigator.of(context).pop();
-      
-      // Show error
-      if (mounted) {
-        _showErrorDialog('Error', 'Failed to clean up site names: $e');
-      }
-    }
-  }
 
   Future<void> _testApiConnection() async {
     // Show loading
@@ -323,21 +280,6 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
                       label: Text('Clear All Flights (${_dbStats?['flights'] ?? 0})'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.orange,
-                      ),
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 12),
-                  
-                  // Clean up site names
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: (_dbStats?['sites'] ?? 0) > 0 ? _cleanupSiteNames : null,
-                      icon: const Icon(Icons.edit_location_alt),
-                      label: Text('Clean Up Site Names (${_dbStats?['sites'] ?? 0})'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.blue,
                       ),
                     ),
                   ),
