@@ -158,4 +158,29 @@ class SiteRepository {
     
     return updatedCount;
   }
+
+  /// Get all sites that have been used in flights (for personalized fallback)
+  /// Returns sites ordered by usage frequency (most used first)
+  Future<List<Site>> getSitesUsedInFlights() async {
+    Database db = await _databaseHelper.database;
+    
+    // Query to get all sites used in flights, with usage count for ordering
+    List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT 
+        sites.*,
+        (
+          SELECT COUNT(*) FROM flights 
+          WHERE flights.launch_site_id = sites.id OR flights.landing_site_id = sites.id
+        ) as usage_count
+      FROM sites 
+      WHERE sites.id IN (
+        SELECT DISTINCT launch_site_id FROM flights WHERE launch_site_id IS NOT NULL
+        UNION
+        SELECT DISTINCT landing_site_id FROM flights WHERE landing_site_id IS NOT NULL
+      )
+      ORDER BY usage_count DESC, sites.name ASC
+    ''');
+    
+    return List.generate(maps.length, (i) => Site.fromMap(maps[i]));
+  }
 }

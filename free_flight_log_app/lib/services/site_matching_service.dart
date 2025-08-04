@@ -1,7 +1,7 @@
-import 'dart:convert';
 import 'dart:math';
-import 'package:flutter/services.dart';
 import '../data/models/paragliding_site.dart';
+import '../data/models/site.dart';
+import '../data/repositories/site_repository.dart';
 import 'paragliding_earth_api.dart';
 
 class SiteMatchingService {
@@ -13,25 +13,28 @@ class SiteMatchingService {
   List<ParaglidingSite>? _sites;
   bool _isInitialized = false;
   bool _useApi = true; // Enable API by default, can be configured
+  final SiteRepository _siteRepository = SiteRepository();
 
-  /// Initialize the service by loading popular sites from assets
+  /// Initialize the service by loading sites from user's flight log
+  /// This provides personalized fallback based on actual flight history
   Future<void> initialize() async {
     if (_isInitialized) return;
 
     try {
-      // Load popular sites from JSON asset file
-      final String jsonString = await rootBundle.loadString('assets/popular_paragliding_sites.json');
-      final Map<String, dynamic> jsonData = jsonDecode(jsonString);
+      // Load sites that have been used in actual flights
+      final usedSites = await _siteRepository.getSitesUsedInFlights();
       
-      // Extract the sites array from the wrapper object
-      final List<dynamic> jsonList = jsonData['sites'] as List<dynamic>;
-      
-      _sites = jsonList.map((json) => ParaglidingSite.fromJson(json)).toList();
+      // Convert Site objects to ParaglidingSite objects
+      _sites = usedSites.map((site) => _convertSiteToParaglidingSite(site)).toList();
       _isInitialized = true;
       
-      print('Loaded ${_sites!.length} popular paragliding sites from ${jsonData['source']} (version ${jsonData['version']})');
+      if (_sites!.isEmpty) {
+        print('SiteMatching: No flight log sites available - using API-only mode');
+      } else {
+        print('SiteMatching: Loaded ${_sites!.length} sites from flight log (personalized fallback)');
+      }
     } catch (e) {
-      print('Error loading paragliding sites: $e');
+      print('SiteMatching: Error loading flight log sites: $e');
       // Initialize with empty list if loading fails
       _sites = [];
       _isInitialized = true;
@@ -288,11 +291,19 @@ class SiteMatchingService {
   /// Get the number of loaded sites
   int get siteCount => _sites?.length ?? 0;
 
-  /// Reload sites from assets (useful for testing or updates)
+  /// Reload sites from flight log (useful when new flights are added)
   Future<void> reload() async {
     _isInitialized = false;
     _sites = null;
     await initialize();
+  }
+
+  /// Refresh site list after new flights are imported
+  /// Call this after IGC imports to update the personalized fallback
+  Future<void> refreshAfterFlightImport() async {
+    if (_isInitialized) {
+      await reload();
+    }
   }
 
   /// Enable or disable API usage
@@ -318,5 +329,32 @@ class SiteMatchingService {
   /// Clear API cache
   void clearApiCache() {
     ParaglidingEarthApi.instance.clearCache();
+  }
+
+  /// Convert a Site object (from database) to ParaglidingSite object (for compatibility)
+  ParaglidingSite _convertSiteToParaglidingSite(Site site) {
+    // Determine site type based on name patterns (fallback logic)
+    String siteType = 'launch'; // Default
+    final name = site.name.toLowerCase();
+    if (name.contains('landing') || 
+        name.contains('atterrissage') ||
+        name.contains('landeplatz') ||
+        name.contains('campo')) {
+      siteType = 'landing';
+    }
+
+    return ParaglidingSite(
+      name: site.name,
+      latitude: site.latitude,
+      longitude: site.longitude,
+      altitude: site.altitude?.toInt(), // Convert double? to int?
+      description: 'Flight log site', // Simple description for user sites
+      windDirections: [], // Not available in user sites
+      siteType: siteType,
+      rating: 4, // User sites get good rating since they're proven locations
+      country: null, // Not stored in user sites
+      region: null, // Not stored in user sites  
+      popularity: 75.0, // High popularity for user's personal sites
+    );
   }
 }

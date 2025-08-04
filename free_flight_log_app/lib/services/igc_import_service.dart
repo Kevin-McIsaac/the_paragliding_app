@@ -108,6 +108,11 @@ class IgcImportService {
         
         await _flightRepository.updateFlight(updatedFlight);
         
+        // Refresh site matching service after successful replacement
+        // This updates the personalized fallback with potentially new sites
+        final siteMatchingService = SiteMatchingService.instance;
+        await siteMatchingService.refreshAfterFlightImport();
+        
         return ImportResult.replaced(
           fileName: fileName,
           flightId: existingFlight.id,
@@ -119,6 +124,11 @@ class IgcImportService {
         // Import as new flight
         final savedFlightId = await _flightRepository.insertFlight(flight);
         
+        // Refresh site matching service after successful import
+        // This updates the personalized fallback with new sites
+        final siteMatchingService = SiteMatchingService.instance;
+        await siteMatchingService.refreshAfterFlightImport();
+
         return ImportResult.imported(
           fileName: fileName,
           flightId: savedFlightId,
