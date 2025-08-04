@@ -5,9 +5,11 @@ class Flight {
   final String landingTime;
   final int duration;
   final int? launchSiteId;
-  final int? landingSiteId;
   final String? launchSiteName;  // From JOIN with sites table
-  final String? landingSiteName; // From JOIN with sites table
+  final double? landingLatitude;
+  final double? landingLongitude;
+  final double? landingAltitude;
+  final String? landingDescription;
   final double? maxAltitude;
   final double? maxClimbRate;
   final double? maxSinkRate;
@@ -30,9 +32,11 @@ class Flight {
     required this.landingTime,
     required this.duration,
     this.launchSiteId,
-    this.landingSiteId,
     this.launchSiteName,
-    this.landingSiteName,
+    this.landingLatitude,
+    this.landingLongitude,
+    this.landingAltitude,
+    this.landingDescription,
     this.maxAltitude,
     this.maxClimbRate,
     this.maxSinkRate,
@@ -57,8 +61,11 @@ class Flight {
       'landing_time': landingTime,
       'duration': duration,
       'launch_site_id': launchSiteId,
-      'landing_site_id': landingSiteId,
-      // Note: launchSiteName and landingSiteName are not stored in flights table
+      'landing_latitude': landingLatitude,
+      'landing_longitude': landingLongitude,
+      'landing_altitude': landingAltitude,
+      'landing_description': landingDescription,
+      // Note: launchSiteName is not stored in flights table (from JOIN)
       'max_altitude': maxAltitude,
       'max_climb_rate': maxClimbRate,
       'max_sink_rate': maxSinkRate,
@@ -84,9 +91,11 @@ class Flight {
       landingTime: map['landing_time'],
       duration: map['duration'],
       launchSiteId: map['launch_site_id'],
-      landingSiteId: map['landing_site_id'],
       launchSiteName: map['launch_site_name'], // From JOIN query
-      landingSiteName: map['landing_site_name'], // From JOIN query
+      landingLatitude: map['landing_latitude']?.toDouble(),
+      landingLongitude: map['landing_longitude']?.toDouble(),
+      landingAltitude: map['landing_altitude']?.toDouble(),
+      landingDescription: map['landing_description'],
       maxAltitude: map['max_altitude']?.toDouble(),
       maxClimbRate: map['max_climb_rate']?.toDouble(),
       maxSinkRate: map['max_sink_rate']?.toDouble(),
@@ -111,9 +120,11 @@ class Flight {
     String? landingTime,
     int? duration,
     int? launchSiteId,
-    int? landingSiteId,
     String? launchSiteName,
-    String? landingSiteName,
+    double? landingLatitude,
+    double? landingLongitude,
+    double? landingAltitude,
+    String? landingDescription,
     double? maxAltitude,
     double? maxClimbRate,
     double? maxSinkRate,
@@ -136,9 +147,11 @@ class Flight {
       landingTime: landingTime ?? this.landingTime,
       duration: duration ?? this.duration,
       launchSiteId: launchSiteId ?? this.launchSiteId,
-      landingSiteId: landingSiteId ?? this.landingSiteId,
       launchSiteName: launchSiteName ?? this.launchSiteName,
-      landingSiteName: landingSiteName ?? this.landingSiteName,
+      landingLatitude: landingLatitude ?? this.landingLatitude,
+      landingLongitude: landingLongitude ?? this.landingLongitude,
+      landingAltitude: landingAltitude ?? this.landingAltitude,
+      landingDescription: landingDescription ?? this.landingDescription,
       maxAltitude: maxAltitude ?? this.maxAltitude,
       maxClimbRate: maxClimbRate ?? this.maxClimbRate,
       maxSinkRate: maxSinkRate ?? this.maxSinkRate,

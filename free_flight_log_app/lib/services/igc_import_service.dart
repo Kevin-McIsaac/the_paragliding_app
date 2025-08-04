@@ -90,7 +90,10 @@ class IgcImportService {
           landingTime: flight.landingTime,
           duration: flight.duration,
           launchSiteId: flight.launchSiteId,
-          landingSiteId: flight.landingSiteId,
+          landingLatitude: flight.landingLatitude,
+          landingLongitude: flight.landingLongitude,
+          landingAltitude: flight.landingAltitude,
+          landingDescription: flight.landingDescription,
           wingId: flight.wingId,
           maxAltitude: flight.maxAltitude,
           maxClimbRate: flight.maxClimbRate,
@@ -157,11 +160,19 @@ class IgcImportService {
     Site? launchSite;
     if (igcData.launchSite != null) {
       final launchPoint = igcData.launchSite!;
-      final siteName = await _getSiteName(
+      
+      // Try to get a paragliding site name
+      String siteName = await _getSiteName(
         launchPoint.latitude,
         launchPoint.longitude,
         siteType: 'launch',
       );
+      
+      // If the site name is just coordinates (no actual site found), use "Unknown"
+      // This happens when _getSiteName returns coordinate strings like "47.123°N 8.456°E"
+      if (siteName.contains('°')) {
+        siteName = 'Unknown';
+      }
       
       launchSite = await _siteRepository.findOrCreateSite(
         latitude: launchPoint.latitude,
@@ -171,22 +182,21 @@ class IgcImportService {
       );
     }
 
-    // Get or create landing site with paragliding site matching
-    Site? landingSite;
+    // Get landing coordinates (no longer create landing sites)
+    double? landingLatitude;
+    double? landingLongitude;
+    double? landingAltitude;
+    String? landingDescription;
+    
     if (igcData.landingSite != null) {
       final landingPoint = igcData.landingSite!;
-      final siteName = await _getSiteName(
-        landingPoint.latitude,
-        landingPoint.longitude,
-        siteType: 'landing',
-      );
+      landingLatitude = landingPoint.latitude;
+      landingLongitude = landingPoint.longitude;
+      landingAltitude = landingPoint.gpsAltitude.toDouble();
       
-      landingSite = await _siteRepository.findOrCreateSite(
-        latitude: landingPoint.latitude,
-        longitude: landingPoint.longitude,
-        altitude: landingPoint.gpsAltitude.toDouble(),
-        name: siteName,
-      );
+      // Don't lookup site names for landings - they can be anywhere
+      // Leave description null so users can add their own meaningful descriptions
+      landingDescription = null;
     }
 
     // Get or create wing from glider information
@@ -208,7 +218,10 @@ class IgcImportService {
       landingTime: _formatTime(igcData.landingTime),
       duration: igcData.duration,
       launchSiteId: launchSite?.id,
-      landingSiteId: landingSite?.id,
+      landingLatitude: landingLatitude,
+      landingLongitude: landingLongitude,
+      landingAltitude: landingAltitude,
+      landingDescription: landingDescription,
       wingId: wing?.id,
       maxAltitude: igcData.maxAltitude,
       maxClimbRate: climbRates['maxClimb'],
@@ -220,7 +233,7 @@ class IgcImportService {
       trackLogPath: trackLogPath,
       source: 'igc',
       timezone: igcData.timezone,
-      notes: 'Imported from IGC file${igcData.pilot.isNotEmpty ? '\nPilot: ${igcData.pilot}' : ''}${igcData.gliderType.isNotEmpty ? '\nGlider: ${igcData.gliderType}' : ''}',
+      notes: 'Imported from IGC file: ${path.basename(filePath)}${igcData.pilot.isNotEmpty ? '\nPilot: ${igcData.pilot}' : ''}${igcData.gliderType.isNotEmpty ? '\nGlider: ${igcData.gliderType}' : ''}',
     );
   }
 
@@ -247,7 +260,10 @@ class IgcImportService {
       landingTime: flight.landingTime,
       duration: flight.duration,
       launchSiteId: flight.launchSiteId,
-      landingSiteId: flight.landingSiteId,
+      landingLatitude: flight.landingLatitude,
+      landingLongitude: flight.landingLongitude,
+      landingAltitude: flight.landingAltitude,
+      landingDescription: flight.landingDescription,
       wingId: flight.wingId,
       maxAltitude: flight.maxAltitude,
       maxClimbRate: flight.maxClimbRate,

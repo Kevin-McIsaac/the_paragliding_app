@@ -4,7 +4,7 @@ import 'package:path/path.dart';
 
 class DatabaseHelper {
   static const _databaseName = "FlightLog.db";
-  static const _databaseVersion = 3;
+  static const _databaseVersion = 4;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -31,7 +31,10 @@ class DatabaseHelper {
         landing_time TEXT NOT NULL,
         duration INTEGER NOT NULL,
         launch_site_id INTEGER,
-        landing_site_id INTEGER,
+        landing_latitude REAL,
+        landing_longitude REAL,
+        landing_altitude REAL,
+        landing_description TEXT,
         max_altitude REAL,
         max_climb_rate REAL,
         max_sink_rate REAL,
@@ -47,7 +50,6 @@ class DatabaseHelper {
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (launch_site_id) REFERENCES sites (id),
-        FOREIGN KEY (landing_site_id) REFERENCES sites (id),
         FOREIGN KEY (wing_id) REFERENCES wings (id)
       )
     ''');
@@ -108,6 +110,35 @@ class DatabaseHelper {
       } catch (e) {
         print('Error during timezone migration: $e');
         // If migration fails, we might need to recreate the database
+        throw e;
+      }
+    }
+    
+    if (oldVersion < 4) {
+      try {
+        // Add landing coordinate columns and migrate existing landing site data
+        await db.execute('ALTER TABLE flights ADD COLUMN landing_latitude REAL');
+        await db.execute('ALTER TABLE flights ADD COLUMN landing_longitude REAL');
+        await db.execute('ALTER TABLE flights ADD COLUMN landing_altitude REAL');
+        await db.execute('ALTER TABLE flights ADD COLUMN landing_description TEXT');
+        
+        // Migrate existing landing site data to coordinates
+        await db.execute('''
+          UPDATE flights 
+          SET landing_latitude = (SELECT latitude FROM sites WHERE sites.id = flights.landing_site_id),
+              landing_longitude = (SELECT longitude FROM sites WHERE sites.id = flights.landing_site_id),
+              landing_altitude = (SELECT altitude FROM sites WHERE sites.id = flights.landing_site_id),
+              landing_description = (SELECT name FROM sites WHERE sites.id = flights.landing_site_id)
+          WHERE landing_site_id IS NOT NULL
+        ''');
+        
+        // Remove landing_site_id column (SQLite doesn't support DROP COLUMN directly)
+        // We'll leave it for now to avoid complex table recreation
+        // It will be ignored in the new model
+        
+        print('Successfully migrated to landing coordinates');
+      } catch (e) {
+        print('Error during landing coordinates migration: $e');
         throw e;
       }
     }

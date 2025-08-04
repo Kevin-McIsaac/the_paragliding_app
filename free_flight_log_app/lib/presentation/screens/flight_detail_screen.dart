@@ -29,7 +29,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
   
   late Flight _flight;
   Site? _launchSite;
-  Site? _landingSite;
   Wing? _wing;
   bool _isLoading = true;
   bool _flightModified = false;
@@ -60,9 +59,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
     try {
       if (_flight.launchSiteId != null) {
         _launchSite = await _siteRepository.getSite(_flight.launchSiteId!);
-      }
-      if (_flight.landingSiteId != null) {
-        _landingSite = await _siteRepository.getSite(_flight.landingSiteId!);
       }
       if (_flight.wingId != null) {
         _wing = await _wingRepository.getWing(_flight.wingId!);
@@ -314,7 +310,10 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
         landingTime: _flight.landingTime,
         duration: _flight.duration,
         launchSiteId: _flight.launchSiteId,
-        landingSiteId: _flight.landingSiteId,
+        landingLatitude: _flight.landingLatitude,
+        landingLongitude: _flight.landingLongitude,
+        landingAltitude: _flight.landingAltitude,
+        landingDescription: _flight.landingDescription,
         wingId: _flight.wingId,
         maxAltitude: _flight.maxAltitude,
         maxClimbRate: _flight.maxClimbRate,
@@ -427,7 +426,10 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
         landingTime: newLandingTime,
         duration: newDuration,
         launchSiteId: _flight.launchSiteId,
-        landingSiteId: _flight.landingSiteId,
+        landingLatitude: _flight.landingLatitude,
+        landingLongitude: _flight.landingLongitude,
+        landingAltitude: _flight.landingAltitude,
+        landingDescription: _flight.landingDescription,
         wingId: _flight.wingId,
         maxAltitude: _flight.maxAltitude,
         maxClimbRate: _flight.maxClimbRate,
@@ -498,7 +500,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
 
   Future<void> _editSite(bool isLaunchSite) async {
     final sites = await _siteRepository.getAllSites();
-    final currentSite = isLaunchSite ? _launchSite : _landingSite;
+    final currentSite = _launchSite;
     
     if (!mounted) return;
     
@@ -641,7 +643,10 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
         landingTime: _flight.landingTime,
         duration: _flight.duration,
         launchSiteId: isLaunchSite ? newSite?.id : _flight.launchSiteId,
-        landingSiteId: isLaunchSite ? _flight.landingSiteId : newSite?.id,
+        landingLatitude: _flight.landingLatitude,
+        landingLongitude: _flight.landingLongitude,
+        landingAltitude: _flight.landingAltitude,
+        landingDescription: _flight.landingDescription,
         wingId: _flight.wingId,
         maxAltitude: _flight.maxAltitude,
         maxClimbRate: _flight.maxClimbRate,
@@ -665,8 +670,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
         _isSaving = false;
         if (isLaunchSite) {
           _launchSite = newSite;
-        } else {
-          _landingSite = newSite;
         }
       });
 
@@ -700,7 +703,10 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
         landingTime: _flight.landingTime,
         duration: _flight.duration,
         launchSiteId: _flight.launchSiteId,
-        landingSiteId: _flight.landingSiteId,
+        landingLatitude: _flight.landingLatitude,
+        landingLongitude: _flight.landingLongitude,
+        landingAltitude: _flight.landingAltitude,
+        landingDescription: _flight.landingDescription,
         wingId: newWing?.id,
         maxAltitude: _flight.maxAltitude,
         maxClimbRate: _flight.maxClimbRate,
@@ -1506,10 +1512,10 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                 text: TextSpan(
                   style: Theme.of(context).textTheme.bodyMedium,
                   children: [
-                    if (_landingSite != null) ...[
+                    if (_flight.landingLatitude != null && _flight.landingLongitude != null) ...[
                       WidgetSpan(
                         child: GestureDetector(
-                          onTap: _isSaving ? null : () => _editSite(false),
+                          onTap: _isSaving ? null : () => _editLandingLocation(),
                           child: Container(
                             decoration: BoxDecoration(
                               border: Border(
@@ -1520,7 +1526,8 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                               ),
                             ),
                             child: Text(
-                              _landingSite!.name,
+                              _flight.landingDescription ?? 
+                              '${_flight.landingLatitude!.toStringAsFixed(4)}, ${_flight.landingLongitude!.toStringAsFixed(4)}',
                               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                 color: Theme.of(context).colorScheme.primary,
                               ),
@@ -1577,7 +1584,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                       ),
                       WidgetSpan(
                         child: GestureDetector(
-                          onTap: _isSaving ? null : () => _editSite(false),
+                          onTap: _isSaving ? null : () => _editLandingLocation(),
                           child: Container(
                             decoration: BoxDecoration(
                               border: Border(
@@ -1606,6 +1613,177 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _editLandingLocation() async {
+    final latController = TextEditingController(
+      text: _flight.landingLatitude?.toString() ?? '',
+    );
+    final lonController = TextEditingController(
+      text: _flight.landingLongitude?.toString() ?? '',
+    );
+    final altController = TextEditingController(
+      text: _flight.landingAltitude?.toString() ?? '',
+    );
+    final descController = TextEditingController(
+      text: _flight.landingDescription ?? '',
+    );
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Landing Location'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: latController,
+                decoration: const InputDecoration(
+                  labelText: 'Latitude',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: lonController,
+                decoration: const InputDecoration(
+                  labelText: 'Longitude',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: altController,
+                decoration: const InputDecoration(
+                  labelText: 'Altitude (m)',
+                  border: OutlineInputBorder(),
+                  hintText: 'Optional',
+                ),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: descController,
+                decoration: const InputDecoration(
+                  labelText: 'Description',
+                  border: OutlineInputBorder(),
+                  hintText: 'Optional description (e.g., "Field near highway")',
+                ),
+                maxLines: 2,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final lat = double.tryParse(latController.text);
+              final lon = double.tryParse(lonController.text);
+              final alt = altController.text.isEmpty ? null : double.tryParse(altController.text);
+              final desc = descController.text.isEmpty ? null : descController.text;
+              
+              if (lat == null || lon == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please enter valid latitude and longitude')),
+                );
+                return;
+              }
+              
+              Navigator.of(context).pop({
+                'latitude': lat,
+                'longitude': lon,
+                'altitude': alt,
+                'description': desc,
+              });
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null) {
+      await _updateLandingLocation(
+        result['latitude'],
+        result['longitude'],
+        result['altitude'],
+        result['description'],
+      );
+    }
+
+    latController.dispose();
+    lonController.dispose();
+    altController.dispose();
+    descController.dispose();
+  }
+
+  Future<void> _updateLandingLocation(
+    double latitude,
+    double longitude,
+    double? altitude,
+    String? description,
+  ) async {
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      final updatedFlight = Flight(
+        id: _flight.id,
+        date: _flight.date,
+        launchTime: _flight.launchTime,
+        landingTime: _flight.landingTime,
+        duration: _flight.duration,
+        launchSiteId: _flight.launchSiteId,
+        landingLatitude: latitude,
+        landingLongitude: longitude,
+        landingAltitude: altitude,
+        landingDescription: description,
+        wingId: _flight.wingId,
+        maxAltitude: _flight.maxAltitude,
+        maxClimbRate: _flight.maxClimbRate,
+        maxSinkRate: _flight.maxSinkRate,
+        maxClimbRate5Sec: _flight.maxClimbRate5Sec,
+        maxSinkRate5Sec: _flight.maxSinkRate5Sec,
+        distance: _flight.distance,
+        straightDistance: _flight.straightDistance,
+        trackLogPath: _flight.trackLogPath,
+        source: _flight.source,
+        timezone: _flight.timezone,
+        notes: _flight.notes,
+        createdAt: _flight.createdAt,
+      );
+
+      await _flightRepository.updateFlight(updatedFlight);
+      
+      setState(() {
+        _flight = updatedFlight;
+        _flightModified = true;
+        _isSaving = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Landing location updated successfully')),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isSaving = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error updating landing location: $e')),
+        );
+      }
+    }
   }
 
 }

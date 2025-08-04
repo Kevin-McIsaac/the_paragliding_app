@@ -16,13 +16,21 @@ class FlightRepository {
     } catch (e) {
       if (e.toString().contains('max_climb_rate_5_sec') || 
           e.toString().contains('max_sink_rate_5_sec') ||
-          e.toString().contains('timezone')) {
+          e.toString().contains('timezone') ||
+          e.toString().contains('landing_latitude') ||
+          e.toString().contains('landing_longitude') ||
+          e.toString().contains('landing_altitude') ||
+          e.toString().contains('landing_description')) {
         print('Database migration needed. Attempting to recreate database...');
         
         // Remove the new fields and try again with legacy format
         map.remove('max_climb_rate_5_sec');
         map.remove('max_sink_rate_5_sec');
         map.remove('timezone');
+        map.remove('landing_latitude');
+        map.remove('landing_longitude');
+        map.remove('landing_altitude');
+        map.remove('landing_description');
         
         try {
           return await db.insert('flights', map);
@@ -48,11 +56,9 @@ class FlightRepository {
     Database db = await _databaseHelper.database;
     List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT f.*, 
-             ls.name as launch_site_name,
-             land.name as landing_site_name
+             ls.name as launch_site_name
       FROM flights f
       LEFT JOIN sites ls ON f.launch_site_id = ls.id
-      LEFT JOIN sites land ON f.landing_site_id = land.id
       ORDER BY f.date DESC, f.launch_time DESC
     ''');
     return List.generate(maps.length, (i) => Flight.fromMap(maps[i]));
@@ -60,11 +66,13 @@ class FlightRepository {
 
   Future<Flight?> getFlight(int id) async {
     Database db = await _databaseHelper.database;
-    List<Map<String, dynamic>> maps = await db.query(
-      'flights',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT f.*, 
+             ls.name as launch_site_name
+      FROM flights f
+      LEFT JOIN sites ls ON f.launch_site_id = ls.id
+      WHERE f.id = ?
+    ''', [id]);
     if (maps.isNotEmpty) {
       return Flight.fromMap(maps.first);
     }
@@ -107,8 +115,8 @@ class FlightRepository {
     Database db = await _databaseHelper.database;
     List<Map<String, dynamic>> maps = await db.query(
       'flights',
-      where: 'launch_site_id = ? OR landing_site_id = ?',
-      whereArgs: [siteId, siteId],
+      where: 'launch_site_id = ?',
+      whereArgs: [siteId],
       orderBy: 'date DESC, launch_time DESC',
     );
     return List.generate(maps.length, (i) => Flight.fromMap(maps[i]));

@@ -80,8 +80,8 @@ class SiteRepository {
   Future<bool> canDeleteSite(int siteId) async {
     Database db = await _databaseHelper.database;
     List<Map<String, dynamic>> result = await db.rawQuery(
-      'SELECT COUNT(*) as count FROM flights WHERE launch_site_id = ? OR landing_site_id = ?',
-      [siteId, siteId],
+      'SELECT COUNT(*) as count FROM flights WHERE launch_site_id = ?',
+      [siteId],
     );
     return result.first['count'] == 0;
   }
@@ -126,19 +126,18 @@ class SiteRepository {
   Future<List<Site>> getSitesUsedInFlights() async {
     Database db = await _databaseHelper.database;
     
-    // Query to get all sites used in flights, with usage count for ordering
+    // Query to get all launch sites used in flights, with usage count for ordering
+    // Note: We only track launch sites now, not landing sites (which are stored as coordinates)
     List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT 
         sites.*,
         (
           SELECT COUNT(*) FROM flights 
-          WHERE flights.launch_site_id = sites.id OR flights.landing_site_id = sites.id
+          WHERE flights.launch_site_id = sites.id
         ) as usage_count
       FROM sites 
       WHERE sites.id IN (
         SELECT DISTINCT launch_site_id FROM flights WHERE launch_site_id IS NOT NULL
-        UNION
-        SELECT DISTINCT landing_site_id FROM flights WHERE landing_site_id IS NOT NULL
       )
       ORDER BY usage_count DESC, sites.name ASC
     ''');
