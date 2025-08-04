@@ -4,6 +4,8 @@ import 'timezone_service.dart';
 
 /// Parser for IGC (International Gliding Commission) file format
 class IgcParser {
+  // Cache for timezone detection per file to avoid duplicate logging
+  static final Map<String, String?> _timezoneCache = {};
   /// Parse IGC file from file path
   Future<IgcFile> parseFile(String filePath) async {
     final file = File(filePath);
@@ -75,54 +77,69 @@ class IgcParser {
     // Always detect timezone from GPS coordinates (override any HFTZNUTCOFFSET)
     if (trackPoints.isNotEmpty) {
       final firstPoint = trackPoints.first;
-      final detectedTimezone = TimezoneService.getTimezoneFromCoordinates(
-        firstPoint.latitude,
-        firstPoint.longitude,
-      );
       
-      if (detectedTimezone != null) {
-        // Convert timezone identifier to offset string
-        final newTimezone = TimezoneService.getOffsetStringFromTimezone(
-          detectedTimezone,
-          flightDate ?? DateTime.now(),
+      // Create cache key based on coordinates to avoid duplicate detection
+      final coordKey = '${firstPoint.latitude.toStringAsFixed(3)},${firstPoint.longitude.toStringAsFixed(3)}';
+      
+      // Check cache first
+      String? cachedTimezone = _timezoneCache[coordKey];
+      
+      if (cachedTimezone == null) {
+        // Not in cache, detect timezone
+        final detectedTimezone = TimezoneService.getTimezoneFromCoordinates(
+          firstPoint.latitude,
+          firstPoint.longitude,
         );
         
-        if (newTimezone != null) {
-          // Log if we're overriding an existing timezone
-          if (timezone != null && timezone != newTimezone) {
-            print('Overriding HFTZNUTCOFFSET ($timezone) with GPS-detected timezone: $detectedTimezone ($newTimezone)');
-          } else {
-            print('Detected timezone from GPS: $detectedTimezone ($newTimezone)');
-          }
+        if (detectedTimezone != null) {
+          // Convert timezone identifier to offset string
+          cachedTimezone = TimezoneService.getOffsetStringFromTimezone(
+            detectedTimezone,
+            flightDate ?? DateTime.now(),
+          );
           
-          timezone = newTimezone;
-          
-          // Re-process all track points with the detected timezone
-          // Since B records are in UTC, we need to convert them to local time
-          for (int i = 0; i < trackPoints.length; i++) {
-            final point = trackPoints[i];
-            // The timestamp is currently in UTC, convert to local
-            final localTime = _convertUtcToLocal(
-              DateTime.utc(
-                point.timestamp.year,
-                point.timestamp.month,
-                point.timestamp.day,
-                point.timestamp.hour,
-                point.timestamp.minute,
-                point.timestamp.second,
-              ),
-              timezone!,
-            );
+          if (cachedTimezone != null) {
+            // Cache the result
+            _timezoneCache[coordKey] = cachedTimezone;
             
-            trackPoints[i] = IgcPoint(
-              timestamp: localTime,
-              latitude: point.latitude,
-              longitude: point.longitude,
-              pressureAltitude: point.pressureAltitude,
-              gpsAltitude: point.gpsAltitude,
-              isValid: point.isValid,
-            );
+            // Log only on first detection
+            if (timezone != null && timezone != cachedTimezone) {
+              print('Overriding HFTZNUTCOFFSET ($timezone) with GPS-detected timezone: $detectedTimezone ($cachedTimezone)');
+            } else {
+              print('Detected timezone from GPS: $detectedTimezone ($cachedTimezone)');
+            }
           }
+        }
+      }
+      
+      if (cachedTimezone != null) {
+        timezone = cachedTimezone;
+        
+        // Re-process all track points with the detected timezone
+        // Since B records are in UTC, we need to convert them to local time
+        for (int i = 0; i < trackPoints.length; i++) {
+          final point = trackPoints[i];
+          // The timestamp is currently in UTC, convert to local
+          final localTime = _convertUtcToLocal(
+            DateTime.utc(
+              point.timestamp.year,
+              point.timestamp.month,
+              point.timestamp.day,
+              point.timestamp.hour,
+              point.timestamp.minute,
+              point.timestamp.second,
+            ),
+            timezone!,
+          );
+          
+          trackPoints[i] = IgcPoint(
+            timestamp: localTime,
+            latitude: point.latitude,
+            longitude: point.longitude,
+            pressureAltitude: point.pressureAltitude,
+            gpsAltitude: point.gpsAltitude,
+            isValid: point.isValid,
+          );
         }
       }
     }
