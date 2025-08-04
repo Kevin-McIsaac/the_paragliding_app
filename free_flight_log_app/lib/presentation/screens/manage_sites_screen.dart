@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import '../../data/models/site.dart';
 import '../../data/repositories/site_repository.dart';
 
@@ -472,7 +474,9 @@ class _SiteListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: ListTile(
+      child: GestureDetector(
+        onDoubleTap: onEdit,
+        child: ListTile(
         leading: const Icon(Icons.location_on),
         title: Text(
           site.name,
@@ -553,6 +557,7 @@ class _SiteListTile extends StatelessWidget {
             ),
           ],
         ),
+        ),
       ),
     );
   }
@@ -567,17 +572,20 @@ class _EditSiteDialog extends StatefulWidget {
   State<_EditSiteDialog> createState() => _EditSiteDialogState();
 }
 
-class _EditSiteDialogState extends State<_EditSiteDialog> {
+class _EditSiteDialogState extends State<_EditSiteDialog> with SingleTickerProviderStateMixin {
   late TextEditingController _nameController;
   late TextEditingController _latitudeController;
   late TextEditingController _longitudeController;
   late TextEditingController _altitudeController;
   late TextEditingController _countryController;
+  late TabController _tabController;
+  MapController? _mapController;
   final _formKey = GlobalKey<FormState>();
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _nameController = TextEditingController(text: widget.site.name);
     _latitudeController = TextEditingController(text: widget.site.latitude.toString());
     _longitudeController = TextEditingController(text: widget.site.longitude.toString());
@@ -591,6 +599,7 @@ class _EditSiteDialogState extends State<_EditSiteDialog> {
 
   @override
   void dispose() {
+    _tabController.dispose();
     _nameController.dispose();
     _latitudeController.dispose();
     _longitudeController.dispose();
@@ -601,13 +610,94 @@ class _EditSiteDialogState extends State<_EditSiteDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Edit Site'),
-      content: Form(
+    return Dialog(
+      child: Container(
+        width: MediaQuery.of(context).size.width * 0.9,
+        height: MediaQuery.of(context).size.height * 0.8,
+        child: Column(
+          children: [
+            // Header with title and close button
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: Theme.of(context).dividerColor),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Text(
+                    'Edit Site',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
+            // Tab bar
+            TabBar(
+              controller: _tabController,
+              tabs: const [
+                Tab(
+                  icon: Icon(Icons.edit),
+                  text: 'Details',
+                ),
+                Tab(
+                  icon: Icon(Icons.map),
+                  text: 'Location',
+                ),
+              ],
+            ),
+            // Tab content
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildDetailsTab(),
+                  _buildLocationTab(),
+                ],
+              ),
+            ),
+            // Action buttons
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(color: Theme.of(context).dividerColor),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: _saveChanges,
+                    child: const Text('Save'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailsTab() {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Form(
         key: _formKey,
         child: SingleChildScrollView(
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             children: [
               TextFormField(
                 controller: _nameController,
@@ -704,32 +794,92 @@ class _EditSiteDialogState extends State<_EditSiteDialog> {
           ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+    );
+  }
+
+  Widget _buildLocationTab() {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          Text(
+            '${widget.site.name}',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${widget.site.latitude.toStringAsFixed(6)}, ${widget.site.longitude.toStringAsFixed(6)}',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontFamily: 'monospace',
+            ),
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: _buildLocationMap(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _saveChanges() {
+    if (_formKey.currentState!.validate()) {
+      final updatedSite = widget.site.copyWith(
+        name: _nameController.text.trim(),
+        latitude: double.parse(_latitudeController.text.trim()),
+        longitude: double.parse(_longitudeController.text.trim()),
+        altitude: _altitudeController.text.trim().isEmpty
+            ? null
+            : double.parse(_altitudeController.text.trim()),
+        country: _countryController.text.trim().isEmpty
+            ? null
+            : _countryController.text.trim(),
+        customName: true, // Mark as custom since user edited it
+      );
+      Navigator.of(context).pop(updatedSite);
+    }
+  }
+
+  Widget _buildLocationMap() {
+    _mapController ??= MapController();
+    
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).dividerColor),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: FlutterMap(
+          mapController: _mapController,
+          options: MapOptions(
+            initialCenter: LatLng(widget.site.latitude, widget.site.longitude),
+            initialZoom: 14.0,
+            minZoom: 5.0,
+            maxZoom: 18.0,
+          ),
+          children: [
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.example.free_flight_log_app',
+            ),
+            MarkerLayer(
+              markers: [
+                Marker(
+                  point: LatLng(widget.site.latitude, widget.site.longitude),
+                  width: 40,
+                  height: 40,
+                  child: const Icon(
+                    Icons.location_pin,
+                    color: Colors.red,
+                    size: 40,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
-        FilledButton(
-          onPressed: () {
-            if (_formKey.currentState!.validate()) {
-              final updatedSite = widget.site.copyWith(
-                name: _nameController.text.trim(),
-                latitude: double.parse(_latitudeController.text.trim()),
-                longitude: double.parse(_longitudeController.text.trim()),
-                altitude: _altitudeController.text.trim().isEmpty
-                    ? null
-                    : double.parse(_altitudeController.text.trim()),
-                country: _countryController.text.trim().isEmpty
-                    ? null
-                    : _countryController.text.trim(),
-                customName: true, // Mark as custom since user edited it
-              );
-              Navigator.of(context).pop(updatedSite);
-            }
-          },
-          child: const Text('Save'),
-        ),
-      ],
+      ),
     );
   }
 }

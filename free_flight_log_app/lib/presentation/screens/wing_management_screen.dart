@@ -290,7 +290,9 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
       opacity: wing.active ? 1.0 : 0.6,
       child: Card(
         margin: const EdgeInsets.only(bottom: 8),
-        child: ListTile(
+        child: GestureDetector(
+          onDoubleTap: () => _editWing(wing),
+          child: ListTile(
         leading: CircleAvatar(
           backgroundColor: wing.active 
             ? Theme.of(context).colorScheme.primary
@@ -365,6 +367,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
           ],
         ),
         onTap: () => _editWing(wing),
+        ),
         ),
       ),
     );
