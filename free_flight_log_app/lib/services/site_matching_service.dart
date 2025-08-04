@@ -42,7 +42,7 @@ class SiteMatchingService {
   }
 
   /// Find the nearest paragliding site to given coordinates
-  /// Uses API first, then falls back to local database
+  /// Uses hybrid approach: flight log first for speed, API for enhanced data
   /// Returns null if no site found within maxDistance (meters)
   Future<ParaglidingSite?> findNearestSite(
     double latitude, 
@@ -50,7 +50,37 @@ class SiteMatchingService {
     double maxDistance = 1000, // 1km default
     String? preferredType, // 'launch', 'landing', or null for any
   }) async {
-    // Try API first if enabled
+    // Try local flight log first (much faster for known sites)
+    final localSite = _findNearestSiteLocal(latitude, longitude, maxDistance: maxDistance, preferredType: preferredType);
+    
+    // If we found a local site but it's missing country info, also check API for enhanced data
+    if (localSite != null && localSite.country == null && _useApi) {
+      try {
+        final apiSite = await ParaglidingEarthApi.instance.findNearestSite(
+          latitude,
+          longitude,
+          maxDistanceKm: maxDistance / 1000.0, // Convert meters to km
+          preferredType: preferredType,
+        );
+        
+        if (apiSite != null && apiSite.country != null) {
+          print('SiteMatching: Found site in flight log, enhanced with API country data: "${apiSite.name}" → ${apiSite.country}');
+          return apiSite; // Use API result with country info
+        }
+      } catch (e) {
+        print('SiteMatching: API enhancement failed, using flight log data: $e');
+      }
+      
+      // Use local site even without country info
+      print('SiteMatching: Found site in flight log: "${localSite.name}" (no country info available)');
+      return localSite;
+    } else if (localSite != null) {
+      // Local site found with complete info
+      print('SiteMatching: Found site in flight log: "${localSite.name}" at ${localSite.latitude.toStringAsFixed(4)}, ${localSite.longitude.toStringAsFixed(4)}');
+      return localSite;
+    }
+
+    // No local site found, try API for new sites
     if (_useApi) {
       try {
         final apiSite = await ParaglidingEarthApi.instance.findNearestSite(
@@ -61,16 +91,18 @@ class SiteMatchingService {
         );
         
         if (apiSite != null) {
-          print('SiteMatching: Found site via API: ${apiSite.name}');
+          print('SiteMatching: Found new site via API: "${apiSite.name}" at ${apiSite.latitude.toStringAsFixed(4)}, ${apiSite.longitude.toStringAsFixed(4)}');
+          print('SiteMatching: API site location info - Country: "${apiSite.country ?? 'null'}"');
           return apiSite;
         }
       } catch (e) {
-        print('SiteMatching: API lookup failed, falling back to local database: $e');
+        print('SiteMatching: API lookup failed: $e');
       }
     }
 
-    // Fallback to local database
-    return _findNearestSiteLocal(latitude, longitude, maxDistance: maxDistance, preferredType: preferredType);
+    // No site found in either local database or API
+    print('SiteMatching: No site found within ${maxDistance}m of ${latitude.toStringAsFixed(4)}, ${longitude.toStringAsFixed(4)}');
+    return null;
   }
 
   /// Find the nearest site using local database only

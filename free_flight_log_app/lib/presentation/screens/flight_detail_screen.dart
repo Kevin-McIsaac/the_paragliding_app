@@ -504,64 +504,18 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
     
     if (!mounted) return;
     
-    final Site? selectedSite = await showDialog<Site>(
+    final _SiteSelectionResult? result = await showDialog<_SiteSelectionResult>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Select ${isLaunchSite ? 'Launch' : 'Landing'} Site'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                title: const Text('No site'),
-                leading: Radio<Site?>(
-                  value: null,
-                  groupValue: currentSite,
-                  onChanged: (Site? value) {
-                    Navigator.of(context).pop(value);
-                  },
-                ),
-                onTap: () => Navigator.of(context).pop(null),
-              ),
-              const Divider(),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: sites.length,
-                  itemBuilder: (context, index) {
-                    final site = sites[index];
-                    return ListTile(
-                      title: Text(site.name),
-                      subtitle: site.altitude != null 
-                          ? Text('${site.altitude!.toInt()} m')
-                          : null,
-                      leading: Radio<Site>(
-                        value: site,
-                        groupValue: currentSite,
-                        onChanged: (Site? value) {
-                          Navigator.of(context).pop(value);
-                        },
-                      ),
-                      onTap: () => Navigator.of(context).pop(site),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-        ],
+      builder: (context) => _SiteSelectionDialog(
+        sites: sites,
+        currentSite: currentSite,
+        title: 'Select ${isLaunchSite ? 'Launch' : 'Landing'} Site',
       ),
     );
 
-    if (selectedSite != currentSite) {
-      await _updateFlightSite(isLaunchSite, selectedSite);
+    // Only update if a selection was made (not cancelled)
+    if (result != null && result.selectedSite != currentSite) {
+      await _updateFlightSite(isLaunchSite, result.selectedSite);
     }
   }
 
@@ -570,7 +524,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
     
     if (!mounted) return;
     
-    final Wing? selectedWing = await showDialog<Wing>(
+    final _WingSelectionResult? result = await showDialog<_WingSelectionResult>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Select Wing'),
@@ -585,10 +539,10 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                   value: null,
                   groupValue: _wing,
                   onChanged: (Wing? value) {
-                    Navigator.of(context).pop(value);
+                    Navigator.of(context).pop(_WingSelectionResult(value));
                   },
                 ),
-                onTap: () => Navigator.of(context).pop(null),
+                onTap: () => Navigator.of(context).pop(_WingSelectionResult(null)),
               ),
               const Divider(),
               Flexible(
@@ -605,10 +559,10 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                         value: wing,
                         groupValue: _wing,
                         onChanged: (Wing? value) {
-                          Navigator.of(context).pop(value);
+                          Navigator.of(context).pop(_WingSelectionResult(value));
                         },
                       ),
-                      onTap: () => Navigator.of(context).pop(wing),
+                      onTap: () => Navigator.of(context).pop(_WingSelectionResult(wing)),
                     );
                   },
                 ),
@@ -618,15 +572,16 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(context).pop(), // Return null for cancellation
             child: const Text('Cancel'),
           ),
         ],
       ),
     );
 
-    if (selectedWing != _wing) {
-      await _updateFlightWing(selectedWing);
+    // Only update if a selection was made (not cancelled)
+    if (result != null && result.selectedWing != _wing) {
+      await _updateFlightWing(result.selectedWing);
     }
   }
 
@@ -1786,4 +1741,324 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
     }
   }
 
+}
+
+// Result wrapper to distinguish between cancellation and selection
+class _SiteSelectionResult {
+  final Site? selectedSite;
+  
+  const _SiteSelectionResult(this.selectedSite);
+}
+
+// Result wrapper for wing selection
+class _WingSelectionResult {
+  final Wing? selectedWing;
+  
+  const _WingSelectionResult(this.selectedWing);
+}
+
+// Custom dialog for site selection with search functionality
+class _SiteSelectionDialog extends StatefulWidget {
+  final List<Site> sites;
+  final Site? currentSite;
+  final String title;
+
+  const _SiteSelectionDialog({
+    required this.sites,
+    required this.currentSite,
+    required this.title,
+  });
+
+  @override
+  State<_SiteSelectionDialog> createState() => _SiteSelectionDialogState();
+}
+
+class _SiteSelectionDialogState extends State<_SiteSelectionDialog> {
+  late List<Site> _filteredSites;
+  final TextEditingController _searchController = TextEditingController();
+  Site? _selectedSite;
+  String _searchQuery = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _filteredSites = widget.sites;
+    _selectedSite = widget.currentSite;
+    
+    // Sort sites alphabetically for easier browsing
+    _filteredSites.sort((a, b) => a.name.compareTo(b.name));
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _filterSites(String query) {
+    setState(() {
+      _searchQuery = query.toLowerCase();
+      if (_searchQuery.isEmpty) {
+        _filteredSites = List.from(widget.sites)
+          ..sort((a, b) => a.name.compareTo(b.name));
+      } else {
+        _filteredSites = widget.sites
+            .where((site) => 
+                site.name.toLowerCase().contains(_searchQuery) ||
+                (site.country?.toLowerCase().contains(_searchQuery) ?? false))
+            .toList()
+          ..sort((a, b) {
+            // Prioritize sites that start with the search query
+            final aStarts = a.name.toLowerCase().startsWith(_searchQuery);
+            final bStarts = b.name.toLowerCase().startsWith(_searchQuery);
+            if (aStarts && !bStarts) return -1;
+            if (!aStarts && bStarts) return 1;
+            return a.name.compareTo(b.name);
+          });
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Group sites by country for better organization
+    final Map<String, List<Site>> countryGroupedSites = {};
+    for (final site in _filteredSites) {
+      final country = site.country ?? 'Unknown Country';
+      countryGroupedSites.putIfAbsent(country, () => []).add(site);
+    }
+    
+    // Sort countries alphabetically, but keep "Unknown Country" at the end
+    final sortedCountries = countryGroupedSites.keys.toList()..sort((a, b) {
+      if (a == 'Unknown Country' && b != 'Unknown Country') return 1;
+      if (a != 'Unknown Country' && b == 'Unknown Country') return -1;
+      return a.compareTo(b);
+    });
+    
+    // Sort sites within each country
+    for (final country in sortedCountries) {
+      countryGroupedSites[country]!.sort((a, b) => a.name.compareTo(b.name));
+    }
+
+    return AlertDialog(
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(widget.title),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'Search sites or countries...',
+              prefixIcon: const Icon(Icons.search),
+              border: const OutlineInputBorder(),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchController.clear();
+                        _filterSites('');
+                      },
+                    )
+                  : null,
+            ),
+            onChanged: _filterSites,
+            autofocus: true,
+          ),
+          if (_filteredSites.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                '${_filteredSites.length} site${_filteredSites.length != 1 ? 's' : ''} found',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+        ],
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: 400, // Fixed height for better UX
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // No site option
+            ListTile(
+              title: const Text('No site'),
+              leading: Radio<Site?>(
+                value: null,
+                groupValue: _selectedSite,
+                onChanged: (Site? value) {
+                  setState(() {
+                    _selectedSite = value;
+                  });
+                },
+              ),
+              onTap: () {
+                setState(() {
+                  _selectedSite = null;
+                });
+              },
+              dense: true,
+            ),
+            const Divider(),
+            // Site list
+            Expanded(
+              child: _filteredSites.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.search_off, 
+                               size: 48, 
+                               color: Colors.grey[400]),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No sites match your search',
+                            style: TextStyle(color: Colors.grey[600]),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: _searchQuery.isEmpty 
+                          ? sortedCountries.fold<int>(0, (count, country) => 
+                              count + 1 + countryGroupedSites[country]!.length) // Country header + sites
+                          : _filteredSites.length,
+                      itemBuilder: (context, index) {
+                        if (_searchQuery.isNotEmpty) {
+                          // When searching, show flat list
+                          final site = _filteredSites[index];
+                          return ListTile(
+                            title: Text(
+                              site.name,
+                              style: site.name == 'Unknown'
+                                  ? TextStyle(fontStyle: FontStyle.italic,
+                                            color: Colors.grey[600])
+                                  : null,
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (site.altitude != null)
+                                  Text('${site.altitude!.toInt()} m'),
+                                if (site.country != null)
+                                  Text(
+                                    site.country!,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            leading: Radio<Site>(
+                              value: site,
+                              groupValue: _selectedSite,
+                              onChanged: (Site? value) {
+                                setState(() {
+                                  _selectedSite = value;
+                                });
+                              },
+                            ),
+                            onTap: () {
+                              setState(() {
+                                _selectedSite = site;
+                              });
+                            },
+                            dense: true,
+                          );
+                        } else {
+                          // When not searching, show hierarchical structure
+                          return _buildHierarchicalItem(index, countryGroupedSites);
+                        }
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(), // Return null for cancellation
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_SiteSelectionResult(_selectedSite)),
+          child: const Text('Select'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHierarchicalItem(int index, Map<String, List<Site>> countryGroupedSites) {
+    // Calculate which item we're showing based on the hierarchical structure
+    int currentIndex = 0;
+    
+    for (final country in countryGroupedSites.keys.toList()..sort((a, b) {
+      if (a == 'Unknown Country' && b != 'Unknown Country') return 1;
+      if (a != 'Unknown Country' && b == 'Unknown Country') return -1;
+      return a.compareTo(b);
+    })) {
+      if (currentIndex == index) {
+        // Country header
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          margin: const EdgeInsets.only(top: 8),
+          color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+          child: Text(
+            country,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+        );
+      }
+      currentIndex++;
+      
+      final sites = countryGroupedSites[country]!;
+      for (final site in sites) {
+        if (currentIndex == index) {
+          // Site item
+          return Padding(
+            padding: const EdgeInsets.only(left: 16),
+            child: ListTile(
+              title: Text(
+                site.name,
+                style: site.name == 'Unknown'
+                    ? TextStyle(fontStyle: FontStyle.italic,
+                              color: Colors.grey[600])
+                    : null,
+              ),
+              subtitle: site.altitude != null
+                  ? Text('${site.altitude!.toInt()} m')
+                  : null,
+              leading: Radio<Site>(
+                value: site,
+                groupValue: _selectedSite,
+                onChanged: (Site? value) {
+                  setState(() {
+                    _selectedSite = value;
+                  });
+                },
+              ),
+              onTap: () {
+                setState(() {
+                  _selectedSite = site;
+                });
+              },
+              dense: true,
+            ),
+          );
+        }
+        currentIndex++;
+      }
+    }
+    
+    // Fallback (shouldn't reach here)
+    return const SizedBox.shrink();
+  }
 }

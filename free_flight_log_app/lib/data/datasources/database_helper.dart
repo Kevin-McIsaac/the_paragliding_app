@@ -4,7 +4,7 @@ import 'package:path/path.dart';
 
 class DatabaseHelper {
   static const _databaseName = "FlightLog.db";
-  static const _databaseVersion = 4;
+  static const _databaseVersion = 6;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -61,6 +61,7 @@ class DatabaseHelper {
         latitude REAL NOT NULL,
         longitude REAL NOT NULL,
         altitude REAL,
+        country TEXT,
         custom_name INTEGER DEFAULT 0,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
@@ -139,6 +140,53 @@ class DatabaseHelper {
         print('Successfully migrated to landing coordinates');
       } catch (e) {
         print('Error during landing coordinates migration: $e');
+        throw e;
+      }
+    }
+    
+    if (oldVersion < 5) {
+      try {
+        // Add country and state columns to sites table
+        await db.execute('ALTER TABLE sites ADD COLUMN country TEXT');
+        await db.execute('ALTER TABLE sites ADD COLUMN state TEXT');
+        
+        print('Successfully added country and state columns to sites table');
+      } catch (e) {
+        print('Error during country/state migration: $e');
+        throw e;
+      }
+    }
+    
+    if (oldVersion < 6) {
+      try {
+        // Remove state column as ParaglidingEarth API doesn't provide region data
+        // SQLite doesn't support DROP COLUMN, so we'll recreate the table
+        await db.execute('''
+          CREATE TABLE sites_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            latitude REAL NOT NULL,
+            longitude REAL NOT NULL,
+            altitude REAL,
+            country TEXT,
+            custom_name INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+          )
+        ''');
+        
+        // Copy data from old table (excluding state column)
+        await db.execute('''
+          INSERT INTO sites_new (id, name, latitude, longitude, altitude, country, custom_name, created_at)
+          SELECT id, name, latitude, longitude, altitude, country, custom_name, created_at FROM sites
+        ''');
+        
+        // Drop old table and rename new table
+        await db.execute('DROP TABLE sites');
+        await db.execute('ALTER TABLE sites_new RENAME TO sites');
+        
+        print('Successfully removed state column from sites table');
+      } catch (e) {
+        print('Error during state column removal: $e');
         throw e;
       }
     }

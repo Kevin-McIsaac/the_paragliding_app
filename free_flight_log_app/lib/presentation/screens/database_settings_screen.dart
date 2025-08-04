@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../utils/database_reset_helper.dart';
 import '../../data/repositories/site_repository.dart';
 import '../../services/site_matching_service.dart';
+import '../../services/site_migration_service.dart';
 
 class DatabaseSettingsScreen extends StatefulWidget {
   const DatabaseSettingsScreen({super.key});
@@ -206,6 +207,54 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
     }
   }
 
+  Future<void> _migrateSiteLocationInfo() async {
+    // Show confirmation dialog
+    final confirmed = await _showConfirmationDialog(
+      'Update Site Country Info',
+      'This will look up country information for sites that are missing this data.\n\n'
+      'The process uses the ParaglidingEarth API and may take several minutes for many sites.\n\n'
+      'Existing country information will not be overwritten.\n\n'
+      'Continue with update?',
+    );
+
+    if (!confirmed) return;
+
+    // Show loading
+    _showLoadingDialog('Updating site country information...');
+
+    try {
+      final migrationService = SiteMigrationService();
+      final result = await migrationService.migrateExistingSites();
+      
+      // Close loading dialog
+      if (mounted) Navigator.of(context).pop();
+      
+      // Show result
+      if (mounted) {
+        if (result.hasUpdates || result.totalSites == 0) {
+          _showSuccessDialog(
+            'Migration Complete',
+            result.message,
+          );
+          await _loadDatabaseStats(); // Refresh stats
+        } else {
+          _showErrorDialog(
+            'Migration Complete',
+            result.message,
+          );
+        }
+      }
+    } catch (e) {
+      // Close loading dialog
+      if (mounted) Navigator.of(context).pop();
+      
+      // Show error
+      if (mounted) {
+        _showErrorDialog('Migration Error', 'Error during site migration: $e');
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -294,6 +343,21 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
                       label: const Text('Test ParaglidingEarth API'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.green,
+                      ),
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 12),
+
+                  // Update Site Country Info
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _migrateSiteLocationInfo,
+                      icon: const Icon(Icons.location_on),
+                      label: const Text('Update Site Country Info'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.blue,
                       ),
                     ),
                   ),

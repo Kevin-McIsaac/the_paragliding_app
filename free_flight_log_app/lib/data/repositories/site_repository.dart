@@ -91,6 +91,7 @@ class SiteRepository {
     required double longitude,
     double? altitude,
     required String name,
+    String? country,
     double tolerance = 0.01,
   }) async {
     // First try to find existing site
@@ -106,6 +107,7 @@ class SiteRepository {
       latitude: latitude,
       longitude: longitude,
       altitude: altitude,
+      country: country,
       customName: false,
     );
     
@@ -116,6 +118,7 @@ class SiteRepository {
       latitude: latitude,
       longitude: longitude,
       altitude: altitude,
+      country: country,
       customName: false,
     );
   }
@@ -143,5 +146,30 @@ class SiteRepository {
     ''');
     
     return List.generate(maps.length, (i) => Site.fromMap(maps[i]));
+  }
+
+  /// Get all sites that are missing country information
+  Future<List<Site>> getSitesWithoutLocationInfo() async {
+    Database db = await _databaseHelper.database;
+    List<Map<String, dynamic>> maps = await db.query(
+      'sites',
+      where: 'country IS NULL AND name != ?',
+      whereArgs: ['Unknown'],
+      orderBy: 'name ASC',
+    );
+    return List.generate(maps.length, (i) => Site.fromMap(maps[i]));
+  }
+
+  /// Update country for an existing site
+  Future<int> updateSiteLocationInfo(int siteId, String? country) async {
+    Database db = await _databaseHelper.database;
+    return await db.update(
+      'sites',
+      {
+        'country': country,
+      },
+      where: 'id = ?',
+      whereArgs: [siteId],
+    );
   }
 }

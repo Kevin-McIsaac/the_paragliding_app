@@ -4,6 +4,7 @@ class Site {
   final double latitude;
   final double longitude;
   final double? altitude;
+  final String? country;
   final bool customName;
   final DateTime? createdAt;
 
@@ -13,6 +14,7 @@ class Site {
     required this.latitude,
     required this.longitude,
     this.altitude,
+    this.country,
     this.customName = false,
     this.createdAt,
   });
@@ -24,6 +26,7 @@ class Site {
       'latitude': latitude,
       'longitude': longitude,
       'altitude': altitude,
+      'country': country,
       'custom_name': customName ? 1 : 0,
       'created_at': createdAt?.toIso8601String(),
     };
@@ -36,6 +39,7 @@ class Site {
       latitude: map['latitude']?.toDouble(),
       longitude: map['longitude']?.toDouble(),
       altitude: map['altitude']?.toDouble(),
+      country: map['country'],
       customName: map['custom_name'] == 1,
       createdAt: map['created_at'] != null ? DateTime.parse(map['created_at']) : null,
     );
@@ -47,6 +51,7 @@ class Site {
     double? latitude,
     double? longitude,
     double? altitude,
+    String? country,
     bool? customName,
     DateTime? createdAt,
   }) {
@@ -56,6 +61,7 @@ class Site {
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       altitude: altitude ?? this.altitude,
+      country: country ?? this.country,
       customName: customName ?? this.customName,
       createdAt: createdAt ?? this.createdAt,
     );

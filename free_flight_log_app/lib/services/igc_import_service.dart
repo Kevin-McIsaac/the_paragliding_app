@@ -161,17 +161,34 @@ class IgcImportService {
     if (igcData.launchSite != null) {
       final launchPoint = igcData.launchSite!;
       
-      // Try to get a paragliding site name
-      String siteName = await _getSiteName(
+      // Try to match with a paragliding site to get name and location info
+      final siteMatchingService = SiteMatchingService.instance;
+      if (!siteMatchingService.isReady) {
+        await siteMatchingService.initialize();
+      }
+      
+      final matchedSite = await siteMatchingService.findNearestSite(
         launchPoint.latitude,
         launchPoint.longitude,
-        siteType: 'launch',
+        maxDistance: 500, // 500m for launch sites
+        preferredType: 'launch',
       );
       
-      // If the site name is just coordinates (no actual site found), use "Unknown"
-      // This happens when _getSiteName returns coordinate strings like "47.123°N 8.456°E"
-      if (siteName.contains('°')) {
+      String siteName;
+      String? country;
+      
+      if (matchedSite != null) {
+        siteName = matchedSite.name;
+        country = matchedSite.country;
+        
+        // Debug output to see what the API returned
+        print('IGC Import: API found site "${siteName}" for coordinates ${launchPoint.latitude.toStringAsFixed(4)}, ${launchPoint.longitude.toStringAsFixed(4)}');
+        print('IGC Import: Site details - Country: "${country ?? 'null'}"');
+        print('IGC Import: Full site object: $matchedSite');
+      } else {
         siteName = 'Unknown';
+        country = null;
+        print('IGC Import: No API site found for coordinates ${launchPoint.latitude.toStringAsFixed(4)}, ${launchPoint.longitude.toStringAsFixed(4)}');
       }
       
       launchSite = await _siteRepository.findOrCreateSite(
@@ -179,7 +196,11 @@ class IgcImportService {
         longitude: launchPoint.longitude,
         altitude: launchPoint.gpsAltitude.toDouble(),
         name: siteName,
+        country: country,
       );
+      
+      // Debug output to see what was actually stored
+      print('IGC Import: Created/found site in database with ID ${launchSite.id}, name "${launchSite.name}", country "${launchSite.country ?? 'null'}"');
     }
 
     // Get landing coordinates (no longer create landing sites)

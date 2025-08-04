@@ -217,8 +217,18 @@ class ParaglidingEarthApi {
     // Map ParaglidingEarth properties to our model
     final name = properties['name']?.toString() ?? 'Unknown Site';
     final description = properties['description']?.toString() ?? '';
-    final country = properties['country']?.toString();
-    final region = properties['region']?.toString();
+    
+    // ParaglidingEarth API uses 'countryCode' field (e.g., "at", "ch", "fr")
+    final countryCode = properties['countryCode']?.toString();
+    final country = countryCode != null ? _countryCodeToName(countryCode) : null;
+    
+    // ParaglidingEarth API doesn't provide region/state information
+    final region = null;
+    
+    // Debug output for country parsing
+    if (countryCode != null) {
+      print('ParaglidingEarth API: Site "${name}" - countryCode "${countryCode}" → country "${country}"');
+    }
     
     // Determine site type based on API data
     String siteType = 'launch'; // Default
@@ -283,6 +293,80 @@ class ParaglidingEarthApi {
   /// Clear all cached data
   void clearCache() {
     _cache.clear();
+  }
+
+  /// Convert ISO country code to full country name
+  String _countryCodeToName(String countryCode) {
+    // Map of common ISO 3166-1 alpha-2 country codes to full names
+    // Focus on European countries where paragliding is popular
+    final countryMap = <String, String>{
+      'ad': 'Andorra',
+      'at': 'Austria', 
+      'be': 'Belgium',
+      'bg': 'Bulgaria',
+      'ch': 'Switzerland',
+      'cz': 'Czech Republic',
+      'de': 'Germany',
+      'dk': 'Denmark',
+      'es': 'Spain',
+      'fi': 'Finland',
+      'fr': 'France',
+      'gb': 'United Kingdom',
+      'gr': 'Greece',
+      'hr': 'Croatia',
+      'hu': 'Hungary',
+      'ie': 'Ireland',
+      'is': 'Iceland',
+      'it': 'Italy',
+      'li': 'Liechtenstein',
+      'lu': 'Luxembourg',
+      'mc': 'Monaco',
+      'mt': 'Malta',
+      'nl': 'Netherlands',
+      'no': 'Norway',
+      'pl': 'Poland',
+      'pt': 'Portugal',
+      'ro': 'Romania',
+      'se': 'Sweden',
+      'si': 'Slovenia',
+      'sk': 'Slovakia',
+      'sm': 'San Marino',
+      'va': 'Vatican City',
+      
+      // Other popular paragliding countries
+      'us': 'United States',
+      'ca': 'Canada',
+      'mx': 'Mexico',
+      'br': 'Brazil',
+      'ar': 'Argentina',
+      'cl': 'Chile',
+      'co': 'Colombia',
+      'pe': 'Peru',
+      'au': 'Australia',
+      'nz': 'New Zealand',
+      'za': 'South Africa',
+      'ma': 'Morocco',
+      'tn': 'Tunisia',
+      'eg': 'Egypt',
+      'tr': 'Turkey',
+      'il': 'Israel',
+      'jo': 'Jordan',
+      'lb': 'Lebanon',
+      'in': 'India',
+      'np': 'Nepal',
+      'pk': 'Pakistan',
+      'cn': 'China',
+      'jp': 'Japan',
+      'kr': 'South Korea',
+      'th': 'Thailand',
+      'vn': 'Vietnam',
+      'id': 'Indonesia',
+      'my': 'Malaysia',
+      'ph': 'Philippines',
+    };
+    
+    final lowerCode = countryCode.toLowerCase();
+    return countryMap[lowerCode] ?? countryCode.toUpperCase(); // Fallback to uppercase code
   }
 
   /// Get cache statistics
