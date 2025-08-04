@@ -13,9 +13,12 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
   final SiteRepository _siteRepository = SiteRepository();
   List<Site> _sites = [];
   List<Site> _filteredSites = [];
+  Map<String, List<Site>> _groupedSites = {};
   bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  String _sortBy = 'country'; // 'name', 'country', 'date' - default to country grouping
+  bool _groupByCountry = true;
 
   @override
   void initState() {
@@ -43,8 +46,73 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
       _filteredSites = List.from(_sites);
     } else {
       _filteredSites = _sites.where((site) =>
-        site.name.toLowerCase().contains(_searchQuery)
+        site.name.toLowerCase().contains(_searchQuery) ||
+        (site.country?.toLowerCase().contains(_searchQuery) ?? false)
       ).toList();
+    }
+    
+    // Sort the filtered sites
+    _sortSites();
+    
+    // Group sites by country if enabled
+    if (_groupByCountry) {
+      _groupSitesByCountry();
+    }
+  }
+  
+  void _groupSitesByCountry() {
+    _groupedSites.clear();
+    
+    for (final site in _filteredSites) {
+      final country = site.country ?? 'Unknown Country';
+      if (!_groupedSites.containsKey(country)) {
+        _groupedSites[country] = [];
+      }
+      _groupedSites[country]!.add(site);
+    }
+    
+    // Sort countries alphabetically, but put "Unknown Country" at the end
+    final sortedCountries = _groupedSites.keys.toList();
+    sortedCountries.sort((a, b) {
+      if (a == 'Unknown Country' && b != 'Unknown Country') return 1;
+      if (b == 'Unknown Country' && a != 'Unknown Country') return -1;
+      return a.compareTo(b);
+    });
+    
+    // Rebuild grouped sites in sorted order
+    final sortedGroupedSites = <String, List<Site>>{};
+    for (final country in sortedCountries) {
+      sortedGroupedSites[country] = _groupedSites[country]!;
+      // Sort sites within each country by name
+      sortedGroupedSites[country]!.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    }
+    
+    _groupedSites = sortedGroupedSites;
+  }
+  
+  void _sortSites() {
+    switch (_sortBy) {
+      case 'name':
+        _filteredSites.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        break;
+      case 'country':
+        _filteredSites.sort((a, b) {
+          final countryA = a.country ?? 'ZZZ'; // Put sites without country at end
+          final countryB = b.country ?? 'ZZZ';
+          final countryComparison = countryA.compareTo(countryB);
+          if (countryComparison == 0) {
+            return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+          }
+          return countryComparison;
+        });
+        break;
+      case 'date':
+        _filteredSites.sort((a, b) {
+          final dateA = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final dateB = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return dateB.compareTo(dateA); // Most recent first
+        });
+        break;
     }
   }
 
@@ -169,6 +237,78 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Manage Sites'),
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.sort),
+            tooltip: 'Sort sites',
+            onSelected: (value) {
+              setState(() {
+                _sortBy = value;
+                _groupByCountry = (value == 'country');
+                _filterSites(); // Re-apply sort and grouping
+              });
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'name',
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.text_fields,
+                      color: _sortBy == 'name' ? Theme.of(context).primaryColor : null,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Sort by Name',
+                      style: TextStyle(
+                        fontWeight: _sortBy == 'name' ? FontWeight.bold : null,
+                        color: _sortBy == 'name' ? Theme.of(context).primaryColor : null,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'country',
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.flag,
+                      color: _sortBy == 'country' ? Theme.of(context).primaryColor : null,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Group by Country',
+                      style: TextStyle(
+                        fontWeight: _sortBy == 'country' ? FontWeight.bold : null,
+                        color: _sortBy == 'country' ? Theme.of(context).primaryColor : null,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'date',
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.access_time,
+                      color: _sortBy == 'date' ? Theme.of(context).primaryColor : null,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Sort by Date Added',
+                      style: TextStyle(
+                        fontWeight: _sortBy == 'date' ? FontWeight.bold : null,
+                        color: _sortBy == 'date' ? Theme.of(context).primaryColor : null,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(60),
           child: Padding(
@@ -176,7 +316,7 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
             child: TextField(
               controller: _searchController,
               decoration: const InputDecoration(
-                hintText: 'Search sites...',
+                hintText: 'Search sites by name or country...',
                 prefixIcon: Icon(Icons.search),
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -230,20 +370,89 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
                     ),
                     // Site list
                     Expanded(
-                      child: ListView.builder(
-                        itemCount: _filteredSites.length,
-                        itemBuilder: (context, index) {
-                          final site = _filteredSites[index];
-                          return _SiteListTile(
-                            site: site,
-                            onEdit: () => _editSite(site),
-                            onDelete: () => _deleteSite(site),
-                          );
-                        },
-                      ),
+                      child: _groupByCountry ? _buildGroupedSiteList() : _buildFlatSiteList(),
                     ),
                   ],
                 ),
+    );
+  }
+
+  Widget _buildGroupedSiteList() {
+    if (_groupedSites.isEmpty) {
+      return const Center(child: Text('No sites found'));
+    }
+
+    return ListView.builder(
+      itemCount: _groupedSites.length,
+      itemBuilder: (context, countryIndex) {
+        final country = _groupedSites.keys.elementAt(countryIndex);
+        final sites = _groupedSites[country]!;
+        
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Country header
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              color: Theme.of(context).colorScheme.primaryContainer,
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.flag,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    country,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '${sites.length}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onPrimary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Sites in this country
+            ...sites.map((site) => _SiteListTile(
+              site: site,
+              onEdit: () => _editSite(site),
+              onDelete: () => _deleteSite(site),
+            )),
+            const SizedBox(height: 8), // Space between country groups
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildFlatSiteList() {
+    return ListView.builder(
+      itemCount: _filteredSites.length,
+      itemBuilder: (context, index) {
+        final site = _filteredSites[index];
+        return _SiteListTile(
+          site: site,
+          onEdit: () => _editSite(site),
+          onDelete: () => _deleteSite(site),
+        );
+      },
     );
   }
 }
@@ -279,11 +488,35 @@ class _SiteListTile extends StatelessWidget {
                 color: Colors.grey[600],
               ),
             ),
-            if (site.altitude != null)
-              Text(
-                'Altitude: ${site.altitude!.toStringAsFixed(0)}m',
-                style: TextStyle(color: Colors.grey[600]),
-              ),
+            Row(
+              children: [
+                if (site.altitude != null) ...[
+                  Text(
+                    'Altitude: ${site.altitude!.toStringAsFixed(0)}m',
+                    style: TextStyle(color: Colors.grey[600]),
+                  ),
+                  if (site.country != null) ...[
+                    Text(' • ', style: TextStyle(color: Colors.grey[600])),
+                  ],
+                ],
+                if (site.country != null)
+                  Text(
+                    site.country!,
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  )
+                else
+                  Text(
+                    'Unknown Country',
+                    style: TextStyle(
+                      color: Colors.grey[500],
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+              ],
+            ),
           ],
         ),
         trailing: PopupMenuButton<String>(
@@ -339,6 +572,7 @@ class _EditSiteDialogState extends State<_EditSiteDialog> {
   late TextEditingController _latitudeController;
   late TextEditingController _longitudeController;
   late TextEditingController _altitudeController;
+  late TextEditingController _countryController;
   final _formKey = GlobalKey<FormState>();
 
   @override
@@ -350,6 +584,9 @@ class _EditSiteDialogState extends State<_EditSiteDialog> {
     _altitudeController = TextEditingController(
       text: widget.site.altitude?.toString() ?? '',
     );
+    _countryController = TextEditingController(
+      text: widget.site.country ?? '',
+    );
   }
 
   @override
@@ -358,6 +595,7 @@ class _EditSiteDialogState extends State<_EditSiteDialog> {
     _latitudeController.dispose();
     _longitudeController.dispose();
     _altitudeController.dispose();
+    _countryController.dispose();
     super.dispose();
   }
 
@@ -449,6 +687,19 @@ class _EditSiteDialogState extends State<_EditSiteDialog> {
                   return null;
                 },
               ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _countryController,
+                decoration: const InputDecoration(
+                  labelText: 'Country',
+                  border: OutlineInputBorder(),
+                  hintText: 'Optional',
+                ),
+                validator: (value) {
+                  // Country is optional, no validation needed
+                  return null;
+                },
+              ),
             ],
           ),
         ),
@@ -468,6 +719,9 @@ class _EditSiteDialogState extends State<_EditSiteDialog> {
                 altitude: _altitudeController.text.trim().isEmpty
                     ? null
                     : double.parse(_altitudeController.text.trim()),
+                country: _countryController.text.trim().isEmpty
+                    ? null
+                    : _countryController.text.trim(),
                 customName: true, // Mark as custom since user edited it
               );
               Navigator.of(context).pop(updatedSite);
