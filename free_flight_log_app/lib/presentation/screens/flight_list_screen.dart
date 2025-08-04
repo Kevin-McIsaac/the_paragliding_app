@@ -5,6 +5,7 @@ import 'add_flight_screen.dart';
 import 'igc_import_screen.dart';
 import 'flight_detail_screen.dart';
 import 'wing_management_screen.dart';
+import 'manage_sites_screen.dart';
 import 'statistics_screen.dart';
 import 'database_settings_screen.dart';
 
@@ -296,6 +297,12 @@ class _FlightListScreenState extends State<FlightListScreen> {
                         builder: (context) => const WingManagementScreen(),
                       ),
                     );
+                  } else if (value == 'sites') {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const ManageSitesScreen(),
+                      ),
+                    );
                   } else if (value == 'statistics') {
                     Navigator.of(context).push(
                       MaterialPageRoute(
@@ -339,6 +346,16 @@ class _FlightListScreenState extends State<FlightListScreen> {
                         Icon(Icons.paragliding),
                         SizedBox(width: 8),
                         Text('Manage Wings'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'sites',
+                    child: Row(
+                      children: [
+                        Icon(Icons.location_on),
+                        SizedBox(width: 8),
+                        Text('Manage Sites'),
                       ],
                     ),
                   ),

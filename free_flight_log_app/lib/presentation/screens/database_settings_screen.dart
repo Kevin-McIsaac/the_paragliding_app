@@ -168,7 +168,6 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
     );
   }
 
-
   Future<void> _testApiConnection() async {
     // Show loading
     _showLoadingDialog('Testing ParaglidingEarth API connection...');
