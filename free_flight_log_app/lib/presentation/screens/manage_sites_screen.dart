@@ -580,6 +580,7 @@ class _EditSiteDialogState extends State<_EditSiteDialog> with SingleTickerProvi
   late TextEditingController _countryController;
   late TabController _tabController;
   MapController? _mapController;
+  bool _showSatelliteView = false;
   final _formKey = GlobalKey<FormState>();
 
   @override
@@ -840,6 +841,12 @@ class _EditSiteDialogState extends State<_EditSiteDialog> with SingleTickerProvi
     }
   }
 
+  void _toggleSatelliteView() {
+    setState(() {
+      _showSatelliteView = !_showSatelliteView;
+    });
+  }
+
   Widget _buildLocationMap() {
     _mapController ??= MapController();
     
@@ -848,9 +855,11 @@ class _EditSiteDialogState extends State<_EditSiteDialog> with SingleTickerProvi
         border: Border.all(color: Theme.of(context).dividerColor),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: FlutterMap(
+      child: Stack(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: FlutterMap(
           mapController: _mapController,
           options: MapOptions(
             initialCenter: LatLng(widget.site.latitude, widget.site.longitude),
@@ -860,7 +869,9 @@ class _EditSiteDialogState extends State<_EditSiteDialog> with SingleTickerProvi
           ),
           children: [
             TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              urlTemplate: _showSatelliteView 
+                ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+                : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
               userAgentPackageName: 'com.example.free_flight_log_app',
             ),
             MarkerLayer(
@@ -877,8 +888,56 @@ class _EditSiteDialogState extends State<_EditSiteDialog> with SingleTickerProvi
                 ),
               ],
             ),
+            // Attribution overlay for satellite tiles
+            if (_showSatelliteView)
+              Align(
+                alignment: Alignment.bottomRight,
+                child: Container(
+                  margin: const EdgeInsets.all(4),
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.8),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                  child: Text(
+                    'Powered by Esri',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
+              ),
           ],
-        ),
+            ),
+          ),
+          // Satellite toggle button
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(4),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 4,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: IconButton(
+                onPressed: _toggleSatelliteView,
+                icon: Icon(
+                  _showSatelliteView ? Icons.map : Icons.satellite_alt,
+                  size: 20,
+                ),
+                tooltip: _showSatelliteView ? 'Street View' : 'Satellite View',
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

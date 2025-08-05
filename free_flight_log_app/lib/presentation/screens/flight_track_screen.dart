@@ -31,6 +31,7 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
   bool _showAltitudeColors = true;
   bool _showMarkers = true;
   bool _showStraightLine = true;
+  bool _showSatelliteView = false;
   
   // Currently selected track point for climb rate display
   int? _selectedPointIndex;
@@ -285,6 +286,12 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
     _createPolylines();
   }
 
+  void _toggleSatelliteView() {
+    setState(() {
+      _showSatelliteView = !_showSatelliteView;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -303,6 +310,9 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
                   break;
                 case 'straight_line':
                   _toggleStraightLine();
+                  break;
+                case 'satellite':
+                  _toggleSatelliteView();
                   break;
                 case 'fit':
                   _fitMapToBounds();
@@ -337,6 +347,16 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
                     Icon(_showStraightLine ? Icons.timeline : Icons.timeline_outlined),
                     const SizedBox(width: 8),
                     Text('${_showStraightLine ? 'Hide' : 'Show'} Straight Line'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'satellite',
+                child: Row(
+                  children: [
+                    Icon(_showSatelliteView ? Icons.map : Icons.satellite_alt),
+                    const SizedBox(width: 8),
+                    Text('${_showSatelliteView ? 'Street' : 'Satellite'} View'),
                   ],
                 ),
               ),
@@ -603,7 +623,9 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
       ),
       children: [
         TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          urlTemplate: _showSatelliteView 
+            ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+            : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.example.free_flight_log_app',
         ),
         if (_polylines.isNotEmpty)
@@ -613,6 +635,26 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
         if (_markers.isNotEmpty)
           MarkerLayer(
             markers: _markers,
+          ),
+        // Attribution overlay for satellite tiles
+        if (_showSatelliteView)
+          Align(
+            alignment: Alignment.bottomRight,
+            child: Container(
+              margin: const EdgeInsets.all(4),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.8),
+                borderRadius: BorderRadius.circular(2),
+              ),
+              child: Text(
+                'Powered by Esri',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.black87,
+                ),
+              ),
+            ),
           ),
       ],
     );
