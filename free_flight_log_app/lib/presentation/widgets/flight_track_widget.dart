@@ -90,8 +90,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
   String? _error;
   
   // Map display options with persistent settings for full screen mode
-  bool _showMarkers = true;
-  bool _showStraightLine = true;
+  bool _showLabels = true;
   bool _showSatelliteView = false;
   
   // Currently hovered track point for real-time feedback
@@ -102,9 +101,6 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
     super.initState();
     if (!widget.config.embedded) {
       _loadSavedPreferences();
-    } else {
-      // For embedded mode, use config defaults
-      _showStraightLine = widget.config.showStraightLine;
     }
     _loadTrackData();
   }
@@ -112,8 +108,8 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
   Future<void> _loadSavedPreferences() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _showMarkers = prefs.getBool('flight_track_show_markers') ?? true;
-      _showStraightLine = prefs.getBool('flight_track_show_straight_line') ?? true;
+      _showLabels = prefs.getBool('flight_track_show_labels') ?? 
+          (prefs.getBool('flight_track_show_markers') ?? true); // Backward compatibility
       _showSatelliteView = prefs.getBool('flight_track_show_satellite') ?? false;
     });
   }
@@ -171,7 +167,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
     polylines.addAll(_createClimbRateColoredPolylines());
 
     // Create straight line polyline if enabled
-    if (_showStraightLine && _trackPoints.length >= 2) {
+    if (_showLabels && _trackPoints.length >= 2) {
       final launchPoint = LatLng(_trackPoints.first.latitude, _trackPoints.first.longitude);
       final landingPoint = LatLng(_trackPoints.last.latitude, _trackPoints.last.longitude);
       
@@ -252,43 +248,48 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
   }
 
   void _createMarkers() {
-    if (_trackPoints.isEmpty || !_showMarkers) {
+    if (_trackPoints.isEmpty) {
       setState(() {
         _markers = [];
       });
       return;
     }
 
-    final startPoint = _trackPoints.first;
-    final endPoint = _trackPoints.last;
-    
-    // Find highest point
-    final highestPoint = _trackPoints.reduce(
-      (a, b) => a.gpsAltitude > b.gpsAltitude ? a : b
-    );
+    final markers = <Marker>[];
 
-    final markers = <Marker>[
-      Marker(
-        point: LatLng(startPoint.latitude, startPoint.longitude),
-        child: _buildMarkerIcon(Colors.green, 'L'),
-        width: 40,
-        height: 40,
-      ),
-      Marker(
-        point: LatLng(endPoint.latitude, endPoint.longitude),
-        child: _buildMarkerIcon(Colors.red, 'X'),
-        width: 40,
-        height: 40,
-      ),
-      Marker(
-        point: LatLng(highestPoint.latitude, highestPoint.longitude),
-        child: _buildMarkerIcon(Colors.blue, 'H'),
-        width: 40,
-        height: 40,
-      ),
-    ];
+    // Add label markers if enabled
+    if (_showLabels) {
+      final startPoint = _trackPoints.first;
+      final endPoint = _trackPoints.last;
+      
+      // Find highest point
+      final highestPoint = _trackPoints.reduce(
+        (a, b) => a.gpsAltitude > b.gpsAltitude ? a : b
+      );
 
-    // Add crosshairs markers for interactive mode
+      markers.addAll([
+        Marker(
+          point: LatLng(startPoint.latitude, startPoint.longitude),
+          child: _buildMarkerIcon(Colors.green, 'L'),
+          width: 40,
+          height: 40,
+        ),
+        Marker(
+          point: LatLng(endPoint.latitude, endPoint.longitude),
+          child: _buildMarkerIcon(Colors.red, 'X'),
+          width: 40,
+          height: 40,
+        ),
+        Marker(
+          point: LatLng(highestPoint.latitude, highestPoint.longitude),
+          child: _buildMarkerIcon(Colors.blue, 'H'),
+          width: 40,
+          height: 40,
+        ),
+      ]);
+    }
+
+    // Add crosshairs markers for interactive mode (always shown when hovering)
     if (widget.config.interactive && _hoveredPointIndex != null) {
       if (_hoveredPointIndex! < _trackPoints.length) {
         final hoveredPoint = _trackPoints[_hoveredPointIndex!];
@@ -307,8 +308,8 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
       }
     }
 
-    // Add straight distance marker at midpoint if showing straight line
-    if (_showStraightLine && _trackPoints.length >= 2 && widget.flight.straightDistance != null) {
+    // Add straight distance marker at midpoint if showing labels
+    if (_showLabels && _trackPoints.length >= 2 && widget.flight.straightDistance != null) {
       final startPoint = _trackPoints.first;
       final endPoint = _trackPoints.last;
       final midLat = (startPoint.latitude + endPoint.latitude) / 2;
@@ -451,28 +452,16 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
   }
 
   // FAB Controls (only for full screen mode)
-  void _toggleMarkers() async {
+  void _toggleLabels() async {
     setState(() {
-      _showMarkers = !_showMarkers;
+      _showLabels = !_showLabels;
     });
     _createMarkers();
-    
-    if (!widget.config.embedded) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('flight_track_show_markers', _showMarkers);
-    }
-  }
-
-  void _toggleStraightLine() async {
-    setState(() {
-      _showStraightLine = !_showStraightLine;
-    });
     _createPolylines();
-    _createMarkers();
     
     if (!widget.config.embedded) {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('flight_track_show_straight_line', _showStraightLine);
+      await prefs.setBool('flight_track_show_labels', _showLabels);
     }
   }
 
@@ -590,11 +579,8 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
           icon: const Icon(Icons.layers, size: 20),
           onSelected: (value) {
             switch (value) {
-              case 'markers':
-                _toggleMarkers();
-                break;
-              case 'straight_line':
-                _toggleStraightLine();
+              case 'labels':
+                _toggleLabels();
                 break;
               case 'satellite':
                 _toggleSatelliteView();
@@ -606,22 +592,12 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
           },
           itemBuilder: (context) => [
             PopupMenuItem(
-              value: 'markers',
+              value: 'labels',
               child: Row(
                 children: [
-                  Icon(_showMarkers ? Icons.visibility : Icons.visibility_off),
+                  Icon(_showLabels ? Icons.label_off : Icons.label),
                   const SizedBox(width: 8),
-                  Text('${_showMarkers ? 'Hide' : 'Show'} Markers'),
-                ],
-              ),
-            ),
-            PopupMenuItem(
-              value: 'straight_line',
-              child: Row(
-                children: [
-                  Icon(_showStraightLine ? Icons.timeline : Icons.timeline_outlined),
-                  const SizedBox(width: 8),
-                  Text('${_showStraightLine ? 'Hide' : 'Show'} Distance'),
+                  Text('${_showLabels ? 'Hide' : 'Show'} Labels'),
                 ],
               ),
             ),

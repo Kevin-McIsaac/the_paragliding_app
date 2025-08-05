@@ -22,8 +22,7 @@ class _FlightTrackCanvasScreenState extends State<FlightTrackCanvasScreen> {
   
   // Display options
   bool _showAltitudeColors = true;
-  bool _showMarkers = true;
-  bool _showStraightLine = true;
+  bool _showLabels = true;
 
   @override
   void initState() {
@@ -83,15 +82,9 @@ class _FlightTrackCanvasScreenState extends State<FlightTrackCanvasScreen> {
     });
   }
 
-  void _toggleMarkers() {
+  void _toggleLabels() {
     setState(() {
-      _showMarkers = !_showMarkers;
-    });
-  }
-
-  void _toggleStraightLine() {
-    setState(() {
-      _showStraightLine = !_showStraightLine;
+      _showLabels = !_showLabels;
     });
   }
 
@@ -105,25 +98,22 @@ class _FlightTrackCanvasScreenState extends State<FlightTrackCanvasScreen> {
           PopupMenuButton<String>(
             onSelected: (value) {
               switch (value) {
-                case 'markers':
-                  _toggleMarkers();
+                case 'labels':
+                  _toggleLabels();
                   break;
                 case 'colors':
                   _toggleAltitudeColors();
-                  break;
-                case 'straight_line':
-                  _toggleStraightLine();
                   break;
               }
             },
             itemBuilder: (context) => [
               PopupMenuItem(
-                value: 'markers',
+                value: 'labels',
                 child: Row(
                   children: [
-                    Icon(_showMarkers ? Icons.visibility : Icons.visibility_off),
+                    Icon(_showLabels ? Icons.label_off : Icons.label),
                     const SizedBox(width: 8),
-                    Text('${_showMarkers ? 'Hide' : 'Show'} Markers'),
+                    Text('${_showLabels ? 'Hide' : 'Show'} Labels'),
                   ],
                 ),
               ),
@@ -134,16 +124,6 @@ class _FlightTrackCanvasScreenState extends State<FlightTrackCanvasScreen> {
                     Icon(_showAltitudeColors ? Icons.palette : Icons.palette_outlined),
                     const SizedBox(width: 8),
                     Text('${_showAltitudeColors ? 'Red' : 'Altitude'} Colors'),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: 'straight_line',
-                child: Row(
-                  children: [
-                    Icon(_showStraightLine ? Icons.timeline : Icons.timeline_outlined),
-                    const SizedBox(width: 8),
-                    Text('${_showStraightLine ? 'Hide' : 'Show'} Straight Line'),
                   ],
                 ),
               ),
@@ -297,8 +277,7 @@ class _FlightTrackCanvasScreenState extends State<FlightTrackCanvasScreen> {
         painter: FlightTrackPainter(
           trackPoints: _trackPoints,
           showAltitudeColors: _showAltitudeColors,
-          showMarkers: _showMarkers,
-          showStraightLine: _showStraightLine,
+          showLabels: _showLabels,
           straightDistance: widget.flight.straightDistance,
         ),
       ),
@@ -309,15 +288,13 @@ class _FlightTrackCanvasScreenState extends State<FlightTrackCanvasScreen> {
 class FlightTrackPainter extends CustomPainter {
   final List<IgcPoint> trackPoints;
   final bool showAltitudeColors;
-  final bool showMarkers;
-  final bool showStraightLine;
+  final bool showLabels;
   final double? straightDistance;
 
   FlightTrackPainter({
     required this.trackPoints,
     required this.showAltitudeColors,
-    required this.showMarkers,
-    required this.showStraightLine,
+    required this.showLabels,
     this.straightDistance,
   });
 
@@ -350,7 +327,7 @@ class FlightTrackPainter extends CustomPainter {
     }).toList();
 
     // Draw straight line (behind the track)
-    if (showStraightLine && screenPoints.length >= 2) {
+    if (showLabels && screenPoints.length >= 2) {
       _drawStraightLine(canvas, screenPoints.first, screenPoints.last);
     }
 
@@ -364,7 +341,7 @@ class FlightTrackPainter extends CustomPainter {
     }
 
     // Draw markers
-    if (showMarkers && trackPoints.isNotEmpty) {
+    if (showLabels && trackPoints.isNotEmpty) {
       _drawMarkers(canvas, screenPoints, altitudes, minAlt, maxAlt);
     }
 
@@ -619,8 +596,7 @@ class FlightTrackPainter extends CustomPainter {
   bool shouldRepaint(FlightTrackPainter oldDelegate) {
     return trackPoints != oldDelegate.trackPoints ||
            showAltitudeColors != oldDelegate.showAltitudeColors ||
-           showMarkers != oldDelegate.showMarkers ||
-           showStraightLine != oldDelegate.showStraightLine ||
+           showLabels != oldDelegate.showLabels ||
            straightDistance != oldDelegate.straightDistance;
   }
 }
