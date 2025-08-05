@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
 import '../../data/models/flight.dart';
 import '../../data/models/site.dart';
 import '../../data/models/wing.dart';
-import '../../data/models/igc_file.dart';
 import '../../data/repositories/flight_repository.dart';
 import '../../data/repositories/site_repository.dart';
 import '../../data/repositories/wing_repository.dart';
-import '../../services/igc_import_service.dart';
+import '../widgets/flight_track_widget.dart';
 import 'flight_track_screen.dart';
 
 class FlightDetailScreen extends StatefulWidget {
@@ -25,7 +22,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
   final FlightRepository _flightRepository = FlightRepository();
   final SiteRepository _siteRepository = SiteRepository();
   final WingRepository _wingRepository = WingRepository();
-  final IgcImportService _igcService = IgcImportService();
   
   late Flight _flight;
   Site? _launchSite;
@@ -37,18 +33,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
   bool _isEditingNotes = false;
   bool _isSaving = false;
   late TextEditingController _notesController;
-  
-  // Map-related state
-  MapController? _mapController;
-  List<IgcPoint> _trackPoints = [];
-  List<Polyline> _polylines = [];
-  List<Marker> _markers = [];
-  bool _isTrackLoading = false;
-  String? _trackError;
-  bool _showSatelliteView = false;
-  bool _showAltitudeColors = true;
-  String _colorMode = 'altitude'; // 'altitude', 'climbrate', 'simple'
-  List<double> _fifteenSecondRates = [];
 
   @override
   void initState() {
@@ -56,7 +40,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
     _flight = widget.flight;
     _notesController = TextEditingController(text: _flight.notes ?? '');
     _loadFlightDetails();
-    _loadTrackData();
   }
 
   Future<void> _loadFlightDetails() async {
@@ -76,225 +59,14 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
     }
   }
 
-  Future<void> _loadTrackData() async {
-    if (_flight.trackLogPath == null) {
-      return;
-    }
-
-    setState(() {
-      _isTrackLoading = true;
-      _trackError = null;
-    });
-
-    try {
-      final trackPoints = await _igcService.getTrackPoints(_flight.trackLogPath!);
-      
-      if (trackPoints.isEmpty) {
-        setState(() {
-          _trackError = 'No track points found';
-          _isTrackLoading = false;
-        });
-        return;
-      }
-
-      // Calculate climb rates from IGC data
-      final igcFile = await _igcService.getIgcFile(_flight.trackLogPath!);
-      final fifteenSecondRates = igcFile.calculate15SecondClimbRates();
-      
-      setState(() {
-        _trackPoints = trackPoints;
-        _fifteenSecondRates = fifteenSecondRates;
-        _isTrackLoading = false;
-      });
-      
-      _createPolylines();
-      _createMarkers();
-      
-    } catch (e) {
-      setState(() {
-        _trackError = 'Error loading track data: $e';
-        _isTrackLoading = false;
-      });
-    }
-  }
-
-  void _createPolylines() {
-    if (_trackPoints.isEmpty) return;
-
-    final polylines = <Polyline>[];
-
-    if (_colorMode == 'altitude') {
-      // Create altitude-based colored segments
-      polylines.addAll(_createAltitudeColoredPolylines());
-    } else if (_colorMode == 'climbrate') {
-      // Create climb rate-based colored segments
-      polylines.addAll(_createClimbRateColoredPolylines());
-    } else {
-      // Create simple single-color track polyline
-      final trackCoordinates = _trackPoints
-          .map((point) => LatLng(point.latitude, point.longitude))
-          .toList();
-
-      final trackPolyline = Polyline(
-        points: trackCoordinates,
-        color: Colors.blue,
-        strokeWidth: 3.0,
-      );
-      polylines.add(trackPolyline);
-    }
-
-    // Create straight line polyline if we have enough points
-    if (_trackPoints.length >= 2 && _flight.straightDistance != null) {
-      final launchPoint = LatLng(_trackPoints.first.latitude, _trackPoints.first.longitude);
-      final landingPoint = LatLng(_trackPoints.last.latitude, _trackPoints.last.longitude);
-      
-      final straightLinePolyline = Polyline(
-        points: [launchPoint, landingPoint],
-        color: Colors.orange,
-        strokeWidth: 4.0,
-        isDotted: true,
-      );
-      polylines.add(straightLinePolyline);
-    }
-
-    setState(() {
-      _polylines = polylines;
-    });
-  }
-
-  void _createMarkers() {
-    if (_trackPoints.isEmpty) {
-      setState(() {
-        _markers = [];
-      });
-      return;
-    }
-
-    final startPoint = _trackPoints.first;
-    final endPoint = _trackPoints.last;
-    
-    // Find highest point
-    final highestPoint = _trackPoints.reduce(
-      (a, b) => a.gpsAltitude > b.gpsAltitude ? a : b
-    );
-
-    final markers = <Marker>[
-      Marker(
-        point: LatLng(startPoint.latitude, startPoint.longitude),
-        child: _buildMarkerIcon(Colors.green, 'L'),
-        width: 40,
-        height: 40,
-      ),
-      Marker(
-        point: LatLng(endPoint.latitude, endPoint.longitude),
-        child: _buildMarkerIcon(Colors.red, 'X'),
-        width: 40,
-        height: 40,
-      ),
-      Marker(
-        point: LatLng(highestPoint.latitude, highestPoint.longitude),
-        child: _buildMarkerIcon(Colors.blue, 'H'),
-        width: 40,
-        height: 40,
-      ),
-    ];
-
-    // Add straight distance marker at midpoint if showing straight line
-    if (_trackPoints.length >= 2 && _flight.straightDistance != null) {
-      final startPoint = _trackPoints.first;
-      final endPoint = _trackPoints.last;
-      final midLat = (startPoint.latitude + endPoint.latitude) / 2;
-      final midLng = (startPoint.longitude + endPoint.longitude) / 2;
-      
-      markers.add(
-        Marker(
-          point: LatLng(midLat, midLng),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.orange,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.white, width: 1),
-            ),
-            child: Text(
-              '${_flight.straightDistance!.toStringAsFixed(1)} km',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 8,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          width: 60,
-          height: 20,
-        ),
-      );
-    }
-
-    setState(() {
-      _markers = markers;
-    });
-  }
-
-  Widget _buildMarkerIcon(Color color, String label) {
-    return Container(
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-        border: Border.all(color: Colors.white, width: 2),
-      ),
-      child: Center(
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ),
-    );
-  }
-
-
-  Future<void> _deleteFlight() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Flight'),
-        content: const Text('Are you sure you want to delete this flight? This action cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      try {
-        await _flightRepository.deleteFlight(_flight.id!);
-        if (mounted) {
-          Navigator.of(context).pop(true); // Return true to indicate deletion
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error deleting flight: $e')),
-          );
-        }
-      }
-    }
+  @override
+  void dispose() {
+    _notesController.dispose();
+    super.dispose();
   }
 
   String _formatDate(DateTime date) {
-    return DateFormat('EEEE, MMMM d, y').format(date);
+    return DateFormat('EEEE, MMM d, yyyy').format(date);
   }
 
   String _formatDuration(int minutes) {
@@ -306,25 +78,348 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
     return '${mins}m';
   }
 
-  String _formatTime(String timeString) {
-    // timeString is already in HH:MM format from the database
-    return timeString;
-  }
-
-  String _buildAppBarTitle() {
-    final siteName = _launchSite?.name ?? 'Unknown Site';
-    final date = _formatDate(_flight.date);
-    final time = _formatTime(_flight.launchTime);
-    
-    return 'Flight Details - $siteName\n$date $time';
-  }
-
-  /// Format time with timezone information
-  String _formatTimeWithTimezone(String time, String? timezone) {
-    if (timezone != null) {
-      return '$time $timezone';
+  String _formatTimeWithTimezone(String timeStr, String? timezone) {
+    if (timezone != null && timezone.isNotEmpty) {
+      return '$timeStr $timezone';
     }
-    return time;
+    return timeStr;
+  }
+
+  // Inline editing methods
+  Future<void> _editDate() async {
+    final selectedDate = await showDatePicker(
+      context: context,
+      initialDate: _flight.date,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
+    );
+
+    if (selectedDate != null && selectedDate != _flight.date) {
+      await _updateFlightDate(selectedDate);
+    }
+  }
+
+  Future<void> _editTime(bool isLaunchTime) async {
+    final currentTimeStr = isLaunchTime ? _flight.launchTime : _flight.landingTime;
+    // Parse the time string (HH:mm format)
+    final timeParts = currentTimeStr.split(':');
+    final currentHour = int.parse(timeParts[0]);
+    final currentMinute = int.parse(timeParts[1]);
+    
+    final selectedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: currentHour, minute: currentMinute),
+    );
+
+    if (selectedTime != null) {
+      final newTimeStr = '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}';
+      
+      if (isLaunchTime) {
+        await _updateFlightTimes(newTimeStr, _flight.landingTime);
+      } else {
+        await _updateFlightTimes(_flight.launchTime, newTimeStr);
+      }
+    }
+  }
+
+  Future<void> _editSite(bool isLaunchSite) async {
+    try {
+      final sites = await _siteRepository.getAllSites();
+      
+      if (!mounted) return;
+      
+      final result = await showDialog<_SiteSelectionResult>(
+        context: context,
+        builder: (context) => _SiteSelectionDialog(
+          sites: sites,
+          currentSite: isLaunchSite ? _launchSite : null,
+          title: isLaunchSite ? 'Select Launch Site' : 'Select Landing Site',
+        ),
+      );
+
+      if (result != null && mounted) {
+        if (isLaunchSite) {
+          await _updateLaunchSite(result.selectedSite);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading sites: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _editWing() async {
+    try {
+      final wings = await _wingRepository.getAllWings();
+      
+      if (!mounted) return;
+      
+      final result = await showDialog<_WingSelectionResult>(
+        context: context,
+        builder: (context) => _WingSelectionDialog(
+          wings: wings,
+          currentWing: _wing,
+        ),
+      );
+
+      if (result != null && mounted) {
+        await _updateWing(result.selectedWing);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading wings: $e')),
+        );
+      }
+    }
+  }
+
+  // Update methods
+  Future<void> _updateFlightDate(DateTime newDate) async {
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      final updatedFlight = Flight(
+        id: _flight.id,
+        date: newDate,
+        launchTime: _flight.launchTime,
+        landingTime: _flight.landingTime,
+        duration: _flight.duration,
+        launchSiteId: _flight.launchSiteId,
+        landingLatitude: _flight.landingLatitude,
+        landingLongitude: _flight.landingLongitude,
+        landingAltitude: _flight.landingAltitude,
+        landingDescription: _flight.landingDescription,
+        wingId: _flight.wingId,
+        maxAltitude: _flight.maxAltitude,
+        maxClimbRate: _flight.maxClimbRate,
+        maxSinkRate: _flight.maxSinkRate,
+        maxClimbRate5Sec: _flight.maxClimbRate5Sec,
+        maxSinkRate5Sec: _flight.maxSinkRate5Sec,
+        distance: _flight.distance,
+        straightDistance: _flight.straightDistance,
+        trackLogPath: _flight.trackLogPath,
+        source: _flight.source,
+        timezone: _flight.timezone,
+        notes: _flight.notes,
+        createdAt: _flight.createdAt,
+      );
+
+      await _flightRepository.updateFlight(updatedFlight);
+      
+      setState(() {
+        _flight = updatedFlight;
+        _flightModified = true;
+        _isSaving = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Date updated successfully')),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isSaving = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error updating date: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateFlightTimes(String newLaunchTime, String newLandingTime) async {
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      // Calculate new duration from time strings
+      final launchParts = newLaunchTime.split(':');
+      final landingParts = newLandingTime.split(':');
+      
+      final launchMinutes = int.parse(launchParts[0]) * 60 + int.parse(launchParts[1]);
+      final landingMinutes = int.parse(landingParts[0]) * 60 + int.parse(landingParts[1]);
+      
+      int duration = landingMinutes - launchMinutes;
+      
+      // Handle midnight crossing (negative duration)
+      if (duration < 0) {
+        duration += 24 * 60; // Add 24 hours
+      }
+
+      final updatedFlight = Flight(
+        id: _flight.id,
+        date: _flight.date,
+        launchTime: newLaunchTime,
+        landingTime: newLandingTime,
+        duration: duration,
+        launchSiteId: _flight.launchSiteId,
+        landingLatitude: _flight.landingLatitude,
+        landingLongitude: _flight.landingLongitude,
+        landingAltitude: _flight.landingAltitude,
+        landingDescription: _flight.landingDescription,
+        wingId: _flight.wingId,
+        maxAltitude: _flight.maxAltitude,
+        maxClimbRate: _flight.maxClimbRate,
+        maxSinkRate: _flight.maxSinkRate,
+        maxClimbRate5Sec: _flight.maxClimbRate5Sec,
+        maxSinkRate5Sec: _flight.maxSinkRate5Sec,
+        distance: _flight.distance,
+        straightDistance: _flight.straightDistance,
+        trackLogPath: _flight.trackLogPath,
+        source: _flight.source,
+        timezone: _flight.timezone,
+        notes: _flight.notes,
+        createdAt: _flight.createdAt,
+      );
+
+      await _flightRepository.updateFlight(updatedFlight);
+      
+      setState(() {
+        _flight = updatedFlight;
+        _flightModified = true;
+        _isSaving = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Times updated successfully')),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isSaving = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error updating times: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateLaunchSite(Site? newSite) async {
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      final updatedFlight = Flight(
+        id: _flight.id,
+        date: _flight.date,
+        launchTime: _flight.launchTime,
+        landingTime: _flight.landingTime,
+        duration: _flight.duration,
+        launchSiteId: newSite?.id,
+        landingLatitude: _flight.landingLatitude,
+        landingLongitude: _flight.landingLongitude,
+        landingAltitude: _flight.landingAltitude,
+        landingDescription: _flight.landingDescription,
+        wingId: _flight.wingId,
+        maxAltitude: _flight.maxAltitude,
+        maxClimbRate: _flight.maxClimbRate,
+        maxSinkRate: _flight.maxSinkRate,
+        maxClimbRate5Sec: _flight.maxClimbRate5Sec,
+        maxSinkRate5Sec: _flight.maxSinkRate5Sec,
+        distance: _flight.distance,
+        straightDistance: _flight.straightDistance,
+        trackLogPath: _flight.trackLogPath,
+        source: _flight.source,
+        timezone: _flight.timezone,
+        notes: _flight.notes,
+        createdAt: _flight.createdAt,
+      );
+
+      await _flightRepository.updateFlight(updatedFlight);
+      
+      setState(() {
+        _flight = updatedFlight;
+        _launchSite = newSite;
+        _flightModified = true;
+        _isSaving = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Launch site updated successfully')),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isSaving = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error updating launch site: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateWing(Wing? newWing) async {
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      final updatedFlight = Flight(
+        id: _flight.id,
+        date: _flight.date,
+        launchTime: _flight.launchTime,
+        landingTime: _flight.landingTime,
+        duration: _flight.duration,
+        launchSiteId: _flight.launchSiteId,
+        landingLatitude: _flight.landingLatitude,
+        landingLongitude: _flight.landingLongitude,
+        landingAltitude: _flight.landingAltitude,
+        landingDescription: _flight.landingDescription,
+        wingId: newWing?.id,
+        maxAltitude: _flight.maxAltitude,
+        maxClimbRate: _flight.maxClimbRate,
+        maxSinkRate: _flight.maxSinkRate,
+        maxClimbRate5Sec: _flight.maxClimbRate5Sec,
+        maxSinkRate5Sec: _flight.maxSinkRate5Sec,
+        distance: _flight.distance,
+        straightDistance: _flight.straightDistance,
+        trackLogPath: _flight.trackLogPath,
+        source: _flight.source,
+        timezone: _flight.timezone,
+        notes: _flight.notes,
+        createdAt: _flight.createdAt,
+      );
+
+      await _flightRepository.updateFlight(updatedFlight);
+      
+      setState(() {
+        _flight = updatedFlight;
+        _wing = newWing;
+        _flightModified = true;
+        _isSaving = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Wing updated successfully')),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isSaving = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error updating wing: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _saveNotes() async {
@@ -370,7 +465,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Notes updated successfully')),
+          const SnackBar(content: Text('Notes saved successfully')),
         );
       }
     } catch (e) {
@@ -392,457 +487,91 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
     });
   }
 
-  Future<void> _editDate() async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: _flight.date,
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now(),
-    );
-    
-    if (picked != null && picked != _flight.date) {
-      await _updateFlightField('date', picked);
-    }
-  }
-
-  Future<void> _editTime(bool isLaunchTime) async {
-    final currentTime = isLaunchTime ? _flight.launchTime : _flight.landingTime;
-    final timeParts = currentTime.split(':');
-    final currentTimeOfDay = TimeOfDay(
-      hour: int.parse(timeParts[0]),
-      minute: int.parse(timeParts[1]),
-    );
-
-    final TimeOfDay? picked = await showTimePicker(
-      context: context,
-      initialTime: currentTimeOfDay,
-    );
-    
-    if (picked != null) {
-      final formattedTime = '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
-      await _updateFlightField(isLaunchTime ? 'launchTime' : 'landingTime', formattedTime);
-    }
-  }
-
-  Future<void> _updateFlightField(String field, dynamic value) async {
-    setState(() {
-      _isSaving = true;
-    });
-
-    try {
-      // Calculate new duration if times changed
-      int newDuration = _flight.duration;
-      String newLaunchTime = _flight.launchTime;
-      String newLandingTime = _flight.landingTime;
-      DateTime newDate = _flight.date;
-
-      if (field == 'date') {
-        newDate = value as DateTime;
-      } else if (field == 'launchTime') {
-        newLaunchTime = value as String;
-      } else if (field == 'landingTime') {
-        newLandingTime = value as String;
-      }
-
-      // Recalculate duration if times changed
-      if (field == 'launchTime' || field == 'landingTime') {
-        newDuration = _calculateDurationFromTimes(newDate, newLaunchTime, newLandingTime);
-      }
-
-      final updatedFlight = Flight(
-        id: _flight.id,
-        date: newDate,
-        launchTime: newLaunchTime,
-        landingTime: newLandingTime,
-        duration: newDuration,
-        launchSiteId: _flight.launchSiteId,
-        landingLatitude: _flight.landingLatitude,
-        landingLongitude: _flight.landingLongitude,
-        landingAltitude: _flight.landingAltitude,
-        landingDescription: _flight.landingDescription,
-        wingId: _flight.wingId,
-        maxAltitude: _flight.maxAltitude,
-        maxClimbRate: _flight.maxClimbRate,
-        maxSinkRate: _flight.maxSinkRate,
-        maxClimbRate5Sec: _flight.maxClimbRate5Sec,
-        maxSinkRate5Sec: _flight.maxSinkRate5Sec,
-        distance: _flight.distance,
-        straightDistance: _flight.straightDistance,
-        trackLogPath: _flight.trackLogPath,
-        source: _flight.source,
-        timezone: _flight.timezone,
-        notes: _flight.notes,
-        createdAt: _flight.createdAt,
-      );
-
-      await _flightRepository.updateFlight(updatedFlight);
-      
-      setState(() {
-        _flight = updatedFlight;
-        _flightModified = true;
-        _isSaving = false;
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${field == 'date' ? 'Date' : field == 'launchTime' ? 'Launch time' : 'Landing time'} updated successfully')),
-        );
-      }
-    } catch (e) {
-      setState(() {
-        _isSaving = false;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating flight: $e')),
-        );
-      }
-    }
-  }
-
-  int _calculateDurationFromTimes(DateTime date, String launchTime, String landingTime) {
-    final launchParts = launchTime.split(':');
-    final landingParts = landingTime.split(':');
-    
-    final launchDateTime = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      int.parse(launchParts[0]),
-      int.parse(launchParts[1]),
-    );
-    
-    var landingDateTime = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      int.parse(landingParts[0]),
-      int.parse(landingParts[1]),
-    );
-    
-    // Handle case where landing is next day
-    if (landingDateTime.isBefore(launchDateTime)) {
-      landingDateTime = landingDateTime.add(const Duration(days: 1));
-    }
-    
-    return landingDateTime.difference(launchDateTime).inMinutes;
-  }
-
-  Future<void> _editSite(bool isLaunchSite) async {
-    final sites = await _siteRepository.getAllSites();
-    final currentSite = _launchSite;
-    
-    if (!mounted) return;
-    
-    final _SiteSelectionResult? result = await showDialog<_SiteSelectionResult>(
-      context: context,
-      builder: (context) => _SiteSelectionDialog(
-        sites: sites,
-        currentSite: currentSite,
-        title: 'Select ${isLaunchSite ? 'Launch' : 'Landing'} Site',
-      ),
-    );
-
-    // Only update if a selection was made (not cancelled)
-    if (result != null && result.selectedSite != currentSite) {
-      await _updateFlightSite(isLaunchSite, result.selectedSite);
-    }
-  }
-
-  Future<void> _editWing() async {
-    final wings = await _wingRepository.getAllWings();
-    
-    if (!mounted) return;
-    
-    final _WingSelectionResult? result = await showDialog<_WingSelectionResult>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Select Wing'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                title: const Text('No wing'),
-                leading: Radio<Wing?>(
-                  value: null,
-                  groupValue: _wing,
-                  onChanged: (Wing? value) {
-                    Navigator.of(context).pop(_WingSelectionResult(value));
-                  },
-                ),
-                onTap: () => Navigator.of(context).pop(_WingSelectionResult(null)),
-              ),
-              const Divider(),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: wings.length,
-                  itemBuilder: (context, index) {
-                    final wing = wings[index];
-                    final displayName = '${wing.manufacturer ?? ''} ${wing.model ?? ''}'.trim();
-                    return ListTile(
-                      title: Text(displayName.isEmpty ? wing.name : displayName),
-                      subtitle: wing.size != null ? Text('Size: ${wing.size}') : null,
-                      leading: Radio<Wing>(
-                        value: wing,
-                        groupValue: _wing,
-                        onChanged: (Wing? value) {
-                          Navigator.of(context).pop(_WingSelectionResult(value));
-                        },
-                      ),
-                      onTap: () => Navigator.of(context).pop(_WingSelectionResult(wing)),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(), // Return null for cancellation
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
-
-    // Only update if a selection was made (not cancelled)
-    if (result != null && result.selectedWing != _wing) {
-      await _updateFlightWing(result.selectedWing);
-    }
-  }
-
-  Future<void> _updateFlightSite(bool isLaunchSite, Site? newSite) async {
-    setState(() {
-      _isSaving = true;
-    });
-
-    try {
-      final updatedFlight = Flight(
-        id: _flight.id,
-        date: _flight.date,
-        launchTime: _flight.launchTime,
-        landingTime: _flight.landingTime,
-        duration: _flight.duration,
-        launchSiteId: isLaunchSite ? newSite?.id : _flight.launchSiteId,
-        landingLatitude: _flight.landingLatitude,
-        landingLongitude: _flight.landingLongitude,
-        landingAltitude: _flight.landingAltitude,
-        landingDescription: _flight.landingDescription,
-        wingId: _flight.wingId,
-        maxAltitude: _flight.maxAltitude,
-        maxClimbRate: _flight.maxClimbRate,
-        maxSinkRate: _flight.maxSinkRate,
-        maxClimbRate5Sec: _flight.maxClimbRate5Sec,
-        maxSinkRate5Sec: _flight.maxSinkRate5Sec,
-        distance: _flight.distance,
-        straightDistance: _flight.straightDistance,
-        trackLogPath: _flight.trackLogPath,
-        source: _flight.source,
-        timezone: _flight.timezone,
-        notes: _flight.notes,
-        createdAt: _flight.createdAt,
-      );
-
-      await _flightRepository.updateFlight(updatedFlight);
-      
-      setState(() {
-        _flight = updatedFlight;
-        _flightModified = true;
-        _isSaving = false;
-        if (isLaunchSite) {
-          _launchSite = newSite;
-        }
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${isLaunchSite ? 'Launch' : 'Landing'} site updated successfully')),
-        );
-      }
-    } catch (e) {
-      setState(() {
-        _isSaving = false;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating site: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _updateFlightWing(Wing? newWing) async {
-    setState(() {
-      _isSaving = true;
-    });
-
-    try {
-      final updatedFlight = Flight(
-        id: _flight.id,
-        date: _flight.date,
-        launchTime: _flight.launchTime,
-        landingTime: _flight.landingTime,
-        duration: _flight.duration,
-        launchSiteId: _flight.launchSiteId,
-        landingLatitude: _flight.landingLatitude,
-        landingLongitude: _flight.landingLongitude,
-        landingAltitude: _flight.landingAltitude,
-        landingDescription: _flight.landingDescription,
-        wingId: newWing?.id,
-        maxAltitude: _flight.maxAltitude,
-        maxClimbRate: _flight.maxClimbRate,
-        maxSinkRate: _flight.maxSinkRate,
-        maxClimbRate5Sec: _flight.maxClimbRate5Sec,
-        maxSinkRate5Sec: _flight.maxSinkRate5Sec,
-        distance: _flight.distance,
-        straightDistance: _flight.straightDistance,
-        trackLogPath: _flight.trackLogPath,
-        source: _flight.source,
-        timezone: _flight.timezone,
-        notes: _flight.notes,
-        createdAt: _flight.createdAt,
-      );
-
-      await _flightRepository.updateFlight(updatedFlight);
-      
-      setState(() {
-        _flight = updatedFlight;
-        _flightModified = true;
-        _isSaving = false;
-        _wing = newWing;
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Wing updated successfully')),
-        );
-      }
-    } catch (e) {
-      setState(() {
-        _isSaving = false;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating wing: $e')),
-        );
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _notesController.dispose();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_buildAppBarTitle()),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.of(context).pop(_flightModified),
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop && _flightModified) {
+          // Return the updated flight when popping
+          Navigator.of(context).pop(_flight);
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text('Flight Details'),
+          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         ),
-        actions: [
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'delete') {
-                _deleteFlight();
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'delete',
-                child: Row(
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : SingleChildScrollView(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Icon(Icons.delete, color: Colors.red),
-                    SizedBox(width: 8),
-                    Text('Delete Flight', style: TextStyle(color: Colors.red)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+                    // Flight Track Visualization (if available)
+                    if (_flight.trackLogPath != null)
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Flight Track',
+                                    style: Theme.of(context).textTheme.titleLarge,
+                                  ),
+                                  TextButton.icon(
+                                    onPressed: () {
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (context) => FlightTrackScreen(flight: _flight),
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.fullscreen),
+                                    label: const Text('Full Screen'),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              FlightTrackWidget(
+                                flight: _flight,
+                                config: FlightTrackConfig.embeddedWithControls(),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
 
-                  // Flight Track with Statistics Card
-                  if (_flight.trackLogPath != null && _flight.source == 'igc')
+                    const SizedBox(height: 16),
+
+                    // Flight Details Card (Combined Overview, Sites, and Equipment)
                     Card(
                       child: Padding(
                         padding: const EdgeInsets.all(16.0),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  'Flight Track',
-                                  style: Theme.of(context).textTheme.titleLarge,
-                                ),
-                                TextButton.icon(
-                                  onPressed: () {
-                                    Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (context) => FlightTrackScreen(flight: _flight),
-                                      ),
-                                    );
-                                  },
-                                  icon: const Icon(Icons.fullscreen),
-                                  label: const Text('Full Screen'),
-                                ),
-                              ],
+                            Text(
+                              'Flight Details',
+                              style: Theme.of(context).textTheme.titleLarge,
                             ),
                             const SizedBox(height: 16),
-                            if (_trackPoints.isNotEmpty) _buildStatsBar(),
-                            const SizedBox(height: 16),
-                            _buildEmbeddedMap(),
+                            _buildFlightDetailsContent(),
                           ],
                         ),
                       ),
                     ),
 
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 16),
 
-                  // Flight Details Card (Combined Overview, Sites, and Equipment)
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Flight Details',
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                          const SizedBox(height: 16),
-                          _buildFlightDetailsContent(),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Notes Card (Full Width) - Always show if has notes or in edit mode
-                  if (_flight.notes?.isNotEmpty == true || _isEditingNotes)
-                    SizedBox(
-                      width: double.infinity,
-                      child: Card(
+                    // Notes Card (Notes editing or display)
+                    if (_isEditingNotes)
+                      Card(
                         child: Padding(
                           padding: const EdgeInsets.all(16.0),
                           child: Column(
@@ -855,7 +584,58 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                                     'Notes',
                                     style: Theme.of(context).textTheme.titleLarge,
                                   ),
-                                  if (!_isEditingNotes)
+                                  Row(
+                                    children: [
+                                      TextButton(
+                                        onPressed: _isSaving ? null : _cancelNotesEdit,
+                                        child: const Text('Cancel'),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      FilledButton(
+                                        onPressed: _isSaving ? null : _saveNotes,
+                                        child: _isSaving 
+                                            ? const SizedBox(
+                                                width: 16,
+                                                height: 16,
+                                                child: CircularProgressIndicator(strokeWidth: 2),
+                                              )
+                                            : const Text('Save'),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              TextFormField(
+                                controller: _notesController,
+                                decoration: const InputDecoration(
+                                  hintText: 'Enter your flight notes here...',
+                                  border: OutlineInputBorder(),
+                                ),
+                                maxLines: 4,
+                                enabled: !_isSaving,
+                                autofocus: true,
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else ...[
+                      // Notes Display Card (when not editing)
+                      if (_flight.notes?.isNotEmpty == true)
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'Notes',
+                                      style: Theme.of(context).textTheme.titleLarge,
+                                    ),
                                     IconButton(
                                       onPressed: () {
                                         setState(() {
@@ -865,715 +645,146 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                                       icon: const Icon(Icons.edit, size: 20),
                                       tooltip: 'Edit notes',
                                     ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              if (_isEditingNotes) ...[
-                                TextFormField(
-                                  controller: _notesController,
-                                  decoration: const InputDecoration(
-                                    hintText: 'Enter flight notes...',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  maxLines: 4,
-                                  autofocus: true,
-                                ),
-                                const SizedBox(height: 12),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.end,
-                                  children: [
-                                    TextButton(
-                                      onPressed: _isSaving ? null : _cancelNotesEdit,
-                                      child: const Text('Cancel'),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    ElevatedButton(
-                                      onPressed: _isSaving ? null : _saveNotes,
-                                      child: _isSaving
-                                          ? const SizedBox(
-                                              width: 16,
-                                              height: 16,
-                                              child: CircularProgressIndicator(strokeWidth: 2),
-                                            )
-                                          : const Text('Save'),
-                                    ),
                                   ],
                                 ),
-                              ] else ...[
-                                GestureDetector(
-                                  onTap: () {
-                                    setState(() {
-                                      _isEditingNotes = true;
-                                    });
-                                  },
-                                  child: Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.symmetric(vertical: 8),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        if (_flight.notes!.isNotEmpty) ...[
-                                          Text(
-                                            _flight.notes!,
-                                            style: Theme.of(context).textTheme.bodyMedium,
-                                          ),
-                                          if (_flight.source == 'igc' && _flight.trackLogPath != null) ...[
-                                            const SizedBox(height: 12),
-                                            const Divider(),
-                                            const SizedBox(height: 8),
-                                          ],
-                                        ],
-                                        if (_flight.source == 'igc' && _flight.trackLogPath != null) ...[
-                                          Text(
-                                            'IGC Source:',
-                                            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                                              fontWeight: FontWeight.bold,
-                                              color: Colors.grey[600],
-                                            ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          SelectableText(
-                                            _flight.trackLogPath!,
-                                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                              fontFamily: 'monospace',
-                                              color: Colors.grey[700],
-                                            ),
-                                          ),
-                                        ],
+                                const SizedBox(height: 16),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (_flight.notes?.isNotEmpty == true) ...[
+                                      Text(
+                                        _flight.notes!,
+                                        style: Theme.of(context).textTheme.bodyMedium,
+                                      ),
+                                      if (_flight.source == 'igc' && _flight.trackLogPath != null) ...[
+                                        const SizedBox(height: 12),
+                                        const Divider(),
+                                        const SizedBox(height: 8),
                                       ],
-                                    ),
-                                  ),
+                                    ],
+                                    if (_flight.source == 'igc' && _flight.trackLogPath != null) ...[
+                                      Text(
+                                        'IGC Source:',
+                                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      SelectableText(
+                                        _flight.trackLogPath!,
+                                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                          fontFamily: 'monospace',
+                                          color: Colors.grey[700],
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
                               ],
-                            ],
+                            ),
                           ),
-                        ),
-                      ),
-                    ),
-                  
-                  // Add Notes Card (if no notes exist and not editing)
-                  if (_flight.notes?.isEmpty != false && !_isEditingNotes)
-                    SizedBox(
-                      width: double.infinity,
-                      child: Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        )
+                      
+                      // Add Notes Card (if no notes exist and not editing)
+                      else if (_flight.notes?.isEmpty != false && !_isEditingNotes)
+                        SizedBox(
+                          width: double.infinity,
+                          child: Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    'Notes',
-                                    style: Theme.of(context).textTheme.titleLarge,
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'Notes',
+                                        style: Theme.of(context).textTheme.titleLarge,
+                                      ),
+                                      IconButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            _isEditingNotes = true;
+                                          });
+                                        },
+                                        icon: const Icon(Icons.add, size: 20),
+                                        tooltip: 'Add notes',
+                                      ),
+                                    ],
                                   ),
-                                  IconButton(
-                                    onPressed: () {
+                                  const SizedBox(height: 8),
+                                  
+                                  // Show IGC source info if available, even without user notes
+                                  if (_flight.source == 'igc' && _flight.trackLogPath != null) ...[
+                                    Text(
+                                      'IGC Source:',
+                                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    SelectableText(
+                                      _flight.trackLogPath!,
+                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        fontFamily: 'monospace',
+                                        color: Colors.grey[700],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
+                                  
+                                  GestureDetector(
+                                    onTap: () {
                                       setState(() {
                                         _isEditingNotes = true;
                                       });
                                     },
-                                    icon: const Icon(Icons.add, size: 20),
-                                    tooltip: 'Add notes',
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              
-                              // Show IGC source info if available, even without user notes
-                              if (_flight.source == 'igc' && _flight.trackLogPath != null) ...[
-                                Text(
-                                  'IGC Source:',
-                                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                SelectableText(
-                                  _flight.trackLogPath!,
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    fontFamily: 'monospace',
-                                    color: Colors.grey[700],
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                              ],
-                              
-                              GestureDetector(
-                                onTap: () {
-                                  setState(() {
-                                    _isEditingNotes = true;
-                                  });
-                                },
-                                child: Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey[100],
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: Colors.grey[300]!),
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      'Tap to add notes',
-                                      style: TextStyle(
-                                        color: Colors.grey[600],
-                                        fontStyle: FontStyle.italic,
+                                    child: Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.symmetric(vertical: 16),
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey[100],
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: Colors.grey[300]!,
+                                          style: BorderStyle.solid,
+                                        ),
+                                      ),
+                                      child: Center(
+                                        child: Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              Icons.add,
+                                              color: Colors.grey[600],
+                                              size: 20,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              'Tap to add flight notes',
+                                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                                color: Colors.grey[600],
+                                                fontStyle: FontStyle.italic,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
+                                ],
                               ),
-                            ],
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-    );
-  }
-
-  Widget _buildEmbeddedMap() {
-    if (_isTrackLoading) {
-      return Container(
-        height: 250,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          color: Colors.grey[100],
-        ),
-        child: const Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Loading track data...'),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (_trackError != null) {
-      return Container(
-        height: 250,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          color: Colors.grey[100],
-        ),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.error_outline, size: 48, color: Colors.grey[400]),
-              const SizedBox(height: 16),
-              Text(
-                'Track Not Available',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey[600],
+                    ],
+                  ],
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                _trackError!,
-                style: TextStyle(color: Colors.grey[600]),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (_trackPoints.isEmpty) {
-      return Container(
-        height: 250,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          color: Colors.grey[100],
-        ),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.map_outlined, size: 48, color: Colors.grey[400]),
-              const SizedBox(height: 16),
-              Text(
-                'No Track Data',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey[600],
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    _mapController ??= MapController();
-
-    return Container(
-      height: 250,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey[300]!),
       ),
-      child: Stack(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: FlutterMap(
-          mapController: _mapController,
-          options: MapOptions(
-            initialCenter: _trackPoints.isNotEmpty
-                ? LatLng(_trackPoints.first.latitude, _trackPoints.first.longitude)
-                : const LatLng(0, 0),
-            initialZoom: 12,
-            onMapReady: () {
-              _fitMapToBounds();
-            },
-          ),
-          children: [
-            TileLayer(
-              urlTemplate: _showSatelliteView 
-                ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-                : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'com.example.free_flight_log_app',
-            ),
-            if (_polylines.isNotEmpty)
-              PolylineLayer(
-                polylines: _polylines,
-              ),
-            if (_markers.isNotEmpty)
-              MarkerLayer(
-                markers: _markers,
-              ),
-            // Attribution overlay for satellite tiles
-            if (_showSatelliteView)
-              Align(
-                alignment: Alignment.bottomRight,
-                child: Container(
-                  margin: const EdgeInsets.all(4),
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.8),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                  child: Text(
-                    'Powered by Esri',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-            ),
-          ),
-          // Satellite toggle button
-          Positioned(
-            top: 8,
-            right: 8,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(4),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black26,
-                    blurRadius: 4,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: PopupMenuButton<String>(
-                icon: const Icon(Icons.layers, size: 20),
-                onSelected: (value) {
-                  switch (value) {
-                    case 'satellite':
-                      _toggleSatelliteView();
-                      break;
-                    case 'colors':
-                      _showColorModeDialog();
-                      break;
-                  }
-                },
-                itemBuilder: (context) => [
-                  PopupMenuItem(
-                    value: 'satellite',
-                    child: Row(
-                      children: [
-                        Icon(_showSatelliteView ? Icons.map : Icons.satellite_alt),
-                        const SizedBox(width: 8),
-                        Text('${_showSatelliteView ? 'Street' : 'Satellite'} View'),
-                      ],
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'colors',
-                    child: Row(
-                      children: [
-                        Icon(Icons.palette),
-                        const SizedBox(width: 8),
-                        Text('Track Colors'),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _fitMapToBounds() {
-    if (_trackPoints.isEmpty || _mapController == null) return;
-
-    final latitudes = _trackPoints.map((p) => p.latitude);
-    final longitudes = _trackPoints.map((p) => p.longitude);
-    
-    final minLat = latitudes.reduce((a, b) => a < b ? a : b);
-    final maxLat = latitudes.reduce((a, b) => a > b ? a : b);
-    final minLng = longitudes.reduce((a, b) => a < b ? a : b);
-    final maxLng = longitudes.reduce((a, b) => a > b ? a : b);
-
-    final bounds = LatLngBounds(
-      LatLng(minLat, minLng),
-      LatLng(maxLat, maxLng),
-    );
-
-    _mapController!.fitCamera(
-      CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(20.0)),
-    );
-  }
-
-  void _toggleSatelliteView() {
-    setState(() {
-      _showSatelliteView = !_showSatelliteView;
-    });
-  }
-
-  void _toggleAltitudeColors() {
-    setState(() {
-      if (_colorMode == 'simple') {
-        _colorMode = 'altitude';
-        _showAltitudeColors = true;
-      } else {
-        _colorMode = 'simple';
-        _showAltitudeColors = false;
-      }
-    });
-    _createPolylines();
-  }
-
-  void _setColorMode(String mode) {
-    setState(() {
-      _colorMode = mode;
-      _showAltitudeColors = (mode != 'simple');
-    });
-    _createPolylines();
-  }
-
-  List<Polyline> _createAltitudeColoredPolylines() {
-    if (_trackPoints.length < 2) return [];
-
-    // Find min and max altitudes for color mapping
-    final altitudes = _trackPoints.map((p) => p.gpsAltitude).toList();
-    final minAlt = altitudes.reduce((a, b) => a < b ? a : b);
-    final maxAlt = altitudes.reduce((a, b) => a > b ? a : b);
-    final altRange = maxAlt - minAlt;
-
-    final polylines = <Polyline>[];
-
-    // Create colored segments between consecutive points
-    for (int i = 0; i < _trackPoints.length - 1; i++) {
-      final currentPoint = _trackPoints[i];
-      final nextPoint = _trackPoints[i + 1];
-      
-      // Calculate color based on current point altitude
-      final normalizedAlt = altRange > 0 ? (currentPoint.gpsAltitude - minAlt) / altRange : 0.0;
-      final color = _getAltitudeColor(normalizedAlt);
-      
-      polylines.add(
-        Polyline(
-          points: [
-            LatLng(currentPoint.latitude, currentPoint.longitude),
-            LatLng(nextPoint.latitude, nextPoint.longitude),
-          ],
-          color: color,
-          strokeWidth: 3.0,
-        ),
-      );
-    }
-
-    return polylines;
-  }
-
-  Color _getAltitudeColor(double normalizedAltitude) {
-    // Create a color gradient from blue (low) to red (high)
-    // normalizedAltitude is between 0.0 and 1.0
-    
-    if (normalizedAltitude <= 0.25) {
-      // Blue to Cyan
-      final t = normalizedAltitude * 4;
-      return Color.lerp(Colors.blue, Colors.cyan, t)!;
-    } else if (normalizedAltitude <= 0.5) {
-      // Cyan to Green
-      final t = (normalizedAltitude - 0.25) * 4;
-      return Color.lerp(Colors.cyan, Colors.green, t)!;
-    } else if (normalizedAltitude <= 0.75) {
-      // Green to Yellow
-      final t = (normalizedAltitude - 0.5) * 4;
-      return Color.lerp(Colors.green, Colors.yellow, t)!;
-    } else {
-      // Yellow to Red
-      final t = (normalizedAltitude - 0.75) * 4;
-      return Color.lerp(Colors.yellow, Colors.red, t)!;
-    }
-  }
-
-  List<Polyline> _createClimbRateColoredPolylines() {
-    if (_trackPoints.length < 2 || _fifteenSecondRates.isEmpty) return [];
-
-    // Find min and max climb rates for color mapping (ignoring extreme outliers)
-    final rates = _fifteenSecondRates.where((rate) => rate.abs() < 10.0).toList(); // Filter extreme values
-    if (rates.isEmpty) return [];
-    
-    final minRate = rates.reduce((a, b) => a < b ? a : b);
-    final maxRate = rates.reduce((a, b) => a > b ? a : b);
-    final rateRange = maxRate - minRate;
-
-    final polylines = <Polyline>[];
-
-    // Create colored segments between consecutive points
-    for (int i = 0; i < _trackPoints.length - 1; i++) {
-      final currentPoint = _trackPoints[i];
-      final nextPoint = _trackPoints[i + 1];
-      
-      // Get climb rate for current point (handle index bounds)
-      final climbRate = i < _fifteenSecondRates.length ? _fifteenSecondRates[i] : 0.0;
-      
-      // Calculate color based on climb rate
-      final color = _getClimbRateColor(climbRate, minRate, maxRate, rateRange);
-      
-      polylines.add(
-        Polyline(
-          points: [
-            LatLng(currentPoint.latitude, currentPoint.longitude),
-            LatLng(nextPoint.latitude, nextPoint.longitude),
-          ],
-          color: color,
-          strokeWidth: 3.0,
-        ),
-      );
-    }
-
-    return polylines;
-  }
-
-  Color _getClimbRateColor(double climbRate, double minRate, double maxRate, double rateRange) {
-    // Normalize climb rate to -1.0 to 1.0 range, with 0 being neutral
-    double normalizedRate;
-    
-    if (climbRate >= 0) {
-      // Positive climb rate (climbing)
-      normalizedRate = maxRate > 0 ? climbRate / maxRate : 0.0;
-      normalizedRate = normalizedRate.clamp(0.0, 1.0);
-      
-      // Green to red gradient for climbing
-      if (normalizedRate <= 0.5) {
-        // Light green to green
-        final t = normalizedRate * 2;
-        return Color.lerp(Colors.lightGreen, Colors.green, t)!;
-      } else {
-        // Green to red (strong climb)
-        final t = (normalizedRate - 0.5) * 2;
-        return Color.lerp(Colors.green, Colors.red, t)!;
-      }
-    } else {
-      // Negative climb rate (sinking)
-      normalizedRate = minRate < 0 ? climbRate / minRate : 0.0;
-      normalizedRate = normalizedRate.clamp(0.0, 1.0);
-      
-      // Light blue to dark blue gradient for sinking
-      if (normalizedRate <= 0.5) {
-        // Light blue to blue
-        final t = normalizedRate * 2;
-        return Color.lerp(Colors.lightBlue, Colors.blue, t)!;
-      } else {
-        // Blue to dark blue (strong sink)
-        final t = (normalizedRate - 0.5) * 2;
-        return Color.lerp(Colors.blue, Colors.indigo, t)!;
-      }
-    }
-  }
-
-  void _showColorModeDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Track Colors'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            RadioListTile<String>(
-              title: const Text('Simple (Blue)'),
-              value: 'simple',
-              groupValue: _colorMode,
-              onChanged: (value) {
-                if (value != null) {
-                  _setColorMode(value);
-                  Navigator.of(context).pop();
-                }
-              },
-            ),
-            RadioListTile<String>(
-              title: const Text('Altitude'),
-              subtitle: const Text('Blue (low) to Red (high)'),
-              value: 'altitude',
-              groupValue: _colorMode,
-              onChanged: (value) {
-                if (value != null) {
-                  _setColorMode(value);
-                  Navigator.of(context).pop();
-                }
-              },
-            ),
-            RadioListTile<String>(
-              title: const Text('Climb Rate (15s avg)'),
-              subtitle: const Text('Blue (sink) to Red (climb)'),
-              value: 'climbrate',
-              groupValue: _colorMode,
-              onChanged: (value) {
-                if (value != null) {
-                  _setColorMode(value);
-                  Navigator.of(context).pop();
-                }
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatsBar() {
-    final duration = _formatDuration(_flight.duration);
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildStatItem(
-                'Duration',
-                duration,
-                Icons.access_time,
-              ),
-              _buildStatItem(
-                'Track Distance',
-                _flight.distance != null 
-                    ? '${_flight.distance!.toStringAsFixed(1)} km'
-                    : 'N/A',
-                Icons.timeline,
-              ),
-              _buildStatItem(
-                'Max Alt',
-                _flight.maxAltitude != null
-                    ? '${_flight.maxAltitude!.toInt()} m'
-                    : 'N/A',
-                Icons.height,
-              ),
-            ],
-          ),
-          if (_flight.maxClimbRate != null || _flight.maxSinkRate != null ||
-              _flight.maxClimbRate5Sec != null || _flight.maxSinkRate5Sec != null) ...[
-            const SizedBox(height: 12),
-            const Divider(height: 1),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                if (_flight.maxClimbRate != null)
-                  _buildStatItem(
-                    'Max Climb (Inst)',
-                    '${_flight.maxClimbRate!.toStringAsFixed(1)} m/s',
-                    Icons.trending_up,
-                  ),
-                if (_flight.maxSinkRate != null)
-                  _buildStatItem(
-                    'Max Sink (Inst)',
-                    '${_flight.maxSinkRate!.toStringAsFixed(1)} m/s',
-                    Icons.trending_down,
-                  ),
-                if (_flight.maxClimbRate5Sec != null)
-                  _buildStatItem(
-                    'Max Climb (15s)',
-                    '${_flight.maxClimbRate5Sec!.toStringAsFixed(1)} m/s',
-                    Icons.trending_up,
-                  ),
-                if (_flight.maxSinkRate5Sec != null)
-                  _buildStatItem(
-                    'Max Sink (15s)',
-                    '${_flight.maxSinkRate5Sec!.toStringAsFixed(1)} m/s',
-                    Icons.trending_down,
-                  ),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatItem(String label, String value, IconData icon) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-        ),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 10,
-            color: Colors.grey[600],
-          ),
-        ),
-      ],
     );
   }
 
@@ -2385,5 +1596,213 @@ class _SiteSelectionDialogState extends State<_SiteSelectionDialog> {
     
     // Fallback (shouldn't reach here)
     return const SizedBox.shrink();
+  }
+}
+
+// Custom wing selection dialog
+class _WingSelectionDialog extends StatefulWidget {
+  final List<Wing> wings;
+  final Wing? currentWing;
+
+  const _WingSelectionDialog({
+    required this.wings,
+    required this.currentWing,
+  });
+
+  @override
+  State<_WingSelectionDialog> createState() => _WingSelectionDialogState();
+}
+
+class _WingSelectionDialogState extends State<_WingSelectionDialog> {
+  late List<Wing> _filteredWings;
+  final TextEditingController _searchController = TextEditingController();
+  Wing? _selectedWing;
+  String _searchQuery = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _filteredWings = widget.wings;
+    _selectedWing = widget.currentWing;
+    
+    // Sort wings by manufacturer and model for easier browsing
+    _filteredWings.sort((a, b) {
+      final aManufacturer = a.manufacturer ?? '';
+      final bManufacturer = b.manufacturer ?? '';
+      final manufacturerCompare = aManufacturer.compareTo(bManufacturer);
+      if (manufacturerCompare != 0) return manufacturerCompare;
+      
+      final aModel = a.model ?? '';
+      final bModel = b.model ?? '';
+      return aModel.compareTo(bModel);
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _filterWings(String query) {
+    setState(() {
+      _searchQuery = query.toLowerCase();
+      if (_searchQuery.isEmpty) {
+        _filteredWings = List.from(widget.wings)
+          ..sort((a, b) {
+            final aManufacturer = a.manufacturer ?? '';
+            final bManufacturer = b.manufacturer ?? '';
+            final manufacturerCompare = aManufacturer.compareTo(bManufacturer);
+            if (manufacturerCompare != 0) return manufacturerCompare;
+            
+            final aModel = a.model ?? '';
+            final bModel = b.model ?? '';
+            return aModel.compareTo(bModel);
+          });
+      } else {
+        _filteredWings = widget.wings
+            .where((wing) => 
+                (wing.manufacturer?.toLowerCase().contains(_searchQuery) ?? false) ||
+                (wing.model?.toLowerCase().contains(_searchQuery) ?? false))
+            .toList()
+          ..sort((a, b) {
+            final aManufacturer = a.manufacturer ?? '';
+            final bManufacturer = b.manufacturer ?? '';
+            final manufacturerCompare = aManufacturer.compareTo(bManufacturer);
+            if (manufacturerCompare != 0) return manufacturerCompare;
+            
+            final aModel = a.model ?? '';
+            final bModel = b.model ?? '';
+            return aModel.compareTo(bModel);
+          });
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('Select Wing'),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'Search manufacturer or model...',
+              prefixIcon: const Icon(Icons.search),
+              border: const OutlineInputBorder(),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchController.clear();
+                        _filterWings('');
+                      },
+                    )
+                  : null,
+            ),
+            onChanged: _filterWings,
+            autofocus: true,
+          ),
+          if (_filteredWings.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                '${_filteredWings.length} wing${_filteredWings.length != 1 ? 's' : ''} found',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+        ],
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: 400,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // No wing option
+            ListTile(
+              title: const Text('No wing'),
+              leading: Radio<Wing?>(
+                value: null,
+                groupValue: _selectedWing,
+                onChanged: (Wing? value) {
+                  setState(() {
+                    _selectedWing = value;
+                  });
+                },
+              ),
+              onTap: () {
+                setState(() {
+                  _selectedWing = null;
+                });
+              },
+              dense: true,
+            ),
+            const Divider(),
+            // Wing list
+            Expanded(
+              child: _filteredWings.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.search_off, 
+                               size: 48, 
+                               color: Colors.grey[400]),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No wings match your search',
+                            style: TextStyle(color: Colors.grey[600]),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: _filteredWings.length,
+                      itemBuilder: (context, index) {
+                        final wing = _filteredWings[index];
+                        return ListTile(
+                          title: Text('${wing.manufacturer ?? 'Unknown'} ${wing.model ?? 'Unknown'}'),
+                          subtitle: wing.size != null
+                              ? Text('Size: ${wing.size}')
+                              : null,
+                          leading: Radio<Wing>(
+                            value: wing,
+                            groupValue: _selectedWing,
+                            onChanged: (Wing? value) {
+                              setState(() {
+                                _selectedWing = value;
+                              });
+                            },
+                          ),
+                          onTap: () {
+                            setState(() {
+                              _selectedWing = wing;
+                            });
+                          },
+                          dense: true,
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_WingSelectionResult(_selectedWing)),
+          child: const Text('Select'),
+        ),
+      ],
+    );
   }
 }

@@ -284,6 +284,26 @@ flutter upgrade
 
 ## Recent Updates
 
+### August 2025 - Shared Flight Track Widget & Code Duplication Elimination
+- **FlightTrackWidget Implementation**: Created shared widget to eliminate code duplication between embedded and full-screen flight track views
+  - **Unified Codebase**: Single widget handles both FlightDetailScreen embedded cards and FlightTrackScreen full-screen view
+  - **Configuration Pattern**: FlightTrackConfig class provides three display modes: `embedded()`, `embeddedWithControls()`, and `fullScreen()`
+  - **Consistent Features**: Both views now show identical functionality including FAB controls, statistics header, and climb rate visualization
+  - **No Functionality Drift**: Shared implementation prevents features from becoming inconsistent between views
+- **RenderFlex Constraint Fix**: Resolved unbounded height constraint errors in scrollable contexts
+  - **Embedded Mode**: Always provides bounded height via SizedBox with fallback to 350px
+  - **Loading/Error States**: Fixed constraint handling using SizedBox.expand for full-screen and proper height for embedded
+  - **Flexible Layout**: Replaced Expanded with Flexible in full-screen mode for better constraint compatibility
+  - **mainAxisSize.min**: Used throughout for optimal sizing behavior in scrollable containers
+- **Enhanced Display Configurations**:
+  - **embedded()**: Height 250px, minimal features for compact display
+  - **embeddedWithControls()**: Height 350px, full features including stats bar, FAB menu, and legend
+  - **fullScreen()**: No height constraint, optimized for dedicated screen real estate
+- **Code Architecture Improvements**:
+  - **Statistics Logic Migration**: Moved all flight statistics calculations from FlightTrackScreen to shared widget
+  - **State Management**: Proper handling of map preferences and display options across configurations
+  - **Widget Composition**: Clean separation of concerns with configuration-driven feature toggling
+
 ### August 2025 - Enhanced Flight Track Visualization & User Experience
 - **Climb Rate Color Visualization**: Redesigned flight track display to use climb rate colors instead of altitude
   - **Green**: Climb rates ≥ 0 m/s (thermals/lift areas)
@@ -420,6 +440,9 @@ flutter upgrade
 - **Folder Memory**: IGC import now remembers last used folder for improved workflow
 
 ### Key Files Updated
+- `lib/presentation/widgets/flight_track_widget.dart`: Shared flight track widget with configuration-driven display modes (NEW)
+- `lib/presentation/screens/flight_track_screen.dart`: Simplified to use shared FlightTrackWidget with fullScreen() config
+- `lib/presentation/screens/flight_detail_screen.dart`: Updated to use FlightTrackWidget with embeddedWithControls() config, eliminating code duplication
 - `lib/presentation/screens/flight_track_screen.dart`: Major flight track visualization overhaul with climb rate colors, crosshairs, and persistent FAB settings
 - `lib/presentation/screens/flight_track_canvas_screen.dart`: Updated canvas view to match new color scheme (altitude to royal blue)
 - `lib/data/models/flight.dart`: Added timezone field and midnight crossing duration logic
