@@ -89,6 +89,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
   
   // Currently selected track point for climb rate display
   int? _selectedPointIndex;
+  Offset? _selectedPointScreenPosition;
 
   @override
   void initState() {
@@ -407,8 +408,18 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
 
     // Only update if the tap is reasonably close to the track (within 1km)
     if (minDistance < 1.0) {
+      final selectedPoint = _trackPoints[closestIndex];
+      final selectedLatLng = LatLng(selectedPoint.latitude, selectedPoint.longitude);
+      
+      // Convert lat/lng to screen coordinates
+      final screenPoint = _mapController?.camera.latLngToScreenPoint(selectedLatLng);
+      final screenPosition = screenPoint != null 
+          ? Offset(screenPoint.x.toDouble(), screenPoint.y.toDouble())
+          : null;
+      
       setState(() {
         _selectedPointIndex = closestIndex;
+        _selectedPointScreenPosition = screenPosition;
       });
 
       // Update markers to show selected point
@@ -481,7 +492,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Colors.white.withValues(alpha: 0.8),
           borderRadius: BorderRadius.circular(8),
           boxShadow: [
             BoxShadow(
@@ -799,6 +810,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
           mapWidget,
           _buildMapControls(),
           _buildClimbRateLegend(),
+          _buildFloatingStats(),
         ],
       );
 
@@ -831,6 +843,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
         mapWidget,
         _buildMapControls(),
         _buildClimbRateLegend(),
+        _buildFloatingStats(),
       ],
     );
   }
@@ -925,12 +938,6 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
                   ),
               ],
             ),
-          ],
-          if (_selectedPointIndex != null) ...[
-            const SizedBox(height: 12),
-            const Divider(height: 1),
-            const SizedBox(height: 12),
-            _buildClimbRateDisplay(),
           ],
         ],
       ),
@@ -1031,6 +1038,145 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildFloatingStats() {
+    if (_selectedPointIndex == null || 
+        _selectedPointScreenPosition == null ||
+        _selectedPointIndex! >= _trackPoints.length ||
+        _instantaneousRates.isEmpty ||
+        _fifteenSecondRates.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final point = _trackPoints[_selectedPointIndex!];
+    final instantRate = _selectedPointIndex! < _instantaneousRates.length
+        ? _instantaneousRates[_selectedPointIndex!]
+        : 0.0;
+    final fifteenSecRate = _selectedPointIndex! < _fifteenSecondRates.length
+        ? _fifteenSecondRates[_selectedPointIndex!]
+        : 0.0;
+
+    // Position the overlay near the selected point, but ensure it's visible
+    double left = _selectedPointScreenPosition!.dx;
+    double top = _selectedPointScreenPosition!.dy - 120; // Position above the point
+
+    // Adjust if off-screen
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+    
+    if (left + 200 > screenWidth) left = screenWidth - 220;
+    if (left < 20) left = 20;
+    if (top < 20) top = _selectedPointScreenPosition!.dy + 40; // Position below if no room above
+    if (top + 100 > screenHeight) top = screenHeight - 120;
+
+    return Positioned(
+      left: left,
+      top: top,
+      child: GestureDetector(
+        onTap: () {
+          // Close the floating stats when tapped
+          setState(() {
+            _selectedPointIndex = null;
+            _selectedPointScreenPosition = null;
+          });
+          _createMarkers();
+        },
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.8),
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.2),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              RichText(
+                text: TextSpan(
+                  children: [
+                    TextSpan(
+                      text: 'Time: ',
+                      style: TextStyle(color: Colors.grey[800], fontSize: 11),
+                    ),
+                    TextSpan(
+                      text: '${point.timestamp.hour.toString().padLeft(2, '0')}:${point.timestamp.minute.toString().padLeft(2, '0')}:${point.timestamp.second.toString().padLeft(2, '0')}',
+                      style: TextStyle(color: Colors.grey[800], fontSize: 11, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              ),
+              RichText(
+                text: TextSpan(
+                  children: [
+                    TextSpan(
+                      text: 'Alt: ',
+                      style: TextStyle(color: Colors.grey[800], fontSize: 11),
+                    ),
+                    TextSpan(
+                      text: '${point.gpsAltitude.toInt()} m',
+                      style: TextStyle(color: Colors.grey[800], fontSize: 11, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              ),
+              RichText(
+                text: TextSpan(
+                  children: [
+                    TextSpan(
+                      text: 'Instant: ',
+                      style: TextStyle(color: Colors.grey[800], fontSize: 11),
+                    ),
+                    TextSpan(
+                      text: '${instantRate.toStringAsFixed(1)} m/s',
+                      style: TextStyle(
+                        color: _getClimbRateColor(instantRate),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              RichText(
+                text: TextSpan(
+                  children: [
+                    TextSpan(
+                      text: '15s Avg: ',
+                      style: TextStyle(color: Colors.grey[800], fontSize: 11),
+                    ),
+                    TextSpan(
+                      text: '${fifteenSecRate.toStringAsFixed(1)} m/s',
+                      style: TextStyle(
+                        color: _getClimbRateColor(fifteenSecRate),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Tap to close',
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 9,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
