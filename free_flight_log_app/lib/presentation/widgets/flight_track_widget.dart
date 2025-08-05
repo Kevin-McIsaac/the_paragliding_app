@@ -95,6 +95,14 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
   
   // Currently hovered track point for real-time feedback
   int? _hoveredPointIndex;
+  
+  // Currently hovered label for statistics display
+  String? _hoveredLabel;
+  
+  // Label positions for hover detection
+  LatLng? _launchPosition;
+  LatLng? _landingPosition;
+  LatLng? _highPointPosition;
 
   @override
   void initState() {
@@ -267,24 +275,29 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
         (a, b) => a.gpsAltitude > b.gpsAltitude ? a : b
       );
 
+      // Store label positions for hover detection
+      _launchPosition = LatLng(startPoint.latitude, startPoint.longitude);
+      _landingPosition = LatLng(endPoint.latitude, endPoint.longitude);
+      _highPointPosition = LatLng(highestPoint.latitude, highestPoint.longitude);
+
       markers.addAll([
         Marker(
           point: LatLng(startPoint.latitude, startPoint.longitude),
-          child: _buildMarkerIcon(Colors.green, 'L'),
-          width: 40,
-          height: 40,
+          child: _buildCircleMarker(Colors.green, 'Launch'),
+          width: 16,
+          height: 16,
         ),
         Marker(
           point: LatLng(endPoint.latitude, endPoint.longitude),
-          child: _buildMarkerIcon(Colors.red, 'X'),
-          width: 40,
-          height: 40,
+          child: _buildCircleMarker(Colors.red, 'Landing'),
+          width: 16,
+          height: 16,
         ),
         Marker(
           point: LatLng(highestPoint.latitude, highestPoint.longitude),
-          child: _buildMarkerIcon(Colors.blue, 'H'),
-          width: 40,
-          height: 40,
+          child: _buildCircleMarker(Colors.blue, 'High Point'),
+          width: 16,
+          height: 16,
         ),
       ]);
     }
@@ -345,22 +358,14 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
     });
   }
 
-  Widget _buildMarkerIcon(Color color, String label) {
+  Widget _buildCircleMarker(Color color, String labelName) {
     return Container(
+      width: 16,
+      height: 16,
       decoration: BoxDecoration(
         color: color,
         shape: BoxShape.circle,
         border: Border.all(color: Colors.white, width: 2),
-      ),
-      child: Center(
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
       ),
     );
   }
@@ -399,6 +404,24 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
 
   void _handleMapHover(dynamic event, LatLng hoveredPoint) {
     if (_trackPoints.isEmpty || !widget.config.interactive) return;
+
+    // Check for label hover first (within 50m of a label)
+    String? newHoveredLabel;
+    if (_launchPosition != null && _calculateDistance(hoveredPoint.latitude, hoveredPoint.longitude, _launchPosition!.latitude, _launchPosition!.longitude) < 0.05) {
+      newHoveredLabel = 'Launch';
+    } else if (_landingPosition != null && _calculateDistance(hoveredPoint.latitude, hoveredPoint.longitude, _landingPosition!.latitude, _landingPosition!.longitude) < 0.05) {
+      newHoveredLabel = 'Landing';
+    } else if (_highPointPosition != null && _calculateDistance(hoveredPoint.latitude, hoveredPoint.longitude, _highPointPosition!.latitude, _highPointPosition!.longitude) < 0.05) {
+      newHoveredLabel = 'High Point';
+    }
+
+    // Update label hover state if changed
+    if (newHoveredLabel != _hoveredLabel) {
+      print('Label hover changed: $_hoveredLabel -> $newHoveredLabel');
+      setState(() {
+        _hoveredLabel = newHoveredLabel;
+      });
+    }
 
     // Find the closest track point to the hovered location
     double minDistance = double.infinity;
@@ -950,12 +973,20 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
   }
 
   Widget _buildFloatingStats() {
-    // Only show stats for hovered point
-    if (_hoveredPointIndex == null || 
-        _hoveredPointIndex! >= _trackPoints.length ||
-        _instantaneousRates.isEmpty ||
-        _fifteenSecondRates.isEmpty) {
+    // Show stats if either a label is hovered OR a track point is hovered
+    bool hasHoveredLabel = _hoveredLabel != null;
+    bool hasValidTrackPoint = _hoveredPointIndex != null && 
+        _hoveredPointIndex! < _trackPoints.length &&
+        _instantaneousRates.isNotEmpty &&
+        _fifteenSecondRates.isNotEmpty;
+    
+    if (!hasHoveredLabel && !hasValidTrackPoint) {
       return const SizedBox.shrink();
+    }
+    
+    // For label-only hover, we need to create a minimal display
+    if (hasHoveredLabel && !hasValidTrackPoint) {
+      return _buildLabelOnlyStats();
     }
 
     final point = _trackPoints[_hoveredPointIndex!];
@@ -1015,6 +1046,24 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Show label name if a label is hovered
+              if (_hoveredLabel != null) ...[
+                RichText(
+                  text: TextSpan(
+                    children: [
+                      TextSpan(
+                        text: 'Label: ',
+                        style: TextStyle(color: Colors.grey[800], fontSize: 11),
+                      ),
+                      TextSpan(
+                        text: _hoveredLabel!,
+                        style: TextStyle(color: Colors.grey[800], fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 4),
+              ],
               RichText(
                 text: TextSpan(
                   children: [
@@ -1078,6 +1127,44 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
                     ),
                   ],
                 ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+  
+  /// Build floating stats for hovered labels only (no track point data)
+  Widget _buildLabelOnlyStats() {
+    if (_hoveredLabel == null) return const SizedBox.shrink();
+    
+    return Positioned(
+      top: 80,
+      right: 80,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.8),
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: RichText(
+          text: TextSpan(
+            children: [
+              TextSpan(
+                text: 'Label: ',
+                style: TextStyle(color: Colors.grey[800], fontSize: 11),
+              ),
+              TextSpan(
+                text: _hoveredLabel!,
+                style: TextStyle(color: Colors.grey[800], fontSize: 11, fontWeight: FontWeight.bold),
               ),
             ],
           ),
@@ -1461,6 +1548,14 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
       });
       _createMarkers();
     }
+  }
+  
+  /// Handle label hover events
+  void _onLabelHover(String? labelName) {
+    print('Label hover: $labelName'); // Debug print
+    setState(() {
+      _hoveredLabel = labelName;
+    });
   }
 }
 

@@ -498,14 +498,14 @@ class FlightTrackPainter extends CustomPainter {
   }
 
   void _drawMarker(Canvas canvas, Offset position, Color color, String label) {
-    // Draw marker circle
+    // Draw marker circle with 8px radius
     final markerPaint = Paint()
       ..color = color
       ..style = PaintingStyle.fill;
     
     canvas.drawCircle(position, 8, markerPaint);
     
-    // Draw border
+    // Draw border with 2px width
     final borderPaint = Paint()
       ..color = Colors.white
       ..style = PaintingStyle.stroke
@@ -513,27 +513,7 @@ class FlightTrackPainter extends CustomPainter {
     
     canvas.drawCircle(position, 8, borderPaint);
     
-    // Draw label
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: label,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    
-    textPainter.layout();
-    textPainter.paint(
-      canvas,
-      Offset(
-        position.dx - textPainter.width / 2,
-        position.dy - textPainter.height / 2,
-      ),
-    );
+    // Remove text label - using only colored circles as requested
   }
 
   void _drawScale(Canvas canvas, Size size, double minLat, double maxLat, 
