@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -92,10 +93,6 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
   bool _showMarkers = true;
   bool _showStraightLine = true;
   bool _showSatelliteView = false;
-  
-  // Currently selected track point for climb rate display
-  int? _selectedPointIndex;
-  Offset? _selectedPointScreenPosition;
   
   // Currently hovered track point for real-time feedback
   int? _hoveredPointIndex;
@@ -292,20 +289,16 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
     ];
 
     // Add crosshairs markers for interactive mode
-    if (widget.config.interactive) {
-      // Show hovered point if hovering, otherwise show selected point
-      final activePointIndex = _hoveredPointIndex ?? _selectedPointIndex;
-      
-      if (activePointIndex != null && activePointIndex < _trackPoints.length) {
-        final activePoint = _trackPoints[activePointIndex];
+    if (widget.config.interactive && _hoveredPointIndex != null) {
+      if (_hoveredPointIndex! < _trackPoints.length) {
+        final hoveredPoint = _trackPoints[_hoveredPointIndex!];
         
-        // Different styling for hover vs selected
-        final isHovered = _hoveredPointIndex != null;
-        final crosshairColor = isHovered ? Colors.black54 : Colors.black;
+        // Use hover styling - matching altitude chart indicator
+        final crosshairColor = Colors.orange[600]!;
         
         markers.add(
           Marker(
-            point: LatLng(activePoint.latitude, activePoint.longitude),
+            point: LatLng(hoveredPoint.latitude, hoveredPoint.longitude),
             child: _buildCrosshairsIcon(crosshairColor),
             width: 40,
             height: 40,
@@ -402,18 +395,19 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
     );
   }
 
-  void _handleMapTap(LatLng tappedPoint) {
+
+  void _handleMapHover(dynamic event, LatLng hoveredPoint) {
     if (_trackPoints.isEmpty || !widget.config.interactive) return;
 
-    // Find the closest track point to the tapped location
+    // Find the closest track point to the hovered location
     double minDistance = double.infinity;
     int closestIndex = 0;
 
     for (int i = 0; i < _trackPoints.length; i++) {
       final point = _trackPoints[i];
       final distance = _calculateDistance(
-        tappedPoint.latitude,
-        tappedPoint.longitude,
+        hoveredPoint.latitude,
+        hoveredPoint.longitude,
         point.latitude,
         point.longitude,
       );
@@ -424,27 +418,19 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
       }
     }
 
-    // Only update if the tap is reasonably close to the track (within 1km)
-    if (minDistance < 1.0) {
-      final selectedPoint = _trackPoints[closestIndex];
-      final selectedLatLng = LatLng(selectedPoint.latitude, selectedPoint.longitude);
-      
-      // Convert lat/lng to screen coordinates
-      final screenPoint = _mapController?.camera.latLngToScreenPoint(selectedLatLng);
-      final screenPosition = screenPoint != null 
-          ? Offset(screenPoint.x.toDouble(), screenPoint.y.toDouble())
-          : null;
-      
+    // Only update if the hover is reasonably close to the track (within 0.5km for better responsiveness)
+    // and if it's different from the current hovered point
+    if (minDistance < 0.5 && _hoveredPointIndex != closestIndex) {
       setState(() {
-        _selectedPointIndex = closestIndex;
-        _selectedPointScreenPosition = screenPosition;
+        _hoveredPointIndex = closestIndex;
       });
-
-      // Update markers to show selected point
       _createMarkers();
-      
-      // Notify parent if callback provided
-      widget.onPointSelected?.call(closestIndex);
+    } else if (minDistance >= 0.5 && _hoveredPointIndex != null) {
+      // Clear hover state if mouse moves away from track
+      setState(() {
+        _hoveredPointIndex = null;
+      });
+      _createMarkers();
     }
   }
 
@@ -747,8 +733,8 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
             ? LatLng(_trackPoints.first.latitude, _trackPoints.first.longitude)
             : const LatLng(0, 0),
         initialZoom: widget.config.embedded ? 12 : 14,
-        onTap: widget.config.interactive ? (tapPosition, point) {
-          _handleMapTap(point);
+        onPointerHover: widget.config.interactive ? (event, point) {
+          _handleMapHover(event, point);
         } : null,
         onMapReady: () {
           if (_trackPoints.isNotEmpty) {
@@ -964,81 +950,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
     );
   }
 
-  Widget _buildClimbRateDisplay() {
-    if (_selectedPointIndex == null || 
-        _selectedPointIndex! >= _trackPoints.length ||
-        _instantaneousRates.isEmpty ||
-        _fifteenSecondRates.isEmpty) {
-      return const SizedBox.shrink();
-    }
 
-    final point = _trackPoints[_selectedPointIndex!];
-    final instantRate = _selectedPointIndex! < _instantaneousRates.length
-        ? _instantaneousRates[_selectedPointIndex!]
-        : 0.0;
-    final fifteenSecRate = _selectedPointIndex! < _fifteenSecondRates.length
-        ? _fifteenSecondRates[_selectedPointIndex!]
-        : 0.0;
-
-    return Column(
-      children: [
-        Text(
-          'Point ${_selectedPointIndex! + 1} - ${_formatTime(point.timestamp)}',
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _buildClimbRateItem(
-              'Instant',
-              '${instantRate.toStringAsFixed(1)} m/s',
-              instantRate >= 0 ? Icons.trending_up : Icons.trending_down,
-              instantRate >= 0 ? Colors.green : Colors.red,
-            ),
-            _buildClimbRateItem(
-              '15-sec Avg',
-              '${fifteenSecRate.toStringAsFixed(1)} m/s',
-              fifteenSecRate >= 0 ? Icons.trending_up : Icons.trending_down,
-              fifteenSecRate >= 0 ? Colors.green : Colors.red,
-            ),
-            _buildStatItem(
-              'Altitude',
-              '${point.gpsAltitude} m',
-              Icons.height,
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildClimbRateItem(String label, String value, IconData icon, Color color) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 20, color: color),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: TextStyle(
-            fontWeight: FontWeight.bold, 
-            fontSize: 12,
-            color: color,
-          ),
-        ),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 10,
-            color: Colors.grey[600],
-          ),
-        ),
-      ],
-    );
-  }
 
   Widget _buildStatItem(String label, String value, IconData icon) {
     return Column(
@@ -1062,25 +974,33 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
   }
 
   Widget _buildFloatingStats() {
-    if (_selectedPointIndex == null || 
-        _selectedPointScreenPosition == null ||
-        _selectedPointIndex! >= _trackPoints.length ||
+    // Only show stats for hovered point
+    if (_hoveredPointIndex == null || 
+        _hoveredPointIndex! >= _trackPoints.length ||
         _instantaneousRates.isEmpty ||
         _fifteenSecondRates.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    final point = _trackPoints[_selectedPointIndex!];
-    final instantRate = _selectedPointIndex! < _instantaneousRates.length
-        ? _instantaneousRates[_selectedPointIndex!]
+    final point = _trackPoints[_hoveredPointIndex!];
+    final instantRate = _hoveredPointIndex! < _instantaneousRates.length
+        ? _instantaneousRates[_hoveredPointIndex!]
         : 0.0;
-    final fifteenSecRate = _selectedPointIndex! < _fifteenSecondRates.length
-        ? _fifteenSecondRates[_selectedPointIndex!]
+    final fifteenSecRate = _hoveredPointIndex! < _fifteenSecondRates.length
+        ? _fifteenSecondRates[_hoveredPointIndex!]
         : 0.0;
 
-    // Position the overlay near the selected point, but ensure it's visible
-    double left = _selectedPointScreenPosition!.dx;
-    double top = _selectedPointScreenPosition!.dy - 120; // Position above the point
+    // Calculate screen position from the map coordinates
+    final hoveredPoint = _trackPoints[_hoveredPointIndex!];
+    final hoveredLatLng = LatLng(hoveredPoint.latitude, hoveredPoint.longitude);
+    final screenPoint = _mapController?.camera.latLngToScreenPoint(hoveredLatLng);
+    
+    if (screenPoint == null) {
+      return const SizedBox.shrink();
+    }
+    
+    double left = screenPoint.x.toDouble();
+    double top = screenPoint.y.toDouble() - 120; // Position above the point
 
     // Adjust if off-screen
     final screenWidth = MediaQuery.of(context).size.width;
@@ -1088,7 +1008,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
     
     if (left + 200 > screenWidth) left = screenWidth - 220;
     if (left < 20) left = 20;
-    if (top < 20) top = _selectedPointScreenPosition!.dy + 40; // Position below if no room above
+    if (top < 20) top = screenPoint.y.toDouble() + 40; // Position below if no room above
     if (top + 100 > screenHeight) top = screenHeight - 120;
 
     return Positioned(
@@ -1098,8 +1018,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
         onTap: () {
           // Close the floating stats when tapped
           setState(() {
-            _selectedPointIndex = null;
-            _selectedPointScreenPosition = null;
+            _hoveredPointIndex = null;
           });
           _createMarkers();
         },
@@ -1182,15 +1101,6 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
                       ),
                     ),
                   ],
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Tap to close',
-                style: TextStyle(
-                  color: Colors.grey[600],
-                  fontSize: 9,
-                  fontStyle: FontStyle.italic,
                 ),
               ),
             ],
@@ -1295,8 +1205,15 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
           ),
         ],
       ),
-      child: LineChart(
-        LineChartData(
+      child: MouseRegion(
+        onHover: widget.config.interactive ? (PointerHoverEvent event) {
+          _handleAltitudeChartMouseHover(event);
+        } : null,
+        onExit: widget.config.interactive ? (PointerExitEvent event) {
+          _clearHoverState();
+        } : null,
+        child: LineChart(
+          LineChartData(
           gridData: FlGridData(
             show: true,
             drawVerticalLine: true,
@@ -1389,51 +1306,14 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
             verticalLines: [
               VerticalLine(
                 x: selectedTime,
-                color: Colors.red[600]!,
+                color: Colors.orange[600]!,
                 strokeWidth: 2,
                 dashArray: [5, 5],
               ),
             ],
           ) : null,
-          lineTouchData: LineTouchData(
-            enabled: widget.config.interactive,
-            mouseCursorResolver: (FlTouchEvent event, LineTouchResponse? response) {
-              return response?.lineBarSpots?.isNotEmpty == true 
-                ? SystemMouseCursors.precise 
-                : SystemMouseCursors.basic;
-            },
-            touchCallback: (FlTouchEvent event, LineTouchResponse? touchResponse) {
-              if (touchResponse?.lineBarSpots?.isNotEmpty == true) {
-                final touchedSpot = touchResponse!.lineBarSpots!.first;
-                
-                if (event is FlTapUpEvent) {
-                  // Permanent selection on tap
-                  _handleAltitudeChartTap(touchedSpot.x);
-                } else if (event is FlPanUpdateEvent) {
-                  // Temporary hover on mouse move
-                  _handleAltitudeChartHover(touchedSpot.x);
-                }
-              } else if (event is FlPanEndEvent || event is FlTapCancelEvent) {
-                // Clear hover when mouse leaves chart area
-                _clearHoverState();
-              }
-            },
-            touchTooltipData: LineTouchTooltipData(
-              getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
-                return touchedBarSpots.map((barSpot) {
-                  final timeStr = _formatTimeOfDay(barSpot.x);
-                  
-                  return LineTooltipItem(
-                    '$timeStr\n${barSpot.y.toInt()}m',
-                    TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  );
-                }).toList();
-              },
-            ),
+          // Completely disable fl_chart's built-in touch system to prevent conflicting indicators
+          lineTouchData: LineTouchData(enabled: false),
           ),
         ),
       ),
@@ -1501,16 +1381,17 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
 
   /// Get the X-coordinate (time) for the selected point
   double? _getSelectedPointTime() {
-    if (_selectedPointIndex == null || _selectedPointIndex! >= _trackPoints.length) {
+    // Only use hovered point
+    if (_hoveredPointIndex == null || _hoveredPointIndex! >= _trackPoints.length) {
       return null;
     }
 
-    final selectedPoint = _trackPoints[_selectedPointIndex!];
+    final hoveredPoint = _trackPoints[_hoveredPointIndex!];
     // Return minutes since midnight
-    return selectedPoint.timestamp.hour * 60.0 + selectedPoint.timestamp.minute + selectedPoint.timestamp.second / 60.0;
+    return hoveredPoint.timestamp.hour * 60.0 + hoveredPoint.timestamp.minute + hoveredPoint.timestamp.second / 60.0;
   }
 
-  /// Handle tap on altitude chart to select point
+  /// Handle tap on altitude chart to set hover point
   void _handleAltitudeChartTap(double timeMinutes) {
     if (_trackPoints.isEmpty) return;
     
@@ -1529,8 +1410,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
     }
 
     setState(() {
-      _selectedPointIndex = closestIndex;
-      _selectedPointScreenPosition = null; // Reset screen position
+      _hoveredPointIndex = closestIndex;
     });
     
     _createMarkers();
@@ -1560,6 +1440,41 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
       });
       _createMarkers();
     }
+  }
+
+  /// Handle mouse hover on altitude chart by converting mouse position to time
+  void _handleAltitudeChartMouseHover(PointerHoverEvent event) {
+    if (_trackPoints.isEmpty) return;
+    
+    // Get the chart container bounds
+    final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+    
+    // Calculate the altitude chart area (120px height + margins/padding)
+    // Chart is at the bottom, so we need to find its vertical position
+    final chartHeight = 120.0;
+    final chartMargin = 8.0;
+    final chartPadding = 12.0;
+    
+    // Get mouse position relative to the chart area
+    final mouseX = event.localPosition.dx - chartMargin - chartPadding;
+    final chartWidth = renderBox.size.width - (2 * chartMargin) - (2 * chartPadding);
+    
+    if (mouseX < 0 || mouseX > chartWidth) return;
+    
+    // Calculate time range for the chart
+    if (_trackPoints.isEmpty) return;
+    final firstTime = _trackPoints.first.timestamp;
+    final lastTime = _trackPoints.last.timestamp;
+    final startMinutes = firstTime.hour * 60.0 + firstTime.minute + firstTime.second / 60.0;
+    final endMinutes = lastTime.hour * 60.0 + lastTime.minute + lastTime.second / 60.0;
+    
+    // Convert mouse X position to time
+    final timeRatio = mouseX / chartWidth;
+    final hoveredTimeMinutes = startMinutes + (timeRatio * (endMinutes - startMinutes));
+    
+    // Use existing hover logic
+    _handleAltitudeChartHover(hoveredTimeMinutes);
   }
 
   /// Clear hover state when mouse leaves altitude chart
