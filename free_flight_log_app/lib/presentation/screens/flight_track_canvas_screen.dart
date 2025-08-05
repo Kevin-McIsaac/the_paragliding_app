@@ -133,7 +133,7 @@ class _FlightTrackCanvasScreenState extends State<FlightTrackCanvasScreen> {
                   children: [
                     Icon(_showAltitudeColors ? Icons.palette : Icons.palette_outlined),
                     const SizedBox(width: 8),
-                    Text('${_showAltitudeColors ? 'Simple' : 'Altitude'} Colors'),
+                    Text('${_showAltitudeColors ? 'Red' : 'Altitude'} Colors'),
                   ],
                 ),
               ),
@@ -481,8 +481,8 @@ class FlightTrackPainter extends CustomPainter {
           : 0.0;
       
       final color = Color.lerp(
-        Colors.blue,    // Low altitude
-        Colors.red,     // High altitude
+        Colors.grey,    // Low altitude
+        Colors.blue,    // High altitude
         normalizedAlt,
       )!;
       

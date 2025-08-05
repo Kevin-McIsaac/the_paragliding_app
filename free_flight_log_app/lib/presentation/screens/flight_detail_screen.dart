@@ -46,6 +46,9 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
   bool _isTrackLoading = false;
   String? _trackError;
   bool _showSatelliteView = false;
+  bool _showAltitudeColors = true;
+  String _colorMode = 'altitude'; // 'altitude', 'climbrate', 'simple'
+  List<double> _fifteenSecondRates = [];
 
   @override
   void initState() {
@@ -94,8 +97,13 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
         return;
       }
 
+      // Calculate climb rates from IGC data
+      final igcFile = await _igcService.getIgcFile(_flight.trackLogPath!);
+      final fifteenSecondRates = igcFile.calculate15SecondClimbRates();
+      
       setState(() {
         _trackPoints = trackPoints;
+        _fifteenSecondRates = fifteenSecondRates;
         _isTrackLoading = false;
       });
       
@@ -115,17 +123,25 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
 
     final polylines = <Polyline>[];
 
-    // Create main track polyline
-    final trackCoordinates = _trackPoints
-        .map((point) => LatLng(point.latitude, point.longitude))
-        .toList();
+    if (_colorMode == 'altitude') {
+      // Create altitude-based colored segments
+      polylines.addAll(_createAltitudeColoredPolylines());
+    } else if (_colorMode == 'climbrate') {
+      // Create climb rate-based colored segments
+      polylines.addAll(_createClimbRateColoredPolylines());
+    } else {
+      // Create simple single-color track polyline
+      final trackCoordinates = _trackPoints
+          .map((point) => LatLng(point.latitude, point.longitude))
+          .toList();
 
-    final trackPolyline = Polyline(
-      points: trackCoordinates,
-      color: Colors.blue,
-      strokeWidth: 3.0,
-    );
-    polylines.add(trackPolyline);
+      final trackPolyline = Polyline(
+        points: trackCoordinates,
+        color: Colors.blue,
+        strokeWidth: 3.0,
+      );
+      polylines.add(trackPolyline);
+    }
 
     // Create straight line polyline if we have enough points
     if (_trackPoints.length >= 2 && _flight.straightDistance != null) {
@@ -288,6 +304,19 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
       return '${hours}h ${mins}m';
     }
     return '${mins}m';
+  }
+
+  String _formatTime(String timeString) {
+    // timeString is already in HH:MM format from the database
+    return timeString;
+  }
+
+  String _buildAppBarTitle() {
+    final siteName = _launchSite?.name ?? 'Unknown Site';
+    final date = _formatDate(_flight.date);
+    final time = _formatTime(_flight.launchTime);
+    
+    return 'Flight Details - $siteName\n$date $time';
   }
 
   /// Format time with timezone information
@@ -714,7 +743,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Flight ${_formatDate(_flight.date)}'),
+        title: Text(_buildAppBarTitle()),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -1166,13 +1195,40 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                   ),
                 ],
               ),
-              child: IconButton(
-                onPressed: _toggleSatelliteView,
-                icon: Icon(
-                  _showSatelliteView ? Icons.map : Icons.satellite_alt,
-                  size: 20,
-                ),
-                tooltip: _showSatelliteView ? 'Street View' : 'Satellite View',
+              child: PopupMenuButton<String>(
+                icon: const Icon(Icons.layers, size: 20),
+                onSelected: (value) {
+                  switch (value) {
+                    case 'satellite':
+                      _toggleSatelliteView();
+                      break;
+                    case 'colors':
+                      _showColorModeDialog();
+                      break;
+                  }
+                },
+                itemBuilder: (context) => [
+                  PopupMenuItem(
+                    value: 'satellite',
+                    child: Row(
+                      children: [
+                        Icon(_showSatelliteView ? Icons.map : Icons.satellite_alt),
+                        const SizedBox(width: 8),
+                        Text('${_showSatelliteView ? 'Street' : 'Satellite'} View'),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'colors',
+                    child: Row(
+                      children: [
+                        Icon(Icons.palette),
+                        const SizedBox(width: 8),
+                        Text('Track Colors'),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -1206,6 +1262,216 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
     setState(() {
       _showSatelliteView = !_showSatelliteView;
     });
+  }
+
+  void _toggleAltitudeColors() {
+    setState(() {
+      if (_colorMode == 'simple') {
+        _colorMode = 'altitude';
+        _showAltitudeColors = true;
+      } else {
+        _colorMode = 'simple';
+        _showAltitudeColors = false;
+      }
+    });
+    _createPolylines();
+  }
+
+  void _setColorMode(String mode) {
+    setState(() {
+      _colorMode = mode;
+      _showAltitudeColors = (mode != 'simple');
+    });
+    _createPolylines();
+  }
+
+  List<Polyline> _createAltitudeColoredPolylines() {
+    if (_trackPoints.length < 2) return [];
+
+    // Find min and max altitudes for color mapping
+    final altitudes = _trackPoints.map((p) => p.gpsAltitude).toList();
+    final minAlt = altitudes.reduce((a, b) => a < b ? a : b);
+    final maxAlt = altitudes.reduce((a, b) => a > b ? a : b);
+    final altRange = maxAlt - minAlt;
+
+    final polylines = <Polyline>[];
+
+    // Create colored segments between consecutive points
+    for (int i = 0; i < _trackPoints.length - 1; i++) {
+      final currentPoint = _trackPoints[i];
+      final nextPoint = _trackPoints[i + 1];
+      
+      // Calculate color based on current point altitude
+      final normalizedAlt = altRange > 0 ? (currentPoint.gpsAltitude - minAlt) / altRange : 0.0;
+      final color = _getAltitudeColor(normalizedAlt);
+      
+      polylines.add(
+        Polyline(
+          points: [
+            LatLng(currentPoint.latitude, currentPoint.longitude),
+            LatLng(nextPoint.latitude, nextPoint.longitude),
+          ],
+          color: color,
+          strokeWidth: 3.0,
+        ),
+      );
+    }
+
+    return polylines;
+  }
+
+  Color _getAltitudeColor(double normalizedAltitude) {
+    // Create a color gradient from blue (low) to red (high)
+    // normalizedAltitude is between 0.0 and 1.0
+    
+    if (normalizedAltitude <= 0.25) {
+      // Blue to Cyan
+      final t = normalizedAltitude * 4;
+      return Color.lerp(Colors.blue, Colors.cyan, t)!;
+    } else if (normalizedAltitude <= 0.5) {
+      // Cyan to Green
+      final t = (normalizedAltitude - 0.25) * 4;
+      return Color.lerp(Colors.cyan, Colors.green, t)!;
+    } else if (normalizedAltitude <= 0.75) {
+      // Green to Yellow
+      final t = (normalizedAltitude - 0.5) * 4;
+      return Color.lerp(Colors.green, Colors.yellow, t)!;
+    } else {
+      // Yellow to Red
+      final t = (normalizedAltitude - 0.75) * 4;
+      return Color.lerp(Colors.yellow, Colors.red, t)!;
+    }
+  }
+
+  List<Polyline> _createClimbRateColoredPolylines() {
+    if (_trackPoints.length < 2 || _fifteenSecondRates.isEmpty) return [];
+
+    // Find min and max climb rates for color mapping (ignoring extreme outliers)
+    final rates = _fifteenSecondRates.where((rate) => rate.abs() < 10.0).toList(); // Filter extreme values
+    if (rates.isEmpty) return [];
+    
+    final minRate = rates.reduce((a, b) => a < b ? a : b);
+    final maxRate = rates.reduce((a, b) => a > b ? a : b);
+    final rateRange = maxRate - minRate;
+
+    final polylines = <Polyline>[];
+
+    // Create colored segments between consecutive points
+    for (int i = 0; i < _trackPoints.length - 1; i++) {
+      final currentPoint = _trackPoints[i];
+      final nextPoint = _trackPoints[i + 1];
+      
+      // Get climb rate for current point (handle index bounds)
+      final climbRate = i < _fifteenSecondRates.length ? _fifteenSecondRates[i] : 0.0;
+      
+      // Calculate color based on climb rate
+      final color = _getClimbRateColor(climbRate, minRate, maxRate, rateRange);
+      
+      polylines.add(
+        Polyline(
+          points: [
+            LatLng(currentPoint.latitude, currentPoint.longitude),
+            LatLng(nextPoint.latitude, nextPoint.longitude),
+          ],
+          color: color,
+          strokeWidth: 3.0,
+        ),
+      );
+    }
+
+    return polylines;
+  }
+
+  Color _getClimbRateColor(double climbRate, double minRate, double maxRate, double rateRange) {
+    // Normalize climb rate to -1.0 to 1.0 range, with 0 being neutral
+    double normalizedRate;
+    
+    if (climbRate >= 0) {
+      // Positive climb rate (climbing)
+      normalizedRate = maxRate > 0 ? climbRate / maxRate : 0.0;
+      normalizedRate = normalizedRate.clamp(0.0, 1.0);
+      
+      // Green to red gradient for climbing
+      if (normalizedRate <= 0.5) {
+        // Light green to green
+        final t = normalizedRate * 2;
+        return Color.lerp(Colors.lightGreen, Colors.green, t)!;
+      } else {
+        // Green to red (strong climb)
+        final t = (normalizedRate - 0.5) * 2;
+        return Color.lerp(Colors.green, Colors.red, t)!;
+      }
+    } else {
+      // Negative climb rate (sinking)
+      normalizedRate = minRate < 0 ? climbRate / minRate : 0.0;
+      normalizedRate = normalizedRate.clamp(0.0, 1.0);
+      
+      // Light blue to dark blue gradient for sinking
+      if (normalizedRate <= 0.5) {
+        // Light blue to blue
+        final t = normalizedRate * 2;
+        return Color.lerp(Colors.lightBlue, Colors.blue, t)!;
+      } else {
+        // Blue to dark blue (strong sink)
+        final t = (normalizedRate - 0.5) * 2;
+        return Color.lerp(Colors.blue, Colors.indigo, t)!;
+      }
+    }
+  }
+
+  void _showColorModeDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Track Colors'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            RadioListTile<String>(
+              title: const Text('Simple (Blue)'),
+              value: 'simple',
+              groupValue: _colorMode,
+              onChanged: (value) {
+                if (value != null) {
+                  _setColorMode(value);
+                  Navigator.of(context).pop();
+                }
+              },
+            ),
+            RadioListTile<String>(
+              title: const Text('Altitude'),
+              subtitle: const Text('Blue (low) to Red (high)'),
+              value: 'altitude',
+              groupValue: _colorMode,
+              onChanged: (value) {
+                if (value != null) {
+                  _setColorMode(value);
+                  Navigator.of(context).pop();
+                }
+              },
+            ),
+            RadioListTile<String>(
+              title: const Text('Climb Rate (15s avg)'),
+              subtitle: const Text('Blue (sink) to Red (climb)'),
+              value: 'climbrate',
+              groupValue: _colorMode,
+              onChanged: (value) {
+                if (value != null) {
+                  _setColorMode(value);
+                  Navigator.of(context).pop();
+                }
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildStatsBar() {

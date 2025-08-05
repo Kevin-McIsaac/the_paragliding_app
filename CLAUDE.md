@@ -284,6 +284,26 @@ flutter upgrade
 
 ## Recent Updates
 
+### August 2025 - Enhanced Flight Track Visualization & User Experience
+- **Climb Rate Color Visualization**: Redesigned flight track display to use climb rate colors instead of altitude
+  - **Green**: Climb rates ≥ 0 m/s (thermals/lift areas)
+  - **Royal Blue**: Weak sink rates -1.5 to 0 m/s (neutral air)
+  - **Red**: Strong sink rates ≤ -1.5 m/s (heavy sink areas)
+  - **15-Second Averaging**: Uses smoothed climb rate data for realistic thermal analysis
+- **Interactive Color Legend**: Added bottom-left legend showing climb rate color scheme and thresholds
+- **Professional Crosshairs**: Replaced circular selected point marker with precision crosshairs
+  - **Minimal Design**: Clean black lines with white outline for visibility
+  - **Center Gap**: 50% center gap for unobstructed view of selected track point
+  - **Precision Targeting**: Professional scope-like appearance for accurate point selection
+- **Enhanced FAB Menu**: Improved floating action button controls
+  - **Distance Line**: Renamed "Straight Line" to "Distance" with gray dotted line
+  - **Persistent Settings**: FAB menu states remembered across app sessions using SharedPreferences
+  - **Proper Toggle**: Distance label marker now correctly shows/hides with distance line
+- **Visual Improvements**: 
+  - **Removed Altitude Submenu**: Streamlined interface by removing unused altitude color options
+  - **Gray Distance Line**: Changed from orange to gray for better visual hierarchy
+  - **Consistent Styling**: All map overlays use coordinated color scheme
+
 ### January 2025 - Advanced Site Management and Performance Optimization
 - **Hybrid Site Lookup System**: Optimized site matching with intelligent multi-tier approach
   - **Flight Log Priority**: Searches user's existing 22 sites first (~2ms, 250x faster for known sites)
@@ -400,6 +420,8 @@ flutter upgrade
 - **Folder Memory**: IGC import now remembers last used folder for improved workflow
 
 ### Key Files Updated
+- `lib/presentation/screens/flight_track_screen.dart`: Major flight track visualization overhaul with climb rate colors, crosshairs, and persistent FAB settings
+- `lib/presentation/screens/flight_track_canvas_screen.dart`: Updated canvas view to match new color scheme (altitude to royal blue)
 - `lib/data/models/flight.dart`: Added timezone field and midnight crossing duration logic
 - `lib/data/models/igc_file.dart`: Enhanced with timezone support and smart duration calculation
 - `lib/data/datasources/database_helper.dart`: Database v3 migration for timezone column

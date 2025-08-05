@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/flight.dart';
 import '../../data/models/igc_file.dart';
 import '../../services/igc_import_service.dart';
@@ -28,7 +29,6 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
   String? _error;
   
   // Map display options
-  bool _showAltitudeColors = true;
   bool _showMarkers = true;
   bool _showStraightLine = true;
   bool _showSatelliteView = false;
@@ -39,7 +39,17 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
   @override
   void initState() {
     super.initState();
+    _loadSavedPreferences();
     _loadTrackData();
+  }
+
+  Future<void> _loadSavedPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _showMarkers = prefs.getBool('flight_track_show_markers') ?? true;
+      _showStraightLine = prefs.getBool('flight_track_show_straight_line') ?? true;
+      _showSatelliteView = prefs.getBool('flight_track_show_satellite') ?? false;
+    });
   }
 
   Future<void> _loadTrackData() async {
@@ -65,7 +75,7 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
       // Calculate climb rates from IGC data
       final igcFile = await _igcService.getIgcFile(widget.flight.trackLogPath!);
       final instantaneousRates = igcFile.calculateInstantaneousClimbRates();
-      final fifteenSecondRates = igcFile.calculate15SecondClimbRates();
+      final fifteenSecondRates = _calculateGPS15SecondClimbRates(trackPoints);
 
       setState(() {
         _trackPoints = trackPoints;
@@ -91,17 +101,8 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
 
     final polylines = <Polyline>[];
 
-    // Create main track polyline
-    final trackCoordinates = _trackPoints
-        .map((point) => LatLng(point.latitude, point.longitude))
-        .toList();
-
-    final trackPolyline = Polyline(
-      points: trackCoordinates,
-      color: _showAltitudeColors ? Colors.blue : Colors.red,
-      strokeWidth: 3.0,
-    );
-    polylines.add(trackPolyline);
+    // Create climb rate-based colored segments
+    polylines.addAll(_createClimbRateColoredPolylines());
 
     // Create straight line polyline if enabled
     if (_showStraightLine && _trackPoints.length >= 2) {
@@ -110,18 +111,18 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
       
       final straightLinePolyline = Polyline(
         points: [launchPoint, landingPoint],
-        color: Colors.orange,
+        color: Colors.grey,
         strokeWidth: 4.0,
         isDotted: true,
       );
       polylines.add(straightLinePolyline);
     }
 
-    // TODO: Add altitude-based coloring in future update
     setState(() {
       _polylines = polylines;
     });
   }
+
 
   void _createMarkers() {
     if (_trackPoints.isEmpty || !_showMarkers) {
@@ -167,7 +168,7 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
       markers.add(
         Marker(
           point: LatLng(selectedPoint.latitude, selectedPoint.longitude),
-          child: _buildMarkerIcon(Colors.orange, 'S'),
+          child: _buildCrosshairsIcon(Colors.black),
           width: 40,
           height: 40,
         ),
@@ -187,7 +188,7 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: Colors.orange,
+              color: Colors.grey,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: Colors.white, width: 2),
             ),
@@ -231,6 +232,16 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
     );
   }
 
+  Widget _buildCrosshairsIcon(Color color) {
+    return Container(
+      width: 40,
+      height: 40,
+      child: CustomPaint(
+        painter: CrosshairsPainter(color: color),
+      ),
+    );
+  }
+
   void _fitMapToBounds() {
     if (_trackPoints.isEmpty || _mapController == null) return;
 
@@ -265,31 +276,35 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
     return '${mins}m';
   }
 
-  void _toggleAltitudeColors() {
-    setState(() {
-      _showAltitudeColors = !_showAltitudeColors;
-    });
-    _createPolylines();
-  }
 
-  void _toggleMarkers() {
+  void _toggleMarkers() async {
     setState(() {
       _showMarkers = !_showMarkers;
     });
     _createMarkers();
+    
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('flight_track_show_markers', _showMarkers);
   }
 
-  void _toggleStraightLine() {
+  void _toggleStraightLine() async {
     setState(() {
       _showStraightLine = !_showStraightLine;
     });
     _createPolylines();
+    _createMarkers();
+    
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('flight_track_show_straight_line', _showStraightLine);
   }
 
-  void _toggleSatelliteView() {
+  void _toggleSatelliteView() async {
     setState(() {
       _showSatelliteView = !_showSatelliteView;
     });
+    
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('flight_track_show_satellite', _showSatelliteView);
   }
 
   @override
@@ -298,90 +313,27 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
       appBar: AppBar(
         title: const Text('Flight Track'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        actions: [
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              switch (value) {
-                case 'markers':
-                  _toggleMarkers();
-                  break;
-                case 'colors':
-                  _toggleAltitudeColors();
-                  break;
-                case 'straight_line':
-                  _toggleStraightLine();
-                  break;
-                case 'satellite':
-                  _toggleSatelliteView();
-                  break;
-                case 'fit':
-                  _fitMapToBounds();
-                  break;
-              }
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: 'markers',
-                child: Row(
-                  children: [
-                    Icon(_showMarkers ? Icons.visibility : Icons.visibility_off),
-                    const SizedBox(width: 8),
-                    Text('${_showMarkers ? 'Hide' : 'Show'} Markers'),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: 'colors',
-                child: Row(
-                  children: [
-                    Icon(_showAltitudeColors ? Icons.palette : Icons.palette_outlined),
-                    const SizedBox(width: 8),
-                    Text('${_showAltitudeColors ? 'Simple' : 'Altitude'} Colors'),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: 'straight_line',
-                child: Row(
-                  children: [
-                    Icon(_showStraightLine ? Icons.timeline : Icons.timeline_outlined),
-                    const SizedBox(width: 8),
-                    Text('${_showStraightLine ? 'Hide' : 'Show'} Straight Line'),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: 'satellite',
-                child: Row(
-                  children: [
-                    Icon(_showSatelliteView ? Icons.map : Icons.satellite_alt),
-                    const SizedBox(width: 8),
-                    Text('${_showSatelliteView ? 'Street' : 'Satellite'} View'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'fit',
-                child: Row(
-                  children: [
-                    Icon(Icons.fit_screen),
-                    SizedBox(width: 8),
-                    Text('Fit to Track'),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? _buildErrorState()
-              : Column(
+              : Stack(
                   children: [
-                    _buildStatsBar(),
-                    Expanded(child: _buildMap()),
+                    Column(
+                      children: [
+                        _buildStatsBar(),
+                        Expanded(
+                          child: Stack(
+                            children: [
+                              _buildMap(),
+                              _buildMapControls(),
+                              _buildClimbRateLegend(),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
     );
@@ -707,5 +659,367 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
     final c = 2 * atan2(sqrt(a), sqrt(1 - a));
     
     return earthRadius * c;
+  }
+
+  Widget _buildMapControls() {
+    return Positioned(
+      top: 8,
+      right: 8,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(4),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black26,
+              blurRadius: 4,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: PopupMenuButton<String>(
+          icon: const Icon(Icons.layers, size: 20),
+          onSelected: (value) {
+            switch (value) {
+              case 'markers':
+                _toggleMarkers();
+                break;
+              case 'straight_line':
+                _toggleStraightLine();
+                break;
+              case 'satellite':
+                _toggleSatelliteView();
+                break;
+              case 'fit':
+                _fitMapToBounds();
+                break;
+            }
+          },
+          itemBuilder: (context) => [
+            PopupMenuItem(
+              value: 'markers',
+              child: Row(
+                children: [
+                  Icon(_showMarkers ? Icons.visibility : Icons.visibility_off),
+                  const SizedBox(width: 8),
+                  Text('${_showMarkers ? 'Hide' : 'Show'} Markers'),
+                ],
+              ),
+            ),
+            PopupMenuItem(
+              value: 'straight_line',
+              child: Row(
+                children: [
+                  Icon(_showStraightLine ? Icons.timeline : Icons.timeline_outlined),
+                  const SizedBox(width: 8),
+                  Text('${_showStraightLine ? 'Hide' : 'Show'} Distance'),
+                ],
+              ),
+            ),
+            PopupMenuItem(
+              value: 'satellite',
+              child: Row(
+                children: [
+                  Icon(_showSatelliteView ? Icons.map : Icons.satellite_alt),
+                  const SizedBox(width: 8),
+                  Text('${_showSatelliteView ? 'Street' : 'Satellite'} View'),
+                ],
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'fit',
+              child: Row(
+                children: [
+                  Icon(Icons.fit_screen),
+                  SizedBox(width: 8),
+                  Text('Fit to Track'),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildClimbRateLegend() {
+    return Positioned(
+      bottom: 8,
+      left: 8,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Climb Rate (15s avg)',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[800],
+              ),
+            ),
+            const SizedBox(height: 8),
+            _buildLegendItem(Colors.green, '≥ 0 m/s', 'Climb'),
+            const SizedBox(height: 4),
+            _buildLegendItem(Colors.blue[700]!, '-1.5 to 0 m/s', 'Weak Sink'),
+            const SizedBox(height: 4),
+            _buildLegendItem(Colors.red, '≤ -1.5 m/s', 'Strong Sink'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLegendItem(Color color, String range, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 16,
+          height: 3,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(1.5),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey[800],
+              ),
+            ),
+            Text(
+              range,
+              style: TextStyle(
+                fontSize: 9,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  List<Polyline> _createClimbRateColoredPolylines() {
+    if (_trackPoints.length < 2) return [];
+    
+    // If no climb rate data, create a simple red track
+    if (_fifteenSecondRates.isEmpty) {
+      print('No climb rate data available, showing red track');
+      final trackCoordinates = _trackPoints
+          .map((point) => LatLng(point.latitude, point.longitude))
+          .toList();
+
+      return [Polyline(
+        points: trackCoordinates,
+        color: Colors.red,
+        strokeWidth: 3.0,
+      )];
+    }
+
+    print('Creating climb rate colored track with ${_fifteenSecondRates.length} climb rate points');
+
+    final polylines = <Polyline>[];
+
+    // Create colored segments between consecutive points
+    for (int i = 0; i < _trackPoints.length - 1; i++) {
+      final currentPoint = _trackPoints[i];
+      final nextPoint = _trackPoints[i + 1];
+      
+      // Get climb rate for current point (handle index bounds)
+      final climbRate = i < _fifteenSecondRates.length ? _fifteenSecondRates[i] : 0.0;
+      
+      // Calculate color based on climb rate
+      final color = _getClimbRateColor(climbRate);
+      
+      polylines.add(
+        Polyline(
+          points: [
+            LatLng(currentPoint.latitude, currentPoint.longitude),
+            LatLng(nextPoint.latitude, nextPoint.longitude),
+          ],
+          color: color,
+          strokeWidth: 3.0,
+        ),
+      );
+    }
+
+    return polylines;
+  }
+
+  Color _getClimbRateColor(double climbRate) {
+    // Simple 3-tier color scheme based on fixed thresholds
+    // Red: Strong sink (rate <= -1.5 m/s)
+    // Royal Blue: Weak sink (-1.5 < rate < 0 m/s)  
+    // Green: Any climb (rate >= 0 m/s)
+    
+    if (climbRate <= -1.5) {
+      return Colors.red;
+    } else if (climbRate < 0) {
+      return Colors.blue[700]!;
+    } else {
+      return Colors.green;
+    }
+  }
+
+  /// Calculate 15-second averaged climb rates using GPS altitude specifically
+  List<double> _calculateGPS15SecondClimbRates(List<IgcPoint> points) {
+    if (points.length < 2) return [];
+
+    final climbRates = <double>[];
+    
+    for (int i = 0; i < points.length; i++) {
+      // Look for points within a 15-second window centered on current point
+      final currentTime = points[i].timestamp;
+      
+      // Determine window bounds (±7.5 seconds)
+      final windowStart = currentTime.subtract(const Duration(milliseconds: 7500));
+      final windowEnd = currentTime.add(const Duration(milliseconds: 7500));
+      
+      // Find first and last points within window
+      IgcPoint? firstInWindow;
+      IgcPoint? lastInWindow;
+      
+      for (final point in points) {
+        final pointTime = point.timestamp;
+        
+        // Check if point is within window
+        if (!pointTime.isBefore(windowStart) && !pointTime.isAfter(windowEnd)) {
+          firstInWindow ??= point;
+          lastInWindow = point;
+        }
+      }
+      
+      // If we don't have at least 2 distinct points, use instantaneous rate as fallback
+      if (firstInWindow == null || lastInWindow == null || firstInWindow == lastInWindow) {
+        if (i > 0) {
+          final timeDiff = (points[i].timestamp.millisecondsSinceEpoch - 
+                           points[i-1].timestamp.millisecondsSinceEpoch) / 1000.0;
+          if (timeDiff > 0) {
+            // Force use of GPS altitude only
+            final altDiff = (points[i].gpsAltitude - points[i-1].gpsAltitude).toDouble();
+            climbRates.add(altDiff / timeDiff);
+          } else {
+            climbRates.add(0.0);
+          }
+        } else {
+          climbRates.add(0.0);
+        }
+        continue;
+      }
+      
+      // Calculate climb rate over the window using GPS altitude only
+      final timeDiffSeconds = (lastInWindow.timestamp.millisecondsSinceEpoch - 
+                              firstInWindow.timestamp.millisecondsSinceEpoch) / 1000.0;
+      
+      if (timeDiffSeconds > 0) {
+        // Force use of GPS altitude only
+        final altDiff = (lastInWindow.gpsAltitude - firstInWindow.gpsAltitude).toDouble();
+        climbRates.add(altDiff / timeDiffSeconds);
+      } else {
+        climbRates.add(0.0);
+      }
+    }
+
+    return climbRates;
+  }
+}
+
+class CrosshairsPainter extends CustomPainter {
+  final Color color;
+
+  CrosshairsPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2 - 4;
+    final gapRadius = radius / 2; // 1/2 of the radius for the center gap
+
+    // Draw white outline for better visibility
+    final outlinePaint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 4.0
+      ..strokeCap = StrokeCap.square;
+
+    // Draw main crosshair lines
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2.0
+      ..strokeCap = StrokeCap.square;
+
+    // Draw white outline horizontal lines (left and right segments)
+    canvas.drawLine(
+      Offset(center.dx - radius, center.dy),
+      Offset(center.dx - gapRadius, center.dy),
+      outlinePaint,
+    );
+    canvas.drawLine(
+      Offset(center.dx + gapRadius, center.dy),
+      Offset(center.dx + radius, center.dy),
+      outlinePaint,
+    );
+
+    // Draw white outline vertical lines (top and bottom segments)
+    canvas.drawLine(
+      Offset(center.dx, center.dy - radius),
+      Offset(center.dx, center.dy - gapRadius),
+      outlinePaint,
+    );
+    canvas.drawLine(
+      Offset(center.dx, center.dy + gapRadius),
+      Offset(center.dx, center.dy + radius),
+      outlinePaint,
+    );
+
+    // Draw colored horizontal lines (left and right segments)
+    canvas.drawLine(
+      Offset(center.dx - radius, center.dy),
+      Offset(center.dx - gapRadius, center.dy),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(center.dx + gapRadius, center.dy),
+      Offset(center.dx + radius, center.dy),
+      paint,
+    );
+
+    // Draw colored vertical lines (top and bottom segments)
+    canvas.drawLine(
+      Offset(center.dx, center.dy - radius),
+      Offset(center.dx, center.dy - gapRadius),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(center.dx, center.dy + gapRadius),
+      Offset(center.dx, center.dy + radius),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(CrosshairsPainter oldDelegate) {
+    return oldDelegate.color != color;
   }
 }
