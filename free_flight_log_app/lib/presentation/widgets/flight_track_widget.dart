@@ -96,6 +96,9 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
   // Currently selected track point for climb rate display
   int? _selectedPointIndex;
   Offset? _selectedPointScreenPosition;
+  
+  // Currently hovered track point for real-time feedback
+  int? _hoveredPointIndex;
 
   @override
   void initState() {
@@ -288,18 +291,27 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
       ),
     ];
 
-    // Add selected point marker if one is selected and interactive
-    if (widget.config.interactive && _selectedPointIndex != null && _selectedPointIndex! < _trackPoints.length) {
-      final selectedPoint = _trackPoints[_selectedPointIndex!];
+    // Add crosshairs markers for interactive mode
+    if (widget.config.interactive) {
+      // Show hovered point if hovering, otherwise show selected point
+      final activePointIndex = _hoveredPointIndex ?? _selectedPointIndex;
       
-      markers.add(
-        Marker(
-          point: LatLng(selectedPoint.latitude, selectedPoint.longitude),
-          child: _buildCrosshairsIcon(Colors.black),
-          width: 40,
-          height: 40,
-        ),
-      );
+      if (activePointIndex != null && activePointIndex < _trackPoints.length) {
+        final activePoint = _trackPoints[activePointIndex];
+        
+        // Different styling for hover vs selected
+        final isHovered = _hoveredPointIndex != null;
+        final crosshairColor = isHovered ? Colors.black54 : Colors.black;
+        
+        markers.add(
+          Marker(
+            point: LatLng(activePoint.latitude, activePoint.longitude),
+            child: _buildCrosshairsIcon(crosshairColor),
+            width: 40,
+            height: 40,
+          ),
+        );
+      }
     }
 
     // Add straight distance marker at midpoint if showing straight line
@@ -1385,10 +1397,25 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
           ) : null,
           lineTouchData: LineTouchData(
             enabled: widget.config.interactive,
+            mouseCursorResolver: (FlTouchEvent event, LineTouchResponse? response) {
+              return response?.lineBarSpots?.isNotEmpty == true 
+                ? SystemMouseCursors.precise 
+                : SystemMouseCursors.basic;
+            },
             touchCallback: (FlTouchEvent event, LineTouchResponse? touchResponse) {
-              if (event is FlTapUpEvent && touchResponse?.lineBarSpots?.isNotEmpty == true) {
+              if (touchResponse?.lineBarSpots?.isNotEmpty == true) {
                 final touchedSpot = touchResponse!.lineBarSpots!.first;
-                _handleAltitudeChartTap(touchedSpot.x);
+                
+                if (event is FlTapUpEvent) {
+                  // Permanent selection on tap
+                  _handleAltitudeChartTap(touchedSpot.x);
+                } else if (event is FlPanUpdateEvent) {
+                  // Temporary hover on mouse move
+                  _handleAltitudeChartHover(touchedSpot.x);
+                }
+              } else if (event is FlPanEndEvent || event is FlTapCancelEvent) {
+                // Clear hover when mouse leaves chart area
+                _clearHoverState();
               }
             },
             touchTooltipData: LineTouchTooltipData(
@@ -1507,6 +1534,42 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
     });
     
     _createMarkers();
+  }
+
+  /// Handle hover on altitude chart to show real-time position
+  void _handleAltitudeChartHover(double timeMinutes) {
+    if (_trackPoints.isEmpty) return;
+    
+    // Find the closest point to the hovered time
+    int closestIndex = 0;
+    double minDiff = double.infinity;
+
+    for (int i = 0; i < _trackPoints.length; i++) {
+      final pointTime = _trackPoints[i].timestamp.hour * 60.0 + _trackPoints[i].timestamp.minute + _trackPoints[i].timestamp.second / 60.0;
+      final diff = (pointTime - timeMinutes).abs();
+      
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestIndex = i;
+      }
+    }
+
+    if (_hoveredPointIndex != closestIndex) {
+      setState(() {
+        _hoveredPointIndex = closestIndex;
+      });
+      _createMarkers();
+    }
+  }
+
+  /// Clear hover state when mouse leaves altitude chart
+  void _clearHoverState() {
+    if (_hoveredPointIndex != null) {
+      setState(() {
+        _hoveredPointIndex = null;
+      });
+      _createMarkers();
+    }
   }
 }
 
