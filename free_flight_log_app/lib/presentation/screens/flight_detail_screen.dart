@@ -509,6 +509,26 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    // Flight Details Card (Combined Overview, Sites, and Equipment)
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Flight Details',
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
+                            const SizedBox(height: 16),
+                            _buildFlightDetailsContent(),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
+
                     // Flight Track Visualization (if available)
                     if (_flight.trackLogPath != null)
                       Card(
@@ -546,26 +566,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                           ),
                         ),
                       ),
-
-                    const SizedBox(height: 16),
-
-                    // Flight Details Card (Combined Overview, Sites, and Equipment)
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Flight Details',
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                            const SizedBox(height: 16),
-                            _buildFlightDetailsContent(),
-                          ],
-                        ),
-                      ),
-                    ),
 
                     const SizedBox(height: 16),
 
@@ -824,8 +824,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                         ),
                       ),
                     ),
-                    const TextSpan(text: ' for '),
-                    TextSpan(text: _formatDuration(_flight.duration)),
                     if (_wing != null) ...[
                       const TextSpan(text: ' using '),
                       WidgetSpan(
