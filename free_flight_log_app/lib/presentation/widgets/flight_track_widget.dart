@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:fl_chart/fl_chart.dart';
 import '../../data/models/flight.dart';
 import '../../data/models/igc_file.dart';
 import '../../services/igc_import_service.dart';
@@ -14,6 +15,7 @@ class FlightTrackConfig {
   final bool showStats;
   final bool interactive;
   final bool showStraightLine;
+  final bool showAltitudeChart;
   final double? height;
 
   const FlightTrackConfig({
@@ -23,6 +25,7 @@ class FlightTrackConfig {
     this.showStats = true,
     this.interactive = true,
     this.showStraightLine = true,
+    this.showAltitudeChart = true,
     this.height,
   });
 
@@ -33,6 +36,7 @@ class FlightTrackConfig {
         showStats = false,
         interactive = false,
         showStraightLine = true,
+        showAltitudeChart = false,
         height = 250;
 
   FlightTrackConfig.embeddedWithControls()
@@ -42,6 +46,7 @@ class FlightTrackConfig {
         showStats = true,
         interactive = true,
         showStraightLine = true,
+        showAltitudeChart = true,
         height = 600;
 
   FlightTrackConfig.fullScreen()
@@ -51,6 +56,7 @@ class FlightTrackConfig {
         showStats = true,
         interactive = true,
         showStraightLine = true,
+        showAltitudeChart = true,
         height = null;
 }
 
@@ -823,6 +829,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
             children: [
               _buildStatsBar(),
               Expanded(child: stackWidget),
+              _buildAltitudeChart(),
             ],
           ),
         );
@@ -833,6 +840,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
           children: [
             _buildStatsBar(),
             Flexible(child: stackWidget),
+            _buildAltitudeChart(),
           ],
         );
       }
@@ -1240,6 +1248,265 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
     }
 
     return climbRates;
+  }
+
+  /// Build altitude chart widget
+  Widget _buildAltitudeChart() {
+    if (!widget.config.showAltitudeChart || _trackPoints.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final altitudeData = _prepareAltitudeChartData();
+    if (altitudeData.isEmpty) return const SizedBox.shrink();
+
+    // Calculate altitude range for Y-axis
+    final altitudes = altitudeData.map((spot) => spot.y).toList();
+    final minAlt = altitudes.reduce(min);
+    final maxAlt = altitudes.reduce(max);
+    final altRange = maxAlt - minAlt;
+    final padding = altRange * 0.1; // 10% padding
+
+    final selectedTime = _getSelectedPointTime();
+
+    return Container(
+      height: 120,
+      margin: const EdgeInsets.all(8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.8),
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: LineChart(
+        LineChartData(
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: true,
+            drawHorizontalLine: true,
+            horizontalInterval: _calculateYAxisInterval(altRange),
+            verticalInterval: null, // Auto interval
+            getDrawingHorizontalLine: (value) {
+              // Make grid lines more prominent to act as tick marks
+              return FlLine(
+                color: Colors.grey[400]!,
+                strokeWidth: 1.0,
+              );
+            },
+            getDrawingVerticalLine: (value) {
+              return FlLine(
+                color: Colors.grey[300]!,
+                strokeWidth: 0.5,
+              );
+            },
+          ),
+          titlesData: FlTitlesData(
+            show: true,
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 22,
+                interval: null, // Auto interval
+                getTitlesWidget: (value, meta) {
+                  // Skip first and last labels to avoid crowding and overlap
+                  if (meta.min == value || meta.max == value) {
+                    return const SizedBox.shrink();
+                  }
+                  return Text(
+                    _formatTimeOfDay(value),
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 10,
+                    ),
+                  );
+                },
+              ),
+            ),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 50,
+                interval: _calculateYAxisInterval(altRange),
+                getTitlesWidget: (value, meta) {
+                  // Skip first and last labels to avoid crowding
+                  if (meta.min == value || meta.max == value) {
+                    return const SizedBox.shrink();
+                  }
+                  return Text(
+                    '${value.toInt()}m',
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 10,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          borderData: FlBorderData(
+            show: true,
+            border: Border.all(color: Colors.grey[300]!, width: 1),
+          ),
+          minX: altitudeData.first.x,
+          maxX: altitudeData.last.x,
+          minY: minAlt - padding,
+          maxY: maxAlt + padding,
+          lineBarsData: [
+            LineChartBarData(
+              spots: altitudeData,
+              isCurved: true,
+              curveSmoothness: 0.3,
+              color: Colors.blue[600],
+              barWidth: 2,
+              isStrokeCapRound: true,
+              dotData: const FlDotData(show: false),
+              belowBarData: BarAreaData(
+                show: true,
+                color: Colors.blue[600]!.withValues(alpha: 0.2),
+              ),
+            ),
+          ],
+          extraLinesData: selectedTime != null ? ExtraLinesData(
+            verticalLines: [
+              VerticalLine(
+                x: selectedTime,
+                color: Colors.red[600]!,
+                strokeWidth: 2,
+                dashArray: [5, 5],
+              ),
+            ],
+          ) : null,
+          lineTouchData: LineTouchData(
+            enabled: widget.config.interactive,
+            touchCallback: (FlTouchEvent event, LineTouchResponse? touchResponse) {
+              if (event is FlTapUpEvent && touchResponse?.lineBarSpots?.isNotEmpty == true) {
+                final touchedSpot = touchResponse!.lineBarSpots!.first;
+                _handleAltitudeChartTap(touchedSpot.x);
+              }
+            },
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
+                return touchedBarSpots.map((barSpot) {
+                  final timeStr = _formatTimeOfDay(barSpot.x);
+                  
+                  return LineTooltipItem(
+                    '$timeStr\n${barSpot.y.toInt()}m',
+                    TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  );
+                }).toList();
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Calculate intelligent y-axis interval based on altitude range
+  double _calculateYAxisInterval(double altRange) {
+    if (altRange <= 50) return 10;
+    if (altRange <= 100) return 20;
+    if (altRange <= 200) return 50;
+    if (altRange <= 500) return 100;
+    if (altRange <= 1000) return 200;
+    if (altRange <= 2000) return 500;
+    return 1000;
+  }
+
+  /// Format time of day from minutes since midnight as hh:mm
+  String _formatTimeOfDay(double minutesSinceMidnight) {
+    final totalMinutes = minutesSinceMidnight.toInt();
+    final hours = totalMinutes ~/ 60;
+    final minutes = totalMinutes % 60;
+    return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}';
+  }
+
+  /// Format time from seconds with intelligent precision
+  String _formatTimeFromSeconds(double seconds) {
+    if (seconds < 60) {
+      return '${seconds.toInt()}s';
+    } else if (seconds < 3600) {
+      final mins = seconds ~/ 60;
+      final remainingSecs = (seconds % 60).toInt();
+      return remainingSecs > 0 ? '${mins}m${remainingSecs}s' : '${mins}m';
+    } else {
+      final hours = seconds ~/ 3600;
+      final remainingMins = ((seconds % 3600) ~/ 60).toInt();
+      final remainingSecs = (seconds % 60).toInt();
+      
+      if (remainingMins > 0 && remainingSecs > 0) {
+        return '${hours}h${remainingMins}m${remainingSecs}s';
+      } else if (remainingMins > 0) {
+        return '${hours}h${remainingMins}m';
+      } else {
+        return '${hours}h';
+      }
+    }
+  }
+
+  /// Prepare altitude chart data from track points
+  List<FlSpot> _prepareAltitudeChartData() {
+    if (_trackPoints.isEmpty) return [];
+
+    final spots = <FlSpot>[];
+
+    for (int i = 0; i < _trackPoints.length; i++) {
+      final point = _trackPoints[i];
+      // Use minutes since midnight as x-axis value
+      final timeOfDay = point.timestamp.hour * 60.0 + point.timestamp.minute + point.timestamp.second / 60.0;
+      final altitude = point.gpsAltitude.toDouble();
+      spots.add(FlSpot(timeOfDay, altitude));
+    }
+
+    return spots;
+  }
+
+  /// Get the X-coordinate (time) for the selected point
+  double? _getSelectedPointTime() {
+    if (_selectedPointIndex == null || _selectedPointIndex! >= _trackPoints.length) {
+      return null;
+    }
+
+    final selectedPoint = _trackPoints[_selectedPointIndex!];
+    // Return minutes since midnight
+    return selectedPoint.timestamp.hour * 60.0 + selectedPoint.timestamp.minute + selectedPoint.timestamp.second / 60.0;
+  }
+
+  /// Handle tap on altitude chart to select point
+  void _handleAltitudeChartTap(double timeMinutes) {
+    if (_trackPoints.isEmpty) return;
+    
+    // Find the closest point to the tapped time
+    int closestIndex = 0;
+    double minDiff = double.infinity;
+
+    for (int i = 0; i < _trackPoints.length; i++) {
+      final pointTime = _trackPoints[i].timestamp.hour * 60.0 + _trackPoints[i].timestamp.minute + _trackPoints[i].timestamp.second / 60.0;
+      final diff = (pointTime - timeMinutes).abs();
+      
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestIndex = i;
+      }
+    }
+
+    setState(() {
+      _selectedPointIndex = closestIndex;
+      _selectedPointScreenPosition = null; // Reset screen position
+    });
+    
+    _createMarkers();
   }
 }
 
