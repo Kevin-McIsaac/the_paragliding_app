@@ -70,7 +70,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                     children: [
                       // Yearly Statistics Section
                       if (_yearlyStats.isNotEmpty) ...[
-                        _buildSectionHeader('Hours Flown by Year', Icons.calendar_today),
+                        _buildSectionHeader('Flights by Year', Icons.calendar_today),
                         const SizedBox(height: 8),
                         _buildYearlyStatsTable(),
                         const SizedBox(height: 24),
@@ -78,7 +78,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                       
                       // Wing Statistics Section
                       if (_wingStats.isNotEmpty) ...[
-                        _buildSectionHeader('Hours by Wing', Icons.paragliding),
+                        _buildSectionHeader('Flights by Wing', Icons.paragliding),
                         const SizedBox(height: 8),
                         _buildWingStatsTable(),
                         const SizedBox(height: 24),
@@ -86,7 +86,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                       
                       // Site Statistics Section
                       if (_siteStats.isNotEmpty) ...[
-                        _buildSectionHeader('Launches by Site', Icons.location_on),
+                        _buildSectionHeader('Flights by Site', Icons.location_on),
                         const SizedBox(height: 8),
                         _buildSiteStatsTable(),
                       ],
