@@ -40,6 +40,16 @@ class FlightTrackConfig {
         showAltitudeChart = false,
         height = 250;
 
+  FlightTrackConfig.embeddedMap()
+      : embedded = true,
+        showLegend = true,
+        showFAB = true,
+        showStats = false,
+        interactive = true,
+        showStraightLine = true,
+        showAltitudeChart = false,
+        height = 400;
+
   FlightTrackConfig.embeddedWithControls()
       : embedded = true,
         showLegend = true,
@@ -54,7 +64,7 @@ class FlightTrackConfig {
       : embedded = false,
         showLegend = true,
         showFAB = true,
-        showStats = true,
+        showStats = false,
         interactive = true,
         showStraightLine = true,
         showAltitudeChart = true,

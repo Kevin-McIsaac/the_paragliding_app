@@ -7,6 +7,7 @@ import '../../data/repositories/flight_repository.dart';
 import '../../data/repositories/site_repository.dart';
 import '../../data/repositories/wing_repository.dart';
 import '../widgets/flight_track_widget.dart';
+import '../widgets/flight_statistics_widget.dart';
 import 'flight_track_screen.dart';
 
 class FlightDetailScreen extends StatefulWidget {
@@ -529,6 +530,27 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
 
                     const SizedBox(height: 16),
 
+                    // Flight Statistics Card (if track data available)
+                    if (_flight.trackLogPath != null)
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Flight Statistics',
+                                style: Theme.of(context).textTheme.titleLarge,
+                              ),
+                              const SizedBox(height: 16),
+                              FlightStatisticsWidget(flight: _flight),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                    const SizedBox(height: 16),
+
                     // Flight Track Visualization (if available)
                     if (_flight.trackLogPath != null)
                       Card(
@@ -560,7 +582,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                               const SizedBox(height: 16),
                               FlightTrackWidget(
                                 flight: _flight,
-                                config: FlightTrackConfig.embeddedWithControls(),
+                                config: FlightTrackConfig.embeddedMap(),
                               ),
                             ],
                           ),
