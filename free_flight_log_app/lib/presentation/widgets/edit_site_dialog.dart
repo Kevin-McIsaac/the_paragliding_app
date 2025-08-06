@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../data/models/site.dart';
 
 class EditSiteDialog extends StatefulWidget {
@@ -312,7 +313,7 @@ class _EditSiteDialogState extends State<EditSiteDialog> with SingleTickerProvid
               urlTemplate: _showSatelliteView 
                 ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
                 : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'com.example.free_flight_log_app',
+              userAgentPackageName: 'com.freeflightlog.free_flight_log_app',
             ),
             MarkerLayer(
               markers: [
@@ -328,26 +329,51 @@ class _EditSiteDialogState extends State<EditSiteDialog> with SingleTickerProvid
                 ),
               ],
             ),
-            // Attribution overlay for satellite tiles
-            if (_showSatelliteView)
-              Align(
-                alignment: Alignment.bottomRight,
-                child: Container(
-                  margin: const EdgeInsets.all(4),
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.8),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                  child: Text(
-                    'Powered by Esri',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.black87,
+            // Attribution overlay - required for OSM and satellite tiles
+            Align(
+              alignment: Alignment.bottomRight,
+              child: Container(
+                margin: const EdgeInsets.all(4),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_showSatelliteView) ...[
+                      Text(
+                        'Powered by Esri',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const Text(' | ', style: TextStyle(fontSize: 10, color: Colors.black54)),
+                    ],
+                    GestureDetector(
+                      onTap: () async {
+                        final uri = Uri.parse('https://www.openstreetmap.org/copyright');
+                        try {
+                          await launchUrl(uri, mode: LaunchMode.platformDefault);
+                        } catch (e) {
+                          print('Could not launch URL: $e');
+                        }
+                      },
+                      child: Text(
+                        '© OpenStreetMap contributors',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.blue[800],
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
+            ),
           ],
             ),
           ),

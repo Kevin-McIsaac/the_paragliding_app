@@ -9,6 +9,7 @@ import 'wing_management_screen.dart';
 import 'manage_sites_screen.dart';
 import 'statistics_screen.dart';
 import 'database_settings_screen.dart';
+import 'about_screen.dart';
 
 class FlightListScreen extends StatefulWidget {
   const FlightListScreen({super.key});
@@ -308,6 +309,12 @@ class _FlightListScreenState extends State<FlightListScreen> {
                         builder: (context) => const DatabaseSettingsScreen(),
                       ),
                     );
+                  } else if (value == 'about') {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const AboutScreen(),
+                      ),
+                    );
                   }
                 },
                 itemBuilder: (context) => [
@@ -380,6 +387,17 @@ class _FlightListScreenState extends State<FlightListScreen> {
                         Icon(Icons.storage),
                         SizedBox(width: 8),
                         Text('Database Settings'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(
+                    value: 'about',
+                    child: Row(
+                      children: [
+                        Icon(Icons.info),
+                        SizedBox(width: 8),
+                        Text('About'),
                       ],
                     ),
                   ),
