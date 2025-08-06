@@ -47,10 +47,18 @@ cd free_flight_log_app
 flutter pub get
 
 # Run on Linux desktop (recommended for development)
-flutter run -d linux
+# Using convenience script with OSM compliance flag
+./run.sh
+
+# Or run directly with OSM compliance flag to suppress flutter_map warning
+flutter run -d linux --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
 
 # Run on Android (device must be connected)
-flutter run -d android
+flutter run -d android --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
+
+# Build for production (includes OSM compliance flag)
+./build.sh linux
+./build.sh apk --release
 ```
 
 For comprehensive development setup, build commands, testing, and troubleshooting, see [DEVELOPMENT.md](DEVELOPMENT.md).
@@ -100,6 +108,7 @@ For detailed technical architecture, database schema, and implementation details
 - Timezone-aware time display for international flight logging
 - Automatic midnight crossing duration correction
 - Track distance analysis with sortable flight list columns
+- **OpenStreetMap Compliance**: Full compliance with OSM tile usage policy including attribution, user agent, and contact information
 
 ## Project History
 

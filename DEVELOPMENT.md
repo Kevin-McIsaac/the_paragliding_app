@@ -13,10 +13,11 @@ cd free_flight_log_app
 flutter pub get
 
 # Run on Linux desktop (recommended for development)
-flutter run -d linux
+# Note: Includes OSM compliance flag to suppress flutter_map warning
+flutter run -d linux --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
 
 # Run on Android (device must be connected)
-flutter run -d android
+flutter run -d android --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
 ```
 
 ### Development Environment Setup
@@ -54,10 +55,11 @@ cd free_flight_log_app
 flutter pub get
 
 # Run on Linux desktop (recommended for development)
-flutter run -d linux
+# Note: Includes OSM compliance flag to suppress flutter_map warning
+flutter run -d linux --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
 
 # Run on Android device (must be connected with USB debugging)
-flutter run -d android
+flutter run -d android --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
 
 # Check available devices
 flutter devices
@@ -72,16 +74,17 @@ flutter devices
 flutter clean
 
 # Build Linux desktop app
-flutter build linux
+# Note: Includes OSM compliance flag to suppress flutter_map warning
+flutter build linux --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
 
 # Build Android APK (debug)
-flutter build apk --debug
+flutter build apk --debug --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
 
 # Build Android APK (release)
-flutter build apk --release
+flutter build apk --release --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
 
 # Build Android App Bundle for Play Store
-flutter build appbundle --release
+flutter build appbundle --release --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
 ```
 
 ### Development Tools
