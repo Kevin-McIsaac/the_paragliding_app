@@ -113,3 +113,6 @@ For detailed technical architecture, database schema, and implementation details
 ## Project History
 
 For complete project history and detailed changelog, see [CHANGELOG.md](CHANGELOG.md).
+
+## Development Reminders
+- After running flutter analyze, review the output and fix

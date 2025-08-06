@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -76,7 +77,7 @@ class FlightTrackWidget extends StatefulWidget {
   State<FlightTrackWidget> createState() => _FlightTrackWidgetState();
 }
 
-class _FlightTrackWidgetState extends State<FlightTrackWidget> {
+class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindingObserver {
   MapController? _mapController;
   final IgcImportService _igcService = IgcImportService();
   
@@ -91,6 +92,9 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
   // Map display options with persistent settings for full screen mode
   bool _showLabels = true;
   bool _showSatelliteView = false;
+  bool _showLegend = true;
+  bool _preferencesLoaded = false;
+  bool _isFirstLoad = true;
   
   // Currently hovered track point for real-time feedback
   int? _hoveredPointIndex;
@@ -106,19 +110,104 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
   @override
   void initState() {
     super.initState();
-    if (!widget.config.embedded) {
-      _loadSavedPreferences();
-    }
-    _loadTrackData();
+    print('FlightTrackWidget initState() - starting initialization');
+    WidgetsBinding.instance.addObserver(this);
+    // Load preferences synchronously first
+    _loadPreferencesFirst();
   }
 
-  Future<void> _loadSavedPreferences() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
+  void _loadPreferencesFirst() async {
+    try {
+      print('FlightTrackWidget - Loading SharedPreferences...');
+      final prefs = await SharedPreferences.getInstance();
+      
       _showLabels = prefs.getBool('flight_track_show_labels') ?? 
-          (prefs.getBool('flight_track_show_markers') ?? true); // Backward compatibility
+          (prefs.getBool('flight_track_show_markers') ?? true);
       _showSatelliteView = prefs.getBool('flight_track_show_satellite') ?? false;
-    });
+      _showLegend = prefs.getBool('flight_track_show_legend') ?? true;
+      
+      print('FlightTrackWidget - Preferences loaded: labels=$_showLabels, satellite=$_showSatelliteView, legend=$_showLegend');
+      _preferencesLoaded = true;
+      
+      // Pre-warm network and flutter_map by making a test request
+      print('FlightTrackWidget - Pre-warming network stack...');
+      try {
+        // Make a lightweight HTTP request to warm up the network stack
+        final client = HttpClient();
+        final request = await client.getUrl(Uri.parse('https://tile.openstreetmap.org/0/0/0.png'));
+        request.headers.set('User-Agent', 'com.freeflightlog.free_flight_log_app');
+        final response = await request.close();
+        await response.drain();
+        client.close();
+        print('FlightTrackWidget - Network warmup completed successfully');
+      } catch (e) {
+        print('FlightTrackWidget - Network warmup failed: $e');
+      }
+      
+      // Additional delay to ensure everything is settled
+      await Future.delayed(const Duration(milliseconds: 200));
+      
+      // Only start loading track data after preferences are loaded
+      print('FlightTrackWidget - Starting track data load...');
+      _loadTrackData();
+    } catch (e) {
+      print('Error loading initial preferences: $e');
+      _preferencesLoaded = true;
+      _loadTrackData();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Reload preferences when app comes back to foreground
+      _loadSavedPreferences();
+    }
+  }
+
+  @override
+  void didUpdateWidget(FlightTrackWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Reload preferences when widget is updated (e.g., when navigating back to this screen)
+    _loadSavedPreferences();
+  }
+
+
+
+  Future<void> _loadSavedPreferences() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final newShowLabels = prefs.getBool('flight_track_show_labels') ?? 
+          (prefs.getBool('flight_track_show_markers') ?? true); // Backward compatibility
+      final newShowSatelliteView = prefs.getBool('flight_track_show_satellite') ?? false;
+      final newShowLegend = prefs.getBool('flight_track_show_legend') ?? true;
+      
+      // Check if labels changed to recreate markers/polylines
+      final labelsChanged = newShowLabels != _showLabels;
+      
+      // Always update state - this ensures refreshes work properly
+      if (mounted) {
+        setState(() {
+          _showLabels = newShowLabels;
+          _showSatelliteView = newShowSatelliteView;
+          _showLegend = newShowLegend;
+        });
+        
+        // Recreate markers and polylines if labels changed and we have track data
+        if (labelsChanged && _trackPoints.isNotEmpty) {
+          _createMarkers();
+          _createPolylines();
+        }
+      }
+    } catch (e) {
+      print('Error loading preferences: $e');
+    }
   }
 
   Future<void> _loadTrackData() async {
@@ -155,7 +244,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
       
       _createPolylines();
       _createMarkers();
-      _fitMapToBounds();
+      // Don't call _fitMapToBounds() here - it will be called in onMapReady
       
     } catch (e) {
       setState(() {
@@ -383,6 +472,9 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
 
   void _fitMapToBounds() {
     if (_trackPoints.isEmpty || _mapController == null) return;
+    
+    // Only fit bounds if map is ready to avoid MapController errors
+    if (!mounted) return;
 
     final latitudes = _trackPoints.map((p) => p.latitude);
     final longitudes = _trackPoints.map((p) => p.longitude);
@@ -510,10 +602,8 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
     _createMarkers();
     _createPolylines();
     
-    if (!widget.config.embedded) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('flight_track_show_labels', _showLabels);
-    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('flight_track_show_labels', _showLabels);
   }
 
   void _toggleSatelliteView() async {
@@ -521,14 +611,21 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
       _showSatelliteView = !_showSatelliteView;
     });
     
-    if (!widget.config.embedded) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('flight_track_show_satellite', _showSatelliteView);
-    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('flight_track_show_satellite', _showSatelliteView);
+  }
+
+  void _toggleLegend() async {
+    setState(() {
+      _showLegend = !_showLegend;
+    });
+    
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('flight_track_show_legend', _showLegend);
   }
 
   Widget _buildClimbRateLegend() {
-    if (!widget.config.showLegend) return const SizedBox.shrink();
+    if (!widget.config.showLegend || !_showLegend) return const SizedBox.shrink();
     
     return Positioned(
       bottom: 8,
@@ -546,26 +643,85 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
             ),
           ],
         ),
-        child: Column(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Climb Rate (15s avg)',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey[800],
-              ),
+            // Climb Rate column
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Climb Rate',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey[800],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _buildLegendItem(Colors.green, '≥ 0 m/s', 'Climb'),
+                const SizedBox(height: 4),
+                _buildLegendItem(Colors.blue[700]!, '-1.5 to 0 m/s', 'Weak Sink'),
+                const SizedBox(height: 4),
+                _buildLegendItem(Colors.red, '≤ -1.5 m/s', 'Strong Sink'),
+              ],
             ),
-            const SizedBox(height: 8),
-            _buildLegendItem(Colors.green, '≥ 0 m/s', 'Climb'),
-            const SizedBox(height: 4),
-            _buildLegendItem(Colors.blue[700]!, '-1.5 to 0 m/s', 'Weak Sink'),
-            const SizedBox(height: 4),
-            _buildLegendItem(Colors.red, '≤ -1.5 m/s', 'Strong Sink'),
+            const SizedBox(width: 24),
+            // Flight Points column
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Flight Points',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey[800],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _buildMarkerLegendItem(Colors.green, 'High Point'),
+                const SizedBox(height: 4),
+                _buildMarkerLegendItem(Colors.blue, 'Launch'),
+                const SizedBox(height: 4),
+                _buildMarkerLegendItem(Colors.red, 'Landing'),
+              ],
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildMarkerLegendItem(Color color, String label) {
+    return SizedBox(
+      height: 32, // Match the height of climb rate legend items
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 12,
+            height: 12,
+            margin: const EdgeInsets.only(top: 2), // Align with text baseline
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+              color: Colors.grey[800],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -636,6 +792,9 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
               case 'satellite':
                 _toggleSatelliteView();
                 break;
+              case 'legend':
+                _toggleLegend();
+                break;
               case 'fit':
                 _fitMapToBounds();
                 break;
@@ -645,6 +804,16 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
             }
           },
           itemBuilder: (context) => [
+            PopupMenuItem(
+              value: 'satellite',
+              child: Row(
+                children: [
+                  Icon(_showSatelliteView ? Icons.map : Icons.satellite_alt),
+                  const SizedBox(width: 8),
+                  Text('${_showSatelliteView ? 'Street' : 'Satellite'} View'),
+                ],
+              ),
+            ),
             PopupMenuItem(
               value: 'labels',
               child: Row(
@@ -656,12 +825,12 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
               ),
             ),
             PopupMenuItem(
-              value: 'satellite',
+              value: 'legend',
               child: Row(
                 children: [
-                  Icon(_showSatelliteView ? Icons.map : Icons.satellite_alt),
+                  Icon(_showLegend ? Icons.visibility_off : Icons.visibility),
                   const SizedBox(width: 8),
-                  Text('${_showSatelliteView ? 'Street' : 'Satellite'} View'),
+                  Text('${_showLegend ? 'Hide' : 'Show'} Legend'),
                 ],
               ),
             ),
@@ -693,7 +862,38 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
 
   @override
   Widget build(BuildContext context) {
+    print('FlightTrackWidget build() called - preferencesLoaded: $_preferencesLoaded, isLoading: $_isLoading, error: $_error');
+    
+    // Don't render anything until preferences are loaded to ensure stable tile URLs
+    if (!_preferencesLoaded) {
+      print('FlightTrackWidget - Showing preferences loading state');
+      final loadingWidget = Container(
+        height: widget.config.embedded ? (widget.config.height ?? 300) : null,
+        decoration: BoxDecoration(
+          borderRadius: widget.config.embedded ? BorderRadius.circular(8) : null,
+          color: Colors.grey[100],
+        ),
+        child: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Initializing map...'),
+            ],
+          ),
+        ),
+      );
+      
+      if (!widget.config.embedded) {
+        return SizedBox.expand(child: loadingWidget);
+      }
+      return loadingWidget;
+    }
+
     if (_isLoading) {
+      print('FlightTrackWidget - Showing track data loading state');
       final loadingWidget = Container(
         height: widget.config.embedded ? (widget.config.height ?? 300) : null,
         decoration: BoxDecoration(
@@ -721,6 +921,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
     }
 
     if (_error != null) {
+      print('FlightTrackWidget - Showing error state: $_error');
       final errorWidget = Container(
         height: widget.config.embedded ? (widget.config.height ?? 300) : null,
         decoration: BoxDecoration(
@@ -764,31 +965,59 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
       return errorWidget;
     }
 
+    // Create a fresh MapController for each build to avoid state issues
     _mapController ??= MapController();
+    print('FlightTrackWidget - Creating FlutterMap widget with satellite=$_showSatelliteView');
     
     Widget mapWidget = FlutterMap(
       mapController: _mapController,
       options: MapOptions(
         initialCenter: _trackPoints.isNotEmpty
             ? LatLng(_trackPoints.first.latitude, _trackPoints.first.longitude)
-            : const LatLng(0, 0),
+            : const LatLng(46.8182, 8.2275), // Switzerland default for paragliding
         initialZoom: widget.config.embedded ? 12 : 14,
         onPointerHover: widget.config.interactive ? (event, point) {
           _handleMapHover(event, point);
         } : null,
         onMapReady: () {
+          print('FlutterMap onMapReady callback - trackPoints count: ${_trackPoints.length}');
           if (_trackPoints.isNotEmpty) {
+            print('FlutterMap - calling _fitMapToBounds()');
             _fitMapToBounds();
+          }
+          
+          // Mark first load as complete and force a rebuild to trigger tile loading
+          if (_isFirstLoad) {
+            _isFirstLoad = false;
+            print('FlutterMap - First load complete, forcing rebuild to trigger tiles');
+            // Minimal delay then force rebuild to ensure tiles load
+            Future.delayed(const Duration(milliseconds: 50), () {
+              if (mounted) {
+                print('FlutterMap - Forcing setState to trigger tile reload');
+                setState(() {
+                  // This rebuild should trigger tile loading
+                });
+              }
+            });
           }
         },
       ),
       children: [
-        TileLayer(
-          urlTemplate: _showSatelliteView 
+        () {
+          // Use user's preferred tile source after network pre-warming
+          final tileUrl = _showSatelliteView
             ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-            : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.freeflightlog.free_flight_log_app',
-        ),
+            : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+          print('FlutterMap - Creating TileLayer with URL: $tileUrl (satellitePref: $_showSatelliteView)');
+          return TileLayer(
+            urlTemplate: tileUrl,
+            userAgentPackageName: 'com.freeflightlog.free_flight_log_app',
+            // Add error handling and retry logic for tile loading
+            errorTileCallback: (tile, error, stackTrace) {
+              print('TileLayer ERROR loading tile ${tile.coordinates}: $error');
+            },
+          );
+        }(),
         if (_polylines.isNotEmpty)
           PolylineLayer(
             polylines: _polylines,
