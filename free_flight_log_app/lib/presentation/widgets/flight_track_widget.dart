@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -79,6 +78,7 @@ class FlightTrackWidget extends StatefulWidget {
 
 class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindingObserver {
   MapController? _mapController;
+  bool _mapControllerReady = false;
   final IgcImportService _igcService = IgcImportService();
   
   List<IgcPoint> _trackPoints = [];
@@ -93,8 +93,8 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
   bool _showLabels = true;
   bool _showSatelliteView = false;
   bool _showLegend = true;
-  bool _preferencesLoaded = false;
   bool _isFirstLoad = true;
+  bool _preferencesLoaded = false;
   
   // Currently hovered track point for real-time feedback
   int? _hoveredPointIndex;
@@ -110,51 +110,24 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
   @override
   void initState() {
     super.initState();
-    print('FlightTrackWidget initState() - starting initialization');
     WidgetsBinding.instance.addObserver(this);
-    // Load preferences synchronously first
-    _loadPreferencesFirst();
+    _initializeWidget();
   }
 
-  void _loadPreferencesFirst() async {
-    try {
-      print('FlightTrackWidget - Loading SharedPreferences...');
-      final prefs = await SharedPreferences.getInstance();
-      
-      _showLabels = prefs.getBool('flight_track_show_labels') ?? 
-          (prefs.getBool('flight_track_show_markers') ?? true);
-      _showSatelliteView = prefs.getBool('flight_track_show_satellite') ?? false;
-      _showLegend = prefs.getBool('flight_track_show_legend') ?? true;
-      
-      print('FlightTrackWidget - Preferences loaded: labels=$_showLabels, satellite=$_showSatelliteView, legend=$_showLegend');
-      _preferencesLoaded = true;
-      
-      // Pre-warm network and flutter_map by making a test request
-      print('FlightTrackWidget - Pre-warming network stack...');
-      try {
-        // Make a lightweight HTTP request to warm up the network stack
-        final client = HttpClient();
-        final request = await client.getUrl(Uri.parse('https://tile.openstreetmap.org/0/0/0.png'));
-        request.headers.set('User-Agent', 'com.freeflightlog.free_flight_log_app');
-        final response = await request.close();
-        await response.drain();
-        client.close();
-        print('FlightTrackWidget - Network warmup completed successfully');
-      } catch (e) {
-        print('FlightTrackWidget - Network warmup failed: $e');
-      }
-      
-      // Additional delay to ensure everything is settled
-      await Future.delayed(const Duration(milliseconds: 200));
-      
-      // Only start loading track data after preferences are loaded
-      print('FlightTrackWidget - Starting track data load...');
-      _loadTrackData();
-    } catch (e) {
-      print('Error loading initial preferences: $e');
-      _preferencesLoaded = true;
-      _loadTrackData();
-    }
+  Future<void> _initializeWidget() async {
+    // Load preferences first to ensure stable tile URLs
+    await _loadSavedPreferences();
+    
+    // Add a delay specifically for ChromeOS/Linux container cold start
+    await Future.delayed(const Duration(milliseconds: 300));
+    
+    // Mark map controller as ready
+    setState(() {
+      _mapControllerReady = true;
+    });
+    
+    // Then load track data
+    _loadTrackData();
   }
 
   @override
@@ -179,7 +152,6 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
   }
 
 
-
   Future<void> _loadSavedPreferences() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -191,12 +163,12 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
       // Check if labels changed to recreate markers/polylines
       final labelsChanged = newShowLabels != _showLabels;
       
-      // Always update state - this ensures refreshes work properly
       if (mounted) {
         setState(() {
           _showLabels = newShowLabels;
           _showSatelliteView = newShowSatelliteView;
           _showLegend = newShowLegend;
+          _preferencesLoaded = true;
         });
         
         // Recreate markers and polylines if labels changed and we have track data
@@ -206,7 +178,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
         }
       }
     } catch (e) {
-      print('Error loading preferences: $e');
+      _preferencesLoaded = true; // Ensure we don't block forever on error
     }
   }
 
@@ -862,38 +834,8 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
 
   @override
   Widget build(BuildContext context) {
-    print('FlightTrackWidget build() called - preferencesLoaded: $_preferencesLoaded, isLoading: $_isLoading, error: $_error');
-    
-    // Don't render anything until preferences are loaded to ensure stable tile URLs
-    if (!_preferencesLoaded) {
-      print('FlightTrackWidget - Showing preferences loading state');
-      final loadingWidget = Container(
-        height: widget.config.embedded ? (widget.config.height ?? 300) : null,
-        decoration: BoxDecoration(
-          borderRadius: widget.config.embedded ? BorderRadius.circular(8) : null,
-          color: Colors.grey[100],
-        ),
-        child: const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Initializing map...'),
-            ],
-          ),
-        ),
-      );
-      
-      if (!widget.config.embedded) {
-        return SizedBox.expand(child: loadingWidget);
-      }
-      return loadingWidget;
-    }
-
-    if (_isLoading) {
-      print('FlightTrackWidget - Showing track data loading state');
+    // Don't render map until preferences are loaded AND map controller is ready
+    if (!_preferencesLoaded || !_mapControllerReady || _isLoading) {
       final loadingWidget = Container(
         height: widget.config.embedded ? (widget.config.height ?? 300) : null,
         decoration: BoxDecoration(
@@ -921,7 +863,6 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     }
 
     if (_error != null) {
-      print('FlightTrackWidget - Showing error state: $_error');
       final errorWidget = Container(
         height: widget.config.embedded ? (widget.config.height ?? 300) : null,
         decoration: BoxDecoration(
@@ -965,9 +906,8 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
       return errorWidget;
     }
 
-    // Create a fresh MapController for each build to avoid state issues
+    // Create MapController only when we're ready to avoid cold start issues
     _mapController ??= MapController();
-    print('FlightTrackWidget - Creating FlutterMap widget with satellite=$_showSatelliteView');
     
     Widget mapWidget = FlutterMap(
       mapController: _mapController,
@@ -980,44 +920,28 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
           _handleMapHover(event, point);
         } : null,
         onMapReady: () {
-          print('FlutterMap onMapReady callback - trackPoints count: ${_trackPoints.length}');
           if (_trackPoints.isNotEmpty) {
-            print('FlutterMap - calling _fitMapToBounds()');
             _fitMapToBounds();
           }
           
-          // Mark first load as complete and force a rebuild to trigger tile loading
+          // Force rebuild on first load to trigger tile loading  
           if (_isFirstLoad) {
             _isFirstLoad = false;
-            print('FlutterMap - First load complete, forcing rebuild to trigger tiles');
-            // Minimal delay then force rebuild to ensure tiles load
-            Future.delayed(const Duration(milliseconds: 50), () {
+            Future.delayed(const Duration(milliseconds: 200), () {
               if (mounted) {
-                print('FlutterMap - Forcing setState to trigger tile reload');
-                setState(() {
-                  // This rebuild should trigger tile loading
-                });
+                setState(() {});
               }
             });
           }
         },
       ),
       children: [
-        () {
-          // Use user's preferred tile source after network pre-warming
-          final tileUrl = _showSatelliteView
+        TileLayer(
+          urlTemplate: _showSatelliteView 
             ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-            : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-          print('FlutterMap - Creating TileLayer with URL: $tileUrl (satellitePref: $_showSatelliteView)');
-          return TileLayer(
-            urlTemplate: tileUrl,
-            userAgentPackageName: 'com.freeflightlog.free_flight_log_app',
-            // Add error handling and retry logic for tile loading
-            errorTileCallback: (tile, error, stackTrace) {
-              print('TileLayer ERROR loading tile ${tile.coordinates}: $error');
-            },
-          );
-        }(),
+            : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'com.freeflightlog.free_flight_log_app',
+        ),
         if (_polylines.isNotEmpty)
           PolylineLayer(
             polylines: _polylines,
