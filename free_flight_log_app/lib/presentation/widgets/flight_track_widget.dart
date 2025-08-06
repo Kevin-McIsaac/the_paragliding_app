@@ -181,7 +181,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
         points: [launchPoint, landingPoint],
         color: Colors.grey,
         strokeWidth: 4.0,
-        isDotted: true,
+        pattern: const StrokePattern.dotted(),
       );
       polylines.add(straightLinePolyline);
     }
@@ -407,13 +407,13 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
 
     // Check for label hover using pixel-based detection
     String? newHoveredLabel;
-    final hoveredScreenPoint = _mapController?.camera.latLngToScreenPoint(hoveredPoint);
+    final hoveredScreenPoint = _mapController?.camera.latLngToScreenOffset(hoveredPoint);
     
     if (hoveredScreenPoint != null) {
       const double hoverRadiusPixels = 12.0; // Match the circle radius (18px marker = 9px radius + 3px for easier targeting)
       
       if (_launchPosition != null) {
-        final launchScreenPoint = _mapController!.camera.latLngToScreenPoint(_launchPosition!);
+        final launchScreenPoint = _mapController!.camera.latLngToScreenOffset(_launchPosition!);
         final pixelDistance = _calculatePixelDistance(hoveredScreenPoint, launchScreenPoint);
         if (pixelDistance <= hoverRadiusPixels) {
           newHoveredLabel = 'Launch';
@@ -421,7 +421,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
       }
       
       if (newHoveredLabel == null && _landingPosition != null) {
-        final landingScreenPoint = _mapController!.camera.latLngToScreenPoint(_landingPosition!);
+        final landingScreenPoint = _mapController!.camera.latLngToScreenOffset(_landingPosition!);
         final pixelDistance = _calculatePixelDistance(hoveredScreenPoint, landingScreenPoint);
         if (pixelDistance <= hoverRadiusPixels) {
           newHoveredLabel = 'Landing';
@@ -429,7 +429,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
       }
       
       if (newHoveredLabel == null && _highPointPosition != null) {
-        final highPointScreenPoint = _mapController!.camera.latLngToScreenPoint(_highPointPosition!);
+        final highPointScreenPoint = _mapController!.camera.latLngToScreenOffset(_highPointPosition!);
         final pixelDistance = _calculatePixelDistance(hoveredScreenPoint, highPointScreenPoint);
         if (pixelDistance <= hoverRadiusPixels) {
           newHoveredLabel = 'High Point';
@@ -495,9 +495,9 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
     return earthRadius * c;
   }
 
-  double _calculatePixelDistance(Point<double> point1, Point<double> point2) {
-    final dx = point1.x - point2.x;
-    final dy = point1.y - point2.y;
+  double _calculatePixelDistance(Offset point1, Offset point2) {
+    final dx = point1.dx - point2.dx;
+    final dy = point1.dy - point2.dy;
     return sqrt(dx * dx + dy * dy);
   }
 
@@ -896,14 +896,14 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
     // Calculate screen position from the map coordinates
     final hoveredPoint = _trackPoints[_hoveredPointIndex!];
     final hoveredLatLng = LatLng(hoveredPoint.latitude, hoveredPoint.longitude);
-    final screenPoint = _mapController?.camera.latLngToScreenPoint(hoveredLatLng);
+    final screenPoint = _mapController?.camera.latLngToScreenOffset(hoveredLatLng);
     
     if (screenPoint == null) {
       return const SizedBox.shrink();
     }
     
-    double left = screenPoint.x.toDouble();
-    double top = screenPoint.y.toDouble() - 120; // Position above the point
+    double left = screenPoint.dx;
+    double top = screenPoint.dy - 120; // Position above the point
 
     // Adjust if off-screen
     final screenWidth = MediaQuery.of(context).size.width;
@@ -911,7 +911,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
     
     if (left + 200 > screenWidth) left = screenWidth - 220;
     if (left < 20) left = 20;
-    if (top < 20) top = screenPoint.y.toDouble() + 40; // Position below if no room above
+    if (top < 20) top = screenPoint.dy + 40; // Position below if no room above
     if (top + 100 > screenHeight) top = screenHeight - 120;
 
     return Positioned(
