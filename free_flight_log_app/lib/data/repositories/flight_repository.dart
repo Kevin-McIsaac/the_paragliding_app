@@ -271,20 +271,25 @@ class FlightRepository {
     List<Map<String, dynamic>> results = await db.rawQuery('''
       SELECT 
         s.name as site_name,
+        s.country as country,
         COUNT(f.id) as flight_count,
         SUM(f.duration) as total_minutes,
         MAX(f.max_altitude) as max_altitude
       FROM sites s
       LEFT JOIN flights f ON f.launch_site_id = s.id
       WHERE f.id IS NOT NULL
-      GROUP BY s.id, s.name
-      ORDER BY flight_count DESC, s.name ASC
+      GROUP BY s.id, s.name, s.country
+      ORDER BY 
+        CASE WHEN s.country IS NULL THEN 1 ELSE 0 END,
+        s.country ASC,
+        s.name ASC
     ''');
     
     return results.map((row) {
       final totalMinutes = (row['total_minutes'] as int?) ?? 0;
       return {
         'site_name': row['site_name'] ?? 'Unknown',
+        'country': row['country'] ?? 'Unknown Country',
         'flight_count': row['flight_count'] ?? 0,
         'total_hours': totalMinutes / 60.0,
         'max_altitude': row['max_altitude'] ?? 0,

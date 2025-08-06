@@ -490,11 +490,20 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   }
 
   Widget _buildSiteStatsTable() {
-    // Calculate totals
+    // Group sites by country
+    Map<String, List<Map<String, dynamic>>> groupedSites = {};
     double totalHours = 0;
     int totalFlights = 0;
     double maxAltitude = 0;
+    
     for (final stat in _siteStats) {
+      final country = stat['country'] as String;
+      if (!groupedSites.containsKey(country)) {
+        groupedSites[country] = [];
+      }
+      groupedSites[country]!.add(stat);
+      
+      // Calculate totals
       totalHours += stat['total_hours'] as double;
       totalFlights += stat['flight_count'] as int;
       final altitude = stat['max_altitude'] as double;
@@ -502,6 +511,14 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         maxAltitude = altitude;
       }
     }
+    
+    // Sort countries (Unknown Country at the end)
+    final sortedCountries = groupedSites.keys.toList();
+    sortedCountries.sort((a, b) {
+      if (a == 'Unknown Country' && b != 'Unknown Country') return 1;
+      if (b == 'Unknown Country' && a != 'Unknown Country') return -1;
+      return a.compareTo(b);
+    });
     
     return Card(
       elevation: 2,
@@ -565,57 +582,103 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
               ),
             ),
             
-            // Data Rows
-            ..._siteStats.map((stat) => Container(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(
-                    color: Theme.of(context).dividerColor.withOpacity(0.3),
+            // Country Groups
+            ...sortedCountries.expand((country) {
+              final sites = groupedSites[country]!;
+              return [
+                // Country Header (only show if more than one country)
+                if (groupedSites.keys.length > 1)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5),
+                      border: Border(
+                        bottom: BorderSide(
+                          color: Theme.of(context).dividerColor.withOpacity(0.5),
+                        ),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.flag,
+                          size: 16,
+                          color: Theme.of(context).colorScheme.onPrimaryContainer,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          country,
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).colorScheme.onPrimaryContainer,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '${sites.length} ${sites.length == 1 ? 'site' : 'sites'}',
+                          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: Theme.of(context).colorScheme.onPrimaryContainer,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: 4,
-                    child: Text(
-                      stat['site_name'] as String,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w500,
+                // Sites in this country
+                ...sites.map((stat) => Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(
+                        color: Theme.of(context).dividerColor.withOpacity(0.3),
                       ),
                     ),
                   ),
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      stat['flight_count'].toString(),
-                      style: Theme.of(context).textTheme.bodyLarge,
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                  Expanded(
-                    flex: 3,
-                    child: Text(
-                      _formatHours(stat['total_hours'] as double),
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.w500,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 4,
+                        child: Padding(
+                          padding: EdgeInsets.only(left: groupedSites.keys.length > 1 ? 24.0 : 0.0),
+                          child: Text(
+                            stat['site_name'] as String,
+                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
                       ),
-                      textAlign: TextAlign.center,
-                    ),
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          stat['flight_count'].toString(),
+                          style: Theme.of(context).textTheme.bodyLarge,
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      Expanded(
+                        flex: 3,
+                        child: Text(
+                          _formatHours(stat['total_hours'] as double),
+                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          '${(stat['max_altitude'] as num).toInt()}m',
+                          style: Theme.of(context).textTheme.bodyLarge,
+                          textAlign: TextAlign.right,
+                        ),
+                      ),
+                    ],
                   ),
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      '${(stat['max_altitude'] as num).toInt()}m',
-                      style: Theme.of(context).textTheme.bodyLarge,
-                      textAlign: TextAlign.right,
-                    ),
-                  ),
-                ],
-              ),
-            )).toList(),
+                )),
+              ];
+            }).toList(),
             
             // Total Row (if more than one site)
             if (_siteStats.length > 1)
@@ -635,7 +698,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                     Expanded(
                       flex: 4,
                       child: Text(
-                        'Total',
+                        'TOTAL',
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
