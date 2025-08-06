@@ -7,6 +7,7 @@ class Site {
   final String? country;
   final bool customName;
   final DateTime? createdAt;
+  final int? flightCount;
 
   Site({
     this.id,
@@ -17,6 +18,7 @@ class Site {
     this.country,
     this.customName = false,
     this.createdAt,
+    this.flightCount,
   });
 
   Map<String, dynamic> toMap() {
@@ -42,6 +44,7 @@ class Site {
       country: map['country'],
       customName: map['custom_name'] == 1,
       createdAt: map['created_at'] != null ? DateTime.parse(map['created_at']) : null,
+      flightCount: map['flight_count'],
     );
   }
 
@@ -54,6 +57,7 @@ class Site {
     String? country,
     bool? customName,
     DateTime? createdAt,
+    int? flightCount,
   }) {
     return Site(
       id: id ?? this.id,
@@ -64,6 +68,7 @@ class Site {
       country: country ?? this.country,
       customName: customName ?? this.customName,
       createdAt: createdAt ?? this.createdAt,
+      flightCount: flightCount ?? this.flightCount,
     );
   }
 }

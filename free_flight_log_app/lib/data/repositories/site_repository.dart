@@ -172,4 +172,22 @@ class SiteRepository {
       whereArgs: [siteId],
     );
   }
+
+  /// Get all sites with their flight counts (including sites with 0 flights)
+  Future<List<Site>> getSitesWithFlightCounts() async {
+    Database db = await _databaseHelper.database;
+    
+    List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT 
+        sites.*,
+        COALESCE(
+          (SELECT COUNT(*) FROM flights WHERE flights.launch_site_id = sites.id), 
+          0
+        ) as flight_count
+      FROM sites 
+      ORDER BY sites.name ASC
+    ''');
+    
+    return List.generate(maps.length, (i) => Site.fromMap(maps[i]));
+  }
 }

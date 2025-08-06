@@ -121,7 +121,7 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
   Future<void> _loadSites() async {
     setState(() => _isLoading = true);
     try {
-      final sites = await _siteRepository.getAllSites();
+      final sites = await _siteRepository.getSitesWithFlightCounts();
       setState(() {
         _sites = sites;
         _filterSites();
@@ -499,19 +499,19 @@ class _SiteListTile extends StatelessWidget {
                     'Altitude: ${site.altitude!.toStringAsFixed(0)}m',
                     style: TextStyle(color: Colors.grey[600]),
                   ),
-                  if (site.country != null) ...[
-                    Text(' • ', style: TextStyle(color: Colors.grey[600])),
-                  ],
+                  Text(' • ', style: TextStyle(color: Colors.grey[600])),
                 ],
-                if (site.country != null)
+                if (site.country != null) ...[
                   Text(
                     site.country!,
                     style: TextStyle(
                       color: Colors.grey[600],
                       fontWeight: FontWeight.w500,
                     ),
-                  )
-                else
+                  ),
+                  Text(' • ', style: TextStyle(color: Colors.grey[600])),
+                ]
+                else ...[
                   Text(
                     'Unknown Country',
                     style: TextStyle(
@@ -519,6 +519,17 @@ class _SiteListTile extends StatelessWidget {
                       fontStyle: FontStyle.italic,
                     ),
                   ),
+                  Text(' • ', style: TextStyle(color: Colors.grey[600])),
+                ],
+                Text(
+                  '${site.flightCount ?? 0} flights',
+                  style: TextStyle(
+                    color: site.flightCount != null && site.flightCount! > 0 
+                      ? Colors.green[600] 
+                      : Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ],
             ),
           ],
