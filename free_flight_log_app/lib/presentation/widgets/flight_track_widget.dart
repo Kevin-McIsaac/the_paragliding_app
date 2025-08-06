@@ -13,20 +13,16 @@ class FlightTrackConfig {
   final bool embedded;
   final bool showLegend;
   final bool showFAB;
-  final bool showStats;
   final bool interactive;
   final bool showStraightLine;
-  final bool showAltitudeChart;
   final double? height;
 
   const FlightTrackConfig({
     this.embedded = false,
     this.showLegend = true,
     this.showFAB = true,
-    this.showStats = true,
     this.interactive = true,
     this.showStraightLine = true,
-    this.showAltitudeChart = true,
     this.height,
   });
 
@@ -34,40 +30,32 @@ class FlightTrackConfig {
       : embedded = true,
         showLegend = false,
         showFAB = false,
-        showStats = false,
         interactive = false,
         showStraightLine = true,
-        showAltitudeChart = false,
         height = 250;
 
   FlightTrackConfig.embeddedMap()
       : embedded = true,
         showLegend = true,
         showFAB = true,
-        showStats = false,
         interactive = true,
         showStraightLine = true,
-        showAltitudeChart = false,
         height = 400;
 
   FlightTrackConfig.embeddedWithControls()
       : embedded = true,
         showLegend = true,
         showFAB = true,
-        showStats = true,
         interactive = true,
         showStraightLine = true,
-        showAltitudeChart = true,
-        height = 600;
+        height = 500;
 
   FlightTrackConfig.fullScreen()
       : embedded = false,
         showLegend = true,
         showFAB = true,
-        showStats = false,
         interactive = true,
         showStraightLine = true,
-        showAltitudeChart = true,
         height = null;
 }
 
@@ -790,8 +778,8 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
       ],
     );
 
-    // Wrap in container with height constraint if specified (but not when stats are shown, as height is controlled by outer SizedBox)
-    if (widget.config.height != null && !widget.config.showStats) {
+    // Wrap in container with height constraint if specified for non-embedded widgets
+    if (widget.config.height != null && !widget.config.embedded) {
       mapWidget = Container(
         height: widget.config.height,
         decoration: BoxDecoration(
@@ -817,44 +805,8 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
       );
     }
 
-    // If stats are enabled, wrap in a column with stats bar
-    if (widget.config.showStats) {
-      final stackWidget = Stack(
-        children: [
-          mapWidget,
-          _buildMapControls(),
-          _buildClimbRateLegend(),
-          _buildFloatingStats(),
-        ],
-      );
-
-      // For embedded mode, always provide bounded height
-      if (widget.config.embedded) {
-        return SizedBox(
-          height: widget.config.height ?? 350, // Default height if not specified
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildStatsBar(),
-              Expanded(child: stackWidget),
-              _buildAltitudeChart(),
-            ],
-          ),
-        );
-      } else {
-        // Full screen mode - use Flexible instead of Expanded for better constraint handling
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildStatsBar(),
-            Flexible(child: stackWidget),
-            _buildAltitudeChart(),
-          ],
-        );
-      }
-    }
-
-    return Stack(
+    // Create the main map widget with controls
+    final stackWidget = Stack(
       children: [
         mapWidget,
         _buildMapControls(),
@@ -862,126 +814,31 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
         _buildFloatingStats(),
       ],
     );
-  }
 
-  // Statistics methods
-  String _formatTime(DateTime time) {
-    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
-  }
-
-  String _formatDuration(int minutes) {
-    final hours = minutes ~/ 60;
-    final mins = minutes % 60;
-    if (hours > 0) {
-      return '${hours}h ${mins}m';
-    }
-    return '${mins}m';
-  }
-
-  Widget _buildStatsBar() {
-    if (_trackPoints.isEmpty) return const SizedBox.shrink();
-
-    final duration = _formatDuration(widget.flight.duration);
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildStatItem(
-                'Duration',
-                duration,
-                Icons.access_time,
-              ),
-              _buildStatItem(
-                'Track Distance',
-                widget.flight.distance != null 
-                    ? '${widget.flight.distance!.toStringAsFixed(1)} km'
-                    : 'N/A',
-                Icons.timeline,
-              ),
-              _buildStatItem(
-                'Max Alt',
-                widget.flight.maxAltitude != null
-                    ? '${widget.flight.maxAltitude!.toInt()} m'
-                    : 'N/A',
-                Icons.height,
-              ),
-            ],
-          ),
-          if (widget.flight.maxClimbRate != null || widget.flight.maxClimbRate5Sec != null) ...[
-            const SizedBox(height: 12),
-            const Divider(height: 1),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                if (widget.flight.maxClimbRate != null)
-                  _buildStatItem(
-                    'Max Climb (Inst)',
-                    '${widget.flight.maxClimbRate!.toStringAsFixed(1)} m/s',
-                    Icons.trending_up,
-                  ),
-                if (widget.flight.maxSinkRate != null)
-                  _buildStatItem(
-                    'Max Sink (Inst)',
-                    '${widget.flight.maxSinkRate!.toStringAsFixed(1)} m/s',
-                    Icons.trending_down,
-                  ),
-                if (widget.flight.maxClimbRate5Sec != null)
-                  _buildStatItem(
-                    'Max Climb (15s)',
-                    '${widget.flight.maxClimbRate5Sec!.toStringAsFixed(1)} m/s',
-                    Icons.trending_up,
-                  ),
-                if (widget.flight.maxSinkRate5Sec != null)
-                  _buildStatItem(
-                    'Max Sink (15s)',
-                    '${widget.flight.maxSinkRate5Sec!.toStringAsFixed(1)} m/s',
-                    Icons.trending_down,
-                  ),
-              ],
-            ),
+    // For embedded mode, always provide bounded height and include altitude chart
+    if (widget.config.embedded) {
+      return SizedBox(
+        height: widget.config.height ?? 350, // Default height if not specified
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Expanded(child: stackWidget),
+            _buildAltitudeChart(),
           ],
+        ),
+      );
+    } else {
+      // Full screen mode - use Flexible instead of Expanded for better constraint handling
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(child: stackWidget),
+          _buildAltitudeChart(),
         ],
-      ),
-    );
+      );
+    }
   }
 
-
-
-  Widget _buildStatItem(String label, String value, IconData icon) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-        ),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 10,
-            color: Colors.grey[600],
-          ),
-        ),
-      ],
-    );
-  }
 
   Widget _buildFloatingStats() {
     // Show stats if either a label is hovered OR a track point is hovered
@@ -1248,7 +1105,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
 
   /// Build altitude chart widget
   Widget _buildAltitudeChart() {
-    if (!widget.config.showAltitudeChart || _trackPoints.isEmpty) {
+    if (_trackPoints.isEmpty) {
       return const SizedBox.shrink();
     }
 

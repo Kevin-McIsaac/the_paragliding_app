@@ -582,7 +582,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                               const SizedBox(height: 16),
                               FlightTrackWidget(
                                 flight: _flight,
-                                config: FlightTrackConfig.embeddedMap(),
+                                config: FlightTrackConfig.embeddedWithControls(),
                               ),
                             ],
                           ),
