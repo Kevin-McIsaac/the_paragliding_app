@@ -13,6 +13,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   
   List<Map<String, dynamic>> _yearlyStats = [];
   List<Map<String, dynamic>> _wingStats = [];
+  List<Map<String, dynamic>> _siteStats = [];
   bool _isLoading = true;
   
   @override
@@ -25,10 +26,12 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     try {
       final yearlyStats = await _flightRepository.getYearlyStatistics();
       final wingStats = await _flightRepository.getWingStatistics();
+      final siteStats = await _flightRepository.getSiteStatistics();
       
       setState(() {
         _yearlyStats = yearlyStats;
         _wingStats = wingStats;
+        _siteStats = siteStats;
         _isLoading = false;
       });
     } catch (e) {
@@ -58,7 +61,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _yearlyStats.isEmpty && _wingStats.isEmpty
+          : _yearlyStats.isEmpty && _wingStats.isEmpty && _siteStats.isEmpty
               ? _buildEmptyState()
               : SingleChildScrollView(
                   padding: const EdgeInsets.all(16.0),
@@ -78,6 +81,14 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                         _buildSectionHeader('Hours by Wing', Icons.paragliding),
                         const SizedBox(height: 8),
                         _buildWingStatsTable(),
+                        const SizedBox(height: 24),
+                      ],
+                      
+                      // Site Statistics Section
+                      if (_siteStats.isNotEmpty) ...[
+                        _buildSectionHeader('Launches by Site', Icons.location_on),
+                        const SizedBox(height: 8),
+                        _buildSiteStatsTable(),
                       ],
                     ],
                   ),
@@ -464,6 +475,198 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                         _formatHours(totalHours),
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.right,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSiteStatsTable() {
+    // Calculate totals
+    double totalHours = 0;
+    int totalFlights = 0;
+    double maxAltitude = 0;
+    for (final stat in _siteStats) {
+      totalHours += stat['total_hours'] as double;
+      totalFlights += stat['flight_count'] as int;
+      final altitude = stat['max_altitude'] as double;
+      if (altitude > maxAltitude) {
+        maxAltitude = altitude;
+      }
+    }
+    
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            // Header Row
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                    color: Theme.of(context).dividerColor,
+                    width: 2,
+                  ),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 4,
+                    child: Text(
+                      'Site',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      'Flights',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      'Total Hours',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      'Max Alt',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.right,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            // Data Rows
+            ..._siteStats.map((stat) => Container(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                    color: Theme.of(context).dividerColor.withOpacity(0.3),
+                  ),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 4,
+                    child: Text(
+                      stat['site_name'] as String,
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      stat['flight_count'].toString(),
+                      style: Theme.of(context).textTheme.bodyLarge,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      _formatHours(stat['total_hours'] as double),
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      '${(stat['max_altitude'] as num).toInt()}m',
+                      style: Theme.of(context).textTheme.bodyLarge,
+                      textAlign: TextAlign.right,
+                    ),
+                  ),
+                ],
+              ),
+            )).toList(),
+            
+            // Total Row (if more than one site)
+            if (_siteStats.length > 1)
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+                  border: Border(
+                    top: BorderSide(
+                      color: Theme.of(context).dividerColor,
+                      width: 2,
+                    ),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 4,
+                      child: Text(
+                        'Total',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        totalFlights.toString(),
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    Expanded(
+                      flex: 3,
+                      child: Text(
+                        _formatHours(totalHours),
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        '${maxAltitude.toInt()}m',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
                         textAlign: TextAlign.right,
