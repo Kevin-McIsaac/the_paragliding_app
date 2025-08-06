@@ -494,7 +494,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     Map<String, List<Map<String, dynamic>>> groupedSites = {};
     double totalHours = 0;
     int totalFlights = 0;
-    double maxAltitude = 0;
     
     for (final stat in _siteStats) {
       final country = stat['country'] as String;
@@ -506,10 +505,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       // Calculate totals
       totalHours += stat['total_hours'] as double;
       totalFlights += stat['flight_count'] as int;
-      final altitude = stat['max_altitude'] as double;
-      if (altitude > maxAltitude) {
-        maxAltitude = altitude;
-      }
     }
     
     // Sort countries (Unknown Country at the end)
@@ -562,16 +557,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                     flex: 3,
                     child: Text(
                       'Total Hours',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      'Max Alt',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
@@ -663,14 +648,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                             color: Theme.of(context).colorScheme.primary,
                             fontWeight: FontWeight.w500,
                           ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                      Expanded(
-                        flex: 2,
-                        child: Text(
-                          '${(stat['max_altitude'] as num).toInt()}m',
-                          style: Theme.of(context).textTheme.bodyLarge,
                           textAlign: TextAlign.right,
                         ),
                       ),
@@ -720,16 +697,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                         _formatHours(totalHours),
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           color: Theme.of(context).colorScheme.primary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        '${maxAltitude.toInt()}m',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
                         textAlign: TextAlign.right,
