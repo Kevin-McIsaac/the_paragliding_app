@@ -54,7 +54,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
         _wing = await _wingRepository.getWing(_flight.wingId!);
       }
     } catch (e) {
-      print('Error loading flight details: $e');
+      // Error loading flight details - UI will show loading state ended
     } finally {
       setState(() {
         _isLoading = false;
@@ -72,14 +72,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
     return DateFormat('EEEE, MMM d, yyyy').format(date);
   }
 
-  String _formatDuration(int minutes) {
-    final hours = minutes ~/ 60;
-    final mins = minutes % 60;
-    if (hours > 0) {
-      return '${hours}h ${mins}m';
-    }
-    return '${mins}m';
-  }
 
   String _formatTimeWithTimezone(String timeStr, String? timezone) {
     if (timezone != null && timezone.isNotEmpty) {
@@ -141,50 +133,47 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
       );
 
       if (result != null && mounted) {
-        if (result.isEditAction) {
-          // Handle edit action - open edit dialog
-          final editedSite = await showDialog<Site>(
-            context: context,
-            builder: (context) => _EditSiteDialog(site: result.selectedSite!),
-          );
-          
-          if (editedSite != null && mounted) {
-            try {
-              await _siteRepository.updateSite(editedSite);
-              
-              // Update the current flight's site if it's the same site being edited
-              if (isLaunchSite && _flight.launchSiteId == editedSite.id) {
-                _launchSite = editedSite;
-                setState(() {});
-              }
-              
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Site "${editedSite.name}" updated')),
-                );
-                
-                // After editing, re-open site selection to allow further selection
-                await _editSite(isLaunchSite);
-              }
-            } catch (e) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Error updating site: $e')),
-                );
-              }
-            }
-          }
-        } else {
-          // Handle selection action
-          if (isLaunchSite) {
-            await _updateLaunchSite(result.selectedSite);
-          }
+        if (isLaunchSite) {
+          await _updateLaunchSite(result.selectedSite);
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error loading sites: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _editCurrentSite() async {
+    if (_launchSite == null) return;
+    
+    try {
+      final editedSite = await showDialog<Site>(
+        context: context,
+        builder: (context) => _EditSiteDialog(site: _launchSite!),
+      );
+      
+      if (editedSite != null && mounted) {
+        await _siteRepository.updateSite(editedSite);
+        
+        // Update the current flight's site
+        setState(() {
+          _launchSite = editedSite;
+          _flightModified = true;
+        });
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Site "${editedSite.name}" updated')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error updating site: $e')),
         );
       }
     }
@@ -529,11 +518,12 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: true,
+      canPop: false,
       onPopInvokedWithResult: (didPop, result) {
-        if (didPop && _flightModified) {
-          // Return the updated flight when popping
-          Navigator.of(context).pop(_flight);
+        // Only handle the pop if it was prevented (didPop = false)
+        if (!didPop) {
+          // Return true if flight was modified to trigger refresh in calling screen
+          Navigator.of(context).pop(_flightModified);
         }
       },
       child: Scaffold(
@@ -870,7 +860,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                           decoration: BoxDecoration(
                             border: Border(
                               bottom: BorderSide(
-                                color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
                                 width: 1,
                               ),
                             ),
@@ -893,7 +883,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                             decoration: BoxDecoration(
                               border: Border(
                                 bottom: BorderSide(
-                                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
                                   width: 1,
                                 ),
                               ),
@@ -915,7 +905,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                             decoration: BoxDecoration(
                               border: Border(
                                 bottom: BorderSide(
-                                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
                                   width: 1,
                                 ),
                               ),
@@ -958,7 +948,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                             decoration: BoxDecoration(
                               border: Border(
                                 bottom: BorderSide(
-                                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
                                   width: 1,
                                 ),
                               ),
@@ -968,6 +958,19 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                 color: Theme.of(context).colorScheme.primary,
                               ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      WidgetSpan(
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 4),
+                          child: GestureDetector(
+                            onTap: _isSaving ? null : _editCurrentSite,
+                            child: Icon(
+                              Icons.edit,
+                              size: 16,
+                              color: Theme.of(context).colorScheme.primary,
                             ),
                           ),
                         ),
@@ -983,7 +986,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                             decoration: BoxDecoration(
                               border: Border(
                                 bottom: BorderSide(
-                                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
                                   width: 1,
                                 ),
                               ),
@@ -1005,7 +1008,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                             decoration: BoxDecoration(
                               border: Border(
                                 bottom: BorderSide(
-                                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
                                   width: 1,
                                 ),
                               ),
@@ -1026,7 +1029,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                             decoration: BoxDecoration(
                               border: Border(
                                 bottom: BorderSide(
-                                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
                                   width: 1,
                                 ),
                               ),
@@ -1069,7 +1072,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                             decoration: BoxDecoration(
                               border: Border(
                                 bottom: BorderSide(
-                                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
                                   width: 1,
                                 ),
                               ),
@@ -1095,7 +1098,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                             decoration: BoxDecoration(
                               border: Border(
                                 bottom: BorderSide(
-                                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
                                   width: 1,
                                 ),
                               ),
@@ -1117,7 +1120,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                             decoration: BoxDecoration(
                               border: Border(
                                 bottom: BorderSide(
-                                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
                                   width: 1,
                                 ),
                               ),
@@ -1138,7 +1141,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                             decoration: BoxDecoration(
                               border: Border(
                                 bottom: BorderSide(
-                                  color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
                                   width: 1,
                                 ),
                               ),
@@ -1340,9 +1343,8 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
 // Result wrapper to distinguish between cancellation and selection
 class _SiteSelectionResult {
   final Site? selectedSite;
-  final bool isEditAction;
   
-  const _SiteSelectionResult(this.selectedSite, {this.isEditAction = false});
+  const _SiteSelectionResult(this.selectedSite);
 }
 
 // Result wrapper for wing selection
@@ -1557,13 +1559,6 @@ class _SiteSelectionDialogState extends State<_SiteSelectionDialog> {
                                 });
                               },
                             ),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.edit, size: 20),
-                              onPressed: () => Navigator.of(context).pop(
-                                _SiteSelectionResult(site, isEditAction: true),
-                              ),
-                              tooltip: 'Edit site',
-                            ),
                             onTap: () {
                               setState(() {
                                 _selectedSite = site;
@@ -1587,7 +1582,7 @@ class _SiteSelectionDialogState extends State<_SiteSelectionDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: () => Navigator.of(context).pop(_SiteSelectionResult(_selectedSite, isEditAction: false)),
+          onPressed: () => Navigator.of(context).pop(_SiteSelectionResult(_selectedSite)),
           child: const Text('Select'),
         ),
       ],
@@ -1609,7 +1604,7 @@ class _SiteSelectionDialogState extends State<_SiteSelectionDialog> {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           margin: const EdgeInsets.only(top: 8),
-          color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
           child: Text(
             country,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -1646,13 +1641,6 @@ class _SiteSelectionDialogState extends State<_SiteSelectionDialog> {
                     _selectedSite = value;
                   });
                 },
-              ),
-              trailing: IconButton(
-                icon: const Icon(Icons.edit, size: 20),
-                onPressed: () => Navigator.of(context).pop(
-                  _SiteSelectionResult(site, isEditAction: true),
-                ),
-                tooltip: 'Edit site',
               ),
               onTap: () {
                 setState(() {
@@ -1930,7 +1918,7 @@ class _EditSiteDialogState extends State<_EditSiteDialog> with SingleTickerProvi
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      child: Container(
+      child: SizedBox(
         width: MediaQuery.of(context).size.width * 0.9,
         height: MediaQuery.of(context).size.height * 0.8,
         child: Column(
@@ -2122,7 +2110,7 @@ class _EditSiteDialogState extends State<_EditSiteDialog> with SingleTickerProvi
       child: Column(
         children: [
           Text(
-            '${widget.site.name}',
+            widget.site.name,
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 8),
@@ -2214,7 +2202,7 @@ class _EditSiteDialogState extends State<_EditSiteDialog> with SingleTickerProvi
                       margin: const EdgeInsets.all(4),
                       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.8),
+                        color: Colors.white.withValues(alpha: 0.8),
                         borderRadius: BorderRadius.circular(2),
                       ),
                       child: Text(
