@@ -282,7 +282,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
       markers.addAll([
         Marker(
           point: LatLng(startPoint.latitude, startPoint.longitude),
-          child: _buildCircleMarker(Colors.green, 'Launch'),
+          child: _buildCircleMarker(Colors.blue, 'Launch'),
           width: 18,
           height: 18,
         ),
@@ -294,7 +294,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
         ),
         Marker(
           point: LatLng(highestPoint.latitude, highestPoint.longitude),
-          child: _buildCircleMarker(Colors.blue, 'High Point'),
+          child: _buildCircleMarker(Colors.green, 'High Point'),
           width: 18,
           height: 18,
         ),
