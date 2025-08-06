@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../data/models/flight.dart';
 import '../../data/repositories/flight_repository.dart';
+import '../../utils/date_time_utils.dart';
 import 'add_flight_screen.dart';
 import 'igc_import_screen.dart';
 import 'flight_detail_screen.dart';
@@ -118,11 +119,6 @@ class _FlightListScreenState extends State<FlightListScreen> {
     });
   }
 
-  String _formatDuration(int minutes) {
-    final hours = minutes ~/ 60;
-    final mins = minutes % 60;
-    return '${hours}h ${mins}m';
-  }
 
   /// Format time with timezone information
   String _formatTimeWithTimezone(String time, String? timezone) {
@@ -470,7 +466,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                 _isSelectionMode && _selectedFlightIds.isNotEmpty 
                     ? 'Selected Time' 
                     : 'Total Time',
-                _formatDuration(totalTime),
+                DateTimeUtils.formatDuration(totalTime),
               ),
             ],
           ),
@@ -577,7 +573,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                         },
                 ),
                 DataCell(
-                  Text(_formatDuration(flight.duration)),
+                  Text(DateTimeUtils.formatDuration(flight.duration)),
                   onTap: _isSelectionMode 
                       ? null 
                       : () async {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../data/models/flight.dart';
 import '../../data/repositories/flight_repository.dart';
+import '../../utils/date_time_utils.dart';
 
 class AddFlightScreen extends StatefulWidget {
   const AddFlightScreen({super.key});
@@ -85,11 +86,6 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
     return duration;
   }
 
-  String _formatDuration(int minutes) {
-    final hours = minutes ~/ 60;
-    final mins = minutes % 60;
-    return '${hours}h ${mins}m';
-  }
 
   Future<void> _saveFlight() async {
     if (!_formKey.currentState!.validate()) {
@@ -227,7 +223,7 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
               child: ListTile(
                 leading: const Icon(Icons.timer),
                 title: const Text('Flight Duration'),
-                subtitle: Text(_formatDuration(duration)),
+                subtitle: Text(DateTimeUtils.formatDuration(duration)),
                 trailing: duration < 5 
                     ? Icon(Icons.warning, color: Colors.orange)
                     : duration > 480 

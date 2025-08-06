@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../data/models/flight.dart';
+import '../../utils/date_time_utils.dart';
 
 class FlightStatisticsWidget extends StatelessWidget {
   final Flight flight;
@@ -9,18 +10,10 @@ class FlightStatisticsWidget extends StatelessWidget {
     required this.flight,
   });
 
-  String _formatDuration(int minutes) {
-    final hours = minutes ~/ 60;
-    final mins = minutes % 60;
-    if (hours > 0) {
-      return '${hours}h ${mins}m';
-    }
-    return '${mins}m';
-  }
 
   @override
   Widget build(BuildContext context) {
-    final duration = _formatDuration(flight.duration);
+    final duration = DateTimeUtils.formatDurationCompact(flight.duration);
 
     return Container(
       padding: const EdgeInsets.all(16),

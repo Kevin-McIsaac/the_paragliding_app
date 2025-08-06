@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../data/repositories/flight_repository.dart';
+import '../../utils/date_time_utils.dart';
 
 class StatisticsScreen extends StatefulWidget {
   const StatisticsScreen({super.key});
@@ -46,11 +47,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     }
   }
   
-  String _formatHours(double hours) {
-    final wholeHours = hours.floor();
-    final minutes = ((hours - wholeHours) * 60).round();
-    return '${wholeHours}h ${minutes}m';
-  }
   
   @override
   Widget build(BuildContext context) {
@@ -234,7 +230,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                   Expanded(
                     flex: 3,
                     child: Text(
-                      _formatHours(stat['total_hours'] as double),
+                      DateTimeUtils.formatHours(stat['total_hours'] as double),
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: Theme.of(context).colorScheme.primary,
                         fontWeight: FontWeight.w500,
@@ -282,7 +278,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                   Expanded(
                     flex: 3,
                     child: Text(
-                      _formatHours(totalHours),
+                      DateTimeUtils.formatHours(totalHours),
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         color: Theme.of(context).colorScheme.primary,
                         fontWeight: FontWeight.bold,
@@ -423,7 +419,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                   Expanded(
                     flex: 3,
                     child: Text(
-                      _formatHours(stat['total_hours'] as double),
+                      DateTimeUtils.formatHours(stat['total_hours'] as double),
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: Theme.of(context).colorScheme.primary,
                         fontWeight: FontWeight.w500,
@@ -472,7 +468,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                     Expanded(
                       flex: 3,
                       child: Text(
-                        _formatHours(totalHours),
+                        DateTimeUtils.formatHours(totalHours),
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           color: Theme.of(context).colorScheme.primary,
                           fontWeight: FontWeight.bold,
@@ -643,7 +639,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                       Expanded(
                         flex: 3,
                         child: Text(
-                          _formatHours(stat['total_hours'] as double),
+                          DateTimeUtils.formatHours(stat['total_hours'] as double),
                           style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                             color: Theme.of(context).colorScheme.primary,
                             fontWeight: FontWeight.w500,
@@ -694,7 +690,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                     Expanded(
                       flex: 3,
                       child: Text(
-                        _formatHours(totalHours),
+                        DateTimeUtils.formatHours(totalHours),
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           color: Theme.of(context).colorScheme.primary,
                           fontWeight: FontWeight.bold,

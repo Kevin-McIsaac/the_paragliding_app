@@ -39,7 +39,6 @@ dependencies:
   sqflite: ^2.3.0           # Local SQLite database
   sqflite_common_ffi: ^2.3.0 # SQLite for desktop platforms
   shared_preferences: ^2.2.0 # Settings storage
-  provider: ^6.1.0          # State management
   flutter_map: ^6.1.0         # Cross-platform map visualization with OpenStreetMap
   latlong2: ^0.9.1            # Coordinate handling for flutter_map
   file_picker: ^6.0.0       # IGC file import
