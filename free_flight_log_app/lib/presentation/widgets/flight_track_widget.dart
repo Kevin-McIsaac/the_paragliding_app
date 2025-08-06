@@ -282,20 +282,20 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
         Marker(
           point: LatLng(startPoint.latitude, startPoint.longitude),
           child: _buildCircleMarker(Colors.green, 'Launch'),
-          width: 16,
-          height: 16,
+          width: 18,
+          height: 18,
         ),
         Marker(
           point: LatLng(endPoint.latitude, endPoint.longitude),
           child: _buildCircleMarker(Colors.red, 'Landing'),
-          width: 16,
-          height: 16,
+          width: 18,
+          height: 18,
         ),
         Marker(
           point: LatLng(highestPoint.latitude, highestPoint.longitude),
           child: _buildCircleMarker(Colors.blue, 'High Point'),
-          width: 16,
-          height: 16,
+          width: 18,
+          height: 18,
         ),
       ]);
     }
@@ -360,8 +360,8 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
 
   Widget _buildCircleMarker(Color color, String labelName) {
     return Container(
-      width: 16,
-      height: 16,
+      width: 18,
+      height: 18,
       decoration: BoxDecoration(
         color: color,
         shape: BoxShape.circle,
@@ -405,14 +405,36 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
   void _handleMapHover(dynamic event, LatLng hoveredPoint) {
     if (_trackPoints.isEmpty || !widget.config.interactive) return;
 
-    // Check for label hover first (within 50m of a label)
+    // Check for label hover using pixel-based detection
     String? newHoveredLabel;
-    if (_launchPosition != null && _calculateDistance(hoveredPoint.latitude, hoveredPoint.longitude, _launchPosition!.latitude, _launchPosition!.longitude) < 0.05) {
-      newHoveredLabel = 'Launch';
-    } else if (_landingPosition != null && _calculateDistance(hoveredPoint.latitude, hoveredPoint.longitude, _landingPosition!.latitude, _landingPosition!.longitude) < 0.05) {
-      newHoveredLabel = 'Landing';
-    } else if (_highPointPosition != null && _calculateDistance(hoveredPoint.latitude, hoveredPoint.longitude, _highPointPosition!.latitude, _highPointPosition!.longitude) < 0.05) {
-      newHoveredLabel = 'High Point';
+    final hoveredScreenPoint = _mapController?.camera.latLngToScreenPoint(hoveredPoint);
+    
+    if (hoveredScreenPoint != null) {
+      const double hoverRadiusPixels = 12.0; // Match the circle radius (18px marker = 9px radius + 3px for easier targeting)
+      
+      if (_launchPosition != null) {
+        final launchScreenPoint = _mapController!.camera.latLngToScreenPoint(_launchPosition!);
+        final pixelDistance = _calculatePixelDistance(hoveredScreenPoint, launchScreenPoint);
+        if (pixelDistance <= hoverRadiusPixels) {
+          newHoveredLabel = 'Launch';
+        }
+      }
+      
+      if (newHoveredLabel == null && _landingPosition != null) {
+        final landingScreenPoint = _mapController!.camera.latLngToScreenPoint(_landingPosition!);
+        final pixelDistance = _calculatePixelDistance(hoveredScreenPoint, landingScreenPoint);
+        if (pixelDistance <= hoverRadiusPixels) {
+          newHoveredLabel = 'Landing';
+        }
+      }
+      
+      if (newHoveredLabel == null && _highPointPosition != null) {
+        final highPointScreenPoint = _mapController!.camera.latLngToScreenPoint(_highPointPosition!);
+        final pixelDistance = _calculatePixelDistance(hoveredScreenPoint, highPointScreenPoint);
+        if (pixelDistance <= hoverRadiusPixels) {
+          newHoveredLabel = 'High Point';
+        }
+      }
     }
 
     // Update label hover state if changed
@@ -471,6 +493,12 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
     final c = 2 * atan2(sqrt(a), sqrt(1 - a));
     
     return earthRadius * c;
+  }
+
+  double _calculatePixelDistance(Point<double> point1, Point<double> point2) {
+    final dx = point1.x - point2.x;
+    final dy = point1.y - point2.y;
+    return sqrt(dx * dx + dy * dy);
   }
 
   // FAB Controls (only for full screen mode)
