@@ -331,24 +331,26 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
       markers.add(
         Marker(
           point: LatLng(midLat, midLng),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.grey,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white, width: 2),
-            ),
+          child: Center(
             child: Text(
               '${widget.flight.straightDistance!.toStringAsFixed(1)} km',
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 10,
+                fontSize: 12,
                 fontWeight: FontWeight.bold,
+                shadows: [
+                  Shadow(
+                    offset: Offset(1, 1),
+                    blurRadius: 2,
+                    color: Colors.black,
+                  ),
+                ],
               ),
+              textAlign: TextAlign.center,
             ),
           ),
-          width: 80,
-          height: 30,
+          width: 60,
+          height: 20,
         ),
       );
     }
@@ -417,7 +419,6 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
 
     // Update label hover state if changed
     if (newHoveredLabel != _hoveredLabel) {
-      print('Label hover changed: $_hoveredLabel -> $newHoveredLabel');
       setState(() {
         _hoveredLabel = newHoveredLabel;
       });
@@ -1552,7 +1553,6 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> {
   
   /// Handle label hover events
   void _onLabelHover(String? labelName) {
-    print('Label hover: $labelName'); // Debug print
     setState(() {
       _hoveredLabel = labelName;
     });
