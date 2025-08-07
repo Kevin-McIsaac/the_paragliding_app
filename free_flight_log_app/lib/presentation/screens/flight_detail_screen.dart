@@ -24,7 +24,7 @@ class FlightDetailScreen extends StatefulWidget {
   State<FlightDetailScreen> createState() => _FlightDetailScreenState();
 }
 
-class _FlightDetailScreenState extends State<FlightDetailScreen> {
+class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBindingObserver {
   final FlightRepository _flightRepository = FlightRepository();
   final SiteRepository _siteRepository = SiteRepository();
   final WingRepository _wingRepository = WingRepository();
@@ -39,6 +39,9 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
   bool _isEditingNotes = false;
   bool _isSaving = false;
   late TextEditingController _notesController;
+  
+  // Map refresh management
+  int _mapRefreshKey = 0;
 
   @override
   void initState() {
@@ -46,6 +49,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
     _flight = widget.flight;
     _notesController = TextEditingController(text: _flight.notes ?? '');
     _loadFlightDetails();
+    WidgetsBinding.instance.addObserver(this);
   }
 
   Future<void> _loadFlightDetails() async {
@@ -67,8 +71,20 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _notesController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      // App returned to foreground, refresh map to pick up any config changes
+      setState(() {
+        _mapRefreshKey++;
+      });
+    }
   }
 
   String _formatDate(DateTime date) {
@@ -598,12 +614,16 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                                     style: Theme.of(context).textTheme.titleLarge,
                                   ),
                                   TextButton.icon(
-                                    onPressed: () {
-                                      Navigator.of(context).push(
+                                    onPressed: () async {
+                                      await Navigator.of(context).push(
                                         MaterialPageRoute(
                                           builder: (context) => FlightTrackScreen(flight: _flight),
                                         ),
                                       );
+                                      // Returned from Flight Track screen, refresh map to pick up config changes
+                                      setState(() {
+                                        _mapRefreshKey++;
+                                      });
                                     },
                                     icon: const Icon(Icons.fullscreen),
                                     label: const Text('Full Screen'),
@@ -612,6 +632,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> {
                               ),
                               const SizedBox(height: 16),
                               FlightTrackWidget(
+                                key: ValueKey(_mapRefreshKey),
                                 flight: _flight,
                                 config: FlightTrackConfig.embeddedWithControls(),
                               ),
