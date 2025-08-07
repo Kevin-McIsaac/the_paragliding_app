@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'dart:io' show Platform;
 import 'presentation/screens/flight_list_screen.dart';
 import 'services/timezone_service.dart';
+import 'providers/flight_provider.dart';
+import 'providers/site_provider.dart';
+import 'providers/wing_provider.dart';
+import 'data/repositories/flight_repository.dart';
+import 'data/repositories/site_repository.dart';
+import 'data/repositories/wing_repository.dart';
 
 void main() {
   // Initialize sqflite for desktop platforms
@@ -22,23 +29,36 @@ class FreeFlightLogApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Free Flight Log',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
-          brightness: Brightness.light,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(
+          create: (_) => FlightProvider(FlightRepository()),
         ),
-        useMaterial3: true,
-      ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
-          brightness: Brightness.dark,
+        ChangeNotifierProvider(
+          create: (_) => SiteProvider(SiteRepository()),
         ),
-        useMaterial3: true,
+        ChangeNotifierProvider(
+          create: (_) => WingProvider(WingRepository()),
+        ),
+      ],
+      child: MaterialApp(
+        title: 'Free Flight Log',
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Colors.blue,
+            brightness: Brightness.light,
+          ),
+          useMaterial3: true,
+        ),
+        darkTheme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Colors.blue,
+            brightness: Brightness.dark,
+          ),
+          useMaterial3: true,
+        ),
+        home: const FlightListScreen(),
       ),
-      home: const FlightListScreen(),
     );
   }
 }
