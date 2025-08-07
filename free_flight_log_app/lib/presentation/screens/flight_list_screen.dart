@@ -334,8 +334,6 @@ class _FlightListScreenState extends State<FlightListScreen> {
                     if (result == true) {
                       _refreshFlights();
                     }
-                  } else if (value == 'refresh') {
-                    _refreshFlights();
                   } else if (value == 'select') {
                     _toggleSelectionMode();
                   } else if (value == 'wings') {
@@ -372,54 +370,12 @@ class _FlightListScreenState extends State<FlightListScreen> {
                 },
                 itemBuilder: (context) => [
                   const PopupMenuItem(
-                    value: 'import',
-                    child: Row(
-                      children: [
-                        Icon(Icons.upload_file),
-                        SizedBox(width: 8),
-                        Text('Import IGC'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'refresh',
-                    child: Row(
-                      children: [
-                        Icon(Icons.refresh),
-                        SizedBox(width: 8),
-                        Text('Refresh'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuDivider(),
-                  const PopupMenuItem(
                     value: 'statistics',
                     child: Row(
                       children: [
                         Icon(Icons.bar_chart),
                         SizedBox(width: 8),
                         Text('Statistics'),
-                      ],
-                    ),
-                  ),
-                  if (context.read<FlightProvider>().flights.isNotEmpty)
-                    const PopupMenuItem(
-                      value: 'select',
-                      child: Row(
-                        children: [
-                          Icon(Icons.checklist),
-                          SizedBox(width: 8),
-                          Text('Select Flights'),
-                        ],
-                      ),
-                    ),
-                  const PopupMenuItem(
-                    value: 'wings',
-                    child: Row(
-                      children: [
-                        Icon(Icons.paragliding),
-                        SizedBox(width: 8),
-                        Text('Manage Wings'),
                       ],
                     ),
                   ),
@@ -434,6 +390,39 @@ class _FlightListScreenState extends State<FlightListScreen> {
                     ),
                   ),
                   const PopupMenuItem(
+                    value: 'wings',
+                    child: Row(
+                      children: [
+                        Icon(Icons.paragliding),
+                        SizedBox(width: 8),
+                        Text('Manage Wings'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(
+                    value: 'import',
+                    child: Row(
+                      children: [
+                        Icon(Icons.upload_file),
+                        SizedBox(width: 8),
+                        Text('Import IGC'),
+                      ],
+                    ),
+                  ),
+                  if (context.read<FlightProvider>().flights.isNotEmpty)
+                    const PopupMenuItem(
+                      value: 'select',
+                      child: Row(
+                        children: [
+                          Icon(Icons.checklist),
+                          SizedBox(width: 8),
+                          Text('Select Flights'),
+                        ],
+                      ),
+                    ),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(
                     value: 'database',
                     child: Row(
                       children: [
@@ -443,7 +432,6 @@ class _FlightListScreenState extends State<FlightListScreen> {
                       ],
                     ),
                   ),
-                  const PopupMenuDivider(),
                   const PopupMenuItem(
                     value: 'about',
                     child: Row(
