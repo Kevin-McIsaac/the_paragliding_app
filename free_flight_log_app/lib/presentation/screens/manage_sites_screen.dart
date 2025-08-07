@@ -19,6 +19,7 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
   String _searchQuery = '';
   String _sortBy = 'country'; // 'name', 'country', 'date' - default to country grouping
   bool _groupByCountry = true;
+  bool _hasInitialized = false; // Track if we've initialized the filtered list
 
   @override
   void initState() {
@@ -39,7 +40,9 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
   void _onSearchChanged() {
     setState(() {
       _searchQuery = _searchController.text.toLowerCase();
-      _filterSites(context.read<SiteProvider>().sites);
+      if (_hasInitialized) {
+        _filterSites(context.read<SiteProvider>().sites);
+      }
     });
   }
 
@@ -277,10 +280,23 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
       ),
       body: Consumer<SiteProvider>(
         builder: (context, siteProvider, child) {
-          // Update filtered sites when provider data changes
-          if (siteProvider.sites.isNotEmpty) {
+          // Initialize filtered sites on first load
+          if (!_hasInitialized && siteProvider.sites.isNotEmpty) {
+            _filteredSites = List.from(siteProvider.sites);
+            _sortSites();
+            if (_groupByCountry) {
+              _groupSitesByCountry();
+            }
+            _hasInitialized = true;
+          } else if (_hasInitialized && siteProvider.sites.isNotEmpty) {
+            // Update filtered sites when provider data changes after initialization
+            // This handles cases where sites are edited/deleted
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              _filterSites(siteProvider.sites);
+              if (mounted) {
+                setState(() {
+                  _filterSites(siteProvider.sites);
+                });
+              }
             });
           }
 
@@ -324,28 +340,25 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
             );
           }
 
-          if (_filteredSites.isEmpty && siteProvider.sites.isEmpty) {
+          // Show empty state only after initialization or when truly empty
+          if (siteProvider.sites.isEmpty) {
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    _searchQuery.isEmpty ? Icons.location_off : Icons.search_off,
+                  const Icon(
+                    Icons.location_off,
                     size: 64,
                     color: Colors.grey,
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    _searchQuery.isEmpty 
-                        ? 'No sites found'
-                        : 'No sites match your search',
+                    'No sites found',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    _searchQuery.isEmpty
-                        ? 'Sites will appear here after importing flights'
-                        : 'Try a different search term',
+                    'Sites will appear here after importing flights',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: Colors.grey,
                     ),
@@ -355,7 +368,7 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
             );
           }
 
-          if (_filteredSites.isEmpty && siteProvider.sites.isNotEmpty) {
+          if (_hasInitialized && _filteredSites.isEmpty && siteProvider.sites.isNotEmpty) {
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
