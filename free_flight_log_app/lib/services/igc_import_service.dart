@@ -8,16 +8,19 @@ import '../data/models/igc_file.dart';
 import '../data/models/import_result.dart';
 import '../data/repositories/flight_repository.dart';
 import '../data/repositories/site_repository.dart';
+import '../data/services/flight_query_service.dart';
 import 'logging_service.dart';
 import '../data/repositories/wing_repository.dart';
 import 'igc_parser.dart';
 import 'site_matching_service.dart';
+import '../core/dependency_injection.dart';
 
 /// Service for importing IGC files into the flight log
 class IgcImportService {
-  final FlightRepository _flightRepository = FlightRepository();
-  final SiteRepository _siteRepository = SiteRepository();
-  final WingRepository _wingRepository = WingRepository();
+  final FlightRepository _flightRepository = serviceLocator<FlightRepository>();
+  final SiteRepository _siteRepository = serviceLocator<SiteRepository>();
+  final WingRepository _wingRepository = serviceLocator<WingRepository>();
+  final FlightQueryService _queryService = serviceLocator<FlightQueryService>();
   final IgcParser parser = IgcParser();
 
   /// Check if a flight with the same date and time already exists
@@ -34,7 +37,7 @@ class IgcImportService {
       final launchTime = _formatTime(igcData.launchTime);
       
       // Check for existing flight with same date and launch time
-      return await _flightRepository.findFlightByDateTime(igcData.date, launchTime);
+      return await _queryService.findFlightByDateTime(igcData.date, launchTime);
     } catch (e) {
       // If we can't parse the file, we can't check for duplicates
       return null;
@@ -64,7 +67,7 @@ class IgcImportService {
       final launchTime = _formatTime(igcData.launchTime);
       
       // Check for existing flight
-      final existingFlight = await _flightRepository.findFlightByDateTime(
+      final existingFlight = await _queryService.findFlightByDateTime(
         igcData.date, 
         launchTime,
       );

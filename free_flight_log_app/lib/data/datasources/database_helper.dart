@@ -5,7 +5,7 @@ import '../../services/logging_service.dart';
 
 class DatabaseHelper {
   static const _databaseName = "FlightLog.db";
-  static const _databaseVersion = 6;
+  static const _databaseVersion = 7;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -83,9 +83,52 @@ class DatabaseHelper {
       )
     ''');
 
-    await db.execute('CREATE INDEX idx_flights_date ON flights(date)');
-    await db.execute('CREATE INDEX idx_flights_launch_site ON flights(launch_site_id)');
-    await db.execute('CREATE INDEX idx_flights_wing ON flights(wing_id)');
+    // Create optimized indexes for query performance
+    await _createIndexes(db);
+  }
+  
+  /// Create database indexes for optimal query performance
+  Future<void> _createIndexes(Database db) async {
+    LoggingService.database('INDEX', 'Creating database indexes for performance optimization');
+    
+    try {
+      // Basic indexes for foreign key relationships
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_launch_site ON flights(launch_site_id)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_wing ON flights(wing_id)');
+      
+      // Composite index for most common query pattern: ORDER BY date DESC, launch_time DESC
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_date_time ON flights(date DESC, launch_time DESC)');
+      
+      // Index for date range queries (statistics, filtering)
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_date ON flights(date)');
+      
+      // Index for created/updated timestamp queries
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_created ON flights(created_at)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_updated ON flights(updated_at)');
+      
+      // Statistics query optimization indexes
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_year ON flights(strftime("%Y", date))');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_duration ON flights(duration)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_altitude ON flights(max_altitude)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_distance ON flights(distance)');
+      
+      // Sites table indexes
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_sites_country ON sites(country)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_sites_name ON sites(name)');
+      
+      // Wings table indexes  
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_wings_active ON wings(active)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_wings_manufacturer ON wings(manufacturer)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_wings_name ON wings(name)');
+      
+      // Duplicate detection optimization (IGC import)
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_duplicate_check ON flights(date, launch_time)');
+      
+      LoggingService.database('INDEX', 'Successfully created all database indexes');
+    } catch (e) {
+      LoggingService.error('DatabaseHelper: Failed to create indexes', e);
+      rethrow;
+    }
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -191,6 +234,17 @@ class DatabaseHelper {
         rethrow;
       }
     }
+    
+    if (oldVersion < 7) {
+      try {
+        // Create optimized indexes for better query performance
+        await _createIndexes(db);
+        LoggingService.database('MIGRATION', 'Successfully created performance indexes');
+      } catch (e) {
+        LoggingService.database('MIGRATION', 'Error during index creation', e);
+        rethrow;
+      }
+    }
   }
 
   /// Force recreation of the database (use when migration fails)
@@ -208,6 +262,58 @@ class DatabaseHelper {
     
     // Recreate the database
     _database = await _initDatabase();
+  }
+
+  /// Validate database schema to ensure all expected columns exist
+  /// This provides an additional safety net beyond migrations
+  Future<bool> validateDatabaseSchema() async {
+    try {
+      final db = await database;
+      
+      // Check flights table has all expected columns
+      final flightColumns = await db.rawQuery("PRAGMA table_info(flights)");
+      final expectedFlightColumns = {
+        'id', 'date', 'launch_time', 'landing_time', 'duration',
+        'launch_site_id', 'landing_latitude', 'landing_longitude', 'landing_altitude', 'landing_description',
+        'max_altitude', 'max_climb_rate', 'max_sink_rate', 'max_climb_rate_5_sec', 'max_sink_rate_5_sec',
+        'distance', 'straight_distance', 'wing_id', 'notes', 'created_at', 'updated_at', 'timezone'
+      };
+      
+      final actualFlightColumns = flightColumns.map((col) => col['name'] as String).toSet();
+      final missingFlightColumns = expectedFlightColumns.difference(actualFlightColumns);
+      
+      if (missingFlightColumns.isNotEmpty) {
+        LoggingService.error('DatabaseHelper: Missing flight columns: ${missingFlightColumns.join(', ')}');
+        return false;
+      }
+      
+      // Check sites table has all expected columns  
+      final siteColumns = await db.rawQuery("PRAGMA table_info(sites)");
+      final expectedSiteColumns = {
+        'id', 'name', 'latitude', 'longitude', 'altitude', 'country', 'custom_name', 'created_at'
+      };
+      
+      final actualSiteColumns = siteColumns.map((col) => col['name'] as String).toSet();
+      final missingSiteColumns = expectedSiteColumns.difference(actualSiteColumns);
+      
+      if (missingSiteColumns.isNotEmpty) {
+        LoggingService.error('DatabaseHelper: Missing site columns: ${missingSiteColumns.join(', ')}');
+        return false;
+      }
+      
+      // Check database version
+      final version = await db.getVersion();
+      if (version != _databaseVersion) {
+        LoggingService.error('DatabaseHelper: Database version mismatch. Expected: $_databaseVersion, Actual: $version');
+        return false;
+      }
+      
+      LoggingService.info('DatabaseHelper: Database schema validation successful (v$version)');
+      return true;
+    } catch (e) {
+      LoggingService.error('DatabaseHelper: Schema validation failed', e);
+      return false;
+    }
   }
 
   Future<void> close() async {

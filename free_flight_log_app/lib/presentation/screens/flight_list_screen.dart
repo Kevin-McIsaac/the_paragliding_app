@@ -27,6 +27,12 @@ class _FlightListScreenState extends State<FlightListScreen> {
   // Sorting state
   String _sortColumn = 'datetime';
   bool _sortAscending = false; // Default to reverse (newest first)
+  
+  // Sorting cache to prevent O(n log n) on every rebuild
+  List<Flight>? _sortedFlightsCache;
+  String? _lastSortColumn;
+  bool? _lastSortAscending;
+  int? _lastFlightDataHash;
 
   @override
   void initState() {
@@ -39,7 +45,57 @@ class _FlightListScreenState extends State<FlightListScreen> {
 
   // Refresh flights from provider
   Future<void> _refreshFlights() async {
+    _invalidateCache();
     await context.read<FlightProvider>().loadFlights();
+  }
+  
+  /// Calculate a simple hash of flight data for change detection
+  int _calculateFlightDataHash(List<Flight> flights) {
+    if (flights.isEmpty) return 0;
+    
+    // Use flight count and last updated timestamp as a simple hash
+    final lastUpdated = flights.isNotEmpty 
+        ? flights.map((f) => f.updatedAt?.millisecondsSinceEpoch ?? 0).reduce((a, b) => a > b ? a : b)
+        : 0;
+    return flights.length.hashCode ^ lastUpdated.hashCode;
+  }
+  
+  /// Check if the sorting cache is still valid
+  bool _isCacheValid(List<Flight> flights) {
+    if (_sortedFlightsCache == null || 
+        _lastSortColumn != _sortColumn || 
+        _lastSortAscending != _sortAscending) {
+      return false;
+    }
+    
+    final currentHash = _calculateFlightDataHash(flights);
+    return _lastFlightDataHash == currentHash;
+  }
+  
+  /// Invalidate the sorting cache
+  void _invalidateCache() {
+    _sortedFlightsCache = null;
+    _lastSortColumn = null;
+    _lastSortAscending = null;
+    _lastFlightDataHash = null;
+  }
+  
+  /// Get sorted flights using cache when possible
+  List<Flight> _getSortedFlights(List<Flight> flights) {
+    if (_isCacheValid(flights)) {
+      return _sortedFlightsCache!;
+    }
+    
+    // Cache is invalid, perform sort and update cache
+    final sortedFlights = _sortFlights(List.from(flights));
+    
+    // Update cache
+    _sortedFlightsCache = sortedFlights;
+    _lastSortColumn = _sortColumn;
+    _lastSortAscending = _sortAscending;
+    _lastFlightDataHash = _calculateFlightDataHash(flights);
+    
+    return sortedFlights;
   }
   
   List<Flight> _sortFlights(List<Flight> flights) {
@@ -103,7 +159,8 @@ class _FlightListScreenState extends State<FlightListScreen> {
         _sortColumn = column;
         _sortAscending = true;
       }
-      // Sorting will be handled in the Consumer builder
+      // Invalidate cache since sort criteria changed
+      _invalidateCache();
     });
   }
 
@@ -143,7 +200,12 @@ class _FlightListScreenState extends State<FlightListScreen> {
   }
 
   Future<void> _deleteSelectedFlights() async {
-    if (_selectedFlightIds.isEmpty) return;
+    if (_selectedFlightIds.isEmpty || _isDeleting) return;
+
+    // Set deleting state immediately to prevent double-tap
+    setState(() {
+      _isDeleting = true;
+    });
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -166,11 +228,15 @@ class _FlightListScreenState extends State<FlightListScreen> {
       ),
     );
 
-    if (confirmed == true) {
+    if (confirmed != true) {
+      // User cancelled, reset deleting state
       setState(() {
-        _isDeleting = true;
+        _isDeleting = false;
       });
+      return;
+    }
 
+    try {
       final flightProvider = context.read<FlightProvider>();
       final flightCount = _selectedFlightIds.length;
       final success = await flightProvider.deleteFlights(_selectedFlightIds.toList());
@@ -198,6 +264,19 @@ class _FlightListScreenState extends State<FlightListScreen> {
             ),
           );
         }
+      }
+    } catch (e) {
+      // Handle any unexpected errors and reset state
+      if (mounted) {
+        setState(() {
+          _isDeleting = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Unexpected error during deletion: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
@@ -415,7 +494,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
             );
           }
           
-          final flights = _sortFlights(List.from(flightProvider.flights));
+          final flights = _getSortedFlights(flightProvider.flights);
           
           if (flights.isEmpty) {
             return _buildEmptyState();

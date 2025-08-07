@@ -1,14 +1,18 @@
 import 'package:flutter/foundation.dart';
 import '../data/models/site.dart';
 import '../data/repositories/site_repository.dart';
-import '../data/repositories/flight_repository.dart';
+import '../data/services/flight_statistics_service.dart';
 import '../services/logging_service.dart';
+import '../core/dependency_injection.dart';
 
 /// State management for site data
 class SiteProvider extends ChangeNotifier {
   final SiteRepository _repository;
+  late final FlightStatisticsService _statisticsService;
   
-  SiteProvider(this._repository);
+  SiteProvider(this._repository) {
+    _statisticsService = serviceLocator<FlightStatisticsService>();
+  }
 
   List<Site> _sites = [];
   bool _isLoading = false;
@@ -38,6 +42,30 @@ class SiteProvider extends ChangeNotifier {
     } catch (e) {
       LoggingService.error('SiteProvider: Failed to load sites', e);
       _setError('Failed to load sites: $e');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Load sites with flight counts from repository
+  Future<void> loadSitesWithFlightCounts() async {
+    _setLoading(true);
+    _clearError();
+    
+    try {
+      LoggingService.debug('SiteProvider: Loading sites with flight counts from repository');
+      final startTime = DateTime.now();
+      
+      _sites = await _repository.getSitesWithFlightCounts();
+      
+      final duration = DateTime.now().difference(startTime);
+      LoggingService.performance('Load sites with flight counts', duration, '${_sites.length} sites loaded');
+      
+      LoggingService.info('SiteProvider: Loaded ${_sites.length} sites with flight counts');
+      notifyListeners();
+    } catch (e) {
+      LoggingService.error('SiteProvider: Failed to load sites with flight counts', e);
+      _setError('Failed to load sites with flight counts: $e');
     } finally {
       _setLoading(false);
     }
@@ -155,8 +183,7 @@ class SiteProvider extends ChangeNotifier {
   Future<List<Map<String, dynamic>>> getSiteStatistics() async {
     try {
       LoggingService.debug('SiteProvider: Loading site statistics');
-      final flightRepository = FlightRepository();
-      return await flightRepository.getSiteStatistics();
+      return await _statisticsService.getSiteStatistics();
     } catch (e) {
       LoggingService.error('SiteProvider: Failed to load site statistics', e);
       _setError('Failed to load site statistics: $e');

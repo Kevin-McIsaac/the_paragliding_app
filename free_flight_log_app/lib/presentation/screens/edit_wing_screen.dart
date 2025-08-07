@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../data/models/wing.dart';
 import '../../data/repositories/wing_repository.dart';
+import '../../core/dependency_injection.dart';
 
 class EditWingScreen extends StatefulWidget {
   final Wing? wing;
@@ -14,7 +15,7 @@ class EditWingScreen extends StatefulWidget {
 
 class _EditWingScreenState extends State<EditWingScreen> {
   final _formKey = GlobalKey<FormState>();
-  final WingRepository _wingRepository = WingRepository();
+  final WingRepository _wingRepository = serviceLocator<WingRepository>();
 
   late TextEditingController _nameController;
   late TextEditingController _manufacturerController;

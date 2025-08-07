@@ -1,14 +1,18 @@
 import 'package:flutter/foundation.dart';
 import '../data/models/wing.dart';
 import '../data/repositories/wing_repository.dart';
-import '../data/repositories/flight_repository.dart';
+import '../data/services/flight_statistics_service.dart';
 import '../services/logging_service.dart';
+import '../core/dependency_injection.dart';
 
 /// State management for wing data
 class WingProvider extends ChangeNotifier {
   final WingRepository _repository;
+  late final FlightStatisticsService _statisticsService;
   
-  WingProvider(this._repository);
+  WingProvider(this._repository) {
+    _statisticsService = serviceLocator<FlightStatisticsService>();
+  }
 
   List<Wing> _wings = [];
   bool _isLoading = false;
@@ -196,8 +200,7 @@ class WingProvider extends ChangeNotifier {
   Future<List<Map<String, dynamic>>> getWingStatistics() async {
     try {
       LoggingService.debug('WingProvider: Loading wing statistics');
-      final flightRepository = FlightRepository();
-      return await flightRepository.getWingStatistics();
+      return await _statisticsService.getWingStatistics();
     } catch (e) {
       LoggingService.error('WingProvider: Failed to load wing statistics', e);
       _setError('Failed to load wing statistics: $e');

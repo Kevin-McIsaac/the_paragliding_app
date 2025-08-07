@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../data/models/site.dart';
-import '../../data/repositories/site_repository.dart';
 import '../../utils/ui_utils.dart';
 import '../widgets/edit_site_dialog.dart';
+import '../../providers/site_provider.dart';
 
 class ManageSitesScreen extends StatefulWidget {
   const ManageSitesScreen({super.key});
@@ -12,11 +13,8 @@ class ManageSitesScreen extends StatefulWidget {
 }
 
 class _ManageSitesScreenState extends State<ManageSitesScreen> {
-  final SiteRepository _siteRepository = SiteRepository();
-  List<Site> _sites = [];
   List<Site> _filteredSites = [];
   Map<String, List<Site>> _groupedSites = {};
-  bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   String _sortBy = 'country'; // 'name', 'country', 'date' - default to country grouping
@@ -25,7 +23,9 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
   @override
   void initState() {
     super.initState();
-    _loadSites();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<SiteProvider>().loadSitesWithFlightCounts();
+    });
     _searchController.addListener(_onSearchChanged);
   }
 
@@ -39,15 +39,15 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
   void _onSearchChanged() {
     setState(() {
       _searchQuery = _searchController.text.toLowerCase();
-      _filterSites();
+      _filterSites(context.read<SiteProvider>().sites);
     });
   }
 
-  void _filterSites() {
+  void _filterSites(List<Site> sites) {
     if (_searchQuery.isEmpty) {
-      _filteredSites = List.from(_sites);
+      _filteredSites = List.from(sites);
     } else {
-      _filteredSites = _sites.where((site) =>
+      _filteredSites = sites.where((site) =>
         site.name.toLowerCase().contains(_searchQuery) ||
         (site.country?.toLowerCase().contains(_searchQuery) ?? false)
       ).toList();
@@ -118,44 +118,11 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
     }
   }
 
-  Future<void> _loadSites() async {
-    setState(() => _isLoading = true);
-    try {
-      final sites = await _siteRepository.getSitesWithFlightCounts();
-      setState(() {
-        _sites = sites;
-        _filterSites();
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() => _isLoading = false);
-      if (mounted) {
-        UiUtils.showExceptionError(context, 'loading sites', e);
-      }
-    }
-  }
 
   Future<void> _deleteSite(Site site) async {
-    // Check if site can be deleted
-    final canDelete = await _siteRepository.canDeleteSite(site.id!);
-    
-    // Check if widget is still mounted before using context
     if (!mounted) return;
     
-    if (!canDelete) {
-      UiUtils.showErrorDialog(
-        context,
-        'Cannot Delete Site',
-        'This site is used in flight records and cannot be deleted.\n\n'
-        'You can edit the site name or other details instead.',
-      );
-      return;
-    }
-
     // Show confirmation dialog
-    // Check if widget is still mounted before using context
-    if (!mounted) return;
-    
     final confirmed = await UiUtils.showDeleteConfirmation(
       context,
       'Delete Site',
@@ -163,19 +130,29 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
       'This action cannot be undone.',
     );
 
-    if (!confirmed) return;
+    if (!confirmed || !mounted) return;
 
-    try {
-      await _siteRepository.deleteSite(site.id!);
-      await _loadSites(); // Refresh list
-      if (mounted) {
+    final success = await context.read<SiteProvider>().deleteSite(site.id!);
+    
+    if (mounted) {
+      if (success) {
         UiUtils.showSuccessMessage(context, 'Site "${site.name}" deleted');
         // Return true to indicate sites were modified
         Navigator.of(context).pop(true);
-      }
-    } catch (e) {
-      if (mounted) {
-        UiUtils.showExceptionError(context, 'deleting site', e);
+      } else {
+        final errorMessage = context.read<SiteProvider>().errorMessage;
+        if (errorMessage != null) {
+          if (errorMessage.contains('used in flight records')) {
+            UiUtils.showErrorDialog(
+              context,
+              'Cannot Delete Site',
+              'This site is used in flight records and cannot be deleted.\n\n'
+              'You can edit the site name or other details instead.',
+            );
+          } else {
+            UiUtils.showErrorDialog(context, 'Error', errorMessage);
+          }
+        }
       }
     }
   }
@@ -186,16 +163,17 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
       builder: (context) => EditSiteDialog(site: site),
     );
 
-    if (result != null) {
-      try {
-        await _siteRepository.updateSite(result);
-        await _loadSites(); // Refresh list
-        if (mounted) {
+    if (result != null && mounted) {
+      final success = await context.read<SiteProvider>().updateSite(result);
+      
+      if (mounted) {
+        if (success) {
           UiUtils.showSuccessMessage(context, 'Site "${result.name}" updated');
-        }
-      } catch (e) {
-        if (mounted) {
-          UiUtils.showExceptionError(context, 'updating site', e);
+        } else {
+          final errorMessage = context.read<SiteProvider>().errorMessage;
+          if (errorMessage != null) {
+            UiUtils.showErrorDialog(context, 'Error', errorMessage);
+          }
         }
       }
     }
@@ -216,7 +194,8 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
               setState(() {
                 _sortBy = value;
                 _groupByCountry = (value == 'country');
-                _filterSites(); // Re-apply sort and grouping
+                final provider = context.read<SiteProvider>();
+                _filterSites(provider.sites); // Re-apply sort and grouping
               });
             },
             itemBuilder: (context) => [
@@ -296,55 +275,133 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
           ),
         ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _filteredSites.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        _searchQuery.isEmpty ? Icons.location_off : Icons.search_off,
-                        size: 64,
-                        color: Colors.grey,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        _searchQuery.isEmpty 
-                            ? 'No sites found'
-                            : 'No sites match your search',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _searchQuery.isEmpty
-                            ? 'Sites will appear here after importing flights'
-                            : 'Try a different search term',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.grey,
-                        ),
-                      ),
-                    ],
+      body: Consumer<SiteProvider>(
+        builder: (context, siteProvider, child) {
+          // Update filtered sites when provider data changes
+          if (siteProvider.sites.isNotEmpty) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _filterSites(siteProvider.sites);
+            });
+          }
+
+          if (siteProvider.isLoading) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (siteProvider.errorMessage != null) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    size: 64,
+                    color: Colors.red,
                   ),
-                )
-              : Column(
-                  children: [
-                    // Summary header  
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                      child: Text(
-                        'Showing ${_filteredSites.length} of ${_sites.length} sites',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Error loading sites',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    siteProvider.errorMessage!,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.grey,
                     ),
-                    // Site list
-                    Expanded(
-                      child: _groupByCountry ? _buildGroupedSiteList() : _buildFlatSiteList(),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () {
+                      siteProvider.clearError();
+                      siteProvider.loadSitesWithFlightCounts();
+                    },
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          if (_filteredSites.isEmpty && siteProvider.sites.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    _searchQuery.isEmpty ? Icons.location_off : Icons.search_off,
+                    size: 64,
+                    color: Colors.grey,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    _searchQuery.isEmpty 
+                        ? 'No sites found'
+                        : 'No sites match your search',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _searchQuery.isEmpty
+                        ? 'Sites will appear here after importing flights'
+                        : 'Try a different search term',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.grey,
                     ),
-                  ],
+                  ),
+                ],
+              ),
+            );
+          }
+
+          if (_filteredSites.isEmpty && siteProvider.sites.isNotEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.search_off,
+                    size: 64,
+                    color: Colors.grey,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No sites match your search',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Try a different search term',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return Column(
+            children: [
+              // Summary header  
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: Text(
+                  'Showing ${_filteredSites.length} of ${siteProvider.sites.length} sites',
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
+              ),
+              // Site list
+              Expanded(
+                child: _groupByCountry ? _buildGroupedSiteList() : _buildFlatSiteList(),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 

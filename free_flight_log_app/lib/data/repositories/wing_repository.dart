@@ -3,7 +3,10 @@ import '../datasources/database_helper.dart';
 import '../models/wing.dart';
 
 class WingRepository {
-  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
+  final DatabaseHelper _databaseHelper;
+  
+  /// Constructor with dependency injection
+  WingRepository(this._databaseHelper);
 
   Future<int> insertWing(Wing wing) async {
     Database db = await _databaseHelper.database;

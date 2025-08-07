@@ -3,7 +3,10 @@ import '../datasources/database_helper.dart';
 import '../models/site.dart';
 
 class SiteRepository {
-  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
+  final DatabaseHelper _databaseHelper;
+  
+  /// Constructor with dependency injection
+  SiteRepository(this._databaseHelper);
 
   Future<int> insertSite(Site site) async {
     Database db = await _databaseHelper.database;

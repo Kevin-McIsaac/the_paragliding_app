@@ -7,6 +7,7 @@ import '../../data/repositories/flight_repository.dart';
 import '../../data/repositories/site_repository.dart';
 import '../../data/repositories/wing_repository.dart';
 import 'edit_wing_screen.dart';
+import '../../core/dependency_injection.dart';
 
 class EditFlightScreen extends StatefulWidget {
   final Flight flight;
@@ -19,9 +20,9 @@ class EditFlightScreen extends StatefulWidget {
 
 class _EditFlightScreenState extends State<EditFlightScreen> {
   final _formKey = GlobalKey<FormState>();
-  final FlightRepository _flightRepository = FlightRepository();
-  final SiteRepository _siteRepository = SiteRepository();
-  final WingRepository _wingRepository = WingRepository();
+  final FlightRepository _flightRepository = serviceLocator<FlightRepository>();
+  final SiteRepository _siteRepository = serviceLocator<SiteRepository>();
+  final WingRepository _wingRepository = serviceLocator<WingRepository>();
 
   late TextEditingController _notesController;
 

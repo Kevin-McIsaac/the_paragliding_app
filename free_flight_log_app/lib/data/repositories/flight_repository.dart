@@ -3,56 +3,43 @@ import '../datasources/database_helper.dart';
 import '../models/flight.dart';
 import '../../services/logging_service.dart';
 
+/// Repository for basic Flight CRUD operations
+/// Handles only data persistence operations, not business logic or complex queries
 class FlightRepository {
-  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
+  final DatabaseHelper _databaseHelper;
+  
+  /// Constructor with dependency injection
+  FlightRepository(this._databaseHelper);
 
+  /// Insert a new flight into the database
   Future<int> insertFlight(Flight flight) async {
+    LoggingService.debug('FlightRepository: Inserting new flight');
+    
     Database db = await _databaseHelper.database;
     var map = flight.toMap();
     map.remove('id');
     map['updated_at'] = DateTime.now().toIso8601String();
     
     try {
-      return await db.insert('flights', map);
+      final result = await db.insert('flights', map);
+      LoggingService.database('INSERT', 'Successfully inserted flight with ID $result');
+      return result;
     } catch (e) {
-      if (e.toString().contains('max_climb_rate_5_sec') || 
-          e.toString().contains('max_sink_rate_5_sec') ||
-          e.toString().contains('timezone') ||
-          e.toString().contains('landing_latitude') ||
-          e.toString().contains('landing_longitude') ||
-          e.toString().contains('landing_altitude') ||
-          e.toString().contains('landing_description')) {
-        LoggingService.database('INSERT', 'Database migration needed for flight insert', e);
-        
-        // Remove the new fields and try again with legacy format
-        map.remove('max_climb_rate_5_sec');
-        map.remove('max_sink_rate_5_sec');
-        map.remove('timezone');
-        map.remove('landing_latitude');
-        map.remove('landing_longitude');
-        map.remove('landing_altitude');
-        map.remove('landing_description');
-        
-        try {
-          return await db.insert('flights', map);
-        } catch (e2) {
-          // Log the detailed error for debugging
-          LoggingService.error('Database insert failed with legacy format', e2);
-          
-          // Don't delete user data - provide meaningful error instead
-          throw Exception(
-            'Failed to insert flight due to database schema mismatch. '
-            'Please update the app or contact support. '
-            'Original error: $e - Secondary error: $e2'
-          );
-        }
-      } else {
-        rethrow;
-      }
+      LoggingService.error('FlightRepository: Failed to insert flight', e);
+      LoggingService.debug('FlightRepository: Flight data attempted: ${map.keys.join(', ')}');
+      
+      throw Exception(
+        'Failed to insert flight. This may indicate a database schema issue. '
+        'Please restart the app to trigger database migrations, or contact support if the problem persists. '
+        'Error details: $e'
+      );
     }
   }
 
+  /// Get all flights ordered by date (most recent first) with launch site names
   Future<List<Flight>> getAllFlights() async {
+    LoggingService.debug('FlightRepository: Getting all flights');
+    
     Database db = await _databaseHelper.database;
     List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT f.*, 
@@ -61,10 +48,17 @@ class FlightRepository {
       LEFT JOIN sites ls ON f.launch_site_id = ls.id
       ORDER BY f.date DESC, f.launch_time DESC
     ''');
-    return List.generate(maps.length, (i) => Flight.fromMap(maps[i]));
+    
+    final flights = maps.map((map) => Flight.fromMap(map)).toList();
+    LoggingService.debug('FlightRepository: Retrieved ${flights.length} flights');
+    
+    return flights;
   }
 
+  /// Get a specific flight by ID
   Future<Flight?> getFlight(int id) async {
+    LoggingService.debug('FlightRepository: Getting flight $id');
+    
     Database db = await _databaseHelper.database;
     List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT f.*, 
@@ -73,227 +67,48 @@ class FlightRepository {
       LEFT JOIN sites ls ON f.launch_site_id = ls.id
       WHERE f.id = ?
     ''', [id]);
+    
     if (maps.isNotEmpty) {
+      LoggingService.debug('FlightRepository: Found flight $id');
       return Flight.fromMap(maps.first);
     }
+    
+    LoggingService.debug('FlightRepository: Flight $id not found');
     return null;
   }
 
+  /// Update an existing flight
   Future<int> updateFlight(Flight flight) async {
+    LoggingService.debug('FlightRepository: Updating flight ${flight.id}');
+    
     Database db = await _databaseHelper.database;
     var map = flight.toMap();
     map['updated_at'] = DateTime.now().toIso8601String();
-    return await db.update(
+    
+    final result = await db.update(
       'flights',
       map,
       where: 'id = ?',
       whereArgs: [flight.id],
     );
+    
+    LoggingService.database('UPDATE', 'Updated flight ${flight.id}');
+    return result;
   }
 
+  /// Delete a flight by ID
   Future<int> deleteFlight(int id) async {
+    LoggingService.debug('FlightRepository: Deleting flight $id');
+    
     Database db = await _databaseHelper.database;
-    return await db.delete(
+    final result = await db.delete(
       'flights',
       where: 'id = ?',
       whereArgs: [id],
     );
+    
+    LoggingService.database('DELETE', 'Deleted flight $id');
+    return result;
   }
 
-  Future<List<Flight>> getFlightsByDateRange(DateTime start, DateTime end) async {
-    Database db = await _databaseHelper.database;
-    List<Map<String, dynamic>> maps = await db.query(
-      'flights',
-      where: 'date >= ? AND date <= ?',
-      whereArgs: [start.toIso8601String(), end.toIso8601String()],
-      orderBy: 'date DESC, launch_time DESC',
-    );
-    return List.generate(maps.length, (i) => Flight.fromMap(maps[i]));
-  }
-
-  Future<List<Flight>> getFlightsBySite(int siteId) async {
-    Database db = await _databaseHelper.database;
-    List<Map<String, dynamic>> maps = await db.query(
-      'flights',
-      where: 'launch_site_id = ?',
-      whereArgs: [siteId],
-      orderBy: 'date DESC, launch_time DESC',
-    );
-    return List.generate(maps.length, (i) => Flight.fromMap(maps[i]));
-  }
-
-  Future<List<Flight>> getFlightsByWing(int wingId) async {
-    Database db = await _databaseHelper.database;
-    List<Map<String, dynamic>> maps = await db.query(
-      'flights',
-      where: 'wing_id = ?',
-      whereArgs: [wingId],
-      orderBy: 'date DESC, launch_time DESC',
-    );
-    return List.generate(maps.length, (i) => Flight.fromMap(maps[i]));
-  }
-
-  /// Find flight by date and launch time to check for duplicates
-  Future<Flight?> findFlightByDateTime(DateTime date, String launchTime) async {
-    Database db = await _databaseHelper.database;
-    
-    // Format date as ISO string for database comparison
-    final dateStr = date.toIso8601String().split('T')[0]; // Get just the date part
-    
-    List<Map<String, dynamic>> maps = await db.query(
-      'flights',
-      where: 'DATE(date) = ? AND launch_time = ?',
-      whereArgs: [dateStr, launchTime],
-      limit: 1,
-    );
-    
-    if (maps.isNotEmpty) {
-      return Flight.fromMap(maps.first);
-    }
-    return null;
-  }
-
-  Future<Map<String, dynamic>> getFlightStatistics() async {
-    Database db = await _databaseHelper.database;
-    
-    List<Map<String, dynamic>> countResult = await db.rawQuery(
-      'SELECT COUNT(*) as total_flights FROM flights'
-    );
-    
-    List<Map<String, dynamic>> durationResult = await db.rawQuery(
-      'SELECT SUM(duration) as total_duration FROM flights'
-    );
-    
-    List<Map<String, dynamic>> maxAltitudeResult = await db.rawQuery(
-      'SELECT MAX(max_altitude) as highest_altitude FROM flights'
-    );
-    
-    return {
-      'totalFlights': countResult.first['total_flights'] ?? 0,
-      'totalDuration': durationResult.first['total_duration'] ?? 0,
-      'highestAltitude': maxAltitudeResult.first['highest_altitude'] ?? 0.0,
-    };
-  }
-
-  /// Get flights grouped by year with total hours
-  Future<Map<int, double>> getFlightHoursByYear() async {
-    Database db = await _databaseHelper.database;
-    
-    List<Map<String, dynamic>> results = await db.rawQuery('''
-      SELECT 
-        CAST(strftime('%Y', date) AS INTEGER) as year,
-        SUM(duration) as total_minutes,
-        COUNT(*) as flight_count
-      FROM flights
-      GROUP BY year
-      ORDER BY year DESC
-    ''');
-    
-    Map<int, double> hoursByYear = {};
-    for (final row in results) {
-      final year = row['year'] as int;
-      final totalMinutes = (row['total_minutes'] as int?) ?? 0;
-      hoursByYear[year] = totalMinutes / 60.0; // Convert to hours
-    }
-    
-    return hoursByYear;
-  }
-
-  /// Get flight statistics grouped by year
-  Future<List<Map<String, dynamic>>> getYearlyStatistics() async {
-    Database db = await _databaseHelper.database;
-    
-    List<Map<String, dynamic>> results = await db.rawQuery('''
-      SELECT 
-        CAST(strftime('%Y', date) AS INTEGER) as year,
-        COUNT(*) as flight_count,
-        SUM(duration) as total_minutes,
-        MAX(max_altitude) as max_altitude
-      FROM flights
-      GROUP BY year
-      ORDER BY year DESC
-    ''');
-    
-    return results.map((row) {
-      final totalMinutes = (row['total_minutes'] as int?) ?? 0;
-      return {
-        'year': row['year'],
-        'flight_count': row['flight_count'] ?? 0,
-        'total_hours': totalMinutes / 60.0,
-        'max_altitude': row['max_altitude'] ?? 0,
-      };
-    }).toList();
-  }
-
-  /// Get total flight hours by wing (grouped by manufacturer and model)
-  Future<List<Map<String, dynamic>>> getWingStatistics() async {
-    Database db = await _databaseHelper.database;
-    
-    // First query groups by manufacturer and model combination
-    List<Map<String, dynamic>> results = await db.rawQuery('''
-      SELECT 
-        CASE 
-          WHEN w.manufacturer IS NOT NULL AND w.manufacturer != '' 
-               AND w.model IS NOT NULL AND w.model != ''
-          THEN w.manufacturer || ' ' || w.model
-          ELSE COALESCE(w.name, 'Unknown')
-        END as wing_name,
-        COUNT(f.id) as flight_count,
-        SUM(f.duration) as total_minutes,
-        MAX(f.max_altitude) as max_altitude,
-        COUNT(DISTINCT w.id) as wing_count
-      FROM wings w
-      LEFT JOIN flights f ON f.wing_id = w.id
-      WHERE f.id IS NOT NULL
-      GROUP BY wing_name
-      ORDER BY total_minutes DESC
-    ''');
-    
-    return results.map((row) {
-      final displayName = row['wing_name'] as String? ?? 'Unknown';
-      final totalMinutes = (row['total_minutes'] as int?) ?? 0;
-      final wingCount = (row['wing_count'] as int?) ?? 1;
-      
-      return {
-        'name': displayName,
-        'flight_count': row['flight_count'] ?? 0,
-        'total_hours': totalMinutes / 60.0,
-        'max_altitude': row['max_altitude'] ?? 0,
-        'wing_count': wingCount, // Number of individual wings of this type
-      };
-    }).toList();
-  }
-
-  /// Get statistics grouped by launch site
-  Future<List<Map<String, dynamic>>> getSiteStatistics() async {
-    Database db = await _databaseHelper.database;
-    
-    List<Map<String, dynamic>> results = await db.rawQuery('''
-      SELECT 
-        s.name as site_name,
-        s.country as country,
-        COUNT(f.id) as flight_count,
-        SUM(f.duration) as total_minutes,
-        MAX(f.max_altitude) as max_altitude
-      FROM sites s
-      LEFT JOIN flights f ON f.launch_site_id = s.id
-      WHERE f.id IS NOT NULL
-      GROUP BY s.id, s.name, s.country
-      ORDER BY 
-        CASE WHEN s.country IS NULL THEN 1 ELSE 0 END,
-        s.country ASC,
-        s.name ASC
-    ''');
-    
-    return results.map((row) {
-      final totalMinutes = (row['total_minutes'] as int?) ?? 0;
-      return {
-        'site_name': row['site_name'] ?? 'Unknown',
-        'country': row['country'] ?? 'Unknown Country',
-        'flight_count': row['flight_count'] ?? 0,
-        'total_hours': totalMinutes / 60.0,
-        'max_altitude': row['max_altitude'] ?? 0,
-      };
-    }).toList();
-  }
 }

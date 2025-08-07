@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../data/repositories/flight_repository.dart';
+import 'package:provider/provider.dart';
 import '../../utils/date_time_utils.dart';
+import '../../providers/flight_provider.dart';
 
 class StatisticsScreen extends StatefulWidget {
   const StatisticsScreen({super.key});
@@ -10,42 +11,15 @@ class StatisticsScreen extends StatefulWidget {
 }
 
 class _StatisticsScreenState extends State<StatisticsScreen> {
-  final FlightRepository _flightRepository = FlightRepository();
-  
-  List<Map<String, dynamic>> _yearlyStats = [];
-  List<Map<String, dynamic>> _wingStats = [];
-  List<Map<String, dynamic>> _siteStats = [];
-  bool _isLoading = true;
   
   @override
   void initState() {
     super.initState();
-    _loadStatistics();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<FlightProvider>().loadAllStatistics();
+    });
   }
   
-  Future<void> _loadStatistics() async {
-    try {
-      final yearlyStats = await _flightRepository.getYearlyStatistics();
-      final wingStats = await _flightRepository.getWingStatistics();
-      final siteStats = await _flightRepository.getSiteStatistics();
-      
-      setState(() {
-        _yearlyStats = yearlyStats;
-        _wingStats = wingStats;
-        _siteStats = siteStats;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading statistics: $e')),
-        );
-      }
-    }
-  }
   
   
   @override
@@ -55,40 +29,86 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         title: const Text('Flight Statistics'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _yearlyStats.isEmpty && _wingStats.isEmpty && _siteStats.isEmpty
-              ? _buildEmptyState()
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Yearly Statistics Section
-                      if (_yearlyStats.isNotEmpty) ...[
-                        _buildSectionHeader('Flights by Year', Icons.calendar_today),
-                        const SizedBox(height: 8),
-                        _buildYearlyStatsTable(),
-                        const SizedBox(height: 24),
-                      ],
-                      
-                      // Wing Statistics Section
-                      if (_wingStats.isNotEmpty) ...[
-                        _buildSectionHeader('Flights by Wing', Icons.paragliding),
-                        const SizedBox(height: 8),
-                        _buildWingStatsTable(),
-                        const SizedBox(height: 24),
-                      ],
-                      
-                      // Site Statistics Section
-                      if (_siteStats.isNotEmpty) ...[
-                        _buildSectionHeader('Flights by Site', Icons.location_on),
-                        const SizedBox(height: 8),
-                        _buildSiteStatsTable(),
-                      ],
-                    ],
+      body: Consumer<FlightProvider>(
+        builder: (context, flightProvider, child) {
+          if (flightProvider.isLoading) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (flightProvider.errorMessage != null) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    size: 64,
+                    color: Colors.red,
                   ),
-                ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Error loading statistics',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    flightProvider.errorMessage!,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.grey,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () {
+                      flightProvider.clearError();
+                      flightProvider.loadAllStatistics();
+                    },
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          if (flightProvider.yearlyStats.isEmpty && 
+              flightProvider.wingStats.isEmpty && 
+              flightProvider.siteStats.isEmpty) {
+            return _buildEmptyState();
+          }
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Yearly Statistics Section
+                if (flightProvider.yearlyStats.isNotEmpty) ...[
+                  _buildSectionHeader('Flights by Year', Icons.calendar_today),
+                  const SizedBox(height: 8),
+                  _buildYearlyStatsTable(flightProvider.yearlyStats),
+                  const SizedBox(height: 24),
+                ],
+                
+                // Wing Statistics Section
+                if (flightProvider.wingStats.isNotEmpty) ...[
+                  _buildSectionHeader('Flights by Wing', Icons.paragliding),
+                  const SizedBox(height: 8),
+                  _buildWingStatsTable(flightProvider.wingStats),
+                  const SizedBox(height: 24),
+                ],
+                
+                // Site Statistics Section
+                if (flightProvider.siteStats.isNotEmpty) ...[
+                  _buildSectionHeader('Flights by Site', Icons.location_on),
+                  const SizedBox(height: 8),
+                  _buildSiteStatsTable(flightProvider.siteStats),
+                ],
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
   
@@ -137,11 +157,11 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     );
   }
   
-  Widget _buildYearlyStatsTable() {
+  Widget _buildYearlyStatsTable(List<Map<String, dynamic>> yearlyStats) {
     // Calculate totals
     double totalHours = 0;
     int totalFlights = 0;
-    for (final stat in _yearlyStats) {
+    for (final stat in yearlyStats) {
       totalHours += stat['total_hours'] as double;
       totalFlights += stat['flight_count'] as int;
     }
@@ -199,7 +219,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
             ),
             
             // Data Rows
-            ..._yearlyStats.map((stat) => Container(
+            ...yearlyStats.map((stat) => Container(
               padding: const EdgeInsets.symmetric(vertical: 12),
               decoration: BoxDecoration(
                 border: Border(
@@ -240,7 +260,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                   ),
                 ],
               ),
-            )).toList(),
+            )),
             
             // Total Row
             Container(
@@ -295,11 +315,11 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     );
   }
   
-  Widget _buildWingStatsTable() {
+  Widget _buildWingStatsTable(List<Map<String, dynamic>> wingStats) {
     // Calculate totals
     double totalHours = 0;
     int totalFlights = 0;
-    for (final stat in _wingStats) {
+    for (final stat in wingStats) {
       totalHours += stat['total_hours'] as double;
       totalFlights += stat['flight_count'] as int;
     }
@@ -357,7 +377,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
             ),
             
             // Data Rows
-            ..._wingStats.map((stat) => Container(
+            ...wingStats.map((stat) => Container(
               padding: const EdgeInsets.symmetric(vertical: 12),
               decoration: BoxDecoration(
                 border: Border(
@@ -429,10 +449,10 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                   ),
                 ],
               ),
-            )).toList(),
+            )),
             
             // Total Row (if more than one wing)
-            if (_wingStats.length > 1)
+            if (wingStats.length > 1)
               Container(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
@@ -485,13 +505,13 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     );
   }
 
-  Widget _buildSiteStatsTable() {
+  Widget _buildSiteStatsTable(List<Map<String, dynamic>> siteStats) {
     // Group sites by country
     Map<String, List<Map<String, dynamic>>> groupedSites = {};
     double totalHours = 0;
     int totalFlights = 0;
     
-    for (final stat in _siteStats) {
+    for (final stat in siteStats) {
       final country = stat['country'] as String;
       if (!groupedSites.containsKey(country)) {
         groupedSites[country] = [];
@@ -651,10 +671,10 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                   ),
                 )),
               ];
-            }).toList(),
+            }),
             
             // Total Row (if more than one site)
-            if (_siteStats.length > 1)
+            if (siteStats.length > 1)
               Container(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(

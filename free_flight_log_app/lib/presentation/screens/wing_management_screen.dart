@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../data/models/wing.dart';
-import '../../data/repositories/wing_repository.dart';
+import '../../providers/wing_provider.dart';
 import 'edit_wing_screen.dart';
 
 class WingManagementScreen extends StatefulWidget {
@@ -11,33 +12,13 @@ class WingManagementScreen extends StatefulWidget {
 }
 
 class _WingManagementScreenState extends State<WingManagementScreen> {
-  final WingRepository _wingRepository = WingRepository();
-  List<Wing> _wings = [];
-  bool _isLoading = true;
-
   @override
   void initState() {
     super.initState();
-    _loadWings();
-  }
-
-  Future<void> _loadWings() async {
-    try {
-      final wings = await _wingRepository.getAllWings();
-      setState(() {
-        _wings = wings;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading wings: $e')),
-        );
-      }
-    }
+    // Load wings when the widget is first created
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<WingProvider>().loadWings();
+    });
   }
 
   Future<void> _addNewWing() async {
@@ -47,8 +28,8 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
       ),
     );
 
-    if (result == true) {
-      _loadWings();
+    if (result == true && mounted) {
+      context.read<WingProvider>().loadWings();
     }
   }
 
@@ -59,47 +40,12 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
       ),
     );
 
-    if (result == true) {
-      _loadWings();
+    if (result == true && mounted) {
+      context.read<WingProvider>().loadWings();
     }
   }
 
   Future<void> _deleteWing(Wing wing) async {
-    // Check if wing can be deleted (not used in flights)
-    final canDelete = await _wingRepository.canDeleteWing(wing.id!);
-    
-    if (!canDelete) {
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Cannot Delete Wing'),
-            content: const Text(
-              'This wing is used in one or more flights and cannot be deleted. '
-              'You can deactivate it instead to hide it from new flight entries.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-              TextButton(
-                onPressed: () async {
-                  Navigator.of(context).pop();
-                  await _deactivateWing(wing);
-                },
-                child: const Text('Deactivate'),
-              ),
-            ],
-          ),
-        );
-      }
-      return;
-    }
-
-    // Check if widget is still mounted before using context
-    if (!mounted) return;
-
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -119,76 +65,74 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
       ),
     );
 
-    if (confirmed == true) {
-      try {
-        await _wingRepository.deleteWing(wing.id!);
-        _loadWings();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Wing "${wing.name}" deleted successfully')),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error deleting wing: $e')),
-          );
-        }
+    if (confirmed == true && mounted) {
+      final success = await context.read<WingProvider>().deleteWing(wing.id!);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(success 
+                ? 'Wing "${wing.name}" deleted successfully'
+                : 'Error deleting wing'),
+            backgroundColor: success ? null : Colors.red,
+          ),
+        );
       }
     }
   }
 
   Future<void> _deactivateWing(Wing wing) async {
-    try {
-      await _wingRepository.deactivateWing(wing.id!);
-      _loadWings();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Wing "${wing.name}" deactivated')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error deactivating wing: $e')),
-        );
-      }
+    // Deactivate by updating the wing with active = false
+    final deactivatedWing = Wing(
+      id: wing.id,
+      name: wing.name,
+      manufacturer: wing.manufacturer,
+      model: wing.model,
+      size: wing.size,
+      color: wing.color,
+      purchaseDate: wing.purchaseDate,
+      active: false,
+      notes: wing.notes,
+      createdAt: wing.createdAt,
+    );
+    
+    final success = await context.read<WingProvider>().updateWing(deactivatedWing);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(success 
+              ? 'Wing "${wing.name}" deactivated'
+              : 'Error deactivating wing'),
+          backgroundColor: success ? null : Colors.red,
+        ),
+      );
     }
   }
 
   Future<void> _toggleWingStatus(Wing wing) async {
-    try {
-      final updatedWing = Wing(
-        id: wing.id,
-        name: wing.name,
-        manufacturer: wing.manufacturer,
-        model: wing.model,
-        size: wing.size,
-        color: wing.color,
-        purchaseDate: wing.purchaseDate,
-        active: !wing.active,
-        notes: wing.notes,
-        createdAt: wing.createdAt,
-      );
+    final updatedWing = Wing(
+      id: wing.id,
+      name: wing.name,
+      manufacturer: wing.manufacturer,
+      model: wing.model,
+      size: wing.size,
+      color: wing.color,
+      purchaseDate: wing.purchaseDate,
+      active: !wing.active,
+      notes: wing.notes,
+      createdAt: wing.createdAt,
+    );
 
-      await _wingRepository.updateWing(updatedWing);
-      _loadWings();
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Wing "${wing.name}" ${wing.active ? 'deactivated' : 'activated'}'
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating wing: $e')),
-        );
-      }
+    final success = await context.read<WingProvider>().updateWing(updatedWing);
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(success
+              ? 'Wing "${wing.name}" ${wing.active ? 'deactivated' : 'activated'}'
+              : 'Error updating wing'),
+          backgroundColor: success ? null : Colors.red,
+        ),
+      );
     }
   }
 
@@ -206,11 +150,51 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _wings.isEmpty
-              ? _buildEmptyState()
-              : _buildWingList(),
+      body: Consumer<WingProvider>(
+        builder: (context, wingProvider, child) {
+          if (wingProvider.isLoading) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          
+          if (wingProvider.errorMessage != null) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.error, size: 64, color: Colors.red[400]),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Error loading wings',
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    wingProvider.errorMessage!,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () {
+                      wingProvider.clearError();
+                      wingProvider.loadWings();
+                    },
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            );
+          }
+          
+          final wings = wingProvider.wings;
+          
+          if (wings.isEmpty) {
+            return _buildEmptyState();
+          }
+          
+          return _buildWingList(wings);
+        },
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _addNewWing,
         tooltip: 'Add Wing',
@@ -254,9 +238,9 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
     );
   }
 
-  Widget _buildWingList() {
-    final activeWings = _wings.where((wing) => wing.active).toList();
-    final inactiveWings = _wings.where((wing) => !wing.active).toList();
+  Widget _buildWingList(List<Wing> wings) {
+    final activeWings = wings.where((wing) => wing.active).toList();
+    final inactiveWings = wings.where((wing) => !wing.active).toList();
 
     return ListView(
       padding: const EdgeInsets.all(16),

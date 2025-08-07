@@ -5,8 +5,8 @@ import 'logging_service.dart';
 
 /// Parser for IGC (International Gliding Commission) file format
 class IgcParser {
-  // Cache for timezone detection per file to avoid duplicate logging
-  static final Map<String, String?> _timezoneCache = {};
+  // LRU cache for timezone detection with size limit to prevent memory leaks
+  static final _TimezoneCache _timezoneCache = _TimezoneCache();
   /// Parse IGC file from file path
   Future<IgcFile> parseFile(String filePath) async {
     final file = File(filePath);
@@ -83,7 +83,7 @@ class IgcParser {
       final coordKey = '${firstPoint.latitude.toStringAsFixed(3)},${firstPoint.longitude.toStringAsFixed(3)}';
       
       // Check cache first
-      String? cachedTimezone = _timezoneCache[coordKey];
+      String? cachedTimezone = _timezoneCache.get(coordKey);
       
       if (cachedTimezone == null) {
         // Not in cache, detect timezone
@@ -101,7 +101,7 @@ class IgcParser {
           
           if (cachedTimezone != null) {
             // Cache the result
-            _timezoneCache[coordKey] = cachedTimezone;
+            _timezoneCache.put(coordKey, cachedTimezone);
             
             // Log only on first detection
             // Log timezone detection results
@@ -334,5 +334,72 @@ class IgcParser {
       LoggingService.error('IgcParser: Error converting UTC to local time', e);
       return utcTime;
     }
+  }
+  
+  /// Clear timezone cache to free memory (useful for memory management)
+  static void clearTimezoneCache() {
+    _timezoneCache.clear();
+  }
+  
+  /// Get timezone cache statistics for monitoring
+  static Map<String, dynamic> getTimezoneStats() {
+    return _timezoneCache.getStats();
+  }
+}
+
+/// LRU Cache for timezone detection to prevent memory leaks
+/// Maintains a maximum size and evicts least recently used entries
+class _TimezoneCache {
+  static const int _maxSize = 100; // Reasonable limit for timezone cache
+  
+  final Map<String, String?> _cache = {};
+  final List<String> _accessOrder = [];
+  
+  /// Get cached timezone for coordinate key
+  String? get(String key) {
+    final value = _cache[key];
+    if (value != null) {
+      // Update access order (move to end = most recently used)
+      _accessOrder.remove(key);
+      _accessOrder.add(key);
+    }
+    return value;
+  }
+  
+  /// Store timezone in cache with LRU eviction
+  void put(String key, String? value) {
+    if (_cache.containsKey(key)) {
+      // Update existing entry
+      _cache[key] = value;
+      _accessOrder.remove(key);
+      _accessOrder.add(key);
+    } else {
+      // Add new entry
+      _cache[key] = value;
+      _accessOrder.add(key);
+      
+      // Evict oldest entries if cache is full
+      while (_cache.length > _maxSize) {
+        final oldestKey = _accessOrder.removeAt(0);
+        _cache.remove(oldestKey);
+        LoggingService.debug('IgcParser: Evicted timezone cache entry: $oldestKey');
+      }
+    }
+  }
+  
+  /// Clear all cached entries (useful for memory management)
+  void clear() {
+    _cache.clear();
+    _accessOrder.clear();
+    LoggingService.info('IgcParser: Timezone cache cleared');
+  }
+  
+  /// Get cache statistics for debugging
+  Map<String, dynamic> getStats() {
+    return {
+      'size': _cache.length,
+      'maxSize': _maxSize,
+      'hitRate': _cache.isEmpty ? 0.0 : _accessOrder.length / _cache.length,
+    };
   }
 }

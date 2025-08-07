@@ -2,10 +2,11 @@ import '../data/repositories/site_repository.dart';
 import '../data/models/site.dart';
 import '../services/logging_service.dart';
 import 'site_matching_service.dart';
+import '../core/dependency_injection.dart';
 
 /// Service for migrating existing sites to populate country field
 class SiteMigrationService {
-  final SiteRepository _siteRepository = SiteRepository();
+  final SiteRepository _siteRepository = serviceLocator<SiteRepository>();
   final SiteMatchingService _siteMatchingService = SiteMatchingService.instance;
 
   /// Migrate all sites that are missing country information

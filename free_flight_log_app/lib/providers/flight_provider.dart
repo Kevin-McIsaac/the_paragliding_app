@@ -1,22 +1,40 @@
 import 'package:flutter/foundation.dart';
 import '../data/models/flight.dart';
 import '../data/repositories/flight_repository.dart';
+import '../data/services/flight_query_service.dart';
+import '../data/services/flight_statistics_service.dart';
+import '../core/dependency_injection.dart';
 import '../services/logging_service.dart';
 
 /// State management for flight data
 class FlightProvider extends ChangeNotifier {
   final FlightRepository _repository;
+  late final FlightQueryService _queryService;
+  late final FlightStatisticsService _statisticsService;
   
-  FlightProvider(this._repository);
+  FlightProvider(this._repository) {
+    _queryService = serviceLocator<FlightQueryService>();
+    _statisticsService = serviceLocator<FlightStatisticsService>();
+  }
 
   List<Flight> _flights = [];
   bool _isLoading = false;
   String? _errorMessage;
+  
+  // Statistics state
+  List<Map<String, dynamic>> _yearlyStats = [];
+  List<Map<String, dynamic>> _wingStats = [];
+  List<Map<String, dynamic>> _siteStats = [];
+  bool _statisticsLoaded = false;
 
   // Getters
   List<Flight> get flights => _flights;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
+  List<Map<String, dynamic>> get yearlyStats => _yearlyStats;
+  List<Map<String, dynamic>> get wingStats => _wingStats;
+  List<Map<String, dynamic>> get siteStats => _siteStats;
+  bool get statisticsLoaded => _statisticsLoaded;
 
   /// Load all flights from repository
   Future<void> loadFlights() async {
@@ -91,6 +109,12 @@ class FlightProvider extends ChangeNotifier {
   Future<bool> deleteFlight(int flightId) async {
     _clearError();
     
+    // Check if flight exists in local list to prevent duplicate deletion
+    if (!_flights.any((f) => f.id == flightId)) {
+      LoggingService.warning('FlightProvider: Flight $flightId not found in local list, skipping deletion');
+      return false;
+    }
+    
     try {
       LoggingService.debug('FlightProvider: Deleting flight $flightId');
       await _repository.deleteFlight(flightId);
@@ -112,17 +136,29 @@ class FlightProvider extends ChangeNotifier {
   Future<bool> deleteFlights(List<int> flightIds) async {
     _clearError();
     
+    // Filter to only include flights that exist in local list
+    final existingIds = flightIds.where((id) => _flights.any((f) => f.id == id)).toList();
+    
+    if (existingIds.isEmpty) {
+      LoggingService.warning('FlightProvider: No flights found for deletion in local list');
+      return false;
+    }
+    
+    if (existingIds.length != flightIds.length) {
+      LoggingService.warning('FlightProvider: Some flights already deleted, proceeding with ${existingIds.length}/${flightIds.length} flights');
+    }
+    
     try {
-      LoggingService.debug('FlightProvider: Deleting ${flightIds.length} flights');
+      LoggingService.debug('FlightProvider: Deleting ${existingIds.length} flights');
       
-      for (final id in flightIds) {
+      for (final id in existingIds) {
         await _repository.deleteFlight(id);
       }
       
       // Remove from local list
-      _flights.removeWhere((f) => flightIds.contains(f.id));
+      _flights.removeWhere((f) => existingIds.contains(f.id));
       
-      LoggingService.info('FlightProvider: Deleted ${flightIds.length} flights');
+      LoggingService.info('FlightProvider: Deleted ${existingIds.length} flights');
       notifyListeners();
       return true;
     } catch (e) {
@@ -136,7 +172,7 @@ class FlightProvider extends ChangeNotifier {
   Future<Map<String, dynamic>> getStatistics() async {
     try {
       LoggingService.debug('FlightProvider: Loading statistics');
-      return await _repository.getFlightStatistics();
+      return await _statisticsService.getOverallStatistics();
     } catch (e) {
       LoggingService.error('FlightProvider: Failed to load statistics', e);
       _setError('Failed to load statistics: $e');
@@ -148,7 +184,7 @@ class FlightProvider extends ChangeNotifier {
   Future<List<Map<String, dynamic>>> getYearlyStatistics() async {
     try {
       LoggingService.debug('FlightProvider: Loading yearly statistics');
-      return await _repository.getYearlyStatistics();
+      return await _statisticsService.getYearlyStatistics();
     } catch (e) {
       LoggingService.error('FlightProvider: Failed to load yearly statistics', e);
       _setError('Failed to load yearly statistics: $e');
@@ -156,10 +192,70 @@ class FlightProvider extends ChangeNotifier {
     }
   }
 
+  /// Get wing statistics
+  Future<List<Map<String, dynamic>>> getWingStatistics() async {
+    try {
+      LoggingService.debug('FlightProvider: Loading wing statistics');
+      return await _statisticsService.getWingStatistics();
+    } catch (e) {
+      LoggingService.error('FlightProvider: Failed to load wing statistics', e);
+      _setError('Failed to load wing statistics: $e');
+      return [];
+    }
+  }
+
+  /// Get site statistics
+  Future<List<Map<String, dynamic>>> getSiteStatistics() async {
+    try {
+      LoggingService.debug('FlightProvider: Loading site statistics');
+      return await _statisticsService.getSiteStatistics();
+    } catch (e) {
+      LoggingService.error('FlightProvider: Failed to load site statistics', e);
+      _setError('Failed to load site statistics: $e');
+      return [];
+    }
+  }
+
+  /// Load all statistics data
+  Future<void> loadAllStatistics() async {
+    _setLoading(true);
+    _clearError();
+    
+    try {
+      LoggingService.debug('FlightProvider: Loading all statistics');
+      final startTime = DateTime.now();
+      
+      // Load all statistics in parallel
+      final results = await Future.wait([
+        _statisticsService.getYearlyStatistics(),
+        _statisticsService.getWingStatistics(),
+        _statisticsService.getSiteStatistics(),
+      ]);
+      
+      _yearlyStats = results[0];
+      _wingStats = results[1];
+      _siteStats = results[2];
+      _statisticsLoaded = true;
+      
+      final duration = DateTime.now().difference(startTime);
+      LoggingService.performance('Load all statistics', duration, 
+          '${_yearlyStats.length} yearly, ${_wingStats.length} wing, ${_siteStats.length} site stats loaded');
+      
+      LoggingService.info('FlightProvider: Loaded all statistics successfully');
+      notifyListeners();
+    } catch (e) {
+      LoggingService.error('FlightProvider: Failed to load statistics', e);
+      _setError('Failed to load statistics: $e');
+      _statisticsLoaded = false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   /// Find duplicate flight
   Future<Flight?> findDuplicateFlight(DateTime date, String launchTime) async {
     try {
-      return await _repository.findFlightByDateTime(date, launchTime);
+      return await _queryService.findFlightByDateTime(date, launchTime);
     } catch (e) {
       LoggingService.error('FlightProvider: Failed to check for duplicates', e);
       return null;

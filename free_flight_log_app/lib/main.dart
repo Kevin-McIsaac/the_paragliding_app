@@ -7,11 +7,12 @@ import 'services/timezone_service.dart';
 import 'providers/flight_provider.dart';
 import 'providers/site_provider.dart';
 import 'providers/wing_provider.dart';
-import 'data/repositories/flight_repository.dart';
-import 'data/repositories/site_repository.dart';
-import 'data/repositories/wing_repository.dart';
+import 'core/dependency_injection.dart';
 
-void main() {
+void main() async {
+  // Ensure Flutter is initialized
+  WidgetsFlutterBinding.ensureInitialized();
+  
   // Initialize sqflite for desktop platforms
   if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
     sqfliteFfiInit();
@@ -20,6 +21,9 @@ void main() {
   
   // Initialize timezone database
   TimezoneService.initialize();
+  
+  // Configure dependency injection
+  await configureDependencies();
   
   runApp(const FreeFlightLogApp());
 }
@@ -32,13 +36,13 @@ class FreeFlightLogApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(
-          create: (_) => FlightProvider(FlightRepository()),
+          create: (_) => serviceLocator<FlightProvider>(),
         ),
         ChangeNotifierProvider(
-          create: (_) => SiteProvider(SiteRepository()),
+          create: (_) => serviceLocator<SiteProvider>(),
         ),
         ChangeNotifierProvider(
-          create: (_) => WingProvider(WingRepository()),
+          create: (_) => serviceLocator<WingProvider>(),
         ),
       ],
       child: MaterialApp(
