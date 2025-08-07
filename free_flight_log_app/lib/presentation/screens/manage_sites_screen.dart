@@ -333,7 +333,7 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
-                      color: Theme.of(context).colorScheme.surfaceVariant,
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
                       child: Text(
                         'Showing ${_filteredSites.length} of ${_sites.length} sites',
                         style: Theme.of(context).textTheme.bodyMedium,

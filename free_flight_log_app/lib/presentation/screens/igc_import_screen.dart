@@ -19,7 +19,7 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
   bool _isLoading = false;
   List<String> _selectedFilePaths = [];
   String? _errorMessage;
-  List<ImportResult> _importResults = [];
+  final List<ImportResult> _importResults = [];
   String? _currentlyProcessingFile;
   String? _lastFolder;
   
@@ -363,9 +363,6 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year}';
-  }
 
   @override
   Widget build(BuildContext context) {

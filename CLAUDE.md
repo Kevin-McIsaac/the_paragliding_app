@@ -116,3 +116,6 @@ For complete project history and detailed changelog, see [CHANGELOG.md](CHANGELO
 
 ## Development Reminders
 - After running flutter analyze, review the output and fix
+
+## Bash and Command Execution Notes
+- The Bash tool doesn't support shell redirection operators like 2>&1 or pipes |. Instead, run the command directly

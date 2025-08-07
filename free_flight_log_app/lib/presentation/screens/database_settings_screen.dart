@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../utils/database_reset_helper.dart';
-import '../../data/repositories/site_repository.dart';
 import '../../services/site_matching_service.dart';
 import '../../services/site_migration_service.dart';
 
@@ -369,9 +368,9 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      border: Border.all(color: Colors.red.withOpacity(0.3)),
+                      border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
                       borderRadius: BorderRadius.circular(8),
-                      color: Colors.red.withOpacity(0.1),
+                      color: Colors.red.withValues(alpha: 0.1),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

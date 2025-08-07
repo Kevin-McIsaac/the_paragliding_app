@@ -2,6 +2,7 @@ import 'dart:math';
 import '../data/models/paragliding_site.dart';
 import '../data/models/site.dart';
 import '../data/repositories/site_repository.dart';
+import '../services/logging_service.dart';
 import 'paragliding_earth_api.dart';
 
 class SiteMatchingService {
@@ -29,12 +30,12 @@ class SiteMatchingService {
       _isInitialized = true;
       
       if (_sites!.isEmpty) {
-        print('SiteMatching: No flight log sites available - using API-only mode');
+        LoggingService.info('SiteMatchingService: No flight log sites available - using API-only mode');
       } else {
-        print('SiteMatching: Loaded ${_sites!.length} sites from flight log (personalized fallback)');
+        LoggingService.info('SiteMatchingService: Loaded ${_sites!.length} sites from flight log (personalized fallback)');
       }
     } catch (e) {
-      print('SiteMatching: Error loading flight log sites: $e');
+      LoggingService.error('SiteMatchingService: Error loading flight log sites', e);
       // Initialize with empty list if loading fails
       _sites = [];
       _isInitialized = true;
@@ -64,19 +65,19 @@ class SiteMatchingService {
         );
         
         if (apiSite != null && apiSite.country != null) {
-          print('SiteMatching: Found site in flight log, enhanced with API country data: "${apiSite.name}" → ${apiSite.country}');
+          LoggingService.info('SiteMatchingService: Found site in flight log, enhanced with API country data: "${apiSite.name}" → ${apiSite.country}');
           return apiSite; // Use API result with country info
         }
       } catch (e) {
-        print('SiteMatching: API enhancement failed, using flight log data: $e');
+        LoggingService.warning('SiteMatchingService: API enhancement failed, using flight log data: $e');
       }
       
       // Use local site even without country info
-      print('SiteMatching: Found site in flight log: "${localSite.name}" (no country info available)');
+      LoggingService.info('SiteMatchingService: Found site in flight log: "${localSite.name}" (no country info available)');
       return localSite;
     } else if (localSite != null) {
       // Local site found with complete info
-      print('SiteMatching: Found site in flight log: "${localSite.name}" at ${localSite.latitude.toStringAsFixed(4)}, ${localSite.longitude.toStringAsFixed(4)}');
+      LoggingService.info('SiteMatchingService: Found site in flight log: "${localSite.name}" at ${localSite.latitude.toStringAsFixed(4)}, ${localSite.longitude.toStringAsFixed(4)}');
       return localSite;
     }
 
@@ -91,17 +92,17 @@ class SiteMatchingService {
         );
         
         if (apiSite != null) {
-          print('SiteMatching: Found new site via API: "${apiSite.name}" at ${apiSite.latitude.toStringAsFixed(4)}, ${apiSite.longitude.toStringAsFixed(4)}');
-          print('SiteMatching: API site location info - Country: "${apiSite.country ?? 'null'}"');
+          LoggingService.info('SiteMatchingService: Found new site via API: "${apiSite.name}" at ${apiSite.latitude.toStringAsFixed(4)}, ${apiSite.longitude.toStringAsFixed(4)}');
+          LoggingService.info('SiteMatchingService: API site location info - Country: "${apiSite.country ?? 'null'}"');
           return apiSite;
         }
       } catch (e) {
-        print('SiteMatching: API lookup failed: $e');
+        LoggingService.warning('SiteMatchingService: API lookup failed: $e');
       }
     }
 
     // No site found in either local database or API
-    print('SiteMatching: No site found within ${maxDistance}m of ${latitude.toStringAsFixed(4)}, ${longitude.toStringAsFixed(4)}');
+    LoggingService.info('SiteMatchingService: No site found within ${maxDistance}m of ${latitude.toStringAsFixed(4)}, ${longitude.toStringAsFixed(4)}');
     return null;
   }
 
@@ -303,7 +304,7 @@ class SiteMatchingService {
 
     if (matchingSite != null) {
       final siteName = prefix.isNotEmpty ? '$prefix ${matchingSite.name}' : matchingSite.name;
-      print('SiteMatching: Using site name: $siteName');
+      LoggingService.info('SiteMatchingService: Using site name: $siteName');
       return siteName;
     }
 
@@ -313,7 +314,7 @@ class SiteMatchingService {
     final coordName = '$latStr $lonStr';
     final finalName = prefix.isNotEmpty ? '$prefix $coordName' : coordName;
     
-    print('SiteMatching: No site found, using coordinates: $finalName');
+    LoggingService.info('SiteMatchingService: No site found, using coordinates: $finalName');
     return finalName;
   }
 
@@ -341,7 +342,7 @@ class SiteMatchingService {
   /// Enable or disable API usage
   void setApiEnabled(bool enabled) {
     _useApi = enabled;
-    print('SiteMatching: API usage ${enabled ? 'enabled' : 'disabled'}');
+    LoggingService.info('SiteMatchingService: API usage ${enabled ? 'enabled' : 'disabled'}');
   }
 
   /// Check if API is enabled

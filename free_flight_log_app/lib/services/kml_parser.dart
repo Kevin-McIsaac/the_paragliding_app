@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:xml/xml.dart';
 import '../data/models/paragliding_site.dart';
+import '../services/logging_service.dart';
 
 class KmlParser {
   /// Parse KML file from Paraglidingearth.com and extract paragliding sites
@@ -10,7 +11,7 @@ class KmlParser {
       final contents = await file.readAsString();
       return parseKmlString(contents);
     } catch (e) {
-      print('Error reading KML file: $e');
+      LoggingService.error('KmlParser: Error reading KML file', e);
       return [];
     }
   }
@@ -31,10 +32,10 @@ class KmlParser {
         }
       }
 
-      print('Parsed ${sites.length} sites from KML');
+      LoggingService.info('KmlParser: Parsed ${sites.length} sites from KML');
       return sites;
     } catch (e) {
-      print('Error parsing KML: $e');
+      LoggingService.error('KmlParser: Error parsing KML', e);
       return [];
     }
   }
@@ -89,7 +90,7 @@ class KmlParser {
         popularity: _calculatePopularity(description, extendedData),
       );
     } catch (e) {
-      print('Error parsing placemark: $e');
+      LoggingService.error('KmlParser: Error parsing placemark', e);
       return null;
     }
   }

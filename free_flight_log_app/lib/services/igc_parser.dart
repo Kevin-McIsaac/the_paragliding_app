@@ -1,6 +1,7 @@
 import 'dart:io';
 import '../data/models/igc_file.dart';
 import 'timezone_service.dart';
+import 'logging_service.dart';
 
 /// Parser for IGC (International Gliding Commission) file format
 class IgcParser {
@@ -103,11 +104,8 @@ class IgcParser {
             _timezoneCache[coordKey] = cachedTimezone;
             
             // Log only on first detection
-            if (timezone != null && timezone != cachedTimezone) {
-              print('Overriding HFTZNUTCOFFSET ($timezone) with GPS-detected timezone: $detectedTimezone ($cachedTimezone)');
-            } else {
-              print('Detected timezone from GPS: $detectedTimezone ($cachedTimezone)');
-            }
+            // Log timezone detection results
+            LoggingService.info('IgcParser: Detected timezone from GPS: $detectedTimezone ($cachedTimezone)');
           }
         }
       }
@@ -215,7 +213,7 @@ class IgcParser {
       
       return null;
     } catch (e) {
-      print('Error parsing timezone: $e');
+      LoggingService.error('IgcParser: Error parsing timezone', e);
       return null;
     }
   }
@@ -233,7 +231,7 @@ class IgcParser {
       
       return DateTime(year, month, day);
     } catch (e) {
-      print('Error parsing date: $e');
+      LoggingService.error('IgcParser: Error parsing date', e);
       return null;
     }
   }
@@ -305,7 +303,7 @@ class IgcParser {
         isValid: isValid,
       );
     } catch (e) {
-      print('Error parsing B record: $e');
+      LoggingService.error('IgcParser: Error parsing B record', e);
       return null;
     }
   }
@@ -333,7 +331,7 @@ class IgcParser {
       // If timezone is +10:00, local time is UTC + 10 hours
       return utcTime.add(duration);
     } catch (e) {
-      print('Error converting UTC to local time: $e');
+      LoggingService.error('IgcParser: Error converting UTC to local time', e);
       return utcTime;
     }
   }

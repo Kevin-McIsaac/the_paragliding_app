@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 import '../data/datasources/database_helper.dart';
+import '../services/logging_service.dart';
 
 /// Utility class to help with database migration issues
 class DatabaseMigrationHelper {
@@ -31,27 +32,27 @@ class DatabaseMigrationHelper {
       // Check if columns exist first
       final hasColumns = await hasNewClimbRateColumns();
       if (hasColumns) {
-        print('Columns already exist');
+        LoggingService.info('DatabaseMigrationHelper: Columns already exist');
         return;
       }
 
-      print('Adding missing climb rate columns...');
+      LoggingService.info('DatabaseMigrationHelper: Adding missing climb rate columns...');
       
       await db.execute('ALTER TABLE flights ADD COLUMN max_climb_rate_5_sec REAL');
       await db.execute('ALTER TABLE flights ADD COLUMN max_sink_rate_5_sec REAL');
       
-      print('Successfully added missing columns');
+      LoggingService.info('DatabaseMigrationHelper: Successfully added missing columns');
     } catch (e) {
-      print('Error adding columns: $e');
+      LoggingService.error('DatabaseMigrationHelper: Error adding columns', e);
       throw e;
     }
   }
 
   /// Force recreate the database (WARNING: This will delete all data!)
   static Future<void> recreateDatabase() async {
-    print('WARNING: Recreating database - all data will be lost!');
+    LoggingService.warning('DatabaseMigrationHelper: WARNING: Recreating database - all data will be lost!');
     await _databaseHelper.recreateDatabase();
-    print('Database recreated successfully');
+    LoggingService.info('DatabaseMigrationHelper: Database recreated successfully');
   }
 
   /// Check database schema and attempt to fix any issues
@@ -60,14 +61,14 @@ class DatabaseMigrationHelper {
       final hasColumns = await hasNewClimbRateColumns();
       
       if (!hasColumns) {
-        print('Missing climb rate columns. Attempting to add them...');
+        LoggingService.info('DatabaseMigrationHelper: Missing climb rate columns. Attempting to add them...');
         await addMissingColumns();
       } else {
-        print('Database schema is up to date');
+        LoggingService.info('DatabaseMigrationHelper: Database schema is up to date');
       }
     } catch (e) {
-      print('Schema check failed: $e');
-      print('Consider running recreateDatabase() if you can afford to lose data');
+      LoggingService.error('DatabaseMigrationHelper: Schema check failed', e);
+      LoggingService.warning('DatabaseMigrationHelper: Consider running recreateDatabase() if you can afford to lose data');
     }
   }
 }

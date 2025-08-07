@@ -45,11 +45,11 @@ class FlightTrackStats extends StatelessWidget {
         constraints: const BoxConstraints(maxWidth: 200),
         padding: const EdgeInsets.all(12),
         decoration: showBackground ? BoxDecoration(
-          color: Theme.of(context).colorScheme.surface.withOpacity(0.95),
+          color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.95),
           borderRadius: BorderRadius.circular(8),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
+              color: Colors.black.withValues(alpha: 0.1),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -90,7 +90,7 @@ class FlightTrackStats extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: showBackground ? BoxDecoration(
-        color: Theme.of(context).colorScheme.surface.withOpacity(0.9),
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
         borderRadius: BorderRadius.circular(8),
       ) : null,
       child: SingleChildScrollView(

@@ -59,7 +59,7 @@ class _FlightAltitudeChartState extends State<FlightAltitudeChart> {
         borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -123,7 +123,7 @@ class _FlightAltitudeChartState extends State<FlightAltitudeChart> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: isSelected ? color.withOpacity(0.2) : Colors.transparent,
+          color: isSelected ? color.withValues(alpha: 0.2) : Colors.transparent,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isSelected ? color : Colors.grey[300]!,
@@ -183,7 +183,7 @@ class _FlightAltitudeChartState extends State<FlightAltitudeChart> {
           dotData: const FlDotData(show: false),
           belowBarData: BarAreaData(
             show: true,
-            color: Colors.blue.withOpacity(0.1),
+            color: Colors.blue.withValues(alpha: 0.1),
           ),
         ),
       );

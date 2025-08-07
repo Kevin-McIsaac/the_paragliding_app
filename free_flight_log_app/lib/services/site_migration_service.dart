@@ -1,5 +1,6 @@
 import '../data/repositories/site_repository.dart';
 import '../data/models/site.dart';
+import '../services/logging_service.dart';
 import 'site_matching_service.dart';
 
 /// Service for migrating existing sites to populate country field
@@ -27,7 +28,7 @@ class SiteMigrationService {
         return result;
       }
       
-      print('SiteMigration: Found ${sitesToMigrate.length} sites needing location info');
+      LoggingService.info('SiteMigrationService: Found ${sitesToMigrate.length} sites needing location info');
       
       for (final site in sitesToMigrate) {
         try {
@@ -47,14 +48,14 @@ class SiteMigrationService {
             );
             
             result.updatedSites++;
-            print('SiteMigration: Updated "${site.name}" with country "${matchedSite.country}"');
+            LoggingService.info('SiteMigrationService: Updated "${site.name}" with country "${matchedSite.country}"');
           } else {
             result.skippedSites++;
-            print('SiteMigration: No country info found for "${site.name}"');
+            LoggingService.info('SiteMigrationService: No country info found for "${site.name}"');
           }
         } catch (e) {
           result.errorSites++;
-          print('SiteMigration: Error processing "${site.name}": $e');
+          LoggingService.error('SiteMigrationService: Error processing "${site.name}"', e);
         }
         
         // Small delay to avoid overwhelming the API
@@ -65,7 +66,7 @@ class SiteMigrationService {
       
     } catch (e) {
       result.message = 'Migration failed: $e';
-      print('SiteMigration: Fatal error: $e');
+      LoggingService.error('SiteMigrationService: Fatal error', e);
     }
     
     return result;

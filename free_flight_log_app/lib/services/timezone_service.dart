@@ -1,6 +1,7 @@
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 import 'dart:math';
+import '../services/logging_service.dart';
 
 class TimezoneService {
   static bool _initialized = false;
@@ -170,7 +171,7 @@ class TimezoneService {
       
       return '$sign${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}';
     } catch (e) {
-      print('Error getting offset for timezone $timezoneId: $e');
+      LoggingService.error('TimezoneService: Error getting offset for timezone $timezoneId', e);
       return null;
     }
   }

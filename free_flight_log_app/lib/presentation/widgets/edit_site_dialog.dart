@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../data/models/site.dart';
+import '../../services/logging_service.dart';
 
 class EditSiteDialog extends StatefulWidget {
   final Site site;
@@ -358,7 +359,7 @@ class _EditSiteDialogState extends State<EditSiteDialog> with SingleTickerProvid
                         try {
                           await launchUrl(uri, mode: LaunchMode.platformDefault);
                         } catch (e) {
-                          print('Could not launch URL: $e');
+                          LoggingService.error('EditSiteDialog: Could not launch URL', e);
                         }
                       },
                       child: Text(

@@ -100,7 +100,7 @@ class DatabaseHelper {
       } catch (e) {
         LoggingService.database('MIGRATION', 'Error during migration', e);
         // If migration fails, we might need to recreate the database
-        throw e;
+        rethrow;
       }
     }
     
@@ -112,7 +112,7 @@ class DatabaseHelper {
       } catch (e) {
         LoggingService.database('MIGRATION', 'Error during timezone migration', e);
         // If migration fails, we might need to recreate the database
-        throw e;
+        rethrow;
       }
     }
     
@@ -141,7 +141,7 @@ class DatabaseHelper {
         LoggingService.database('MIGRATION', 'Successfully migrated to landing coordinates');
       } catch (e) {
         LoggingService.database('MIGRATION', 'Error during landing coordinates migration', e);
-        throw e;
+        rethrow;
       }
     }
     
@@ -154,7 +154,7 @@ class DatabaseHelper {
         LoggingService.database('MIGRATION', 'Successfully added country and state columns to sites table');
       } catch (e) {
         LoggingService.database('MIGRATION', 'Error during country/state migration', e);
-        throw e;
+        rethrow;
       }
     }
     
@@ -188,7 +188,7 @@ class DatabaseHelper {
         LoggingService.database('MIGRATION', 'Successfully removed state column from sites table');
       } catch (e) {
         LoggingService.database('MIGRATION', 'Error during state column removal', e);
-        throw e;
+        rethrow;
       }
     }
   }

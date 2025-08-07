@@ -9,6 +9,7 @@ import 'package:fl_chart/fl_chart.dart';
 import '../../data/models/flight.dart';
 import '../../data/models/igc_file.dart';
 import '../../services/igc_import_service.dart';
+import '../../services/logging_service.dart';
 
 // FLUTTER_MAP TILE LOADING SOLUTION:
 // This widget implements delayed TileLayer creation to solve a flutter_map race condition
@@ -258,7 +259,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     
     // If no climb rate data, create a simple red track
     if (_fifteenSecondRates.isEmpty) {
-      print('No climb rate data available, showing red track');
+      LoggingService.info('FlightTrackWidget: No climb rate data available, showing red track');
       final trackCoordinates = _trackPoints
           .map((point) => LatLng(point.latitude, point.longitude))
           .toList();
@@ -270,7 +271,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
       )];
     }
 
-    print('Creating climb rate colored track with ${_fifteenSecondRates.length} climb rate points');
+    LoggingService.info('FlightTrackWidget: Creating climb rate colored track with ${_fifteenSecondRates.length} climb rate points');
 
     final polylines = <Polyline>[];
 
@@ -1651,7 +1652,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
       await launchUrl(uri, mode: LaunchMode.platformDefault);
     } catch (e) {
       // Handle error silently or show a message
-      print('Could not launch URL: $e');
+      LoggingService.error('FlightTrackWidget: Could not launch URL', e);
     }
   }
 
@@ -1662,7 +1663,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
       await launchUrl(uri, mode: LaunchMode.platformDefault);
     } catch (e) {
       // Handle error silently or show a message
-      print('Could not launch URL: $e');
+      LoggingService.error('FlightTrackWidget: Could not launch URL', e);
     }
   }
 }

@@ -8,6 +8,7 @@ import '../data/models/igc_file.dart';
 import '../data/models/import_result.dart';
 import '../data/repositories/flight_repository.dart';
 import '../data/repositories/site_repository.dart';
+import 'logging_service.dart';
 import '../data/repositories/wing_repository.dart';
 import 'igc_parser.dart';
 import 'site_matching_service.dart';
@@ -182,13 +183,13 @@ class IgcImportService {
         country = matchedSite.country;
         
         // Debug output to see what the API returned
-        print('IGC Import: API found site "${siteName}" for coordinates ${launchPoint.latitude.toStringAsFixed(4)}, ${launchPoint.longitude.toStringAsFixed(4)}');
-        print('IGC Import: Site details - Country: "${country ?? 'null'}"');
-        print('IGC Import: Full site object: $matchedSite');
+        LoggingService.info('IgcImportService: API found site "$siteName" for coordinates ${launchPoint.latitude.toStringAsFixed(4)}, ${launchPoint.longitude.toStringAsFixed(4)}');
+        LoggingService.debug('IgcImportService: Site details - Country: "${country ?? 'null'}"');
+        LoggingService.debug('IgcImportService: Full site object: $matchedSite');
       } else {
         siteName = 'Unknown';
         country = null;
-        print('IGC Import: No API site found for coordinates ${launchPoint.latitude.toStringAsFixed(4)}, ${launchPoint.longitude.toStringAsFixed(4)}');
+        LoggingService.info('IgcImportService: No API site found for coordinates ${launchPoint.latitude.toStringAsFixed(4)}, ${launchPoint.longitude.toStringAsFixed(4)}');
       }
       
       launchSite = await _siteRepository.findOrCreateSite(
@@ -200,7 +201,7 @@ class IgcImportService {
       );
       
       // Debug output to see what was actually stored
-      print('IGC Import: Created/found site in database with ID ${launchSite.id}, name "${launchSite.name}", country "${launchSite.country ?? 'null'}"');
+      LoggingService.info('IgcImportService: Created/found site in database with ID ${launchSite.id}, name "${launchSite.name}", country "${launchSite.country ?? 'null'}"');
     }
 
     // Get landing coordinates (no longer create landing sites)
@@ -361,7 +362,7 @@ class IgcImportService {
       final igcData = await parser.parseFile(trackLogPath);
       return igcData.trackPoints;
     } catch (e) {
-      print('Error reading track points: $e');
+      LoggingService.error('IgcImportService: Error reading track points', e);
       return [];
     }
   }
@@ -424,7 +425,7 @@ class IgcImportService {
       notes: 'Automatically created from IGC import',
     );
 
-    print('Debug: Creating wing with name="$wingName", manufacturer="$manufacturer", model="$model"');
+    LoggingService.debug('IgcImportService: Creating wing with name="$wingName", manufacturer="$manufacturer", model="$model"');
 
     final wingId = await _wingRepository.insertWing(newWing);
     

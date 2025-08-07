@@ -109,12 +109,6 @@ class _FlightListScreenState extends State<FlightListScreen> {
 
 
   /// Format time with timezone information
-  String _formatTimeWithTimezone(String time, String? timezone) {
-    if (timezone != null) {
-      return '$time $timezone';
-    }
-    return time;
-  }
 
   void _toggleSelectionMode() {
     setState(() {
@@ -190,13 +184,13 @@ class _FlightListScreenState extends State<FlightListScreen> {
           }
         });
         
-        if (success) {
+        if (success && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('$flightCount flight${flightCount != 1 ? 's' : ''} deleted successfully'),
             ),
           );
-        } else if (flightProvider.errorMessage != null) {
+        } else if (flightProvider.errorMessage != null && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(flightProvider.errorMessage!),

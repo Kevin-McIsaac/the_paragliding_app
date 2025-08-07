@@ -204,7 +204,3 @@ class ParaglidingSite {
   }
 }
 
-// Extension to add toRadians method to double
-extension on double {
-  double toRadians() => this * pi / 180;
-}

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../services/logging_service.dart';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
@@ -9,7 +10,7 @@ class AboutScreen extends StatelessWidget {
     try {
       await launchUrl(uri, mode: LaunchMode.platformDefault);
     } catch (e) {
-      print('Could not launch URL: $e');
+      LoggingService.error('AboutScreen: Could not launch URL', e);
     }
   }
 

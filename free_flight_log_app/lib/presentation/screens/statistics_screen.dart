@@ -204,7 +204,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
               decoration: BoxDecoration(
                 border: Border(
                   bottom: BorderSide(
-                    color: Theme.of(context).dividerColor.withOpacity(0.3),
+                    color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
                   ),
                 ),
               ),
@@ -246,7 +246,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
             Container(
               padding: const EdgeInsets.symmetric(vertical: 12),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+                color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
                 border: Border(
                   top: BorderSide(
                     color: Theme.of(context).dividerColor,
@@ -362,7 +362,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
               decoration: BoxDecoration(
                 border: Border(
                   bottom: BorderSide(
-                    color: Theme.of(context).dividerColor.withOpacity(0.3),
+                    color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
                   ),
                 ),
               ),
@@ -436,7 +436,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+                  color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
                   border: Border(
                     top: BorderSide(
                       color: Theme.of(context).dividerColor,
@@ -572,10 +572,10 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5),
+                      color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5),
                       border: Border(
                         bottom: BorderSide(
-                          color: Theme.of(context).dividerColor.withOpacity(0.5),
+                          color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
                         ),
                       ),
                     ),
@@ -610,7 +610,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                   decoration: BoxDecoration(
                     border: Border(
                       bottom: BorderSide(
-                        color: Theme.of(context).dividerColor.withOpacity(0.3),
+                        color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
                       ),
                     ),
                   ),
@@ -658,7 +658,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+                  color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
                   border: Border(
                     top: BorderSide(
                       color: Theme.of(context).dividerColor,

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../data/models/paragliding_site.dart';
+import '../services/logging_service.dart';
 
 /// Service for interacting with ParaglidingEarth.com API
 /// Provides real-time site lookups with caching and fallback support
@@ -48,7 +49,7 @@ class ParaglidingEarthApi {
         },
       );
 
-      print('ParaglidingEarth API: Fetching sites around $latitude, $longitude (${radiusKm}km)');
+      LoggingService.info('ParaglidingEarthApi: Fetching sites around $latitude, $longitude (${radiusKm}km)');
 
       final response = await http.get(url).timeout(_timeout);
       
@@ -58,14 +59,14 @@ class ParaglidingEarthApi {
         // Cache the response
         _cacheResponse(cacheKey, sites);
         
-        print('ParaglidingEarth API: Found ${sites.length} sites');
+        LoggingService.info('ParaglidingEarthApi: Found ${sites.length} sites');
         return sites;
       } else {
-        print('ParaglidingEarth API: HTTP ${response.statusCode} - ${response.reasonPhrase}');
+        LoggingService.warning('ParaglidingEarthApi: HTTP ${response.statusCode} - ${response.reasonPhrase}');
         return [];
       }
     } catch (e) {
-      print('ParaglidingEarth API error: $e');
+      LoggingService.error('ParaglidingEarthApi: API error', e);
       return [];
     }
   }
@@ -130,20 +131,20 @@ class ParaglidingEarthApi {
         },
       );
 
-      print('ParaglidingEarth API: Fetching sites in bounds');
+      LoggingService.info('ParaglidingEarthApi: Fetching sites in bounds');
 
       final response = await http.get(url).timeout(_timeout);
       
       if (response.statusCode == 200) {
         final sites = _parseGeoJsonResponse(response.body);
-        print('ParaglidingEarth API: Found ${sites.length} sites in bounds');
+        LoggingService.info('ParaglidingEarthApi: Found ${sites.length} sites in bounds');
         return sites;
       } else {
-        print('ParaglidingEarth API: HTTP ${response.statusCode} - ${response.reasonPhrase}');
+        LoggingService.warning('ParaglidingEarthApi: HTTP ${response.statusCode} - ${response.reasonPhrase}');
         return [];
       }
     } catch (e) {
-      print('ParaglidingEarth API error: $e');
+      LoggingService.error('ParaglidingEarthApi: API error', e);
       return [];
     }
   }
@@ -188,13 +189,13 @@ class ParaglidingEarthApi {
               sites.add(site);
             }
           } catch (e) {
-            print('Error parsing feature: $e');
+            LoggingService.error('ParaglidingEarthApi: Error parsing feature', e);
             // Continue with other features
           }
         }
       }
     } catch (e) {
-      print('Error parsing GeoJSON: $e');
+      LoggingService.error('ParaglidingEarthApi: Error parsing GeoJSON', e);
     }
     
     return sites;
@@ -227,7 +228,7 @@ class ParaglidingEarthApi {
     
     // Debug output for country parsing
     if (countryCode != null) {
-      print('ParaglidingEarth API: Site "${name}" - countryCode "${countryCode}" → country "${country}"');
+      LoggingService.info('ParaglidingEarthApi: Site "${name}" - countryCode "${countryCode}" → country "${country}"');
     }
     
     // Determine site type based on API data
@@ -267,7 +268,7 @@ class ParaglidingEarthApi {
   List<ParaglidingSite>? _getCachedResponse(String key) {
     final cached = _cache[key];
     if (cached != null && DateTime.now().isBefore(cached.expiry)) {
-      print('ParaglidingEarth API: Using cached response for $key');
+      LoggingService.info('ParaglidingEarthApi: Using cached response for $key');
       return cached.sites;
     }
     return null;

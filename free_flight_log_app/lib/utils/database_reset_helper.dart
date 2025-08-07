@@ -1,5 +1,6 @@
 import 'dart:io';
 import '../data/datasources/database_helper.dart';
+import '../services/logging_service.dart';
 
 /// Helper class for resetting/clearing database data
 /// Can be called from within the Flutter app
@@ -9,7 +10,7 @@ class DatabaseResetHelper {
   /// Reset the entire database - removes all data and recreates tables
   static Future<Map<String, dynamic>> resetDatabase() async {
     try {
-      print('🗃️  Resetting database...');
+      LoggingService.info('DatabaseResetHelper: Resetting database...');
       
       // Get current database info before reset
       final db = await _databaseHelper.database;
@@ -19,7 +20,7 @@ class DatabaseResetHelper {
       final siteCount = await _getTableCount('sites');
       final wingCount = await _getTableCount('wings');
       
-      print('Removing $flightCount flights, $siteCount sites, $wingCount wings');
+      LoggingService.info('DatabaseResetHelper: Removing $flightCount flights, $siteCount sites, $wingCount wings');
       
       // Close the database connection
       await db.close();
@@ -28,11 +29,11 @@ class DatabaseResetHelper {
       final dbFile = File(path);
       if (await dbFile.exists()) {
         await dbFile.delete();
-        print('✅ Database file deleted');
+        LoggingService.info('DatabaseResetHelper: Database file deleted');
       }
       
       // Recreate the database (this will run the onCreate method)
-      print('🔄 Recreating database with fresh schema...');
+      LoggingService.info('DatabaseResetHelper: Recreating database with fresh schema...');
       await _databaseHelper.recreateDatabase();
       final newDb = await _databaseHelper.database;
       
@@ -41,8 +42,8 @@ class DatabaseResetHelper {
       final newSiteCount = await _getTableCount('sites');
       final newWingCount = await _getTableCount('wings');
       
-      print('✅ Database reset complete!');
-      print('New database: $newFlightCount flights, $newSiteCount sites, $newWingCount wings');
+      LoggingService.info('DatabaseResetHelper: Database reset complete!');
+      LoggingService.info('DatabaseResetHelper: New database: $newFlightCount flights, $newSiteCount sites, $newWingCount wings');
       
       return {
         'success': true,
@@ -62,7 +63,7 @@ class DatabaseResetHelper {
       };
       
     } catch (e) {
-      print('❌ Error resetting database: $e');
+      LoggingService.error('DatabaseResetHelper: Error resetting database', e);
       return {
         'success': false,
         'message': 'Error resetting database: $e',
@@ -73,7 +74,7 @@ class DatabaseResetHelper {
   /// Clear all flight data (keep sites and wings)
   static Future<Map<String, dynamic>> clearAllFlights() async {
     try {
-      print('🗃️  Clearing all flights...');
+      LoggingService.info('DatabaseResetHelper: Clearing all flights...');
       
       final db = await _databaseHelper.database;
       final flightCount = await _getTableCount('flights');
@@ -89,7 +90,7 @@ class DatabaseResetHelper {
       // Delete all flights
       final deletedCount = await db.delete('flights');
       
-      print('✅ Cleared $deletedCount flights');
+      LoggingService.info('DatabaseResetHelper: Cleared $deletedCount flights');
       
       return {
         'success': true,
@@ -98,7 +99,7 @@ class DatabaseResetHelper {
       };
       
     } catch (e) {
-      print('❌ Error clearing flights: $e');
+      LoggingService.error('DatabaseResetHelper: Error clearing flights', e);
       return {
         'success': false,
         'message': 'Error clearing flights: $e',
@@ -109,7 +110,7 @@ class DatabaseResetHelper {
   /// Clear all site data (may fail if referenced by flights)
   static Future<Map<String, dynamic>> clearAllSites() async {
     try {
-      print('🗃️  Clearing all sites...');
+      LoggingService.info('DatabaseResetHelper: Clearing all sites...');
       
       final db = await _databaseHelper.database;
       final siteCount = await _getTableCount('sites');
@@ -124,7 +125,7 @@ class DatabaseResetHelper {
       
       try {
         final deletedCount = await db.delete('sites');
-        print('✅ Cleared $deletedCount sites');
+        LoggingService.info('DatabaseResetHelper: Cleared $deletedCount sites');
         
         return {
           'success': true,
@@ -139,7 +140,7 @@ class DatabaseResetHelper {
       }
       
     } catch (e) {
-      print('❌ Error clearing sites: $e');
+      LoggingService.error('DatabaseResetHelper: Error clearing sites', e);
       return {
         'success': false,
         'message': 'Error clearing sites: $e',
@@ -150,7 +151,7 @@ class DatabaseResetHelper {
   /// Clear all wing data (may fail if referenced by flights)
   static Future<Map<String, dynamic>> clearAllWings() async {
     try {
-      print('🗃️  Clearing all wings...');
+      LoggingService.info('DatabaseResetHelper: Clearing all wings...');
       
       final db = await _databaseHelper.database;
       final wingCount = await _getTableCount('wings');
@@ -165,7 +166,7 @@ class DatabaseResetHelper {
       
       try {
         final deletedCount = await db.delete('wings');
-        print('✅ Cleared $deletedCount wings');
+        LoggingService.info('DatabaseResetHelper: Cleared $deletedCount wings');
         
         return {
           'success': true,
@@ -180,7 +181,7 @@ class DatabaseResetHelper {
       }
       
     } catch (e) {
-      print('❌ Error clearing wings: $e');
+      LoggingService.error('DatabaseResetHelper: Error clearing wings', e);
       return {
         'success': false,
         'message': 'Error clearing wings: $e',
@@ -236,16 +237,16 @@ class DatabaseResetHelper {
   /// Initialize a fresh database (call this after reset if needed)
   static Future<void> initializeFreshDatabase() async {
     try {
-      print('🆕 Initializing fresh database...');
+      LoggingService.info('DatabaseResetHelper: Initializing fresh database...');
       
       // This will ensure the database is created with the latest schema
       final db = await _databaseHelper.database;
       const version = 3; // Current database version
       
-      print('✅ Database initialized with version $version');
+      LoggingService.info('DatabaseResetHelper: Database initialized with version $version');
       
     } catch (e) {
-      print('❌ Error initializing database: $e');
+      LoggingService.error('DatabaseResetHelper: Error initializing database', e);
       rethrow;
     }
   }
