@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:path/path.dart';
+import '../../services/logging_service.dart';
 
 class DatabaseHelper {
   static const _databaseName = "FlightLog.db";
@@ -88,16 +89,16 @@ class DatabaseHelper {
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    print('Upgrading database from version $oldVersion to $newVersion');
+    LoggingService.database('UPGRADE', 'Upgrading database from version $oldVersion to $newVersion');
     
     if (oldVersion < 2) {
       try {
         // Add 5-second average climb rate columns
         await db.execute('ALTER TABLE flights ADD COLUMN max_climb_rate_5_sec REAL');
         await db.execute('ALTER TABLE flights ADD COLUMN max_sink_rate_5_sec REAL');
-        print('Successfully added new climb rate columns');
+        LoggingService.database('MIGRATION', 'Successfully added new climb rate columns');
       } catch (e) {
-        print('Error during migration: $e');
+        LoggingService.database('MIGRATION', 'Error during migration', e);
         // If migration fails, we might need to recreate the database
         throw e;
       }
@@ -107,9 +108,9 @@ class DatabaseHelper {
       try {
         // Add timezone column for proper timezone support
         await db.execute('ALTER TABLE flights ADD COLUMN timezone TEXT');
-        print('Successfully added timezone column');
+        LoggingService.database('MIGRATION', 'Successfully added timezone column');
       } catch (e) {
-        print('Error during timezone migration: $e');
+        LoggingService.database('MIGRATION', 'Error during timezone migration', e);
         // If migration fails, we might need to recreate the database
         throw e;
       }
@@ -137,9 +138,9 @@ class DatabaseHelper {
         // We'll leave it for now to avoid complex table recreation
         // It will be ignored in the new model
         
-        print('Successfully migrated to landing coordinates');
+        LoggingService.database('MIGRATION', 'Successfully migrated to landing coordinates');
       } catch (e) {
-        print('Error during landing coordinates migration: $e');
+        LoggingService.database('MIGRATION', 'Error during landing coordinates migration', e);
         throw e;
       }
     }
@@ -150,9 +151,9 @@ class DatabaseHelper {
         await db.execute('ALTER TABLE sites ADD COLUMN country TEXT');
         await db.execute('ALTER TABLE sites ADD COLUMN state TEXT');
         
-        print('Successfully added country and state columns to sites table');
+        LoggingService.database('MIGRATION', 'Successfully added country and state columns to sites table');
       } catch (e) {
-        print('Error during country/state migration: $e');
+        LoggingService.database('MIGRATION', 'Error during country/state migration', e);
         throw e;
       }
     }
@@ -184,9 +185,9 @@ class DatabaseHelper {
         await db.execute('DROP TABLE sites');
         await db.execute('ALTER TABLE sites_new RENAME TO sites');
         
-        print('Successfully removed state column from sites table');
+        LoggingService.database('MIGRATION', 'Successfully removed state column from sites table');
       } catch (e) {
-        print('Error during state column removal: $e');
+        LoggingService.database('MIGRATION', 'Error during state column removal', e);
         throw e;
       }
     }

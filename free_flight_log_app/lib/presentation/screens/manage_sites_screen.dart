@@ -139,6 +139,9 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
     // Check if site can be deleted
     final canDelete = await _siteRepository.canDeleteSite(site.id!);
     
+    // Check if widget is still mounted before using context
+    if (!mounted) return;
+    
     if (!canDelete) {
       UiUtils.showErrorDialog(
         context,
@@ -150,6 +153,9 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
     }
 
     // Show confirmation dialog
+    // Check if widget is still mounted before using context
+    if (!mounted) return;
+    
     final confirmed = await UiUtils.showDeleteConfirmation(
       context,
       'Delete Site',

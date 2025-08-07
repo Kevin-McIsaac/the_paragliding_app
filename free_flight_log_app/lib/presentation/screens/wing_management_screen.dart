@@ -97,6 +97,9 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
       return;
     }
 
+    // Check if widget is still mounted before using context
+    if (!mounted) return;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(

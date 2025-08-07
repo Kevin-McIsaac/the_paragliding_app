@@ -77,12 +77,8 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
           );
         }
         
-        if (widget.flight.landingSiteId != null) {
-          _selectedLandingSite = sites.firstWhere(
-            (site) => site.id == widget.flight.landingSiteId,
-            orElse: () => sites.first,
-          );
-        }
+        // Landing site selection removed - now using coordinates
+        // Legacy flights may have had landing sites, but we now use coordinates
         
         if (widget.flight.wingId != null) {
           _selectedWing = wings.firstWhere(
@@ -214,7 +210,10 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
         landingTime: _formatTime(_landingTime),
         duration: _calculateDuration(),
         launchSiteId: _selectedLaunchSite?.id,
-        landingSiteId: _selectedLandingSite?.id,
+        landingLatitude: widget.flight.landingLatitude,
+        landingLongitude: widget.flight.landingLongitude,
+        landingAltitude: widget.flight.landingAltitude,
+        landingDescription: widget.flight.landingDescription,
         wingId: (_selectedWing?.name == '__ADD_NEW__') ? null : _selectedWing?.id,
         maxAltitude: widget.flight.maxAltitude,
         distance: widget.flight.distance,

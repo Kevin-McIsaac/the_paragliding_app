@@ -224,6 +224,9 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
     try {
       final igcData = await _importService.parser.parseFile(filePath);
       
+      // Check if widget is still mounted before using context
+      if (!mounted) return DuplicateAction.skip;
+      
       return await showDialog<DuplicateAction>(
         context: context,
         barrierDismissible: false,

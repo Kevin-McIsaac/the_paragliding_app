@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 import '../datasources/database_helper.dart';
 import '../models/flight.dart';
+import '../../services/logging_service.dart';
 
 class FlightRepository {
   final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
@@ -21,7 +22,7 @@ class FlightRepository {
           e.toString().contains('landing_longitude') ||
           e.toString().contains('landing_altitude') ||
           e.toString().contains('landing_description')) {
-        print('Database migration needed. Attempting to recreate database...');
+        LoggingService.database('INSERT', 'Database migration needed for flight insert', e);
         
         // Remove the new fields and try again with legacy format
         map.remove('max_climb_rate_5_sec');
@@ -35,16 +36,15 @@ class FlightRepository {
         try {
           return await db.insert('flights', map);
         } catch (e2) {
-          // If that also fails, recreate the database
-          await _databaseHelper.recreateDatabase();
-          db = await _databaseHelper.database;
+          // Log the detailed error for debugging
+          LoggingService.error('Database insert failed with legacy format', e2);
           
-          // Restore the full map with new fields for the fresh database
-          map = flight.toMap();
-          map.remove('id');
-          map['updated_at'] = DateTime.now().toIso8601String();
-          
-          return await db.insert('flights', map);
+          // Don't delete user data - provide meaningful error instead
+          throw Exception(
+            'Failed to insert flight due to database schema mismatch. '
+            'Please update the app or contact support. '
+            'Original error: $e - Secondary error: $e2'
+          );
         }
       } else {
         rethrow;
