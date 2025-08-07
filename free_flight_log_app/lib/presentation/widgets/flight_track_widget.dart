@@ -1356,14 +1356,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
           ),
         ],
       ),
-      child: MouseRegion(
-        onHover: widget.config.interactive ? (PointerHoverEvent event) {
-          _handleAltitudeChartMouseHover(event);
-        } : null,
-        onExit: widget.config.interactive ? (PointerExitEvent event) {
-          _clearHoverState();
-        } : null,
-        child: LineChart(
+      child: LineChart(
           LineChartData(
           gridData: FlGridData(
             show: true,
@@ -1463,10 +1456,29 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
               ),
             ],
           ) : null,
-          // Completely disable fl_chart's built-in touch system to prevent conflicting indicators
-          lineTouchData: LineTouchData(enabled: false),
+          // Use fl_chart's built-in touch handling for accurate coordinate mapping
+          lineTouchData: widget.config.interactive ? LineTouchData(
+            enabled: true,
+            handleBuiltInTouches: false, // We'll handle the visual feedback ourselves
+            touchCallback: (FlTouchEvent event, LineTouchResponse? touchResponse) {
+              if (event is FlPointerHoverEvent || event is FlPanUpdateEvent) {
+                // Get the chart position from the event
+                if (touchResponse?.lineBarSpots != null && touchResponse!.lineBarSpots!.isNotEmpty) {
+                  final spot = touchResponse.lineBarSpots!.first;
+                  _handleAltitudeChartHover(spot.x); // x is already in chart coordinates (time in minutes)
+                }
+              } else if (event is FlPointerExitEvent) {
+                _clearHoverState();
+              }
+            },
+            getTouchLineStart: (barData, spotIndex) => 0,
+            getTouchLineEnd: (barData, spotIndex) => 0,
+            touchTooltipData: LineTouchTooltipData(
+              showOnTopOfTheChartBoxArea: false,
+              getTooltipItems: (touchedSpots) => [], // No tooltip, we handle display ourselves
+            ),
+          ) : LineTouchData(enabled: false),
           ),
-        ),
       ),
     );
   }
@@ -1593,40 +1605,6 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     }
   }
 
-  /// Handle mouse hover on altitude chart by converting mouse position to time
-  void _handleAltitudeChartMouseHover(PointerHoverEvent event) {
-    if (_trackPoints.isEmpty) return;
-    
-    // Get the chart container bounds
-    final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
-    if (renderBox == null) return;
-    
-    // Calculate the altitude chart area (120px height + margins/padding)
-    // Chart is at the bottom, so we need to find its vertical position
-    final chartHeight = 120.0;
-    final chartMargin = 8.0;
-    final chartPadding = 12.0;
-    
-    // Get mouse position relative to the chart area
-    final mouseX = event.localPosition.dx - chartMargin - chartPadding;
-    final chartWidth = renderBox.size.width - (2 * chartMargin) - (2 * chartPadding);
-    
-    if (mouseX < 0 || mouseX > chartWidth) return;
-    
-    // Calculate time range for the chart
-    if (_trackPoints.isEmpty) return;
-    final firstTime = _trackPoints.first.timestamp;
-    final lastTime = _trackPoints.last.timestamp;
-    final startMinutes = firstTime.hour * 60.0 + firstTime.minute + firstTime.second / 60.0;
-    final endMinutes = lastTime.hour * 60.0 + lastTime.minute + lastTime.second / 60.0;
-    
-    // Convert mouse X position to time
-    final timeRatio = mouseX / chartWidth;
-    final hoveredTimeMinutes = startMinutes + (timeRatio * (endMinutes - startMinutes));
-    
-    // Use existing hover logic
-    _handleAltitudeChartHover(hoveredTimeMinutes);
-  }
 
   /// Clear hover state when mouse leaves altitude chart
   void _clearHoverState() {
