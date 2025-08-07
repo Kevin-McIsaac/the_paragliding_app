@@ -10,6 +10,15 @@ import '../../data/models/flight.dart';
 import '../../data/models/igc_file.dart';
 import '../../services/igc_import_service.dart';
 
+// FLUTTER_MAP TILE LOADING SOLUTION:
+// This widget implements delayed TileLayer creation to solve a flutter_map race condition
+// where tiles fail to load on the first widget creation. The solution:
+// 1. Create FlutterMap immediately with stable preferences
+// 2. Only add TileLayer after onMapReady callback fires (_tilesReady = true)
+// 3. Sequential preference loading prevents tile URL instability
+// 
+// This approach is faster and cleaner than artificial delays or forced rebuilds.
+
 class FlightTrackConfig {
   final bool embedded;
   final bool showLegend;
@@ -92,8 +101,8 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
   bool _showLabels = true;
   bool _showSatelliteView = false;
   bool _showLegend = true;
-  bool _isFirstLoad = true;
   bool _preferencesLoaded = false;
+  bool _tilesReady = false; // Controls when TileLayer is added to prevent flutter_map race condition
   
   // Currently hovered track point for real-time feedback
   int? _hoveredPointIndex;
@@ -114,13 +123,10 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
   }
 
   Future<void> _initializeWidget() async {
-    // Load preferences first to ensure stable tile URLs
+    // Load preferences first to ensure stable tile URLs when TileLayer is created
     await _loadSavedPreferences();
     
-    // Minimum delay needed for ChromeOS/Linux container cold start
-    await Future.delayed(const Duration(milliseconds: 150));
-    
-    // Then load track data
+    // Load track data
     _loadTrackData();
   }
 
@@ -828,7 +834,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
 
   @override
   Widget build(BuildContext context) {
-    // Test: Remove _mapControllerReady flag - just use preferences loaded and loading state
+    // Only wait for preferences to be loaded before showing the map
     if (!_preferencesLoaded || _isLoading) {
       final loadingWidget = Container(
         height: widget.config.embedded ? (widget.config.height ?? 300) : null,
@@ -918,24 +924,28 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
             _fitMapToBounds();
           }
           
-          // Force rebuild on first load to trigger tile loading  
-          if (_isFirstLoad) {
-            _isFirstLoad = false;
-            Future.delayed(const Duration(milliseconds: 200), () {
-              if (mounted) {
-                setState(() {});
-              }
-            });
-          }
+          // Add TileLayer once FlutterMap is fully initialized
+          // This prevents the flutter_map tile loading race condition
+          setState(() {
+            _tilesReady = true;
+          });
         },
       ),
       children: [
-        TileLayer(
-          urlTemplate: _showSatelliteView 
-            ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-            : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.freeflightlog.free_flight_log_app',
-        ),
+        // FLUTTER_MAP TILE LOADING FIX:
+        // Only add TileLayer after onMapReady fires. This solves a flutter_map race condition
+        // where tiles fail to load on first widget creation, particularly on ChromeOS/Linux containers.
+        // Alternative approaches tested:
+        // - Artificial delays (300ms): Works but slow and masks root cause
+        // - Forced rebuilds (setState after onMapReady): Works but inefficient  
+        // - This solution: Clean and fast - addresses the actual flutter_map initialization timing
+        if (_tilesReady)
+          TileLayer(
+            urlTemplate: _showSatelliteView 
+              ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+              : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            userAgentPackageName: 'com.freeflightlog.free_flight_log_app',
+          ),
         if (_polylines.isNotEmpty)
           PolylineLayer(
             polylines: _polylines,
