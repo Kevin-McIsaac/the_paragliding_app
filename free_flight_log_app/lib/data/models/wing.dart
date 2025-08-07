@@ -78,4 +78,13 @@ class Wing {
       createdAt: createdAt ?? this.createdAt,
     );
   }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is Wing && other.id == id && id != null;
+  }
+
+  @override
+  int get hashCode => id.hashCode;
 }

@@ -71,4 +71,13 @@ class Site {
       flightCount: flightCount ?? this.flightCount,
     );
   }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is Site && other.id == id && id != null;
+  }
+
+  @override
+  int get hashCode => id.hashCode;
 }
