@@ -78,7 +78,6 @@ class FlightTrackWidget extends StatefulWidget {
 
 class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindingObserver {
   MapController? _mapController;
-  bool _mapControllerReady = false;
   final IgcImportService _igcService = IgcImportService();
   
   List<IgcPoint> _trackPoints = [];
@@ -118,13 +117,8 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     // Load preferences first to ensure stable tile URLs
     await _loadSavedPreferences();
     
-    // Add a delay specifically for ChromeOS/Linux container cold start
-    await Future.delayed(const Duration(milliseconds: 300));
-    
-    // Mark map controller as ready
-    setState(() {
-      _mapControllerReady = true;
-    });
+    // Minimum delay needed for ChromeOS/Linux container cold start
+    await Future.delayed(const Duration(milliseconds: 150));
     
     // Then load track data
     _loadTrackData();
@@ -834,8 +828,8 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
 
   @override
   Widget build(BuildContext context) {
-    // Don't render map until preferences are loaded AND map controller is ready
-    if (!_preferencesLoaded || !_mapControllerReady || _isLoading) {
+    // Test: Remove _mapControllerReady flag - just use preferences loaded and loading state
+    if (!_preferencesLoaded || _isLoading) {
       final loadingWidget = Container(
         height: widget.config.embedded ? (widget.config.height ?? 300) : null,
         decoration: BoxDecoration(
