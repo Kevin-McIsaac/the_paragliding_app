@@ -23,6 +23,7 @@ class FlightPlaybackController extends ChangeNotifier {
   // Animation
   AnimationController? _animationController;
   Animation<double>? _animation;
+  TickerProvider? _currentVsync;
   
   // Constructor
   FlightPlaybackController({
@@ -65,6 +66,7 @@ class FlightPlaybackController extends ChangeNotifier {
       _currentPointIndex = 0;
     }
     
+    _currentVsync = vsync; // Store for later use
     _state = PlaybackState.playing;
     _startAnimation(vsync);
     notifyListeners();
@@ -98,9 +100,17 @@ class FlightPlaybackController extends ChangeNotifier {
   // Speed control
   void setPlaybackSpeed(double speed) {
     _playbackSpeed = speed;
-    if (_state == PlaybackState.playing && _animationController != null) {
-      _animationController!.duration = _calculateAnimationDuration();
+    
+    // If currently playing, restart animation with new speed
+    if (_state == PlaybackState.playing && _animationController != null && _currentVsync != null) {
+      // Use current point index instead of animation progress to maintain position
+      final currentIndex = _currentPointIndex;
+      _animationController!.stop();
+      
+      // Restart animation from current point index with new speed
+      _startAnimationFromIndex(currentIndex, _currentVsync!);
     }
+    
     notifyListeners();
   }
   
@@ -167,6 +177,47 @@ class FlightPlaybackController extends ChangeNotifier {
     
     final remainingPoints = trackPoints.length - _currentPointIndex - 1;
     if (remainingPoints <= 0) return;
+    
+    _animationController = AnimationController(
+      vsync: vsync,
+      duration: _calculateAnimationDuration(),
+    );
+    
+    _animation = Tween<double>(
+      begin: _currentPointIndex.toDouble(),
+      end: (trackPoints.length - 1).toDouble(),
+    ).animate(_animationController!);
+    
+    _animation!.addListener(() {
+      final newIndex = _animation!.value.round();
+      if (newIndex != _currentPointIndex) {
+        _currentPointIndex = newIndex;
+        notifyListeners();
+      }
+    });
+    
+    _animationController!.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        stop();
+      }
+    });
+    
+    _animationController!.forward();
+  }
+  
+  /// Start animation from a specific point index (used when changing speed during playback)
+  void _startAnimationFromIndex(int startIndex, TickerProvider vsync) {
+    _animationController?.dispose();
+    
+    // Set current position
+    _currentPointIndex = startIndex.clamp(0, trackPoints.length - 1);
+    
+    // Create new animation from current position to end
+    final remainingPoints = trackPoints.length - _currentPointIndex - 1;
+    if (remainingPoints <= 0) {
+      stop();
+      return;
+    }
     
     _animationController = AnimationController(
       vsync: vsync,
