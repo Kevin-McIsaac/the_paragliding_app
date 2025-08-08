@@ -228,7 +228,7 @@ class ParaglidingEarthApi {
     
     // Debug output for country parsing
     if (countryCode != null) {
-      LoggingService.info('ParaglidingEarthApi: Site "${name}" - countryCode "${countryCode}" → country "${country}"');
+      LoggingService.info('ParaglidingEarthApi: Site "$name" - countryCode "$countryCode" → country "$country"');
     }
     
     // Determine site type based on API data

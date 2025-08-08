@@ -2,7 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:free_flight_log_app/services/timezone_service.dart';
 import 'package:free_flight_log_app/services/igc_parser.dart';
 import 'dart:io';
-import 'package:path/path.dart' as path;
 
 void main() {
   group('Timezone Detection Tests', () {

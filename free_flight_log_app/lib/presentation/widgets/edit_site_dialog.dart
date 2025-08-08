@@ -54,7 +54,7 @@ class _EditSiteDialogState extends State<EditSiteDialog> with SingleTickerProvid
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      child: Container(
+      child: SizedBox(
         width: MediaQuery.of(context).size.width * 0.9,
         height: MediaQuery.of(context).size.height * 0.8,
         child: Column(
@@ -246,7 +246,7 @@ class _EditSiteDialogState extends State<EditSiteDialog> with SingleTickerProvid
       child: Column(
         children: [
           Text(
-            '${widget.site.name}',
+            widget.site.name,
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 8),

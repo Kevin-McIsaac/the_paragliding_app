@@ -177,7 +177,7 @@ class TestHelpers {
 
 /// Mock Flight Provider for testing
 class MockFlightProvider extends ChangeNotifier implements FlightProvider {
-  List<Flight> _flights = [];
+  final List<Flight> _flights = [];
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -258,7 +258,7 @@ class MockFlightProvider extends ChangeNotifier implements FlightProvider {
 
 /// Mock Site Provider for testing
 class MockSiteProvider extends ChangeNotifier implements SiteProvider {
-  List<Site> _sites = [];
+  final List<Site> _sites = [];
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -321,7 +321,7 @@ class MockSiteProvider extends ChangeNotifier implements SiteProvider {
 
 /// Mock Wing Provider for testing
 class MockWingProvider extends ChangeNotifier implements WingProvider {
-  List<Wing> _wings = [];
+  final List<Wing> _wings = [];
   bool _isLoading = false;
   String? _errorMessage;
 

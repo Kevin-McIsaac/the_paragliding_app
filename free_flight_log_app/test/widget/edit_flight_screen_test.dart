@@ -272,10 +272,10 @@ class DatePickerFormField extends StatelessWidget {
   final Function(DateTime)? onChanged;
   
   const DatePickerFormField({
-    Key? key,
+    super.key,
     this.initialValue,
     this.onChanged,
-  }) : super(key: key);
+  });
   
   @override
   Widget build(BuildContext context) {

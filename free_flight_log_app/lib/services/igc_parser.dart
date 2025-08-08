@@ -127,7 +127,7 @@ class IgcParser {
               point.timestamp.minute,
               point.timestamp.second,
             ),
-            timezone!,
+            timezone,
           );
           
           trackPoints[i] = IgcPoint(

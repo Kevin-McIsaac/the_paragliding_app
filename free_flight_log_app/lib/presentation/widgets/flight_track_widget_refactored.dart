@@ -7,7 +7,6 @@ import 'flight_track/flight_track_map.dart';
 import 'flight_track/flight_track_legend.dart';
 import 'flight_track/flight_track_stats.dart';
 import 'flight_track/flight_altitude_chart_simple.dart';
-import 'flight_track/flight_map_controls.dart';
 
 /// Configuration for the flight track widget display
 class FlightTrackConfig {

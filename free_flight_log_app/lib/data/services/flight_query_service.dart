@@ -160,7 +160,7 @@ class FlightQueryService {
     List<Map<String, dynamic>> maps = await db.rawQuery(query, allArgs);
     final flights = maps.map((map) => Flight.fromMap(map)).toList();
     
-    LoggingService.info('FlightQueryService: Retrieved ${flights.length}/${totalCount} flights (page ${params.page})');
+    LoggingService.info('FlightQueryService: Retrieved ${flights.length}/$totalCount flights (page ${params.page})');
     
     return PaginationResult<Flight>(
       items: flights,

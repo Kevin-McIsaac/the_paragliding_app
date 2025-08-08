@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import '../lib/data/models/igc_file.dart';
+import 'package:free_flight_log_app/data/models/igc_file.dart';
 
 void main() {
   group('IGC Climb Rate Debug Tests', () {

@@ -226,7 +226,7 @@ class _FlightTrackMapState extends State<FlightTrackMap> {
   @override
   Widget build(BuildContext context) {
     if (!_preferencesLoaded) {
-      return Container(
+      return SizedBox(
         height: widget.config.height ?? 400,
         width: widget.config.width,
         child: const Center(
@@ -261,7 +261,7 @@ class _FlightTrackMapState extends State<FlightTrackMap> {
 
     final bounds = _calculateBounds();
     
-    return Container(
+    return SizedBox(
       height: widget.config.height ?? 400,
       width: widget.config.width,
       child: ClipRRect(

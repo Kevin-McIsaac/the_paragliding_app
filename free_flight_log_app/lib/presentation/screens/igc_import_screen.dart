@@ -68,20 +68,40 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
 
   Future<void> _pickIgcFiles() async {
     try {
-      // Get the last used folder
-      String? initialDirectory = await _getLastFolder();
+      // For Android 14+ (API 34+), use a more compatible approach
+      FilePickerResult? result;
       
-      // Verify the directory still exists
-      if (initialDirectory != null && !Directory(initialDirectory).existsSync()) {
-        initialDirectory = null;
+      try {
+        // Try with custom type and igc extension
+        result = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: ['igc'],
+          allowMultiple: true,
+        );
+      } catch (e) {
+        // Fallback: try with any file type and filter manually
+        result = await FilePicker.platform.pickFiles(
+          type: FileType.any,
+          allowMultiple: true,
+        );
+        
+        // Filter for .igc files manually
+        if (result != null) {
+          final igcFiles = result.files.where((file) => 
+            file.name.toLowerCase().endsWith('.igc') && file.path != null
+          ).toList();
+          
+          if (igcFiles.isEmpty) {
+            setState(() {
+              _errorMessage = 'No IGC files selected. Please select files with .igc extension.';
+            });
+            return;
+          }
+          
+          // Create a new result with only IGC files
+          result = FilePickerResult(igcFiles);
+        }
       }
-      
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['igc', 'IGC'],
-        allowMultiple: true,
-        initialDirectory: initialDirectory,
-      );
 
       if (result != null && result.files.isNotEmpty) {
         final validPaths = result.files
@@ -89,9 +109,14 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
             .map((file) => file.path!)
             .toList();
         
-        // Save the folder of the first selected file for next time
+        // Save the folder of the first selected file for next time (if accessible)
         if (validPaths.isNotEmpty) {
-          await _saveLastFolder(validPaths.first);
+          try {
+            await _saveLastFolder(validPaths.first);
+          } catch (e) {
+            // Ignore folder saving errors on newer Android versions
+            // due to scoped storage restrictions
+          }
         }
         
         setState(() {

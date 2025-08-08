@@ -67,7 +67,7 @@ class UiUtils {
   /// Automatically formats the error with a standard message
   /// Example: UiUtils.showExceptionError(context, 'save flight', e);
   static void showExceptionError(BuildContext context, String operation, dynamic error) {
-    final message = 'Error ${operation}: ${error.toString()}';
+    final message = 'Error $operation: ${error.toString()}';
     showErrorMessage(context, message);
   }
 

@@ -77,8 +77,8 @@ class LoggingService {
 
 /// Extension methods for easier logging from any context
 extension LoggingExtensions on Object {
-  void logDebug(String message) => LoggingService.debug('${runtimeType}: $message');
-  void logInfo(String message) => LoggingService.info('${runtimeType}: $message');
-  void logWarning(String message) => LoggingService.warning('${runtimeType}: $message');
-  void logError(String message, [dynamic error]) => LoggingService.error('${runtimeType}: $message', error);
+  void logDebug(String message) => LoggingService.debug('$runtimeType: $message');
+  void logInfo(String message) => LoggingService.info('$runtimeType: $message');
+  void logWarning(String message) => LoggingService.warning('$runtimeType: $message');
+  void logError(String message, [dynamic error]) => LoggingService.error('$runtimeType: $message', error);
 }

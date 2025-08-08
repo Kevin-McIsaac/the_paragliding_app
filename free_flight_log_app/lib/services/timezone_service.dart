@@ -93,9 +93,7 @@ class TimezoneService {
     }
     
     // If no timezone found within radius, fall back to basic longitude-based estimation
-    if (closestTimezone == null) {
-      closestTimezone = _estimateTimezoneFromLongitude(longitude, latitude);
-    }
+    closestTimezone ??= _estimateTimezoneFromLongitude(longitude, latitude);
     
     return closestTimezone;
   }

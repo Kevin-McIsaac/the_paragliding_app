@@ -1,4 +1,3 @@
-import 'package:sqflite/sqflite.dart';
 import '../data/datasources/database_helper.dart';
 import '../services/logging_service.dart';
 
@@ -44,7 +43,7 @@ class DatabaseMigrationHelper {
       LoggingService.info('DatabaseMigrationHelper: Successfully added missing columns');
     } catch (e) {
       LoggingService.error('DatabaseMigrationHelper: Error adding columns', e);
-      throw e;
+      rethrow;
     }
   }
 

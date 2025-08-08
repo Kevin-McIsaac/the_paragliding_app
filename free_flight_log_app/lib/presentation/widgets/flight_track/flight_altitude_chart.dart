@@ -264,7 +264,7 @@ class _FlightAltitudeChartState extends State<FlightAltitudeChart> {
                 );
               } else if (_showClimbRate && !_showAltitude) {
                 return Text(
-                  '${value.toStringAsFixed(1)}',
+                  value.toStringAsFixed(1),
                   style: const TextStyle(fontSize: 10),
                 );
               } else {
