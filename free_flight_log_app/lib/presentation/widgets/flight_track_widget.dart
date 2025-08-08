@@ -120,6 +120,8 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
   // Current playback position marker
   int? _playbackPointIndex;
   
+  // Auto-follow throttling
+  
   // Label positions for hover detection
   LatLng? _launchPosition;
   LatLng? _landingPosition;
@@ -1682,6 +1684,63 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
         _playbackPointIndex = _playbackController!.currentPointIndex;
       });
       _createMarkers();
+      _panIfNearEdge();
+    }
+  }
+
+  /// Pan map if playback position is near the edge of the visible area
+  void _panIfNearEdge() {
+    final point = _playbackController?.currentPoint;
+    final mapController = _mapController;
+    
+    if (point == null || mapController == null) return;
+    
+    final camera = mapController.camera;
+    final bounds = camera.visibleBounds;
+    final currentCenter = camera.center;
+    
+    // Define margin as percentage from edge (10% = 0.1)
+    const double margin = 0.1;
+    
+    final latRange = bounds.north - bounds.south;
+    final lngRange = bounds.east - bounds.west;
+    
+    // Calculate the safe zone boundaries
+    final northLimit = bounds.north - (latRange * margin);
+    final southLimit = bounds.south + (latRange * margin);
+    final eastLimit = bounds.east - (lngRange * margin);
+    final westLimit = bounds.west + (lngRange * margin);
+    
+    // Check if point is outside the safe zone and calculate minimal correction
+    double newLat = currentCenter.latitude;
+    double newLng = currentCenter.longitude;
+    bool needsPan = false;
+    
+    if (point.latitude > northLimit) {
+      // Point is too far north - move map north just enough
+      newLat = currentCenter.latitude + (point.latitude - northLimit);
+      needsPan = true;
+    } else if (point.latitude < southLimit) {
+      // Point is too far south - move map south just enough
+      newLat = currentCenter.latitude + (point.latitude - southLimit);
+      needsPan = true;
+    }
+    
+    if (point.longitude > eastLimit) {
+      // Point is too far east - move map east just enough
+      newLng = currentCenter.longitude + (point.longitude - eastLimit);
+      needsPan = true;
+    } else if (point.longitude < westLimit) {
+      // Point is too far west - move map west just enough
+      newLng = currentCenter.longitude + (point.longitude - westLimit);
+      needsPan = true;
+    }
+    
+    if (needsPan) {
+      mapController.move(
+        LatLng(newLat, newLng),
+        camera.zoom,
+      );
     }
   }
 
