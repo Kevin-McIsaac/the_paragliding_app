@@ -1340,7 +1340,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     return Container(
       height: 120,
       padding: const EdgeInsets.all(16),
-      color: Theme.of(context).colorScheme.surface,
+      color: Theme.of(context).colorScheme.secondaryContainer,
       child: LineChart(
           LineChartData(
           gridData: FlGridData(
@@ -1463,6 +1463,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
               getTooltipItems: (touchedSpots) => [], // No tooltip, we handle display ourselves
             ),
           ) : LineTouchData(enabled: false),
+          backgroundColor: Colors.transparent,
           ),
       ),
     );
