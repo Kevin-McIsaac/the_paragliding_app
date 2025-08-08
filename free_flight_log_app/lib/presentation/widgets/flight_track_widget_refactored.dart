@@ -3,10 +3,12 @@ import '../../data/models/flight.dart';
 import '../../data/models/igc_file.dart';
 import '../../services/igc_import_service.dart';
 import '../../services/logging_service.dart';
+import '../controllers/flight_playback_controller.dart';
 import 'flight_track/flight_track_map.dart';
 import 'flight_track/flight_track_legend.dart';
 import 'flight_track/flight_track_stats.dart';
 import 'flight_track/flight_altitude_chart_simple.dart';
+import 'flight_playback_panel.dart';
 
 /// Configuration for the flight track widget display
 class FlightTrackConfig {

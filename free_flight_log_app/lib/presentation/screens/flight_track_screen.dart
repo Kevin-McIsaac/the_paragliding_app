@@ -27,6 +27,7 @@ class _FlightTrackScreenState extends State<FlightTrackScreen> {
         flight: widget.flight,
         config: FlightTrackConfig.fullScreen(),
         onPointSelected: _onPointSelected,
+        showPlaybackPanel: true,
       ),
     );
   }

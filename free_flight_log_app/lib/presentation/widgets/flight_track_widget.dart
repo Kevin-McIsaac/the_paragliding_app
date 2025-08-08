@@ -9,6 +9,8 @@ import '../../data/models/flight.dart';
 import '../../data/models/igc_file.dart';
 import '../../services/igc_import_service.dart';
 import '../../services/logging_service.dart';
+import '../controllers/flight_playback_controller.dart';
+import 'flight_playback_panel.dart';
 
 // FLUTTER_MAP TILE LOADING SOLUTION:
 // This widget implements delayed TileLayer creation to solve a flutter_map race condition
@@ -73,12 +75,14 @@ class FlightTrackWidget extends StatefulWidget {
   final Flight flight;
   final FlightTrackConfig config;
   final Function(int)? onPointSelected;
+  final bool showPlaybackPanel;
 
   const FlightTrackWidget({
     super.key,
     required this.flight,
     required this.config,
     this.onPointSelected,
+    this.showPlaybackPanel = false,
   });
 
   @override
@@ -110,6 +114,12 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
   // Currently hovered label for statistics display
   String? _hoveredLabel;
   
+  // Playback controller for timeline scrubbing
+  FlightPlaybackController? _playbackController;
+  
+  // Current playback position marker
+  int? _playbackPointIndex;
+  
   // Label positions for hover detection
   LatLng? _launchPosition;
   LatLng? _landingPosition;
@@ -133,6 +143,8 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _playbackController?.removeListener(_onPlaybackChanged);
+    _playbackController?.dispose();
     super.dispose();
   }
 
@@ -213,6 +225,16 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
         _fifteenSecondRates = fifteenSecondRates;
         _isLoading = false;
       });
+      
+      // Initialize playback controller if needed
+      if (widget.showPlaybackPanel) {
+        _playbackController = FlightPlaybackController(
+          trackPoints: trackPoints,
+          instantaneousClimbRates: instantaneousRates,
+          averagedClimbRates: fifteenSecondRates,
+        );
+        _playbackController!.addListener(_onPlaybackChanged);
+      }
       
       _createPolylines();
       _createMarkers();
@@ -380,6 +402,20 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
         );
       }
     }
+    
+    // Add playback position marker
+    if (_playbackPointIndex != null && _playbackPointIndex! < _trackPoints.length) {
+      final playbackPoint = _trackPoints[_playbackPointIndex!];
+      
+      markers.add(
+        Marker(
+          point: LatLng(playbackPoint.latitude, playbackPoint.longitude),
+          child: _buildPlaybackMarker(),
+          width: 24,
+          height: 24,
+        ),
+      );
+    }
 
     // Add straight distance marker at midpoint if showing labels
     if (_showLabels && _trackPoints.length >= 2 && widget.flight.straightDistance != null) {
@@ -438,6 +474,30 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
       height: 40,
       child: CustomPaint(
         painter: CrosshairsPainter(color: color),
+      ),
+    );
+  }
+  
+  Widget _buildPlaybackMarker() {
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        color: Colors.deepPurple[600],
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 3),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Icon(
+        Icons.play_arrow,
+        color: Colors.white,
+        size: 12,
       ),
     );
   }
@@ -1043,15 +1103,33 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
       ),
     );
 
+    // Add playback panel if enabled
+    Widget finalWidget = unifiedWidget;
+    if (widget.showPlaybackPanel && _playbackController != null) {
+      finalWidget = Stack(
+        children: [
+          unifiedWidget,
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: FlightPlaybackPanel(
+              controller: _playbackController!,
+            ),
+          ),
+        ],
+      );
+    }
+    
     // For embedded mode, provide bounded height
     if (widget.config.embedded) {
       return SizedBox(
         height: widget.config.height ?? 350,
-        child: unifiedWidget,
+        child: finalWidget,
       );
     } else {
       // Full screen mode
-      return unifiedWidget;
+      return finalWidget;
     }
   }
 
@@ -1336,6 +1414,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     final padding = altRange * 0.1; // 10% padding
 
     final selectedTime = _getSelectedPointTime();
+    final playbackTime = _getPlaybackPointTime();
 
     return Container(
       height: 120,
@@ -1431,16 +1510,25 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
               ),
             ),
           ],
-          extraLinesData: selectedTime != null ? ExtraLinesData(
+          extraLinesData: ExtraLinesData(
             verticalLines: [
-              VerticalLine(
-                x: selectedTime,
-                color: Colors.orange[600]!,
-                strokeWidth: 2,
-                dashArray: [5, 5],
-              ),
+              // Hover indicator line
+              if (selectedTime != null)
+                VerticalLine(
+                  x: selectedTime,
+                  color: Colors.orange[600]!,
+                  strokeWidth: 2,
+                  dashArray: [5, 5],
+                ),
+              // Playback position line
+              if (playbackTime != null)
+                VerticalLine(
+                  x: playbackTime,
+                  color: Colors.deepPurple[600]!,
+                  strokeWidth: 3,
+                ),
             ],
-          ) : null,
+          ),
           // Use fl_chart's built-in touch handling for accurate coordinate mapping
           lineTouchData: widget.config.interactive ? LineTouchData(
             enabled: true,
@@ -1539,6 +1627,17 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     // Return minutes since midnight
     return hoveredPoint.timestamp.hour * 60.0 + hoveredPoint.timestamp.minute + hoveredPoint.timestamp.second / 60.0;
   }
+  
+  /// Get the X-coordinate (time) for the playback position
+  double? _getPlaybackPointTime() {
+    if (_playbackPointIndex == null || _playbackPointIndex! >= _trackPoints.length) {
+      return null;
+    }
+
+    final playbackPoint = _trackPoints[_playbackPointIndex!];
+    // Return minutes since midnight
+    return playbackPoint.timestamp.hour * 60.0 + playbackPoint.timestamp.minute + playbackPoint.timestamp.second / 60.0;
+  }
 
   /// Handle tap on altitude chart to set hover point
   void _handleAltitudeChartTap(double timeMinutes) {
@@ -1607,6 +1706,16 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     setState(() {
       _hoveredLabel = labelName;
     });
+  }
+  
+  /// Handle playback controller changes
+  void _onPlaybackChanged() {
+    if (_playbackController != null) {
+      setState(() {
+        _playbackPointIndex = _playbackController!.currentPointIndex;
+      });
+      _createMarkers();
+    }
   }
 
   /// Open OpenStreetMap copyright page

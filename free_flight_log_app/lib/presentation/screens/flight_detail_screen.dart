@@ -634,6 +634,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                                 key: ValueKey(_mapRefreshKey),
                                 flight: _flight,
                                 config: FlightTrackConfig.embeddedWithControls(),
+                                showPlaybackPanel: true,
                               ),
                             ],
                           ),
