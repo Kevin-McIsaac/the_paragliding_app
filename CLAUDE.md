@@ -56,6 +56,9 @@ flutter run -d pixel --dart-define=flutter.flutter_map.unblockOSM="Our tile serv
 
 # Run on emulator:
 flutter run -d emulator-5554 --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
+
+# Get pixel screen shot
+adb -s 192.168.86.250:45781 exec-out screencap -p > /mnt/chromeos/MyFiles/Downloads/pixel_screenshot.png
 ```
 
 For comprehensive development setup, build commands, testing, and troubleshooting, see [DEVELOPMENT.md](DEVELOPMENT.md).
@@ -71,44 +74,7 @@ For comprehensive development setup, build commands, testing, and troubleshootin
 
 For detailed technical architecture, database schema, and implementation details, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
-## Development Status
 
-### ✅ MVP Features (COMPLETED)
-
-1. ✅ Manual flight entry form with validation
-2. ✅ Flight list display with statistics
-3. ✅ Basic CRUD operations (Create, Read, Update, Delete)
-4. ✅ Simple statistics (total flights/hours/max altitude)
-5. ✅ Local SQLite persistence with cross-platform support
-6. ✅ IGC file import and parsing with climb rate calculations
-7. ✅ OpenStreetMap integration for cross-platform track visualization
-8. ✅ Flight detail view with inline editing capability and comprehensive statistics
-9. ✅ Wing/equipment management with automatic creation from IGC data
-10. ✅ Database migrations for schema updates
-
-### 🚀 Next Features (Post-MVP)
-
-1. 📋 Altitude and climb rate charts (fl_chart ready)
-2. 📋 Site recognition via reverse geocoding
-3. 📋 Export functionality (CSV, KML)
-4. 📋 Provider state management implementation
-5. 📋 Advanced flight analysis and statistics
-6. 📋 Flight comparison and trend analysis
-
-## Important Notes
-
-- This is a **local-only** app - no cloud services or user authentication
-- All data stored on device in SQLite database
-- Cross-platform support: Linux ✅, Android ✅, iOS ✅, macOS ✅, Windows ✅
-- Material Design 3 UI with proper theming
-- Full IGC import and flight track visualization capability
-- Comprehensive climb rate analysis with 15-second averaging
-- Database migration support for schema updates
-- Remembers last IGC import folder for improved workflow
-- Timezone-aware time display for international flight logging
-- Automatic midnight crossing duration correction
-- Track distance analysis with sortable flight list columns
-- **OpenStreetMap Compliance**: Full compliance with OSM tile usage policy including attribution, user agent, and contact information
 
 ## Project History
 
@@ -116,9 +82,6 @@ For complete project history and detailed changelog, see [CHANGELOG.md](CHANGELO
 
 ## Development Reminders
 
-- After running flutter analyze, review the output and fix
-
-
-## Bash and Command Execution Notes
-
-- The Bash tool doesn't support shell redirection operators like 2>&1 or pipes. It captures stdout and stderr
+- After running flutter review the output and fix
+- Prefer running app test in flutter on the pixel
+- The Bash tool doesn't support shell redirection operators like 2>&1 or pipes but it does capture stdout and stderr.

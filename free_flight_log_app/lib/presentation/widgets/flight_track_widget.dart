@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -23,6 +24,82 @@ import 'flight_playback_panel.dart';
 // 3. Sequential preference loading prevents tile URL instability
 // 
 // This approach is faster and cleaner than artificial delays or forced rebuilds.
+
+/// Isolate-compatible polyline calculation to prevent main thread blocking
+/// This function runs in a background isolate for heavy computational tasks
+List<Polyline> _calculatePolylinesIsolate(Map<String, dynamic> data) {
+  final List<Map<String, dynamic>> pointMaps = List<Map<String, dynamic>>.from(data['points']);
+  final List<double> climbRates = List<double>.from(data['climbRates']);
+  final bool showLabels = data['showLabels'] as bool;
+  
+  // Convert point maps back to coordinate objects
+  final List<LatLng> trackCoordinates = pointMaps
+      .map((pointMap) => LatLng(pointMap['lat'] as double, pointMap['lng'] as double))
+      .toList();
+  
+  final polylines = <Polyline>[];
+  
+  if (climbRates.isEmpty) {
+    // Simple red track for flights without climb rate data
+    polylines.add(Polyline(
+      points: trackCoordinates,
+      color: const Color(0xFFFF0000), // Colors.red
+      strokeWidth: 3.0,
+    ));
+    return polylines;
+  }
+  
+  // Create colored segments between consecutive points
+  for (int i = 0; i < trackCoordinates.length - 1; i++) {
+    final currentPoint = trackCoordinates[i];
+    final nextPoint = trackCoordinates[i + 1];
+    
+    // Get climb rate for current point (handle index bounds)
+    final climbRate = i < climbRates.length ? climbRates[i] : 0.0;
+    
+    // Calculate color based on climb rate using helper function
+    final color = _getClimbRateColorStatic(climbRate);
+    
+    polylines.add(
+      Polyline(
+        points: [currentPoint, nextPoint],
+        color: color,
+        strokeWidth: 3.0,
+      ),
+    );
+  }
+  
+  // Add straight line polyline if enabled
+  if (showLabels && trackCoordinates.length >= 2) {
+    final launchPoint = trackCoordinates.first;
+    final landingPoint = trackCoordinates.last;
+    
+    polylines.add(Polyline(
+      points: [launchPoint, landingPoint],
+      color: const Color(0xFF9E9E9E), // Colors.grey
+      strokeWidth: 4.0,
+      pattern: const StrokePattern.dotted(),
+    ));
+  }
+  
+  return polylines;
+}
+
+/// Helper function for climb rate color calculation (isolate-compatible)
+Color _getClimbRateColorStatic(double climbRate) {
+  // Simple 3-tier color scheme based on fixed thresholds
+  // Red: Strong sink (rate <= -1.5 m/s)
+  // Royal Blue: Weak sink (-1.5 < rate < 0 m/s)  
+  // Green: Any climb (rate >= 0 m/s)
+  
+  if (climbRate <= -1.5) {
+    return const Color(0xFFFF0000); // Colors.red
+  } else if (climbRate < 0) {
+    return const Color(0xFF1976D2); // Colors.blue[700]
+  } else {
+    return const Color(0xFF4CAF50); // Colors.green
+  }
+}
 
 class FlightTrackConfig {
   final bool embedded;
@@ -110,12 +187,9 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
   bool _showLegend = true;
   bool _preferencesLoaded = false;
   bool _tilesReady = false; // Controls when TileLayer is added to prevent flutter_map race condition
+  bool _isGeneratingPolylines = false; // Controls loading state during background polyline generation
   
-  // Currently hovered track point for real-time feedback
-  int? _hoveredPointIndex;
-  
-  // Currently hovered label for statistics display
-  String? _hoveredLabel;
+  // Removed old hover system - now using unified playback controller linking
   
   // Playback controller for timeline scrubbing
   FlightPlaybackController? _playbackController;
@@ -130,12 +204,12 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
   // Current playback position marker
   int? _playbackPointIndex;
   
+  // Chart interaction key for accurate coordinate mapping
+  final GlobalKey _chartKey = GlobalKey();
+  
   // Auto-follow throttling
   
-  // Label positions for hover detection
-  LatLng? _launchPosition;
-  LatLng? _landingPosition;
-  LatLng? _highPointPosition;
+  // Old label position variables removed - no longer needed without hover system
 
   @override
   void initState() {
@@ -207,7 +281,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
         // Recreate markers and polylines if labels changed and we have track data
         if (labelsChanged && _trackPoints.isNotEmpty) {
           _createMarkers();
-          _createPolylines();
+          _createPolylinesAsync();
         }
       }
     } catch (e) {
@@ -257,7 +331,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
         _playbackController!.addListener(_onPlaybackChanged);
       }
       
-      _createPolylines();
+      await _createPolylinesAsync();
       _createMarkers();
       // Don't call _fitMapToBounds() here - it will be called in onMapReady
       
@@ -269,31 +343,85 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     }
   }
 
-  void _createPolylines() {
+  /// Async polyline creation using background isolate to prevent main thread blocking
+  Future<void> _createPolylinesAsync() async {
     if (_trackPoints.isEmpty) return;
 
-    final polylines = <Polyline>[];
-
-    // Create climb rate-based colored segments
-    polylines.addAll(_createClimbRateColoredPolylines());
-
-    // Create straight line polyline if enabled
-    if (_showLabels && _trackPoints.length >= 2) {
-      final launchPoint = LatLng(_trackPoints.first.latitude, _trackPoints.first.longitude);
-      final landingPoint = LatLng(_trackPoints.last.latitude, _trackPoints.last.longitude);
-      
-      final straightLinePolyline = Polyline(
-        points: [launchPoint, landingPoint],
-        color: Colors.grey,
-        strokeWidth: 4.0,
-        pattern: const StrokePattern.dotted(),
-      );
-      polylines.add(straightLinePolyline);
+    // Check global cache first
+    final cacheKey = _createPolylineseCacheKey();
+    if (_globalPolylineCache.containsKey(cacheKey)) {
+      LoggingService.debug('FlightTrackWidget: Using cached polylines for key: ${cacheKey.substring(0, 16)}...');
+      setState(() {
+        _polylines = _globalPolylineCache[cacheKey]!;
+      });
+      return;
     }
 
+    // Show loading state
     setState(() {
-      _polylines = polylines;
+      _isGeneratingPolylines = true;
     });
+
+    try {
+      final startTime = DateTime.now();
+      
+      // Prepare data for isolate (must be serializable)
+      final polylineData = {
+        'points': _trackPoints.map((point) => {
+          'lat': point.latitude,
+          'lng': point.longitude,
+        }).toList(),
+        'climbRates': _fifteenSecondRates,
+        'showLabels': _showLabels,
+      };
+
+      // Generate polylines in background isolate
+      final polylines = await compute(_calculatePolylinesIsolate, polylineData);
+      
+      final duration = DateTime.now().difference(startTime);
+      LoggingService.performance('Generate polylines (isolate)', duration, '${polylines.length} polylines created');
+
+      // Cache and update UI
+      if (mounted) {
+        _cachePolylines(cacheKey, polylines);
+        setState(() {
+          _polylines = polylines;
+          _isGeneratingPolylines = false;
+        });
+      }
+      
+    } catch (e) {
+      LoggingService.error('FlightTrackWidget: Failed to generate polylines in background', e);
+      
+      // Fallback to synchronous generation
+      if (mounted) {
+        final fallbackPolylines = _createClimbRateColoredPolylinesFallback();
+        setState(() {
+          _polylines = fallbackPolylines;
+          _isGeneratingPolylines = false;
+        });
+      }
+    }
+  }
+
+  /// Fallback synchronous polyline generation for error cases
+  List<Polyline> _createClimbRateColoredPolylinesFallback() {
+    if (_trackPoints.length < 2) return [];
+    
+    final polylines = <Polyline>[];
+    
+    // Simple red track as fallback
+    final trackCoordinates = _trackPoints
+        .map((point) => LatLng(point.latitude, point.longitude))
+        .toList();
+
+    polylines.add(Polyline(
+      points: trackCoordinates,
+      color: Colors.red,
+      strokeWidth: 3.0,
+    ));
+    
+    return polylines;
   }
 
   List<Polyline> _createClimbRateColoredPolylines() {
@@ -449,10 +577,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
         (a, b) => a.gpsAltitude > b.gpsAltitude ? a : b
       );
 
-      // Store label positions for hover detection
-      _launchPosition = LatLng(startPoint.latitude, startPoint.longitude);
-      _landingPosition = LatLng(endPoint.latitude, endPoint.longitude);
-      _highPointPosition = LatLng(highestPoint.latitude, highestPoint.longitude);
+      // Position storage removed - no longer needed without hover system
 
       markers.addAll([
         Marker(
@@ -476,24 +601,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
       ]);
     }
 
-    // Add crosshairs markers for interactive mode (always shown when hovering)
-    if (widget.config.interactive && _hoveredPointIndex != null) {
-      if (_hoveredPointIndex! < _trackPoints.length) {
-        final hoveredPoint = _trackPoints[_hoveredPointIndex!];
-        
-        // Use hover styling - matching altitude chart indicator
-        final crosshairColor = Colors.orange[600]!;
-        
-        markers.add(
-          Marker(
-            point: LatLng(hoveredPoint.latitude, hoveredPoint.longitude),
-            child: _buildCrosshairsIcon(crosshairColor),
-            width: 40,
-            height: 40,
-          ),
-        );
-      }
-    }
+    // Old hover crosshairs system removed - now using unified playback controller
     
     // Add playback position marker
     if (_playbackPointIndex != null && _playbackPointIndex! < _trackPoints.length) {
@@ -560,15 +668,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     );
   }
 
-  Widget _buildCrosshairsIcon(Color color) {
-    return SizedBox(
-      width: 40,
-      height: 40,
-      child: CustomPaint(
-        painter: CrosshairsPainter(color: color),
-      ),
-    );
-  }
+  // _buildCrosshairsIcon removed - no longer needed without hover system
   
   Widget _buildPlaybackMarker() {
     return Container(
@@ -619,82 +719,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
   }
 
 
-  void _handleMapHover(dynamic event, LatLng hoveredPoint) {
-    if (_trackPoints.isEmpty || !widget.config.interactive) return;
-
-    // Check for label hover using pixel-based detection
-    String? newHoveredLabel;
-    final hoveredScreenPoint = _mapController?.camera.latLngToScreenOffset(hoveredPoint);
-    
-    if (hoveredScreenPoint != null) {
-      const double hoverRadiusPixels = 12.0; // Match the circle radius (18px marker = 9px radius + 3px for easier targeting)
-      
-      if (_launchPosition != null) {
-        final launchScreenPoint = _mapController!.camera.latLngToScreenOffset(_launchPosition!);
-        final pixelDistance = _calculatePixelDistance(hoveredScreenPoint, launchScreenPoint);
-        if (pixelDistance <= hoverRadiusPixels) {
-          newHoveredLabel = 'Launch';
-        }
-      }
-      
-      if (newHoveredLabel == null && _landingPosition != null) {
-        final landingScreenPoint = _mapController!.camera.latLngToScreenOffset(_landingPosition!);
-        final pixelDistance = _calculatePixelDistance(hoveredScreenPoint, landingScreenPoint);
-        if (pixelDistance <= hoverRadiusPixels) {
-          newHoveredLabel = 'Landing';
-        }
-      }
-      
-      if (newHoveredLabel == null && _highPointPosition != null) {
-        final highPointScreenPoint = _mapController!.camera.latLngToScreenOffset(_highPointPosition!);
-        final pixelDistance = _calculatePixelDistance(hoveredScreenPoint, highPointScreenPoint);
-        if (pixelDistance <= hoverRadiusPixels) {
-          newHoveredLabel = 'High Point';
-        }
-      }
-    }
-
-    // Update label hover state if changed
-    if (newHoveredLabel != _hoveredLabel) {
-      setState(() {
-        _hoveredLabel = newHoveredLabel;
-      });
-    }
-
-    // Find the closest track point to the hovered location
-    double minDistance = double.infinity;
-    int closestIndex = 0;
-
-    for (int i = 0; i < _trackPoints.length; i++) {
-      final point = _trackPoints[i];
-      final distance = _calculateDistance(
-        hoveredPoint.latitude,
-        hoveredPoint.longitude,
-        point.latitude,
-        point.longitude,
-      );
-
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestIndex = i;
-      }
-    }
-
-    // Only update if the hover is reasonably close to the track (within 0.5km for better responsiveness)
-    // and if it's different from the current hovered point
-    if (minDistance < 0.5 && _hoveredPointIndex != closestIndex) {
-      setState(() {
-        _hoveredPointIndex = closestIndex;
-      });
-      _createMarkers();
-    } else if (minDistance >= 0.5 && _hoveredPointIndex != null) {
-      // Clear hover state if mouse moves away from track
-      setState(() {
-        _hoveredPointIndex = null;
-      });
-      _createMarkers();
-    }
-  }
+  // Old _handleMapHover method removed - now using unified click-based interaction
 
   double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
     const double earthRadius = 6371; // km
@@ -712,11 +737,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     return earthRadius * c;
   }
 
-  double _calculatePixelDistance(Offset point1, Offset point2) {
-    final dx = point1.dx - point2.dx;
-    final dy = point1.dy - point2.dy;
-    return sqrt(dx * dx + dy * dy);
-  }
+  // _calculatePixelDistance removed - no longer needed without hover system
 
   // FAB Controls (only for full screen mode)
   void _toggleLabels() async {
@@ -724,7 +745,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
       _showLabels = !_showLabels;
     });
     _createMarkers();
-    _createPolylines();
+    await _createPolylinesAsync();
     
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('flight_track_show_labels', _showLabels);
@@ -1040,8 +1061,8 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
             ? LatLng(_trackPoints.first.latitude, _trackPoints.first.longitude)
             : const LatLng(46.8182, 8.2275), // Switzerland default for paragliding
         initialZoom: widget.config.embedded ? 12 : 14,
-        onPointerHover: widget.config.interactive ? (event, point) {
-          _handleMapHover(event, point);
+        onTap: widget.config.interactive ? (tapPosition, point) {
+          _handleMapTrackClick(point);
         } : null,
         onMapReady: () {
           if (_trackPoints.isNotEmpty) {
@@ -1073,6 +1094,24 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
         if (_polylines.isNotEmpty)
           PolylineLayer(
             polylines: _polylines,
+          ),
+        // Loading indicator for polyline generation
+        if (_isGeneratingPolylines)
+          Container(
+            color: Colors.black.withValues(alpha: 0.3),
+            child: const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Colors.white),
+                  SizedBox(height: 8),
+                  Text(
+                    'Generating flight track...',
+                    style: TextStyle(color: Colors.white, fontSize: 14),
+                  ),
+                ],
+              ),
+            ),
           ),
         if (_markers.isNotEmpty)
           MarkerLayer(
@@ -1135,7 +1174,6 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
         mapWidget,
         _buildMapControls(),
         _buildClimbRateLegend(),
-        _buildFloatingStats(),
       ],
     );
 
@@ -1193,206 +1231,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
   }
 
 
-  Widget _buildFloatingStats() {
-    // Show stats if either a label is hovered OR a track point is hovered
-    bool hasHoveredLabel = _hoveredLabel != null;
-    bool hasValidTrackPoint = _hoveredPointIndex != null && 
-        _hoveredPointIndex! < _trackPoints.length &&
-        _instantaneousRates.isNotEmpty &&
-        _fifteenSecondRates.isNotEmpty;
-    
-    if (!hasHoveredLabel && !hasValidTrackPoint) {
-      return const SizedBox.shrink();
-    }
-    
-    // For label-only hover, we need to create a minimal display
-    if (hasHoveredLabel && !hasValidTrackPoint) {
-      return _buildLabelOnlyStats();
-    }
-
-    final point = _trackPoints[_hoveredPointIndex!];
-    final instantRate = _hoveredPointIndex! < _instantaneousRates.length
-        ? _instantaneousRates[_hoveredPointIndex!]
-        : 0.0;
-    final fifteenSecRate = _hoveredPointIndex! < _fifteenSecondRates.length
-        ? _fifteenSecondRates[_hoveredPointIndex!]
-        : 0.0;
-
-    // Calculate screen position from the map coordinates
-    final hoveredPoint = _trackPoints[_hoveredPointIndex!];
-    final hoveredLatLng = LatLng(hoveredPoint.latitude, hoveredPoint.longitude);
-    final screenPoint = _mapController?.camera.latLngToScreenOffset(hoveredLatLng);
-    
-    if (screenPoint == null) {
-      return const SizedBox.shrink();
-    }
-    
-    double left = screenPoint.dx;
-    double top = screenPoint.dy - 120; // Position above the point
-
-    // Adjust if off-screen
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
-    
-    if (left + 200 > screenWidth) left = screenWidth - 220;
-    if (left < 20) left = 20;
-    if (top < 20) top = screenPoint.dy + 40; // Position below if no room above
-    if (top + 100 > screenHeight) top = screenHeight - 120;
-
-    return Positioned(
-      left: left,
-      top: top,
-      child: GestureDetector(
-        onTap: () {
-          // Close the floating stats when tapped
-          setState(() {
-            _hoveredPointIndex = null;
-          });
-          _createMarkers();
-        },
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.8),
-            borderRadius: BorderRadius.circular(8),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.2),
-                blurRadius: 4,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Show label name if a label is hovered
-              if (_hoveredLabel != null) ...[
-                RichText(
-                  text: TextSpan(
-                    children: [
-                      TextSpan(
-                        text: 'Label: ',
-                        style: TextStyle(color: Colors.grey[800], fontSize: 11),
-                      ),
-                      TextSpan(
-                        text: _hoveredLabel!,
-                        style: TextStyle(color: Colors.grey[800], fontSize: 11, fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 4),
-              ],
-              RichText(
-                text: TextSpan(
-                  children: [
-                    TextSpan(
-                      text: 'Time: ',
-                      style: TextStyle(color: Colors.grey[800], fontSize: 11),
-                    ),
-                    TextSpan(
-                      text: '${point.timestamp.hour.toString().padLeft(2, '0')}:${point.timestamp.minute.toString().padLeft(2, '0')}:${point.timestamp.second.toString().padLeft(2, '0')}',
-                      style: TextStyle(color: Colors.grey[800], fontSize: 11, fontWeight: FontWeight.w500),
-                    ),
-                  ],
-                ),
-              ),
-              RichText(
-                text: TextSpan(
-                  children: [
-                    TextSpan(
-                      text: 'Alt: ',
-                      style: TextStyle(color: Colors.grey[800], fontSize: 11),
-                    ),
-                    TextSpan(
-                      text: '${point.gpsAltitude.toInt()} m',
-                      style: TextStyle(color: Colors.grey[800], fontSize: 11, fontWeight: FontWeight.w500),
-                    ),
-                  ],
-                ),
-              ),
-              RichText(
-                text: TextSpan(
-                  children: [
-                    TextSpan(
-                      text: 'Instant: ',
-                      style: TextStyle(color: Colors.grey[800], fontSize: 11),
-                    ),
-                    TextSpan(
-                      text: '${instantRate.toStringAsFixed(1)} m/s',
-                      style: TextStyle(
-                        color: _getClimbRateColor(instantRate),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              RichText(
-                text: TextSpan(
-                  children: [
-                    TextSpan(
-                      text: '15s Avg: ',
-                      style: TextStyle(color: Colors.grey[800], fontSize: 11),
-                    ),
-                    TextSpan(
-                      text: '${fifteenSecRate.toStringAsFixed(1)} m/s',
-                      style: TextStyle(
-                        color: _getClimbRateColor(fifteenSecRate),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-  
-  /// Build floating stats for hovered labels only (no track point data)
-  Widget _buildLabelOnlyStats() {
-    if (_hoveredLabel == null) return const SizedBox.shrink();
-    
-    return Positioned(
-      top: 80,
-      right: 80,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.8),
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.2),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: RichText(
-          text: TextSpan(
-            children: [
-              TextSpan(
-                text: 'Label: ',
-                style: TextStyle(color: Colors.grey[800], fontSize: 11),
-              ),
-              TextSpan(
-                text: _hoveredLabel!,
-                style: TextStyle(color: Colors.grey[800], fontSize: 11, fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  // Old floating stats system removed - now using unified playback controller
 
   /// Calculate 15-second averaged climb rates using GPS altitude specifically
   List<double> _calculateGPS15SecondClimbRates(List<IgcPoint> points) {
@@ -1472,14 +1311,23 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     final altRange = maxAlt - minAlt;
     final padding = altRange * 0.1; // 10% padding
 
-    final selectedTime = _getSelectedPointTime();
     final playbackTime = _getPlaybackPointTime();
 
     return Container(
       height: 120,
       padding: const EdgeInsets.all(16),
       color: Theme.of(context).colorScheme.secondaryContainer,
-      child: LineChart(
+      child: GestureDetector(
+        onPanUpdate: widget.config.interactive ? (details) {
+          LoggingService.debug('FlightTrackWidget: Pan update detected at ${details.localPosition}');
+          _handleChartPanUpdate(details.localPosition, altitudeData);
+        } : null,
+        onTapDown: widget.config.interactive ? (details) {
+          LoggingService.debug('FlightTrackWidget: Tap down detected at ${details.localPosition}');
+          _handleChartPanUpdate(details.localPosition, altitudeData);
+        } : null,
+        child: LineChart(
+          key: _chartKey,
           LineChartData(
           gridData: FlGridData(
             show: true,
@@ -1571,15 +1419,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
           ],
           extraLinesData: ExtraLinesData(
             verticalLines: [
-              // Hover indicator line
-              if (selectedTime != null)
-                VerticalLine(
-                  x: selectedTime,
-                  color: Colors.orange[600]!,
-                  strokeWidth: 2,
-                  dashArray: [5, 5],
-                ),
-              // Playback position line
+              // Unified playback position line (purple) - removed old orange hover line
               if (playbackTime != null)
                 VerticalLine(
                   x: playbackTime,
@@ -1588,32 +1428,70 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
                 ),
             ],
           ),
-          // Use fl_chart's built-in touch handling for accurate coordinate mapping
-          lineTouchData: widget.config.interactive ? LineTouchData(
-            enabled: true,
-            handleBuiltInTouches: false, // We'll handle the visual feedback ourselves
-            touchCallback: (FlTouchEvent event, LineTouchResponse? touchResponse) {
-              if (event is FlPointerHoverEvent || event is FlPanUpdateEvent) {
-                // Get the chart position from the event
-                if (touchResponse?.lineBarSpots != null && touchResponse!.lineBarSpots!.isNotEmpty) {
-                  final spot = touchResponse.lineBarSpots!.first;
-                  _handleAltitudeChartHover(spot.x); // x is already in chart coordinates (time in minutes)
-                }
-              } else if (event is FlPointerExitEvent) {
-                _clearHoverState();
-              }
-            },
-            getTouchLineStart: (barData, spotIndex) => 0,
-            getTouchLineEnd: (barData, spotIndex) => 0,
-            touchTooltipData: LineTouchTooltipData(
-              showOnTopOfTheChartBoxArea: false,
-              getTooltipItems: (touchedSpots) => [], // No tooltip, we handle display ourselves
-            ),
-          ) : LineTouchData(enabled: false),
+          // Disable fl_chart touch handling - using GestureDetector instead
+          lineTouchData: LineTouchData(enabled: false),
           backgroundColor: Colors.transparent,
           ),
+        ),
       ),
     );
+  }
+
+  /// Handle direct touch/pan on chart by converting screen coordinates to time
+  void _handleChartPanUpdate(Offset localPosition, List<FlSpot> altitudeData) {
+    if (altitudeData.isEmpty || _playbackController == null) return;
+    
+    // Get the chart widget's render box for precise coordinate mapping
+    final RenderBox? chartBox = _chartKey.currentContext?.findRenderObject() as RenderBox?;
+    if (chartBox == null) {
+      LoggingService.debug('FlightTrackWidget: Chart RenderBox not available for touch coordinate conversion');
+      return;
+    }
+    
+    // Get actual chart dimensions and bounds
+    final chartSize = chartBox.size;
+    final chartPaintBounds = chartBox.paintBounds;
+    
+    LoggingService.debug('FlightTrackWidget: Chart touch - localPos: $localPosition, chartSize: $chartSize, paintBounds: $chartPaintBounds');
+    
+    // fl_chart reserves space for axes - estimate based on common patterns
+    // These values are based on fl_chart's internal layout calculations
+    const double leftAxisReserve = 50.0;   // reservedSize from leftTitles
+    const double bottomAxisReserve = 22.0; // reservedSize from bottomTitles
+    const double topPadding = 8.0;         // Default fl_chart top padding
+    const double rightPadding = 8.0;       // Default fl_chart right padding
+    
+    // Calculate actual chart plot area
+    final plotAreaWidth = chartSize.width - leftAxisReserve - rightPadding;
+    final plotAreaHeight = chartSize.height - topPadding - bottomAxisReserve;
+    
+    // Adjust touch position relative to plot area origin
+    final plotX = localPosition.dx - leftAxisReserve;
+    final plotY = localPosition.dy - topPadding;
+    
+    LoggingService.debug('FlightTrackWidget: Plot area - width: $plotAreaWidth, height: $plotAreaHeight, plotX: $plotX, plotY: $plotY');
+    
+    // Validate touch is within plot bounds
+    if (plotX < 0 || plotX > plotAreaWidth || plotY < 0 || plotY > plotAreaHeight) {
+      LoggingService.debug('FlightTrackWidget: Touch outside plot area - ignoring');
+      return;
+    }
+    
+    // Convert screen X coordinate to chart data coordinate
+    final minTime = altitudeData.first.x;
+    final maxTime = altitudeData.last.x;
+    final timeRange = maxTime - minTime;
+    
+    // Calculate normalized position (0.0 to 1.0) within plot area
+    final normalizedX = plotX / plotAreaWidth;
+    
+    // Map to actual time value
+    final timeMinutes = minTime + (normalizedX * timeRange);
+    
+    LoggingService.debug('FlightTrackWidget: Touch conversion - normalizedX: $normalizedX, timeMinutes: $timeMinutes, timeRange: $minTime-$maxTime');
+    
+    // Update playback controller - this syncs purple line, slider, and map
+    _handleAltitudeChartInteraction(timeMinutes);
   }
 
   /// Calculate intelligent y-axis interval based on altitude range
@@ -1658,7 +1536,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     }
   }
 
-  /// Prepare altitude chart data from track points
+  /// Prepare altitude chart data from track points with intelligent decimation
   List<FlSpot> _prepareAltitudeChartData() {
     if (_trackPoints.isEmpty) return [];
 
@@ -1672,20 +1550,51 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
       spots.add(FlSpot(timeOfDay, altitude));
     }
 
-    return spots;
+    // Apply decimation for performance on large datasets
+    return _decimateChartData(spots);
   }
 
-  /// Get the X-coordinate (time) for the selected point
-  double? _getSelectedPointTime() {
-    // Only use hovered point
-    if (_hoveredPointIndex == null || _hoveredPointIndex! >= _trackPoints.length) {
-      return null;
+  /// Intelligently reduce chart data points for smooth rendering performance
+  /// Preserves important features while reducing density for large tracks
+  List<FlSpot> _decimateChartData(List<FlSpot> data, {int maxPoints = 300}) {
+    if (data.length <= maxPoints) {
+      LoggingService.debug('FlightTrackWidget: Chart data within limits (${data.length} <= $maxPoints points) - no decimation needed');
+      return data;
     }
 
-    final hoveredPoint = _trackPoints[_hoveredPointIndex!];
-    // Return minutes since midnight
-    return hoveredPoint.timestamp.hour * 60.0 + hoveredPoint.timestamp.minute + hoveredPoint.timestamp.second / 60.0;
+    LoggingService.debug('FlightTrackWidget: Decimating chart data from ${data.length} to ~$maxPoints points for performance');
+
+    final decimated = <FlSpot>[];
+    
+    // Always keep first and last points
+    decimated.add(data.first);
+    
+    // Calculate step size for uniform sampling
+    final step = (data.length - 2) / (maxPoints - 2);
+    
+    // Sample points with uniform distribution
+    for (int i = 1; i < maxPoints - 1; i++) {
+      final index = (1 + i * step).round().clamp(1, data.length - 2);
+      if (index < data.length && !decimated.any((spot) => spot == data[index])) {
+        decimated.add(data[index]);
+      }
+    }
+    
+    // Always keep last point
+    if (data.length > 1) {
+      decimated.add(data.last);
+    }
+
+    // Sort by x-value to maintain chronological order
+    decimated.sort((a, b) => a.x.compareTo(b.x));
+    
+    LoggingService.performance('Chart data decimation', DateTime.now().difference(DateTime.now()), 
+        '${data.length} -> ${decimated.length} points');
+
+    return decimated;
   }
+
+  // _getSelectedPointTime removed - now using unified playback controller only
   
   /// Get the X-coordinate (time) for the playback position
   double? _getPlaybackPointTime() {
@@ -1698,73 +1607,77 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     return playbackPoint.timestamp.hour * 60.0 + playbackPoint.timestamp.minute + playbackPoint.timestamp.second / 60.0;
   }
 
-  /// Handle tap on altitude chart to set hover point
-  void _handleAltitudeChartTap(double timeMinutes) {
-    if (_trackPoints.isEmpty) return;
-    
-    // Find the closest point to the tapped time
-    int closestIndex = 0;
-    double minDiff = double.infinity;
-
-    for (int i = 0; i < _trackPoints.length; i++) {
-      final pointTime = _trackPoints[i].timestamp.hour * 60.0 + _trackPoints[i].timestamp.minute + _trackPoints[i].timestamp.second / 60.0;
-      final diff = (pointTime - timeMinutes).abs();
-      
-      if (diff < minDiff) {
-        minDiff = diff;
-        closestIndex = i;
-      }
+  // ========== NEW UNIFIED LINKING SYSTEM ==========
+  
+  /// Handle hover/interaction on altitude chart - updates playback controller for unified linking
+  void _handleAltitudeChartInteraction(double timeMinutes) {
+    if (_trackPoints.isEmpty || _playbackController == null) {
+      LoggingService.debug('FlightTrackWidget: Chart interaction ignored - no track points or controller');
+      return;
     }
-
-    setState(() {
-      _hoveredPointIndex = closestIndex;
-    });
     
-    _createMarkers();
+    // Convert chart time to Duration from flight start
+    final targetTime = Duration(
+      minutes: timeMinutes.floor(),
+      seconds: ((timeMinutes - timeMinutes.floor()) * 60).round(),
+    );
+    
+    LoggingService.debug('FlightTrackWidget: Chart interaction - timeMinutes: $timeMinutes -> targetTime: $targetTime');
+    
+    // Update playback controller - this automatically syncs map marker and timeline slider
+    final oldIndex = _playbackController!.currentPointIndex;
+    _playbackController!.seekToTime(targetTime);
+    final newIndex = _playbackController!.currentPointIndex;
+    
+    LoggingService.debug('FlightTrackWidget: Playback controller updated - index: $oldIndex -> $newIndex');
   }
-
-  /// Handle hover on altitude chart to show real-time position
-  void _handleAltitudeChartHover(double timeMinutes) {
-    if (_trackPoints.isEmpty) return;
+  
+  /// Handle click on altitude chart - locks position for persistent display
+  void _handleAltitudeChartClick(double timeMinutes) {
+    if (_trackPoints.isEmpty || _playbackController == null) return;
     
-    // Find the closest point to the hovered time
-    int closestIndex = 0;
-    double minDiff = double.infinity;
-
-    for (int i = 0; i < _trackPoints.length; i++) {
-      final pointTime = _trackPoints[i].timestamp.hour * 60.0 + _trackPoints[i].timestamp.minute + _trackPoints[i].timestamp.second / 60.0;
-      final diff = (pointTime - timeMinutes).abs();
-      
-      if (diff < minDiff) {
-        minDiff = diff;
-        closestIndex = i;
-      }
-    }
-
-    if (_hoveredPointIndex != closestIndex) {
-      setState(() {
-        _hoveredPointIndex = closestIndex;
-      });
-      _createMarkers();
-    }
-  }
-
-
-  /// Clear hover state when mouse leaves altitude chart
-  void _clearHoverState() {
-    if (_hoveredPointIndex != null) {
-      setState(() {
-        _hoveredPointIndex = null;
-      });
-      _createMarkers();
+    // Same logic as hover but with potential for additional click-specific behavior
+    _handleAltitudeChartInteraction(timeMinutes);
+    
+    // Stop any currently playing animation to maintain clicked position
+    if (_playbackController!.state == PlaybackState.playing) {
+      _playbackController!.pause();
     }
   }
   
-  /// Handle label hover events
-  void _onLabelHover(String? labelName) {
-    setState(() {
-      _hoveredLabel = labelName;
-    });
+  /// Handle click on map track - finds closest point and updates playback controller
+  void _handleMapTrackClick(LatLng clickedPosition) {
+    if (_trackPoints.isEmpty || _playbackController == null) return;
+    
+    // Find closest track point to clicked position
+    double minDistance = double.infinity;
+    int closestIndex = 0;
+    
+    for (int i = 0; i < _trackPoints.length; i++) {
+      final point = _trackPoints[i];
+      final distance = _calculateDistance(
+        clickedPosition.latitude,
+        clickedPosition.longitude,
+        point.latitude,
+        point.longitude,
+      );
+      
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestIndex = i;
+      }
+    }
+    
+    // Only respond to clicks reasonably close to the track (within 1km)
+    if (minDistance <= 1.0) {
+      // Update playback controller - this automatically syncs chart indicator and timeline slider
+      _playbackController!.seekToIndex(closestIndex);
+      
+      // Stop any currently playing animation to maintain clicked position
+      if (_playbackController!.state == PlaybackState.playing) {
+        _playbackController!.pause();
+      }
+    }
   }
   
   /// Handle playback controller changes with debouncing
@@ -1777,11 +1690,18 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     // Debounce updates to reduce rebuild frequency (16ms = ~60fps)
     _playbackUpdateTimer = Timer(const Duration(milliseconds: 16), () {
       if (mounted && _playbackController != null) {
-        setState(() {
-          _playbackPointIndex = _playbackController!.currentPointIndex;
-        });
-        _createMarkers();
-        _panIfNearEdge();
+        final newIndex = _playbackController!.currentPointIndex;
+        
+        // Only update if index actually changed to avoid unnecessary rebuilds
+        if (_playbackPointIndex != newIndex) {
+          LoggingService.debug('FlightTrackWidget: Playback position changed - index: $_playbackPointIndex -> $newIndex');
+          
+          setState(() {
+            _playbackPointIndex = newIndex;
+          });
+          _createMarkers();
+          _panIfNearEdge();
+        }
       }
     });
   }
