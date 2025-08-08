@@ -264,9 +264,7 @@ class _FlightTrackMapState extends State<FlightTrackMap> {
     return SizedBox(
       height: widget.config.height ?? 400,
       width: widget.config.width,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: FlutterMap(
+      child: FlutterMap(
           mapController: _mapController,
           options: MapOptions(
             initialCameraFit: bounds != null ? CameraFit.bounds(bounds: bounds) : null,
@@ -321,7 +319,6 @@ class _FlightTrackMapState extends State<FlightTrackMap> {
             ),
           ],
         ),
-      ),
     );
   }
 }

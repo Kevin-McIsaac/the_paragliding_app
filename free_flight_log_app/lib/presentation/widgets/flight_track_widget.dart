@@ -997,30 +997,11 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
       ],
     );
 
-    // Wrap in container with height constraint if specified for non-embedded widgets
+    // Remove individual styling since unified container handles it
     if (widget.config.height != null && !widget.config.embedded) {
-      mapWidget = Container(
+      mapWidget = SizedBox(
         height: widget.config.height,
-        decoration: BoxDecoration(
-          borderRadius: widget.config.embedded ? BorderRadius.circular(8) : null,
-          border: widget.config.embedded ? Border.all(color: Colors.grey[300]!) : null,
-        ),
-        child: widget.config.embedded ? ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: mapWidget,
-        ) : mapWidget,
-      );
-    } else if (widget.config.embedded) {
-      // Apply embedded styling even when stats are shown
-      mapWidget = Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.grey[300]!),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: mapWidget,
-        ),
+        child: mapWidget,
       );
     }
 
@@ -1034,27 +1015,43 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
       ],
     );
 
-    // For embedded mode, always provide bounded height and include altitude chart
-    if (widget.config.embedded) {
-      return SizedBox(
-        height: widget.config.height ?? 350, // Default height if not specified
+    // Unified container for seamless map and chart integration
+    final unifiedWidget = Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(child: stackWidget),
+            // Map section
+            widget.config.embedded 
+                ? Expanded(child: stackWidget)
+                : Flexible(child: stackWidget),
+            // Chart section - seamlessly connected
             _buildAltitudeChart(),
           ],
         ),
+      ),
+    );
+
+    // For embedded mode, provide bounded height
+    if (widget.config.embedded) {
+      return SizedBox(
+        height: widget.config.height ?? 350,
+        child: unifiedWidget,
       );
     } else {
-      // Full screen mode - use Flexible instead of Expanded for better constraint handling
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Flexible(child: stackWidget),
-          _buildAltitudeChart(),
-        ],
-      );
+      // Full screen mode
+      return unifiedWidget;
     }
   }
 
@@ -1342,19 +1339,8 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
 
     return Container(
       height: 120,
-      margin: const EdgeInsets.all(8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.8),
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.all(16),
+      color: Theme.of(context).colorScheme.surface,
       child: LineChart(
           LineChartData(
           gridData: FlGridData(

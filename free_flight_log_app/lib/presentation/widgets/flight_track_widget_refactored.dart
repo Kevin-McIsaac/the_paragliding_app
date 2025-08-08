@@ -227,29 +227,19 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget>
   }
 
   Widget _buildMainWidget() {
-    final children = <Widget>[];
+    // Check if we need to show chart alongside map
+    final showChart = widget.config.showChart && (_igcData?.trackPoints.isNotEmpty ?? false);
 
-    // Map section
-    children.add(_buildMapSection());
-
-    // Chart section (if enabled and data available)
-    if (widget.config.showChart && (_igcData?.trackPoints.isNotEmpty ?? false)) {
-      children.add(const SizedBox(height: 16));
-      children.add(_buildChartSection());
-    }
-
-    // Wrap in appropriate container
+    // If embedded mode, return the unified widget directly
     if (widget.config.embedded) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: children,
-      );
-    } else {
-      return SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(children: children),
-      );
+      return showChart ? _buildUnifiedVisualization() : _buildMapSection();
     }
+
+    // For full screen mode, wrap in scroll view
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: showChart ? _buildUnifiedVisualization() : _buildMapSection(),
+    );
   }
 
   Widget _buildMapSection() {
@@ -320,6 +310,121 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget>
                 child: Icon(_showChart ? Icons.show_chart_outlined : Icons.show_chart),
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUnifiedVisualization() {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Map section (no individual container/shadow)
+            _buildMapContent(),
+            
+            // Chart section (if toggled on)
+            if (_showChart) _buildChartContent(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMapContent() {
+    return SizedBox(
+      height: widget.config.height ?? 400,
+      child: Stack(
+        children: [
+          // Main map (no border radius - handled by parent ClipRRect)
+          FlightTrackMap(
+            flight: widget.flight,
+            igcData: _igcData,
+            config: FlightMapConfig(
+              interactive: widget.config.interactive,
+              showStraightLine: widget.config.showStraightLine,
+              height: widget.config.height,
+            ),
+          ),
+
+          // Legend (if enabled)
+          if (widget.config.showLegend && (_igcData?.trackPoints.isNotEmpty ?? false))
+            Positioned(
+              top: 16,
+              left: 16,
+              child: FlightTrackLegend(
+                igcData: _igcData,
+                compact: widget.config.embedded,
+              ),
+            ),
+
+          // Statistics (if enabled)
+          if (widget.config.showStats && (_igcData?.trackPoints.isNotEmpty ?? false))
+            FlightTrackStats(
+              flight: widget.flight,
+              igcData: _igcData,
+              mode: widget.config.embedded 
+                  ? StatsDisplayMode.compact 
+                  : StatsDisplayMode.floating,
+            ),
+
+          // Chart toggle FAB (if enabled)
+          if (widget.config.showFAB && 
+              widget.config.showChart && 
+              (_igcData?.trackPoints.isNotEmpty ?? false))
+            Positioned(
+              right: 16,
+              bottom: 16,
+              child: FloatingActionButton.small(
+                onPressed: _toggleChart,
+                tooltip: _showChart ? 'Hide Chart' : 'Show Chart',
+                child: Icon(_showChart ? Icons.show_chart_outlined : Icons.show_chart),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChartContent() {
+    return Container(
+      height: 200,
+      padding: const EdgeInsets.all(16),
+      color: Theme.of(context).colorScheme.surface,
+      child: Column(
+        children: [
+          // Title
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Flight Altitude Profile',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          
+          // Chart content
+          Expanded(
+            child: FlightAltitudeChart(
+              flight: widget.flight,
+              igcData: _igcData,
+              height: double.infinity, // Let it expand to fill
+            ),
+          ),
         ],
       ),
     );

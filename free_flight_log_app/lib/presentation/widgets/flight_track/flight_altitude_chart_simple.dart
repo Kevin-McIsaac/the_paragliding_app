@@ -41,40 +41,9 @@ class FlightAltitudeChart extends StatelessWidget {
       );
     }
 
-    return Container(
+    return SizedBox(
       height: height,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          // Title
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Flight Altitude Profile',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          
-          // Chart
-          Expanded(
-            child: LineChart(_buildChartData()),
-          ),
-        ],
-      ),
+      child: LineChart(_buildChartData()),
     );
   }
 
