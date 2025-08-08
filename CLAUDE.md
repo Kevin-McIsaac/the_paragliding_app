@@ -16,6 +16,7 @@ Free Flight Log is a cross-platform application for logging paraglider, hang gli
 **IMPLEMENTATION COMPLETE** - The MVP has been successfully built and is functional:
 
 ✅ **Completed Features:**
+
 - Flight logging with comprehensive form validation
 - SQLite database with full CRUD operations
 - Cross-platform support (Linux, Android, iOS, macOS, Windows)
@@ -33,6 +34,7 @@ Free Flight Log is a cross-platform application for logging paraglider, hang gli
 - Midnight crossing flight duration handling
 
 📋 **Planning Documents** (for reference):
+
 - Complete functional requirements (FUNCTIONAL_SPECIFICATION.md)
 - Technical architecture using Flutter/Dart (TECHNICAL_DESIGN.md)
 - Week-by-week MVP implementation plan (MVP_BUILD_PLAN.md)
@@ -41,28 +43,19 @@ Free Flight Log is a cross-platform application for logging paraglider, hang gli
 
 ```bash
 # Navigate to the Flutter app
-cd free_flight_log_app
+cd ~/Projects/free_flight_log_app
 
 # Install dependencies
 flutter pub get
 
 # Run on Linux desktop (recommended for development)
-# Using convenience script with OSM compliance flag
-./run.sh
-
-# Or run directly with OSM compliance flag to suppress flutter_map warning
 flutter run -d linux --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
 
 # Run on Android (device must be connected)
-# First check available devices: flutter devices
-# Use specific device ID (not generic "android"):
-flutter run -d "adb-52110DLAQ001UT-hkZkFs._adb-tls-connect._tcp" --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
-# Or for emulator:
-flutter run -d emulator-5554 --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
+flutter run -d pixel --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
 
-# Build for production (includes OSM compliance flag)
-./build.sh linux
-./build.sh apk --release
+# Run on emulator:
+flutter run -d emulator-5554 --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
 ```
 
 For comprehensive development setup, build commands, testing, and troubleshooting, see [DEVELOPMENT.md](DEVELOPMENT.md).
@@ -70,6 +63,7 @@ For comprehensive development setup, build commands, testing, and troubleshootin
 ## Architecture Overview
 
 **Current Implementation:**
+
 - **Pattern**: MVVM with Repository pattern ✅
 - **State Management**: Provider (ready for implementation) 
 - **Database**: SQLite via sqflite (mobile) + sqflite_common_ffi (desktop) ✅
@@ -80,6 +74,7 @@ For detailed technical architecture, database schema, and implementation details
 ## Development Status
 
 ### ✅ MVP Features (COMPLETED)
+
 1. ✅ Manual flight entry form with validation
 2. ✅ Flight list display with statistics
 3. ✅ Basic CRUD operations (Create, Read, Update, Delete)
@@ -92,6 +87,7 @@ For detailed technical architecture, database schema, and implementation details
 10. ✅ Database migrations for schema updates
 
 ### 🚀 Next Features (Post-MVP)
+
 1. 📋 Altitude and climb rate charts (fl_chart ready)
 2. 📋 Site recognition via reverse geocoding
 3. 📋 Export functionality (CSV, KML)
@@ -119,7 +115,9 @@ For detailed technical architecture, database schema, and implementation details
 For complete project history and detailed changelog, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Development Reminders
+
 - After running flutter analyze, review the output and fix
 
 ## Bash and Command Execution Notes
+
 - The Bash tool doesn't support shell redirection operators like 2>&1 or pipes |. Instead, run the command directly
