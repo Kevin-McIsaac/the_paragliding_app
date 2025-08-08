@@ -54,6 +54,43 @@ class FlightRepository {
     
     return flights;
   }
+  
+  /// Get all flights as raw maps for isolate processing
+  Future<List<Map<String, dynamic>>> getAllFlightsRaw() async {
+    LoggingService.debug('FlightRepository: Getting all flights (raw)');
+    
+    Database db = await _databaseHelper.database;
+    List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT f.*, 
+             ls.name as launch_site_name
+      FROM flights f
+      LEFT JOIN sites ls ON f.launch_site_id = ls.id
+      ORDER BY f.date DESC, f.launch_time DESC
+    ''');
+    
+    LoggingService.debug('FlightRepository: Retrieved ${maps.length} flight records');
+    return maps;
+  }
+  
+  /// Get paginated flights for better performance
+  Future<List<Flight>> getFlightsPaginated(int offset, int limit) async {
+    LoggingService.debug('FlightRepository: Getting flights (offset: $offset, limit: $limit)');
+    
+    Database db = await _databaseHelper.database;
+    List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT f.*, 
+             ls.name as launch_site_name
+      FROM flights f
+      LEFT JOIN sites ls ON f.launch_site_id = ls.id
+      ORDER BY f.date DESC, f.launch_time DESC
+      LIMIT ? OFFSET ?
+    ''', [limit, offset]);
+    
+    final flights = maps.map((map) => Flight.fromMap(map)).toList();
+    LoggingService.debug('FlightRepository: Retrieved ${flights.length} flights');
+    
+    return flights;
+  }
 
   /// Get a specific flight by ID
   Future<Flight?> getFlight(int id) async {

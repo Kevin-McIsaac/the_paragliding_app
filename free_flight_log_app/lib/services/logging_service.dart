@@ -1,4 +1,5 @@
 import 'package:logger/logger.dart';
+import 'package:flutter/foundation.dart';
 
 /// Centralized logging service for Free Flight Log application
 class LoggingService {
@@ -7,12 +8,13 @@ class LoggingService {
   LoggingService._internal();
 
   static final Logger _logger = Logger(
+    level: kDebugMode ? Level.debug : Level.warning, // Reduce logging in production
     printer: PrettyPrinter(
-      methodCount: 2,
+      methodCount: kDebugMode ? 2 : 0, // Disable stack traces in production
       errorMethodCount: 8,
       lineLength: 120,
       colors: true,
-      printEmojis: true,
+      printEmojis: kDebugMode, // Disable emojis in production for performance
       printTime: true,
     ),
   );
@@ -66,12 +68,12 @@ class LoggingService {
     _logger.d('UI[$screen]: $message');
   }
 
-  /// Log performance metrics
+  /// Log performance metrics (debug level to reduce production overhead)
   static void performance(String operation, Duration duration, [String? details]) {
     final message = details != null 
         ? '$operation completed in ${duration.inMilliseconds}ms - $details'
         : '$operation completed in ${duration.inMilliseconds}ms';
-    _logger.i('PERF: $message');
+    _logger.d('PERF: $message'); // Changed from info to debug
   }
 }
 

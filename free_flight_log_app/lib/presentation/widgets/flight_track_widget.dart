@@ -1,5 +1,8 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -117,6 +120,13 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
   // Playback controller for timeline scrubbing
   FlightPlaybackController? _playbackController;
   
+  // Debounce timer for playback updates to reduce rebuild frequency
+  Timer? _playbackUpdateTimer;
+  
+  // Static global cache for polylines to persist across widget rebuilds
+  static final Map<String, List<Polyline>> _globalPolylineCache = <String, List<Polyline>>{};
+  static const int _maxCacheSize = 10; // Limit cache size to prevent memory issues
+  
   // Current playback position marker
   int? _playbackPointIndex;
   
@@ -147,7 +157,16 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     WidgetsBinding.instance.removeObserver(this);
     _playbackController?.removeListener(_onPlaybackChanged);
     _playbackController?.dispose();
+    // Cancel debounce timer
+    _playbackUpdateTimer?.cancel();
+    // Note: We don't clear the global cache on dispose to allow reuse
     super.dispose();
+  }
+  
+  /// Clear global cache (for testing or memory management)
+  static void clearGlobalCache() {
+    _globalPolylineCache.clear();
+    LoggingService.debug('FlightTrackWidget: Cleared global polylines cache');
   }
 
   @override
@@ -280,21 +299,36 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
   List<Polyline> _createClimbRateColoredPolylines() {
     if (_trackPoints.length < 2) return [];
     
+    // Create comprehensive cache key using flight ID + data fingerprint
+    final cacheKey = _createPolylineseCacheKey();
+    
+    // Check global cache first
+    if (_globalPolylineCache.containsKey(cacheKey)) {
+      LoggingService.debug('FlightTrackWidget: Using cached polylines for key: ${cacheKey.substring(0, 16)}...');
+      return _globalPolylineCache[cacheKey]!;
+    }
+    
+    LoggingService.debug('FlightTrackWidget: Cache miss - creating polylines for key: ${cacheKey.substring(0, 16)}...');
+    
     // If no climb rate data, create a simple red track
     if (_fifteenSecondRates.isEmpty) {
-      LoggingService.info('FlightTrackWidget: No climb rate data available, showing red track');
+      LoggingService.debug('FlightTrackWidget: No climb rate data available, showing red track');
       final trackCoordinates = _trackPoints
           .map((point) => LatLng(point.latitude, point.longitude))
           .toList();
 
-      return [Polyline(
+      final simplePolyline = [Polyline(
         points: trackCoordinates,
         color: Colors.red,
         strokeWidth: 3.0,
       )];
+      
+      // Cache the result globally
+      _cachePolylines(cacheKey, simplePolyline);
+      return simplePolyline;
     }
 
-    LoggingService.info('FlightTrackWidget: Creating climb rate colored track with ${_fifteenSecondRates.length} climb rate points');
+    LoggingService.debug('FlightTrackWidget: Creating climb rate colored track with ${_fifteenSecondRates.length} climb rate points');
 
     final polylines = <Polyline>[];
 
@@ -320,8 +354,64 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
         ),
       );
     }
-
+    
+    // Cache the result globally
+    _cachePolylines(cacheKey, polylines);
     return polylines;
+  }
+  
+  /// Create a comprehensive cache key based on flight ID and data fingerprint
+  String _createPolylineseCacheKey() {
+    // Use flight ID as primary key
+    final flightId = widget.flight.id?.toString() ?? 'unknown';
+    
+    // Create data fingerprint using critical data points
+    final dataPoints = <String>[];
+    
+    // Add basic metrics
+    dataPoints.add('pts:${_trackPoints.length}');
+    dataPoints.add('rates:${_fifteenSecondRates.length}');
+    
+    // Sample key points for fingerprint (first, middle, last + every 10th point)
+    if (_trackPoints.isNotEmpty) {
+      dataPoints.add('f:${_trackPoints.first.latitude.toStringAsFixed(6)},${_trackPoints.first.longitude.toStringAsFixed(6)},${_trackPoints.first.gpsAltitude}');
+      
+      if (_trackPoints.length > 1) {
+        final mid = _trackPoints.length ~/ 2;
+        dataPoints.add('m:${_trackPoints[mid].latitude.toStringAsFixed(6)},${_trackPoints[mid].longitude.toStringAsFixed(6)},${_trackPoints[mid].gpsAltitude}');
+        dataPoints.add('l:${_trackPoints.last.latitude.toStringAsFixed(6)},${_trackPoints.last.longitude.toStringAsFixed(6)},${_trackPoints.last.gpsAltitude}');
+      }
+    }
+    
+    // Sample climb rates (first, middle, last)
+    if (_fifteenSecondRates.isNotEmpty) {
+      dataPoints.add('cr_f:${_fifteenSecondRates.first.toStringAsFixed(2)}');
+      if (_fifteenSecondRates.length > 1) {
+        final mid = _fifteenSecondRates.length ~/ 2;
+        dataPoints.add('cr_m:${_fifteenSecondRates[mid].toStringAsFixed(2)}');
+        dataPoints.add('cr_l:${_fifteenSecondRates.last.toStringAsFixed(2)}');
+      }
+    }
+    
+    // Create hash of the data fingerprint
+    final fingerprint = dataPoints.join('|');
+    final bytes = utf8.encode(fingerprint);
+    final hash = sha256.convert(bytes).toString();
+    
+    return 'flight_${flightId}_$hash';
+  }
+  
+  /// Cache polylines with size management
+  void _cachePolylines(String key, List<Polyline> polylines) {
+    // Manage cache size by removing oldest entries
+    if (_globalPolylineCache.length >= _maxCacheSize) {
+      final oldestKey = _globalPolylineCache.keys.first;
+      _globalPolylineCache.remove(oldestKey);
+      LoggingService.debug('FlightTrackWidget: Evicted old cache entry: ${oldestKey.substring(0, 16)}...');
+    }
+    
+    _globalPolylineCache[key] = polylines;
+    LoggingService.debug('FlightTrackWidget: Cached polylines for key: ${key.substring(0, 16)}... (cache size: ${_globalPolylineCache.length})');
   }
 
   Color _getClimbRateColor(double climbRate) {
@@ -1677,15 +1767,23 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     });
   }
   
-  /// Handle playback controller changes
+  /// Handle playback controller changes with debouncing
   void _onPlaybackChanged() {
-    if (_playbackController != null) {
-      setState(() {
-        _playbackPointIndex = _playbackController!.currentPointIndex;
-      });
-      _createMarkers();
-      _panIfNearEdge();
-    }
+    if (_playbackController == null) return;
+    
+    // Cancel any existing timer
+    _playbackUpdateTimer?.cancel();
+    
+    // Debounce updates to reduce rebuild frequency (16ms = ~60fps)
+    _playbackUpdateTimer = Timer(const Duration(milliseconds: 16), () {
+      if (mounted && _playbackController != null) {
+        setState(() {
+          _playbackPointIndex = _playbackController!.currentPointIndex;
+        });
+        _createMarkers();
+        _panIfNearEdge();
+      }
+    });
   }
 
   /// Pan map if playback position is near the edge of the visible area

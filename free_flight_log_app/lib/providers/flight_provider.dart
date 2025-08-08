@@ -36,7 +36,7 @@ class FlightProvider extends ChangeNotifier {
   List<Map<String, dynamic>> get siteStats => _siteStats;
   bool get statisticsLoaded => _statisticsLoaded;
 
-  /// Load all flights from repository
+  /// Load all flights from repository  
   Future<void> loadFlights() async {
     _setLoading(true);
     _clearError();
@@ -45,6 +45,7 @@ class FlightProvider extends ChangeNotifier {
       LoggingService.debug('FlightProvider: Loading flights from repository');
       final startTime = DateTime.now();
       
+      // Load flights directly (isolate was causing overhead)
       _flights = await _repository.getAllFlights();
       
       final duration = DateTime.now().difference(startTime);
