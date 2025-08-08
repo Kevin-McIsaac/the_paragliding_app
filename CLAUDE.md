@@ -54,7 +54,11 @@ flutter pub get
 flutter run -d linux --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
 
 # Run on Android (device must be connected)
-flutter run -d android --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
+# First check available devices: flutter devices
+# Use specific device ID (not generic "android"):
+flutter run -d "adb-52110DLAQ001UT-hkZkFs._adb-tls-connect._tcp" --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
+# Or for emulator:
+flutter run -d emulator-5554 --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
 
 # Build for production (includes OSM compliance flag)
 ./build.sh linux
