@@ -8,7 +8,7 @@ plugins {
 android {
     namespace = "com.freeflightlog.free_flight_log_app"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
