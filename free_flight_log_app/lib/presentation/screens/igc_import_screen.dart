@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
 import 'dart:io';
-import '../../services/igc_import_service.dart';
 import '../../data/models/flight.dart';
 import '../../data/models/import_result.dart';
+import '../../providers/flight_provider.dart';
 import '../widgets/duplicate_flight_dialog.dart';
+import '../../services/igc_parser.dart';
 
 class IgcImportScreen extends StatefulWidget {
   const IgcImportScreen({super.key});
@@ -15,13 +17,13 @@ class IgcImportScreen extends StatefulWidget {
 }
 
 class _IgcImportScreenState extends State<IgcImportScreen> {
-  final IgcImportService _importService = IgcImportService();
   bool _isLoading = false;
   List<String> _selectedFilePaths = [];
   String? _errorMessage;
   final List<ImportResult> _importResults = [];
   String? _currentlyProcessingFile;
   String? _lastFolder;
+  final IgcParser _igcParser = IgcParser();
   
   // User preferences for handling duplicates
   bool _skipAllDuplicates = false;
@@ -147,6 +149,8 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
       _skipAllDuplicates = false;
       _replaceAllDuplicates = false;
     });
+    
+    final flightProvider = context.read<FlightProvider>();
 
     for (final filePath in _selectedFilePaths) {
       setState(() {
@@ -155,16 +159,16 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
       
       try {
         // Check for duplicates first
-        final existingFlight = await _importService.checkForDuplicate(filePath);
+        final existingFlight = await flightProvider.checkIgcForDuplicate(filePath);
         bool shouldReplace = false;
         
         if (existingFlight != null) {
           // Duplicate found - check user preferences
           if (_skipAllDuplicates) {
             // User chose skip all, create skipped result
-            final result = await _importService.importIgcFileWithDuplicateHandling(
+            final result = await flightProvider.importIgcFile(
               filePath,
-              replace: false,
+              skipDuplicate: true,
             );
             setState(() {
               _importResults.add(result);
@@ -178,9 +182,9 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
             
             if (action == DuplicateAction.skip) {
               // Skip this file
-              final result = await _importService.importIgcFileWithDuplicateHandling(
+              final result = await flightProvider.importIgcFile(
                 filePath,
-                replace: false,
+                skipDuplicate: true,
               );
               setState(() {
                 _importResults.add(result);
@@ -191,9 +195,9 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
               setState(() {
                 _skipAllDuplicates = true;
               });
-              final result = await _importService.importIgcFileWithDuplicateHandling(
+              final result = await flightProvider.importIgcFile(
                 filePath,
-                replace: false,
+                skipDuplicate: true,
               );
               setState(() {
                 _importResults.add(result);
@@ -212,9 +216,9 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
         }
         
         // Import the file (either new or replace)
-        final result = await _importService.importIgcFileWithDuplicateHandling(
+        final result = await flightProvider.importIgcFile(
           filePath,
-          replace: shouldReplace,
+          replaceDuplicate: shouldReplace,
         );
         
         setState(() {
@@ -247,7 +251,7 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
   Future<DuplicateAction?> _showDuplicateDialog(Flight existingFlight, String filePath) async {
     // Parse the IGC file to get details for comparison
     try {
-      final igcData = await _importService.parser.parseFile(filePath);
+      final igcData = await _igcParser.parseFile(filePath);
       
       // Check if widget is still mounted before using context
       if (!mounted) return DuplicateAction.skip;

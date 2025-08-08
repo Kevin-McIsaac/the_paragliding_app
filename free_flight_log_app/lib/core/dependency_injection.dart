@@ -5,6 +5,7 @@ import '../data/repositories/site_repository.dart';
 import '../data/repositories/wing_repository.dart';
 import '../data/services/flight_query_service.dart';
 import '../data/services/flight_statistics_service.dart';
+import '../services/igc_import_service.dart';
 import '../providers/flight_provider.dart';
 import '../providers/site_provider.dart';
 import '../providers/wing_provider.dart';
@@ -96,6 +97,11 @@ void _registerServices() {
   // Register FlightStatisticsService with DatabaseHelper dependency
   serviceLocator.registerLazySingleton<FlightStatisticsService>(
     () => FlightStatisticsService(serviceLocator<DatabaseHelper>()),
+  );
+  
+  // Register IgcImportService - it will get its dependencies from serviceLocator
+  serviceLocator.registerLazySingleton<IgcImportService>(
+    () => IgcImportService(),
   );
 }
 

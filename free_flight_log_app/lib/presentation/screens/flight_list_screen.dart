@@ -23,16 +23,6 @@ class _FlightListScreenState extends State<FlightListScreen> {
   bool _isSelectionMode = false;
   Set<int> _selectedFlightIds = {};
   bool _isDeleting = false;
-  
-  // Sorting state
-  String _sortColumn = 'datetime';
-  bool _sortAscending = false; // Default to reverse (newest first)
-  
-  // Sorting cache to prevent O(n log n) on every rebuild
-  List<Flight>? _sortedFlightsCache;
-  String? _lastSortColumn;
-  bool? _lastSortAscending;
-  int? _lastFlightDataHash;
 
   @override
   void initState() {
@@ -45,123 +35,16 @@ class _FlightListScreenState extends State<FlightListScreen> {
 
   // Refresh flights from provider
   Future<void> _refreshFlights() async {
-    _invalidateCache();
     await context.read<FlightProvider>().loadFlights();
   }
   
-  /// Calculate a simple hash of flight data for change detection
-  int _calculateFlightDataHash(List<Flight> flights) {
-    if (flights.isEmpty) return 0;
-    
-    // Use flight count and last updated timestamp as a simple hash
-    final lastUpdated = flights.isNotEmpty 
-        ? flights.map((f) => f.updatedAt?.millisecondsSinceEpoch ?? 0).reduce((a, b) => a > b ? a : b)
-        : 0;
-    return flights.length.hashCode ^ lastUpdated.hashCode;
-  }
-  
-  /// Check if the sorting cache is still valid
-  bool _isCacheValid(List<Flight> flights) {
-    if (_sortedFlightsCache == null || 
-        _lastSortColumn != _sortColumn || 
-        _lastSortAscending != _sortAscending) {
-      return false;
-    }
-    
-    final currentHash = _calculateFlightDataHash(flights);
-    return _lastFlightDataHash == currentHash;
-  }
-  
-  /// Invalidate the sorting cache
-  void _invalidateCache() {
-    _sortedFlightsCache = null;
-    _lastSortColumn = null;
-    _lastSortAscending = null;
-    _lastFlightDataHash = null;
-  }
-  
-  /// Get sorted flights using cache when possible
-  List<Flight> _getSortedFlights(List<Flight> flights) {
-    if (_isCacheValid(flights)) {
-      return _sortedFlightsCache!;
-    }
-    
-    // Cache is invalid, perform sort and update cache
-    final sortedFlights = _sortFlights(List.from(flights));
-    
-    // Update cache
-    _sortedFlightsCache = sortedFlights;
-    _lastSortColumn = _sortColumn;
-    _lastSortAscending = _sortAscending;
-    _lastFlightDataHash = _calculateFlightDataHash(flights);
-    
-    return sortedFlights;
-  }
-  
-  List<Flight> _sortFlights(List<Flight> flights) {
-    flights.sort((a, b) {
-      int comparison;
-      
-      switch (_sortColumn) {
-        case 'launch_site':
-          // Sort by launch site name
-          final aSite = a.launchSiteName ?? 'Unknown';
-          final bSite = b.launchSiteName ?? 'Unknown';
-          comparison = aSite.compareTo(bSite);
-          break;
-        case 'datetime':
-          // Combine date and time for sorting
-          final aDateTime = DateTime(
-            a.date.year, a.date.month, a.date.day,
-            int.parse(a.launchTime.split(':')[0]),
-            int.parse(a.launchTime.split(':')[1]),
-          );
-          final bDateTime = DateTime(
-            b.date.year, b.date.month, b.date.day,
-            int.parse(b.launchTime.split(':')[0]),
-            int.parse(b.launchTime.split(':')[1]),
-          );
-          comparison = aDateTime.compareTo(bDateTime);
-          break;
-        case 'duration':
-          comparison = a.duration.compareTo(b.duration);
-          break;
-        case 'distance':
-          final aDist = a.straightDistance ?? 0.0;
-          final bDist = b.straightDistance ?? 0.0;
-          comparison = aDist.compareTo(bDist);
-          break;
-        case 'track_distance':
-          final aTrackDist = a.distance ?? 0.0;
-          final bTrackDist = b.distance ?? 0.0;
-          comparison = aTrackDist.compareTo(bTrackDist);
-          break;
-        case 'altitude':
-          final aAlt = a.maxAltitude ?? 0.0;
-          final bAlt = b.maxAltitude ?? 0.0;
-          comparison = aAlt.compareTo(bAlt);
-          break;
-        default:
-          comparison = 0;
-      }
-      
-      return _sortAscending ? comparison : -comparison;
-    });
-    
-    return flights;
-  }
-  
   void _sort(String column) {
-    setState(() {
-      if (_sortColumn == column) {
-        _sortAscending = !_sortAscending;
-      } else {
-        _sortColumn = column;
-        _sortAscending = true;
-      }
-      // Invalidate cache since sort criteria changed
-      _invalidateCache();
-    });
+    final provider = context.read<FlightProvider>();
+    if (provider.sortColumn == column) {
+      provider.setSorting(column, !provider.sortAscending);
+    } else {
+      provider.setSorting(column, true);
+    }
   }
 
 
@@ -482,13 +365,13 @@ class _FlightListScreenState extends State<FlightListScreen> {
             );
           }
           
-          final flights = _getSortedFlights(flightProvider.flights);
+          final flights = flightProvider.sortedFlights;
           
           if (flights.isEmpty) {
             return _buildEmptyState();
           }
           
-          return _buildFlightList(flights);
+          return _buildFlightList(flights, flightProvider);
         },
       ),
       floatingActionButton: FloatingActionButton(
@@ -538,7 +421,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
     );
   }
 
-  Widget _buildFlightList(List<Flight> flights) {
+  Widget _buildFlightList(List<Flight> flights, FlightProvider flightProvider) {
     // Calculate stats based on selection mode
     final flightsToCount = _isSelectionMode && _selectedFlightIds.isNotEmpty 
         ? flights.where((flight) => _selectedFlightIds.contains(flight.id)).toList()
@@ -571,26 +454,26 @@ class _FlightListScreenState extends State<FlightListScreen> {
           ),
         ),
         Expanded(
-          child: _buildFlightTable(flights),
+          child: _buildFlightTable(flights, flightProvider),
         ),
       ],
     );
   }
   
-  Widget _buildFlightTable(List<Flight> flights) {
+  Widget _buildFlightTable(List<Flight> flights, FlightProvider flightProvider) {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: SingleChildScrollView(
         child: DataTable(
           showCheckboxColumn: _isSelectionMode,
-          sortColumnIndex: _sortColumn == 'launch_site' ? 0
-              : _sortColumn == 'datetime' ? 1
-              : _sortColumn == 'duration' ? 2
-              : _sortColumn == 'track_distance' ? 3
-              : _sortColumn == 'distance' ? 4
-              : _sortColumn == 'altitude' ? 5
+          sortColumnIndex: flightProvider.sortColumn == 'launch_site' ? 0
+              : flightProvider.sortColumn == 'datetime' ? 1
+              : flightProvider.sortColumn == 'duration' ? 2
+              : flightProvider.sortColumn == 'track_distance' ? 3
+              : flightProvider.sortColumn == 'distance' ? 4
+              : flightProvider.sortColumn == 'altitude' ? 5
               : 0,
-          sortAscending: _sortAscending,
+          sortAscending: flightProvider.sortAscending,
           columns: [
             DataColumn(
               label: const Text('Launch Site'),

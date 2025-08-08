@@ -1,8 +1,10 @@
 import 'package:flutter/foundation.dart';
 import '../data/models/flight.dart';
+import '../data/models/import_result.dart';
 import '../data/repositories/flight_repository.dart';
 import '../data/services/flight_query_service.dart';
 import '../data/services/flight_statistics_service.dart';
+import '../services/igc_import_service.dart';
 import '../core/dependency_injection.dart';
 import '../services/logging_service.dart';
 
@@ -11,10 +13,12 @@ class FlightProvider extends ChangeNotifier {
   final FlightRepository _repository;
   late final FlightQueryService _queryService;
   late final FlightStatisticsService _statisticsService;
+  late final IgcImportService _igcImportService;
   
   FlightProvider(this._repository) {
     _queryService = serviceLocator<FlightQueryService>();
     _statisticsService = serviceLocator<FlightStatisticsService>();
+    _igcImportService = serviceLocator<IgcImportService>();
   }
 
   List<Flight> _flights = [];
@@ -26,6 +30,14 @@ class FlightProvider extends ChangeNotifier {
   List<Map<String, dynamic>> _wingStats = [];
   List<Map<String, dynamic>> _siteStats = [];
   bool _statisticsLoaded = false;
+  
+  // Sorting state and cache
+  String _sortColumn = 'datetime';
+  bool _sortAscending = false; // Default to newest first
+  List<Flight>? _sortedFlightsCache;
+  String? _lastSortColumn;
+  bool? _lastSortAscending;
+  int? _lastFlightDataHash;
 
   // Getters
   List<Flight> get flights => _flights;
@@ -35,6 +47,26 @@ class FlightProvider extends ChangeNotifier {
   List<Map<String, dynamic>> get wingStats => _wingStats;
   List<Map<String, dynamic>> get siteStats => _siteStats;
   bool get statisticsLoaded => _statisticsLoaded;
+  String get sortColumn => _sortColumn;
+  bool get sortAscending => _sortAscending;
+  
+  /// Get sorted flights with caching
+  List<Flight> get sortedFlights {
+    // Check if cache is valid
+    if (_sortedFlightsCache == null || 
+        _lastSortColumn != _sortColumn || 
+        _lastSortAscending != _sortAscending || 
+        _lastFlightDataHash != _calculateFlightDataHash(_flights)) {
+      
+      // Cache miss - need to sort
+      _sortedFlightsCache = _getSortedFlights(_flights);
+      _lastSortColumn = _sortColumn;
+      _lastSortAscending = _sortAscending;
+      _lastFlightDataHash = _calculateFlightDataHash(_flights);
+    }
+    
+    return _sortedFlightsCache!;
+  }
 
   /// Load all flights from repository  
   Future<void> loadFlights() async {
@@ -52,6 +84,7 @@ class FlightProvider extends ChangeNotifier {
       LoggingService.performance('Load flights', duration, '${_flights.length} flights loaded');
       
       LoggingService.info('FlightProvider: Loaded ${_flights.length} flights');
+      _invalidateCache();
       notifyListeners();
     } catch (e) {
       LoggingService.error('FlightProvider: Failed to load flights', e);
@@ -74,6 +107,7 @@ class FlightProvider extends ChangeNotifier {
       _flights.insert(0, newFlight); // Add to beginning (most recent first)
       
       LoggingService.info('FlightProvider: Added flight with ID $id');
+      _invalidateCache();
       notifyListeners();
       return true;
     } catch (e) {
@@ -96,6 +130,7 @@ class FlightProvider extends ChangeNotifier {
       if (index >= 0) {
         _flights[index] = flight;
         LoggingService.info('FlightProvider: Updated flight ${flight.id}');
+        _invalidateCache();
         notifyListeners();
       }
       return true;
@@ -160,6 +195,7 @@ class FlightProvider extends ChangeNotifier {
       _flights.removeWhere((f) => existingIds.contains(f.id));
       
       LoggingService.info('FlightProvider: Deleted ${existingIds.length} flights');
+      _invalidateCache();
       notifyListeners();
       return true;
     } catch (e) {
@@ -262,6 +298,81 @@ class FlightProvider extends ChangeNotifier {
       return null;
     }
   }
+  
+  /// Check if an IGC file would be a duplicate import
+  Future<Flight?> checkIgcForDuplicate(String filePath) async {
+    try {
+      return await _igcImportService.checkForDuplicate(filePath);
+    } catch (e) {
+      LoggingService.error('FlightProvider: Failed to check IGC for duplicates', e);
+      return null;
+    }
+  }
+  
+  /// Import an IGC file with duplicate handling
+  Future<ImportResult> importIgcFile(
+    String filePath, {
+    bool replaceDuplicate = false,
+    bool skipDuplicate = false,
+  }) async {
+    try {
+      LoggingService.debug('FlightProvider: Importing IGC file: $filePath');
+      
+      final result = await _igcImportService.importIgcFileWithDuplicateHandling(
+        filePath,
+        replace: replaceDuplicate && !skipDuplicate,
+      );
+      
+      // Reload flights if import was successful
+      if (result.type == ImportResultType.imported || 
+          result.type == ImportResultType.replaced) {
+        await loadFlights();
+      }
+      
+      LoggingService.info('FlightProvider: IGC import completed with status: ${result.type}');
+      return result;
+    } catch (e) {
+      LoggingService.error('FlightProvider: Failed to import IGC file', e);
+      return ImportResult.failed(
+        fileName: filePath.split('/').last,
+        errorMessage: 'Failed to import: $e',
+      );
+    }
+  }
+  
+  /// Import multiple IGC files
+  Future<List<ImportResult>> importMultipleIgcFiles(
+    List<String> filePaths, {
+    bool skipAllDuplicates = false,
+    bool replaceAllDuplicates = false,
+  }) async {
+    final results = <ImportResult>[];
+    
+    for (final filePath in filePaths) {
+      try {
+        final result = await importIgcFile(
+          filePath,
+          replaceDuplicate: replaceAllDuplicates,
+          skipDuplicate: skipAllDuplicates,
+        );
+        results.add(result);
+      } catch (e) {
+        results.add(ImportResult.failed(
+          fileName: filePath.split('/').last,
+          errorMessage: 'Failed to import: $e',
+        ));
+      }
+    }
+    
+    // Reload flights once after all imports
+    if (results.any((r) => 
+        r.type == ImportResultType.imported || 
+        r.type == ImportResultType.replaced)) {
+      await loadFlights();
+    }
+    
+    return results;
+  }
 
   /// Clear error message
   void clearError() {
@@ -286,5 +397,72 @@ class FlightProvider extends ChangeNotifier {
       _errorMessage = null;
       notifyListeners();
     }
+  }
+  
+  /// Update sorting configuration
+  void setSorting(String column, bool ascending) {
+    if (_sortColumn != column || _sortAscending != ascending) {
+      _sortColumn = column;
+      _sortAscending = ascending;
+      _invalidateCache();
+      notifyListeners();
+    }
+  }
+  
+  /// Invalidate the sorting cache
+  void _invalidateCache() {
+    _sortedFlightsCache = null;
+    _lastSortColumn = null;
+    _lastSortAscending = null;
+    _lastFlightDataHash = null;
+  }
+  
+  /// Calculate a simple hash of flight data for change detection
+  int _calculateFlightDataHash(List<Flight> flights) {
+    int hash = flights.length;
+    for (int i = 0; i < flights.length && i < 10; i++) {
+      hash = hash * 31 + (flights[i].id ?? 0);
+    }
+    return hash;
+  }
+  
+  /// Sort flights based on current settings
+  List<Flight> _getSortedFlights(List<Flight> flights) {
+    final sortedFlights = List<Flight>.from(flights);
+    
+    sortedFlights.sort((a, b) {
+      int comparison;
+      
+      switch (_sortColumn) {
+        case 'datetime':
+          // Sort by date first, then by launch time
+          comparison = a.date.compareTo(b.date);
+          if (comparison == 0) {
+            comparison = a.launchTime.compareTo(b.launchTime);
+          }
+          break;
+        case 'duration':
+          comparison = (a.duration ?? 0).compareTo(b.duration ?? 0);
+          break;
+        case 'altitude':
+          comparison = (a.maxAltitude ?? 0).compareTo(b.maxAltitude ?? 0);
+          break;
+        case 'distance':
+          comparison = (a.straightDistance ?? 0).compareTo(b.straightDistance ?? 0);
+          break;
+        case 'track_distance':
+          comparison = (a.distance ?? 0).compareTo(b.distance ?? 0);
+          break;
+        case 'launch_site':
+          comparison = (a.launchSiteName ?? '').compareTo(b.launchSiteName ?? '');
+          break;
+        default:
+          comparison = 0;
+      }
+      
+      return _sortAscending ? comparison : -comparison;
+    });
+    
+    return sortedFlights;
   }
 }
