@@ -18,7 +18,7 @@ class FlightPlaybackController extends ChangeNotifier {
   // Playback state
   PlaybackState _state = PlaybackState.stopped;
   int _currentPointIndex = 0;
-  double _playbackSpeed = 1.0;
+  double _playbackSpeed = 60.0;
   
   // Animation
   AnimationController? _animationController;

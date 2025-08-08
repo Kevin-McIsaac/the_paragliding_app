@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../controllers/flight_playback_controller.dart';
@@ -20,24 +21,13 @@ class FlightPlaybackPanel extends StatefulWidget {
 
 class _FlightPlaybackPanelState extends State<FlightPlaybackPanel> 
     with TickerProviderStateMixin {
-  bool _isExpanded = false;
-  late AnimationController _expandController;
-  late Animation<double> _expandAnimation;
   
   // Speed options
-  final List<double> _speedOptions = [1.0, 10.0, 30.0, 60.0];
+  final List<double> _speedOptions = [1.0, 10.0, 30.0, 60.0, 120.0];
   
   @override
   void initState() {
     super.initState();
-    _expandController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _expandAnimation = CurvedAnimation(
-      parent: _expandController,
-      curve: Curves.easeInOut,
-    );
     
     // Listen to controller changes
     widget.controller.addListener(_onControllerChanged);
@@ -46,7 +36,6 @@ class _FlightPlaybackPanelState extends State<FlightPlaybackPanel>
   @override
   void dispose() {
     widget.controller.removeListener(_onControllerChanged);
-    _expandController.dispose();
     super.dispose();
   }
   
@@ -56,16 +45,6 @@ class _FlightPlaybackPanelState extends State<FlightPlaybackPanel>
     });
   }
   
-  void _toggleExpanded() {
-    setState(() {
-      _isExpanded = !_isExpanded;
-      if (_isExpanded) {
-        _expandController.forward();
-      } else {
-        _expandController.reverse();
-      }
-    });
-  }
   
   @override
   Widget build(BuildContext context) {
@@ -88,28 +67,8 @@ class _FlightPlaybackPanelState extends State<FlightPlaybackPanel>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Drag handle
-            GestureDetector(
-              onTap: _toggleExpanded,
-              child: Container(
-                height: 6,
-                width: 40,
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                decoration: BoxDecoration(
-                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
-                  borderRadius: BorderRadius.circular(3),
-                ),
-              ),
-            ),
-            
-            // Collapsed view - minimal controls
+            // Main playback panel
             _buildCollapsedView(),
-            
-            // Expanded view - full controls
-            SizeTransition(
-              sizeFactor: _expandAnimation,
-              child: _buildExpandedView(),
-            ),
           ],
         ),
       ),
@@ -124,12 +83,17 @@ class _FlightPlaybackPanelState extends State<FlightPlaybackPanel>
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       child: Column(
         children: [
-          // Timeline scrubber
-          _buildTimelineScrubber(),
+          // Live stats row
+          _buildLiveStatsRow(),
           
           const SizedBox(height: 8),
           
-          // Minimal controls row
+          // Timeline scrubber
+          _buildTimelineScrubber(),
+          
+          const SizedBox(height: 6),
+          
+          // Controls row (play/pause, time, and playback speed)
           Row(
             children: [
               // Play/Pause button
@@ -153,7 +117,7 @@ class _FlightPlaybackPanelState extends State<FlightPlaybackPanel>
                 ),
               ),
               
-              // Speed indicator
+              // Playback speed indicator
               TextButton(
                 onPressed: _showSpeedMenu,
                 child: Text(
@@ -163,12 +127,6 @@ class _FlightPlaybackPanelState extends State<FlightPlaybackPanel>
                   ),
                 ),
               ),
-              
-              // Expand/Collapse button
-              IconButton(
-                onPressed: _toggleExpanded,
-                icon: Icon(_isExpanded ? Icons.expand_more : Icons.expand_less),
-              ),
             ],
           ),
         ],
@@ -176,92 +134,6 @@ class _FlightPlaybackPanelState extends State<FlightPlaybackPanel>
     );
   }
   
-  Widget _buildExpandedView() {
-    final point = widget.controller.currentPoint;
-    
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        children: [
-          // Full playback controls
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              // Skip backward
-              IconButton(
-                onPressed: () => widget.controller.skipBackward(),
-                icon: const Icon(Icons.replay_10),
-                iconSize: 28,
-              ),
-              
-              // Stop
-              IconButton(
-                onPressed: widget.controller.stop,
-                icon: const Icon(Icons.stop),
-                iconSize: 28,
-              ),
-              
-              // Play/Pause (larger)
-              Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                ),
-                child: IconButton(
-                  onPressed: () => widget.controller.togglePlayPause(this),
-                  icon: Icon(
-                    widget.controller.state == PlaybackState.playing
-                        ? Icons.pause
-                        : Icons.play_arrow,
-                  ),
-                  iconSize: 40,
-                  color: Theme.of(context).colorScheme.onPrimaryContainer,
-                ),
-              ),
-              
-              // Skip forward
-              IconButton(
-                onPressed: () => widget.controller.skipForward(),
-                icon: const Icon(Icons.forward_10),
-                iconSize: 28,
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 16),
-          
-          // Speed controls - wrapped for mobile
-          Row(
-            children: [
-              const Text('Speed: '),
-              Expanded(
-                child: Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: 4.0,
-                  children: _speedOptions.map((speed) => 
-                    ChoiceChip(
-                      label: Text('${speed.toInt()}x'),
-                      selected: widget.controller.playbackSpeed == speed,
-                      onSelected: (selected) {
-                        if (selected) {
-                          widget.controller.setPlaybackSpeed(speed);
-                        }
-                      },
-                    ),
-                  ).toList(),
-                ),
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 16),
-          
-          // Live statistics
-          if (point != null) _buildLiveStats(point),
-        ],
-      ),
-    );
-  }
   
   Widget _buildTimelineScrubber() {
     final events = widget.controller.detectEvents();
@@ -379,7 +251,13 @@ class _FlightPlaybackPanelState extends State<FlightPlaybackPanel>
     );
   }
   
-  Widget _buildLiveStats(IgcPoint point) {
+  /// Build live stats row for main panel
+  Widget _buildLiveStatsRow() {
+    final point = widget.controller.currentPoint;
+    if (point == null) {
+      return const SizedBox.shrink();
+    }
+    
     final currentIndex = widget.controller.currentPointIndex;
     final altitude = point.pressureAltitude > 0 
         ? point.pressureAltitude 
@@ -393,30 +271,50 @@ class _FlightPlaybackPanelState extends State<FlightPlaybackPanel>
       climbRate = widget.controller.instantaneousClimbRates[currentIndex];
     }
     
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _buildStatItem(
-            'Altitude',
-            '${altitude.toStringAsFixed(0)}m',
-            Icons.height,
-          ),
-          _buildStatItem(
-            'Climb Rate',
-            '${climbRate > 0 ? '+' : ''}${climbRate.toStringAsFixed(1)}m/s',
-            climbRate > 0 ? Icons.arrow_upward : Icons.arrow_downward,
-          ),
-          // Note: groundSpeed not available in IgcPoint, skip for now
-        ],
-      ),
+    // Calculate ground speed if we have previous point
+    double groundSpeed = 0.0;
+    if (currentIndex > 0 && currentIndex < widget.controller.trackPoints.length) {
+      final prevPoint = widget.controller.trackPoints[currentIndex - 1];
+      final currentPoint = widget.controller.trackPoints[currentIndex];
+      
+      // Simple distance calculation (good for small distances)
+      final dlat = (currentPoint.latitude - prevPoint.latitude) * 111320; // meters per degree latitude
+      final dlon = (currentPoint.longitude - prevPoint.longitude) * 111320 * math.cos(currentPoint.latitude * (math.pi / 180)); // meters per degree longitude
+      final distance = math.sqrt(dlat * dlat + dlon * dlon); // meters
+      
+      final timeDiff = currentPoint.timestamp.difference(prevPoint.timestamp).inSeconds;
+      if (timeDiff > 0) {
+        groundSpeed = distance / timeDiff; // m/s
+      }
+    }
+    
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceAround,
+      children: [
+        _buildStatItem(
+          'Altitude',
+          '${altitude.toStringAsFixed(0)}m',
+          Icons.terrain,
+        ),
+        _buildStatItem(
+          'Climb Rate',
+          '${climbRate > 0 ? '+' : ''}${climbRate.toStringAsFixed(1)}m/s',
+          climbRate > 0 ? Icons.trending_up : Icons.trending_down,
+        ),
+        _buildStatItem(
+          'Speed',
+          '${(groundSpeed * 3.6).toStringAsFixed(0)}km/h',
+          Icons.speed,
+        ),
+        _buildStatItem(
+          'Time',
+          '${point.timestamp.hour.toString().padLeft(2, '0')}:${point.timestamp.minute.toString().padLeft(2, '0')}',
+          Icons.schedule,
+        ),
+      ],
     );
   }
+
   
   Widget _buildStatItem(String label, String value, IconData icon) {
     return Column(

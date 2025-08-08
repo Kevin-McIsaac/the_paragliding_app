@@ -802,89 +802,61 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     return Positioned(
       top: 8,
       right: 8,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(4),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black26,
-              blurRadius: 4,
-              offset: Offset(0, 2),
-            ),
-          ],
-        ),
-        child: PopupMenuButton<String>(
-          icon: const Icon(Icons.layers, size: 20),
-          onSelected: (value) {
-            switch (value) {
-              case 'labels':
-                _toggleLabels();
-                break;
-              case 'satellite':
+      child: FloatingActionButton(
+        mini: true,
+        onPressed: _showMenuBottomSheet,
+        child: const Icon(Icons.layers),
+      ),
+    );
+  }
+
+  void _showMenuBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(_showSatelliteView ? Icons.map : Icons.satellite_alt),
+              title: Text('${_showSatelliteView ? 'Street' : 'Satellite'} View'),
+              onTap: () {
+                Navigator.pop(context);
                 _toggleSatelliteView();
-                break;
-              case 'legend':
+              },
+            ),
+            ListTile(
+              leading: Icon(_showLabels ? Icons.label_off : Icons.label),
+              title: Text('${_showLabels ? 'Hide' : 'Show'} Labels'),
+              onTap: () {
+                Navigator.pop(context);
+                _toggleLabels();
+              },
+            ),
+            ListTile(
+              leading: Icon(_showLegend ? Icons.visibility_off : Icons.visibility),
+              title: Text('${_showLegend ? 'Hide' : 'Show'} Legend'),
+              onTap: () {
+                Navigator.pop(context);
                 _toggleLegend();
-                break;
-              case 'fit':
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.fit_screen),
+              title: const Text('Fit to Track'),
+              onTap: () {
+                Navigator.pop(context);
                 _fitMapToBounds();
-                break;
-              case 'fixmap':
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.report_problem),
+              title: const Text('Report Map Issue'),
+              onTap: () {
+                Navigator.pop(context);
                 _openFixTheMap();
-                break;
-            }
-          },
-          itemBuilder: (context) => [
-            PopupMenuItem(
-              value: 'satellite',
-              child: Row(
-                children: [
-                  Icon(_showSatelliteView ? Icons.map : Icons.satellite_alt),
-                  const SizedBox(width: 8),
-                  Text('${_showSatelliteView ? 'Street' : 'Satellite'} View'),
-                ],
-              ),
-            ),
-            PopupMenuItem(
-              value: 'labels',
-              child: Row(
-                children: [
-                  Icon(_showLabels ? Icons.label_off : Icons.label),
-                  const SizedBox(width: 8),
-                  Text('${_showLabels ? 'Hide' : 'Show'} Labels'),
-                ],
-              ),
-            ),
-            PopupMenuItem(
-              value: 'legend',
-              child: Row(
-                children: [
-                  Icon(_showLegend ? Icons.visibility_off : Icons.visibility),
-                  const SizedBox(width: 8),
-                  Text('${_showLegend ? 'Hide' : 'Show'} Legend'),
-                ],
-              ),
-            ),
-            const PopupMenuItem(
-              value: 'fit',
-              child: Row(
-                children: [
-                  Icon(Icons.fit_screen),
-                  SizedBox(width: 8),
-                  Text('Fit to Track'),
-                ],
-              ),
-            ),
-            const PopupMenuItem(
-              value: 'fixmap',
-              child: Row(
-                children: [
-                  Icon(Icons.report_problem),
-                  SizedBox(width: 8),
-                  Text('Report Map Issue'),
-                ],
-              ),
+              },
             ),
           ],
         ),
@@ -1106,16 +1078,11 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     // Add playback panel if enabled
     Widget finalWidget = unifiedWidget;
     if (widget.showPlaybackPanel && _playbackController != null) {
-      finalWidget = Stack(
+      finalWidget = Column(
         children: [
-          unifiedWidget,
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: FlightPlaybackPanel(
-              controller: _playbackController!,
-            ),
+          Expanded(child: unifiedWidget),
+          FlightPlaybackPanel(
+            controller: _playbackController!,
           ),
         ],
       );
