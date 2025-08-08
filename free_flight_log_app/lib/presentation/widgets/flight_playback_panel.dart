@@ -157,7 +157,7 @@ class _FlightPlaybackPanelState extends State<FlightPlaybackPanel>
               TextButton(
                 onPressed: _showSpeedMenu,
                 child: Text(
-                  '${widget.controller.playbackSpeed}x',
+                  '${widget.controller.playbackSpeed.toInt()}x',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -240,7 +240,7 @@ class _FlightPlaybackPanelState extends State<FlightPlaybackPanel>
                   spacing: 4.0,
                   children: _speedOptions.map((speed) => 
                     ChoiceChip(
-                      label: Text('${speed}x'),
+                      label: Text('${speed.toInt()}x'),
                       selected: widget.controller.playbackSpeed == speed,
                       onSelected: (selected) {
                         if (selected) {
@@ -456,7 +456,7 @@ class _FlightPlaybackPanelState extends State<FlightPlaybackPanel>
       items: _speedOptions.map((speed) => 
         PopupMenuItem(
           value: speed,
-          child: Text('${speed}x'),
+          child: Text('${speed.toInt()}x'),
         ),
       ).toList(),
     ).then((value) {
