@@ -208,14 +208,14 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
                   children: [
                     Icon(
                       Icons.text_fields,
-                      color: _sortBy == 'name' ? Theme.of(context).primaryColor : null,
+                      color: _sortBy == 'name' ? Theme.of(context).colorScheme.primary : null,
                     ),
                     const SizedBox(width: 8),
                     Text(
                       'Sort by Name',
                       style: TextStyle(
                         fontWeight: _sortBy == 'name' ? FontWeight.bold : null,
-                        color: _sortBy == 'name' ? Theme.of(context).primaryColor : null,
+                        color: _sortBy == 'name' ? Theme.of(context).colorScheme.primary : null,
                       ),
                     ),
                   ],
@@ -227,14 +227,14 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
                   children: [
                     Icon(
                       Icons.flag,
-                      color: _sortBy == 'country' ? Theme.of(context).primaryColor : null,
+                      color: _sortBy == 'country' ? Theme.of(context).colorScheme.primary : null,
                     ),
                     const SizedBox(width: 8),
                     Text(
                       'Group by Country',
                       style: TextStyle(
                         fontWeight: _sortBy == 'country' ? FontWeight.bold : null,
-                        color: _sortBy == 'country' ? Theme.of(context).primaryColor : null,
+                        color: _sortBy == 'country' ? Theme.of(context).colorScheme.primary : null,
                       ),
                     ),
                   ],
@@ -246,14 +246,14 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
                   children: [
                     Icon(
                       Icons.access_time,
-                      color: _sortBy == 'date' ? Theme.of(context).primaryColor : null,
+                      color: _sortBy == 'date' ? Theme.of(context).colorScheme.primary : null,
                     ),
                     const SizedBox(width: 8),
                     Text(
                       'Sort by Date Added',
                       style: TextStyle(
                         fontWeight: _sortBy == 'date' ? FontWeight.bold : null,
-                        color: _sortBy == 'date' ? Theme.of(context).primaryColor : null,
+                        color: _sortBy == 'date' ? Theme.of(context).colorScheme.primary : null,
                       ),
                     ),
                   ],
@@ -540,33 +540,42 @@ class _SiteListTile extends StatelessWidget {
                   ),
                   Text(' • ', style: TextStyle(color: Colors.grey[600])),
                 ],
-                if (site.country != null) ...[
-                  Text(
-                    site.country!,
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  Text(' • ', style: TextStyle(color: Colors.grey[600])),
-                ]
-                else ...[
-                  Text(
-                    'Unknown Country',
-                    style: TextStyle(
-                      color: Colors.grey[500],
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                  Text(' • ', style: TextStyle(color: Colors.grey[600])),
-                ],
-                Text(
-                  '${site.flightCount ?? 0} flights',
-                  style: TextStyle(
-                    color: site.flightCount != null && site.flightCount! > 0 
-                      ? Colors.green[600] 
-                      : Colors.grey[600],
-                    fontWeight: FontWeight.w500,
+                Expanded(
+                  child: Row(
+                    children: [
+                      if (site.country != null) ...[
+                        Flexible(
+                          child: Text(
+                            site.country!,
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w500,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Text(' • ', style: TextStyle(color: Colors.grey[600])),
+                      ]
+                      else ...[
+                        Text(
+                          'Unknown Country',
+                          style: TextStyle(
+                            color: Colors.grey[500],
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                        Text(' • ', style: TextStyle(color: Colors.grey[600])),
+                      ],
+                      Text(
+                        '${site.flightCount ?? 0} flights',
+                        style: TextStyle(
+                          color: site.flightCount != null && site.flightCount! > 0 
+                            ? Colors.green[600] 
+                            : Colors.grey[600],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
