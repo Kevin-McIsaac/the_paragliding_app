@@ -33,14 +33,14 @@ class _FlightAltitudeChartState extends State<FlightAltitudeChart> {
         height: widget.height,
         decoration: BoxDecoration(
           color: Colors.grey[100],
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(4),
         ),
         child: const Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(Icons.show_chart, size: 48, color: Colors.grey),
-              SizedBox(height: 8),
+              SizedBox(height: 4),
               Text(
                 'No altitude data available',
                 style: TextStyle(color: Colors.grey),
@@ -53,15 +53,15 @@ class _FlightAltitudeChartState extends State<FlightAltitudeChart> {
 
     return Container(
       height: widget.height,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(4),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+            blurRadius: 2,
+            offset: const Offset(0, 1),
           ),
         ],
       ),
@@ -69,7 +69,7 @@ class _FlightAltitudeChartState extends State<FlightAltitudeChart> {
         children: [
           // Chart controls
           _buildChartControls(context),
-          const SizedBox(height: 12),
+          const SizedBox(height: 6),
           
           // Chart
           Expanded(
@@ -98,7 +98,7 @@ class _FlightAltitudeChartState extends State<FlightAltitudeChart> {
             Colors.blue,
             () => setState(() => _showAltitude = !_showAltitude),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
           _buildToggleChip(
             context,
             'Climb Rate',
@@ -121,10 +121,10 @@ class _FlightAltitudeChartState extends State<FlightAltitudeChart> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           color: isSelected ? color.withValues(alpha: 0.2) : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: isSelected ? color : Colors.grey[300]!,
             width: 1,
@@ -141,7 +141,7 @@ class _FlightAltitudeChartState extends State<FlightAltitudeChart> {
                 shape: BoxShape.circle,
               ),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 4),
             Text(
               label,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -244,33 +244,33 @@ class _FlightAltitudeChartState extends State<FlightAltitudeChart> {
         bottomTitles: AxisTitles(
           sideTitles: SideTitles(
             showTitles: true,
-            reservedSize: 32,
+            reservedSize: 16,
             interval: maxTime / 6,
             getTitlesWidget: (value, meta) => Text(
               '${value.toInt()}min',
-              style: const TextStyle(fontSize: 10),
+              style: const TextStyle(fontSize: 9),
             ),
           ),
         ),
         leftTitles: AxisTitles(
           sideTitles: SideTitles(
             showTitles: true,
-            reservedSize: 50,
+            reservedSize: 28,
             getTitlesWidget: (value, meta) {
               if (_showAltitude && !_showClimbRate) {
                 return Text(
                   '${value.toInt()}m',
-                  style: const TextStyle(fontSize: 10),
+                  style: const TextStyle(fontSize: 9),
                 );
               } else if (_showClimbRate && !_showAltitude) {
                 return Text(
                   value.toStringAsFixed(1),
-                  style: const TextStyle(fontSize: 10),
+                  style: const TextStyle(fontSize: 9),
                 );
               } else {
                 return Text(
                   '${value.toInt()}',
-                  style: const TextStyle(fontSize: 10),
+                  style: const TextStyle(fontSize: 9),
                 );
               }
             },

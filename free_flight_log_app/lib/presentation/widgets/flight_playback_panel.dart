@@ -2,7 +2,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../controllers/flight_playback_controller.dart';
-import '../../data/models/igc_file.dart';
 
 /// Bottom panel with timeline scrubber and playback controls
 class FlightPlaybackPanel extends StatefulWidget {
@@ -52,8 +51,10 @@ class _FlightPlaybackPanelState extends State<FlightPlaybackPanel>
     final colorScheme = theme.colorScheme;
     
     return Container(
+      margin: const EdgeInsets.only(bottom: 8), // Float above bottom edge
       decoration: BoxDecoration(
         color: colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.2),
@@ -64,6 +65,7 @@ class _FlightPlaybackPanelState extends State<FlightPlaybackPanel>
       ),
       child: SafeArea(
         top: false,
+        bottom: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -76,70 +78,79 @@ class _FlightPlaybackPanelState extends State<FlightPlaybackPanel>
   }
   
   Widget _buildCollapsedView() {
-    final currentTime = _formatDuration(widget.controller.currentTime.inSeconds);
-    final totalTime = _formatDuration(widget.controller.totalDuration.inSeconds);
-    
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
       child: Column(
         children: [
           // Live stats row
           _buildLiveStatsRow(),
           
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           
-          // Timeline scrubber
-          _buildTimelineScrubber(),
-          
-          const SizedBox(height: 6),
-          
-          // Controls row (play/pause, time, and playback speed)
-          Row(
-            children: [
-              // Play/Pause button
-              IconButton(
-                onPressed: () => widget.controller.togglePlayPause(this),
-                icon: Icon(
-                  widget.controller.state == PlaybackState.playing
-                      ? Icons.pause
-                      : Icons.play_arrow,
-                ),
-                iconSize: 32,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              
-              // Time display
-              Expanded(
-                child: Text(
-                  '$currentTime / $totalTime',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                  textAlign: TextAlign.center,
-                ),
-              ),
-              
-              // Playback speed indicator
-              TextButton(
-                onPressed: _showSpeedMenu,
-                child: Text(
-                  '${widget.controller.playbackSpeed.toInt()}x',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
+          // Controls and timeline row
+          _buildControlsAndTimelineRow(),
         ],
       ),
     );
   }
   
   
-  Widget _buildTimelineScrubber() {
+  /// Build controls and timeline in single row
+  Widget _buildControlsAndTimelineRow() {
+    return Row(
+      children: [
+        // Play/Pause button - using InkWell for tighter control
+        InkWell(
+          onTap: () => widget.controller.togglePlayPause(this),
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            width: 36,
+            height: 36,
+            alignment: Alignment.center,
+            child: Icon(
+              widget.controller.state == PlaybackState.playing
+                  ? Icons.pause
+                  : Icons.play_arrow,
+              size: 24,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+        ),
+        
+        const SizedBox(width: 4), // Small explicit gap
+        
+        // Playback speed indicator - using InkWell for tighter control
+        InkWell(
+          onTap: _showSpeedMenu,
+          borderRadius: BorderRadius.circular(4),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            alignment: Alignment.center,
+            child: Text(
+              '${widget.controller.playbackSpeed.toInt()}x',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+        
+        const SizedBox(width: 8),
+        
+        // Timeline scrubber (expanded to fill remaining space)
+        Expanded(
+          child: _buildInlineTimelineScrubber(),
+        ),
+      ],
+    );
+  }
+  
+  /// Build inline timeline scrubber for controls row  
+  Widget _buildInlineTimelineScrubber() {
     final events = widget.controller.detectEvents();
     
     return SizedBox(
-      height: 40,
+      height: 32,
       child: Stack(
         alignment: Alignment.center,
         children: [
@@ -173,8 +184,8 @@ class _FlightPlaybackPanelState extends State<FlightPlaybackPanel>
           // Scrubber handle
           SliderTheme(
             data: SliderTheme.of(context).copyWith(
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
               trackHeight: 4,
               activeTrackColor: Colors.transparent,
               inactiveTrackColor: Colors.transparent,
@@ -192,6 +203,7 @@ class _FlightPlaybackPanelState extends State<FlightPlaybackPanel>
       ),
     );
   }
+
   
   Widget _buildEventMarker(FlightEvent event) {
     final progress = widget.controller.totalDuration.inMilliseconds > 0
@@ -200,28 +212,22 @@ class _FlightPlaybackPanelState extends State<FlightPlaybackPanel>
         : 0.0;
     
     Color markerColor;
-    IconData? markerIcon;
     
     switch (event.type) {
       case EventType.takeoff:
         markerColor = Colors.green;
-        markerIcon = Icons.flight_takeoff;
         break;
       case EventType.landing:
         markerColor = Colors.red;
-        markerIcon = Icons.flight_land;
         break;
       case EventType.maxAltitude:
         markerColor = Colors.blue;
-        markerIcon = Icons.terrain;
         break;
       case EventType.maxClimb:
         markerColor = Colors.orange;
-        markerIcon = Icons.arrow_upward;
         break;
       case EventType.thermalEntry:
         markerColor = Colors.purple;
-        markerIcon = Icons.air;
         break;
     }
     
@@ -320,16 +326,16 @@ class _FlightPlaybackPanelState extends State<FlightPlaybackPanel>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
-        const SizedBox(height: 4),
+        Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
+        const SizedBox(height: 2),
         Text(
           value,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
         ),
         Text(
           label,
           style: TextStyle(
-            fontSize: 11,
+            fontSize: 10,
             color: Colors.grey[600],
           ),
         ),
@@ -362,12 +368,5 @@ class _FlightPlaybackPanelState extends State<FlightPlaybackPanel>
         widget.controller.setPlaybackSpeed(value);
       }
     });
-  }
-  
-  /// Format duration in seconds to mm:ss format
-  String _formatDuration(int seconds) {
-    final minutes = seconds ~/ 60;
-    final remainingSeconds = seconds % 60;
-    return '${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')}';
   }
 }
