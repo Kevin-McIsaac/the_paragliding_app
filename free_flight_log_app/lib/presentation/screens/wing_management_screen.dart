@@ -243,7 +243,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
     final inactiveWings = wings.where((wing) => !wing.active).toList();
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.only(top: 16, bottom: 16),
       children: [
         if (activeWings.isNotEmpty) ...[
           Text(

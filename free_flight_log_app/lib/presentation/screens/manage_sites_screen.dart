@@ -400,7 +400,7 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
               // Summary header  
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.only(top: 16, bottom: 16),
                 color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 child: Text(
                   'Showing ${_filteredSites.length} of ${siteProvider.sites.length} sites',

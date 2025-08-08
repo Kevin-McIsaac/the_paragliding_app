@@ -550,7 +550,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
     return Column(
       children: [
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.only(top: 16, bottom: 16),
           color: Theme.of(context).colorScheme.surface,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,

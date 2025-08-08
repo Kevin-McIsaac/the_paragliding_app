@@ -167,7 +167,7 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.all(16.0),
+          padding: const EdgeInsets.only(top: 16.0, bottom: 16.0),
           children: [
             // Date Selection
             Card(
