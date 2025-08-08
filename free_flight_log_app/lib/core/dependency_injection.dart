@@ -15,8 +15,9 @@ final GetIt serviceLocator = GetIt.instance;
 
 /// Configure all dependencies for the application
 /// This should be called once at app startup
-Future<void> configureDependencies() async {
-  LoggingService.info('DI: Configuring dependencies');
+/// Set [testing] to true for test environment
+Future<void> configureDependencies({bool testing = false}) async {
+  LoggingService.info('DI: Configuring dependencies${testing ? ' (testing mode)' : ''}');
   
   // Register core services first
   _registerCoreServices();
