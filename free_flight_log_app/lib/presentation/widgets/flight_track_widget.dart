@@ -1616,17 +1616,29 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
       return;
     }
     
-    // Convert chart time to Duration from flight start
-    final targetTime = Duration(
-      minutes: timeMinutes.floor(),
-      seconds: ((timeMinutes - timeMinutes.floor()) * 60).round(),
-    );
+    // Find the track point closest to the touched time-of-day
+    int bestIndex = 0;
+    double smallestDiff = double.infinity;
     
-    LoggingService.debug('FlightTrackWidget: Chart interaction - timeMinutes: $timeMinutes -> targetTime: $targetTime');
+    for (int i = 0; i < _trackPoints.length; i++) {
+      final point = _trackPoints[i];
+      // Calculate time of day for this point (minutes since midnight)
+      final pointTimeOfDay = point.timestamp.hour * 60.0 + 
+                             point.timestamp.minute + 
+                             point.timestamp.second / 60.0;
+      
+      final diff = (pointTimeOfDay - timeMinutes).abs();
+      if (diff < smallestDiff) {
+        smallestDiff = diff;
+        bestIndex = i;
+      }
+    }
     
-    // Update playback controller - this automatically syncs map marker and timeline slider
+    LoggingService.debug('FlightTrackWidget: Chart interaction - timeMinutes: $timeMinutes -> bestIndex: $bestIndex (diff: ${smallestDiff.toStringAsFixed(2)} minutes)');
+    
+    // Update playback controller to the found index
     final oldIndex = _playbackController!.currentPointIndex;
-    _playbackController!.seekToTime(targetTime);
+    _playbackController!.seekToIndex(bestIndex);
     final newIndex = _playbackController!.currentPointIndex;
     
     LoggingService.debug('FlightTrackWidget: Playback controller updated - index: $oldIndex -> $newIndex');
