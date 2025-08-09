@@ -7,9 +7,6 @@ import '../../data/repositories/flight_repository.dart';
 import '../../data/repositories/site_repository.dart';
 import '../../data/repositories/wing_repository.dart';
 import '../widgets/flight_track_widget.dart';
-import '../widgets/flight_track_3d_widget.dart';
-import '../widgets/cesium_test_widget.dart';
-import '../widgets/cesium_simple_widget.dart';
 import '../widgets/flight_statistics_widget.dart';
 import '../widgets/edit_site_dialog.dart';
 import '../widgets/site_selection_dialog.dart';
@@ -629,28 +626,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                                     },
                                     icon: const Icon(Icons.fullscreen),
                                     label: const Text('Full Screen'),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  ElevatedButton.icon(
-                                    onPressed: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) => Scaffold(
-                                            appBar: AppBar(
-                                              title: const Text('Cesium Test - Zurich'),
-                                              backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-                                            ),
-                                            body: const Padding(
-                                              padding: EdgeInsets.all(16.0),
-                                              child: CesiumSimpleWidget(),
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                    icon: const Icon(Icons.threed_rotation),
-                                    label: const Text('Cesium Test'),
                                   ),
                                 ],
                               ),
