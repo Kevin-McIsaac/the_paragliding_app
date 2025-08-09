@@ -13,8 +13,7 @@ Transform the existing 2D flight track visualization into an immersive 3D experi
 
 ### 2. Flight Track Rendering
 - **3D Flight Path**: Display flight track as a ribbon or tube in 3D space showing actual flight altitude
-- **Altitude Color Coding**: Gradient coloring based on altitude (e.g., blue for low, red for high)
-- **Track Width Variation**: Optional width changes based on climb/sink rate
+- **Altitude Color Coding**: Gradient coloring based on climbrate to match 2D flight trackmap
 - **Track Transparency**: Adjustable opacity for better terrain visibility
 
 ### 3. Interactive Camera Controls

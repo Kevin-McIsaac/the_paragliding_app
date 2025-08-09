@@ -2,16 +2,13 @@ import 'package:flutter/foundation.dart';
 import 'package:free_flight_log_app/data/models/flight.dart';
 import 'package:free_flight_log_app/data/models/site.dart';
 import 'package:free_flight_log_app/data/models/wing.dart';
-import 'package:free_flight_log_app/providers/flight_provider.dart';
-import 'package:free_flight_log_app/providers/site_provider.dart';
-import 'package:free_flight_log_app/providers/wing_provider.dart';
 import 'package:free_flight_log_app/data/repositories/flight_repository.dart';
 import 'package:free_flight_log_app/data/repositories/site_repository.dart';
 import 'package:free_flight_log_app/data/repositories/wing_repository.dart';
 
 /// Mock FlightProvider for testing
 class MockFlightProvider extends ChangeNotifier {
-  List<Flight> _flights = [];
+  final List<Flight> _flights = [];
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -57,8 +54,8 @@ class MockFlightProvider extends ChangeNotifier {
 
 /// Mock SiteProvider for testing
 class MockSiteProvider extends ChangeNotifier {
-  List<Site> _sites = [];
-  bool _isLoading = false;
+  final List<Site> _sites = [];
+  final bool _isLoading = false;
   String? _errorMessage;
 
   List<Site> get sites => _sites;
@@ -83,8 +80,8 @@ class MockSiteProvider extends ChangeNotifier {
 
 /// Mock WingProvider for testing  
 class MockWingProvider extends ChangeNotifier {
-  List<Wing> _wings = [];
-  bool _isLoading = false;
+  final List<Wing> _wings = [];
+  final bool _isLoading = false;
   String? _errorMessage;
 
   List<Wing> get wings => _wings;
