@@ -18,9 +18,18 @@ class Cesium3DMapInAppWebView extends StatefulWidget {
   State<Cesium3DMapInAppWebView> createState() => _Cesium3DMapInAppWebViewState();
 }
 
-class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView> {
+class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView> 
+    with WidgetsBindingObserver {
   InAppWebViewController? webViewController;
   bool isLoading = true;
+  bool _isDisposed = false;
+  
+  @override
+  void initState() {
+    super.initState();
+    // Add lifecycle observer for proper resource management
+    WidgetsBinding.instance.addObserver(this);
+  }
   
   @override
   Widget build(BuildContext context) {
@@ -219,11 +228,58 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView> {
             console.log('Cesium viewer initialized successfully');
             console.log('Camera position set to: lat=$lat, lon=$lon, altitude=$altitude');
             
+            // Store viewer globally for cleanup
+            window.viewer = viewer;
+            
         } catch (error) {
             console.error('Cesium initialization error:', error);
             console.error('Error stack:', error.stack);
             document.getElementById('loadingOverlay').innerHTML = 'Error loading Cesium: ' + error.message;
         }
+        
+        // Cleanup function to be called from Flutter before disposal
+        function cleanupCesium() {
+            console.log('Cleaning up Cesium resources...');
+            if (window.viewer) {
+                try {
+                    // Remove all entities, data sources, and primitives
+                    viewer.scene.primitives.removeAll();
+                    viewer.entities.removeAll();
+                    viewer.dataSources.removeAll();
+                    viewer.imageryLayers.removeAll();
+                    
+                    // Clear tile cache
+                    viewer.scene.globe.tileCache.reset();
+                    
+                    // Destroy the viewer
+                    viewer.destroy();
+                    window.viewer = null;
+                    
+                    console.log('Cesium cleanup completed');
+                } catch (e) {
+                    console.error('Error during Cesium cleanup:', e);
+                }
+            }
+        }
+        
+        // Also cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            cleanupCesium();
+        });
+        
+        // Handle visibility changes to pause/resume rendering
+        document.addEventListener('visibilitychange', function() {
+            if (window.viewer) {
+                if (document.hidden) {
+                    viewer.scene.requestRenderMode = true;
+                    viewer.scene.maximumRenderTimeChange = Infinity;
+                    console.log('Page hidden - rendering paused');
+                } else {
+                    viewer.scene.requestRenderMode = false;
+                    console.log('Page visible - rendering resumed');
+                }
+            }
+        });
     </script>
 </body>
 </html>
@@ -232,7 +288,97 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView> {
   
   @override
   void dispose() {
-    webViewController?.dispose();
+    _isDisposed = true;
+    WidgetsBinding.instance.removeObserver(this);
+    _disposeWebView();
     super.dispose();
+  }
+  
+  Future<void> _disposeWebView() async {
+    if (webViewController != null) {
+      try {
+        // Call JavaScript cleanup function before disposing
+        await webViewController!.evaluateJavascript(source: '''
+          if (typeof cleanupCesium === 'function') {
+            cleanupCesium();
+          }
+        ''');
+        
+        // Stop any ongoing JavaScript execution
+        await webViewController!.stopLoading();
+        
+        // Clear cache to free memory
+        await webViewController!.clearCache();
+        
+        // Remove JavaScript handlers
+        await webViewController!.removeAllUserScripts();
+        
+        // Explicitly dispose the controller
+        webViewController!.dispose();
+        
+        // Clear reference
+        webViewController = null;
+        
+        LoggingService.debug('Cesium3D: WebView disposed successfully');
+      } catch (e) {
+        LoggingService.error('Cesium3D Disposal', 'Error disposing WebView: $e');
+      }
+    }
+  }
+  
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    
+    if (_isDisposed) return;
+    
+    switch (state) {
+      case AppLifecycleState.paused:
+        // Pause WebView when app goes to background
+        webViewController?.pauseTimers();
+        LoggingService.debug('Cesium3D: App paused - WebView timers paused');
+        break;
+      case AppLifecycleState.resumed:
+        // Resume WebView when app comes to foreground
+        if (!_isDisposed && webViewController != null) {
+          webViewController!.resumeTimers();
+          LoggingService.debug('Cesium3D: App resumed - WebView timers resumed');
+        }
+        break;
+      case AppLifecycleState.detached:
+        // Clean up resources when app is detached
+        _disposeWebView();
+        break;
+      default:
+        break;
+    }
+  }
+  
+  @override
+  void didHaveMemoryPressure() {
+    super.didHaveMemoryPressure();
+    
+    if (_isDisposed || webViewController == null) return;
+    
+    LoggingService.warning('Cesium3D: Memory pressure detected - clearing cache');
+    
+    // Clear WebView cache on memory pressure
+    webViewController?.clearCache();
+    
+    // Force garbage collection in JavaScript
+    webViewController?.evaluateJavascript(source: '''
+      if (window.viewer) {
+        // Clear unused Cesium resources
+        viewer.scene.primitives.removeAll();
+        viewer.scene.globe.tileCache.trim();
+        
+        // Force JavaScript garbage collection if available
+        if (window.gc) {
+          window.gc();
+        }
+        
+        console.log('Memory pressure: Cleared Cesium resources');
+      }
+    ''');
   }
 }
