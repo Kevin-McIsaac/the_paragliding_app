@@ -47,46 +47,30 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
     // Add lifecycle observer for proper resource management
     WidgetsBinding.instance.addObserver(this);
     
-    // Check initial connectivity
-    _checkConnectivity();
+    // Check connectivity asynchronously to avoid blocking
+    Future.microtask(() => _checkConnectivity());
     
     // Listen for connectivity changes
     _connectivitySubscription = Connectivity()
       .onConnectivityChanged
       .listen(_updateConnectionStatus);
     
-    // Defer WebView creation to avoid surface sync issues
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        setState(() {
-          _isWebViewReady = true;
-        });
-      }
-    });
+    // Initialize WebView immediately for faster loading
+    _isWebViewReady = true;
     
-    // Start memory monitoring in debug mode
+    // Start memory monitoring in debug mode with delay
     if (kDebugMode) {
-      _startMemoryMonitoring();
+      Future.delayed(const Duration(seconds: 5), () {
+        if (mounted && !_isDisposed) {
+          _startMemoryMonitoring();
+        }
+      });
     }
   }
   
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
-    
-    // Show loading while waiting for WebView to be ready
-    if (!_isWebViewReady) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Initializing 3D View...'),
-          ],
-        ),
-      );
-    }
     
     // Show offline message if no internet
     if (!_hasInternet) {
@@ -188,10 +172,28 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
             });
           },
           onConsoleMessage: (controller, consoleMessage) {
+            // Reduce console logging overhead
+            if (!kDebugMode && consoleMessage.messageLevel != ConsoleMessageLevel.ERROR) {
+              return; // Only log errors in release mode
+            }
+            
+            // Skip repetitive messages
+            final msg = consoleMessage.message;
+            if (msg.contains('Tiles queued') || 
+                msg.contains('Memory:') || 
+                msg.contains('Debug')) {
+              return; // Skip verbose debug messages
+            }
+            
             final level = consoleMessage.messageLevel == ConsoleMessageLevel.ERROR ? 'ERROR' :
                          consoleMessage.messageLevel == ConsoleMessageLevel.WARNING ? 'WARNING' :
                          consoleMessage.messageLevel == ConsoleMessageLevel.LOG ? 'LOG' : 'DEBUG';
-            LoggingService.debug('Cesium3D JS [$level]: ${consoleMessage.message}');
+            
+            if (consoleMessage.messageLevel == ConsoleMessageLevel.ERROR) {
+              LoggingService.error('Cesium3D JS', msg);
+            } else if (kDebugMode) {
+              LoggingService.debug('Cesium3D JS [$level]: $msg');
+            }
           },
           onLoadError: (controller, url, code, message) {
             // Categorize errors
@@ -480,24 +482,19 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
             };
             viewer.scene.globe.tileLoadProgressEvent.addEventListener(tileLoadHandler);
             
-            // Setup periodic memory cleanup
+            // Setup periodic memory cleanup with longer interval
             let cleanupTimer = setInterval(() => {
                 if (viewer && viewer.scene) {
                     // Force garbage collection of unused tiles
                     viewer.scene.globe.tileCache.trim();
                     
-                    // Compact tile cache if it grows too large
-                    if (viewer.scene.globe.tileCache.count > 15) {
+                    // Only reset cache if really necessary
+                    if (viewer.scene.globe.tileCache.count > 35) {
                         cesiumLog.debug('Trimming tile cache');
-                        viewer.scene.globe.tileCache.reset();
-                    }
-                    
-                    // Clear any accumulated primitives
-                    if (viewer.scene.primitives.length > 10) {
-                        viewer.scene.primitives.removeAll();
+                        viewer.scene.globe.tileCache.trim();
                     }
                 }
-            }, 30000);  // Every 30 seconds
+            }, 60000);  // Every 60 seconds to reduce overhead
             
             cesiumLog.info('Cesium viewer initialized successfully');
             cesiumLog.debug('Camera position: lat=$lat, lon=$lon, altitude=$altitude');
@@ -707,7 +704,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   }
   
   void _startMemoryMonitoring() {
-    _memoryMonitorTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+    _memoryMonitorTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
       if (_isDisposed || webViewController == null) {
         timer.cancel();
         return;

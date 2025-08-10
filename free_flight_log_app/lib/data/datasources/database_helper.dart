@@ -107,7 +107,7 @@ class DatabaseHelper {
       await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_updated ON flights(updated_at)');
       
       // Statistics query optimization indexes
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_year ON flights(strftime("%Y", date))');
+      await db.execute("CREATE INDEX IF NOT EXISTS idx_flights_year ON flights(strftime('%Y', date))");
       await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_duration ON flights(duration)');
       await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_altitude ON flights(max_altitude)');
       await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_distance ON flights(distance)');
