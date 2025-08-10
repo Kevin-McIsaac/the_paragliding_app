@@ -48,6 +48,7 @@ dependencies:
   path_provider: ^2.1.0     # App directory paths
   timezone: ^0.10.1         # Timezone database and lookup
   xml: ^6.5.0               # XML/KML parsing for paragliding sites
+  connectivity_plus: ^6.0.3 # Network connectivity detection
   url_launcher: ^6.3.2      # Open external URLs for OSM links
   logger: ^2.6.1            # Structured logging framework
   provider: ^6.1.2          # State management framework

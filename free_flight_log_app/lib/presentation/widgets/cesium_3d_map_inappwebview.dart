@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../services/logging_service.dart';
 
 class Cesium3DMapInAppWebView extends StatefulWidget {
@@ -26,12 +27,26 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   bool isLoading = true;
   bool _isDisposed = false;
   Timer? _memoryMonitorTimer;
+  int _loadRetryCount = 0;
+  final int _maxRetries = 3;
+  bool _showErrorMessage = false;
+  String _errorMessage = '';
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  bool _hasInternet = true;
   
   @override
   void initState() {
     super.initState();
     // Add lifecycle observer for proper resource management
     WidgetsBinding.instance.addObserver(this);
+    
+    // Check initial connectivity
+    _checkConnectivity();
+    
+    // Listen for connectivity changes
+    _connectivitySubscription = Connectivity()
+      .onConnectivityChanged
+      .listen(_updateConnectionStatus);
     
     // Start memory monitoring in debug mode
     if (kDebugMode) {
@@ -41,6 +56,49 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   
   @override
   Widget build(BuildContext context) {
+    // Show offline message if no internet
+    if (!_hasInternet) {
+      return Center(
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.wifi_off,
+                size: 64,
+                color: Colors.grey.shade600,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No Internet Connection',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey.shade800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'The 3D map requires an active internet connection\nto load terrain and imagery data',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: _checkConnectivity,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Check Connection'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    
     return Stack(
       children: [
         InAppWebView(
@@ -82,6 +140,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
             LoggingService.debug('Cesium3D InAppWebView: Page loaded');
             setState(() {
               isLoading = false;
+              _loadRetryCount = 0; // Reset retry count on successful load
             });
           },
           onConsoleMessage: (controller, consoleMessage) {
@@ -91,13 +150,52 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
             LoggingService.debug('Cesium3D JS [$level]: ${consoleMessage.message}');
           },
           onLoadError: (controller, url, code, message) {
-            LoggingService.error('Cesium3D InAppWebView', 'Load error: $message (code: $code)');
+            // Categorize errors
+            if (message.contains('ERR_CONNECTION_REFUSED')) {
+              if (kDebugMode && url.toString().contains('localhost')) {
+                // Development server not accessible from WebView (expected)
+                LoggingService.debug('WebView cannot access Flutter dev server (expected)');
+              } else {
+                // Production connection issue
+                LoggingService.error('Cesium3D', 'Network connection failed: $message');
+                _handleLoadError(url.toString(), message);
+              }
+            } else if (message.contains('ERR_INTERNET_DISCONNECTED')) {
+              LoggingService.error('Cesium3D', 'No internet connection available');
+              _handleNoInternet();
+            } else {
+              LoggingService.error('Cesium3D', 'Load error: $message (code: $code)');
+              _handleLoadError(url.toString(), message);
+            }
           },
           onReceivedError: (controller, request, error) {
-            LoggingService.error('Cesium3D InAppWebView', 'Received error: ${error.description}');
+            // Ignore development server connection errors
+            final errorDesc = error.description ?? '';
+            final urlString = request.url?.toString() ?? '';
+            
+            if (errorDesc.contains('ERR_CONNECTION_REFUSED')) {
+              if (kDebugMode && (urlString.contains('localhost') || urlString.contains('127.0.0.1'))) {
+                // Skip logging for hot reload attempts - this is expected
+                return;
+              }
+              // Log actual connection issues
+              LoggingService.error('Cesium3D', 'Connection refused: $urlString');
+            } else if (!errorDesc.contains('ERR_INTERNET_DISCONNECTED')) {
+              // Log other errors except internet disconnection (handled elsewhere)
+              LoggingService.error('Cesium3D InAppWebView', 
+                'Received error: $errorDesc');
+            }
           },
           onReceivedHttpError: (controller, request, response) {
-            LoggingService.error('Cesium3D InAppWebView', 'HTTP error: ${response.statusCode} - ${response.reasonPhrase}');
+            // Ignore development server 404s
+            if (kDebugMode && 
+                request.url.toString().contains('localhost') &&
+                response.statusCode == 404) {
+              return;
+            }
+            
+            LoggingService.error('Cesium3D InAppWebView', 
+              'HTTP error: ${response.statusCode} - ${response.reasonPhrase}');
           },
           onJsAlert: (controller, jsAlertRequest) async {
             LoggingService.debug('Cesium3D JS Alert: ${jsAlertRequest.message}');
@@ -107,6 +205,55 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
         if (isLoading)
           const Center(
             child: CircularProgressIndicator(),
+          ),
+        if (_showErrorMessage)
+          Center(
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              margin: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red.shade200),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    color: Colors.red.shade700,
+                    size: 48,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Failed to load 3D map',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red.shade900,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _errorMessage,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.red.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: _retryLoad,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade600,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
       ],
     );
@@ -404,6 +551,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   void dispose() {
     _isDisposed = true;
     _memoryMonitorTimer?.cancel();
+    _connectivitySubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _disposeWebView();
     super.dispose();
@@ -521,5 +669,89 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
         }
       ''');
     });
+  }
+  
+  void _handleLoadError(String url, String error) async {
+    // Only retry for actual Cesium resources, not dev server
+    if (!error.contains('ERR_CONNECTION_REFUSED') || 
+        !url.contains('localhost')) {
+      
+      if (_loadRetryCount < _maxRetries) {
+        _loadRetryCount++;
+        LoggingService.info('Retrying Cesium load (attempt $_loadRetryCount/$_maxRetries)');
+        
+        // Wait before retry with exponential backoff
+        await Future.delayed(Duration(seconds: 2 * _loadRetryCount));
+        
+        // Reload the WebView
+        if (mounted && webViewController != null) {
+          webViewController!.reload();
+        }
+      } else {
+        LoggingService.error('Cesium3D', 
+          'Failed to load after $_maxRetries attempts');
+        
+        // Show error to user
+        if (mounted) {
+          setState(() {
+            _showErrorMessage = true;
+            _errorMessage = 'Unable to load the 3D map after $_maxRetries attempts.\nPlease check your internet connection.';
+          });
+        }
+      }
+    }
+  }
+  
+  void _handleNoInternet() {
+    if (mounted) {
+      setState(() {
+        _showErrorMessage = true;
+        _errorMessage = 'No internet connection available.\nThe 3D map requires an active internet connection.';
+      });
+    }
+  }
+  
+  void _retryLoad() {
+    setState(() {
+      _showErrorMessage = false;
+      _errorMessage = '';
+      _loadRetryCount = 0;
+      isLoading = true;
+    });
+    webViewController?.reload();
+  }
+  
+  void _checkConnectivity() async {
+    try {
+      final result = await Connectivity().checkConnectivity();
+      _updateConnectionStatus(result);
+    } catch (e) {
+      LoggingService.error('Cesium3D', 'Error checking connectivity: $e');
+      // Assume connected if we can't check
+      setState(() {
+        _hasInternet = true;
+      });
+    }
+  }
+  
+  void _updateConnectionStatus(List<ConnectivityResult> results) {
+    final hasConnection = results.isNotEmpty && 
+                         !results.contains(ConnectivityResult.none);
+    
+    if (mounted) {
+      setState(() {
+        _hasInternet = hasConnection;
+      });
+      
+      if (!hasConnection) {
+        LoggingService.warning('Cesium3D: No internet connection detected');
+      } else if (!_hasInternet && hasConnection) {
+        LoggingService.info('Cesium3D: Internet connection restored');
+        // Reload if we regained connection and had an error
+        if (_showErrorMessage) {
+          _retryLoad();
+        }
+      }
+    }
   }
 }
