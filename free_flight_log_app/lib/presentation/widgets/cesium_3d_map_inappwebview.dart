@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../../services/logging_service.dart';
 
@@ -23,12 +25,18 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   InAppWebViewController? webViewController;
   bool isLoading = true;
   bool _isDisposed = false;
+  Timer? _memoryMonitorTimer;
   
   @override
   void initState() {
     super.initState();
     // Add lifecycle observer for proper resource management
     WidgetsBinding.instance.addObserver(this);
+    
+    // Start memory monitoring in debug mode
+    if (kDebugMode) {
+      _startMemoryMonitoring();
+    }
   }
   
   @override
@@ -49,15 +57,22 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
             // Android-specific settings that bypass CORS
             allowFileAccessFromFileURLs: true,
             allowUniversalAccessFromFileURLs: true,  // This is the key setting for CORS bypass
-            domStorageEnabled: true,
-            databaseEnabled: true,
-            clearSessionCache: false,
-            thirdPartyCookiesEnabled: true,
+            
+            // Memory optimization settings
+            cacheMode: CacheMode.LOAD_NO_CACHE,  // Don't cache in WebView
+            domStorageEnabled: false,  // Disable DOM storage for memory savings
+            databaseEnabled: false,  // Disable database storage
+            clearSessionCache: true,  // Clear cache on load
+            
+            // Performance settings
+            thirdPartyCookiesEnabled: false,  // Disable third-party cookies
             allowContentAccess: true,
             useHybridComposition: true,
+            hardwareAcceleration: true,
+            
             // iOS-specific settings
             allowsInlineMediaPlayback: true,
-            allowsAirPlayForMediaPlayback: true,
+            allowsAirPlayForMediaPlayback: false,  // Disable AirPlay to save memory
           ),
           onWebViewCreated: (controller) {
             webViewController = controller;
@@ -103,6 +118,9 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
     final lon = widget.initialLon ?? 8.2275;
     final altitude = widget.initialAltitude ?? 2000000; // 2000km altitude for good view
     
+    // Determine if in debug mode for conditional logging
+    final bool isDebugMode = kDebugMode;
+    
     return '''
 <!DOCTYPE html>
 <html lang="en">
@@ -137,23 +155,55 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
     <div id="loadingOverlay">Loading Cesium Globe...</div>
     
     <script>
+        // Debug mode flag from Flutter
+        const DEBUG_MODE = $isDebugMode;
+        
+        // Logging wrapper for conditional output
+        const cesiumLog = {
+            debug: (message) => {
+                if (DEBUG_MODE) {
+                    console.log('[Cesium Debug] ' + message);
+                }
+            },
+            info: (message) => {
+                console.log('[Cesium] ' + message);
+            },
+            error: (message) => {
+                console.error('[Cesium Error] ' + message);
+            }
+        };
+        
         // Cesium Ion token
         Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIzYzkwM2EwNS00YjU2LTRiMzEtYjE3NC01ODlkYWM3MjMzNmEiLCJpZCI6MzMwMjc0LCJpYXQiOjE3NTQ3MjUxMjd9.IizVx3Z5iR9Xe1TbswK-FKidO9UoWa5pqa4t66NK8W0";
         
-        console.log('Starting Cesium initialization...');
+        cesiumLog.info('Starting Cesium initialization...');
         
         try {
-            // Optimized Cesium viewer settings for performance
+            // Aggressively optimized Cesium viewer settings for minimal memory usage
             const viewer = new Cesium.Viewer("cesiumContainer", {
                 terrain: Cesium.Terrain.fromWorldTerrain({
                     requestWaterMask: false,  // Disable water effects
-                    requestVertexNormals: false  // Disable lighting calculations
+                    requestVertexNormals: false,  // Disable lighting calculations
+                    requestMetadata: false  // Disable metadata
                 }),
                 scene3DOnly: true,  // Disable 2D/Columbus view modes for performance
                 requestRenderMode: true,  // Only render on demand
                 maximumRenderTimeChange: Infinity,  // Reduce re-renders
-                targetFrameRate: 30,  // Lower frame rate for mobile
-                resolutionScale: 0.75,  // Reduce resolution for better performance
+                targetFrameRate: 30,  // Balanced frame rate
+                resolutionScale: 0.85,  // Better quality while still saving memory
+                
+                // WebGL context options for low memory usage
+                contextOptions: {
+                    webgl: {
+                        powerPreference: 'low-power',  // Use low-power GPU
+                        antialias: false,  // Disable antialiasing
+                        preserveDrawingBuffer: false,
+                        failIfMajorPerformanceCaveat: true,
+                        depth: true,
+                        stencil: false,
+                        alpha: false
+                    }
+                },
                 
                 // Disable unused widgets to reduce overhead
                 baseLayerPicker: false,
@@ -171,22 +221,29 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                 shouldAnimate: false,
             });
             
-            console.log('Cesium viewer created, configuring performance settings...');
+            cesiumLog.debug('Cesium viewer created, configuring aggressive memory optimizations...');
             
-            // Configure scene for optimal performance
+            // Configure scene for minimal memory usage
             viewer.scene.globe.enableLighting = false;
-            viewer.scene.globe.showGroundAtmosphere = false;  // Disable atmosphere for performance
+            viewer.scene.globe.showGroundAtmosphere = false;  // Disable atmosphere
             viewer.scene.fog.enabled = false;  // Disable fog
             viewer.scene.globe.depthTestAgainstTerrain = false;  // Faster rendering
             viewer.scene.screenSpaceCameraController.enableCollisionDetection = false;
             
-            // Limit tile cache size to reduce memory usage
-            viewer.scene.globe.tileCacheSize = 50;  // Reduced from default 100
+            // Moderate tile cache for better quality
+            viewer.scene.globe.tileCacheSize = 40;  // Balanced cache size
             viewer.scene.globe.preloadSiblings = false;  // Don't preload adjacent tiles
             viewer.scene.globe.preloadAncestors = false;  // Don't preload parent tiles
             
-            // Set maximum screen space error (higher = lower quality but better performance)
-            viewer.scene.globe.maximumScreenSpaceError = 4;  // Default is 2
+            // Balanced screen space error for decent quality with good performance
+            viewer.scene.globe.maximumScreenSpaceError = 3;  // Balanced quality vs performance
+            
+            // Moderate texture size limit
+            viewer.scene.maximumTextureSize = 2048;  // Better texture quality
+            
+            // Disable terrain exaggeration
+            viewer.scene.globe.terrainExaggeration = 1.0;
+            viewer.scene.globe.terrainExaggerationRelativeHeight = 0.0;
             
             // Configure imagery provider for better performance
             const imageryProvider = viewer.imageryLayers.get(0);
@@ -206,40 +263,73 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                 }
             });
             
-            // Track initial load completion and stop logging after that
+            // Track initial load with minimal logging
             let initialLoadComplete = false;
+            let lastTileCount = -1;
+            const loadingStartTime = Date.now();
+            
             const tileLoadHandler = function(queuedTileCount) {
                 if (queuedTileCount === 0 && !initialLoadComplete) {
                     initialLoadComplete = true;
-                    console.log('Initial tile load complete');
+                    const loadTime = ((Date.now() - loadingStartTime) / 1000).toFixed(2);
+                    cesiumLog.info('Initial tile load complete in ' + loadTime + 's');
                     document.getElementById('loadingOverlay').style.display = 'none';
                     
-                    // Remove the listener after initial load to stop logging
+                    // Remove the listener after initial load
                     viewer.scene.globe.tileLoadProgressEvent.removeEventListener(tileLoadHandler);
-                } else if (!initialLoadComplete && queuedTileCount > 0) {
-                    // Only log during initial load, and only significant changes
-                    if (queuedTileCount % 5 === 0) {
-                        console.log('Loading tiles: ' + queuedTileCount + ' remaining');
+                } else if (DEBUG_MODE && !initialLoadComplete) {
+                    // Only log significant changes in debug mode
+                    const change = Math.abs(lastTileCount - queuedTileCount);
+                    if (change > 10 || (queuedTileCount === 0 && lastTileCount > 0)) {
+                        cesiumLog.debug('Tiles queued: ' + queuedTileCount);
+                        lastTileCount = queuedTileCount;
                     }
                 }
             };
             viewer.scene.globe.tileLoadProgressEvent.addEventListener(tileLoadHandler);
             
-            console.log('Cesium viewer initialized successfully');
-            console.log('Camera position set to: lat=$lat, lon=$lon, altitude=$altitude');
+            // Setup periodic memory cleanup
+            let cleanupTimer = setInterval(() => {
+                if (viewer && viewer.scene) {
+                    // Force garbage collection of unused tiles
+                    viewer.scene.globe.tileCache.trim();
+                    
+                    // Compact tile cache if it grows too large
+                    if (viewer.scene.globe.tileCache.count > 15) {
+                        cesiumLog.debug('Trimming tile cache');
+                        viewer.scene.globe.tileCache.reset();
+                    }
+                    
+                    // Clear any accumulated primitives
+                    if (viewer.scene.primitives.length > 10) {
+                        viewer.scene.primitives.removeAll();
+                    }
+                }
+            }, 30000);  // Every 30 seconds
+            
+            cesiumLog.info('Cesium viewer initialized successfully');
+            cesiumLog.debug('Camera position: lat=$lat, lon=$lon, altitude=$altitude');
             
             // Store viewer globally for cleanup
             window.viewer = viewer;
             
         } catch (error) {
-            console.error('Cesium initialization error:', error);
-            console.error('Error stack:', error.stack);
+            cesiumLog.error('Initialization error: ' + error.message);
+            if (DEBUG_MODE) {
+                cesiumLog.error('Stack: ' + error.stack);
+            }
             document.getElementById('loadingOverlay').innerHTML = 'Error loading Cesium: ' + error.message;
         }
         
         // Cleanup function to be called from Flutter before disposal
         function cleanupCesium() {
-            console.log('Cleaning up Cesium resources...');
+            cesiumLog.debug('Cleaning up Cesium resources...');
+            
+            // Clear the cleanup timer
+            if (typeof cleanupTimer !== 'undefined') {
+                clearInterval(cleanupTimer);
+            }
+            
             if (window.viewer) {
                 try {
                     // Remove all entities, data sources, and primitives
@@ -255,11 +345,35 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                     viewer.destroy();
                     window.viewer = null;
                     
-                    console.log('Cesium cleanup completed');
+                    cesiumLog.debug('Cesium cleanup completed');
                 } catch (e) {
-                    console.error('Error during Cesium cleanup:', e);
+                    cesiumLog.error('Error during cleanup: ' + e.message);
                 }
             }
+        }
+        
+        // Memory monitoring function
+        function checkMemory() {
+            if (window.performance && window.performance.memory) {
+                const memory = window.performance.memory;
+                const usage = {
+                    used: Math.round(memory.usedJSHeapSize / 1048576),
+                    total: Math.round(memory.totalJSHeapSize / 1048576),
+                    limit: Math.round(memory.jsHeapSizeLimit / 1048576)
+                };
+                
+                if (usage.used > usage.total * 0.8) {
+                    // High memory usage - trigger cleanup
+                    cesiumLog.debug('High memory usage detected: ' + usage.used + 'MB, triggering cleanup');
+                    if (window.viewer) {
+                        viewer.scene.globe.tileCache.trim();
+                        viewer.scene.primitives.removeAll();
+                    }
+                }
+                
+                return usage;
+            }
+            return null;
         }
         
         // Also cleanup on page unload
@@ -273,10 +387,10 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                 if (document.hidden) {
                     viewer.scene.requestRenderMode = true;
                     viewer.scene.maximumRenderTimeChange = Infinity;
-                    console.log('Page hidden - rendering paused');
+                    cesiumLog.debug('Page hidden - rendering paused');
                 } else {
                     viewer.scene.requestRenderMode = false;
-                    console.log('Page visible - rendering resumed');
+                    cesiumLog.debug('Page visible - rendering resumed');
                 }
             }
         });
@@ -289,6 +403,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   @override
   void dispose() {
     _isDisposed = true;
+    _memoryMonitorTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _disposeWebView();
     super.dispose();
@@ -360,25 +475,51 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
     
     if (_isDisposed || webViewController == null) return;
     
-    LoggingService.warning('Cesium3D: Memory pressure detected - clearing cache');
+    LoggingService.warning('Cesium3D: Memory pressure detected - aggressive cleanup');
     
     // Clear WebView cache on memory pressure
     webViewController?.clearCache();
     
-    // Force garbage collection in JavaScript
+    // Force aggressive garbage collection in JavaScript
     webViewController?.evaluateJavascript(source: '''
       if (window.viewer) {
-        // Clear unused Cesium resources
+        // Clear all resources
         viewer.scene.primitives.removeAll();
-        viewer.scene.globe.tileCache.trim();
+        viewer.entities.removeAll();
+        viewer.dataSources.removeAll();
+        
+        // Reset tile cache completely
+        viewer.scene.globe.tileCache.reset();
+        
+        // Reduce cache size further
+        viewer.scene.globe.tileCacheSize = 10;
         
         // Force JavaScript garbage collection if available
         if (window.gc) {
           window.gc();
         }
         
-        console.log('Memory pressure: Cleared Cesium resources');
+        cesiumLog.info('Memory pressure: Aggressive cleanup completed');
       }
     ''');
+  }
+  
+  void _startMemoryMonitoring() {
+    _memoryMonitorTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+      if (_isDisposed || webViewController == null) {
+        timer.cancel();
+        return;
+      }
+      
+      // Check memory usage via JavaScript
+      webViewController?.evaluateJavascript(source: '''
+        if (typeof checkMemory === 'function') {
+          const usage = checkMemory();
+          if (usage) {
+            cesiumLog.debug('Memory: ' + usage.used + 'MB / ' + usage.total + 'MB (limit: ' + usage.limit + 'MB)');
+          }
+        }
+      ''');
+    });
   }
 }
