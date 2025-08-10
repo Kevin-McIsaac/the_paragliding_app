@@ -1,9 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:async/async.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../services/logging_service.dart';
+import '../../config/cesium_config.dart';
 
 class Cesium3DMapInAppWebView extends StatefulWidget {
   final double? initialLat;
@@ -37,9 +41,17 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   int _surfaceErrorCount = 0;
   Timer? _surfaceRecoveryTimer;
   
+  // Cancellation tokens for async operations
+  CancelableOperation<void>? _htmlLoadOperation;
+  CancelableOperation<void>? _connectivityCheckOperation;
+  CancelableOperation<void>? _webViewDisposeOperation;
+  
   // Keep widget alive to prevent surface recreation
   @override
   bool get wantKeepAlive => true;
+  
+  String? _cesiumHtml;
+  bool _htmlLoadError = false;
   
   @override
   void initState() {
@@ -47,8 +59,15 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
     // Add lifecycle observer for proper resource management
     WidgetsBinding.instance.addObserver(this);
     
-    // Check connectivity asynchronously to avoid blocking
-    Future.microtask(() => _checkConnectivity());
+    // Load HTML template from assets with cancellation support
+    _htmlLoadOperation = CancelableOperation.fromFuture(
+      _loadCesiumHtml(),
+    );
+    
+    // Check connectivity asynchronously with cancellation support
+    _connectivityCheckOperation = CancelableOperation.fromFuture(
+      _checkConnectivity(),
+    );
     
     // Listen for connectivity changes
     _connectivitySubscription = Connectivity()
@@ -108,6 +127,49 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                 onPressed: _checkConnectivity,
                 icon: const Icon(Icons.refresh),
                 label: const Text('Check Connection'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    
+    // Show loading while HTML is being loaded from assets
+    if (_cesiumHtml == null && !_htmlLoadError) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+    
+    // Show error if HTML failed to load
+    if (_htmlLoadError) {
+      return Center(
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.error_outline,
+                size: 64,
+                color: Colors.red.shade600,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Failed to load map resources',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red.shade800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Unable to load Cesium map assets',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.red.shade600,
+                ),
               ),
             ],
           ),
@@ -312,6 +374,45 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
     );
   }
   
+  Future<void> _loadCesiumHtml() async {
+    try {
+      // Check if operation was cancelled
+      if (_isDisposed) return;
+      
+      // Load HTML template and JavaScript from assets
+      final htmlTemplate = await rootBundle.loadString('assets/cesium/cesium.html');
+      
+      // Check cancellation after first async operation
+      if (_isDisposed) return;
+      
+      final jsContent = await rootBundle.loadString('assets/cesium/cesium.js');
+      
+      // Check cancellation after second async operation
+      if (_isDisposed) return;
+      
+      // Inject JavaScript content into HTML template
+      final htmlWithJs = htmlTemplate.replaceAll('{{JS_CONTENT}}', jsContent);
+      
+      // Store the loaded HTML for use
+      if (mounted && !_isDisposed) {
+        setState(() {
+          _cesiumHtml = htmlWithJs;
+        });
+      }
+      
+      LoggingService.debug('Cesium3D: Loaded HTML and JS assets successfully');
+    } catch (e) {
+      if (_isDisposed) return; // Ignore errors if cancelled
+      
+      LoggingService.error('Cesium3D', 'Failed to load HTML assets: $e');
+      if (mounted && !_isDisposed) {
+        setState(() {
+          _htmlLoadError = true;
+        });
+      }
+    }
+  }
+  
   String _buildCesiumHtml() {
     // Use provided coordinates or default to Switzerland (typical paragliding area)
     final lat = widget.initialLat ?? 46.8182;
@@ -321,6 +422,18 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
     // Determine if in debug mode for conditional logging
     final bool isDebugMode = kDebugMode;
     
+    // If HTML template is loaded from assets, use it
+    if (_cesiumHtml != null) {
+      // Replace placeholders with actual values
+      return _cesiumHtml!
+        .replaceAll('{{LAT}}', lat.toString())
+        .replaceAll('{{LON}}', lon.toString())
+        .replaceAll('{{ALTITUDE}}', altitude.toString())
+        .replaceAll('{{DEBUG}}', isDebugMode.toString())
+        .replaceAll('{{TOKEN}}', CesiumConfig.ionAccessToken);
+    }
+    
+    // Fallback to inline HTML (keeping original implementation as backup)
     return '''
 <!DOCTYPE html>
 <html lang="en">
@@ -373,8 +486,8 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
             }
         };
         
-        // Cesium Ion token
-        Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIzYzkwM2EwNS00YjU2LTRiMzEtYjE3NC01ODlkYWM3MjMzNmEiLCJpZCI6MzMwMjc0LCJpYXQiOjE3NTQ3MjUxMjd9.IizVx3Z5iR9Xe1TbswK-FKidO9UoWa5pqa4t66NK8W0";
+        // Cesium Ion token (using config)
+        Cesium.Ion.defaultAccessToken = "${CesiumConfig.ionAccessToken}";
         
         cesiumLog.info('Starting Cesium initialization...');
         
@@ -431,18 +544,18 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
             viewer.scene.screenSpaceCameraController.enableCollisionDetection = false;
             
             // Strict tile cache management to prevent memory limit warnings
-            viewer.scene.globe.tileCacheSize = 25;  // Reduced cache size to prevent memory warnings
+            viewer.scene.globe.tileCacheSize = ${CesiumConfig.tileCacheSize};  // From config
             viewer.scene.globe.preloadSiblings = false;  // Don't preload adjacent tiles
             viewer.scene.globe.preloadAncestors = false;  // Don't preload parent tiles
             
             // Tile memory budget - set explicit memory limit for tiles
-            viewer.scene.globe.maximumMemoryUsage = 128;  // Set max memory usage in MB
+            viewer.scene.globe.maximumMemoryUsage = ${CesiumConfig.maximumMemoryUsageMB};  // From config
             
             // Balanced screen space error for decent quality with good performance
-            viewer.scene.globe.maximumScreenSpaceError = 4;  // Slightly reduced quality to save memory
+            viewer.scene.globe.maximumScreenSpaceError = ${CesiumConfig.maximumScreenSpaceError};  // From config
             
             // Moderate texture size limit
-            viewer.scene.maximumTextureSize = 1024;  // Reduced texture size to save memory
+            viewer.scene.maximumTextureSize = ${CesiumConfig.maximumTextureSize};  // From config
             
             // Set explicit tile load limits
             viewer.scene.globe.loadingDescendantLimit = 10;  // Limit concurrent tile loads
@@ -669,6 +782,11 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
     // Set disposed flag first to prevent any further operations
     _isDisposed = true;
     
+    // Cancel all async operations
+    _htmlLoadOperation?.cancel();
+    _connectivityCheckOperation?.cancel();
+    _webViewDisposeOperation?.cancel();
+    
     // Cancel all timers
     _memoryMonitorTimer?.cancel();
     _surfaceRecoveryTimer?.cancel();
@@ -679,11 +797,15 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
     // Remove observer
     WidgetsBinding.instance.removeObserver(this);
     
-    // Schedule WebView disposal for next frame to avoid conflicts
+    // Schedule WebView disposal for next frame with cancellation support
     // This allows the widget tree to update properly before disposal
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _disposeWebView();
-    });
+    _webViewDisposeOperation = CancelableOperation.fromFuture(
+      Future.delayed(Duration.zero, () {
+        if (!_isDisposed) {
+          _disposeWebView();
+        }
+      }),
+    );
     
     super.dispose();
   }
@@ -852,28 +974,31 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
     });
   }
   
-  void _handleLoadError(String url, String error) async {
+  Future<void> _handleLoadError(String url, String error) async {
     // Only retry for actual Cesium resources, not dev server
     if (!error.contains('ERR_CONNECTION_REFUSED') || 
         !url.contains('localhost')) {
       
-      if (_loadRetryCount < _maxRetries) {
+      if (_loadRetryCount < _maxRetries && !_isDisposed) {
         _loadRetryCount++;
         LoggingService.info('Retrying Cesium load (attempt $_loadRetryCount/$_maxRetries)');
         
         // Wait before retry with exponential backoff
         await Future.delayed(Duration(seconds: 2 * _loadRetryCount));
         
+        // Check if disposed during the delay
+        if (_isDisposed) return;
+        
         // Reload the WebView
-        if (mounted && webViewController != null) {
+        if (mounted && webViewController != null && !_isDisposed) {
           webViewController!.reload();
         }
-      } else {
+      } else if (!_isDisposed) {
         LoggingService.error('Cesium3D', 
           'Failed to load after $_maxRetries attempts');
         
         // Show error to user
-        if (mounted) {
+        if (mounted && !_isDisposed) {
           setState(() {
             _showErrorMessage = true;
             _errorMessage = 'Unable to load the 3D map after $_maxRetries attempts.\nPlease check your internet connection.';
@@ -902,16 +1027,25 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
     webViewController?.reload();
   }
   
-  void _checkConnectivity() async {
+  Future<void> _checkConnectivity() async {
     try {
+      if (_isDisposed) return;
+      
       final result = await Connectivity().checkConnectivity();
+      
+      if (_isDisposed) return;
+      
       _updateConnectionStatus(result);
     } catch (e) {
+      if (_isDisposed) return;
+      
       LoggingService.error('Cesium3D', 'Error checking connectivity: $e');
       // Assume connected if we can't check
-      setState(() {
-        _hasInternet = true;
-      });
+      if (mounted && !_isDisposed) {
+        setState(() {
+          _hasInternet = true;
+        });
+      }
     }
   }
   
