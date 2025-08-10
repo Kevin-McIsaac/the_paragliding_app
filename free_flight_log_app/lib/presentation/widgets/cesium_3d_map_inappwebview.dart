@@ -22,7 +22,7 @@ class Cesium3DMapInAppWebView extends StatefulWidget {
 }
 
 class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView> 
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, AutomaticKeepAliveClientMixin {
   InAppWebViewController? webViewController;
   bool isLoading = true;
   bool _isDisposed = false;
@@ -33,6 +33,13 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   String _errorMessage = '';
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   bool _hasInternet = true;
+  bool _isWebViewReady = false;
+  int _surfaceErrorCount = 0;
+  Timer? _surfaceRecoveryTimer;
+  
+  // Keep widget alive to prevent surface recreation
+  @override
+  bool get wantKeepAlive => true;
   
   @override
   void initState() {
@@ -48,6 +55,15 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
       .onConnectivityChanged
       .listen(_updateConnectionStatus);
     
+    // Defer WebView creation to avoid surface sync issues
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        setState(() {
+          _isWebViewReady = true;
+        });
+      }
+    });
+    
     // Start memory monitoring in debug mode
     if (kDebugMode) {
       _startMemoryMonitoring();
@@ -56,6 +72,22 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
+    
+    // Show loading while waiting for WebView to be ready
+    if (!_isWebViewReady) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Initializing 3D View...'),
+          ],
+        ),
+      );
+    }
+    
     // Show offline message if no internet
     if (!_hasInternet) {
       return Center(
@@ -99,9 +131,15 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
       );
     }
     
-    return Stack(
-      children: [
-        InAppWebView(
+    // Wrap in Visibility to maintain state when hidden
+    return Visibility(
+      visible: true,
+      maintainState: true,  // Keep state when hidden
+      maintainAnimation: true,
+      maintainSize: false,
+      child: Stack(
+        children: [
+          InAppWebView(
           initialData: InAppWebViewInitialData(
             data: _buildCesiumHtml(),
             baseUrl: WebUri("https://localhost/"),
@@ -125,8 +163,12 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
             // Performance settings
             thirdPartyCookiesEnabled: false,  // Disable third-party cookies
             allowContentAccess: true,
-            useHybridComposition: true,
+            
+            // Surface handling settings
+            useHybridComposition: true,  // Use hybrid composition for better surface handling
             hardwareAcceleration: true,
+            supportMultipleWindows: false,
+            useWideViewPort: false,
             
             // iOS-specific settings
             allowsInlineMediaPlayback: true,
@@ -134,13 +176,15 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
           ),
           onWebViewCreated: (controller) {
             webViewController = controller;
-            LoggingService.debug('Cesium3D InAppWebView: WebView created');
+            LoggingService.debug('Cesium3D Surface: WebView created');
+            _surfaceErrorCount = 0; // Reset surface error count
           },
           onLoadStop: (controller, url) async {
-            LoggingService.debug('Cesium3D InAppWebView: Page loaded');
+            LoggingService.debug('Cesium3D Surface: Load complete');
             setState(() {
               isLoading = false;
               _loadRetryCount = 0; // Reset retry count on successful load
+              _surfaceErrorCount = 0; // Reset surface errors on successful load
             });
           },
           onConsoleMessage: (controller, consoleMessage) {
@@ -255,7 +299,8 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
               ),
             ),
           ),
-      ],
+        ],
+      ),
     );
   }
   
@@ -551,6 +596,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   void dispose() {
     _isDisposed = true;
     _memoryMonitorTimer?.cancel();
+    _surfaceRecoveryTimer?.cancel();
     _connectivitySubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _disposeWebView();
@@ -595,17 +641,25 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
     
     if (_isDisposed) return;
     
+    // Log surface lifecycle for debugging
+    if (kDebugMode) {
+      LoggingService.debug('Cesium3D Surface: App lifecycle - $state');
+    }
+    
     switch (state) {
       case AppLifecycleState.paused:
         // Pause WebView when app goes to background
         webViewController?.pauseTimers();
-        LoggingService.debug('Cesium3D: App paused - WebView timers paused');
+        LoggingService.debug('Cesium3D Surface: App paused - WebView timers paused');
         break;
       case AppLifecycleState.resumed:
         // Resume WebView when app comes to foreground
         if (!_isDisposed && webViewController != null) {
           webViewController!.resumeTimers();
-          LoggingService.debug('Cesium3D: App resumed - WebView timers resumed');
+          LoggingService.debug('Cesium3D Surface: App resumed - WebView timers resumed');
+          
+          // Check for surface errors after resume
+          _checkSurfaceHealth();
         }
         break;
       case AppLifecycleState.detached:
@@ -752,6 +806,50 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
           _retryLoad();
         }
       }
+    }
+  }
+  
+  void _checkSurfaceHealth() {
+    // Monitor for surface sync errors
+    if (_surfaceErrorCount > 0) {
+      LoggingService.warning('Cesium3D Surface: Detected $_surfaceErrorCount surface errors');
+      
+      if (_surfaceErrorCount > 3) {
+        _handleSurfaceError();
+      }
+    }
+  }
+  
+  void _handleSurfaceError() {
+    _surfaceErrorCount++;
+    
+    if (_surfaceErrorCount > 3 && mounted) {
+      LoggingService.warning('Cesium3D Surface: Too many surface errors - recreating WebView');
+      
+      // Cancel any existing recovery timer
+      _surfaceRecoveryTimer?.cancel();
+      
+      // Schedule WebView recreation
+      _surfaceRecoveryTimer = Timer(const Duration(seconds: 1), () {
+        if (mounted && !_isDisposed) {
+          setState(() {
+            _isWebViewReady = false;
+          });
+          
+          // Dispose current WebView
+          _disposeWebView();
+          
+          // Recreate after delay
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted && !_isDisposed) {
+              setState(() {
+                _isWebViewReady = true;
+                _surfaceErrorCount = 0;
+              });
+            }
+          });
+        }
+      });
     }
   }
 }
