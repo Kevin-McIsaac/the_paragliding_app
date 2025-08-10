@@ -136,13 +136,13 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView> {
         try {
             const viewer = new Cesium.Viewer("cesiumContainer", {
                 terrain: Cesium.Terrain.fromWorldTerrain(),
-                baseLayerPicker: false,
+                baseLayerPicker: true,
                 geocoder: false,
                 homeButton: true,
                 sceneModePicker: true,
-                navigationHelpButton: false,
-                animation: false,
-                timeline: false,
+                navigationHelpButton: true,
+                animation: true,
+                timeline: true,
                 fullscreenButton: false,
                 vrButton: false,
                 infoBox: false,
