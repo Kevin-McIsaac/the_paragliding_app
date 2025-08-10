@@ -134,15 +134,26 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView> {
         console.log('Starting Cesium initialization...');
         
         try {
+            // Optimized Cesium viewer settings for performance
             const viewer = new Cesium.Viewer("cesiumContainer", {
-                terrain: Cesium.Terrain.fromWorldTerrain(),
-                baseLayerPicker: true,
+                terrain: Cesium.Terrain.fromWorldTerrain({
+                    requestWaterMask: false,  // Disable water effects
+                    requestVertexNormals: false  // Disable lighting calculations
+                }),
+                scene3DOnly: true,  // Disable 2D/Columbus view modes for performance
+                requestRenderMode: true,  // Only render on demand
+                maximumRenderTimeChange: Infinity,  // Reduce re-renders
+                targetFrameRate: 30,  // Lower frame rate for mobile
+                resolutionScale: 0.75,  // Reduce resolution for better performance
+                
+                // Disable unused widgets to reduce overhead
+                baseLayerPicker: false,
                 geocoder: false,
                 homeButton: true,
-                sceneModePicker: true,
-                navigationHelpButton: true,
-                animation: true,
-                timeline: true,
+                sceneModePicker: false,
+                navigationHelpButton: false,
+                animation: false,
+                timeline: false,
                 fullscreenButton: false,
                 vrButton: false,
                 infoBox: false,
@@ -151,14 +162,30 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView> {
                 shouldAnimate: false,
             });
             
-            console.log('Cesium viewer created, setting initial view...');
+            console.log('Cesium viewer created, configuring performance settings...');
             
-            // Hide loading overlay once viewer is ready
-            viewer.scene.globe.tileLoadProgressEvent.addEventListener(function(queuedTileCount) {
-                if (queuedTileCount === 0) {
-                    document.getElementById('loadingOverlay').style.display = 'none';
-                }
-            });
+            // Configure scene for optimal performance
+            viewer.scene.globe.enableLighting = false;
+            viewer.scene.globe.showGroundAtmosphere = false;  // Disable atmosphere for performance
+            viewer.scene.fog.enabled = false;  // Disable fog
+            viewer.scene.globe.depthTestAgainstTerrain = false;  // Faster rendering
+            viewer.scene.screenSpaceCameraController.enableCollisionDetection = false;
+            
+            // Limit tile cache size to reduce memory usage
+            viewer.scene.globe.tileCacheSize = 50;  // Reduced from default 100
+            viewer.scene.globe.preloadSiblings = false;  // Don't preload adjacent tiles
+            viewer.scene.globe.preloadAncestors = false;  // Don't preload parent tiles
+            
+            // Set maximum screen space error (higher = lower quality but better performance)
+            viewer.scene.globe.maximumScreenSpaceError = 4;  // Default is 2
+            
+            // Configure imagery provider for better performance
+            const imageryProvider = viewer.imageryLayers.get(0);
+            if (imageryProvider) {
+                imageryProvider.brightness = 1.0;
+                imageryProvider.contrast = 1.0;
+                imageryProvider.saturation = 1.0;
+            }
             
             // Set initial camera view
             viewer.camera.setView({
@@ -170,30 +197,27 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView> {
                 }
             });
             
+            // Track initial load completion and stop logging after that
+            let initialLoadComplete = false;
+            const tileLoadHandler = function(queuedTileCount) {
+                if (queuedTileCount === 0 && !initialLoadComplete) {
+                    initialLoadComplete = true;
+                    console.log('Initial tile load complete');
+                    document.getElementById('loadingOverlay').style.display = 'none';
+                    
+                    // Remove the listener after initial load to stop logging
+                    viewer.scene.globe.tileLoadProgressEvent.removeEventListener(tileLoadHandler);
+                } else if (!initialLoadComplete && queuedTileCount > 0) {
+                    // Only log during initial load, and only significant changes
+                    if (queuedTileCount % 5 === 0) {
+                        console.log('Loading tiles: ' + queuedTileCount + ' remaining');
+                    }
+                }
+            };
+            viewer.scene.globe.tileLoadProgressEvent.addEventListener(tileLoadHandler);
+            
             console.log('Cesium viewer initialized successfully');
             console.log('Camera position set to: lat=$lat, lon=$lon, altitude=$altitude');
-            
-            // Add some debug info
-            viewer.scene.globe.enableLighting = false;
-            viewer.scene.globe.showGroundAtmosphere = true;
-            viewer.scene.globe.baseColor = Cesium.Color.BLUE.withAlpha(0.5);
-            
-            // Log tile loading events
-            viewer.scene.globe.tileLoadProgressEvent.addEventListener(function(queuedTileCount) {
-                if (queuedTileCount > 0) {
-                    console.log('Loading tiles: ' + queuedTileCount + ' remaining');
-                }
-            });
-            
-            // Check if imagery layers are loading
-            viewer.scene.imageryLayers.layerAdded.addEventListener(function(layer, index) {
-                console.log('Imagery layer added at index ' + index);
-            });
-            
-            // Check for any errors
-            viewer.scene.globe.terrainProviderChanged.addEventListener(function() {
-                console.log('Terrain provider changed');
-            });
             
         } catch (error) {
             console.error('Cesium initialization error:', error);
