@@ -15,7 +15,7 @@ import '../../services/igc_import_service.dart';
 import '../../services/logging_service.dart';
 import '../controllers/flight_playback_controller.dart';
 import 'flight_playback_panel.dart';
-import 'cesium_3d_map_widget.dart';
+import 'cesium_3d_map_inappwebview.dart';
 
 // FLUTTER_MAP TILE LOADING SOLUTION:
 // This widget implements delayed TileLayer creation to solve a flutter_map race condition
@@ -1077,8 +1077,8 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     Widget mapWidget;
     
     if (_show3DView) {
-      // 3D Cesium view
-      mapWidget = Cesium3DMapWidget(
+      // 3D Cesium view (using InAppWebView for CORS bypass)
+      mapWidget = Cesium3DMapInAppWebView(
         initialLat: _trackPoints.isNotEmpty ? _trackPoints.first.latitude : 46.8182,
         initialLon: _trackPoints.isNotEmpty ? _trackPoints.first.longitude : 8.2275,
         initialAltitude: 50000, // 50km for good overview
