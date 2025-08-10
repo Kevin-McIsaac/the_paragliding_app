@@ -15,6 +15,7 @@ import '../../services/igc_import_service.dart';
 import '../../services/logging_service.dart';
 import '../controllers/flight_playback_controller.dart';
 import 'flight_playback_panel.dart';
+import 'cesium_3d_map_inappwebview.dart';
 
 // FLUTTER_MAP TILE LOADING SOLUTION:
 // This widget implements delayed TileLayer creation to solve a flutter_map race condition
@@ -185,6 +186,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
   bool _showLabels = true;
   bool _showSatelliteView = false;
   bool _showLegend = true;
+  bool _show3DView = false; // Toggle for 2D/3D view
   bool _preferencesLoaded = false;
   bool _tilesReady = false; // Controls when TileLayer is added to prevent flutter_map race condition
   bool _isGeneratingPolylines = false; // Controls loading state during background polyline generation
@@ -266,6 +268,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
           (prefs.getBool('flight_track_show_markers') ?? true); // Backward compatibility
       final newShowSatelliteView = prefs.getBool('flight_track_show_satellite') ?? false;
       final newShowLegend = prefs.getBool('flight_track_show_legend') ?? true;
+      final newShow3DView = prefs.getBool('flight_track_show_3d') ?? false;
       
       // Check if labels changed to recreate markers/polylines
       final labelsChanged = newShowLabels != _showLabels;
@@ -275,6 +278,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
           _showLabels = newShowLabels;
           _showSatelliteView = newShowSatelliteView;
           _showLegend = newShowLegend;
+          _show3DView = newShow3DView;
           _preferencesLoaded = true;
         });
         
@@ -760,6 +764,15 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     await prefs.setBool('flight_track_show_satellite', _showSatelliteView);
   }
 
+  void _toggle3DView() async {
+    setState(() {
+      _show3DView = !_show3DView;
+    });
+    
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('flight_track_show_3d', _show3DView);
+  }
+
   void _toggleLegend() async {
     setState(() {
       _showLegend = !_showLegend;
@@ -932,13 +945,22 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: Icon(_showSatelliteView ? Icons.map : Icons.satellite_alt),
-              title: Text('${_showSatelliteView ? 'Street' : 'Satellite'} View'),
+              leading: Icon(_show3DView ? Icons.map : Icons.language),
+              title: Text('${_show3DView ? '2D' : '3D'} View'),
               onTap: () {
                 Navigator.pop(context);
-                _toggleSatelliteView();
+                _toggle3DView();
               },
             ),
+            if (!_show3DView)
+              ListTile(
+                leading: Icon(_showSatelliteView ? Icons.map : Icons.satellite_alt),
+                title: Text('${_showSatelliteView ? 'Street' : 'Satellite'} View'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _toggleSatelliteView();
+                },
+              ),
             ListTile(
               leading: Icon(_showLabels ? Icons.label_off : Icons.label),
               title: Text('${_showLabels ? 'Hide' : 'Show'} Labels'),
@@ -1051,114 +1073,126 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
       return errorWidget;
     }
 
-    // Create MapController only when we're ready to avoid cold start issues
-    _mapController ??= MapController();
+    // Create map widget based on 2D/3D toggle
+    Widget mapWidget;
     
-    Widget mapWidget = FlutterMap(
-      mapController: _mapController,
-      options: MapOptions(
-        initialCenter: _trackPoints.isNotEmpty
-            ? LatLng(_trackPoints.first.latitude, _trackPoints.first.longitude)
-            : const LatLng(46.8182, 8.2275), // Switzerland default for paragliding
-        initialZoom: widget.config.embedded ? 12 : 14,
-        onTap: widget.config.interactive ? (tapPosition, point) {
-          _handleMapTrackClick(point);
-        } : null,
-        onMapReady: () {
-          if (_trackPoints.isNotEmpty) {
-            _fitMapToBounds();
-          }
-          
-          // Add TileLayer once FlutterMap is fully initialized
-          // This prevents the flutter_map tile loading race condition
-          setState(() {
-            _tilesReady = true;
-          });
-        },
-      ),
-      children: [
-        // FLUTTER_MAP TILE LOADING FIX:
-        // Only add TileLayer after onMapReady fires. This solves a flutter_map race condition
-        // where tiles fail to load on first widget creation, particularly on ChromeOS/Linux containers.
-        // Alternative approaches tested:
-        // - Artificial delays (300ms): Works but slow and masks root cause
-        // - Forced rebuilds (setState after onMapReady): Works but inefficient  
-        // - This solution: Clean and fast - addresses the actual flutter_map initialization timing
-        if (_tilesReady)
-          TileLayer(
-            urlTemplate: _showSatelliteView 
-              ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-              : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: 'com.freeflightlog.free_flight_log_app',
-          ),
-        if (_polylines.isNotEmpty)
-          PolylineLayer(
-            polylines: _polylines,
-          ),
-        // Loading indicator for polyline generation
-        if (_isGeneratingPolylines)
-          Container(
-            color: Colors.black.withValues(alpha: 0.3),
-            child: const Center(
-              child: Column(
+    if (_show3DView) {
+      // 3D Cesium view (using InAppWebView for CORS bypass)
+      mapWidget = Cesium3DMapInAppWebView(
+        initialLat: _trackPoints.isNotEmpty ? _trackPoints.first.latitude : 46.8182,
+        initialLon: _trackPoints.isNotEmpty ? _trackPoints.first.longitude : 8.2275,
+        initialAltitude: 50000, // 50km for good overview
+      );
+    } else {
+      // 2D FlutterMap view
+      _mapController ??= MapController();
+      
+      mapWidget = FlutterMap(
+        mapController: _mapController,
+        options: MapOptions(
+          initialCenter: _trackPoints.isNotEmpty
+              ? LatLng(_trackPoints.first.latitude, _trackPoints.first.longitude)
+              : const LatLng(46.8182, 8.2275), // Switzerland default for paragliding
+          initialZoom: widget.config.embedded ? 12 : 14,
+          onTap: widget.config.interactive ? (tapPosition, point) {
+            _handleMapTrackClick(point);
+          } : null,
+          onMapReady: () {
+            if (_trackPoints.isNotEmpty) {
+              _fitMapToBounds();
+            }
+            
+            // Add TileLayer once FlutterMap is fully initialized
+            // This prevents the flutter_map tile loading race condition
+            setState(() {
+              _tilesReady = true;
+            });
+          },
+        ),
+        children: [
+          // FLUTTER_MAP TILE LOADING FIX:
+          // Only add TileLayer after onMapReady fires. This solves a flutter_map race condition
+          // where tiles fail to load on first widget creation, particularly on ChromeOS/Linux containers.
+          // Alternative approaches tested:
+          // - Artificial delays (300ms): Works but slow and masks root cause
+          // - Forced rebuilds (setState after onMapReady): Works but inefficient  
+          // - This solution: Clean and fast - addresses the actual flutter_map initialization timing
+          if (_tilesReady)
+            TileLayer(
+              urlTemplate: _showSatelliteView 
+                ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+                : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.freeflightlog.free_flight_log_app',
+            ),
+          if (_polylines.isNotEmpty)
+            PolylineLayer(
+              polylines: _polylines,
+            ),
+          // Loading indicator for polyline generation
+          if (_isGeneratingPolylines)
+            Container(
+              color: Colors.black.withValues(alpha: 0.3),
+              child: const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: Colors.white),
+                    SizedBox(height: 8),
+                    Text(
+                      'Generating flight track...',
+                      style: TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          if (_markers.isNotEmpty)
+            MarkerLayer(
+              markers: _markers,
+            ),
+          // Attribution overlay - required for OSM and satellite tiles
+          Align(
+            alignment: Alignment.bottomRight,
+            child: Container(
+              margin: const EdgeInsets.all(4),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.9),
+                borderRadius: BorderRadius.circular(2),
+              ),
+              child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircularProgressIndicator(color: Colors.white),
-                  SizedBox(height: 8),
-                  Text(
-                    'Generating flight track...',
-                    style: TextStyle(color: Colors.white, fontSize: 14),
+                  if (_showSatelliteView) ...[
+                    Text(
+                      'Powered by Esri',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const Text(' | ', style: TextStyle(fontSize: 10, color: Colors.black54)),
+                  ],
+                  GestureDetector(
+                    onTap: () {
+                      _openOSMCopyright();
+                    },
+                    child: Text(
+                      '© OpenStreetMap contributors',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.blue[800],
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
                   ),
                 ],
               ),
             ),
           ),
-        if (_markers.isNotEmpty)
-          MarkerLayer(
-            markers: _markers,
-          ),
-        // Attribution overlay - required for OSM and satellite tiles
-        Align(
-          alignment: Alignment.bottomRight,
-          child: Container(
-            margin: const EdgeInsets.all(4),
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.9),
-              borderRadius: BorderRadius.circular(2),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_showSatelliteView) ...[
-                  Text(
-                    'Powered by Esri',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const Text(' | ', style: TextStyle(fontSize: 10, color: Colors.black54)),
-                ],
-                GestureDetector(
-                  onTap: () {
-                    _openOSMCopyright();
-                  },
-                  child: Text(
-                    '© OpenStreetMap contributors',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.blue[800],
-                      decoration: TextDecoration.underline,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
+        ],
+      );
+    }
 
     // Remove individual styling since unified container handles it
     if (widget.config.height != null && !widget.config.embedded) {
