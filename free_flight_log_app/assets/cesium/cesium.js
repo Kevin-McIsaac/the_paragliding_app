@@ -61,7 +61,7 @@ function initializeCesium(config) {
             // Disable unused widgets to reduce overhead
             baseLayerPicker: false,
             geocoder: false,
-            homeButton: true,
+            homeButton: false,  // Remove home button as requested
             sceneModePicker: false,
             navigationHelpButton: false,
             animation: false,
@@ -315,8 +315,10 @@ function createColoredFlightTrack(points) {
     
     igcPoints = points;
     
-    // Remove existing entities
+    // Remove existing entities (but keep track of pilot marker)
+    const hadPilot = playbackState.showPilot;
     viewer.entities.removeAll();
+    playbackState.showPilot = null;
     
     // Create segments with colors based on climb rate
     for (let i = 0; i < points.length - 1; i++) {
@@ -346,6 +348,10 @@ function createColoredFlightTrack(points) {
     
     // Zoom to all entities
     viewer.zoomTo(viewer.entities);
+    
+    // Add pilot marker at start position
+    playbackState.currentIndex = 0;
+    updatePilotPosition(0);
     
     cesiumLog.info('Color-coded track created');
 }
@@ -617,6 +623,9 @@ function setFollowMode(enabled) {
     if (enabled) {
         // Start following from current position
         followFlightPoint(playbackState.currentIndex);
+    } else {
+        // When follow mode is disabled, still update pilot position
+        updatePilotPosition(playbackState.currentIndex);
     }
     
     cesiumLog.info('Follow mode ' + (enabled ? 'enabled' : 'disabled'));
@@ -656,19 +665,39 @@ function followFlightPoint(index) {
         }
     });
     
+    // Update pilot position
+    updatePilotPosition(index);
+}
+
+// Update pilot marker position without changing camera
+function updatePilotPosition(index) {
+    if (!viewer || !igcPoints || index < 0 || index >= igcPoints.length) return;
+    
+    const point = igcPoints[index];
+    
     // Add pilot marker if not exists
     if (!playbackState.showPilot) {
         playbackState.showPilot = viewer.entities.add({
+            name: 'Pilot',
             position: Cesium.Cartesian3.fromDegrees(
                 point.longitude,
                 point.latitude,
                 point.altitude
             ),
             point: {
-                pixelSize: 10,
+                pixelSize: 12,
                 color: Cesium.Color.YELLOW,
                 outlineColor: Cesium.Color.BLACK,
-                outlineWidth: 2
+                outlineWidth: 3,
+                heightReference: Cesium.HeightReference.NONE,
+                disableDepthTestDistance: Number.POSITIVE_INFINITY // Always visible
+            },
+            billboard: {
+                image: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0Ij48cGF0aCBmaWxsPSIjRkZENzAwIiBkPSJNMTIgMkw0IDIwaDEzbC03LTE4eiIvPjwvc3ZnPg==', // Yellow triangle
+                scale: 0.8,
+                verticalOrigin: Cesium.VerticalOrigin.CENTER,
+                heightReference: Cesium.HeightReference.NONE,
+                disableDepthTestDistance: Number.POSITIVE_INFINITY // Always visible
             }
         });
     } else {
@@ -683,13 +712,19 @@ function followFlightPoint(index) {
 
 // Feature 4: Playback controls
 function startPlayback() {
-    if (!viewer || !igcPoints || igcPoints.length === 0) return;
+    if (!viewer || !igcPoints || igcPoints.length === 0) {
+        cesiumLog.error('Cannot start playback: viewer=' + !!viewer + ', points=' + igcPoints.length);
+        return;
+    }
     
     playbackState.isPlaying = true;
     playbackState.lastUpdateTime = Date.now();
     playbackState.accumulatedTime = 0;
     
-    cesiumLog.info('Playback started at speed ' + playbackState.playbackSpeed + 'x');
+    // Always show pilot marker when playback starts
+    updatePilotPosition(playbackState.currentIndex);
+    
+    cesiumLog.info('Playback started at speed ' + playbackState.playbackSpeed + 'x, index=' + playbackState.currentIndex + '/' + igcPoints.length);
     
     // Start animation loop
     animatePlayback();
@@ -721,7 +756,8 @@ function stopPlayback() {
 }
 
 function setPlaybackSpeed(speed) {
-    playbackState.playbackSpeed = Math.max(0.25, Math.min(8.0, speed));
+    // Speed represents points per second (1x = 1 point/sec, 10x = 10 points/sec, etc.)
+    playbackState.playbackSpeed = Math.max(1.0, Math.min(120.0, speed));
     cesiumLog.info('Playback speed set to ' + playbackState.playbackSpeed + 'x');
 }
 
@@ -732,6 +768,14 @@ function seekToPosition(index) {
     
     if (playbackState.followMode) {
         followFlightPoint(index);
+    } else {
+        // Always update pilot position when seeking
+        updatePilotPosition(index);
+    }
+    
+    // Force render to show pilot position change immediately
+    if (viewer && viewer.scene) {
+        viewer.scene.requestRender();
     }
     
     // Update timeline position (will be called from Flutter)
@@ -758,28 +802,47 @@ function animatePlayback() {
     if (!playbackState.isPlaying) return;
     
     const now = Date.now();
-    const deltaTime = (now - playbackState.lastUpdateTime) * playbackState.playbackSpeed;
+    const deltaTime = now - playbackState.lastUpdateTime;
     playbackState.lastUpdateTime = now;
     
-    // Accumulate time (assuming 1 second per point for simplicity)
-    playbackState.accumulatedTime += deltaTime;
+    // Speed represents points per second (1x = 1 point/sec, 10x = 10 points/sec)
+    // Accumulate fractional points based on elapsed time
+    const pointsPerMs = playbackState.playbackSpeed / 1000;
+    playbackState.accumulatedTime += deltaTime * pointsPerMs;
     
-    // Move to next point every second (adjusted by speed)
-    if (playbackState.accumulatedTime >= 1000) {
-        playbackState.accumulatedTime = 0;
+    // Check if we should advance to the next point(s)
+    if (playbackState.accumulatedTime >= 1) {
+        // Calculate how many whole points to advance
+        const pointsToAdvance = Math.floor(playbackState.accumulatedTime);
+        playbackState.accumulatedTime -= pointsToAdvance;
         
-        if (playbackState.currentIndex < igcPoints.length - 1) {
+        // Advance by the calculated number of points (usually 1, but more at high speeds)
+        for (let i = 0; i < pointsToAdvance && playbackState.currentIndex < igcPoints.length - 1; i++) {
             playbackState.currentIndex++;
-            
+        }
+        
+        cesiumLog.debug('Animation: advanced ' + pointsToAdvance + ' points to index ' + playbackState.currentIndex);
+        
+        if (playbackState.currentIndex < igcPoints.length) {
             if (playbackState.followMode) {
                 followFlightPoint(playbackState.currentIndex);
+            } else {
+                // Always update pilot position during animation
+                updatePilotPosition(playbackState.currentIndex);
             }
             
-            // Notify Flutter of position change
+            // Force render to show pilot position change
+            if (viewer && viewer.scene) {
+                viewer.scene.requestRender();
+            }
+            
+            // Notify Flutter of position change - this is critical for slider update
             if (window.onPlaybackPositionChanged) {
                 window.onPlaybackPositionChanged(playbackState.currentIndex);
             }
-        } else {
+        }
+        
+        if (playbackState.currentIndex >= igcPoints.length - 1) {
             // Reached end of flight
             stopPlayback();
             cesiumLog.info('Playback completed');
@@ -787,6 +850,7 @@ function animatePlayback() {
             if (window.onPlaybackCompleted) {
                 window.onPlaybackCompleted();
             }
+            return; // Stop the animation loop
         }
     }
     

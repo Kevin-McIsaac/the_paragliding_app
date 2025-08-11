@@ -950,14 +950,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: Icon(_show3DView ? Icons.map : Icons.language),
-              title: Text('${_show3DView ? '2D' : '3D'} View'),
-              onTap: () {
-                Navigator.pop(context);
-                _toggle3DView();
-              },
-            ),
+            // 2D/3D toggle moved to top left button on map
             if (!_show3DView)
               ListTile(
                 leading: Icon(_showSatelliteView ? Icons.map : Icons.satellite_alt),
@@ -1229,11 +1222,36 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
         mapWidget,
         _buildMapControls(),
         _buildClimbRateLegend(),
-        // Add Cesium controls when in 3D mode, positioned to avoid FAB
+        // Add 2D/3D toggle button at top left (out of FAB)
+        Positioned(
+          top: 8,
+          left: 8,
+          child: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(20),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: _toggle3DView,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Icon(
+                  _show3DView ? Icons.map : Icons.language,
+                  size: 24,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ),
+          ),
+        ),
+        // Add Cesium controls when in 3D mode, positioned below 2D/3D toggle
         if (_show3DView)
           Positioned(
             left: 8,
-            top: 60, // Position below the FAB which is at top: 8
+            top: 60, // Position below the 2D/3D toggle
             child: Cesium3DControlsWidget(
               controller: _cesiumController,
               onClose: () {
@@ -1241,17 +1259,20 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
               },
             ),
           ),
-        // Add playback controls when in 3D mode
+        // Add playback controls when in 3D mode - position at bottom center like 2D map
         if (_show3DView && trackPointsForCesium.isNotEmpty)
           Positioned(
-            right: 8,
             bottom: 8,
-            child: Cesium3DPlaybackWidget(
-              controller: _cesiumController,
-              trackPoints: trackPointsForCesium,
-              onClose: () {
-                // Optional: Add close behavior if needed
-              },
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Cesium3DPlaybackWidget(
+                controller: _cesiumController,
+                trackPoints: trackPointsForCesium,
+                onClose: () {
+                  // Optional: Add close behavior if needed
+                },
+              ),
             ),
           ),
       ],
