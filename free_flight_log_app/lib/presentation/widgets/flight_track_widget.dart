@@ -213,6 +213,13 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
   // Chart interaction key for accurate coordinate mapping
   final GlobalKey _chartKey = GlobalKey();
   
+  // Cached chart data to avoid recalculation during playback
+  List<FlSpot>? _cachedAltitudeData;
+  Map<double, int> _timeToChartIndexMap = {}; // Maps x-axis time to chart spot index
+  final ValueNotifier<int?> _chartIndicatorIndex = ValueNotifier<int?>(null);
+  final ValueNotifier<double?> _chartVerticalLineTime = ValueNotifier<double?>(null);
+  Timer? _verticalLineUpdateTimer; // For less frequent vertical line updates
+  
   // Auto-follow throttling
   
   // Old label position variables removed - no longer needed without hover system
@@ -239,6 +246,11 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     _playbackController?.dispose();
     // Cancel debounce timer
     _playbackUpdateTimer?.cancel();
+    // Cancel vertical line update timer
+    _verticalLineUpdateTimer?.cancel();
+    // Dispose notifiers
+    _chartIndicatorIndex.dispose();
+    _chartVerticalLineTime.dispose();
     // Dispose Cesium controller
     _cesiumController.dispose();
     // Note: We don't clear the global cache on dispose to allow reuse
@@ -330,6 +342,17 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
         _fifteenSecondRates = fifteenSecondRates;
         _isLoading = false;
       });
+      
+      // Prepare and cache altitude chart data
+      _cachedAltitudeData = _prepareAltitudeChartData();
+      
+      // Build time-to-index mapping for quick lookups
+      _timeToChartIndexMap.clear();
+      if (_cachedAltitudeData != null) {
+        for (int i = 0; i < _cachedAltitudeData!.length; i++) {
+          _timeToChartIndexMap[_cachedAltitudeData![i].x] = i;
+        }
+      }
       
       // Initialize playback controller if needed
       if (widget.showPlaybackPanel) {
@@ -1398,21 +1421,20 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
 
   /// Build altitude chart widget
   Widget _buildAltitudeChart() {
-    if (_trackPoints.isEmpty) {
+    if (_trackPoints.isEmpty || _cachedAltitudeData == null) {
       return const SizedBox.shrink();
     }
 
-    final altitudeData = _prepareAltitudeChartData();
+    // Use cached data instead of recalculating
+    final altitudeData = _cachedAltitudeData!;
     if (altitudeData.isEmpty) return const SizedBox.shrink();
 
-    // Calculate altitude range for Y-axis
+    // Calculate altitude range for Y-axis (only once)
     final altitudes = altitudeData.map((spot) => spot.y).toList();
     final minAlt = altitudes.reduce(min);
     final maxAlt = altitudes.reduce(max);
     final altRange = maxAlt - minAlt;
     final padding = altRange * 0.1; // 10% padding
-
-    final playbackTime = _getPlaybackPointTime();
 
     return Container(
       height: 120,
@@ -1427,9 +1449,15 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
           LoggingService.debug('FlightTrackWidget: Tap down detected at ${details.localPosition}');
           _handleChartPanUpdate(details.localPosition, altitudeData);
         } : null,
-        child: LineChart(
-          key: _chartKey,
-          LineChartData(
+        child: ValueListenableBuilder<int?>(
+          valueListenable: _chartIndicatorIndex,
+          builder: (context, indicatorIndex, _) {
+            return ValueListenableBuilder<double?>(
+              valueListenable: _chartVerticalLineTime,
+              builder: (context, verticalLineTime, _) {
+                return LineChart(
+                  key: _chartKey,
+                  LineChartData(
           gridData: FlGridData(
             show: true,
             drawVerticalLine: true,
@@ -1516,23 +1544,48 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
                 show: true,
                 color: Colors.blue[600]!.withValues(alpha: 0.2),
               ),
+              // Native indicator for smooth 60fps updates
+              showingIndicators: indicatorIndex != null ? [indicatorIndex] : [],
             ),
           ],
+          // Optional faint vertical line for visual continuity (updates at 10fps)
           extraLinesData: ExtraLinesData(
-            verticalLines: [
-              // Unified playback position line (purple) - removed old orange hover line
-              if (playbackTime != null)
-                VerticalLine(
-                  x: playbackTime,
-                  color: Colors.deepPurple[600]!,
-                  strokeWidth: 3,
-                ),
-            ],
+            verticalLines: verticalLineTime != null ? [
+              VerticalLine(
+                x: verticalLineTime,
+                color: Colors.deepPurple[600]!.withValues(alpha: 0.3),
+                strokeWidth: 1,
+                dashArray: [5, 3],
+              ),
+            ] : [],
           ),
-          // Disable fl_chart touch handling - using GestureDetector instead
-          lineTouchData: LineTouchData(enabled: false),
+          // Configure touch indicator appearance
+          lineTouchData: LineTouchData(
+            enabled: false, // Keep custom gesture handling
+            getTouchedSpotIndicator: (LineChartBarData barData, List<int> indicators) {
+              return indicators.map((index) {
+                return TouchedSpotIndicatorData(
+                  const FlLine(color: Colors.transparent, strokeWidth: 0), // Invisible line
+                  FlDotData(
+                    show: true,
+                    getDotPainter: (spot, percent, barData, index) =>
+                      FlDotCirclePainter(
+                        radius: 6,
+                        color: Colors.deepPurple[600]!,
+                        strokeColor: Colors.white,
+                        strokeWidth: 3,
+                      ),
+                  ),
+                );
+              }).toList();
+            },
+          ),
           backgroundColor: Colors.transparent,
-          ),
+                  ),
+                );
+              },
+            );
+          },
         ),
       ),
     );
@@ -1793,6 +1846,35 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     }
   }
   
+  /// Map track point index to chart data index, handling decimated data
+  int? _mapTrackIndexToChartIndex(int trackIndex) {
+    if (_cachedAltitudeData == null || trackIndex >= _trackPoints.length) return null;
+    
+    final point = _trackPoints[trackIndex];
+    final timeOfDay = point.timestamp.hour * 60.0 + 
+                     point.timestamp.minute + 
+                     point.timestamp.second / 60.0;
+    
+    // Try exact match first (common for non-decimated data)
+    if (_timeToChartIndexMap.containsKey(timeOfDay)) {
+      return _timeToChartIndexMap[timeOfDay];
+    }
+    
+    // Find closest time in decimated data
+    int closestIndex = 0;
+    double smallestDiff = double.infinity;
+    
+    for (int i = 0; i < _cachedAltitudeData!.length; i++) {
+      final diff = (_cachedAltitudeData![i].x - timeOfDay).abs();
+      if (diff < smallestDiff) {
+        smallestDiff = diff;
+        closestIndex = i;
+      }
+    }
+    
+    return closestIndex;
+  }
+  
   /// Handle playback controller changes with debouncing
   void _onPlaybackChanged() {
     if (_playbackController == null) return;
@@ -1805,7 +1887,20 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
       if (mounted && _playbackController != null) {
         final newIndex = _playbackController!.currentPointIndex;
         
-        // Only update if index actually changed to avoid unnecessary rebuilds
+        // Update chart indicator without setState
+        final chartIndex = _mapTrackIndexToChartIndex(newIndex);
+        _chartIndicatorIndex.value = chartIndex;
+        
+        // Update vertical line less frequently (100ms)
+        _verticalLineUpdateTimer?.cancel();
+        _verticalLineUpdateTimer = Timer(const Duration(milliseconds: 100), () {
+          if (_cachedAltitudeData != null && chartIndex != null && 
+              chartIndex < _cachedAltitudeData!.length) {
+            _chartVerticalLineTime.value = _cachedAltitudeData![chartIndex].x;
+          }
+        });
+        
+        // Only setState for map marker updates if index actually changed
         if (_playbackPointIndex != newIndex) {
           LoggingService.debug('FlightTrackWidget: Playback position changed - index: $_playbackPointIndex -> $newIndex');
           
