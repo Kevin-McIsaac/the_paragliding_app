@@ -15,10 +15,6 @@ import '../../services/igc_import_service.dart';
 import '../../services/logging_service.dart';
 import '../controllers/flight_playback_controller.dart';
 import 'flight_playback_panel.dart';
-import 'cesium_3d_map_inappwebview.dart';
-import 'cesium_3d_controls_widget.dart';
-import 'cesium_3d_playback_widget.dart';
-import 'cesium/cesium_webview_controller.dart';
 
 // FLUTTER_MAP TILE LOADING SOLUTION:
 // This widget implements delayed TileLayer creation to solve a flutter_map race condition
@@ -175,7 +171,6 @@ class FlightTrackWidget extends StatefulWidget {
 
 class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindingObserver {
   MapController? _mapController;
-  final CesiumWebViewController _cesiumController = CesiumWebViewController();
   final IgcImportService _igcService = IgcImportService();
   
   List<IgcPoint> _trackPoints = [];
@@ -190,7 +185,6 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
   bool _showLabels = true;
   bool _showSatelliteView = false;
   bool _showLegend = true;
-  bool _show3DView = false; // Toggle for 2D/3D view
   bool _preferencesLoaded = false;
   bool _tilesReady = false; // Controls when TileLayer is added to prevent flutter_map race condition
   bool _isGeneratingPolylines = false; // Controls loading state during background polyline generation
@@ -251,8 +245,6 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     // Dispose notifiers
     _chartIndicatorIndex.dispose();
     _chartVerticalLineTime.dispose();
-    // Dispose Cesium controller
-    _cesiumController.dispose();
     // Note: We don't clear the global cache on dispose to allow reuse
     super.dispose();
   }
@@ -286,7 +278,6 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
           (prefs.getBool('flight_track_show_markers') ?? true); // Backward compatibility
       final newShowSatelliteView = prefs.getBool('flight_track_show_satellite') ?? false;
       final newShowLegend = prefs.getBool('flight_track_show_legend') ?? true;
-      final newShow3DView = prefs.getBool('flight_track_show_3d') ?? false;
       
       // Check if labels changed to recreate markers/polylines
       final labelsChanged = newShowLabels != _showLabels;
@@ -296,7 +287,6 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
           _showLabels = newShowLabels;
           _showSatelliteView = newShowSatelliteView;
           _showLegend = newShowLegend;
-          _show3DView = newShow3DView;
           _preferencesLoaded = true;
         });
         
@@ -793,15 +783,6 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     await prefs.setBool('flight_track_show_satellite', _showSatelliteView);
   }
 
-  void _toggle3DView() async {
-    setState(() {
-      _show3DView = !_show3DView;
-    });
-    
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('flight_track_show_3d', _show3DView);
-  }
-
   void _toggleLegend() async {
     setState(() {
       _showLegend = !_showLegend;
@@ -973,11 +954,9 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // 2D/3D toggle moved to top left button on map
-            if (!_show3DView)
-              ListTile(
-                leading: Icon(_showSatelliteView ? Icons.map : Icons.satellite_alt),
-                title: Text('${_showSatelliteView ? 'Street' : 'Satellite'} View'),
+            ListTile(
+              leading: Icon(_showSatelliteView ? Icons.map : Icons.satellite_alt),
+              title: Text('${_showSatelliteView ? 'Street' : 'Satellite'} View'),
                 onTap: () {
                   Navigator.pop(context);
                   _toggleSatelliteView();
@@ -1095,36 +1074,13 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
       return errorWidget;
     }
 
-    // Create map widget based on 2D/3D toggle
+    // Create 2D map widget
     Widget mapWidget;
     
-    // Convert IgcPoints to format expected by Cesium widget (needed for both 3D view and playback controls)
-    final trackPointsForCesium = _trackPoints.map((point) => {
-      'latitude': point.latitude,
-      'longitude': point.longitude,
-      'altitude': point.gpsAltitude,
-      'climbRate': _trackPoints.indexOf(point) < _fifteenSecondRates.length 
-          ? _fifteenSecondRates[_trackPoints.indexOf(point)] 
-          : 0.0,
-    }).toList();
+    // 2D FlutterMap view
+    _mapController ??= MapController();
     
-    if (_show3DView) {
-      // 3D Cesium view (using InAppWebView for CORS bypass)
-      
-      mapWidget = Cesium3DMapInAppWebView(
-        initialLat: _trackPoints.isNotEmpty ? _trackPoints.first.latitude : 46.8182,
-        initialLon: _trackPoints.isNotEmpty ? _trackPoints.first.longitude : 8.2275,
-        initialAltitude: 10000, // 10km for better initial view
-        trackPoints: trackPointsForCesium,
-        onControllerCreated: (controller) {
-          _cesiumController.setController(controller);
-        },
-      );
-    } else {
-      // 2D FlutterMap view
-      _mapController ??= MapController();
-      
-      mapWidget = FlutterMap(
+    mapWidget = FlutterMap(
         mapController: _mapController,
         options: MapOptions(
           initialCenter: _trackPoints.isNotEmpty
@@ -1229,7 +1185,6 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
           ),
         ],
       );
-    }
 
     // Remove individual styling since unified container handles it
     if (widget.config.height != null && !widget.config.embedded) {
@@ -1245,59 +1200,6 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
         mapWidget,
         _buildMapControls(),
         _buildClimbRateLegend(),
-        // Add 2D/3D toggle button at top left (out of FAB)
-        Positioned(
-          top: 8,
-          left: 8,
-          child: Material(
-            elevation: 4,
-            borderRadius: BorderRadius.circular(20),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(20),
-              onTap: _toggle3DView,
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Icon(
-                  _show3DView ? Icons.map : Icons.language,
-                  size: 24,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-            ),
-          ),
-        ),
-        // Add Cesium controls when in 3D mode, positioned below 2D/3D toggle
-        if (_show3DView)
-          Positioned(
-            left: 8,
-            top: 60, // Position below the 2D/3D toggle
-            child: Cesium3DControlsWidget(
-              controller: _cesiumController,
-              onClose: () {
-                // Optional: Add close behavior if needed
-              },
-            ),
-          ),
-        // Add playback controls when in 3D mode - position at bottom center like 2D map
-        if (_show3DView && trackPointsForCesium.isNotEmpty)
-          Positioned(
-            bottom: 8,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Cesium3DPlaybackWidget(
-                controller: _cesiumController,
-                trackPoints: trackPointsForCesium,
-                onClose: () {
-                  // Optional: Add close behavior if needed
-                },
-              ),
-            ),
-          ),
       ],
     );
 

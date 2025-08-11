@@ -7,6 +7,7 @@ import '../../data/repositories/flight_repository.dart';
 import '../../data/repositories/site_repository.dart';
 import '../../data/repositories/wing_repository.dart';
 import '../widgets/flight_track_widget.dart';
+import '../widgets/flight_track_3d_widget.dart';
 import '../widgets/flight_statistics_widget.dart';
 import '../widgets/edit_site_dialog.dart';
 import '../widgets/site_selection_dialog.dart';
@@ -634,6 +635,49 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                                 key: ValueKey(_mapRefreshKey),
                                 flight: _flight,
                                 config: FlightTrackConfig.embeddedWithControls(),
+                                showPlaybackPanel: true,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                    const SizedBox(height: 16),
+
+                    // Flight Track 3D Visualization (if available)
+                    if (_flight.trackLogPath != null)
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Flight Track 3D',
+                                    style: Theme.of(context).textTheme.titleLarge,
+                                  ),
+                                  TextButton.icon(
+                                    onPressed: () {
+                                      // TODO: Add full screen 3D view if needed
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Full screen 3D view coming soon!'),
+                                          duration: Duration(seconds: 2),
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.fullscreen),
+                                    label: const Text('Full Screen'),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              FlightTrack3DWidget(
+                                flight: _flight,
+                                config: FlightTrack3DConfig.embedded(),
                                 showPlaybackPanel: true,
                               ),
                             ],
