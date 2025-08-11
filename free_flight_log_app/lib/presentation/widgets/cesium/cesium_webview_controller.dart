@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../../../services/logging_service.dart';
@@ -46,6 +47,111 @@ class CesiumWebViewController {
       LoggingService.debug('CesiumWebViewController: JavaScript execution error: $e');
       return null;
     }
+  }
+  
+  // === Phase 1 Feature Methods ===
+  
+  /// Sets terrain exaggeration factor
+  Future<void> setTerrainExaggeration(double value) async {
+    await evaluateJavascript(source: 'setTerrainExaggeration($value)');
+  }
+  
+  /// Switches the base map type
+  Future<void> switchBaseMap(String mapType) async {
+    await evaluateJavascript(source: 'switchBaseMap("$mapType")');
+  }
+  
+  /// Creates a 3D flight track from points
+  Future<void> createFlightTrack(List<Map<String, dynamic>> points) async {
+    final pointsJson = points.map((p) => 
+      '{latitude:${p['latitude']},longitude:${p['longitude']},altitude:${p['altitude']}}'
+    ).join(',');
+    await evaluateJavascript(source: 'createFlightTrack([$pointsJson])');
+  }
+  
+  /// Creates a color-coded flight track based on climb rate
+  Future<void> createColoredFlightTrack(List<Map<String, dynamic>> points) async {
+    final pointsJson = points.map((p) => 
+      '{latitude:${p['latitude']},longitude:${p['longitude']},altitude:${p['altitude']},climbRate:${p['climbRate'] ?? 0}}'
+    ).join(',');
+    await evaluateJavascript(source: 'createColoredFlightTrack([$pointsJson])');
+  }
+  
+  /// Sets track opacity (0.0 to 1.0)
+  Future<void> setTrackOpacity(double opacity) async {
+    await evaluateJavascript(source: 'setTrackOpacity($opacity)');
+  }
+  
+  /// Sets camera to preset view
+  Future<void> setCameraPreset(String preset) async {
+    await evaluateJavascript(source: 'setCameraPreset("$preset")');
+  }
+  
+  /// Flies camera to specific location
+  Future<void> flyToLocation(double lon, double lat, double alt, {double duration = 3.0}) async {
+    await evaluateJavascript(source: 'flyToLocation($lon, $lat, $alt, $duration)');
+  }
+  
+  /// Enables or disables camera controls
+  Future<void> setCameraControlsEnabled(bool enabled) async {
+    await evaluateJavascript(source: 'setCameraControlsEnabled($enabled)');
+  }
+  
+  // === Phase 2 Feature Methods (Playback) ===
+  
+  /// Enables or disables follow mode for flight playback
+  Future<void> setFollowMode(bool enabled) async {
+    await evaluateJavascript(source: 'setFollowMode($enabled)');
+  }
+  
+  /// Starts flight playback animation
+  Future<void> startPlayback() async {
+    await evaluateJavascript(source: 'startPlayback()');
+  }
+  
+  /// Pauses flight playback
+  Future<void> pausePlayback() async {
+    await evaluateJavascript(source: 'pausePlayback()');
+  }
+  
+  /// Stops flight playback and resets to beginning
+  Future<void> stopPlayback() async {
+    await evaluateJavascript(source: 'stopPlayback()');
+  }
+  
+  /// Sets playback speed (0.25x to 8x)
+  Future<void> setPlaybackSpeed(double speed) async {
+    await evaluateJavascript(source: 'setPlaybackSpeed($speed)');
+  }
+  
+  /// Seeks to specific position in flight track
+  Future<void> seekToPosition(int index) async {
+    await evaluateJavascript(source: 'seekToPosition($index)');
+  }
+  
+  /// Steps forward one point in the track
+  Future<void> stepForward() async {
+    await evaluateJavascript(source: 'stepForward()');
+  }
+  
+  /// Steps backward one point in the track
+  Future<void> stepBackward() async {
+    await evaluateJavascript(source: 'stepBackward()');
+  }
+  
+  /// Gets current playback state
+  Future<Map<String, dynamic>> getPlaybackState() async {
+    final result = await evaluateJavascript(source: 'JSON.stringify(getPlaybackState())');
+    if (result != null && result != 'null') {
+      return Map<String, dynamic>.from(jsonDecode(result.toString()));
+    }
+    return {
+      'isPlaying': false,
+      'currentIndex': 0,
+      'totalPoints': 0,
+      'playbackSpeed': 1.0,
+      'followMode': false,
+    };
   }
   
   /// Reloads the WebView

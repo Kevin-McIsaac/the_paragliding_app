@@ -13,12 +13,16 @@ class Cesium3DMapInAppWebView extends StatefulWidget {
   final double? initialLat;
   final double? initialLon;
   final double? initialAltitude;
+  final List<dynamic>? trackPoints;
+  final void Function(InAppWebViewController)? onControllerCreated;
   
   const Cesium3DMapInAppWebView({
     super.key,
     this.initialLat,
     this.initialLon,
     this.initialAltitude,
+    this.trackPoints,
+    this.onControllerCreated,
   });
 
   @override
@@ -225,6 +229,11 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
               webViewController = controller;
               LoggingService.debug('Cesium3D Surface: WebView created');
               _surfaceErrorCount = 0; // Reset surface error count
+              
+              // Notify parent widget of controller creation
+              if (widget.onControllerCreated != null) {
+                widget.onControllerCreated!(controller);
+              }
             }
           },
           onLoadStop: (controller, url) async {
@@ -236,6 +245,11 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                   _loadRetryCount = 0; // Reset retry count on successful load
                   _surfaceErrorCount = 0; // Reset surface errors on successful load
                 });
+                
+                // Load flight track if available
+                if (widget.trackPoints != null && widget.trackPoints!.isNotEmpty) {
+                  await _loadFlightTrack(controller);
+                }
               }
             }
           },
@@ -1081,6 +1095,60 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
     }
   }
   
+  Future<void> _loadFlightTrack(InAppWebViewController controller) async {
+    try {
+      // Wait a bit for Cesium to fully initialize
+      await Future.delayed(const Duration(seconds: 3));
+      
+      LoggingService.debug('Cesium3D: Loading flight track with ${widget.trackPoints!.length} points');
+      
+      // Convert track points to JavaScript format
+      final jsPoints = widget.trackPoints!.map((point) {
+        // Handle Map objects (which is what we're getting from flight_track_widget)
+        double lat, lon, alt, climbRate;
+        
+        if (point is Map) {
+          lat = (point['latitude'] ?? 0.0).toDouble();
+          lon = (point['longitude'] ?? 0.0).toDouble();
+          alt = (point['altitude'] ?? 0.0).toDouble();
+          climbRate = (point['climbRate'] ?? 0.0).toDouble();
+        } else {
+          // Handle object with properties
+          lat = (point.latitude ?? 0.0).toDouble();
+          lon = (point.longitude ?? 0.0).toDouble();
+          alt = (point.altitude ?? 0.0).toDouble();
+          climbRate = (point.climbRate ?? 0.0).toDouble();
+        }
+        
+        return '{latitude:$lat,longitude:$lon,altitude:$alt,climbRate:$climbRate}';
+      }).join(',');
+      
+      // Log first and last points for debugging
+      if (widget.trackPoints!.isNotEmpty) {
+        final first = widget.trackPoints!.first;
+        final last = widget.trackPoints!.last;
+        LoggingService.debug('Cesium3D: First point: $first');
+        LoggingService.debug('Cesium3D: Last point: $last');
+      }
+      
+      // Call JavaScript function to create colored flight track
+      final jsCode = '''
+        if (typeof createColoredFlightTrack === 'function') {
+          createColoredFlightTrack([$jsPoints]);
+          console.log('[Cesium] Called createColoredFlightTrack with ${widget.trackPoints!.length} points');
+        } else {
+          console.error('[Cesium] createColoredFlightTrack function not found!');
+        }
+      ''';
+      
+      await controller.evaluateJavascript(source: jsCode);
+      
+      LoggingService.info('Cesium3D: Flight track JavaScript executed');
+    } catch (e) {
+      LoggingService.error('Cesium3D: Error loading flight track', e);
+    }
+  }
+
   void _handleSurfaceError() {
     _surfaceErrorCount++;
     

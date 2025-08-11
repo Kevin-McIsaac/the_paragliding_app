@@ -16,6 +16,9 @@ import '../../services/logging_service.dart';
 import '../controllers/flight_playback_controller.dart';
 import 'flight_playback_panel.dart';
 import 'cesium_3d_map_inappwebview.dart';
+import 'cesium_3d_controls_widget.dart';
+import 'cesium_3d_playback_widget.dart';
+import 'cesium/cesium_webview_controller.dart';
 
 // FLUTTER_MAP TILE LOADING SOLUTION:
 // This widget implements delayed TileLayer creation to solve a flutter_map race condition
@@ -172,6 +175,7 @@ class FlightTrackWidget extends StatefulWidget {
 
 class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindingObserver {
   MapController? _mapController;
+  final CesiumWebViewController _cesiumController = CesiumWebViewController();
   final IgcImportService _igcService = IgcImportService();
   
   List<IgcPoint> _trackPoints = [];
@@ -235,6 +239,8 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     _playbackController?.dispose();
     // Cancel debounce timer
     _playbackUpdateTimer?.cancel();
+    // Dispose Cesium controller
+    _cesiumController.dispose();
     // Note: We don't clear the global cache on dispose to allow reuse
     super.dispose();
   }
@@ -1076,12 +1082,27 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     // Create map widget based on 2D/3D toggle
     Widget mapWidget;
     
+    // Convert IgcPoints to format expected by Cesium widget (needed for both 3D view and playback controls)
+    final trackPointsForCesium = _trackPoints.map((point) => {
+      'latitude': point.latitude,
+      'longitude': point.longitude,
+      'altitude': point.gpsAltitude,
+      'climbRate': _trackPoints.indexOf(point) < _fifteenSecondRates.length 
+          ? _fifteenSecondRates[_trackPoints.indexOf(point)] 
+          : 0.0,
+    }).toList();
+    
     if (_show3DView) {
       // 3D Cesium view (using InAppWebView for CORS bypass)
+      
       mapWidget = Cesium3DMapInAppWebView(
         initialLat: _trackPoints.isNotEmpty ? _trackPoints.first.latitude : 46.8182,
         initialLon: _trackPoints.isNotEmpty ? _trackPoints.first.longitude : 8.2275,
-        initialAltitude: 50000, // 50km for good overview
+        initialAltitude: 10000, // 10km for better initial view
+        trackPoints: trackPointsForCesium,
+        onControllerCreated: (controller) {
+          _cesiumController.setController(controller);
+        },
       );
     } else {
       // 2D FlutterMap view
@@ -1208,6 +1229,31 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
         mapWidget,
         _buildMapControls(),
         _buildClimbRateLegend(),
+        // Add Cesium controls when in 3D mode, positioned to avoid FAB
+        if (_show3DView)
+          Positioned(
+            left: 8,
+            top: 60, // Position below the FAB which is at top: 8
+            child: Cesium3DControlsWidget(
+              controller: _cesiumController,
+              onClose: () {
+                // Optional: Add close behavior if needed
+              },
+            ),
+          ),
+        // Add playback controls when in 3D mode
+        if (_show3DView && trackPointsForCesium.isNotEmpty)
+          Positioned(
+            right: 8,
+            bottom: 8,
+            child: Cesium3DPlaybackWidget(
+              controller: _cesiumController,
+              trackPoints: trackPointsForCesium,
+              onClose: () {
+                // Optional: Add close behavior if needed
+              },
+            ),
+          ),
       ],
     );
 

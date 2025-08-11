@@ -5,6 +5,9 @@
 let viewer = null;
 let cleanupTimer = null;
 let initialLoadComplete = false;
+let flightTrackEntity = null;
+let igcPoints = [];
+let currentTerrainExaggeration = 1.0;
 
 // Logging wrapper for conditional output
 const cesiumLog = {
@@ -80,13 +83,13 @@ function initializeCesium(config) {
         viewer.scene.globe.depthTestAgainstTerrain = false;  // Faster rendering
         viewer.scene.screenSpaceCameraController.enableCollisionDetection = false;
         
-        // Strict tile cache management to prevent memory limit warnings
-        viewer.scene.globe.tileCacheSize = 25;  // Reduced cache size to prevent memory warnings
+        // Balanced tile cache management
+        viewer.scene.globe.tileCacheSize = 100;  // Increased cache for better rendering
         viewer.scene.globe.preloadSiblings = false;  // Don't preload adjacent tiles
         viewer.scene.globe.preloadAncestors = false;  // Don't preload parent tiles
         
-        // Tile memory budget - set explicit memory limit for tiles
-        viewer.scene.globe.maximumMemoryUsage = 128;  // Set max memory usage in MB
+        // Tile memory budget - increase for better rendering
+        viewer.scene.globe.maximumMemoryUsage = 256;  // Increased memory limit in MB
         
         // Balanced screen space error for decent quality with good performance
         viewer.scene.globe.maximumScreenSpaceError = 4;  // Slightly reduced quality to save memory
@@ -215,6 +218,277 @@ function initializeCesium(config) {
     }
 }
 
+// === PHASE 1 FEATURES: 3D Terrain, Flight Track, Camera Controls ===
+
+// Feature 1: Terrain controls
+function setTerrainExaggeration(value) {
+    if (!viewer || !viewer.scene || !viewer.scene.globe) return;
+    
+    currentTerrainExaggeration = value;
+    viewer.scene.globe.terrainExaggeration = value;
+    viewer.scene.globe.terrainExaggerationRelativeHeight = 0.0;
+    cesiumLog.debug('Terrain exaggeration set to: ' + value);
+}
+
+function switchBaseMap(mapType) {
+    if (!viewer) return;
+    
+    const layers = viewer.imageryLayers;
+    layers.removeAll();
+    
+    switch(mapType) {
+        case 'satellite':
+            // Default Bing Maps aerial
+            layers.addImageryProvider(new Cesium.BingMapsImageryProvider({
+                url: 'https://dev.virtualearth.net',
+                mapStyle: Cesium.BingMapsStyle.AERIAL_WITH_LABELS
+            }));
+            break;
+        case 'terrain':
+            // OpenStreetMap
+            layers.addImageryProvider(new Cesium.OpenStreetMapImageryProvider({
+                url: 'https://a.tile.openstreetmap.org/'
+            }));
+            break;
+        case 'hybrid':
+            // Satellite with labels
+            layers.addImageryProvider(new Cesium.BingMapsImageryProvider({
+                url: 'https://dev.virtualearth.net',
+                mapStyle: Cesium.BingMapsStyle.AERIAL_WITH_LABELS_ON_DEMAND
+            }));
+            break;
+        default:
+            // Ion default imagery
+            layers.addImageryProvider(new Cesium.IonImageryProvider({ assetId: 2 }));
+    }
+    
+    cesiumLog.info('Base map switched to: ' + mapType);
+}
+
+// Feature 2: 3D Flight Track Rendering
+function createFlightTrack(points) {
+    if (!viewer || !points || points.length === 0) return;
+    
+    // Store points globally for other features
+    igcPoints = points;
+    
+    // Remove existing track if any
+    if (flightTrackEntity) {
+        viewer.entities.remove(flightTrackEntity);
+        flightTrackEntity = null;
+    }
+    
+    // Convert points to Cartesian3 positions
+    const positions = points.map(point => 
+        Cesium.Cartesian3.fromDegrees(
+            point.longitude,
+            point.latitude,
+            point.altitude
+        )
+    );
+    
+    // Create polyline entity with glow effect
+    flightTrackEntity = viewer.entities.add({
+        name: 'Flight Track',
+        polyline: {
+            positions: positions,
+            width: 4,
+            material: new Cesium.PolylineGlowMaterialProperty({
+                glowPower: 0.2,
+                taperPower: 0.5,
+                color: Cesium.Color.YELLOW.withAlpha(0.8)
+            }),
+            clampToGround: false,
+            show: true
+        }
+    });
+    
+    // Zoom to flight track
+    viewer.zoomTo(flightTrackEntity);
+    
+    cesiumLog.info('Flight track created with ' + points.length + ' points');
+}
+
+// Create color-coded track based on climb rate
+function createColoredFlightTrack(points) {
+    if (!viewer || !points || points.length === 0) return;
+    
+    igcPoints = points;
+    
+    // Remove existing entities
+    viewer.entities.removeAll();
+    
+    // Create segments with colors based on climb rate
+    for (let i = 0; i < points.length - 1; i++) {
+        const climbRate = points[i].climbRate || 0;
+        const color = getClimbRateColor(climbRate);
+        
+        viewer.entities.add({
+            polyline: {
+                positions: [
+                    Cesium.Cartesian3.fromDegrees(
+                        points[i].longitude,
+                        points[i].latitude,
+                        points[i].altitude
+                    ),
+                    Cesium.Cartesian3.fromDegrees(
+                        points[i + 1].longitude,
+                        points[i + 1].latitude,
+                        points[i + 1].altitude
+                    )
+                ],
+                width: 4,
+                material: Cesium.Color.fromCssColorString(color).withAlpha(0.8),
+                clampToGround: false
+            }
+        });
+    }
+    
+    // Zoom to all entities
+    viewer.zoomTo(viewer.entities);
+    
+    cesiumLog.info('Color-coded track created');
+}
+
+function getClimbRateColor(climbRate) {
+    // Match existing 2D color scheme exactly
+    // Simple 3-tier color scheme based on fixed thresholds
+    if (climbRate >= 0) {
+        return '#4CAF50';  // Green: Any climb (rate >= 0 m/s)
+    } else if (climbRate > -1.5) {
+        return '#1976D2';  // Royal Blue: Weak sink (-1.5 < rate < 0 m/s)
+    } else {
+        return '#FF0000';  // Red: Strong sink (rate <= -1.5 m/s)
+    }
+}
+
+// Set track transparency
+function setTrackOpacity(opacity) {
+    if (!viewer) return;
+    
+    viewer.entities.values.forEach(entity => {
+        if (entity.polyline) {
+            const material = entity.polyline.material;
+            if (material && material.color) {
+                entity.polyline.material.color = material.color.getValue().withAlpha(opacity);
+            }
+        }
+    });
+    
+    cesiumLog.debug('Track opacity set to: ' + opacity);
+}
+
+// Feature 3: Camera Controls
+function setCameraPreset(preset) {
+    if (!viewer || igcPoints.length === 0) return;
+    
+    // Calculate center of flight
+    let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+    let sumAlt = 0;
+    
+    igcPoints.forEach(point => {
+        minLat = Math.min(minLat, point.latitude);
+        maxLat = Math.max(maxLat, point.latitude);
+        minLon = Math.min(minLon, point.longitude);
+        maxLon = Math.max(maxLon, point.longitude);
+        sumAlt += point.altitude;
+    });
+    
+    const centerLat = (minLat + maxLat) / 2;
+    const centerLon = (minLon + maxLon) / 2;
+    const avgAlt = sumAlt / igcPoints.length;
+    
+    switch(preset) {
+        case 'topDown':
+            viewer.camera.setView({
+                destination: Cesium.Cartesian3.fromDegrees(centerLon, centerLat, avgAlt + 5000),
+                orientation: {
+                    heading: 0,
+                    pitch: Cesium.Math.toRadians(-90),
+                    roll: 0
+                }
+            });
+            break;
+            
+        case 'sideProfile':
+            viewer.camera.setView({
+                destination: Cesium.Cartesian3.fromDegrees(centerLon - 0.05, centerLat, avgAlt + 2000),
+                orientation: {
+                    heading: Cesium.Math.toRadians(90),
+                    pitch: 0,
+                    roll: 0
+                }
+            });
+            break;
+            
+        case 'pilotView':
+            if (igcPoints.length > 0) {
+                const point = igcPoints[Math.floor(igcPoints.length / 2)];
+                viewer.camera.setView({
+                    destination: Cesium.Cartesian3.fromDegrees(
+                        point.longitude,
+                        point.latitude,
+                        point.altitude
+                    ),
+                    orientation: {
+                        heading: Cesium.Math.toRadians(0),
+                        pitch: Cesium.Math.toRadians(-10),
+                        roll: 0
+                    }
+                });
+            }
+            break;
+            
+        case 'threeFourView':
+            viewer.camera.setView({
+                destination: Cesium.Cartesian3.fromDegrees(
+                    centerLon - 0.03, 
+                    centerLat - 0.03, 
+                    avgAlt + 3000
+                ),
+                orientation: {
+                    heading: Cesium.Math.toRadians(45),
+                    pitch: Cesium.Math.toRadians(-30),
+                    roll: 0
+                }
+            });
+            break;
+            
+        default:
+            // Reset to default view
+            viewer.zoomTo(viewer.entities);
+    }
+    
+    cesiumLog.info('Camera preset: ' + preset);
+}
+
+// Smooth camera fly to location
+function flyToLocation(lon, lat, alt, duration) {
+    if (!viewer) return;
+    
+    viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(lon, lat, alt),
+        duration: duration || 3.0,
+        complete: function() {
+            cesiumLog.debug('Camera transition complete');
+        }
+    });
+}
+
+// Enable/disable camera controls
+function setCameraControlsEnabled(enabled) {
+    if (!viewer) return;
+    
+    const controller = viewer.scene.screenSpaceCameraController;
+    controller.enableRotate = enabled;
+    controller.enableTranslate = enabled;
+    controller.enableZoom = enabled;
+    controller.enableTilt = enabled;
+    controller.enableLook = enabled;
+    
+    cesiumLog.debug('Camera controls ' + (enabled ? 'enabled' : 'disabled'));
+}
+
 // Cleanup function to be called from Flutter before disposal
 function cleanupCesium() {
     cesiumLog.debug('Cleaning up Cesium resources...');
@@ -320,7 +594,240 @@ document.addEventListener('visibilitychange', function() {
     }
 });
 
+// === PHASE 2 FEATURES: Flight Playback and Animation ===
+
+// Playback state
+let playbackState = {
+    isPlaying: false,
+    currentIndex: 0,
+    playbackSpeed: 1.0,
+    followMode: false,
+    showPilot: null,
+    animationFrame: null,
+    lastUpdateTime: null,
+    accumulatedTime: 0
+};
+
+// Feature 3: Follow mode for flight playback
+function setFollowMode(enabled) {
+    if (!viewer || !igcPoints || igcPoints.length === 0) return;
+    
+    playbackState.followMode = enabled;
+    
+    if (enabled) {
+        // Start following from current position
+        followFlightPoint(playbackState.currentIndex);
+    }
+    
+    cesiumLog.info('Follow mode ' + (enabled ? 'enabled' : 'disabled'));
+}
+
+function followFlightPoint(index) {
+    if (!viewer || !igcPoints || index < 0 || index >= igcPoints.length) return;
+    
+    const point = igcPoints[index];
+    
+    // Calculate heading to next point for realistic orientation
+    let heading = 0;
+    if (index < igcPoints.length - 1) {
+        const nextPoint = igcPoints[index + 1];
+        heading = Cesium.Math.toRadians(
+            Math.atan2(
+                nextPoint.longitude - point.longitude,
+                nextPoint.latitude - point.latitude
+            ) * 180 / Math.PI
+        );
+    }
+    
+    // Position camera behind and above the pilot
+    const offsetDistance = 100; // meters behind
+    const offsetHeight = 50; // meters above
+    
+    viewer.camera.setView({
+        destination: Cesium.Cartesian3.fromDegrees(
+            point.longitude,
+            point.latitude,
+            point.altitude + offsetHeight
+        ),
+        orientation: {
+            heading: heading,
+            pitch: Cesium.Math.toRadians(-10), // Look slightly down
+            roll: 0
+        }
+    });
+    
+    // Add pilot marker if not exists
+    if (!playbackState.showPilot) {
+        playbackState.showPilot = viewer.entities.add({
+            position: Cesium.Cartesian3.fromDegrees(
+                point.longitude,
+                point.latitude,
+                point.altitude
+            ),
+            point: {
+                pixelSize: 10,
+                color: Cesium.Color.YELLOW,
+                outlineColor: Cesium.Color.BLACK,
+                outlineWidth: 2
+            }
+        });
+    } else {
+        // Update pilot position
+        playbackState.showPilot.position = Cesium.Cartesian3.fromDegrees(
+            point.longitude,
+            point.latitude,
+            point.altitude
+        );
+    }
+}
+
+// Feature 4: Playback controls
+function startPlayback() {
+    if (!viewer || !igcPoints || igcPoints.length === 0) return;
+    
+    playbackState.isPlaying = true;
+    playbackState.lastUpdateTime = Date.now();
+    playbackState.accumulatedTime = 0;
+    
+    cesiumLog.info('Playback started at speed ' + playbackState.playbackSpeed + 'x');
+    
+    // Start animation loop
+    animatePlayback();
+}
+
+function pausePlayback() {
+    playbackState.isPlaying = false;
+    
+    if (playbackState.animationFrame) {
+        cancelAnimationFrame(playbackState.animationFrame);
+        playbackState.animationFrame = null;
+    }
+    
+    cesiumLog.info('Playback paused at index ' + playbackState.currentIndex);
+}
+
+function stopPlayback() {
+    pausePlayback();
+    playbackState.currentIndex = 0;
+    playbackState.accumulatedTime = 0;
+    
+    // Remove pilot marker
+    if (playbackState.showPilot) {
+        viewer.entities.remove(playbackState.showPilot);
+        playbackState.showPilot = null;
+    }
+    
+    cesiumLog.info('Playback stopped');
+}
+
+function setPlaybackSpeed(speed) {
+    playbackState.playbackSpeed = Math.max(0.25, Math.min(8.0, speed));
+    cesiumLog.info('Playback speed set to ' + playbackState.playbackSpeed + 'x');
+}
+
+function seekToPosition(index) {
+    if (!igcPoints || index < 0 || index >= igcPoints.length) return;
+    
+    playbackState.currentIndex = index;
+    
+    if (playbackState.followMode) {
+        followFlightPoint(index);
+    }
+    
+    // Update timeline position (will be called from Flutter)
+    if (window.onPlaybackPositionChanged) {
+        window.onPlaybackPositionChanged(index);
+    }
+    
+    cesiumLog.debug('Seeked to position ' + index);
+}
+
+function stepForward() {
+    if (!igcPoints || playbackState.currentIndex >= igcPoints.length - 1) return;
+    
+    seekToPosition(playbackState.currentIndex + 1);
+}
+
+function stepBackward() {
+    if (!igcPoints || playbackState.currentIndex <= 0) return;
+    
+    seekToPosition(playbackState.currentIndex - 1);
+}
+
+function animatePlayback() {
+    if (!playbackState.isPlaying) return;
+    
+    const now = Date.now();
+    const deltaTime = (now - playbackState.lastUpdateTime) * playbackState.playbackSpeed;
+    playbackState.lastUpdateTime = now;
+    
+    // Accumulate time (assuming 1 second per point for simplicity)
+    playbackState.accumulatedTime += deltaTime;
+    
+    // Move to next point every second (adjusted by speed)
+    if (playbackState.accumulatedTime >= 1000) {
+        playbackState.accumulatedTime = 0;
+        
+        if (playbackState.currentIndex < igcPoints.length - 1) {
+            playbackState.currentIndex++;
+            
+            if (playbackState.followMode) {
+                followFlightPoint(playbackState.currentIndex);
+            }
+            
+            // Notify Flutter of position change
+            if (window.onPlaybackPositionChanged) {
+                window.onPlaybackPositionChanged(playbackState.currentIndex);
+            }
+        } else {
+            // Reached end of flight
+            stopPlayback();
+            cesiumLog.info('Playback completed');
+            
+            if (window.onPlaybackCompleted) {
+                window.onPlaybackCompleted();
+            }
+        }
+    }
+    
+    // Continue animation loop
+    playbackState.animationFrame = requestAnimationFrame(animatePlayback);
+}
+
+// Get playback state for UI updates
+function getPlaybackState() {
+    return {
+        isPlaying: playbackState.isPlaying,
+        currentIndex: playbackState.currentIndex,
+        totalPoints: igcPoints.length,
+        playbackSpeed: playbackState.playbackSpeed,
+        followMode: playbackState.followMode
+    };
+}
+
 // Export functions for Flutter access
 window.cleanupCesium = cleanupCesium;
 window.checkMemory = checkMemory;
 window.initializeCesium = initializeCesium;
+
+// Phase 1 Feature exports
+window.setTerrainExaggeration = setTerrainExaggeration;
+window.switchBaseMap = switchBaseMap;
+window.createFlightTrack = createFlightTrack;
+window.createColoredFlightTrack = createColoredFlightTrack;
+window.setTrackOpacity = setTrackOpacity;
+window.setCameraPreset = setCameraPreset;
+window.flyToLocation = flyToLocation;
+window.setCameraControlsEnabled = setCameraControlsEnabled;
+window.getClimbRateColor = getClimbRateColor;
+
+// Phase 2 Feature exports (Playback)
+window.setFollowMode = setFollowMode;
+window.startPlayback = startPlayback;
+window.pausePlayback = pausePlayback;
+window.stopPlayback = stopPlayback;
+window.setPlaybackSpeed = setPlaybackSpeed;
+window.seekToPosition = seekToPosition;
+window.stepForward = stepForward;
+window.stepBackward = stepBackward;
+window.getPlaybackState = getPlaybackState;
