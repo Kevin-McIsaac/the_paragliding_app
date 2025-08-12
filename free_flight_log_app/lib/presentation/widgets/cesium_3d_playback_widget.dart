@@ -26,7 +26,7 @@ class _Cesium3DPlaybackWidgetState extends State<Cesium3DPlaybackWidget> {
   bool _isPlaying = false;
   int _currentIndex = 0;
   int _totalPoints = 0;
-  double _playbackSpeed = 1.0;
+  double _playbackSpeed = 30.0;  // Default to 30x speed
   bool _followMode = false;
   Timer? _updateTimer;
   
@@ -44,6 +44,11 @@ class _Cesium3DPlaybackWidgetState extends State<Cesium3DPlaybackWidget> {
     
     // Set up JavaScript callback for position updates
     _setupJavaScriptCallbacks();
+    
+    // Set initial playback speed to 30x
+    Future.delayed(const Duration(milliseconds: 500), () {
+      widget.controller.setPlaybackSpeed(30.0);
+    });
   }
 
   @override
@@ -109,18 +114,15 @@ class _Cesium3DPlaybackWidgetState extends State<Cesium3DPlaybackWidget> {
     final colorScheme = theme.colorScheme;
     
     return Container(
-      constraints: const BoxConstraints(maxWidth: 600),
-      margin: const EdgeInsets.only(bottom: 8),
+      // Remove maxWidth constraint to span full width
       decoration: BoxDecoration(
         color: colorScheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
+        border: Border(
+          top: BorderSide(
+            color: Theme.of(context).dividerColor,
+            width: 1,
           ),
-        ],
+        ),
       ),
       child: SafeArea(
         top: false,
@@ -151,8 +153,14 @@ class _Cesium3DPlaybackWidgetState extends State<Cesium3DPlaybackWidget> {
     }
     
     final point = widget.trackPoints[_currentIndex];
+    // Use GPS altitude for statistics display
     final altitude = (point['altitude'] as num?)?.toDouble() ?? 0.0;
     final climbRate = (point['climbRate'] as num?)?.toDouble() ?? 0.0;
+    
+    // Debug log to see what data we're getting
+    if (_currentIndex % 10 == 0) { // Log every 10th point to avoid spam
+      LoggingService.debug('Cesium3DPlayback: Point $_currentIndex - climbRate in data: ${point['climbRate']}, parsed: $climbRate');
+    }
     
     // Calculate ground speed if we have previous point
     double groundSpeed = 0.0;
@@ -162,8 +170,22 @@ class _Cesium3DPlaybackWidgetState extends State<Cesium3DPlaybackWidget> {
       final dlon = ((point['longitude'] as num) - (prevPoint['longitude'] as num)) * 
                    111320 * math.cos((point['latitude'] as num) * (math.pi / 180));
       final distance = math.sqrt(dlat * dlat + dlon * dlon);
-      // Assume 1 second between points for simplification
-      groundSpeed = distance; // m/s
+      
+      // Parse timestamps and calculate actual time difference
+      final currentTime = DateTime.parse(point['timestamp'] as String);
+      final prevTime = DateTime.parse(prevPoint['timestamp'] as String);
+      final timeDiff = currentTime.difference(prevTime).inSeconds;
+      
+      if (timeDiff > 0) {
+        groundSpeed = distance / timeDiff; // m/s
+      }
+    }
+    
+    // Get time of day from timestamp
+    String timeOfDay = '00:00';
+    if (point['timestamp'] != null) {
+      final currentTime = DateTime.parse(point['timestamp'] as String);
+      timeOfDay = '${currentTime.hour.toString().padLeft(2, '0')}:${currentTime.minute.toString().padLeft(2, '0')}';
     }
     
     return Row(
@@ -185,9 +207,9 @@ class _Cesium3DPlaybackWidgetState extends State<Cesium3DPlaybackWidget> {
           Icons.speed,
         ),
         _buildStatItem(
-          'Progress',
-          '${((_currentIndex / math.max(1, _totalPoints - 1)) * 100).toStringAsFixed(0)}%',
-          Icons.percent,
+          'Time',
+          timeOfDay,
+          Icons.schedule,
         ),
       ],
     );
@@ -316,12 +338,15 @@ class _Cesium3DPlaybackWidgetState extends State<Cesium3DPlaybackWidget> {
               max: (_totalPoints - 1).toDouble(),
               onChanged: (value) async {
                 final newIndex = value.round();
-                setState(() {
-                  _currentIndex = newIndex;
-                });
-                await widget.controller.seekToPosition(newIndex);
-                // Haptic feedback on scrub
-                HapticFeedback.selectionClick();
+                // Only update if the change is significant to reduce GPU load
+                if ((newIndex - _currentIndex).abs() >= 1) {
+                  setState(() {
+                    _currentIndex = newIndex;
+                  });
+                  await widget.controller.seekToPosition(newIndex);
+                  // Haptic feedback on scrub
+                  HapticFeedback.selectionClick();
+                }
               },
             ),
           ),

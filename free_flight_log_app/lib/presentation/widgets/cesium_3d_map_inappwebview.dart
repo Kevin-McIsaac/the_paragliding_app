@@ -947,14 +947,20 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
         viewer.entities.removeAll();
         viewer.dataSources.removeAll();
         
-        // Reset tile cache completely
-        viewer.scene.globe.tileCache.reset();
+        // Reset tile cache completely (with null check)
+        if (viewer.scene.globe.tileCache) {
+          viewer.scene.globe.tileCache.reset();
+        }
         
-        // Reduce cache size and memory limits drastically
-        viewer.scene.globe.tileCacheSize = 5;
-        viewer.scene.globe.maximumMemoryUsage = 64;  // Reduce to 64MB
-        viewer.scene.globe.maximumScreenSpaceError = 8;  // Lower quality to save memory
-        viewer.scene.maximumTextureSize = 512;  // Smaller textures
+        // Reduce cache size and memory limits drastically (with safety checks)
+        if (viewer.scene.globe) {
+          viewer.scene.globe.tileCacheSize = 5;
+          viewer.scene.globe.maximumMemoryUsage = 64;  // Reduce to 64MB
+          viewer.scene.globe.maximumScreenSpaceError = 8;  // Lower quality to save memory
+        }
+        if (viewer.scene) {
+          viewer.scene.maximumTextureSize = 512;  // Smaller textures
+        }
         
         // Request render to apply new limits
         viewer.scene.requestRender();

@@ -4,7 +4,6 @@ import '../../data/models/igc_file.dart';
 import '../../services/igc_import_service.dart';
 import '../../services/logging_service.dart';
 import 'cesium_3d_map_inappwebview.dart';
-import 'cesium_3d_controls_widget.dart';
 import 'cesium_3d_playback_widget.dart';
 import 'cesium/cesium_webview_controller.dart';
 
@@ -57,6 +56,7 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
   final IgcImportService _igcService = IgcImportService();
   
   List<IgcPoint> _trackPoints = [];
+  List<double> _climbRates = [];
   bool _isLoading = true;
   String? _error;
 
@@ -92,8 +92,12 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
         return;
       }
 
+      // Calculate climb rates
+      final climbRates = _calculateSimpleClimbRates(trackPoints);
+      
       setState(() {
         _trackPoints = trackPoints;
+        _climbRates = climbRates;
         _isLoading = false;
       });
       
@@ -167,12 +171,26 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
       );
     }
 
-    // Convert IgcPoints to format expected by Cesium widget with timestamps
-    final trackPointsForCesium = _trackPoints.map((point) => {
-      'latitude': point.latitude,
-      'longitude': point.longitude,
-      'altitude': point.gpsAltitude,
-      'timestamp': point.timestamp.toIso8601String(),
+    // Convert IgcPoints to format expected by Cesium widget with timestamps and climb rates
+    final trackPointsForCesium = _trackPoints.asMap().entries.map((entry) {
+      final index = entry.key;
+      final point = entry.value;
+      final climbRate = index < _climbRates.length ? _climbRates[index] : 0.0;
+      
+      // Debug log to verify climb rates are being passed
+      if (index % 30 == 0) {
+        LoggingService.debug('FlightTrack3D: Creating point $index with climbRate: $climbRate from _climbRates[$index]');
+      }
+      
+      return {
+        'latitude': point.latitude,
+        'longitude': point.longitude,
+        'altitude': point.pressureAltitude > 0 ? point.pressureAltitude : point.gpsAltitude,
+        'gpsAltitude': point.gpsAltitude,
+        'pressureAltitude': point.pressureAltitude,
+        'timestamp': point.timestamp.toIso8601String(),
+        'climbRate': climbRate,
+      };
     }).toList();
 
     // Build the 3D map widget
@@ -186,39 +204,18 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
       },
     );
 
-    // Add controls and playback if configured
-    if (widget.config.showControls || widget.config.showPlayback) {
-      cesiumWidget = Stack(
+    // Add playback panel if configured
+    if (widget.config.showPlayback && widget.showPlaybackPanel && trackPointsForCesium.isNotEmpty) {
+      cesiumWidget = Column(
         children: [
-          cesiumWidget,
-          // Add Cesium controls at top left
-          if (widget.config.showControls)
-            Positioned(
-              left: 8,
-              top: 8,
-              child: Cesium3DControlsWidget(
-                controller: _cesiumController,
-                onClose: () {
-                  // Optional: Add close behavior if needed
-                },
-              ),
-            ),
-          // Add playback controls at bottom center
-          if (widget.config.showPlayback && widget.showPlaybackPanel && trackPointsForCesium.isNotEmpty)
-            Positioned(
-              bottom: 8,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: Cesium3DPlaybackWidget(
-                  controller: _cesiumController,
-                  trackPoints: trackPointsForCesium,
-                  onClose: () {
-                    // Optional: Add close behavior if needed
-                  },
-                ),
-              ),
-            ),
+          Expanded(child: cesiumWidget),
+          Cesium3DPlaybackWidget(
+            controller: _cesiumController,
+            trackPoints: trackPointsForCesium,
+            onClose: () {
+              // Optional: Add close behavior if needed
+            },
+          ),
         ],
       );
     }
@@ -240,5 +237,39 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
     }
 
     return cesiumWidget;
+  }
+  
+  /// Calculate simple climb rates between consecutive points
+  List<double> _calculateSimpleClimbRates(List<IgcPoint> points) {
+    if (points.length < 2) return [];
+    
+    final climbRates = <double>[];
+    
+    // First point has no climb rate
+    climbRates.add(0.0);
+    
+    for (int i = 1; i < points.length; i++) {
+      // Use pressure altitude if available for more accurate climb rates
+      final altDiff = (points[i].pressureAltitude > 0 && points[i-1].pressureAltitude > 0)
+          ? points[i].pressureAltitude - points[i-1].pressureAltitude
+          : points[i].gpsAltitude - points[i-1].gpsAltitude;
+      final timeDiff = points[i].timestamp.difference(points[i-1].timestamp).inSeconds;
+      
+      if (timeDiff > 0) {
+        final rate = altDiff / timeDiff; // m/s
+        climbRates.add(rate);
+        
+        // Debug log to check calculations
+        if (i % 20 == 0) {
+          LoggingService.debug('FlightTrack3D: Point $i - altDiff: $altDiff, timeDiff: $timeDiff, climbRate: $rate');
+        }
+      } else {
+        climbRates.add(0.0);
+      }
+    }
+    
+    LoggingService.debug('FlightTrack3D: Calculated ${climbRates.length} climb rates, sample values: ${climbRates.take(5).toList()}');
+    
+    return climbRates;
   }
 }

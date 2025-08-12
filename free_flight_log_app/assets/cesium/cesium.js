@@ -691,7 +691,7 @@ document.addEventListener('visibilitychange', function() {
 let playbackState = {
     isPlaying: false,
     currentIndex: 0,
-    playbackSpeed: 1.0,
+    playbackSpeed: 30.0,  // Default to 30x speed
     followMode: false,
     showPilot: null,
     animationFrame: null,
@@ -887,22 +887,31 @@ function seekToPosition(index) {
     
     playbackState.currentIndex = index;
     
-    if (playbackState.followMode) {
-        followFlightPoint(index);
-    } else {
-        // Always update pilot position when seeking
-        updatePilotPosition(index);
+    // Throttle rapid seek operations to prevent GPU overload
+    if (playbackState.seekTimeout) {
+        clearTimeout(playbackState.seekTimeout);
     }
     
-    // Force render to show pilot position change immediately
-    if (viewer && viewer.scene) {
-        viewer.scene.requestRender();
-    }
-    
-    // Update timeline position (will be called from Flutter)
-    if (window.onPlaybackPositionChanged) {
-        window.onPlaybackPositionChanged(index);
-    }
+    playbackState.seekTimeout = setTimeout(() => {
+        if (playbackState.followMode) {
+            followFlightPoint(index);
+        } else {
+            // Always update pilot position when seeking
+            updatePilotPosition(index);
+        }
+        
+        // Request render only when frame is ready
+        if (viewer && viewer.scene) {
+            viewer.scene.requestRender();
+        }
+        
+        // Update timeline position (will be called from Flutter)
+        if (window.onPlaybackPositionChanged) {
+            window.onPlaybackPositionChanged(index);
+        }
+        
+        playbackState.seekTimeout = null;
+    }, 50); // 50ms debounce to prevent rapid GPU updates
     
     cesiumLog.debug('Seeked to position ' + index);
 }
