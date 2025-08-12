@@ -56,6 +56,7 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
   final IgcImportService _igcService = IgcImportService();
   
   List<IgcPoint> _trackPoints = [];
+  String? _timezone;
   bool _isLoading = true;
   String? _error;
 
@@ -81,9 +82,9 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
     }
 
     try {
-      final trackPoints = await _igcService.getTrackPoints(widget.flight.trackLogPath!);
+      final trackData = await _igcService.getTrackPointsWithTimezone(widget.flight.trackLogPath!);
       
-      if (trackPoints.isEmpty) {
+      if (trackData.points.isEmpty) {
         setState(() {
           _error = 'No track points found';
           _isLoading = false;
@@ -92,9 +93,19 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
       }
 
       setState(() {
-        _trackPoints = trackPoints;
+        _trackPoints = trackData.points;
+        _timezone = trackData.timezone;
         _isLoading = false;
       });
+      
+      // Debug logging
+      if (_trackPoints.isNotEmpty) {
+        final firstPoint = _trackPoints.first;
+        final formatted = _formatTimestampWithTimezone(firstPoint.timestamp, _timezone);
+        LoggingService.info('FlightTrack3D: Timezone detected: $_timezone');
+        LoggingService.info('FlightTrack3D: First point timestamp: ${firstPoint.timestamp.toIso8601String()}');
+        LoggingService.info('FlightTrack3D: Formatted with TZ: $formatted');
+      }
       
     } catch (e) {
       setState(() {
@@ -182,9 +193,10 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
         'altitude': point.gpsAltitude,  // Use GPS altitude to match terrain reference
         'gpsAltitude': point.gpsAltitude,
         'pressureAltitude': point.pressureAltitude,
-        'timestamp': point.timestamp.toIso8601String(),
+        'timestamp': _formatTimestampWithTimezone(point.timestamp, _timezone),
         'climbRate': climbRate,
         'groundSpeed': point.groundSpeed,
+        'timezone': _timezone ?? '+00:00',  // Pass timezone to Cesium
       };
     }).toList();
 
@@ -257,5 +269,33 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
     }
 
     return cesiumWidget;
+  }
+  
+  /// Format timestamp with timezone offset for Cesium
+  String _formatTimestampWithTimezone(DateTime timestamp, String? timezone) {
+    // If no timezone, assume UTC and add 'Z' suffix
+    if (timezone == null || timezone.isEmpty) {
+      // Make sure it has the Z suffix for UTC
+      String iso = timestamp.toIso8601String();
+      if (!iso.endsWith('Z')) {
+        iso = '${iso}Z';
+      }
+      return iso;
+    }
+    
+    // The timestamp is already in local time, so we need to format it with the offset
+    // Remove any existing 'Z' suffix first
+    String iso = timestamp.toIso8601String();
+    if (iso.endsWith('Z')) {
+      iso = iso.substring(0, iso.length - 1);
+    }
+    
+    // Ensure timezone format is correct (+HH:MM or -HH:MM)
+    if (!timezone.startsWith('+') && !timezone.startsWith('-')) {
+      timezone = '+$timezone';
+    }
+    
+    // Add the timezone offset to indicate this is local time
+    return '$iso$timezone';
   }
 }
