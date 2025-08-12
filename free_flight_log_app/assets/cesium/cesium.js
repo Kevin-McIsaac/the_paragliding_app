@@ -119,16 +119,16 @@ function initializeCesium(config) {
             scene3DOnly: true,  // Disable 2D/Columbus view modes for performance
             requestRenderMode: true,  // Only render on demand
             maximumRenderTimeChange: Infinity,  // Reduce re-renders
-            targetFrameRate: 30,  // Balanced frame rate
-            resolutionScale: 0.85,  // Better quality while still saving memory
+            targetFrameRate: 60,  // Higher frame rate for smoother experience
+            resolutionScale: 1.0,  // Full resolution for better quality
             
-            // WebGL context options for low memory usage
+            // WebGL context options for better quality
             contextOptions: {
                 webgl: {
-                    powerPreference: 'low-power',  // Use low-power GPU
-                    antialias: false,  // Disable antialiasing
+                    powerPreference: 'high-performance',  // Use high-performance GPU
+                    antialias: true,  // Enable antialiasing for smoother edges
                     preserveDrawingBuffer: false,
-                    failIfMajorPerformanceCaveat: true,
+                    failIfMajorPerformanceCaveat: false,
                     depth: true,
                     stencil: false,
                     alpha: false
@@ -157,30 +157,34 @@ function initializeCesium(config) {
         
         cesiumLog.debug('Cesium viewer created, configuring aggressive memory optimizations...');
         
-        // Configure scene for minimal memory usage
+        // Configure scene for better quality
         viewer.scene.globe.enableLighting = false;
-        viewer.scene.globe.showGroundAtmosphere = false;  // Disable atmosphere
-        viewer.scene.fog.enabled = false;  // Disable fog
+        viewer.scene.globe.showGroundAtmosphere = true;  // Enable atmosphere for better visuals
+        viewer.scene.fog.enabled = true;  // Enable fog for depth perception
         viewer.scene.globe.depthTestAgainstTerrain = true;  // Enable terrain occlusion
         viewer.scene.screenSpaceCameraController.enableCollisionDetection = false;
         
-        // Balanced tile cache management
-        viewer.scene.globe.tileCacheSize = 100;  // Increased cache for better rendering
-        viewer.scene.globe.preloadSiblings = false;  // Don't preload adjacent tiles
+        // Enhanced tile cache management for quality
+        viewer.scene.globe.tileCacheSize = 200;  // Larger cache for smoother experience
+        viewer.scene.globe.preloadSiblings = true;  // Preload adjacent tiles for smoother panning
         viewer.scene.globe.preloadAncestors = false;  // Don't preload parent tiles
         
-        // Tile memory budget - increase for better rendering
-        viewer.scene.globe.maximumMemoryUsage = 256;  // Increased memory limit in MB
+        // Tile memory budget - increase for better quality
+        viewer.scene.globe.maximumMemoryUsage = 512;  // Higher memory limit for better quality
         
-        // Balanced screen space error for decent quality with good performance
-        viewer.scene.globe.maximumScreenSpaceError = 4;  // Slightly reduced quality to save memory
+        // Better quality with reasonable performance
+        viewer.scene.globe.maximumScreenSpaceError = 2;  // Higher quality terrain and imagery
         
-        // Moderate texture size limit
-        viewer.scene.maximumTextureSize = 1024;  // Reduced texture size to save memory
+        // Higher texture resolution
+        viewer.scene.maximumTextureSize = 2048;  // Higher resolution textures
         
         // Set explicit tile load limits
-        viewer.scene.globe.loadingDescendantLimit = 10;  // Limit concurrent tile loads
-        viewer.scene.globe.immediatelyLoadDesiredLevelOfDetail = false;  // Progressive loading
+        viewer.scene.globe.loadingDescendantLimit = 20;  // More concurrent tile loads
+        viewer.scene.globe.immediatelyLoadDesiredLevelOfDetail = true;  // Load desired detail immediately
+        
+        // Enable FXAA for better edge quality
+        viewer.scene.fxaa = true;
+        viewer.scene.msaaSamples = 4;  // Multi-sample anti-aliasing
         
         // Disable terrain exaggeration
         viewer.scene.globe.terrainExaggeration = 1.0;
