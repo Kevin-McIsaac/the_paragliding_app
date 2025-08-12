@@ -13,7 +13,6 @@ import '../widgets/edit_site_dialog.dart';
 import '../widgets/site_selection_dialog.dart';
 import '../widgets/wing_selection_dialog.dart';
 import 'flight_track_screen.dart';
-import 'flight_track_3d_screen.dart';
 import '../../core/dependency_injection.dart';
 
 class FlightDetailScreen extends StatefulWidget {
@@ -653,25 +652,9 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'Flight Track 3D',
-                                    style: Theme.of(context).textTheme.titleLarge,
-                                  ),
-                                  TextButton.icon(
-                                    onPressed: () async {
-                                      await Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder: (context) => FlightTrack3DScreen(flight: _flight),
-                                        ),
-                                      );
-                                    },
-                                    icon: const Icon(Icons.fullscreen),
-                                    label: const Text('Full Screen'),
-                                  ),
-                                ],
+                              Text(
+                                'Flight Track 3D',
+                                style: Theme.of(context).textTheme.titleLarge,
                               ),
                               const SizedBox(height: 16),
                               FlightTrack3DWidget(

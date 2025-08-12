@@ -557,7 +557,7 @@ function setupTimeBasedAnimation(points) {
     viewer.clock.stopTime = stopTime.clone();
     viewer.clock.currentTime = startTime.clone();
     viewer.clock.clockRange = Cesium.ClockRange.CLAMPED; // Stop at end instead of looping
-    viewer.clock.multiplier = 1;
+    viewer.clock.multiplier = 60;
     viewer.clock.shouldAnimate = false; // Start paused
     
     cesiumLog.info('Clock configured - start: ' + viewer.clock.startTime.toString() + 
@@ -948,7 +948,7 @@ document.addEventListener('visibilitychange', function() {
 let playbackState = {
     isPlaying: false,
     currentIndex: 0,
-    playbackSpeed: 30.0,  // Default to 30x speed
+    playbackSpeed: 60.0,  // Default to 60x speed
     followMode: false,
     showPilot: null,
     animationFrame: null,
