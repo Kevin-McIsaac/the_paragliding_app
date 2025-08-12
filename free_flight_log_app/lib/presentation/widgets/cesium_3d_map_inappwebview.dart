@@ -246,10 +246,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                   _surfaceErrorCount = 0; // Reset surface errors on successful load
                 });
                 
-                // Load flight track if available
-                if (widget.trackPoints != null && widget.trackPoints!.isNotEmpty) {
-                  await _loadFlightTrack(controller);
-                }
+                // Track is now loaded during initialization, no need to load here
               }
             }
           },
@@ -436,6 +433,17 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
     // Determine if in debug mode for conditional logging
     final bool isDebugMode = kDebugMode;
     
+    // Convert track points to JavaScript array format if available
+    String trackPointsJs = '';
+    if (widget.trackPoints != null && widget.trackPoints!.isNotEmpty) {
+      final points = widget.trackPoints!.map((p) => 
+        '{latitude:${p['latitude']},longitude:${p['longitude']},altitude:${p['altitude'] ?? p['gpsAltitude']},climbRate:${p['climbRate'] ?? 0},timestamp:"${p['timestamp'] ?? ""}"}'
+      ).join(',');
+      trackPointsJs = '[$points]';
+    } else {
+      trackPointsJs = '[]';
+    }
+    
     // If HTML template is loaded from assets, use it
     if (_cesiumHtml != null) {
       // Replace placeholders with actual values
@@ -444,7 +452,8 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
         .replaceAll('{{LON}}', lon.toString())
         .replaceAll('{{ALTITUDE}}', altitude.toString())
         .replaceAll('{{DEBUG}}', isDebugMode.toString())
-        .replaceAll('{{TOKEN}}', CesiumConfig.ionAccessToken);
+        .replaceAll('{{TOKEN}}', CesiumConfig.ionAccessToken)
+        .replaceAll('window.cesiumConfig = {', 'window.cesiumConfig = {\n            trackPoints: $trackPointsJs,');
     }
     
     // Fallback to inline HTML (keeping original implementation as backup)

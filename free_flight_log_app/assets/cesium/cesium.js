@@ -31,6 +31,12 @@ function initializeCesium(config) {
     
     cesiumLog.info('Starting Cesium initialization...');
     
+    // Store track points if provided during initialization
+    const hasInitialTrack = config.trackPoints && config.trackPoints.length > 0;
+    if (hasInitialTrack) {
+        cesiumLog.info('Initial track data provided with ' + config.trackPoints.length + ' points');
+    }
+    
     try {
         // Aggressively optimized Cesium viewer settings for minimal memory usage
         viewer = new Cesium.Viewer("cesiumContainer", {
@@ -59,9 +65,9 @@ function initializeCesium(config) {
             },
             
             // Disable unused widgets to reduce overhead
-            baseLayerPicker: false,
-            geocoder: false,
-            homeButton: false,  // Remove home button as requested
+            baseLayerPicker: true,
+            geocoder: true,
+            homeButton: true,  // Remove home button as requested
             sceneModePicker: false,
             navigationHelpButton: false,
             animation: false,
@@ -113,15 +119,18 @@ function initializeCesium(config) {
             imageryProvider.saturation = 1.0;
         }
         
-        // Set initial camera view
-        viewer.camera.setView({
-            destination: Cesium.Cartesian3.fromDegrees(config.lon, config.lat, config.altitude),
-            orientation: {
-                heading: Cesium.Math.toRadians(0),
-                pitch: Cesium.Math.toRadians(-45),
-                roll: 0.0
-            }
-        });
+        // Only set initial camera view if no track points provided
+        // If track points are provided, the view will be set after creating the track
+        if (!hasInitialTrack) {
+            viewer.camera.setView({
+                destination: Cesium.Cartesian3.fromDegrees(config.lon, config.lat, config.altitude),
+                orientation: {
+                    heading: Cesium.Math.toRadians(0),
+                    pitch: Cesium.Math.toRadians(-45),
+                    roll: 0.0
+                }
+            });
+        }
         
         // Handle tile memory exceeded events
         viewer.scene.globe.tileLoadProgressEvent.addEventListener(function() {
@@ -203,7 +212,18 @@ function initializeCesium(config) {
         }, 30000);  // Every 30 seconds for better memory management
         
         cesiumLog.info('Cesium viewer initialized successfully');
-        cesiumLog.debug('Camera position: lat=' + config.lat + ', lon=' + config.lon + ', altitude=' + config.altitude);
+        
+        // If track points were provided, create the track immediately
+        if (hasInitialTrack) {
+            cesiumLog.info('Creating initial track with ' + config.trackPoints.length + ' points');
+            // Use a small delay to ensure viewer is fully ready
+            setTimeout(() => {
+                createColoredFlightTrack(config.trackPoints);
+                cesiumLog.info('Initial track created and view set');
+            }, 100);
+        } else {
+            cesiumLog.debug('Camera position: lat=' + config.lat + ', lon=' + config.lon + ', altitude=' + config.altitude);
+        }
         
         // Store viewer globally for cleanup
         window.viewer = viewer;
@@ -291,7 +311,7 @@ function createFlightTrack(points) {
         name: 'Flight Track',
         polyline: {
             positions: positions,
-            width: 6,
+            width: 10,
             material: new Cesium.PolylineGlowMaterialProperty({
                 glowPower: 0.2,
                 taperPower: 0.5,
@@ -332,7 +352,7 @@ function createColoredFlightTrack(points) {
         name: 'Flight Track',
         polyline: {
             positions: positions,
-            width: 5,
+            width: 8,
             material: new Cesium.PolylineGlowMaterialProperty({
                 glowPower: 0.25,
                 taperPower: 0.2,
@@ -408,7 +428,7 @@ function setupTimeBasedAnimation(points) {
             show: true,
             leadTime: 0,
             trailTime: 60, // Show 60 seconds of trail
-            width: 5,
+            width: 8,
             material: new Cesium.PolylineGlowMaterialProperty({
                 glowPower: 0.15,
                 taperPower: 0.3,
