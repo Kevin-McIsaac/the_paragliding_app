@@ -940,7 +940,7 @@ function animatePlayback() {
             playbackState.currentIndex++;
         }
         
-        cesiumLog.debug('Animation: advanced ' + pointsToAdvance + ' points to index ' + playbackState.currentIndex);
+        // Animation advancing silently
         
         if (playbackState.currentIndex < igcPoints.length) {
             if (playbackState.followMode) {
