@@ -173,14 +173,14 @@ function initializeCesium(config) {
         viewer.scene.globe.maximumMemoryUsage = 512;  // Higher memory limit for better quality
         
         // Better quality with reasonable performance
-        viewer.scene.globe.maximumScreenSpaceError = 2;  // Higher quality terrain and imagery
+        viewer.scene.globe.maximumScreenSpaceError = 3;  // Good quality with reasonable tile count
         
         // Higher texture resolution
         viewer.scene.maximumTextureSize = 2048;  // Higher resolution textures
         
         // Set explicit tile load limits
-        viewer.scene.globe.loadingDescendantLimit = 20;  // More concurrent tile loads
-        viewer.scene.globe.immediatelyLoadDesiredLevelOfDetail = true;  // Load desired detail immediately
+        viewer.scene.globe.loadingDescendantLimit = 15;  // Balanced concurrent tile loads
+        viewer.scene.globe.immediatelyLoadDesiredLevelOfDetail = false;  // Progressive loading for better performance
         
         // Enable FXAA for better edge quality
         viewer.scene.fxaa = true;
@@ -247,14 +247,17 @@ function initializeCesium(config) {
             const globe = viewer.scene.globe;
             if (globe._surface && globe._surface._tilesToRender) {
                 const tileCount = globe._surface._tilesToRender.length;
-                if (tileCount > 30) {
-                    cesiumLog.debug('High tile count detected: ' + tileCount + ' - adjusting quality');
+                if (tileCount > 50) {  // Increased threshold for higher quality settings
+                    // Only log occasionally to reduce spam
+                    if (Math.random() < 0.1) {  // Log 10% of the time
+                        cesiumLog.debug('High tile count: ' + tileCount);
+                    }
                     // Temporarily increase screen space error to reduce tile count
-                    viewer.scene.globe.maximumScreenSpaceError = 6;
+                    viewer.scene.globe.maximumScreenSpaceError = 4;  // Less aggressive reduction
                     
                     // Reset after a delay
                     setTimeout(() => {
-                        viewer.scene.globe.maximumScreenSpaceError = 4;
+                        viewer.scene.globe.maximumScreenSpaceError = 3;  // Reset to our new default
                     }, 3000);
                 }
             }
@@ -306,14 +309,14 @@ function initializeCesium(config) {
                 // Monitor tile count for cleanup
                 if (viewer.scene.globe._surface && viewer.scene.globe._surface._tilesToRender) {
                     const tileCount = viewer.scene.globe._surface._tilesToRender.length;
-                    if (tileCount > 25) {
-                        cesiumLog.debug('High tile count: ' + tileCount + ' - reducing quality');
+                    if (tileCount > 50) {  // Increased threshold
+                        // Silently adjust without logging to reduce console spam
                         // Temporarily increase screen space error to reduce tile count
-                        viewer.scene.globe.maximumScreenSpaceError = 6;
+                        viewer.scene.globe.maximumScreenSpaceError = 4;
                         
                         // Reset after a delay
                         setTimeout(() => {
-                            viewer.scene.globe.maximumScreenSpaceError = 4;
+                            viewer.scene.globe.maximumScreenSpaceError = 3;
                         }, 5000);
                     }
                 }
