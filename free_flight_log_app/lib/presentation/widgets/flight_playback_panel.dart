@@ -265,9 +265,7 @@ class _FlightPlaybackPanelState extends State<FlightPlaybackPanel>
     }
     
     final currentIndex = widget.controller.currentPointIndex;
-    final altitude = point.pressureAltitude > 0 
-        ? point.pressureAltitude 
-        : point.gpsAltitude;
+    final altitude = point.gpsAltitude; // Always use GPS altitude per standards
     
     // Get climb rate from controller's arrays
     double climbRate = 0.0;
