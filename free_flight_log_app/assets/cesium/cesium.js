@@ -67,17 +67,17 @@ function initializeCesium(config) {
             // Disable unused widgets to reduce overhead
             baseLayerPicker: true,
             geocoder: true,
-            homeButton: true,  // Remove home button as requested
-            sceneModePicker: false,
-            navigationHelpButton: false,
-            animation: false,
-            timeline: false,
-            fullscreenButton: false,
+            homeButton: false,  // Remove home button as requested
+            sceneModePicker: true,
+            navigationHelpButton: true,
+            animation: true,
+            timeline: true,
+            fullscreenButton: true,
             vrButton: false,
             infoBox: false,
-            selectionIndicator: false,
+            selectionIndicator: true,
             shadows: false,
-            shouldAnimate: false,
+            shouldAnimate: true,
         });
         
         cesiumLog.debug('Cesium viewer created, configuring aggressive memory optimizations...');
