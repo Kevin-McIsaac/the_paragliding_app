@@ -150,11 +150,17 @@ class CesiumWebViewController {
       if (functionExists == true || functionExists == 'true') {
         final result = await evaluateJavascript(source: 'JSON.stringify(getPlaybackState())');
         if (result != null && result != 'null') {
-          return Map<String, dynamic>.from(jsonDecode(result.toString()));
+          final state = Map<String, dynamic>.from(jsonDecode(result.toString()));
+          // Debug log to see what we're getting
+          if (state['isPlaying'] == true) {
+            LoggingService.debug('CesiumWebViewController: Playback state - index: ${state['currentIndex']}, playing: ${state['isPlaying']}');
+          }
+          return state;
         }
       }
     } catch (e) {
       // Function not available yet, return default state
+      LoggingService.debug('CesiumWebViewController: getPlaybackState error: $e');
     }
     
     return {

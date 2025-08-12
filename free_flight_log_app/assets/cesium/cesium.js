@@ -956,9 +956,11 @@ function animatePlayback() {
         }
         
         if (playbackState.currentIndex >= igcPoints.length - 1) {
-            // Reached end of flight
-            stopPlayback();
-            cesiumLog.info('Playback completed');
+            // Reached end of flight - just pause, don't stop
+            pausePlayback();
+            // Keep pilot at final position
+            updatePilotPosition(igcPoints.length - 1);
+            cesiumLog.info('Playback completed - paused at end');
             
             if (window.onPlaybackCompleted) {
                 window.onPlaybackCompleted();

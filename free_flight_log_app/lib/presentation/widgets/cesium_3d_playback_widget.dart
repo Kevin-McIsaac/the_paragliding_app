@@ -56,21 +56,43 @@ class _Cesium3DPlaybackWidgetState extends State<Cesium3DPlaybackWidget> {
 
   void _startUpdateTimer() {
     _updateTimer?.cancel();
-    _updateTimer = Timer.periodic(const Duration(milliseconds: 100), (_) async {
-      if (_isPlaying || mounted) {
-        try {
-          final state = await widget.controller.getPlaybackState();
-          if (mounted && state != null) {
+    _updateTimer = Timer.periodic(const Duration(milliseconds: 50), (_) async {
+      if (!mounted) return;
+      
+      try {
+        final state = await widget.controller.getPlaybackState();
+        if (mounted && state != null) {
+          // Only update if values have changed to avoid unnecessary rebuilds
+          final newSpeed = state['playbackSpeed'] is int 
+              ? (state['playbackSpeed'] as int).toDouble() 
+              : (state['playbackSpeed'] ?? 1.0);
+          
+          if (_currentIndex != (state['currentIndex'] ?? 0) ||
+              _isPlaying != (state['isPlaying'] ?? false) ||
+              _playbackSpeed != newSpeed ||
+              _followMode != (state['followMode'] ?? false)) {
+            
+            // Debug log significant changes
+            if (_currentIndex != (state['currentIndex'] ?? 0)) {
+              LoggingService.debug('Cesium3DPlaybackWidget: Index changed from $_currentIndex to ${state['currentIndex']}');
+            }
+            if (_isPlaying != (state['isPlaying'] ?? false)) {
+              LoggingService.debug('Cesium3DPlaybackWidget: Playing state changed from $_isPlaying to ${state['isPlaying']}');
+            }
+            
             setState(() {
               _currentIndex = state['currentIndex'] ?? 0;
               _isPlaying = state['isPlaying'] ?? false;
-              _playbackSpeed = state['playbackSpeed'] ?? 1.0;
+              // Handle both int and double for playbackSpeed
+              final speed = state['playbackSpeed'];
+              _playbackSpeed = speed is int ? speed.toDouble() : (speed ?? 1.0);
               _followMode = state['followMode'] ?? false;
             });
           }
-        } catch (e) {
-          // Cesium may not be fully loaded yet, ignore errors
         }
+      } catch (e) {
+        // Cesium may not be fully loaded yet, ignore errors
+        LoggingService.debug('Cesium3DPlaybackWidget: Error getting playback state: $e');
       }
     });
   }
@@ -209,9 +231,7 @@ class _Cesium3DPlaybackWidgetState extends State<Cesium3DPlaybackWidget> {
             } else {
               await widget.controller.startPlayback();
             }
-            setState(() {
-              _isPlaying = !_isPlaying;
-            });
+            // Don't set local state - let it update from getPlaybackState
           },
           borderRadius: BorderRadius.circular(20),
           child: Container(
