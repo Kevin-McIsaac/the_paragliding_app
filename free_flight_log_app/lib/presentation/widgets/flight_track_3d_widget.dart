@@ -57,7 +57,6 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
   final IgcImportService _igcService = IgcImportService();
   
   List<IgcPoint> _trackPoints = [];
-  List<double> _fifteenSecondRates = [];
   bool _isLoading = true;
   String? _error;
 
@@ -93,12 +92,8 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
         return;
       }
 
-      // Calculate climb rates from IGC data
-      final fifteenSecondRates = _calculateGPS15SecondClimbRates(trackPoints);
-
       setState(() {
         _trackPoints = trackPoints;
-        _fifteenSecondRates = fifteenSecondRates;
         _isLoading = false;
       });
       
@@ -110,49 +105,6 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
     }
   }
 
-  /// Calculate 15-second averaged climb rates from GPS altitude
-  List<double> _calculateGPS15SecondClimbRates(List<IgcPoint> points) {
-    if (points.isEmpty) return [];
-    
-    final rates = <double>[];
-    const windowSize = 15; // seconds
-    
-    for (int i = 0; i < points.length; i++) {
-      // Find points approximately 15 seconds before and after
-      int startIdx = i;
-      int endIdx = i;
-      
-      // Look back up to windowSize/2 seconds
-      for (int j = i - 1; j >= 0; j--) {
-        final timeDiff = points[i].timestamp.difference(points[j].timestamp).inSeconds;
-        if (timeDiff > windowSize ~/ 2) break;
-        startIdx = j;
-      }
-      
-      // Look forward up to windowSize/2 seconds
-      for (int j = i + 1; j < points.length; j++) {
-        final timeDiff = points[j].timestamp.difference(points[i].timestamp).inSeconds;
-        if (timeDiff > windowSize ~/ 2) break;
-        endIdx = j;
-      }
-      
-      // Calculate average climb rate over the window
-      if (endIdx > startIdx) {
-        final altDiff = points[endIdx].gpsAltitude - points[startIdx].gpsAltitude;
-        final timeDiff = points[endIdx].timestamp.difference(points[startIdx].timestamp).inSeconds;
-        
-        if (timeDiff > 0) {
-          rates.add(altDiff / timeDiff);
-        } else {
-          rates.add(0.0);
-        }
-      } else {
-        rates.add(0.0);
-      }
-    }
-    
-    return rates;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -215,15 +167,12 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
       );
     }
 
-    // Convert IgcPoints to format expected by Cesium widget
+    // Convert IgcPoints to format expected by Cesium widget with timestamps
     final trackPointsForCesium = _trackPoints.map((point) => {
       'latitude': point.latitude,
       'longitude': point.longitude,
       'altitude': point.gpsAltitude,
       'timestamp': point.timestamp.toIso8601String(),
-      'climbRate': _trackPoints.indexOf(point) < _fifteenSecondRates.length 
-          ? _fifteenSecondRates[_trackPoints.indexOf(point)] 
-          : 0.0,
     }).toList();
 
     // Build the 3D map widget
