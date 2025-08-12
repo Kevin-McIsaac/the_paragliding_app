@@ -807,6 +807,12 @@ function startPlayback() {
         return;
     }
     
+    // If at the end, restart from beginning
+    if (playbackState.currentIndex >= igcPoints.length - 1) {
+        playbackState.currentIndex = 0;
+        cesiumLog.info('Restarting playback from beginning');
+    }
+    
     // Check if using time-based animation
     if (viewer.clock && playbackState.positionProperty) {
         // Use Cesium's native clock for time-based playback
