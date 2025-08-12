@@ -437,7 +437,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
     String trackPointsJs = '';
     if (widget.trackPoints != null && widget.trackPoints!.isNotEmpty) {
       final points = widget.trackPoints!.map((p) => 
-        '{latitude:${p['latitude']},longitude:${p['longitude']},altitude:${p['altitude'] ?? p['gpsAltitude']},climbRate:${p['climbRate'] ?? 0},timestamp:"${p['timestamp'] ?? ""}"}'
+        '{latitude:${p['latitude']},longitude:${p['longitude']},altitude:${p['altitude'] ?? p['gpsAltitude']},climbRate:${p['climbRate'] ?? 0},timestamp:"${p['timestamp'] ?? ""}",timezone:"${p['timezone'] ?? '+00:00'}"}'
       ).join(',');
       trackPointsJs = '[$points]';
     } else {
@@ -1121,21 +1121,26 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
       final jsPoints = widget.trackPoints!.map((point) {
         // Handle Map objects (which is what we're getting from flight_track_widget)
         double lat, lon, alt, climbRate;
+        String timezone, timestamp;
         
         if (point is Map) {
           lat = (point['latitude'] ?? 0.0).toDouble();
           lon = (point['longitude'] ?? 0.0).toDouble();
           alt = (point['altitude'] ?? 0.0).toDouble();
           climbRate = (point['climbRate'] ?? 0.0).toDouble();
+          timezone = point['timezone'] ?? '+00:00';
+          timestamp = point['timestamp'] ?? '';
         } else {
           // Handle object with properties
           lat = (point.latitude ?? 0.0).toDouble();
           lon = (point.longitude ?? 0.0).toDouble();
           alt = (point.altitude ?? 0.0).toDouble();
           climbRate = (point.climbRate ?? 0.0).toDouble();
+          timezone = point.timezone ?? '+00:00';
+          timestamp = point.timestamp ?? '';
         }
         
-        return '{latitude:$lat,longitude:$lon,altitude:$alt,climbRate:$climbRate}';
+        return '{latitude:$lat,longitude:$lon,altitude:$alt,climbRate:$climbRate,timestamp:"$timestamp",timezone:"$timezone"}';
       }).join(',');
       
       // Log first and last points for debugging

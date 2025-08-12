@@ -533,6 +533,105 @@ function createColoredFlightTrack(points) {
     
     igcPoints = points;
     
+    // Extract and store timezone from the first point if available
+    let trackTimezone = '+00:00'; // Default to UTC
+    let timezoneOffsetSeconds = 0; // Offset in seconds for time calculations
+    
+    // Debug: Check what's in the first point
+    if (points.length > 0) {
+        cesiumLog.debug('First point keys: ' + Object.keys(points[0]).join(', '));
+        cesiumLog.debug('First point timezone field: ' + points[0].timezone);
+    }
+    
+    if (points.length > 0 && points[0].timezone) {
+        trackTimezone = points[0].timezone;
+        cesiumLog.info('Track timezone detected: ' + trackTimezone);
+        
+        // Parse timezone offset for display adjustments
+        const tzMatch = trackTimezone.match(/^([+-])(\d{2}):(\d{2})$/);
+        if (tzMatch) {
+            const sign = tzMatch[1] === '+' ? 1 : -1;
+            const hours = parseInt(tzMatch[2], 10);
+            const minutes = parseInt(tzMatch[3], 10);
+            timezoneOffsetSeconds = sign * ((hours * 3600) + (minutes * 60));
+            cesiumLog.info('Timezone offset in seconds: ' + timezoneOffsetSeconds);
+        }
+        
+        // Store timezone globally for display formatting
+        window.flightTimezone = trackTimezone;
+        window.flightTimezoneOffsetSeconds = timezoneOffsetSeconds;
+        
+        // Configure Animation widget to show local time
+        if (viewer.animation && timezoneOffsetSeconds !== 0) {
+            cesiumLog.info('Configuring Animation widget for timezone: ' + trackTimezone);
+            
+            // Store original formatters
+            const originalDateFormatter = viewer.animation.viewModel.dateFormatter;
+            const originalTimeFormatter = viewer.animation.viewModel.timeFormatter;
+            
+            // Override date formatter to show local date
+            viewer.animation.viewModel.dateFormatter = function(julianDate, viewModel) {
+                // Add timezone offset to show local time
+                const localJulianDate = Cesium.JulianDate.addSeconds(
+                    julianDate, 
+                    timezoneOffsetSeconds, 
+                    new Cesium.JulianDate()
+                );
+                const gregorian = Cesium.JulianDate.toGregorianDate(localJulianDate);
+                
+                // Format the date
+                const year = gregorian.year;
+                const month = (gregorian.month).toString().padStart(2, '0');
+                const day = gregorian.day.toString().padStart(2, '0');
+                
+                return year + '-' + month + '-' + day;
+            };
+            
+            // Override time formatter to show local time with timezone
+            viewer.animation.viewModel.timeFormatter = function(julianDate, viewModel) {
+                // Add timezone offset to show local time
+                const localJulianDate = Cesium.JulianDate.addSeconds(
+                    julianDate,
+                    timezoneOffsetSeconds,
+                    new Cesium.JulianDate()
+                );
+                const gregorian = Cesium.JulianDate.toGregorianDate(localJulianDate);
+                
+                const hours = gregorian.hour.toString().padStart(2, '0');
+                const minutes = gregorian.minute.toString().padStart(2, '0');
+                const seconds = Math.floor(gregorian.second).toString().padStart(2, '0');
+                
+                // Include timezone indicator
+                return hours + ':' + minutes + ':' + seconds + ' ' + trackTimezone;
+            };
+            
+            cesiumLog.info('Animation widget configured for local time display');
+        }
+        
+        // Configure Timeline to show local time
+        if (viewer.timeline && timezoneOffsetSeconds !== 0) {
+            cesiumLog.info('Configuring Timeline for timezone: ' + trackTimezone);
+            
+            // Override the timeline's date formatter to show local time
+            viewer.timeline.makeLabel = function(date) {
+                // Add timezone offset to the Julian date to get local time
+                const localJulianDate = Cesium.JulianDate.addSeconds(date, timezoneOffsetSeconds, new Cesium.JulianDate());
+                const gregorian = Cesium.JulianDate.toGregorianDate(localJulianDate);
+                
+                // Format as HH:MM:SS with timezone indicator
+                const hours = gregorian.hour.toString().padStart(2, '0');
+                const minutes = gregorian.minute.toString().padStart(2, '0');
+                const seconds = Math.floor(gregorian.second).toString().padStart(2, '0');
+                
+                return hours + ':' + minutes + ':' + seconds + ' ' + trackTimezone;
+            };
+            
+            cesiumLog.info('Timeline configured for local time display');
+        }
+    } else {
+        cesiumLog.info('No timezone information found in track data, using UTC');
+    }
+    
     // Clear existing entities
     viewer.entities.removeAll();
     playbackState.showPilot = null;
@@ -813,17 +912,35 @@ function setupTimeBasedAnimation(points) {
                     const altitude = currentPoint.gpsAltitude || currentPoint.altitude || 0;
                     const climbRate = currentPoint.climbRate || 0;
                     
-                    // Format time (HH:MM format for compact display)
-                    const date = Cesium.JulianDate.toDate(clock.currentTime);
-                    const timeStr = date.getHours().toString().padStart(2, '0') + ':' + 
-                                  date.getMinutes().toString().padStart(2, '0');
+                    // Format time (HH:MM format for compact display) in local timezone
+                    let timeStr;
+                    let tzLabel = '';
+                    
+                    if (window.flightTimezoneOffsetSeconds && window.flightTimezoneOffsetSeconds !== 0) {
+                        // Convert to local time
+                        const localJulianDate = Cesium.JulianDate.addSeconds(
+                            clock.currentTime,
+                            window.flightTimezoneOffsetSeconds,
+                            new Cesium.JulianDate()
+                        );
+                        const gregorian = Cesium.JulianDate.toGregorianDate(localJulianDate);
+                        timeStr = gregorian.hour.toString().padStart(2, '0') + ':' + 
+                                gregorian.minute.toString().padStart(2, '0');
+                        tzLabel = window.flightTimezone ? ' (' + window.flightTimezone + ')' : '';
+                    } else {
+                        // Fallback to UTC
+                        const date = Cesium.JulianDate.toDate(clock.currentTime);
+                        timeStr = date.getHours().toString().padStart(2, '0') + ':' + 
+                                date.getMinutes().toString().padStart(2, '0');
+                        tzLabel = ' (UTC)';
+                    }
                     
                     // Update label text with horizontal format using pipe separators
                     const labelText = 
                         'Alt: ' + altitude.toFixed(0) + 'm  |  ' +
                         'Climb: ' + (climbRate >= 0 ? '+' : '') + climbRate.toFixed(1) + 'm/s  |  ' + 
                         'Speed: ' + speed.toFixed(1) + 'km/h  |  ' +
-                        timeStr;
+                        timeStr + tzLabel;
                     
                     playbackState.statsLabel.label.text = labelText;
                 }
