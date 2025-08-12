@@ -5,7 +5,6 @@ import '../../data/models/igc_file.dart';
 import '../../services/igc_import_service.dart';
 import '../../services/logging_service.dart';
 import 'cesium_3d_map_inappwebview.dart';
-import 'cesium_3d_playback_widget.dart';
 import 'cesium/cesium_webview_controller.dart';
 
 /// Configuration for the 3D flight track visualization
@@ -57,7 +56,6 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
   final IgcImportService _igcService = IgcImportService();
   
   List<IgcPoint> _trackPoints = [];
-  List<double> _climbRates = [];
   bool _isLoading = true;
   String? _error;
 
@@ -93,12 +91,8 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
         return;
       }
 
-      // Calculate climb rates
-      final climbRates = _calculateSimpleClimbRates(trackPoints);
-      
       setState(() {
         _trackPoints = trackPoints;
-        _climbRates = climbRates;
         _isLoading = false;
       });
       
@@ -173,14 +167,13 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
     }
 
     // Convert IgcPoints to format expected by Cesium widget with timestamps and climb rates
-    final trackPointsForCesium = _trackPoints.asMap().entries.map((entry) {
-      final index = entry.key;
-      final point = entry.value;
-      final climbRate = index < _climbRates.length ? _climbRates[index] : 0.0;
+    final trackPointsForCesium = _trackPoints.map((point) {
+      // Use the virtual properties if available, otherwise fall back to calculated values
+      final climbRate = point.climbRate;
       
       // Debug log to verify climb rates are being passed
-      if (index % 30 == 0) {
-        LoggingService.debug('FlightTrack3D: Creating point $index with climbRate: $climbRate from _climbRates[$index]');
+      if (point.pointIndex != null && point.pointIndex! % 30 == 0) {
+        LoggingService.debug('FlightTrack3D: Point ${point.pointIndex} - climbRate: $climbRate, groundSpeed: ${point.groundSpeed}');
       }
       
       return {
@@ -191,6 +184,7 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
         'pressureAltitude': point.pressureAltitude,
         'timestamp': point.timestamp.toIso8601String(),
         'climbRate': climbRate,
+        'groundSpeed': point.groundSpeed,
       };
     }).toList();
 
@@ -248,21 +242,7 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
       },
     );
 
-    // Add playback panel if configured
-    if (widget.config.showPlayback && widget.showPlaybackPanel && trackPointsForCesium.isNotEmpty) {
-      cesiumWidget = Column(
-        children: [
-          Expanded(child: cesiumWidget),
-          Cesium3DPlaybackWidget(
-            controller: _cesiumController,
-            trackPoints: trackPointsForCesium,
-            onClose: () {
-              // Optional: Add close behavior if needed
-            },
-          ),
-        ],
-      );
-    }
+    // Playback is now handled by Cesium's native Animation and Timeline widgets
 
     // Apply container with height if embedded
     if (widget.config.embedded) {
@@ -277,39 +257,5 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
     }
 
     return cesiumWidget;
-  }
-  
-  /// Calculate simple climb rates between consecutive points
-  List<double> _calculateSimpleClimbRates(List<IgcPoint> points) {
-    if (points.length < 2) return [];
-    
-    final climbRates = <double>[];
-    
-    // First point has no climb rate
-    climbRates.add(0.0);
-    
-    for (int i = 1; i < points.length; i++) {
-      // Use pressure altitude if available for more accurate climb rates
-      final altDiff = (points[i].pressureAltitude > 0 && points[i-1].pressureAltitude > 0)
-          ? points[i].pressureAltitude - points[i-1].pressureAltitude
-          : points[i].gpsAltitude - points[i-1].gpsAltitude;
-      final timeDiff = points[i].timestamp.difference(points[i-1].timestamp).inSeconds;
-      
-      if (timeDiff > 0) {
-        final rate = altDiff / timeDiff; // m/s
-        climbRates.add(rate);
-        
-        // Debug log to check calculations
-        if (i % 20 == 0) {
-          LoggingService.debug('FlightTrack3D: Point $i - altDiff: $altDiff, timeDiff: $timeDiff, climbRate: $rate');
-        }
-      } else {
-        climbRates.add(0.0);
-      }
-    }
-    
-    LoggingService.debug('FlightTrack3D: Calculated ${climbRates.length} climb rates, sample values: ${climbRates.take(5).toList()}');
-    
-    return climbRates;
   }
 }

@@ -9,6 +9,9 @@ let flightTrackEntity = null;
 let igcPoints = [];
 let currentTerrainExaggeration = 1.0;
 
+// Stats positioning configuration
+let statsPosition = 'bottom-center'; // Options: 'top-left', 'top-right', 'bottom-left', 'bottom-right', 'bottom-center'
+
 // Logging wrapper for conditional output
 const cesiumLog = {
     debug: (message) => {
@@ -64,20 +67,20 @@ function initializeCesium(config) {
                 }
             },
             
-            // Disable unused widgets to reduce overhead
+            // Enable Cesium's native animation controls
             baseLayerPicker: true,
             geocoder: true,
             homeButton: false,  // Remove home button as requested
             sceneModePicker: true,
             navigationHelpButton: true,
-            animation: false,
-            timeline: false,
+            animation: true,  // Enable native animation widget
+            timeline: true,   // Enable native timeline widget
             fullscreenButton: true,
             vrButton: false,
             infoBox: false,
             selectionIndicator: true,
             shadows: false,
-            shouldAnimate: true,
+            shouldAnimate: false,  // Start paused
         });
         
         cesiumLog.debug('Cesium viewer created, configuring aggressive memory optimizations...');
@@ -131,6 +134,36 @@ function initializeCesium(config) {
                 }
             });
         }
+        
+        // Add keyboard listener for stats position control
+        document.addEventListener('keydown', function(event) {
+            // 'S' key to cycle through stats positions
+            if (event.key === 's' || event.key === 'S') {
+                cycleStatsPosition();
+                event.preventDefault();
+            }
+            // Number keys for direct position selection
+            else if (event.key === '1') {
+                setStatsPosition('bottom-center');
+                event.preventDefault();
+            }
+            else if (event.key === '2') {
+                setStatsPosition('top-left');
+                event.preventDefault();
+            }
+            else if (event.key === '3') {
+                setStatsPosition('top-right');
+                event.preventDefault();
+            }
+            else if (event.key === '4') {
+                setStatsPosition('bottom-left');
+                event.preventDefault();
+            }
+            else if (event.key === '5') {
+                setStatsPosition('bottom-right');
+                event.preventDefault();
+            }
+        });
         
         // Handle tile memory exceeded events
         viewer.scene.globe.tileLoadProgressEvent.addEventListener(function() {
@@ -227,6 +260,10 @@ function initializeCesium(config) {
         
         // Store viewer globally for cleanup
         window.viewer = viewer;
+        
+        // Expose stats position functions to be callable from Flutter
+        window.setStatsPosition = setStatsPosition;
+        window.cycleStatsPosition = cycleStatsPosition;
         
     } catch (error) {
         cesiumLog.error('Initialization error: ' + error.message);
@@ -370,13 +407,89 @@ function createColoredFlightTrack(points) {
     cesiumLog.info('Single blue track created with ' + points.length + ' points');
 }
 
+// Change stats position and update the label
+function setStatsPosition(newPosition) {
+    const validPositions = ['top-left', 'top-right', 'bottom-left', 'bottom-right', 'bottom-center'];
+    
+    if (!validPositions.includes(newPosition)) {
+        cesiumLog.error('Invalid stats position: ' + newPosition);
+        return;
+    }
+    
+    statsPosition = newPosition;
+    cesiumLog.info('Stats position changed to: ' + statsPosition);
+    
+    // Update the label if it exists
+    if (playbackState.statsLabel) {
+        const newPos = getStatsPositioning();
+        playbackState.statsLabel.label.pixelOffset = newPos.pixelOffset;
+        playbackState.statsLabel.label.horizontalOrigin = newPos.horizontalOrigin;
+        playbackState.statsLabel.label.verticalOrigin = newPos.verticalOrigin;
+    }
+}
+
+// Cycle through stats positions
+function cycleStatsPosition() {
+    const positions = ['bottom-center', 'top-left', 'top-right', 'bottom-left', 'bottom-right'];
+    const currentIndex = positions.indexOf(statsPosition);
+    const nextIndex = (currentIndex + 1) % positions.length;
+    setStatsPosition(positions[nextIndex]);
+}
+
+// Calculate pixel offset and origin for stats position
+function getStatsPositioning() {
+    const padding = 20; // Padding from edges
+    const canvasWidth = viewer.canvas.width;
+    const canvasHeight = viewer.canvas.height;
+    
+    let pixelOffset, horizontalOrigin, verticalOrigin;
+    
+    switch(statsPosition) {
+        case 'top-left':
+            pixelOffset = new Cesium.Cartesian2(-canvasWidth/2 + padding + 80, -canvasHeight/2 + padding + 30);
+            horizontalOrigin = Cesium.HorizontalOrigin.LEFT;
+            verticalOrigin = Cesium.VerticalOrigin.TOP;
+            break;
+        case 'top-right':
+            pixelOffset = new Cesium.Cartesian2(canvasWidth/2 - padding - 80, -canvasHeight/2 + padding + 30);
+            horizontalOrigin = Cesium.HorizontalOrigin.RIGHT;
+            verticalOrigin = Cesium.VerticalOrigin.TOP;
+            break;
+        case 'bottom-left':
+            pixelOffset = new Cesium.Cartesian2(-canvasWidth/2 + padding + 80, canvasHeight/2 - padding - 10);
+            horizontalOrigin = Cesium.HorizontalOrigin.LEFT;
+            verticalOrigin = Cesium.VerticalOrigin.BOTTOM;
+            break;
+        case 'bottom-right':
+            pixelOffset = new Cesium.Cartesian2(canvasWidth/2 - padding - 80, canvasHeight/2 - padding - 10);
+            horizontalOrigin = Cesium.HorizontalOrigin.RIGHT;
+            verticalOrigin = Cesium.VerticalOrigin.BOTTOM;
+            break;
+        case 'bottom-center':
+        default:
+            pixelOffset = new Cesium.Cartesian2(0, canvasHeight/2 - 25);
+            horizontalOrigin = Cesium.HorizontalOrigin.CENTER;
+            verticalOrigin = Cesium.VerticalOrigin.BOTTOM;
+            break;
+    }
+    
+    return { pixelOffset, horizontalOrigin, verticalOrigin };
+}
+
 // Setup Cesium-native time-based animation
 function setupTimeBasedAnimation(points) {
     if (!viewer || !points || points.length === 0) return;
     
+    cesiumLog.info('Setting up time-based animation with ' + points.length + ' points');
+    cesiumLog.debug('First point timestamp: ' + points[0].timestamp);
+    cesiumLog.debug('Last point timestamp: ' + points[points.length - 1].timestamp);
+    
     // Parse timestamps and create time intervals
     const startTime = Cesium.JulianDate.fromIso8601(points[0].timestamp);
     const stopTime = Cesium.JulianDate.fromIso8601(points[points.length - 1].timestamp);
+    
+    cesiumLog.debug('Start time: ' + startTime.toString());
+    cesiumLog.debug('Stop time: ' + stopTime.toString());
     
     // Create sampled position property for smooth interpolation
     const positionProperty = new Cesium.SampledPositionProperty();
@@ -386,7 +499,8 @@ function setupTimeBasedAnimation(points) {
     });
     
     // Add samples for each point
-    points.forEach(point => {
+    let sampleCount = 0;
+    points.forEach((point, index) => {
         const time = Cesium.JulianDate.fromIso8601(point.timestamp);
         const position = Cesium.Cartesian3.fromDegrees(
             point.longitude,
@@ -394,9 +508,23 @@ function setupTimeBasedAnimation(points) {
             point.altitude
         );
         positionProperty.addSample(time, position);
+        sampleCount++;
+        
+        if (index % 100 === 0) {
+            cesiumLog.debug('Added sample ' + index + ' at time: ' + time.toString());
+        }
     });
     
-    // Create pilot entity with time-dynamic position
+    cesiumLog.info('Added ' + sampleCount + ' position samples');
+    
+    // Get first position for pilot initialization
+    const firstPos = Cesium.Cartesian3.fromDegrees(
+        points[0].longitude,
+        points[0].latitude,
+        points[0].altitude
+    );
+    
+    // Create pilot entity with Cesium native time-dynamic position
     const pilotEntity = viewer.entities.add({
         name: 'Pilot',
         availability: new Cesium.TimeIntervalCollection([
@@ -405,27 +533,20 @@ function setupTimeBasedAnimation(points) {
                 stop: stopTime
             })
         ]),
-        position: positionProperty,
+        position: positionProperty,  // Native Cesium SampledPositionProperty
         // Pilot marker
         point: {
-            pixelSize: 12,
+            pixelSize: 16,
             color: Cesium.Color.YELLOW,
             outlineColor: Cesium.Color.BLACK,
-            outlineWidth: 2,
+            outlineWidth: 3,
             heightReference: Cesium.HeightReference.NONE,
-            disableDepthTestDistance: 5000  // Visible within 5km
-        },
-        // Path visualization (trail behind pilot)
-        path: {
-            show: true,
-            leadTime: 0,
-            trailTime: 60, // Show 60 seconds of trail
-            width: 3,
-            material: Cesium.Color.YELLOW.withAlpha(0.6)
-        },
-        // Orientation based on velocity
-        orientation: new Cesium.VelocityOrientationProperty(positionProperty)
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,  // Always visible
+            scaleByDistance: new Cesium.NearFarScalar(1000, 1.5, 100000, 0.5)  // Scale with distance
+        }
     });
+    
+    cesiumLog.info('Created pilot entity with id: ' + pilotEntity.id);
     
     // Store pilot entity reference
     playbackState.showPilot = pilotEntity;
@@ -435,16 +556,122 @@ function setupTimeBasedAnimation(points) {
     viewer.clock.startTime = startTime.clone();
     viewer.clock.stopTime = stopTime.clone();
     viewer.clock.currentTime = startTime.clone();
-    viewer.clock.clockRange = Cesium.ClockRange.LOOP_STOP;
+    viewer.clock.clockRange = Cesium.ClockRange.CLAMPED; // Stop at end instead of looping
     viewer.clock.multiplier = 1;
     viewer.clock.shouldAnimate = false; // Start paused
+    
+    cesiumLog.info('Clock configured - start: ' + viewer.clock.startTime.toString() + 
+                 ', current: ' + viewer.clock.currentTime.toString());
     
     // Set timeline bounds
     if (viewer.timeline) {
         viewer.timeline.zoomTo(startTime, stopTime);
     }
     
-    cesiumLog.info('Time-based animation configured with Cesium native features');
+    // Force initial position evaluation
+    const initialPosition = positionProperty.getValue(startTime);
+    if (initialPosition) {
+        cesiumLog.info('Initial pilot position is valid');
+    } else {
+        cesiumLog.error('Initial pilot position is null!');
+    }
+    
+    // Use the existing pilot entity with time-dynamic position
+    playbackState.showPilot = pilotEntity;
+    playbackState.positionProperty = positionProperty;
+    
+    // Get positioning based on current statsPosition setting
+    const statsPos = getStatsPositioning();
+    
+    // Create a separate label entity for statistics
+    const statsLabel = viewer.entities.add({
+        name: 'StatsLabel',
+        position: firstPos,  // Position doesn't matter for screen-space label
+        label: {
+            text: 'Initializing...',
+            font: '12px monospace',
+            fillColor: Cesium.Color.WHITE,
+            outlineColor: Cesium.Color.BLACK,
+            outlineWidth: 2,
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            pixelOffset: statsPos.pixelOffset,
+            horizontalOrigin: statsPos.horizontalOrigin,
+            verticalOrigin: statsPos.verticalOrigin,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            backgroundColor: Cesium.Color.BLACK.withAlpha(0.6),
+            showBackground: true,
+            backgroundPadding: new Cesium.Cartesian2(15, 5),
+            eyeOffset: new Cesium.Cartesian3(0, 0, -1000)  // Ensure it's always in front
+        }
+    });
+    
+    playbackState.statsLabel = statsLabel;  // Store reference to label
+    
+    // Force scene rendering on each frame to ensure pilot updates
+    viewer.scene.requestRenderMode = false;  // Disable request render mode to force continuous rendering
+    
+    // Add clock tick listener to update statistics label
+    viewer.clock.onTick.addEventListener(function(clock) {
+        // Force scene update
+        viewer.scene.requestRender();
+        
+        if (playbackState.statsLabel) {
+                
+                // Find current point index based on time
+                const totalSeconds = Cesium.JulianDate.secondsDifference(clock.currentTime, clock.startTime);
+                const totalDuration = Cesium.JulianDate.secondsDifference(clock.stopTime, clock.startTime);
+                const progress = totalSeconds / totalDuration;
+                const currentIndex = Math.min(Math.floor(progress * points.length), points.length - 1);
+                
+                if (currentIndex >= 0 && currentIndex < points.length) {
+                    const currentPoint = points[currentIndex];
+                    
+                    // Use pre-calculated ground speed if available, otherwise calculate
+                    let speed = currentPoint.groundSpeed || 0;
+                    if (!speed && currentIndex > 0) {
+                        const prevPoint = points[currentIndex - 1];
+                        const distance = Cesium.Cartesian3.distance(
+                            Cesium.Cartesian3.fromDegrees(prevPoint.longitude, prevPoint.latitude, prevPoint.altitude),
+                            Cesium.Cartesian3.fromDegrees(currentPoint.longitude, currentPoint.latitude, currentPoint.altitude)
+                        );
+                        const timeDiff = Cesium.JulianDate.secondsDifference(
+                            Cesium.JulianDate.fromIso8601(currentPoint.timestamp),
+                            Cesium.JulianDate.fromIso8601(prevPoint.timestamp)
+                        );
+                        if (timeDiff > 0) {
+                            speed = (distance / timeDiff) * 3.6; // Convert m/s to km/h
+                        }
+                    }
+                    
+                    // Get altitude and climb rate (now pre-calculated in IgcPoint)
+                    const altitude = currentPoint.gpsAltitude || currentPoint.altitude || 0;
+                    const climbRate = currentPoint.climbRate || 0;
+                    
+                    // Format time (HH:MM format for compact display)
+                    const date = Cesium.JulianDate.toDate(clock.currentTime);
+                    const timeStr = date.getHours().toString().padStart(2, '0') + ':' + 
+                                  date.getMinutes().toString().padStart(2, '0');
+                    
+                    // Update label text with horizontal format using pipe separators
+                    const labelText = 
+                        'Alt: ' + altitude.toFixed(0) + 'm  |  ' +
+                        'Climb: ' + (climbRate >= 0 ? '+' : '') + climbRate.toFixed(1) + 'm/s  |  ' + 
+                        'Speed: ' + speed.toFixed(1) + 'km/h  |  ' +
+                        timeStr;
+                    
+                    playbackState.statsLabel.label.text = labelText;
+                }
+                
+                // Debug log every 30 seconds of simulation time
+                const seconds = Cesium.JulianDate.secondsDifference(clock.currentTime, clock.startTime);
+                if (Math.floor(seconds) % 30 === 0 && Math.floor(seconds) !== playbackState.lastLoggedSecond) {
+                    playbackState.lastLoggedSecond = Math.floor(seconds);
+                    cesiumLog.debug('Stats update - time: ' + seconds.toFixed(0) + 's, index: ' + currentIndex);
+                }
+            }
+    });
+    
+    cesiumLog.info('Time-based animation configured with Cesium native features and clock listener');
 }
 
 function getClimbRateColor(climbRate) {
@@ -727,7 +954,8 @@ let playbackState = {
     animationFrame: null,
     lastUpdateTime: null,
     accumulatedTime: 0,
-    positionProperty: null  // For Cesium native time-based animation
+    positionProperty: null,  // For Cesium native time-based animation
+    lastLoggedSecond: -1  // For debug logging
 };
 
 // Feature 3: Follow mode for flight playback
@@ -791,53 +1019,27 @@ function followFlightPoint(index) {
     updatePilotPosition(index);
 }
 
-// Update pilot marker position without changing camera
+// Update pilot marker position - DEPRECATED: Now handled by time-based animation
 function updatePilotPosition(index) {
-    if (!viewer || !igcPoints || index < 0 || index >= igcPoints.length) return;
-    
-    const point = igcPoints[index];
-    
-    // Add pilot marker if not exists
-    if (!playbackState.showPilot) {
-        playbackState.showPilot = viewer.entities.add({
-            name: 'Pilot',
-            position: Cesium.Cartesian3.fromDegrees(
-                point.longitude,
-                point.latitude,
-                point.altitude
-            ),
-            point: {
-                pixelSize: 12,
-                color: Cesium.Color.YELLOW,
-                outlineColor: Cesium.Color.BLACK,
-                outlineWidth: 3,
-                heightReference: Cesium.HeightReference.NONE,
-                disableDepthTestDistance: 5000  // Visible within 5km
-            },
-            billboard: {
-                image: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0Ij48cGF0aCBmaWxsPSIjRkZENzAwIiBkPSJNMTIgMkw0IDIwaDEzbC03LTE4eiIvPjwvc3ZnPg==', // Yellow triangle
-                scale: 0.8,
-                verticalOrigin: Cesium.VerticalOrigin.CENTER,
-                heightReference: Cesium.HeightReference.NONE,
-                disableDepthTestDistance: 5000  // Visible within 5km
-            }
-        });
-    } else {
-        // Update pilot position
-        playbackState.showPilot.position = Cesium.Cartesian3.fromDegrees(
-            point.longitude,
-            point.latitude,
-            point.altitude
-        );
-    }
+    // This function is kept for backward compatibility but does nothing
+    // The pilot position is now controlled by Cesium's clock and SampledPositionProperty
+    return;
 }
+
 
 // Feature 4: Playback controls using Cesium native clock
 function startPlayback() {
-    if (!viewer || !igcPoints || igcPoints.length === 0) {
-        cesiumLog.error('Cannot start playback: viewer=' + !!viewer + ', points=' + igcPoints.length);
+    cesiumLog.info('startPlayback called');
+    
+    if (!viewer || !viewer.clock || !igcPoints || igcPoints.length === 0) {
+        cesiumLog.error('Cannot start playback: No viewer or track data');
         return;
     }
+    
+    cesiumLog.debug('Viewer exists: ' + (viewer !== null));
+    cesiumLog.debug('Clock exists: ' + (viewer.clock !== null));
+    cesiumLog.debug('Track points: ' + igcPoints.length);
+    cesiumLog.debug('Pilot entity exists: ' + (playbackState.showPilot !== null));
     
     // If at the end, restart from beginning
     if (playbackState.currentIndex >= igcPoints.length - 1) {
@@ -845,187 +1047,155 @@ function startPlayback() {
         cesiumLog.info('Restarting playback from beginning');
     }
     
-    // Check if using time-based animation
-    if (viewer.clock && playbackState.positionProperty) {
-        // Use Cesium's native clock for time-based playback
-        viewer.clock.shouldAnimate = true;
-        viewer.clock.multiplier = playbackState.playbackSpeed;
-        playbackState.isPlaying = true;
-        
-        cesiumLog.info('Started Cesium native playback at speed ' + playbackState.playbackSpeed + 'x');
-    } else {
-        // Fallback to index-based animation
-        playbackState.isPlaying = true;
-        playbackState.lastUpdateTime = Date.now();
-        playbackState.accumulatedTime = 0;
-        
-        // Always show pilot marker when playback starts
-        updatePilotPosition(playbackState.currentIndex);
-        
-        cesiumLog.info('Playback started at speed ' + playbackState.playbackSpeed + 'x, index=' + playbackState.currentIndex + '/' + igcPoints.length);
-        
-        // Start animation loop
-        animatePlayback();
+    // Sync clock to current position
+    const currentPoint = igcPoints[playbackState.currentIndex];
+    if (currentPoint && currentPoint.timestamp) {
+        const targetTime = Cesium.JulianDate.fromIso8601(currentPoint.timestamp);
+        viewer.clock.currentTime = targetTime;
+        cesiumLog.debug('Set clock time to: ' + targetTime.toString());
     }
-}
-
-function pausePlayback() {
-    playbackState.isPlaying = false;
     
-    // Check if using time-based animation
-    if (viewer.clock && playbackState.positionProperty) {
-        viewer.clock.shouldAnimate = false;
-        cesiumLog.info('Paused Cesium native playback');
-    } else {
-        // Fallback index-based pause
-        if (playbackState.animationFrame) {
-            cancelAnimationFrame(playbackState.animationFrame);
-            playbackState.animationFrame = null;
-        }
-        cesiumLog.info('Playback paused at index ' + playbackState.currentIndex);
-    }
-}
-
-function stopPlayback() {
-    pausePlayback();
-    playbackState.currentIndex = 0;
-    playbackState.accumulatedTime = 0;
+    // Start clock animation
+    viewer.clock.multiplier = playbackState.playbackSpeed;
+    viewer.clock.shouldAnimate = true;
+    playbackState.isPlaying = true;
     
-    // Remove pilot marker
+    cesiumLog.info('Clock animation started - shouldAnimate: ' + viewer.clock.shouldAnimate + 
+                   ', multiplier: ' + viewer.clock.multiplier);
+    
+    // Check if pilot entity is visible
     if (playbackState.showPilot) {
-        viewer.entities.remove(playbackState.showPilot);
-        playbackState.showPilot = null;
+        cesiumLog.debug('Pilot entity show: ' + playbackState.showPilot.show);
+        
+        // Get current position from position property
+        const currentPos = playbackState.positionProperty.getValue(viewer.clock.currentTime);
+        if (currentPos) {
+            cesiumLog.info('Pilot position at current time is valid');
+            // Convert to lat/lon for debugging
+            const carto = Cesium.Cartographic.fromCartesian(currentPos);
+            cesiumLog.debug('Pilot at: lat=' + Cesium.Math.toDegrees(carto.latitude).toFixed(6) + 
+                          ', lon=' + Cesium.Math.toDegrees(carto.longitude).toFixed(6) + 
+                          ', alt=' + carto.height.toFixed(0));
+        } else {
+            cesiumLog.error('Cannot get pilot position at current time!');
+        }
     }
     
-    cesiumLog.info('Playback stopped');
+    cesiumLog.info('Started playback at speed ' + playbackState.playbackSpeed + 'x from index ' + playbackState.currentIndex);
 }
 
+// DEPRECATED: Use Cesium's native Animation widget
+function pausePlayback() {
+    cesiumLog.info('pausePlayback called - use Cesium Animation widget instead');
+}
+
+// DEPRECATED: Use Cesium's native Animation widget
+function stopPlayback() {
+    cesiumLog.info('stopPlayback called - use Cesium Animation widget instead');
+}
+
+// DEPRECATED: Use Cesium's native Animation widget
 function setPlaybackSpeed(speed) {
-    // Speed represents time multiplier for Cesium clock
-    playbackState.playbackSpeed = Math.max(1.0, Math.min(120.0, speed));
-    
-    // Update Cesium clock multiplier if using time-based animation
-    if (viewer.clock && playbackState.positionProperty) {
-        viewer.clock.multiplier = playbackState.playbackSpeed;
-    }
-    
-    cesiumLog.info('Playback speed set to ' + playbackState.playbackSpeed + 'x');
+    cesiumLog.info('setPlaybackSpeed called - use Cesium Animation widget instead');
 }
 
 function seekToPosition(index) {
-    if (!igcPoints || index < 0 || index >= igcPoints.length) return;
+    if (!viewer || !viewer.clock || !igcPoints || index < 0 || index >= igcPoints.length) return;
     
     playbackState.currentIndex = index;
     
-    // Throttle rapid seek operations to prevent GPU overload
-    if (playbackState.seekTimeout) {
-        clearTimeout(playbackState.seekTimeout);
+    // Update clock time to match the selected point
+    const point = igcPoints[index];
+    if (point && point.timestamp) {
+        const targetTime = Cesium.JulianDate.fromIso8601(point.timestamp);
+        viewer.clock.currentTime = targetTime;
+        
+        // If using simple pilot mode, manually update position immediately
+        if (playbackState.simplePilot && playbackState.showPilot && playbackState.positionProperty) {
+            const newPos = playbackState.positionProperty.getValue(targetTime);
+            if (newPos) {
+                playbackState.showPilot.position = newPos;
+                cesiumLog.debug('Manually updated pilot position on seek');
+            }
+        }
     }
     
-    playbackState.seekTimeout = setTimeout(() => {
-        if (playbackState.followMode) {
-            followFlightPoint(index);
-        } else {
-            // Always update pilot position when seeking
-            updatePilotPosition(index);
-        }
-        
-        // Request render only when frame is ready
-        if (viewer && viewer.scene) {
-            viewer.scene.requestRender();
-        }
-        
-        // Update timeline position (will be called from Flutter)
-        if (window.onPlaybackPositionChanged) {
-            window.onPlaybackPositionChanged(index);
-        }
-        
-        playbackState.seekTimeout = null;
-    }, 50); // 50ms debounce to prevent rapid GPU updates
+    // Update camera if in follow mode
+    if (playbackState.followMode) {
+        followFlightPoint(index);
+    }
     
     cesiumLog.debug('Seeked to position ' + index);
 }
 
-function stepForward() {
-    if (!igcPoints || playbackState.currentIndex >= igcPoints.length - 1) return;
+// Get current index from clock time
+function getCurrentIndexFromClock() {
+    if (!viewer || !viewer.clock || !igcPoints || igcPoints.length === 0) return 0;
     
-    seekToPosition(playbackState.currentIndex + 1);
+    const startTime = Cesium.JulianDate.fromIso8601(igcPoints[0].timestamp);
+    const endTime = Cesium.JulianDate.fromIso8601(igcPoints[igcPoints.length - 1].timestamp);
+    const currentTime = viewer.clock.currentTime;
+    
+    const totalSeconds = Cesium.JulianDate.secondsDifference(endTime, startTime);
+    const elapsedSeconds = Cesium.JulianDate.secondsDifference(currentTime, startTime);
+    
+    const progress = Math.max(0, Math.min(1, elapsedSeconds / totalSeconds));
+    return Math.floor(progress * (igcPoints.length - 1));
 }
 
+// DEPRECATED: Use Cesium's native Timeline widget
+function stepForward() {
+    cesiumLog.info('stepForward called - use Cesium Timeline widget instead');
+}
+
+// DEPRECATED: Use Cesium's native Timeline widget
 function stepBackward() {
-    if (!igcPoints || playbackState.currentIndex <= 0) return;
-    
-    seekToPosition(playbackState.currentIndex - 1);
+    cesiumLog.info('stepBackward called - use Cesium Timeline widget instead');
 }
 
 function animatePlayback() {
-    if (!playbackState.isPlaying) return;
-    
-    const now = Date.now();
-    const deltaTime = now - playbackState.lastUpdateTime;
-    playbackState.lastUpdateTime = now;
-    
-    // Speed represents points per second (1x = 1 point/sec, 10x = 10 points/sec)
-    // Accumulate fractional points based on elapsed time
-    const pointsPerMs = playbackState.playbackSpeed / 1000;
-    playbackState.accumulatedTime += deltaTime * pointsPerMs;
-    
-    // Check if we should advance to the next point(s)
-    if (playbackState.accumulatedTime >= 1) {
-        // Calculate how many whole points to advance
-        const pointsToAdvance = Math.floor(playbackState.accumulatedTime);
-        playbackState.accumulatedTime -= pointsToAdvance;
-        
-        // Advance by the calculated number of points (usually 1, but more at high speeds)
-        for (let i = 0; i < pointsToAdvance && playbackState.currentIndex < igcPoints.length - 1; i++) {
-            playbackState.currentIndex++;
-        }
-        
-        // Animation advancing silently
-        
-        if (playbackState.currentIndex < igcPoints.length) {
-            if (playbackState.followMode) {
-                followFlightPoint(playbackState.currentIndex);
-            } else {
-                // Always update pilot position during animation
-                updatePilotPosition(playbackState.currentIndex);
-            }
-            
-            // Force render to show pilot position change
-            if (viewer && viewer.scene) {
-                viewer.scene.requestRender();
-            }
-            
-            // Notify Flutter of position change - this is critical for slider update
-            if (window.onPlaybackPositionChanged) {
-                window.onPlaybackPositionChanged(playbackState.currentIndex);
-            }
-        }
-        
-        if (playbackState.currentIndex >= igcPoints.length - 1) {
-            // Reached end of flight - just pause, don't stop
-            pausePlayback();
-            // Keep pilot at final position
-            updatePilotPosition(igcPoints.length - 1);
-            cesiumLog.info('Playback completed - paused at end');
-            
-            if (window.onPlaybackCompleted) {
-                window.onPlaybackCompleted();
-            }
-            return; // Stop the animation loop
-        }
-    }
-    
-    // Continue animation loop
-    playbackState.animationFrame = requestAnimationFrame(animatePlayback);
+    // DEPRECATED: Animation is now handled by Cesium's clock
+    // This function is kept for backward compatibility but does nothing
+    return;
 }
 
 // Get playback state for UI updates
 function getPlaybackState() {
+    // Calculate current index from clock time if playing
+    let currentIndex = playbackState.currentIndex;
+    if (viewer && viewer.clock && igcPoints && igcPoints.length > 0) {
+        currentIndex = getCurrentIndexFromClock();
+        playbackState.currentIndex = currentIndex; // Keep state in sync
+        
+        // Debug pilot position during playback
+        if (playbackState.isPlaying && playbackState.showPilot && playbackState.positionProperty) {
+            const currentPos = playbackState.positionProperty.getValue(viewer.clock.currentTime);
+            if (!currentPos) {
+                cesiumLog.error('Pilot position is null during playback at time: ' + viewer.clock.currentTime.toString());
+            }
+            
+            // Check if entity is actually being rendered
+            if (playbackState.showPilot.isShowing !== false) {
+                // Entity should be showing
+                const boundingSphere = viewer.scene.globe.pick(
+                    viewer.camera.getPickRay(new Cesium.Cartesian2(
+                        viewer.canvas.width / 2,
+                        viewer.canvas.height / 2
+                    )),
+                    viewer.scene
+                );
+                
+                if (currentIndex % 30 === 0) {  // Log every 30th frame to avoid spam
+                    cesiumLog.debug('Playback index: ' + currentIndex + ', clock time: ' + viewer.clock.currentTime.toString());
+                }
+            }
+        }
+    }
+    
     return {
         isPlaying: playbackState.isPlaying,
-        currentIndex: playbackState.currentIndex,
-        totalPoints: igcPoints.length,
+        currentIndex: currentIndex,
+        totalPoints: igcPoints ? igcPoints.length : 0,
         playbackSpeed: playbackState.playbackSpeed,
         followMode: playbackState.followMode
     };

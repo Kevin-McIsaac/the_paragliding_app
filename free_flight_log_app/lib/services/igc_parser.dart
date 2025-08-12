@@ -142,7 +142,8 @@ class IgcParser {
       }
     }
 
-    return IgcFile(
+    // Create the IgcFile first
+    final igcFile = IgcFile(
       date: flightDate ?? DateTime.now(),
       pilot: pilot,
       gliderType: gliderType,
@@ -151,6 +152,23 @@ class IgcParser {
       headers: headers,
       timezone: timezone,
     );
+    
+    // Now update track points with parent reference and index
+    for (int i = 0; i < trackPoints.length; i++) {
+      final point = trackPoints[i];
+      trackPoints[i] = IgcPoint(
+        timestamp: point.timestamp,
+        latitude: point.latitude,
+        longitude: point.longitude,
+        pressureAltitude: point.pressureAltitude,
+        gpsAltitude: point.gpsAltitude,
+        isValid: point.isValid,
+        parentFile: igcFile,
+        pointIndex: i,
+      );
+    }
+    
+    return igcFile;
   }
 
   /// Parse header record
