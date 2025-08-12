@@ -172,12 +172,11 @@ function initializeCesium(config) {
                 // Check memory usage via performance API
                 if (window.performance && window.performance.memory) {
                     const memoryUsage = window.performance.memory.usedJSHeapSize;
-                    if (memoryUsage > 100 * 1024 * 1024) {  // If over 100MB
-                        cesiumLog.debug('High memory usage: ' + (memoryUsage / 1024 / 1024).toFixed(1) + 'MB - forcing cleanup');
+                    if (memoryUsage > 300 * 1024 * 1024) {  // Only cleanup if over 300MB
+                        cesiumLog.debug('High memory usage: ' + (memoryUsage / 1024 / 1024).toFixed(1) + 'MB - trimming tile cache');
                         
-                        // Clear unused primitives and entities
-                        viewer.scene.primitives.removeAll();
-                        viewer.entities.removeAll();
+                        // Only trim tile cache, preserve flight track entities
+                        viewer.scene.globe.tileCache.trim();
                         
                         // Force garbage collection if available
                         if (window.gc) {
@@ -642,13 +641,16 @@ function checkMemory() {
             limit: Math.round(memory.jsHeapSizeLimit / 1048576)
         };
         
-        if (usage.used > usage.total * 0.8) {
-            // High memory usage - trigger cleanup
+        // Only trigger cleanup if memory usage is above 200MB (not 80% of 33MB!)
+        if (usage.used > 200) {
+            // High memory usage - trigger cleanup but preserve flight track
             cesiumLog.debug('High memory usage detected: ' + usage.used + 'MB, triggering cleanup');
             if (window.viewer) {
+                // Only trim tile cache, don't remove entities
+                viewer.scene.globe.tileCache.trim();
+                
                 // Reduce quality temporarily to free memory
                 viewer.scene.globe.maximumScreenSpaceError = 8;
-                viewer.scene.primitives.removeAll();
                 
                 // Reset quality after memory pressure is reduced
                 setTimeout(() => {

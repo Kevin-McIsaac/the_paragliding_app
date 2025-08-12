@@ -30,6 +30,9 @@ class _Cesium3DPlaybackWidgetState extends State<Cesium3DPlaybackWidget> {
   bool _followMode = false;
   Timer? _updateTimer;
   
+  // GlobalKey for speed button position
+  final GlobalKey _speedButtonKey = GlobalKey();
+  
   // Speed options for dropdown - match 2D map values (represent seconds per update)
   final List<double> _speedOptions = [1.0, 10.0, 30.0, 60.0, 120.0];
 
@@ -241,6 +244,7 @@ class _Cesium3DPlaybackWidgetState extends State<Cesium3DPlaybackWidget> {
         
         // Playback speed indicator
         InkWell(
+          key: _speedButtonKey,
           onTap: _showSpeedMenu,
           borderRadius: BorderRadius.circular(4),
           child: Container(
@@ -327,12 +331,20 @@ class _Cesium3DPlaybackWidgetState extends State<Cesium3DPlaybackWidget> {
   }
   
   void _showSpeedMenu() {
-    final RenderBox button = context.findRenderObject() as RenderBox;
+    // Get the render box of the speed button specifically
+    final RenderBox button = _speedButtonKey.currentContext!.findRenderObject() as RenderBox;
     final RenderBox overlay = Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
+    
+    // Calculate position relative to the speed button
+    final Offset buttonPosition = button.localToGlobal(Offset.zero, ancestor: overlay);
+    final Size buttonSize = button.size;
+    
     final RelativeRect position = RelativeRect.fromRect(
-      Rect.fromPoints(
-        button.localToGlobal(const Offset(50, 0), ancestor: overlay),
-        button.localToGlobal(button.size.bottomRight(const Offset(50, 0)), ancestor: overlay),
+      Rect.fromLTWH(
+        buttonPosition.dx,
+        buttonPosition.dy,
+        buttonSize.width,
+        buttonSize.height,
       ),
       Offset.zero & overlay.size,
     );
