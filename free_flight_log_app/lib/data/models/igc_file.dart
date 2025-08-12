@@ -301,6 +301,10 @@ class IgcPoint {
   final int gpsAltitude;
   final bool isValid;
   
+  // Optional references for calculating virtual properties
+  final IgcFile? parentFile;
+  final int? pointIndex;
+  
   IgcPoint({
     required this.timestamp,
     required this.latitude,
@@ -308,5 +312,69 @@ class IgcPoint {
     required this.pressureAltitude,
     required this.gpsAltitude,
     required this.isValid,
+    this.parentFile,
+    this.pointIndex,
   });
+  
+  /// Virtual getter for instantaneous climb rate in m/s
+  /// Calculated from the previous point using GPS altitude or pressure altitude if available
+  double get climbRate {
+    if (parentFile == null || pointIndex == null || pointIndex! == 0) {
+      return 0.0;
+    }
+    
+    if (pointIndex! >= parentFile!.trackPoints.length) {
+      return 0.0;
+    }
+    
+    final prevPoint = parentFile!.trackPoints[pointIndex! - 1];
+    final timeDiff = timestamp.difference(prevPoint.timestamp).inSeconds;
+    
+    if (timeDiff <= 0) return 0.0;
+    
+    // Use pressure altitude if available (more accurate for vertical speed)
+    final altDiff = (pressureAltitude > 0 && prevPoint.pressureAltitude > 0)
+        ? (pressureAltitude - prevPoint.pressureAltitude).toDouble()
+        : (gpsAltitude - prevPoint.gpsAltitude).toDouble();
+    
+    return altDiff / timeDiff; // m/s
+  }
+  
+  /// Virtual getter for ground speed in km/h
+  /// Calculated from the previous point using haversine distance formula
+  double get groundSpeed {
+    if (parentFile == null || pointIndex == null || pointIndex! == 0) {
+      return 0.0;
+    }
+    
+    if (pointIndex! >= parentFile!.trackPoints.length) {
+      return 0.0;
+    }
+    
+    final prevPoint = parentFile!.trackPoints[pointIndex! - 1];
+    final distance = _calculateDistanceMeters(prevPoint, this); // meters
+    final timeDiff = timestamp.difference(prevPoint.timestamp).inSeconds;
+    
+    if (timeDiff <= 0) return 0.0;
+    
+    return (distance / timeDiff) * 3.6; // Convert m/s to km/h
+  }
+  
+  /// Calculate distance between two points in meters using Haversine formula
+  double _calculateDistanceMeters(IgcPoint p1, IgcPoint p2) {
+    const double earthRadius = 6371000; // meters
+    
+    final lat1Rad = p1.latitude * pi / 180;
+    final lat2Rad = p2.latitude * pi / 180;
+    final deltaLat = (p2.latitude - p1.latitude) * pi / 180;
+    final deltaLon = (p2.longitude - p1.longitude) * pi / 180;
+
+    final a = sin(deltaLat / 2) * sin(deltaLat / 2) +
+        cos(lat1Rad) * cos(lat2Rad) *
+        sin(deltaLon / 2) * sin(deltaLon / 2);
+    
+    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    
+    return earthRadius * c;
+  }
 }

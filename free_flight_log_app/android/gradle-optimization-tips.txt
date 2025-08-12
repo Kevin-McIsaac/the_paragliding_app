@@ -1,0 +1,14 @@
+# Additional tips to speed up Gradle builds:
+# 1. Use gradle-profiler to identify bottlenecks:
+#    ./gradlew assembleDebug --profile
+#
+# 2. Clear build cache if builds are inconsistent:
+#    cd android && ./gradlew clean && ./gradlew cleanBuildCache
+#
+# 3. For repeated builds, use:
+#    flutter build apk --debug --no-tree-shake-icons
+#
+# 4. Consider using AAB for release builds (smaller):
+#    flutter build appbundle
+#
+# 5. Exclude unnecessary resources in debug builds

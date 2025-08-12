@@ -369,6 +369,17 @@ class IgcImportService {
       return [];
     }
   }
+  
+  /// Get track points with timezone information from saved IGC file
+  Future<({List<IgcPoint> points, String? timezone})> getTrackPointsWithTimezone(String trackLogPath) async {
+    try {
+      final igcData = await parser.parseFile(trackLogPath);
+      return (points: igcData.trackPoints, timezone: igcData.timezone);
+    } catch (e) {
+      LoggingService.error('IgcImportService: Error reading track points with timezone', e);
+      return (points: <IgcPoint>[], timezone: null);
+    }
+  }
 
   /// Get full IGC file data from saved file
   Future<IgcFile> getIgcFile(String trackLogPath) async {
