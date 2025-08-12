@@ -141,10 +141,22 @@ class CesiumWebViewController {
   
   /// Gets current playback state
   Future<Map<String, dynamic>> getPlaybackState() async {
-    final result = await evaluateJavascript(source: 'JSON.stringify(getPlaybackState())');
-    if (result != null && result != 'null') {
-      return Map<String, dynamic>.from(jsonDecode(result.toString()));
+    try {
+      // First check if the function exists to avoid errors during initialization
+      final functionExists = await evaluateJavascript(
+        source: 'typeof getPlaybackState !== "undefined"'
+      );
+      
+      if (functionExists == true || functionExists == 'true') {
+        final result = await evaluateJavascript(source: 'JSON.stringify(getPlaybackState())');
+        if (result != null && result != 'null') {
+          return Map<String, dynamic>.from(jsonDecode(result.toString()));
+        }
+      }
+    } catch (e) {
+      // Function not available yet, return default state
     }
+    
     return {
       'isPlaying': false,
       'currentIndex': 0,

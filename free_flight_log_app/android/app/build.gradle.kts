@@ -31,6 +31,18 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Speed up debug builds
+            minifyEnabled = false
+            shrinkResources = false
+            isCrunchPngs = false
+            // Split APKs by ABI to reduce build time
+            splits {
+                abi {
+                    isEnable = false
+                }
+            }
+        }
         release {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
