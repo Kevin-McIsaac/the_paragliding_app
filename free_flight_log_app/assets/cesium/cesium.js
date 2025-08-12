@@ -291,7 +291,7 @@ function createFlightTrack(points) {
         name: 'Flight Track',
         polyline: {
             positions: positions,
-            width: 4,
+            width: 6,
             material: new Cesium.PolylineGlowMaterialProperty({
                 glowPower: 0.2,
                 taperPower: 0.5,
@@ -302,8 +302,8 @@ function createFlightTrack(points) {
         }
     });
     
-    // Zoom to flight track
-    viewer.zoomTo(flightTrackEntity);
+    // Zoom to flight track with padding for UI
+    zoomToEntitiesWithPadding(0.3); // 30% padding
     
     cesiumLog.info('Flight track created with ' + points.length + ' points');
 }
@@ -332,7 +332,7 @@ function createColoredFlightTrack(points) {
         name: 'Flight Track',
         polyline: {
             positions: positions,
-            width: 3,
+            width: 5,
             material: new Cesium.PolylineGlowMaterialProperty({
                 glowPower: 0.25,
                 taperPower: 0.2,
@@ -352,8 +352,8 @@ function createColoredFlightTrack(points) {
         updatePilotPosition(0);
     }
     
-    // Zoom to track
-    viewer.zoomTo(viewer.entities);
+    // Zoom to track with padding for UI
+    zoomToEntitiesWithPadding(0.3); // 30% padding
     
     cesiumLog.info('Single blue track created with ' + points.length + ' points');
 }
@@ -408,7 +408,7 @@ function setupTimeBasedAnimation(points) {
             show: true,
             leadTime: 0,
             trailTime: 60, // Show 60 seconds of trail
-            width: 3,
+            width: 5,
             material: new Cesium.PolylineGlowMaterialProperty({
                 glowPower: 0.15,
                 taperPower: 0.3,
@@ -543,11 +543,33 @@ function setCameraPreset(preset) {
             break;
             
         default:
-            // Reset to default view
-            viewer.zoomTo(viewer.entities);
+            // Reset to default view with padding
+            zoomToEntitiesWithPadding(0.3);
     }
     
     cesiumLog.info('Camera preset: ' + preset);
+}
+
+// Zoom to entities with padding for UI elements
+function zoomToEntitiesWithPadding(padding) {
+    if (!viewer || viewer.entities.values.length === 0) return;
+    
+    // Get the bounding sphere of all entities
+    viewer.zoomTo(viewer.entities).then(function() {
+        // After initial zoom, adjust the camera to add padding
+        if (padding && padding > 0) {
+            // Move camera back by the padding percentage
+            var camera = viewer.camera;
+            var distance = Cesium.Cartesian3.distance(camera.position, camera.pickEllipsoid(new Cesium.Cartesian2(
+                viewer.canvas.clientWidth / 2,
+                viewer.canvas.clientHeight / 2
+            )));
+            
+            if (distance) {
+                camera.moveBackward(distance * padding);
+            }
+        }
+    });
 }
 
 // Smooth camera fly to location

@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../data/models/flight.dart';
 import '../../data/models/igc_file.dart';
@@ -193,11 +194,54 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
       };
     }).toList();
 
+    // Calculate appropriate initial view based on track bounds
+    double initialLat = 46.8182;
+    double initialLon = 8.2275;
+    double initialAltitude = 10000; // Default 10km
+    
+    if (_trackPoints.isNotEmpty) {
+      // Calculate center of the track
+      double minLat = _trackPoints.first.latitude;
+      double maxLat = _trackPoints.first.latitude;
+      double minLon = _trackPoints.first.longitude;
+      double maxLon = _trackPoints.first.longitude;
+      
+      for (var point in _trackPoints) {
+        minLat = minLat < point.latitude ? minLat : point.latitude;
+        maxLat = maxLat > point.latitude ? maxLat : point.latitude;
+        minLon = minLon < point.longitude ? minLon : point.longitude;
+        maxLon = maxLon > point.longitude ? maxLon : point.longitude;
+      }
+      
+      initialLat = (minLat + maxLat) / 2;
+      initialLon = (minLon + maxLon) / 2;
+      
+      // Calculate altitude based on track extent for fullscreen mode
+      if (!widget.config.embedded) {
+        // Calculate the diagonal distance of the bounding box in meters
+        double latDiff = maxLat - minLat;
+        double lonDiff = maxLon - minLon;
+        
+        // Add padding to account for UI elements (stats box at bottom)
+        // Shift center slightly up to compensate for bottom UI
+        initialLat = minLat + (latDiff * 0.45); // Shift center up slightly
+        
+        // Rough conversion to meters (at mid-latitude)
+        double latMeters = latDiff * 111000; // 1 degree latitude ≈ 111km
+        double lonMeters = lonDiff * 111000 * cos(initialLat * pi / 180);
+        double diagonal = sqrt(latMeters * latMeters + lonMeters * lonMeters);
+        
+        // Set altitude to roughly 4x the diagonal for better overview with UI padding
+        // Minimum 8km, maximum 60km for fullscreen
+        initialAltitude = (diagonal * 4).clamp(8000, 60000);
+      }
+    }
+
     // Build the 3D map widget
     Widget cesiumWidget = Cesium3DMapInAppWebView(
-      initialLat: _trackPoints.isNotEmpty ? _trackPoints.first.latitude : 46.8182,
-      initialLon: _trackPoints.isNotEmpty ? _trackPoints.first.longitude : 8.2275,
-      initialAltitude: 10000, // 10km for better initial view
+      initialLat: initialLat,
+      initialLon: initialLon,
+      initialAltitude: initialAltitude,
       trackPoints: trackPointsForCesium,
       onControllerCreated: (controller) {
         _cesiumController.setController(controller);
