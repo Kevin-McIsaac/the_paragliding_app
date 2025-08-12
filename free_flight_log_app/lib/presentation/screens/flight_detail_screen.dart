@@ -13,6 +13,7 @@ import '../widgets/edit_site_dialog.dart';
 import '../widgets/site_selection_dialog.dart';
 import '../widgets/wing_selection_dialog.dart';
 import 'flight_track_screen.dart';
+import 'flight_track_3d_screen.dart';
 import '../../core/dependency_injection.dart';
 
 class FlightDetailScreen extends StatefulWidget {
@@ -660,12 +661,10 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                                     style: Theme.of(context).textTheme.titleLarge,
                                   ),
                                   TextButton.icon(
-                                    onPressed: () {
-                                      // TODO: Add full screen 3D view if needed
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Full screen 3D view coming soon!'),
-                                          duration: Duration(seconds: 2),
+                                    onPressed: () async {
+                                      await Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (context) => FlightTrack3DScreen(flight: _flight),
                                         ),
                                       );
                                     },

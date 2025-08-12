@@ -117,12 +117,6 @@ class _Cesium3DPlaybackWidgetState extends State<Cesium3DPlaybackWidget> {
       // Remove maxWidth constraint to span full width
       decoration: BoxDecoration(
         color: colorScheme.surface,
-        border: Border(
-          top: BorderSide(
-            color: Theme.of(context).dividerColor,
-            width: 1,
-          ),
-        ),
       ),
       child: SafeArea(
         top: false,

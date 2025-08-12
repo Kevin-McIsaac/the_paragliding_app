@@ -226,10 +226,6 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
         height: widget.config.height ?? 500,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: Theme.of(context).dividerColor,
-            width: 1,
-          ),
         ),
         clipBehavior: Clip.antiAlias,
         child: cesiumWidget,
