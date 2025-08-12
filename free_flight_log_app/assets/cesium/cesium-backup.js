@@ -1,28 +1,16 @@
 // Cesium 3D Map JavaScript Module
 // Handles initialization, memory management, and lifecycle
 
-// Global state management
-const cesiumState = {
-    viewer: null,
-    flightTrackEntity: null,
-    igcPoints: [],
-    terrainExaggeration: 1.0,
-    statsPosition: 'bottom-center',
-    timezone: '+00:00',
-    timezoneOffsetSeconds: 0,
-    playback: {
-        followMode: false,
-        showPilot: null,
-        positionProperty: null
-    }
-};
-
-// Compatibility aliases for easier refactoring
+// Global variables
 let viewer = null;
+let cleanupTimer = null;
+let initialLoadComplete = false;
 let flightTrackEntity = null;
 let igcPoints = [];
 let currentTerrainExaggeration = 1.0;
-let statsPosition = 'bottom-center';
+
+// Stats positioning configuration
+let statsPosition = 'bottom-center'; // Options: 'top-left', 'top-right', 'bottom-left', 'bottom-right', 'bottom-center'
 
 // Logging wrapper for conditional output
 const cesiumLog = {
@@ -277,19 +265,18 @@ function initializeCesium(config) {
         
         // Track initial load with minimal logging
         let lastTileCount = -1;
-        let loadComplete = false;
         const loadingStartTime = Date.now();
         
         const tileLoadHandler = function(queuedTileCount) {
-            if (queuedTileCount === 0 && !loadComplete) {
-                loadComplete = true;
+            if (queuedTileCount === 0 && !initialLoadComplete) {
+                initialLoadComplete = true;
                 const loadTime = ((Date.now() - loadingStartTime) / 1000).toFixed(2);
                 cesiumLog.info('Initial tile load complete in ' + loadTime + 's');
                 document.getElementById('loadingOverlay').style.display = 'none';
                 
                 // Remove the listener after initial load
                 viewer.scene.globe.tileLoadProgressEvent.removeEventListener(tileLoadHandler);
-            } else if (config.debug && !loadComplete) {
+            } else if (config.debug && !initialLoadComplete) {
                 // Only log significant changes in debug mode
                 const change = Math.abs(lastTileCount - queuedTileCount);
                 if (change > 10 || (queuedTileCount === 0 && lastTileCount > 0)) {
@@ -300,7 +287,41 @@ function initializeCesium(config) {
         };
         viewer.scene.globe.tileLoadProgressEvent.addEventListener(tileLoadHandler);
         
-        // Simple memory management - let browser handle most cleanup
+        // Setup periodic memory cleanup with aggressive management
+        cleanupTimer = setInterval(() => {
+            if (viewer && viewer.scene && viewer.scene.globe) {
+                // Check memory usage via performance API
+                if (window.performance && window.performance.memory) {
+                    const memoryUsage = window.performance.memory.usedJSHeapSize;
+                    if (memoryUsage > 300 * 1024 * 1024) {  // Only cleanup if over 300MB
+                        cesiumLog.debug('High memory usage: ' + (memoryUsage / 1024 / 1024).toFixed(1) + 'MB - trimming tile cache');
+                        
+                        // Only trim tile cache, preserve flight track entities
+                        viewer.scene.globe.tileCache.trim();
+                        
+                        // Force garbage collection if available
+                        if (window.gc) {
+                            window.gc();
+                        }
+                    }
+                }
+                
+                // Monitor tile count for cleanup
+                if (viewer.scene.globe._surface && viewer.scene.globe._surface._tilesToRender) {
+                    const tileCount = viewer.scene.globe._surface._tilesToRender.length;
+                    if (tileCount > 50) {  // Increased threshold
+                        // Silently adjust without logging to reduce console spam
+                        // Temporarily increase screen space error to reduce tile count
+                        viewer.scene.globe.maximumScreenSpaceError = 4;
+                        
+                        // Reset after a delay
+                        setTimeout(() => {
+                            viewer.scene.globe.maximumScreenSpaceError = 3;
+                        }, 5000);
+                    }
+                }
+            }
+        }, 30000);  // Every 30 seconds for better memory management
         
         cesiumLog.info('Cesium viewer initialized successfully');
         
@@ -380,7 +401,133 @@ function switchBaseMap(mapType) {
 }
 
 // Feature 2: 3D Flight Track Rendering
-// Create flight track with Cesium-native features
+function createFlightTrack(points) {
+    if (!viewer || !points || points.length === 0) return;
+    
+    // Store points globally for other features
+    igcPoints = points;
+    
+    // Extract and store timezone from the first point if available
+    let trackTimezone = '+00:00'; // Default to UTC
+    let timezoneOffsetSeconds = 0; // Offset in seconds for time calculations
+    
+    // Debug: Check what's in the first point
+    if (points.length > 0) {
+        cesiumLog.debug('First point keys: ' + Object.keys(points[0]).join(', '));
+        cesiumLog.debug('First point timezone field: ' + points[0].timezone);
+    }
+    
+    if (points.length > 0 && points[0].timezone) {
+        trackTimezone = points[0].timezone;
+        cesiumLog.info('Track timezone: ' + trackTimezone);
+        
+        // Parse timezone offset for display adjustments
+        const tzMatch = trackTimezone.match(/^([+-])(\d{2}):(\d{2})$/);
+        if (tzMatch) {
+            const sign = tzMatch[1] === '+' ? 1 : -1;
+            const hours = parseInt(tzMatch[2], 10);
+            const minutes = parseInt(tzMatch[3], 10);
+            timezoneOffsetSeconds = sign * ((hours * 3600) + (minutes * 60));
+            cesiumLog.info('Timezone offset seconds: ' + timezoneOffsetSeconds);
+        }
+        
+        // Store timezone globally for display formatting
+        window.flightTimezone = trackTimezone;
+        window.flightTimezoneOffsetSeconds = timezoneOffsetSeconds;
+        
+        // Now update the Animation widget formatters with the timezone info
+        if (viewer.animation && timezoneOffsetSeconds !== 0) {
+            cesiumLog.info('Configuring Animation widget for timezone: ' + trackTimezone);
+            
+            // Override date formatter to show local date
+            viewer.animation.viewModel.dateFormatter = function(julianDate, viewModel) {
+                // Add timezone offset to show local time
+                const localJulianDate = Cesium.JulianDate.addSeconds(
+                    julianDate, 
+                    timezoneOffsetSeconds, 
+                    new Cesium.JulianDate()
+                );
+                const gregorian = Cesium.JulianDate.toGregorianDate(localJulianDate);
+                
+                // Format the date
+                const year = gregorian.year;
+                const month = (gregorian.month).toString().padStart(2, '0');
+                const day = gregorian.day.toString().padStart(2, '0');
+                
+                return year + '-' + month + '-' + day;
+            };
+            
+            // Override time formatter to show local time
+            viewer.animation.viewModel.timeFormatter = function(julianDate, viewModel) {
+                // Add timezone offset to show local time
+                const localJulianDate = Cesium.JulianDate.addSeconds(
+                    julianDate,
+                    timezoneOffsetSeconds,
+                    new Cesium.JulianDate()
+                );
+                const gregorian = Cesium.JulianDate.toGregorianDate(localJulianDate);
+                
+                const hours = gregorian.hour.toString().padStart(2, '0');
+                const minutes = gregorian.minute.toString().padStart(2, '0');
+                const seconds = Math.floor(gregorian.second).toString().padStart(2, '0');
+                
+                // Include timezone indicator
+                return hours + ':' + minutes + ':' + seconds + ' ' + trackTimezone;
+            };
+        }
+        
+        // Also update Timeline to show local time
+        if (viewer.timeline && timezoneOffsetSeconds !== 0) {
+            // Override the timeline's date formatter to show local time
+            viewer.timeline.makeLabel = function(date) {
+                // Add timezone offset to the Julian date to get local time
+                const localJulianDate = Cesium.JulianDate.addSeconds(date, timezoneOffsetSeconds, new Cesium.JulianDate());
+                const gregorian = Cesium.JulianDate.toGregorianDate(localJulianDate);
+                
+                // Format as HH:MM:SS with timezone indicator
+                const hours = gregorian.hour.toString().padStart(2, '0');
+                const minutes = gregorian.minute.toString().padStart(2, '0');
+                const seconds = Math.floor(gregorian.second).toString().padStart(2, '0');
+                
+                return hours + ':' + minutes + ':' + seconds + ' ' + trackTimezone;
+            };
+        }
+    }
+    
+    // Remove existing track if any
+    if (flightTrackEntity) {
+        viewer.entities.remove(flightTrackEntity);
+        flightTrackEntity = null;
+    }
+    
+    // Convert points to Cartesian3 positions
+    const positions = points.map(point => 
+        Cesium.Cartesian3.fromDegrees(
+            point.longitude,
+            point.latitude,
+            point.altitude
+        )
+    );
+    
+    // Create polyline entity with glow effect
+    flightTrackEntity = viewer.entities.add({
+        name: 'Flight Track',
+        polyline: {
+            positions: positions,
+            width: 4,
+            material: Cesium.Color.YELLOW.withAlpha(0.9),
+            clampToGround: false,
+            show: true
+        }
+    });
+    
+    // Zoom to flight track with padding for UI
+    zoomToEntitiesWithPadding(0.3); // 30% padding
+    
+    cesiumLog.info('Flight track created with ' + points.length + ' points');
+}
+
+// Create simplified blue track with Cesium-native features
 function createColoredFlightTrack(points) {
     if (!viewer || !points || points.length === 0) return;
     
@@ -975,7 +1122,10 @@ function cleanupCesium() {
     cesiumLog.debug('Cleaning up Cesium resources...');
     
     // Clear the cleanup timer first
-    // Cleanup timer removed - using simpler approach
+    if (cleanupTimer !== null) {
+        clearInterval(cleanupTimer);
+        cleanupTimer = null;
+    }
     
     // Remove event listeners
     if (window.viewer && viewer.scene && viewer.scene.globe) {
@@ -1021,15 +1171,37 @@ function cleanupCesium() {
     }
 }
 
-// Simple memory check for debugging
+// Memory monitoring function
 function checkMemory() {
     if (window.performance && window.performance.memory) {
         const memory = window.performance.memory;
-        return {
+        const usage = {
             used: Math.round(memory.usedJSHeapSize / 1048576),
             total: Math.round(memory.totalJSHeapSize / 1048576),
             limit: Math.round(memory.jsHeapSizeLimit / 1048576)
         };
+        
+        // Only trigger cleanup if memory usage is above 200MB (not 80% of 33MB!)
+        if (usage.used > 200) {
+            // High memory usage - trigger cleanup but preserve flight track
+            cesiumLog.debug('High memory usage detected: ' + usage.used + 'MB, triggering cleanup');
+            if (window.viewer) {
+                // Only trim tile cache, don't remove entities
+                viewer.scene.globe.tileCache.trim();
+                
+                // Reduce quality temporarily to free memory
+                viewer.scene.globe.maximumScreenSpaceError = 8;
+                
+                // Reset quality after memory pressure is reduced
+                setTimeout(() => {
+                    if (viewer.scene && viewer.scene.globe) {
+                        viewer.scene.globe.maximumScreenSpaceError = 4;
+                    }
+                }, 5000);
+            }
+        }
+        
+        return usage;
     }
     return null;
 }
@@ -1138,7 +1310,179 @@ function updatePilotPosition(index) {
 }
 
 
-// Playback functions removed - using native Cesium Animation and Timeline widgets
+// Feature 4: Playback controls using Cesium native clock
+function startPlayback() {
+    cesiumLog.info('startPlayback called');
+    
+    if (!viewer || !viewer.clock || !igcPoints || igcPoints.length === 0) {
+        cesiumLog.error('Cannot start playback: No viewer or track data');
+        return;
+    }
+    
+    cesiumLog.debug('Viewer exists: ' + (viewer !== null));
+    cesiumLog.debug('Clock exists: ' + (viewer.clock !== null));
+    cesiumLog.debug('Track points: ' + igcPoints.length);
+    cesiumLog.debug('Pilot entity exists: ' + (playbackState.showPilot !== null));
+    
+    // If at the end, restart from beginning
+    if (playbackState.currentIndex >= igcPoints.length - 1) {
+        playbackState.currentIndex = 0;
+        cesiumLog.info('Restarting playback from beginning');
+    }
+    
+    // Sync clock to current position
+    const currentPoint = igcPoints[playbackState.currentIndex];
+    if (currentPoint && currentPoint.timestamp) {
+        const targetTime = Cesium.JulianDate.fromIso8601(currentPoint.timestamp);
+        viewer.clock.currentTime = targetTime;
+        cesiumLog.debug('Set clock time to: ' + targetTime.toString());
+    }
+    
+    // Start clock animation
+    viewer.clock.multiplier = playbackState.playbackSpeed;
+    viewer.clock.shouldAnimate = true;
+    playbackState.isPlaying = true;
+    
+    cesiumLog.info('Clock animation started - shouldAnimate: ' + viewer.clock.shouldAnimate + 
+                   ', multiplier: ' + viewer.clock.multiplier);
+    
+    // Check if pilot entity is visible
+    if (playbackState.showPilot) {
+        cesiumLog.debug('Pilot entity show: ' + playbackState.showPilot.show);
+        
+        // Get current position from position property
+        const currentPos = playbackState.positionProperty.getValue(viewer.clock.currentTime);
+        if (currentPos) {
+            cesiumLog.info('Pilot position at current time is valid');
+            // Convert to lat/lon for debugging
+            const carto = Cesium.Cartographic.fromCartesian(currentPos);
+            cesiumLog.debug('Pilot at: lat=' + Cesium.Math.toDegrees(carto.latitude).toFixed(6) + 
+                          ', lon=' + Cesium.Math.toDegrees(carto.longitude).toFixed(6) + 
+                          ', alt=' + carto.height.toFixed(0));
+        } else {
+            cesiumLog.error('Cannot get pilot position at current time!');
+        }
+    }
+    
+    cesiumLog.info('Started playback at speed ' + playbackState.playbackSpeed + 'x from index ' + playbackState.currentIndex);
+}
+
+// DEPRECATED: Use Cesium's native Animation widget
+function pausePlayback() {
+    cesiumLog.info('pausePlayback called - use Cesium Animation widget instead');
+}
+
+// DEPRECATED: Use Cesium's native Animation widget
+function stopPlayback() {
+    cesiumLog.info('stopPlayback called - use Cesium Animation widget instead');
+}
+
+// DEPRECATED: Use Cesium's native Animation widget
+function setPlaybackSpeed(speed) {
+    cesiumLog.info('setPlaybackSpeed called - use Cesium Animation widget instead');
+}
+
+function seekToPosition(index) {
+    if (!viewer || !viewer.clock || !igcPoints || index < 0 || index >= igcPoints.length) return;
+    
+    playbackState.currentIndex = index;
+    
+    // Update clock time to match the selected point
+    const point = igcPoints[index];
+    if (point && point.timestamp) {
+        const targetTime = Cesium.JulianDate.fromIso8601(point.timestamp);
+        viewer.clock.currentTime = targetTime;
+        
+        // If using simple pilot mode, manually update position immediately
+        if (playbackState.simplePilot && playbackState.showPilot && playbackState.positionProperty) {
+            const newPos = playbackState.positionProperty.getValue(targetTime);
+            if (newPos) {
+                playbackState.showPilot.position = newPos;
+                cesiumLog.debug('Manually updated pilot position on seek');
+            }
+        }
+    }
+    
+    // Update camera if in follow mode
+    if (playbackState.followMode) {
+        followFlightPoint(index);
+    }
+    
+    cesiumLog.debug('Seeked to position ' + index);
+}
+
+// Get current index from clock time
+function getCurrentIndexFromClock() {
+    if (!viewer || !viewer.clock || !igcPoints || igcPoints.length === 0) return 0;
+    
+    const startTime = Cesium.JulianDate.fromIso8601(igcPoints[0].timestamp);
+    const endTime = Cesium.JulianDate.fromIso8601(igcPoints[igcPoints.length - 1].timestamp);
+    const currentTime = viewer.clock.currentTime;
+    
+    const totalSeconds = Cesium.JulianDate.secondsDifference(endTime, startTime);
+    const elapsedSeconds = Cesium.JulianDate.secondsDifference(currentTime, startTime);
+    
+    const progress = Math.max(0, Math.min(1, elapsedSeconds / totalSeconds));
+    return Math.floor(progress * (igcPoints.length - 1));
+}
+
+// DEPRECATED: Use Cesium's native Timeline widget
+function stepForward() {
+    cesiumLog.info('stepForward called - use Cesium Timeline widget instead');
+}
+
+// DEPRECATED: Use Cesium's native Timeline widget
+function stepBackward() {
+    cesiumLog.info('stepBackward called - use Cesium Timeline widget instead');
+}
+
+function animatePlayback() {
+    // DEPRECATED: Animation is now handled by Cesium's clock
+    // This function is kept for backward compatibility but does nothing
+    return;
+}
+
+// Get playback state for UI updates
+function getPlaybackState() {
+    // Calculate current index from clock time if playing
+    let currentIndex = playbackState.currentIndex;
+    if (viewer && viewer.clock && igcPoints && igcPoints.length > 0) {
+        currentIndex = getCurrentIndexFromClock();
+        playbackState.currentIndex = currentIndex; // Keep state in sync
+        
+        // Debug pilot position during playback
+        if (playbackState.isPlaying && playbackState.showPilot && playbackState.positionProperty) {
+            const currentPos = playbackState.positionProperty.getValue(viewer.clock.currentTime);
+            if (!currentPos) {
+                cesiumLog.error('Pilot position is null during playback at time: ' + viewer.clock.currentTime.toString());
+            }
+            
+            // Check if entity is actually being rendered
+            if (playbackState.showPilot.isShowing !== false) {
+                // Entity should be showing
+                const boundingSphere = viewer.scene.globe.pick(
+                    viewer.camera.getPickRay(new Cesium.Cartesian2(
+                        viewer.canvas.width / 2,
+                        viewer.canvas.height / 2
+                    )),
+                    viewer.scene
+                );
+                
+                if (currentIndex % 30 === 0) {  // Log every 30th frame to avoid spam
+                    cesiumLog.debug('Playback index: ' + currentIndex + ', clock time: ' + viewer.clock.currentTime.toString());
+                }
+            }
+        }
+    }
+    
+    return {
+        isPlaying: playbackState.isPlaying,
+        currentIndex: currentIndex,
+        totalPoints: igcPoints ? igcPoints.length : 0,
+        playbackSpeed: playbackState.playbackSpeed,
+        followMode: playbackState.followMode
+    };
+}
 
 // Export functions for Flutter access
 window.cleanupCesium = cleanupCesium;
@@ -1148,6 +1492,7 @@ window.initializeCesium = initializeCesium;
 // Phase 1 Feature exports
 window.setTerrainExaggeration = setTerrainExaggeration;
 window.switchBaseMap = switchBaseMap;
+window.createFlightTrack = createFlightTrack;
 window.createColoredFlightTrack = createColoredFlightTrack;
 window.setTrackOpacity = setTrackOpacity;
 window.setCameraPreset = setCameraPreset;
@@ -1157,3 +1502,11 @@ window.getClimbRateColor = getClimbRateColor;
 
 // Phase 2 Feature exports (Playback)
 window.setFollowMode = setFollowMode;
+window.startPlayback = startPlayback;
+window.pausePlayback = pausePlayback;
+window.stopPlayback = stopPlayback;
+window.setPlaybackSpeed = setPlaybackSpeed;
+window.seekToPosition = seekToPosition;
+window.stepForward = stepForward;
+window.stepBackward = stepBackward;
+window.getPlaybackState = getPlaybackState;
