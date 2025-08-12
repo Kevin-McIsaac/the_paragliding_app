@@ -41,6 +41,74 @@ function initializeCesium(config) {
     }
     
     try {
+        // Create custom imagery provider view models for limited base layer options
+        const imageryViewModels = [];
+        
+        // Bing Maps Aerial
+        imageryViewModels.push(new Cesium.ProviderViewModel({
+            name: 'Bing Maps Aerial',
+            iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerial.png'),
+            tooltip: 'Bing Maps aerial imagery',
+            creationFunction: function () {
+                return Cesium.IonImageryProvider.fromAssetId(2);
+            }
+        }));
+        
+        // Bing Maps Aerial with Labels
+        imageryViewModels.push(new Cesium.ProviderViewModel({
+            name: 'Bing Maps Aerial with Labels',
+            iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerialLabels.png'),
+            tooltip: 'Bing Maps aerial imagery with labels',
+            creationFunction: function () {
+                return Cesium.IonImageryProvider.fromAssetId(3);
+            }
+        }));
+        
+        // Bing Maps Roads
+        imageryViewModels.push(new Cesium.ProviderViewModel({
+            name: 'Bing Maps Roads',
+            iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingRoads.png'),
+            tooltip: 'Bing Maps standard road maps',
+            creationFunction: function () {
+                return Cesium.IonImageryProvider.fromAssetId(4);
+            }
+        }));
+        
+        // OpenStreetMap
+        imageryViewModels.push(new Cesium.ProviderViewModel({
+            name: 'OpenStreetMap',
+            iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/openStreetMap.png'),
+            tooltip: 'OpenStreetMap',
+            creationFunction: function () {
+                return new Cesium.OpenStreetMapImageryProvider({
+                    url: 'https://a.tile.openstreetmap.org/'
+                });
+            }
+        }));
+        
+        // Create terrain provider view models (only world terrain)
+        const terrainViewModels = [];
+        terrainViewModels.push(new Cesium.ProviderViewModel({
+            name: 'World Terrain',
+            iconUrl: Cesium.buildModuleUrl('Widgets/Images/TerrainProviders/CesiumWorldTerrain.png'),
+            tooltip: 'High-resolution global terrain',
+            creationFunction: function () {
+                return Cesium.createWorldTerrainAsync({
+                    requestWaterMask: false,
+                    requestVertexNormals: false
+                });
+            }
+        }));
+        
+        terrainViewModels.push(new Cesium.ProviderViewModel({
+            name: 'No Terrain',
+            iconUrl: Cesium.buildModuleUrl('Widgets/Images/TerrainProviders/Ellipsoid.png'),
+            tooltip: 'WGS84 ellipsoid',
+            creationFunction: function () {
+                return new Cesium.EllipsoidTerrainProvider();
+            }
+        }));
+        
         // Aggressively optimized Cesium viewer settings for minimal memory usage
         viewer = new Cesium.Viewer("cesiumContainer", {
             terrain: Cesium.Terrain.fromWorldTerrain({
@@ -69,6 +137,10 @@ function initializeCesium(config) {
             
             // Enable Cesium's native animation controls
             baseLayerPicker: true,
+            imageryProviderViewModels: imageryViewModels,  // Use custom limited imagery providers
+            selectedImageryProviderViewModel: imageryViewModels[0],  // Default to Bing Aerial
+            terrainProviderViewModels: terrainViewModels,  // Use custom limited terrain providers
+            selectedTerrainProviderViewModel: terrainViewModels[0],  // Default to World Terrain
             geocoder: true,
             homeButton: false,  // Remove home button as requested
             sceneModePicker: true,
