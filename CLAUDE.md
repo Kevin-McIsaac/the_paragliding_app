@@ -74,8 +74,6 @@ For comprehensive development setup, build commands, testing, and troubleshootin
 
 For detailed technical architecture, database schema, and implementation details, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
-
-
 ## Project History
 
 For complete project history and detailed changelog, see [CHANGELOG.md](CHANGELOG.md).
@@ -85,3 +83,11 @@ For complete project history and detailed changelog, see [CHANGELOG.md](CHANGELO
 - After running flutter review the output and fix
 - Prefer running app test in flutter on the pixel
 - The Bash tool doesn't support shell redirection operators like 2>&1 or pipes but it does capture stdout and stderr.
+- store documentation in the document directory
+
+## Calculations
+
+- ALLWAYS use GPS for Altitude
+- ALLWAYS use GPS for calculating Speed taking into account the time between readings.
+- If available use pressure for climb rate, otherwise use GPS, taking into account the time between readings.
+  

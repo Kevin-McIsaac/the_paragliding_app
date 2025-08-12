@@ -186,7 +186,7 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
       return {
         'latitude': point.latitude,
         'longitude': point.longitude,
-        'altitude': point.pressureAltitude > 0 ? point.pressureAltitude : point.gpsAltitude,
+        'altitude': point.gpsAltitude,  // Use GPS altitude to match terrain reference
         'gpsAltitude': point.gpsAltitude,
         'pressureAltitude': point.pressureAltitude,
         'timestamp': point.timestamp.toIso8601String(),

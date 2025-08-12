@@ -70,8 +70,8 @@ function initializeCesium(config) {
             homeButton: false,  // Remove home button as requested
             sceneModePicker: true,
             navigationHelpButton: true,
-            animation: true,
-            timeline: true,
+            animation: false,
+            timeline: false,
             fullscreenButton: true,
             vrButton: false,
             infoBox: false,
@@ -86,7 +86,7 @@ function initializeCesium(config) {
         viewer.scene.globe.enableLighting = false;
         viewer.scene.globe.showGroundAtmosphere = false;  // Disable atmosphere
         viewer.scene.fog.enabled = false;  // Disable fog
-        viewer.scene.globe.depthTestAgainstTerrain = false;  // Faster rendering
+        viewer.scene.globe.depthTestAgainstTerrain = true;  // Enable terrain occlusion
         viewer.scene.screenSpaceCameraController.enableCollisionDetection = false;
         
         // Balanced tile cache management
@@ -311,12 +311,8 @@ function createFlightTrack(points) {
         name: 'Flight Track',
         polyline: {
             positions: positions,
-            width: 10,
-            material: new Cesium.PolylineGlowMaterialProperty({
-                glowPower: 0.2,
-                taperPower: 0.5,
-                color: Cesium.Color.YELLOW.withAlpha(0.8)
-            }),
+            width: 4,
+            material: Cesium.Color.YELLOW.withAlpha(0.9),
             clampToGround: false,
             show: true
         }
@@ -352,12 +348,8 @@ function createColoredFlightTrack(points) {
         name: 'Flight Track',
         polyline: {
             positions: positions,
-            width: 8,
-            material: new Cesium.PolylineGlowMaterialProperty({
-                glowPower: 0.25,
-                taperPower: 0.2,
-                color: Cesium.Color.DODGERBLUE.withAlpha(0.9)
-            }),
+            width: 3,
+            material: Cesium.Color.DODGERBLUE.withAlpha(0.9),
             clampToGround: false,
             show: true
         }
@@ -421,19 +413,15 @@ function setupTimeBasedAnimation(points) {
             outlineColor: Cesium.Color.BLACK,
             outlineWidth: 2,
             heightReference: Cesium.HeightReference.NONE,
-            disableDepthTestDistance: Number.POSITIVE_INFINITY
+            disableDepthTestDistance: 5000  // Visible within 5km
         },
         // Path visualization (trail behind pilot)
         path: {
             show: true,
             leadTime: 0,
             trailTime: 60, // Show 60 seconds of trail
-            width: 8,
-            material: new Cesium.PolylineGlowMaterialProperty({
-                glowPower: 0.15,
-                taperPower: 0.3,
-                color: Cesium.Color.YELLOW.withAlpha(0.5)
-            })
+            width: 3,
+            material: Cesium.Color.YELLOW.withAlpha(0.6)
         },
         // Orientation based on velocity
         orientation: new Cesium.VelocityOrientationProperty(positionProperty)
@@ -824,14 +812,14 @@ function updatePilotPosition(index) {
                 outlineColor: Cesium.Color.BLACK,
                 outlineWidth: 3,
                 heightReference: Cesium.HeightReference.NONE,
-                disableDepthTestDistance: Number.POSITIVE_INFINITY // Always visible
+                disableDepthTestDistance: 5000  // Visible within 5km
             },
             billboard: {
                 image: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0Ij48cGF0aCBmaWxsPSIjRkZENzAwIiBkPSJNMTIgMkw0IDIwaDEzbC03LTE4eiIvPjwvc3ZnPg==', // Yellow triangle
                 scale: 0.8,
                 verticalOrigin: Cesium.VerticalOrigin.CENTER,
                 heightReference: Cesium.HeightReference.NONE,
-                disableDepthTestDistance: Number.POSITIVE_INFINITY // Always visible
+                disableDepthTestDistance: 5000  // Visible within 5km
             }
         });
     } else {
