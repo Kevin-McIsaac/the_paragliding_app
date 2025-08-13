@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:async/async.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -7,6 +6,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../services/logging_service.dart';
+import '../../services/preferences_service.dart';
 import '../../config/cesium_config.dart';
 
 class Cesium3DMapInAppWebView extends StatefulWidget {
@@ -56,6 +56,9 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   
   String? _cesiumHtml;
   bool _htmlLoadError = false;
+  
+  // Preferences service
+  final PreferencesService _preferencesService = PreferencesService();
   
   @override
   void initState() {
@@ -230,6 +233,20 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
               LoggingService.debug('Cesium3D Surface: WebView created');
               _surfaceErrorCount = 0; // Reset surface error count
               
+              // Add JavaScript handlers for scene mode changes
+              controller.addJavaScriptHandler(
+                handlerName: 'onSceneModeChanged',
+                callback: (args) async {
+                  if (args.isNotEmpty) {
+                    final sceneMode = args[0] as String;
+                    LoggingService.info('Cesium3D: Scene mode changed to $sceneMode');
+                    
+                    // Save the preference to Flutter side
+                    await _preferencesService.setSceneMode(sceneMode);
+                  }
+                },
+              );
+              
               // Notify parent widget of controller creation
               if (widget.onControllerCreated != null) {
                 widget.onControllerCreated!(controller);
@@ -244,6 +261,20 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                   isLoading = false;
                   _loadRetryCount = 0; // Reset retry count on successful load
                   _surfaceErrorCount = 0; // Reset surface errors on successful load
+                });
+                
+                // Apply saved scene mode preference after Cesium initializes
+                Future.delayed(const Duration(milliseconds: 1000), () async {
+                  if (!_isDisposed && webViewController != null) {
+                    final savedMode = await _preferencesService.getSceneMode();
+                    if (savedMode != PreferencesService.sceneMode3D) {
+                      // Only set if not already 3D (the default)
+                      LoggingService.debug('Cesium3D: Applying saved scene mode: $savedMode');
+                      await webViewController!.evaluateJavascript(
+                        source: 'if (window.setSceneMode) { window.setSceneMode("$savedMode"); }'
+                      );
+                    }
+                  }
                 });
                 
                 // Track is now loaded during initialization, no need to load here

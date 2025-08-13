@@ -14,7 +14,9 @@ const cesiumState = {
         followMode: false,
         showPilot: null,
         positionProperty: null
-    }
+    },
+    sceneMode: null,  // Will be set to current scene mode
+    sceneModeChanging: false  // Flag to track if scene mode is changing
 };
 
 // Compatibility aliases for easier refactoring
@@ -128,7 +130,7 @@ function initializeCesium(config) {
                 requestVertexNormals: false,  // Disable lighting calculations
                 requestMetadata: false  // Disable metadata
             }),
-            scene3DOnly: true,  // Disable 2D/Columbus view modes for performance
+            scene3DOnly: false,  // Enable 2D/3D/Columbus view modes
             requestRenderMode: true,  // Only render on demand
             maximumRenderTimeChange: Infinity,  // Reduce re-renders
             targetFrameRate: 60,  // Higher frame rate for smoother experience
@@ -168,6 +170,17 @@ function initializeCesium(config) {
         });
         
         cesiumLog.debug('Cesium viewer created, configuring aggressive memory optimizations...');
+        
+        // Load saved scene mode preference or default to 3D
+        const savedSceneMode = loadSceneModePreference();
+        if (savedSceneMode && savedSceneMode !== Cesium.SceneMode.SCENE3D) {
+            viewer.scene.mode = savedSceneMode;
+        }
+        cesiumState.sceneMode = viewer.scene.mode;
+        
+        // Add scene mode change listener
+        viewer.scene.morphComplete.addEventListener(onSceneModeChanged);
+        viewer.scene.morphStart.addEventListener(onSceneModeChanging);
         
         // Configure scene for better quality
         viewer.scene.globe.enableLighting = false;
@@ -1137,6 +1150,314 @@ function updatePilotPosition(index) {
     return;
 }
 
+// ============================================================================
+// Scene Mode Management Functions
+// ============================================================================
+
+// Capture the current camera view for preservation during mode changes
+function captureCurrentView() {
+    if (!viewer || !viewer.camera) {
+        return null;
+    }
+    
+    const camera = viewer.camera;
+    const scene = viewer.scene;
+    
+    // Get the current view rectangle (works in all modes)
+    const rectangle = camera.computeViewRectangle(scene.globe.ellipsoid);
+    
+    // Also capture camera height/altitude for better restoration
+    let altitude = 0;
+    if (scene.mode === Cesium.SceneMode.SCENE3D || scene.mode === Cesium.SceneMode.COLUMBUS_VIEW) {
+        // In 3D or Columbus mode, get the camera height
+        const cartographic = camera.positionCartographic;
+        if (cartographic) {
+            altitude = cartographic.height;
+        }
+    } else if (scene.mode === Cesium.SceneMode.SCENE2D) {
+        // In 2D mode, estimate altitude from the view size
+        if (rectangle) {
+            const width = Cesium.Math.toDegrees(rectangle.east - rectangle.west);
+            const height = Cesium.Math.toDegrees(rectangle.north - rectangle.south);
+            // Rough estimation: larger view = higher altitude
+            altitude = Math.max(width, height) * 111000; // Convert degrees to meters approximately
+        }
+    }
+    
+    const savedView = {
+        rectangle: rectangle,
+        altitude: altitude,
+        heading: camera.heading,
+        pitch: camera.pitch,
+        roll: camera.roll
+    };
+    
+    cesiumLog.debug('Captured view: altitude=' + altitude + ', rectangle=' + (rectangle ? 'yes' : 'no'));
+    return savedView;
+}
+
+// Restore the camera view after a mode change
+function restoreCameraView(savedView, targetMode) {
+    if (!viewer || !savedView || !viewer.camera) {
+        return;
+    }
+    
+    const camera = viewer.camera;
+    
+    try {
+        if (savedView.rectangle) {
+            // Calculate the center of the view rectangle
+            const west = savedView.rectangle.west;
+            const east = savedView.rectangle.east;
+            const north = savedView.rectangle.north;
+            const south = savedView.rectangle.south;
+            
+            const centerLon = (west + east) / 2;
+            const centerLat = (north + south) / 2;
+            
+            // Calculate an appropriate altitude based on the view extent
+            let altitude = savedView.altitude || 10000; // Default to 10km if not available
+            
+            if (targetMode === Cesium.SceneMode.SCENE2D) {
+                // In 2D mode, set the view rectangle directly
+                camera.setView({
+                    destination: savedView.rectangle
+                });
+                cesiumLog.debug('Restored 2D view with rectangle');
+            } else if (targetMode === Cesium.SceneMode.SCENE3D) {
+                // In 3D mode, position camera at the center with appropriate altitude
+                const position = Cesium.Cartesian3.fromRadians(centerLon, centerLat, altitude);
+                
+                camera.setView({
+                    destination: position,
+                    orientation: {
+                        heading: savedView.heading || 0,
+                        pitch: savedView.pitch || -Cesium.Math.PI_OVER_TWO, // Look down
+                        roll: savedView.roll || 0
+                    }
+                });
+                cesiumLog.debug('Restored 3D view at altitude: ' + altitude);
+            } else if (targetMode === Cesium.SceneMode.COLUMBUS_VIEW) {
+                // Columbus view - similar to 3D but with different projection
+                const position = Cesium.Cartesian3.fromRadians(centerLon, centerLat, altitude);
+                
+                camera.setView({
+                    destination: position,
+                    orientation: {
+                        heading: savedView.heading || 0,
+                        pitch: savedView.pitch || -Cesium.Math.PI_OVER_TWO,
+                        roll: savedView.roll || 0
+                    }
+                });
+                cesiumLog.debug('Restored Columbus view at altitude: ' + altitude);
+            }
+        }
+    } catch (e) {
+        cesiumLog.error('Failed to restore camera view: ' + e.message);
+    }
+}
+
+// Set the scene mode (2D, 3D, or Columbus View)
+function setSceneMode(mode) {
+    if (!viewer) {
+        cesiumLog.error('Cannot set scene mode: viewer not initialized');
+        return;
+    }
+    
+    // Convert string mode to Cesium.SceneMode enum
+    let sceneMode;
+    switch(mode) {
+        case '2D':
+        case 2:
+        case Cesium.SceneMode.SCENE2D:
+            sceneMode = Cesium.SceneMode.SCENE2D;
+            break;
+        case '3D':
+        case 3:
+        case Cesium.SceneMode.SCENE3D:
+            sceneMode = Cesium.SceneMode.SCENE3D;
+            break;
+        case 'COLUMBUS':
+        case 2.5:
+        case Cesium.SceneMode.COLUMBUS_VIEW:
+            sceneMode = Cesium.SceneMode.COLUMBUS_VIEW;
+            break;
+        default:
+            cesiumLog.error('Invalid scene mode: ' + mode);
+            return;
+    }
+    
+    // Only change if different from current mode
+    if (viewer.scene.mode !== sceneMode) {
+        cesiumLog.info('Changing scene mode to: ' + getSceneModeString(sceneMode));
+        
+        // Capture current view before morphing
+        const savedView = captureCurrentView();
+        
+        // Use morphing for smooth transition
+        const duration = 2.0; // 2 second transition
+        switch(sceneMode) {
+            case Cesium.SceneMode.SCENE2D:
+                viewer.scene.morphTo2D(duration);
+                break;
+            case Cesium.SceneMode.SCENE3D:
+                viewer.scene.morphTo3D(duration);
+                break;
+            case Cesium.SceneMode.COLUMBUS_VIEW:
+                viewer.scene.morphToColumbusView(duration);
+                break;
+        }
+        
+        // Restore view after morph completes
+        viewer.scene.morphComplete.addEventListener(function restoreView() {
+            // Remove this one-time listener
+            viewer.scene.morphComplete.removeEventListener(restoreView);
+            
+            // Restore the saved view with a small delay to ensure morph is fully complete
+            setTimeout(() => {
+                if (savedView) {
+                    restoreCameraView(savedView, sceneMode);
+                }
+            }, 100);
+        });
+        
+        // Save preference
+        saveSceneModePreference(sceneMode);
+    }
+}
+
+// Get the current scene mode
+function getSceneMode() {
+    if (!viewer) {
+        return null;
+    }
+    return getSceneModeString(viewer.scene.mode);
+}
+
+// Toggle between 2D and 3D modes
+function toggleSceneMode() {
+    if (!viewer) {
+        cesiumLog.error('Cannot toggle scene mode: viewer not initialized');
+        return;
+    }
+    
+    const currentMode = viewer.scene.mode;
+    const newMode = (currentMode === Cesium.SceneMode.SCENE3D) 
+        ? Cesium.SceneMode.SCENE2D 
+        : Cesium.SceneMode.SCENE3D;
+    
+    setSceneMode(newMode);
+}
+
+// Convert Cesium.SceneMode enum to string
+function getSceneModeString(mode) {
+    switch(mode) {
+        case Cesium.SceneMode.SCENE2D:
+            return '2D';
+        case Cesium.SceneMode.SCENE3D:
+            return '3D';
+        case Cesium.SceneMode.COLUMBUS_VIEW:
+            return 'COLUMBUS';
+        default:
+            return 'UNKNOWN';
+    }
+}
+
+// Save scene mode preference to localStorage
+function saveSceneModePreference(mode) {
+    try {
+        // Check if localStorage is available (may not be in WebView)
+        if (typeof(Storage) !== "undefined" && window.localStorage) {
+            localStorage.setItem('cesium_scene_mode', mode.toString());
+            cesiumLog.debug('Saved scene mode preference: ' + getSceneModeString(mode));
+        } else {
+            cesiumLog.debug('localStorage not available - preference will be saved in Flutter');
+        }
+    } catch (e) {
+        cesiumLog.debug('Could not save to localStorage (expected in WebView): ' + e.message);
+    }
+}
+
+// Load scene mode preference from localStorage
+function loadSceneModePreference() {
+    try {
+        // Check if localStorage is available (may not be in WebView)
+        if (typeof(Storage) !== "undefined" && window.localStorage) {
+            const saved = localStorage.getItem('cesium_scene_mode');
+            if (saved !== null) {
+                const mode = parseInt(saved);
+                cesiumLog.debug('Loaded scene mode preference: ' + getSceneModeString(mode));
+                return mode;
+            }
+        }
+    } catch (e) {
+        // Expected in WebView context - preferences handled by Flutter
+        cesiumLog.debug('Could not load from localStorage (expected in WebView)');
+    }
+    return Cesium.SceneMode.SCENE3D; // Default to 3D
+}
+
+// Event handler for scene mode changes
+function onSceneModeChanged() {
+    cesiumState.sceneMode = viewer.scene.mode;
+    cesiumState.sceneModeChanging = false;
+    
+    const modeString = getSceneModeString(viewer.scene.mode);
+    cesiumLog.info('Scene mode changed to: ' + modeString);
+    
+    // Notify Flutter of the change
+    if (window.flutter_inappwebview) {
+        window.flutter_inappwebview.callHandler('onSceneModeChanged', modeString);
+    }
+    
+    // Adjust terrain settings based on mode
+    if (viewer.scene.mode === Cesium.SceneMode.SCENE2D) {
+        // In 2D mode, terrain doesn't make sense
+        // Store current terrain state if needed
+        if (viewer.terrainProvider && !(viewer.terrainProvider instanceof Cesium.EllipsoidTerrainProvider)) {
+            cesiumState.previousTerrainProvider = viewer.terrainProvider;
+        }
+        // viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
+        
+        // Adjust camera constraints for 2D
+        viewer.scene.screenSpaceCameraController.enableRotate = false;
+        viewer.scene.screenSpaceCameraController.enableTilt = false;
+    } else {
+        // In 3D or Columbus mode, restore terrain if it was previously enabled
+        if (cesiumState.previousTerrainProvider) {
+            // viewer.terrainProvider = cesiumState.previousTerrainProvider;
+        }
+        
+        // Enable full camera controls
+        viewer.scene.screenSpaceCameraController.enableRotate = true;
+        viewer.scene.screenSpaceCameraController.enableTilt = true;
+    }
+    
+    // Ensure flight track is visible in new mode
+    if (flightTrackEntity && viewer.scene.mode === Cesium.SceneMode.SCENE2D) {
+        // Adjust entity properties for 2D if needed
+        flightTrackEntity.polyline.clampToGround = false;
+    }
+    
+    // Restore camera view if it was saved before morphing (for scene mode picker usage)
+    if (cesiumState.savedViewBeforeMorph) {
+        setTimeout(() => {
+            restoreCameraView(cesiumState.savedViewBeforeMorph, viewer.scene.mode);
+            cesiumState.savedViewBeforeMorph = null; // Clear after use
+        }, 100);
+    }
+}
+
+// Event handler for when scene mode is changing
+function onSceneModeChanging() {
+    cesiumState.sceneModeChanging = true;
+    cesiumLog.debug('Scene mode morphing started');
+    
+    // Capture the current view before the morph starts
+    // This handles cases where the user uses the scene mode picker directly
+    cesiumState.savedViewBeforeMorph = captureCurrentView();
+}
+
 
 // Playback functions removed - using native Cesium Animation and Timeline widgets
 
@@ -1157,3 +1478,8 @@ window.getClimbRateColor = getClimbRateColor;
 
 // Phase 2 Feature exports (Playback)
 window.setFollowMode = setFollowMode;
+
+// Scene mode management exports
+window.setSceneMode = setSceneMode;
+window.getSceneMode = getSceneMode;
+window.toggleSceneMode = toggleSceneMode;

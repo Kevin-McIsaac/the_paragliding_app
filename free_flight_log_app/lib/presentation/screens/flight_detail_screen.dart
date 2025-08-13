@@ -598,51 +598,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
 
                     const SizedBox(height: 16),
 
-                    // Flight Track Visualization (if available)
-                    if (_flight.trackLogPath != null)
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'Flight Track',
-                                    style: Theme.of(context).textTheme.titleLarge,
-                                  ),
-                                  TextButton.icon(
-                                    onPressed: () async {
-                                      await Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder: (context) => FlightTrackScreen(flight: _flight),
-                                        ),
-                                      );
-                                      // Returned from Flight Track screen, refresh map to pick up config changes
-                                      setState(() {
-                                        _mapRefreshKey++;
-                                      });
-                                    },
-                                    icon: const Icon(Icons.fullscreen),
-                                    label: const Text('Full Screen'),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              FlightTrackWidget(
-                                key: ValueKey(_mapRefreshKey),
-                                flight: _flight,
-                                config: FlightTrackConfig.embeddedWithControls(),
-                                showPlaybackPanel: true,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                    const SizedBox(height: 16),
 
                     // Flight Track 3D Visualization (if available)
                     if (_flight.trackLogPath != null)
@@ -653,7 +608,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Flight Track 3D',
+                                'Flight Track',
                                 style: Theme.of(context).textTheme.titleLarge,
                               ),
                               const SizedBox(height: 16),
