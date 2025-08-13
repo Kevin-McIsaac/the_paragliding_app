@@ -193,9 +193,9 @@ function initializeCesium(config) {
         viewer.scene.highDynamicRange = true;
         
         // Enhanced tile cache management for quality
-        viewer.scene.globe.tileCacheSize = 200;  // Larger cache for smoother experience
+        viewer.scene.globe.tileCacheSize = 300;  // Increased cache for smoother panning
         viewer.scene.globe.preloadSiblings = true;  // Preload adjacent tiles for smoother panning
-        viewer.scene.globe.preloadAncestors = false;  // Don't preload parent tiles
+        viewer.scene.globe.preloadAncestors = true;  // Preload parent tiles for better loading
         
         // Tile memory budget - increase for better quality
         viewer.scene.globe.maximumMemoryUsage = 512;  // Higher memory limit for better quality
@@ -205,6 +205,10 @@ function initializeCesium(config) {
         
         // Higher texture resolution
         viewer.scene.maximumTextureSize = 2048;  // Higher resolution textures
+        
+        // Optimize texture atlas for better memory efficiency
+        viewer.scene.globe.textureCache = viewer.scene.globe.textureCache || {};
+        viewer.scene.globe.maximumTextureAtlasMemory = 256 * 1024 * 1024;  // 256MB texture atlas limit
         
         // Set explicit tile load limits
         viewer.scene.globe.loadingDescendantLimit = 15;  // Balanced concurrent tile loads
