@@ -6,6 +6,7 @@ class PreferencesService {
   static const String _sceneModeKey = 'cesium_scene_mode';
   static const String _terrainEnabledKey = 'cesium_terrain_enabled';
   static const String _baseMapKey = 'cesium_base_map';
+  static const String _navigationHelpDialogKey = 'cesium_navigation_help_dialog';
   
   // Scene mode constants
   static const String sceneMode2D = '2D';
@@ -134,6 +135,38 @@ class PreferencesService {
       return success;
     } catch (e) {
       LoggingService.error('PreferencesService', 'Failed to save base map: $e');
+      return false;
+    }
+  }
+  
+  // ============================================================================
+  // Navigation Help Dialog Preferences
+  // ============================================================================
+  
+  /// Get the navigation help dialog open state preference
+  Future<bool> getNavigationHelpDialogOpen() async {
+    try {
+      final prefs = await _getPrefs();
+      final isOpen = prefs.getBool(_navigationHelpDialogKey) ?? false;
+      LoggingService.debug('PreferencesService: Retrieved navigation help dialog state: $isOpen');
+      return isOpen;
+    } catch (e) {
+      LoggingService.error('PreferencesService', 'Failed to get navigation help dialog state: $e');
+      return false; // Default to closed
+    }
+  }
+  
+  /// Save the navigation help dialog open state preference
+  Future<bool> setNavigationHelpDialogOpen(bool isOpen) async {
+    try {
+      final prefs = await _getPrefs();
+      final success = await prefs.setBool(_navigationHelpDialogKey, isOpen);
+      if (success) {
+        LoggingService.debug('PreferencesService: Saved navigation help dialog state: $isOpen');
+      }
+      return success;
+    } catch (e) {
+      LoggingService.error('PreferencesService', 'Failed to save navigation help dialog state: $e');
       return false;
     }
   }
