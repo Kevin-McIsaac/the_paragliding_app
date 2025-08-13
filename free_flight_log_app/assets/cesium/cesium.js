@@ -107,7 +107,7 @@ function initializeCesium(config) {
             creationFunction: function () {
                 return Cesium.createWorldTerrainAsync({
                     requestWaterMask: false,
-                    requestVertexNormals: false
+                    requestVertexNormals: true  // Enable for better terrain shading
                 });
             }
         }));
@@ -125,7 +125,7 @@ function initializeCesium(config) {
         viewer = new Cesium.Viewer("cesiumContainer", {
             terrain: Cesium.Terrain.fromWorldTerrain({
                 requestWaterMask: false,  // Disable water effects
-                requestVertexNormals: false,  // Disable lighting calculations
+                requestVertexNormals: true,  // Enable for better terrain shading
                 requestMetadata: false  // Disable metadata
             }),
             scene3DOnly: false,  // Enable 2D/3D/Columbus view modes
@@ -209,8 +209,8 @@ function initializeCesium(config) {
         viewer.scene.fxaa = true;
         viewer.scene.msaaSamples = 4;  // Multi-sample anti-aliasing
         
-        // Disable terrain exaggeration
-        viewer.scene.globe.terrainExaggeration = 1.0;
+        // Set terrain exaggeration for better visibility
+        viewer.scene.globe.terrainExaggeration = 1.2;  // 20% exaggeration for clearer elevation changes
         viewer.scene.globe.terrainExaggerationRelativeHeight = 0.0;
         
         // Configure imagery provider for better performance
