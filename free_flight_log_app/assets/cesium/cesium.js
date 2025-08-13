@@ -7,7 +7,6 @@ const cesiumState = {
     flightTrackEntity: null,
     igcPoints: [],
     terrainExaggeration: 1.0,
-    statsPosition: 'bottom-center',
     timezone: '+00:00',
     timezoneOffsetSeconds: 0,
     playback: {
@@ -24,7 +23,6 @@ let viewer = null;
 let flightTrackEntity = null;
 let igcPoints = [];
 let currentTerrainExaggeration = 1.0;
-let statsPosition = 'bottom-center';
 
 // Logging wrapper for conditional output
 const cesiumLog = {
@@ -238,32 +236,6 @@ function initializeCesium(config) {
         
         // Add keyboard listener for stats position control
         document.addEventListener('keydown', function(event) {
-            // 'S' key to cycle through stats positions
-            if (event.key === 's' || event.key === 'S') {
-                cycleStatsPosition();
-                event.preventDefault();
-            }
-            // Number keys for direct position selection
-            else if (event.key === '1') {
-                setStatsPosition('bottom-center');
-                event.preventDefault();
-            }
-            else if (event.key === '2') {
-                setStatsPosition('top-left');
-                event.preventDefault();
-            }
-            else if (event.key === '3') {
-                setStatsPosition('top-right');
-                event.preventDefault();
-            }
-            else if (event.key === '4') {
-                setStatsPosition('bottom-left');
-                event.preventDefault();
-            }
-            else if (event.key === '5') {
-                setStatsPosition('bottom-right');
-                event.preventDefault();
-            }
         });
         
         // Handle tile memory exceeded events
@@ -332,9 +304,6 @@ function initializeCesium(config) {
         // Store viewer globally for cleanup
         window.viewer = viewer;
         
-        // Expose stats position functions to be callable from Flutter
-        window.setStatsPosition = setStatsPosition;
-        window.cycleStatsPosition = cycleStatsPosition;
         
     } catch (error) {
         cesiumLog.error('Initialization error: ' + error.message);
@@ -538,74 +507,6 @@ function createColoredFlightTrack(points) {
     cesiumLog.info('Single blue track created with ' + points.length + ' points');
 }
 
-// Change stats position and update the label
-function setStatsPosition(newPosition) {
-    const validPositions = ['top-left', 'top-right', 'bottom-left', 'bottom-right', 'bottom-center'];
-    
-    if (!validPositions.includes(newPosition)) {
-        cesiumLog.error('Invalid stats position: ' + newPosition);
-        return;
-    }
-    
-    statsPosition = newPosition;
-    cesiumLog.info('Stats position changed to: ' + statsPosition);
-    
-    // Update the label if it exists
-    if (playbackState.statsLabel) {
-        const newPos = getStatsPositioning();
-        playbackState.statsLabel.label.pixelOffset = newPos.pixelOffset;
-        playbackState.statsLabel.label.horizontalOrigin = newPos.horizontalOrigin;
-        playbackState.statsLabel.label.verticalOrigin = newPos.verticalOrigin;
-    }
-}
-
-// Cycle through stats positions
-function cycleStatsPosition() {
-    const positions = ['bottom-center', 'top-left', 'top-right', 'bottom-left', 'bottom-right'];
-    const currentIndex = positions.indexOf(statsPosition);
-    const nextIndex = (currentIndex + 1) % positions.length;
-    setStatsPosition(positions[nextIndex]);
-}
-
-// Calculate pixel offset and origin for stats position
-function getStatsPositioning() {
-    const padding = 20; // Padding from edges
-    const canvasWidth = viewer.canvas.width;
-    const canvasHeight = viewer.canvas.height;
-    
-    let pixelOffset, horizontalOrigin, verticalOrigin;
-    
-    switch(statsPosition) {
-        case 'top-left':
-            pixelOffset = new Cesium.Cartesian2(-canvasWidth/2 + padding + 80, -canvasHeight/2 + padding + 30);
-            horizontalOrigin = Cesium.HorizontalOrigin.LEFT;
-            verticalOrigin = Cesium.VerticalOrigin.TOP;
-            break;
-        case 'top-right':
-            pixelOffset = new Cesium.Cartesian2(canvasWidth/2 - padding - 80, -canvasHeight/2 + padding + 30);
-            horizontalOrigin = Cesium.HorizontalOrigin.RIGHT;
-            verticalOrigin = Cesium.VerticalOrigin.TOP;
-            break;
-        case 'bottom-left':
-            pixelOffset = new Cesium.Cartesian2(-canvasWidth/2 + padding + 80, canvasHeight/2 - padding - 10);
-            horizontalOrigin = Cesium.HorizontalOrigin.LEFT;
-            verticalOrigin = Cesium.VerticalOrigin.BOTTOM;
-            break;
-        case 'bottom-right':
-            pixelOffset = new Cesium.Cartesian2(canvasWidth/2 - padding - 80, canvasHeight/2 - padding - 10);
-            horizontalOrigin = Cesium.HorizontalOrigin.RIGHT;
-            verticalOrigin = Cesium.VerticalOrigin.BOTTOM;
-            break;
-        case 'bottom-center':
-        default:
-            pixelOffset = new Cesium.Cartesian2(0, canvasHeight/2 - 25);
-            horizontalOrigin = Cesium.HorizontalOrigin.CENTER;
-            verticalOrigin = Cesium.VerticalOrigin.BOTTOM;
-            break;
-    }
-    
-    return { pixelOffset, horizontalOrigin, verticalOrigin };
-}
 
 // Setup Cesium-native time-based animation
 function setupTimeBasedAnimation(points) {
@@ -711,32 +612,23 @@ function setupTimeBasedAnimation(points) {
     playbackState.showPilot = pilotEntity;
     playbackState.positionProperty = positionProperty;
     
-    // Get positioning based on current statsPosition setting
-    const statsPos = getStatsPositioning();
-    
-    // Create a separate label entity for statistics
-    const statsLabel = viewer.entities.add({
-        name: 'StatsLabel',
-        position: firstPos,  // Position doesn't matter for screen-space label
-        label: {
-            text: 'Initializing...',
-            font: '12px monospace',
-            fillColor: Cesium.Color.WHITE,
-            outlineColor: Cesium.Color.BLACK,
-            outlineWidth: 2,
-            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-            pixelOffset: statsPos.pixelOffset,
-            horizontalOrigin: statsPos.horizontalOrigin,
-            verticalOrigin: statsPos.verticalOrigin,
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            backgroundColor: Cesium.Color.BLACK.withAlpha(0.6),
-            showBackground: true,
-            backgroundPadding: new Cesium.Cartesian2(15, 5),
-            eyeOffset: new Cesium.Cartesian3(0, 0, -1000)  // Ensure it's always in front
+    // Show the stats container when track is loaded
+    const statsContainer = document.getElementById('statsContainer');
+    const cesiumContainer = document.getElementById('cesiumContainer');
+    if (statsContainer) {
+        statsContainer.classList.add('visible');
+        statsContainer.innerHTML = '<span>Initializing...</span>';
+        // Resize cesium container to make room for stats
+        if (cesiumContainer) {
+            cesiumContainer.classList.add('with-stats');
         }
-    });
-    
-    playbackState.statsLabel = statsLabel;  // Store reference to label
+        // Force Cesium to resize after container change
+        if (viewer) {
+            setTimeout(() => {
+                viewer.resize();
+            }, 350); // Wait for CSS transition
+        }
+    }
     
     // Force scene rendering on each frame to ensure pilot updates
     viewer.scene.requestRenderMode = false;  // Disable request render mode to force continuous rendering
@@ -746,7 +638,8 @@ function setupTimeBasedAnimation(points) {
         // Force scene update
         viewer.scene.requestRender();
         
-        if (playbackState.statsLabel) {
+        const statsContainer = document.getElementById('statsContainer');
+        if (statsContainer) {
                 
                 // Find current point index based on time
                 const totalSeconds = Cesium.JulianDate.secondsDifference(clock.currentTime, clock.startTime);
@@ -801,14 +694,34 @@ function setupTimeBasedAnimation(points) {
                         tzLabel = ' (UTC)';
                     }
                     
-                    // Update label text with horizontal format using pipe separators
-                    const labelText = 
-                        'Alt: ' + altitude.toFixed(0) + 'm  |  ' +
-                        'Climb: ' + (climbRate >= 0 ? '+' : '') + climbRate.toFixed(1) + 'm/s  |  ' + 
-                        'Speed: ' + speed.toFixed(1) + 'km/h  |  ' +
-                        timeStr + tzLabel;
+                    // Choose climb icon based on rate
+                    const climbIcon = climbRate > 0.1 ? 'trending_up' : climbRate < -0.1 ? 'trending_down' : 'trending_flat';
+                    const climbSign = climbRate >= 0 ? '+' : '';
                     
-                    playbackState.statsLabel.label.text = labelText;
+                    // Create HTML with Material Icons in vertical layout
+                    const labelHTML = 
+                        '<div class="stat-item">' +
+                            '<i class="material-icons">height</i>' +
+                            '<div class="stat-value">' + altitude.toFixed(0) + 'm</div>' +
+                            '<div class="stat-label">Altitude</div>' +
+                        '</div>' +
+                        '<div class="stat-item">' +
+                            '<i class="material-icons">' + climbIcon + '</i>' +
+                            '<div class="stat-value">' + climbSign + climbRate.toFixed(1) + 'm/s</div>' +
+                            '<div class="stat-label">Climb</div>' +
+                        '</div>' +
+                        '<div class="stat-item">' +
+                            '<i class="material-icons">speed</i>' +
+                            '<div class="stat-value">' + speed.toFixed(1) + 'km/h</div>' +
+                            '<div class="stat-label">Speed</div>' +
+                        '</div>' +
+                        '<div class="stat-item">' +
+                            '<i class="material-icons">access_time</i>' +
+                            '<div class="stat-value">' + timeStr + '</div>' +
+                            '<div class="stat-label">Time' + tzLabel + '</div>' +
+                        '</div>';
+                    
+                    statsContainer.innerHTML = labelHTML;
                 }
                 
                 // Debug log every 30 seconds of simulation time
@@ -986,6 +899,17 @@ function setCameraControlsEnabled(enabled) {
 // Cleanup function to be called from Flutter before disposal
 function cleanupCesium() {
     cesiumLog.debug('Cleaning up Cesium resources...');
+    
+    // Hide stats container and restore cesium container size
+    const statsContainer = document.getElementById('statsContainer');
+    const cesiumContainer = document.getElementById('cesiumContainer');
+    if (statsContainer) {
+        statsContainer.classList.remove('visible');
+        statsContainer.innerHTML = '';
+    }
+    if (cesiumContainer) {
+        cesiumContainer.classList.remove('with-stats');
+    }
     
     // Clear the cleanup timer first
     // Cleanup timer removed - using simpler approach
