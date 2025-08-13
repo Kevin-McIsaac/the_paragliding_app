@@ -91,3 +91,4 @@ For complete project history and detailed changelog, see [CHANGELOG.md](CHANGELO
 - ALLWAYS use GPS for calculating Speed taking into account the time between readings.
 - If available use pressure for climb rate, otherwise use GPS, taking into account the time between readings.
   
+- Do not try to modularise cesium JS as ES6 Modules Don't Work in WebView
