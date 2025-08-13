@@ -5,7 +5,6 @@ import '../../data/models/igc_file.dart';
 import '../../services/igc_import_service.dart';
 import '../../services/logging_service.dart';
 import 'cesium_3d_map_inappwebview.dart';
-import 'cesium/cesium_webview_controller.dart';
 
 /// Configuration for the 3D flight track visualization
 class FlightTrack3DConfig {
@@ -52,7 +51,6 @@ class FlightTrack3DWidget extends StatefulWidget {
 }
 
 class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
-  final CesiumWebViewController _cesiumController = CesiumWebViewController();
   final IgcImportService _igcService = IgcImportService();
   
   List<IgcPoint> _trackPoints = [];
@@ -68,7 +66,6 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
 
   @override
   void dispose() {
-    _cesiumController.dispose();
     super.dispose();
   }
 
@@ -249,9 +246,6 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
       initialLon: initialLon,
       initialAltitude: initialAltitude,
       trackPoints: trackPointsForCesium,
-      onControllerCreated: (controller) {
-        _cesiumController.setController(controller);
-      },
     );
 
     // Playback is now handled by Cesium's native Animation and Timeline widgets

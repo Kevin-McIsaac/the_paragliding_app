@@ -14,7 +14,6 @@ import '../../data/models/igc_file.dart';
 import '../../services/igc_import_service.dart';
 import '../../services/logging_service.dart';
 import '../controllers/flight_playback_controller.dart';
-import 'flight_playback_panel.dart';
 
 // FLUTTER_MAP TILE LOADING SOLUTION:
 // This widget implements delayed TileLayer creation to solve a flutter_map race condition
@@ -1234,14 +1233,8 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     // Add playback panel if enabled
     Widget finalWidget = unifiedWidget;
     if (widget.showPlaybackPanel && _playbackController != null) {
-      finalWidget = Column(
-        children: [
-          Expanded(child: unifiedWidget),
-          FlightPlaybackPanel(
-            controller: _playbackController!,
-          ),
-        ],
-      );
+      // Playback panel removed - using native controls
+      finalWidget = unifiedWidget;
     }
     
     // For embedded mode, provide bounded height

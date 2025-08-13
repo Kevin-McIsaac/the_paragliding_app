@@ -57,28 +57,20 @@ class FlightDetailViewModel extends ChangeNotifier {
       // Load launch site
       if (flight.launchSiteId != null) {
         futures.add(
-          _siteRepository.getSiteById(flight.launchSiteId!).then((site) {
+          _siteRepository.getSite(flight.launchSiteId!).then((site) {
             _launchSite = site;
           }),
         );
       }
 
-      // Load landing site if different from launch
-      if (flight.landingSiteId != null && 
-          flight.landingSiteId != flight.launchSiteId) {
-        futures.add(
-          _siteRepository.getSiteById(flight.landingSiteId!).then((site) {
-            _landingSite = site;
-          }),
-        );
-      } else {
-        _landingSite = _launchSite;
-      }
+      // For now, landing site is the same as launch site
+      // TODO: Add landing site support when field is added to Flight model
+      _landingSite = _launchSite;
 
       // Load wing
       if (flight.wingId != null) {
         futures.add(
-          _wingRepository.getWingById(flight.wingId!).then((wing) {
+          _wingRepository.getWing(flight.wingId!).then((wing) {
             _wing = wing;
           }),
         );
@@ -153,9 +145,12 @@ class FlightDetailViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // TODO: Add landing site support when field is added to Flight model
+      // For now, we can only update landing coordinates
       _flight = _flight!.copyWith(
-        landingSiteId: site.id,
-        landingSiteName: site.name,
+        landingLatitude: site.latitude,
+        landingLongitude: site.longitude,
+        landingDescription: site.name,
       );
       await _flightRepository.updateFlight(_flight!);
       _landingSite = site;
@@ -181,7 +176,7 @@ class FlightDetailViewModel extends ChangeNotifier {
     try {
       _flight = _flight!.copyWith(
         wingId: wing.id,
-        wingName: '${wing.manufacturer} ${wing.model}',
+        // Note: wingName is not stored in Flight model, it's joined from wings table
       );
       await _flightRepository.updateFlight(_flight!);
       _wing = wing;
