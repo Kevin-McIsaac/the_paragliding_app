@@ -184,8 +184,13 @@ function initializeCesium(config) {
         viewer.scene.globe.enableLighting = false;
         viewer.scene.globe.showGroundAtmosphere = true;  // Enable atmosphere for better visuals
         viewer.scene.fog.enabled = true;  // Enable fog for depth perception
+        viewer.scene.fog.density = 0.0001;  // Reduce fog density for clearer distant views
+        viewer.scene.fog.screenSpaceErrorFactor = 2.0;  // Adjust fog based on terrain detail
         viewer.scene.globe.depthTestAgainstTerrain = true;  // Enable terrain occlusion
         viewer.scene.screenSpaceCameraController.enableCollisionDetection = false;
+        
+        // Enable HDR rendering for better dynamic range
+        viewer.scene.highDynamicRange = true;
         
         // Enhanced tile cache management for quality
         viewer.scene.globe.tileCacheSize = 200;  // Larger cache for smoother experience
@@ -196,7 +201,7 @@ function initializeCesium(config) {
         viewer.scene.globe.maximumMemoryUsage = 512;  // Higher memory limit for better quality
         
         // Better quality with reasonable performance
-        viewer.scene.globe.maximumScreenSpaceError = 3;  // Good quality with reasonable tile count
+        viewer.scene.globe.maximumScreenSpaceError = 2;  // Higher terrain detail for better clarity
         
         // Higher texture resolution
         viewer.scene.maximumTextureSize = 2048;  // Higher resolution textures
@@ -207,7 +212,7 @@ function initializeCesium(config) {
         
         // Enable FXAA for better edge quality
         viewer.scene.fxaa = true;
-        viewer.scene.msaaSamples = 4;  // Multi-sample anti-aliasing
+        viewer.scene.msaaSamples = 8;  // Increased MSAA for smoother edges
         
         // Set terrain exaggeration for better visibility
         viewer.scene.globe.terrainExaggeration = 1.2;  // 20% exaggeration for clearer elevation changes
@@ -250,11 +255,11 @@ function initializeCesium(config) {
                         cesiumLog.debug('High tile count: ' + tileCount);
                     }
                     // Temporarily increase screen space error to reduce tile count
-                    viewer.scene.globe.maximumScreenSpaceError = 4;  // Less aggressive reduction
+                    viewer.scene.globe.maximumScreenSpaceError = 3;  // Less aggressive reduction
                     
                     // Reset after a delay
                     setTimeout(() => {
-                        viewer.scene.globe.maximumScreenSpaceError = 3;  // Reset to our new default
+                        viewer.scene.globe.maximumScreenSpaceError = 2;  // Reset to our new default
                     }, 3000);
                 }
             }
