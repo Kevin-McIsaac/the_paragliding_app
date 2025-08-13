@@ -741,8 +741,23 @@ function setupTimeBasedAnimation(points) {
     // Force scene rendering on each frame to ensure pilot updates
     viewer.scene.requestRenderMode = false;  // Disable request render mode to force continuous rendering
     
+    // Track animation state for play-at-end detection
+    let wasAnimating = false;
+    
     // Add clock tick listener to update statistics label
     viewer.clock.onTick.addEventListener(function(clock) {
+        // Check if we just started playing from the end
+        const atEnd = Cesium.JulianDate.compare(clock.currentTime, clock.stopTime) >= 0;
+        const justStartedPlaying = clock.shouldAnimate && !wasAnimating;
+        
+        if (atEnd && justStartedPlaying) {
+            // Reset to start when play is clicked at end
+            clock.currentTime = clock.startTime.clone();
+            cesiumLog.info('Animation reset to start - play clicked at end');
+        }
+        
+        wasAnimating = clock.shouldAnimate;
+        
         // Force scene update
         viewer.scene.requestRender();
         
