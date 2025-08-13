@@ -107,7 +107,7 @@ function initializeCesium(config) {
             creationFunction: function () {
                 return Cesium.createWorldTerrainAsync({
                     requestWaterMask: false,
-                    requestVertexNormals: false
+                    requestVertexNormals: true  // Enable for better terrain shading
                 });
             }
         }));
@@ -125,7 +125,7 @@ function initializeCesium(config) {
         viewer = new Cesium.Viewer("cesiumContainer", {
             terrain: Cesium.Terrain.fromWorldTerrain({
                 requestWaterMask: false,  // Disable water effects
-                requestVertexNormals: false,  // Disable lighting calculations
+                requestVertexNormals: true,  // Enable for better terrain shading
                 requestMetadata: false  // Disable metadata
             }),
             scene3DOnly: false,  // Enable 2D/3D/Columbus view modes
@@ -184,22 +184,31 @@ function initializeCesium(config) {
         viewer.scene.globe.enableLighting = false;
         viewer.scene.globe.showGroundAtmosphere = true;  // Enable atmosphere for better visuals
         viewer.scene.fog.enabled = true;  // Enable fog for depth perception
+        viewer.scene.fog.density = 0.0001;  // Reduce fog density for clearer distant views
+        viewer.scene.fog.screenSpaceErrorFactor = 2.0;  // Adjust fog based on terrain detail
         viewer.scene.globe.depthTestAgainstTerrain = true;  // Enable terrain occlusion
         viewer.scene.screenSpaceCameraController.enableCollisionDetection = false;
         
+        // Enable HDR rendering for better dynamic range
+        viewer.scene.highDynamicRange = true;
+        
         // Enhanced tile cache management for quality
-        viewer.scene.globe.tileCacheSize = 200;  // Larger cache for smoother experience
+        viewer.scene.globe.tileCacheSize = 300;  // Increased cache for smoother panning
         viewer.scene.globe.preloadSiblings = true;  // Preload adjacent tiles for smoother panning
-        viewer.scene.globe.preloadAncestors = false;  // Don't preload parent tiles
+        viewer.scene.globe.preloadAncestors = true;  // Preload parent tiles for better loading
         
         // Tile memory budget - increase for better quality
         viewer.scene.globe.maximumMemoryUsage = 512;  // Higher memory limit for better quality
         
         // Better quality with reasonable performance
-        viewer.scene.globe.maximumScreenSpaceError = 3;  // Good quality with reasonable tile count
+        viewer.scene.globe.maximumScreenSpaceError = 2;  // Higher terrain detail for better clarity
         
         // Higher texture resolution
         viewer.scene.maximumTextureSize = 2048;  // Higher resolution textures
+        
+        // Optimize texture atlas for better memory efficiency
+        viewer.scene.globe.textureCache = viewer.scene.globe.textureCache || {};
+        viewer.scene.globe.maximumTextureAtlasMemory = 256 * 1024 * 1024;  // 256MB texture atlas limit
         
         // Set explicit tile load limits
         viewer.scene.globe.loadingDescendantLimit = 15;  // Balanced concurrent tile loads
@@ -207,10 +216,10 @@ function initializeCesium(config) {
         
         // Enable FXAA for better edge quality
         viewer.scene.fxaa = true;
-        viewer.scene.msaaSamples = 4;  // Multi-sample anti-aliasing
+        viewer.scene.msaaSamples = 8;  // Increased MSAA for smoother edges
         
-        // Disable terrain exaggeration
-        viewer.scene.globe.terrainExaggeration = 1.0;
+        // Set terrain exaggeration for better visibility
+        viewer.scene.globe.terrainExaggeration = 1.2;  // 20% exaggeration for clearer elevation changes
         viewer.scene.globe.terrainExaggerationRelativeHeight = 0.0;
         
         // Configure imagery provider for better performance
@@ -250,11 +259,11 @@ function initializeCesium(config) {
                         cesiumLog.debug('High tile count: ' + tileCount);
                     }
                     // Temporarily increase screen space error to reduce tile count
-                    viewer.scene.globe.maximumScreenSpaceError = 4;  // Less aggressive reduction
+                    viewer.scene.globe.maximumScreenSpaceError = 3;  // Less aggressive reduction
                     
                     // Reset after a delay
                     setTimeout(() => {
-                        viewer.scene.globe.maximumScreenSpaceError = 3;  // Reset to our new default
+                        viewer.scene.globe.maximumScreenSpaceError = 2;  // Reset to our new default
                     }, 3000);
                 }
             }
