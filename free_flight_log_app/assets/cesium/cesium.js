@@ -121,6 +121,29 @@ function initializeCesium(config) {
             }
         }));
         
+        // Apply saved preferences from Flutter
+        let selectedImageryProvider = imageryViewModels[0]; // Default to Bing Aerial
+        let selectedTerrainProvider = terrainViewModels[0]; // Default to World Terrain
+        let navigationHelpDialogOpen = false; // Default to closed
+        
+        if (config.savedBaseMap) {
+            const found = imageryViewModels.find(vm => vm.name === config.savedBaseMap);
+            if (found) {
+                selectedImageryProvider = found;
+                cesiumLog.info('Applying saved base map preference: ' + config.savedBaseMap);
+            }
+        }
+        
+        if (config.savedTerrainEnabled !== undefined) {
+            selectedTerrainProvider = config.savedTerrainEnabled ? terrainViewModels[0] : terrainViewModels[1];
+            cesiumLog.info('Applying saved terrain preference: ' + (config.savedTerrainEnabled ? 'enabled' : 'disabled'));
+        }
+        
+        if (config.savedNavigationHelpDialogOpen !== undefined) {
+            navigationHelpDialogOpen = config.savedNavigationHelpDialogOpen;
+            cesiumLog.info('Navigation help dialog should be ' + (navigationHelpDialogOpen ? 'open' : 'closed'));
+        }
+        
         // Aggressively optimized Cesium viewer settings for minimal memory usage
         viewer = new Cesium.Viewer("cesiumContainer", {
             terrain: Cesium.Terrain.fromWorldTerrain({
@@ -150,18 +173,18 @@ function initializeCesium(config) {
             // Enable Cesium's native animation controls
             baseLayerPicker: true,
             imageryProviderViewModels: imageryViewModels,  // Use custom limited imagery providers
-            selectedImageryProviderViewModel: imageryViewModels[0],  // Default to Bing Aerial
+            selectedImageryProviderViewModel: selectedImageryProvider,  // Use saved or default
             terrainProviderViewModels: terrainViewModels,  // Use custom limited terrain providers
-            selectedTerrainProviderViewModel: terrainViewModels[0],  // Default to World Terrain
+            selectedTerrainProviderViewModel: selectedTerrainProvider,  // Use saved or default
             geocoder: true,
             homeButton: false,  // Remove home button as requested
             sceneModePicker: true,
-            navigationHelpButton: true,
+            navigationHelpButton: true,  // Always show the button
             animation: true,  // Enable native animation widget
             timeline: true,   // Enable native timeline widget
             fullscreenButton: true,
             vrButton: false,
-            infoBox: false,
+            infoBox: true,  // Enable info box for entity information
             selectionIndicator: true,
             shadows: false,
             shouldAnimate: false,  // Start paused
@@ -247,6 +270,40 @@ function initializeCesium(config) {
         document.addEventListener('keydown', function(event) {
         });
         
+        // Add Cesium native event listeners for preference changes
+        if (viewer.baseLayerPicker) {
+            // Watch for imagery provider changes
+            const imageryObservable = Cesium.knockout.getObservable(
+                viewer.baseLayerPicker.viewModel, 
+                'selectedImagery'
+            );
+            imageryObservable.subscribe(function(newImagery) {
+                if (newImagery) {
+                    cesiumLog.info('Imagery provider changed to: ' + newImagery.name);
+                    // Send to Flutter
+                    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+                        window.flutter_inappwebview.callHandler('onImageryProviderChanged', newImagery.name);
+                    }
+                }
+            });
+            
+            // Watch for terrain provider changes
+            const terrainObservable = Cesium.knockout.getObservable(
+                viewer.baseLayerPicker.viewModel,
+                'selectedTerrain'
+            );
+            terrainObservable.subscribe(function(newTerrain) {
+                if (newTerrain) {
+                    const isTerrainEnabled = newTerrain.name !== 'No Terrain';
+                    cesiumLog.info('Terrain changed to: ' + newTerrain.name + ' (enabled: ' + isTerrainEnabled + ')');
+                    // Send to Flutter
+                    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+                        window.flutter_inappwebview.callHandler('onTerrainProviderChanged', isTerrainEnabled);
+                    }
+                }
+            });
+        }
+        
         // Handle tile memory exceeded events
         viewer.scene.globe.tileLoadProgressEvent.addEventListener(function() {
             // Monitor for memory issues
@@ -298,6 +355,14 @@ function initializeCesium(config) {
         
         cesiumLog.info('Cesium viewer initialized successfully');
         
+        // Apply saved scene mode preference if not 3D (the default)
+        if (config.savedSceneMode && config.savedSceneMode !== '3D') {
+            cesiumLog.info('Applying saved scene mode: ' + config.savedSceneMode);
+            setTimeout(function() {
+                setSceneMode(config.savedSceneMode);
+            }, 500); // Small delay to ensure viewer is fully initialized
+        }
+        
         // If track points were provided, create the track immediately
         if (hasInitialTrack) {
             cesiumLog.info('Creating initial track with ' + config.trackPoints.length + ' points');
@@ -312,6 +377,50 @@ function initializeCesium(config) {
         
         // Store viewer globally for cleanup
         window.viewer = viewer;
+        
+        // Track navigation help dialog state and restore saved preference
+        if (viewer.navigationHelpButton && viewer.navigationHelpButton.viewModel) {
+            const navHelpVM = viewer.navigationHelpButton.viewModel;
+            cesiumLog.debug('Navigation help button is present, setting up dialog state tracking');
+            
+            // Check if showInstructions observable exists (indicates dialog state)
+            if (navHelpVM.showInstructions !== undefined) {
+                const instructionsObservable = Cesium.knockout.getObservable(navHelpVM, 'showInstructions');
+                if (instructionsObservable) {
+                    // First, restore saved state if needed (before subscribing to avoid feedback loop)
+                    // Note: Cesium might open the dialog by default on first use
+                    // We need to explicitly close it if saved state says it should be closed
+                    setTimeout(function() {
+                        // Check current state and apply saved preference
+                        const currentState = navHelpVM.showInstructions;
+                        
+                        if (navigationHelpDialogOpen && !currentState) {
+                            cesiumLog.info('Restoring navigation help dialog to open state');
+                            navHelpVM.showInstructions = true;
+                        } else if (!navigationHelpDialogOpen && currentState) {
+                            cesiumLog.info('Closing navigation help dialog based on saved preference');
+                            navHelpVM.showInstructions = false;
+                        }
+                        
+                        // Now subscribe to future changes (after initial state is set)
+                        // Use a flag to prevent saving the initial state
+                        let isInitialState = true;
+                        setTimeout(function() {
+                            isInitialState = false;
+                        }, 1000);
+                        
+                        instructionsObservable.subscribe(function(isShowing) {
+                            cesiumLog.info('Navigation help dialog ' + (isShowing ? 'opened' : 'closed') + 
+                                         (isInitialState ? ' (initial)' : ' (user action)'));
+                            // Only save if this is a user action, not the initial state
+                            if (!isInitialState && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+                                window.flutter_inappwebview.callHandler('onNavigationHelpDialogStateChanged', isShowing);
+                            }
+                        });
+                    }, 500); // Give viewer time to fully initialize
+                }
+            }
+        }
         
         
     } catch (error) {
@@ -1205,6 +1314,20 @@ function restoreCameraView(savedView, targetMode) {
     }
 }
 
+// Toggle navigation help dialog open/closed
+function setNavigationHelpDialogOpen(open) {
+    if (!viewer || !viewer.navigationHelpButton || !viewer.navigationHelpButton.viewModel) {
+        cesiumLog.error('Cannot toggle navigation help dialog: not available');
+        return;
+    }
+    
+    const navHelpVM = viewer.navigationHelpButton.viewModel;
+    if (navHelpVM.showInstructions !== undefined) {
+        navHelpVM.showInstructions = open;
+        cesiumLog.info('Navigation help dialog set to: ' + (open ? 'open' : 'closed'));
+    }
+}
+
 // Set the scene mode (2D, 3D, or Columbus View)
 function setSceneMode(mode) {
     if (!viewer) {
@@ -1429,5 +1552,6 @@ window.setFollowMode = setFollowMode;
 
 // Scene mode management exports
 window.setSceneMode = setSceneMode;
+window.setNavigationHelpDialogOpen = setNavigationHelpDialogOpen;
 window.getSceneMode = getSceneMode;
 window.toggleSceneMode = toggleSceneMode;

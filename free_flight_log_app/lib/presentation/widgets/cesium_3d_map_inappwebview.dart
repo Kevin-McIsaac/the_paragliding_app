@@ -60,11 +60,20 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   // Preferences service
   final PreferencesService _preferencesService = PreferencesService();
   
+  // Saved preferences
+  String _savedSceneMode = PreferencesService.sceneMode3D;
+  String _savedBaseMap = 'Bing Maps Aerial';
+  bool _savedTerrainEnabled = true;
+  bool _savedNavigationHelpDialogOpen = false;
+  
   @override
   void initState() {
     super.initState();
     // Add lifecycle observer for proper resource management
     WidgetsBinding.instance.addObserver(this);
+    
+    // Load saved preferences
+    _loadPreferences();
     
     // Load HTML template from assets with cancellation support
     _htmlLoadOperation = CancelableOperation.fromFuture(
@@ -91,6 +100,28 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
           _startMemoryMonitoring();
         }
       });
+    }
+  }
+  
+  Future<void> _loadPreferences() async {
+    try {
+      final sceneMode = await _preferencesService.getSceneMode();
+      final baseMap = await _preferencesService.getBaseMap();
+      final terrainEnabled = await _preferencesService.getTerrainEnabled();
+      final navigationHelpDialogOpen = await _preferencesService.getNavigationHelpDialogOpen();
+      
+      if (mounted && !_isDisposed) {
+        setState(() {
+          _savedSceneMode = sceneMode;
+          _savedBaseMap = baseMap;
+          _savedTerrainEnabled = terrainEnabled;
+          _savedNavigationHelpDialogOpen = navigationHelpDialogOpen;
+        });
+        
+        LoggingService.debug('Cesium3D: Loaded preferences - Scene: $sceneMode, BaseMap: $baseMap, Terrain: $terrainEnabled, NavDialog: $navigationHelpDialogOpen');
+      }
+    } catch (e) {
+      LoggingService.error('Cesium3D', 'Failed to load preferences: $e');
     }
   }
   
@@ -247,6 +278,51 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                 },
               );
               
+              // Add handler for imagery provider changes
+              controller.addJavaScriptHandler(
+                handlerName: 'onImageryProviderChanged',
+                callback: (args) async {
+                  if (args.isNotEmpty) {
+                    final imageryName = args[0] as String;
+                    LoggingService.info('Cesium3D: Imagery provider changed to $imageryName');
+                    
+                    // Save the preference
+                    await _preferencesService.setBaseMap(imageryName);
+                    _savedBaseMap = imageryName;
+                  }
+                },
+              );
+              
+              // Add handler for terrain provider changes
+              controller.addJavaScriptHandler(
+                handlerName: 'onTerrainProviderChanged',
+                callback: (args) async {
+                  if (args.isNotEmpty) {
+                    final terrainEnabled = args[0] as bool;
+                    LoggingService.info('Cesium3D: Terrain changed to ${terrainEnabled ? "enabled" : "disabled"}');
+                    
+                    // Save the preference
+                    await _preferencesService.setTerrainEnabled(terrainEnabled);
+                    _savedTerrainEnabled = terrainEnabled;
+                  }
+                },
+              );
+              
+              // Add handler for navigation help dialog state changes
+              controller.addJavaScriptHandler(
+                handlerName: 'onNavigationHelpDialogStateChanged',
+                callback: (args) async {
+                  if (args.isNotEmpty) {
+                    final isOpen = args[0] as bool;
+                    LoggingService.info('Cesium3D: Navigation help dialog ${isOpen ? "opened" : "closed"}');
+                    
+                    // Save the preference
+                    await _preferencesService.setNavigationHelpDialogOpen(isOpen);
+                    _savedNavigationHelpDialogOpen = isOpen;
+                  }
+                },
+              );
+              
               // Notify parent widget of controller creation
               if (widget.onControllerCreated != null) {
                 widget.onControllerCreated!(controller);
@@ -261,20 +337,6 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                   isLoading = false;
                   _loadRetryCount = 0; // Reset retry count on successful load
                   _surfaceErrorCount = 0; // Reset surface errors on successful load
-                });
-                
-                // Apply saved scene mode preference after Cesium initializes
-                Future.delayed(const Duration(milliseconds: 1000), () async {
-                  if (!_isDisposed && webViewController != null) {
-                    final savedMode = await _preferencesService.getSceneMode();
-                    if (savedMode != PreferencesService.sceneMode3D) {
-                      // Only set if not already 3D (the default)
-                      LoggingService.debug('Cesium3D: Applying saved scene mode: $savedMode');
-                      await webViewController!.evaluateJavascript(
-                        source: 'if (window.setSceneMode) { window.setSceneMode("$savedMode"); }'
-                      );
-                    }
-                  }
                 });
                 
                 // Track is now loaded during initialization, no need to load here
@@ -484,7 +546,12 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
         .replaceAll('{{ALTITUDE}}', altitude.toString())
         .replaceAll('{{DEBUG}}', isDebugMode.toString())
         .replaceAll('{{TOKEN}}', CesiumConfig.ionAccessToken)
-        .replaceAll('window.cesiumConfig = {', 'window.cesiumConfig = {\n            trackPoints: $trackPointsJs,');
+        .replaceAll('window.cesiumConfig = {', '''window.cesiumConfig = {
+            trackPoints: $trackPointsJs,
+            savedSceneMode: "$_savedSceneMode",
+            savedBaseMap: "$_savedBaseMap",
+            savedTerrainEnabled: $_savedTerrainEnabled,
+            savedNavigationHelpDialogOpen: $_savedNavigationHelpDialogOpen,''');
     }
     
     // Fallback to inline HTML (keeping original implementation as backup)
