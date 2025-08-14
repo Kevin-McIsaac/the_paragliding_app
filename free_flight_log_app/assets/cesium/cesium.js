@@ -25,7 +25,10 @@ const cesiumState = {
         dynamicCurtainEntity: null,    // Dynamic curtain for progressive mode
         lastUpdateTime: null,
         updateInterval: 100,  // Update every 100ms for smooth animation
-        progressiveMode: true  // Progressive rendering - track builds up without erasure
+        progressiveMode: false,  // Changed to false - now using ribbon mode
+        ribbonMode: 'animation-time',  // Ribbon based on animation time
+        ribbonAnimationSeconds: 3.0,   // Default 3 seconds of animation time
+        ribbonStartTime: null          // Track when ribbon starts
     }
 };
 
@@ -669,6 +672,11 @@ function createColoredFlightTrack(points) {
         show: true,  // Entity itself is always visible
         polyline: {
             positions: new Cesium.CallbackProperty(function(time, result) {
+                // Debug: Log that callback is being called
+                if (Math.random() < 0.05) { // Log 5% of the time
+                    cesiumLog.info('Dynamic track callback called! Enabled=' + cesiumState.flyThroughMode.enabled);
+                }
+                
                 // This function will be called every frame to update positions
                 if (!cesiumState.flyThroughMode.enabled) {
                     return [];  // Return empty array when disabled
@@ -677,15 +685,15 @@ function createColoredFlightTrack(points) {
                 // Calculate trail positions based on current time
                 const trailPositions = calculateTrailPositions(time);
                 
-                // Debug logging (very occasionally to avoid spam)
-                if (Math.random() < 0.001) { // Log 0.1% of the time
-                    cesiumLog.debug('Dynamic track callback: ' + trailPositions.length + ' positions at time ' + time.toString());
+                // Debug logging - more frequent for debugging
+                if (Math.random() < 0.1) { // Log 10% of the time
+                    cesiumLog.info('Dynamic track callback: ' + trailPositions.length + ' positions at time ' + time.toString());
                 }
                 
                 return trailPositions;
             }, false),  // false = positions are not constant, will be re-evaluated each frame
-            width: 3,
-            material: Cesium.Color.DODGERBLUE.withAlpha(0.9),
+            width: 2,  // Thin ribbon trail
+            material: Cesium.Color.DODGERBLUE.withAlpha(0.5),  // 50% transparent blue matching the wall
             clampToGround: false,
             show: false  // Initially hidden
         }
@@ -1341,71 +1349,18 @@ function updatePilotPosition(index) {
 // Fly-through Mode Functions
 // ============================================================================
 
-// Calculate trail positions for fly-through mode (progressive, no erasure)
-// In this mode, the track builds up progressively as the pilot moves,
-// showing the complete path traveled from start to current position.
-// Unlike the original "trailing" mode, the track is never erased.
+// Calculate trail positions for ribbon mode (animation-time based)
+// Shows a ribbon trail of X seconds of animation time behind the pilot
+// This creates a consistent visual trail regardless of playback speed
 function calculateTrailPositions(currentTime) {
     if (!viewer || !igcPoints || igcPoints.length === 0) {
+        cesiumLog.debug('calculateTrailPositions: No viewer or points');
         return [];
     }
     
-    // Build trail from start to current position (progressive rendering)
+    // Build positions array - show all points up to current time
     const trailPositions = [];
     let pointsInTrail = 0;
-    
-    for (let i = 0; i < igcPoints.length; i++) {
-        const point = igcPoints[i];
-        
-        // Skip points without timestamps
-        if (!point.timestamp) {
-            continue;
-        }
-        
-        // Parse the point's timestamp using the same method as the pilot animation
-        let pointTime;
-        try {
-            pointTime = Cesium.JulianDate.fromIso8601(point.timestamp);
-        } catch (e) {
-            cesiumLog.debug('Failed to parse timestamp at index ' + i + ': ' + point.timestamp);
-            continue;
-        }
-        
-        // Check if point is before or at the current time
-        const secondsFromCurrent = Cesium.JulianDate.secondsDifference(pointTime, currentTime);
-        
-        if (secondsFromCurrent <= 0) {
-            // Point is in the past or at current time - add to trail
-            trailPositions.push(
-                Cesium.Cartesian3.fromDegrees(
-                    point.longitude,
-                    point.latitude,
-                    point.altitude
-                )
-            );
-            pointsInTrail++;
-        } else {
-            // We've reached points in the future, stop here
-            break;
-        }
-    }
-    
-    // Debug logging (only occasionally to avoid spam)
-    if (Math.random() < 0.01) { // Log 1% of the time
-        cesiumLog.debug('Fly-through progressive trail: ' + pointsInTrail + ' points rendered');
-    }
-    
-    return trailPositions;
-}
-
-// Calculate trail altitudes for the curtain wall in fly-through mode
-function calculateTrailAltitudes(currentTime) {
-    if (!viewer || !igcPoints || igcPoints.length === 0) {
-        return [];
-    }
-    
-    // Build altitude array for points from start to current position
-    const trailAltitudes = [];
     
     for (let i = 0; i < igcPoints.length; i++) {
         const point = igcPoints[i];
@@ -1423,15 +1378,112 @@ function calculateTrailAltitudes(currentTime) {
             continue;
         }
         
-        // Check if point is before or at the current time
+        // Check if point is before or at current time
         const secondsFromCurrent = Cesium.JulianDate.secondsDifference(pointTime, currentTime);
         
+        // Include all points up to current time for progressive track
         if (secondsFromCurrent <= 0) {
-            // Point is in the past or at current time - add its altitude
-            trailAltitudes.push(point.altitude);
+            trailPositions.push(
+                Cesium.Cartesian3.fromDegrees(
+                    point.longitude,
+                    point.latitude,
+                    point.altitude
+                )
+            );
+            pointsInTrail++;
         } else {
-            // We've reached points in the future, stop here
+            // We've passed the current time, stop checking
             break;
+        }
+    }
+    
+    // For ribbon mode, we only want the last N seconds worth of points
+    if (cesiumState.flyThroughMode.ribbonMode === 'animation-time' && trailPositions.length > 0) {
+        const ribbonAnimationSeconds = cesiumState.flyThroughMode.ribbonAnimationSeconds;
+        
+        // Calculate how many points to keep based on animation time
+        // At 60x speed, 3 seconds of animation = 180 seconds of flight time
+        const speedMultiplier = viewer.clock.multiplier || 1;
+        const flightSecondsInRibbon = ribbonAnimationSeconds * speedMultiplier;
+        
+        // Estimate points per second (assuming roughly uniform sampling)
+        const totalFlightDuration = Cesium.JulianDate.secondsDifference(
+            Cesium.JulianDate.fromIso8601(igcPoints[igcPoints.length - 1].timestamp),
+            Cesium.JulianDate.fromIso8601(igcPoints[0].timestamp)
+        );
+        const pointsPerSecond = igcPoints.length / totalFlightDuration;
+        const maxPointsInRibbon = Math.ceil(flightSecondsInRibbon * pointsPerSecond);
+        
+        // Keep only the last N points for the ribbon
+        if (trailPositions.length > maxPointsInRibbon) {
+            const startIndex = trailPositions.length - maxPointsInRibbon;
+            return trailPositions.slice(startIndex);
+        }
+    }
+    
+    // Debug logging (more frequent for debugging)
+    if (Math.random() < 0.05) { // Log 5% of the time
+        cesiumLog.info('Trail positions: ' + trailPositions.length + ' points built for current time');
+    }
+    
+    return trailPositions;
+}
+
+// Calculate trail altitudes for the curtain wall in ribbon mode
+function calculateTrailAltitudes(currentTime) {
+    if (!viewer || !igcPoints || igcPoints.length === 0) {
+        return [];
+    }
+    
+    // Build altitudes array - match the positions array
+    const trailAltitudes = [];
+    let pointCount = 0;
+    
+    for (let i = 0; i < igcPoints.length; i++) {
+        const point = igcPoints[i];
+        
+        // Skip points without timestamps
+        if (!point.timestamp) {
+            continue;
+        }
+        
+        // Parse the point's timestamp
+        let pointTime;
+        try {
+            pointTime = Cesium.JulianDate.fromIso8601(point.timestamp);
+        } catch (e) {
+            continue;
+        }
+        
+        // Check if point is before or at current time
+        const secondsFromCurrent = Cesium.JulianDate.secondsDifference(pointTime, currentTime);
+        
+        // Include all points up to current time
+        if (secondsFromCurrent <= 0) {
+            trailAltitudes.push(point.altitude);
+            pointCount++;
+        } else {
+            // We've passed the current time, stop checking
+            break;
+        }
+    }
+    
+    // For ribbon mode, match the positions array length
+    if (cesiumState.flyThroughMode.ribbonMode === 'animation-time' && trailAltitudes.length > 0) {
+        const ribbonAnimationSeconds = cesiumState.flyThroughMode.ribbonAnimationSeconds;
+        const speedMultiplier = viewer.clock.multiplier || 1;
+        const flightSecondsInRibbon = ribbonAnimationSeconds * speedMultiplier;
+        
+        const totalFlightDuration = Cesium.JulianDate.secondsDifference(
+            Cesium.JulianDate.fromIso8601(igcPoints[igcPoints.length - 1].timestamp),
+            Cesium.JulianDate.fromIso8601(igcPoints[0].timestamp)
+        );
+        const pointsPerSecond = igcPoints.length / totalFlightDuration;
+        const maxPointsInRibbon = Math.ceil(flightSecondsInRibbon * pointsPerSecond);
+        
+        if (trailAltitudes.length > maxPointsInRibbon) {
+            const startIndex = trailAltitudes.length - maxPointsInRibbon;
+            return trailAltitudes.slice(startIndex);
         }
     }
     
@@ -1449,7 +1501,7 @@ function setFlyThroughMode(enabled) {
     
     if (enabled) {
         // Enable fly-through mode
-        cesiumLog.info('Fly-through mode enabled - progressive track rendering');
+        cesiumLog.info('Ribbon trail mode enabled - ' + cesiumState.flyThroughMode.ribbonAnimationSeconds + ' second ribbon');
         
         // Ensure we have track entities
         if (!cesiumState.flyThroughMode.fullTrackEntity || !cesiumState.flyThroughMode.dynamicTrackEntity) {
@@ -1485,16 +1537,43 @@ function setFlyThroughMode(enabled) {
         // Ensure continuous rendering for smooth trail updates
         viewer.scene.requestRenderMode = false;
         
+        // Ensure animation is running for ribbon to work
+        if (!viewer.clock.shouldAnimate) {
+            cesiumLog.info('Starting animation for ribbon trail');
+            viewer.clock.shouldAnimate = true;
+        }
+        
+        // If clock multiplier is 0, set to default speed
+        if (viewer.clock.multiplier === 0) {
+            viewer.clock.multiplier = 60; // Default 60x speed
+            cesiumLog.info('Set clock multiplier to 60x for ribbon trail');
+        }
+        
         // Force initial render to update the dynamic track
         viewer.scene.requestRender();
         
         // Debug: Check if we have points
-        cesiumLog.debug('IGC points available: ' + (igcPoints ? igcPoints.length : 0));
+        cesiumLog.info('IGC points available: ' + (igcPoints ? igcPoints.length : 0));
+        
+        // Debug: Check clock state
+        if (viewer.clock) {
+            cesiumLog.info('Clock state: shouldAnimate=' + viewer.clock.shouldAnimate + 
+                          ', multiplier=' + viewer.clock.multiplier);
+            cesiumLog.info('Clock times: start=' + viewer.clock.startTime + 
+                          ', current=' + viewer.clock.currentTime + 
+                          ', stop=' + viewer.clock.stopTime);
+        }
         
         // Debug: Test calculate trail positions with current time
         if (viewer.clock && viewer.clock.currentTime) {
             const testPositions = calculateTrailPositions(viewer.clock.currentTime);
             cesiumLog.info('Initial trail calculation: ' + testPositions.length + ' positions');
+            
+            // If we have positions, log details about first and last
+            if (testPositions.length > 0) {
+                cesiumLog.info('First position in trail exists');
+                cesiumLog.info('Last position in trail exists');
+            }
         }
     } else {
         // Disable fly-through mode
@@ -1557,9 +1636,35 @@ function getFlyThroughMode() {
     return cesiumState.flyThroughMode.enabled;
 }
 
-// Get current trail duration in seconds
+// Get current trail duration in seconds (deprecated - kept for compatibility)
 function getTrailDuration() {
     return cesiumState.flyThroughMode.trailDuration / 1000;
+}
+
+// Set ribbon duration in animation seconds
+function setRibbonDuration(seconds) {
+    if (seconds < 0.5 || seconds > 10) {
+        cesiumLog.error('Invalid ribbon duration: ' + seconds + ' seconds (must be 0.5-10)');
+        return;
+    }
+    
+    cesiumState.flyThroughMode.ribbonAnimationSeconds = seconds;
+    cesiumLog.info('Ribbon duration set to ' + seconds + ' animation seconds');
+    
+    // Force update if fly-through mode is active
+    if (cesiumState.flyThroughMode.enabled && viewer) {
+        viewer.scene.requestRender();
+    }
+    
+    // Send state change to Flutter (optional)
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+        window.flutter_inappwebview.callHandler('onRibbonDurationChanged', seconds);
+    }
+}
+
+// Get current ribbon duration in animation seconds
+function getRibbonDuration() {
+    return cesiumState.flyThroughMode.ribbonAnimationSeconds;
 }
 
 // Toggle function for the UI button
@@ -1933,3 +2038,5 @@ window.getFlyThroughMode = getFlyThroughMode;
 window.setTrailDuration = setTrailDuration;
 window.getTrailDuration = getTrailDuration;
 window.toggleFlyThroughMode = toggleFlyThroughMode;
+window.setRibbonDuration = setRibbonDuration;
+window.getRibbonDuration = getRibbonDuration;
