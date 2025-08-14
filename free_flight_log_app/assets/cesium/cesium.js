@@ -1047,12 +1047,7 @@ function setupTimeBasedAnimation(points) {
                     statsContainer.innerHTML = labelHTML;
                 }
                 
-                // Debug log every 30 seconds of simulation time
-                const seconds = Cesium.JulianDate.secondsDifference(clock.currentTime, clock.startTime);
-                if (Math.floor(seconds) % 30 === 0 && Math.floor(seconds) !== playbackState.lastLoggedSecond) {
-                    playbackState.lastLoggedSecond = Math.floor(seconds);
-                    cesiumLog.debug('Stats update - time: ' + seconds.toFixed(0) + 's, index: ' + currentIndex);
-                }
+                // Removed debug logging - not needed for production
             }
     });
     
