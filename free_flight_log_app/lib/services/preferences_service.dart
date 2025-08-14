@@ -7,6 +7,8 @@ class PreferencesService {
   static const String _terrainEnabledKey = 'cesium_terrain_enabled';
   static const String _baseMapKey = 'cesium_base_map';
   static const String _navigationHelpDialogKey = 'cesium_navigation_help_dialog';
+  static const String _flyThroughModeKey = 'cesium_flythrough_mode';
+  static const String _trailDurationKey = 'cesium_trail_duration';
   
   // Scene mode constants
   static const String sceneMode2D = '2D';
@@ -167,6 +169,72 @@ class PreferencesService {
       return success;
     } catch (e) {
       LoggingService.error('PreferencesService', 'Failed to save navigation help dialog state: $e');
+      return false;
+    }
+  }
+  
+  // ============================================================================
+  // Fly-through Mode Preferences
+  // ============================================================================
+  
+  /// Get the fly-through mode preference
+  Future<bool> getFlyThroughMode() async {
+    try {
+      final prefs = await _getPrefs();
+      final enabled = prefs.getBool(_flyThroughModeKey) ?? false;
+      LoggingService.debug('PreferencesService: Retrieved fly-through mode: $enabled');
+      return enabled;
+    } catch (e) {
+      LoggingService.error('PreferencesService', 'Failed to get fly-through mode: $e');
+      return false; // Default to disabled
+    }
+  }
+  
+  /// Save the fly-through mode preference
+  Future<bool> setFlyThroughMode(bool enabled) async {
+    try {
+      final prefs = await _getPrefs();
+      final success = await prefs.setBool(_flyThroughModeKey, enabled);
+      if (success) {
+        LoggingService.debug('PreferencesService: Saved fly-through mode: $enabled');
+      }
+      return success;
+    } catch (e) {
+      LoggingService.error('PreferencesService', 'Failed to save fly-through mode: $e');
+      return false;
+    }
+  }
+  
+  /// Get the trail duration preference (in seconds)
+  Future<int> getTrailDuration() async {
+    try {
+      final prefs = await _getPrefs();
+      final duration = prefs.getInt(_trailDurationKey) ?? 5; // Default to 5 seconds
+      LoggingService.debug('PreferencesService: Retrieved trail duration: $duration seconds');
+      return duration;
+    } catch (e) {
+      LoggingService.error('PreferencesService', 'Failed to get trail duration: $e');
+      return 5; // Default to 5 seconds
+    }
+  }
+  
+  /// Save the trail duration preference (in seconds)
+  Future<bool> setTrailDuration(int seconds) async {
+    try {
+      // Validate duration
+      if (seconds < 1 || seconds > 60) {
+        LoggingService.error('PreferencesService', 'Invalid trail duration: $seconds seconds');
+        return false;
+      }
+      
+      final prefs = await _getPrefs();
+      final success = await prefs.setInt(_trailDurationKey, seconds);
+      if (success) {
+        LoggingService.debug('PreferencesService: Saved trail duration: $seconds seconds');
+      }
+      return success;
+    } catch (e) {
+      LoggingService.error('PreferencesService', 'Failed to save trail duration: $e');
       return false;
     }
   }
