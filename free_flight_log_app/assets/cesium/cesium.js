@@ -672,11 +672,6 @@ function createColoredFlightTrack(points) {
         show: true,  // Entity itself is always visible
         polyline: {
             positions: new Cesium.CallbackProperty(function(time, result) {
-                // Debug: Log that callback is being called
-                if (Math.random() < 0.05) { // Log 5% of the time
-                    cesiumLog.info('Dynamic track callback called! Enabled=' + cesiumState.flyThroughMode.enabled);
-                }
-                
                 // This function will be called every frame to update positions
                 if (!cesiumState.flyThroughMode.enabled) {
                     return [];  // Return empty array when disabled
@@ -685,9 +680,9 @@ function createColoredFlightTrack(points) {
                 // Calculate trail positions based on current time
                 const trailPositions = calculateTrailPositions(time);
                 
-                // Debug logging - more frequent for debugging
-                if (Math.random() < 0.1) { // Log 10% of the time
-                    cesiumLog.info('Dynamic track callback: ' + trailPositions.length + ' positions at time ' + time.toString());
+                // Very rare debug logging to avoid spam
+                if (Math.random() < 0.001) { // Log 0.1% of the time
+                    cesiumLog.debug('Ribbon trail: ' + trailPositions.length + ' positions');
                 }
                 
                 return trailPositions;
@@ -881,22 +876,42 @@ function setupTimeBasedAnimation(points) {
         }
     }
     
-    // Force scene rendering on each frame to ensure pilot updates
-    viewer.scene.requestRenderMode = false;  // Disable request render mode to force continuous rendering
+    // Only force continuous rendering if ribbon trail is enabled and playing
+    // Otherwise use on-demand rendering for better performance
+    if (cesiumState.flyThroughMode.enabled && viewer.clock.shouldAnimate) {
+        viewer.scene.requestRenderMode = false;  // Continuous rendering for smooth ribbon
+    } else {
+        viewer.scene.requestRenderMode = true;  // On-demand rendering when paused or ribbon disabled
+    }
     
-    // Track animation state for play-at-end detection
+    // Track animation state for play-at-end detection and ribbon mode rendering
     let wasAnimating = false;
     
-    // Add clock tick listener to update statistics label
+    // Add clock tick listener to update statistics label and manage rendering mode
     viewer.clock.onTick.addEventListener(function(clock) {
         // Check if we just started playing from the end
         const atEnd = Cesium.JulianDate.compare(clock.currentTime, clock.stopTime) >= 0;
         const justStartedPlaying = clock.shouldAnimate && !wasAnimating;
+        const justStoppedPlaying = !clock.shouldAnimate && wasAnimating;
         
         if (atEnd && justStartedPlaying) {
             // Reset to start when play is clicked at end
             clock.currentTime = clock.startTime.clone();
             cesiumLog.info('Animation reset to start - play clicked at end');
+        }
+        
+        // Manage rendering mode for ribbon trail
+        if (cesiumState.flyThroughMode.enabled) {
+            if (justStartedPlaying) {
+                // Just started playing - enable continuous rendering
+                viewer.scene.requestRenderMode = false;
+                cesiumLog.debug('Ribbon trail: Enabled continuous rendering (playing)');
+            } else if (justStoppedPlaying) {
+                // Just paused/stopped - switch to on-demand rendering
+                viewer.scene.requestRenderMode = true;
+                viewer.scene.requestRender(); // Render once to show current state
+                cesiumLog.debug('Ribbon trail: Switched to on-demand rendering (paused)');
+            }
         }
         
         wasAnimating = clock.shouldAnimate;
@@ -1421,9 +1436,9 @@ function calculateTrailPositions(currentTime) {
         }
     }
     
-    // Debug logging (more frequent for debugging)
-    if (Math.random() < 0.05) { // Log 5% of the time
-        cesiumLog.info('Trail positions: ' + trailPositions.length + ' points built for current time');
+    // Very rare debug logging to avoid spam when paused
+    if (Math.random() < 0.001) { // Log 0.1% of the time
+        cesiumLog.debug('Trail positions: ' + trailPositions.length + ' points built');
     }
     
     return trailPositions;
@@ -1534,13 +1549,20 @@ function setFlyThroughMode(enabled) {
             cesiumLog.debug('Dynamic curtain shown');
         }
         
-        // Ensure continuous rendering for smooth trail updates
-        viewer.scene.requestRenderMode = false;
+        // Only enable continuous rendering if animation is playing
+        // This will be managed by clock event listeners
+        if (viewer.clock.shouldAnimate) {
+            viewer.scene.requestRenderMode = false; // Continuous rendering
+        } else {
+            viewer.scene.requestRenderMode = true; // On-demand rendering
+        }
         
         // Ensure animation is running for ribbon to work
         if (!viewer.clock.shouldAnimate) {
             cesiumLog.info('Starting animation for ribbon trail');
             viewer.clock.shouldAnimate = true;
+            // Enable continuous rendering when we start animation
+            viewer.scene.requestRenderMode = false;
         }
         
         // If clock multiplier is 0, set to default speed
@@ -1578,6 +1600,9 @@ function setFlyThroughMode(enabled) {
     } else {
         // Disable fly-through mode
         cesiumLog.info('Fly-through mode disabled - showing full track');
+        
+        // Switch back to on-demand rendering when ribbon mode is disabled
+        viewer.scene.requestRenderMode = true;
         
         // Show full track (polyline only, not affecting pilot)
         if (cesiumState.flyThroughMode.fullTrackEntity && cesiumState.flyThroughMode.fullTrackEntity.polyline) {
