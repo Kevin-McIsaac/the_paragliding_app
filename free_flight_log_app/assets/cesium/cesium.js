@@ -377,16 +377,8 @@ function initializeCesium(config) {
             }, 500); // Small delay to ensure viewer is fully initialized
         }
         
-        // Apply saved fly-through mode preferences
-        if (config.savedFlyThroughMode !== undefined) {
-            cesiumState.flyThroughMode.enabled = config.savedFlyThroughMode;
-            cesiumLog.info('Applying saved fly-through mode: ' + (config.savedFlyThroughMode ? 'enabled' : 'disabled'));
-        }
-        
-        if (config.savedTrailDuration !== undefined) {
-            cesiumState.flyThroughMode.trailDuration = config.savedTrailDuration * 1000; // Convert to milliseconds
-            cesiumLog.info('Applying saved trail duration: ' + config.savedTrailDuration + ' seconds');
-        }
+        // Fly-through mode is now automatic based on playback state
+        // No need to load preferences
         
         // If track points were provided, create the track immediately
         if (hasInitialTrack) {
@@ -396,12 +388,7 @@ function initializeCesium(config) {
                 createColoredFlightTrack(config.trackPoints);
                 cesiumLog.info('Initial track created and view set');
                 
-                // Apply fly-through mode if saved preference is enabled
-                if (config.savedFlyThroughMode) {
-                    setTimeout(() => {
-                        setFlyThroughMode(true);
-                    }, 200); // Small additional delay to ensure track entities are created
-                }
+                // Fly-through mode is now automatic - no manual setup needed
             }, 100);
         } else {
             cesiumLog.debug('Camera position: lat=' + config.lat + ', lon=' + config.lon + ', altitude=' + config.altitude);
@@ -866,15 +853,9 @@ function setupTimeBasedAnimation(points) {
         }
     }
     
-    // Show the fly-through toggle button when track is loaded
-    const flyThroughToggle = document.getElementById('flyThroughToggle');
-    if (flyThroughToggle) {
-        flyThroughToggle.classList.add('visible');
-        // Set initial state based on preference
-        if (cesiumState.flyThroughMode.enabled) {
-            flyThroughToggle.classList.add('active');
-        }
-    }
+    // Automatic ribbon mode will be managed by clock.onTick listener
+    // Start with full track visible (at beginning)
+    cesiumState.flyThroughMode.enabled = false;
     
     // Only force continuous rendering if ribbon trail is enabled and playing
     // Otherwise use on-demand rendering for better performance
@@ -884,13 +865,69 @@ function setupTimeBasedAnimation(points) {
         viewer.scene.requestRenderMode = true;  // On-demand rendering when paused or ribbon disabled
     }
     
-    // Track animation state for play-at-end detection and ribbon mode rendering
+    // Track animation state for play-at-end detection and automatic ribbon mode
     let wasAnimating = false;
+    let previousRibbonState = false;
     
     // Add clock tick listener to update statistics label and manage rendering mode
     viewer.clock.onTick.addEventListener(function(clock) {
-        // Check if we just started playing from the end
+        // Check position in timeline
+        const atStart = Cesium.JulianDate.secondsDifference(clock.currentTime, clock.startTime) < 0.5;
         const atEnd = Cesium.JulianDate.compare(clock.currentTime, clock.stopTime) >= 0;
+        const isStopped = !clock.shouldAnimate;
+        
+        // Automatic ribbon mode: show full track when stopped at start/end, ribbon otherwise
+        const shouldShowRibbon = !(isStopped && (atStart || atEnd));
+        
+        // Update ribbon mode if changed
+        if (shouldShowRibbon !== previousRibbonState) {
+            if (shouldShowRibbon) {
+                // Enable ribbon mode
+                cesiumLog.info('Auto-enabling ribbon trail (playing or mid-flight)');
+                
+                // Hide full track, show dynamic track
+                if (cesiumState.flyThroughMode.fullTrackEntity && cesiumState.flyThroughMode.fullTrackEntity.polyline) {
+                    cesiumState.flyThroughMode.fullTrackEntity.polyline.show = false;
+                }
+                if (cesiumState.flyThroughMode.dynamicTrackEntity && cesiumState.flyThroughMode.dynamicTrackEntity.polyline) {
+                    cesiumState.flyThroughMode.dynamicTrackEntity.polyline.show = true;
+                }
+                
+                // Hide static curtain, show dynamic curtain
+                if (cesiumState.flyThroughMode.curtainWallEntity) {
+                    cesiumState.flyThroughMode.curtainWallEntity.show = false;
+                }
+                if (cesiumState.flyThroughMode.dynamicCurtainEntity) {
+                    cesiumState.flyThroughMode.dynamicCurtainEntity.show = true;
+                }
+                
+                cesiumState.flyThroughMode.enabled = true;
+            } else {
+                // Disable ribbon mode, show full track
+                cesiumLog.info('Auto-disabling ribbon trail (stopped at start/end)');
+                
+                // Show full track, hide dynamic track
+                if (cesiumState.flyThroughMode.fullTrackEntity && cesiumState.flyThroughMode.fullTrackEntity.polyline) {
+                    cesiumState.flyThroughMode.fullTrackEntity.polyline.show = true;
+                }
+                if (cesiumState.flyThroughMode.dynamicTrackEntity && cesiumState.flyThroughMode.dynamicTrackEntity.polyline) {
+                    cesiumState.flyThroughMode.dynamicTrackEntity.polyline.show = false;
+                }
+                
+                // Show static curtain, hide dynamic curtain
+                if (cesiumState.flyThroughMode.curtainWallEntity) {
+                    cesiumState.flyThroughMode.curtainWallEntity.show = true;
+                }
+                if (cesiumState.flyThroughMode.dynamicCurtainEntity) {
+                    cesiumState.flyThroughMode.dynamicCurtainEntity.show = false;
+                }
+                
+                cesiumState.flyThroughMode.enabled = false;
+            }
+            previousRibbonState = shouldShowRibbon;
+        }
+        
+        // Check if we just started playing from the end
         const justStartedPlaying = clock.shouldAnimate && !wasAnimating;
         const justStoppedPlaying = !clock.shouldAnimate && wasAnimating;
         
@@ -900,17 +937,22 @@ function setupTimeBasedAnimation(points) {
             cesiumLog.info('Animation reset to start - play clicked at end');
         }
         
-        // Manage rendering mode for ribbon trail
+        // Manage rendering mode based on animation state and ribbon mode
         if (cesiumState.flyThroughMode.enabled) {
             if (justStartedPlaying) {
                 // Just started playing - enable continuous rendering
                 viewer.scene.requestRenderMode = false;
-                cesiumLog.debug('Ribbon trail: Enabled continuous rendering (playing)');
+                cesiumLog.debug('Enabled continuous rendering (playing)');
             } else if (justStoppedPlaying) {
                 // Just paused/stopped - switch to on-demand rendering
                 viewer.scene.requestRenderMode = true;
                 viewer.scene.requestRender(); // Render once to show current state
-                cesiumLog.debug('Ribbon trail: Switched to on-demand rendering (paused)');
+                cesiumLog.debug('Switched to on-demand rendering (paused)');
+            }
+        } else {
+            // Full track mode - always use on-demand rendering
+            if (viewer.scene.requestRenderMode === false) {
+                viewer.scene.requestRenderMode = true;
             }
         }
         
@@ -1184,17 +1226,12 @@ function cleanupCesium() {
     // Hide stats container and restore cesium container size
     const statsContainer = document.getElementById('statsContainer');
     const cesiumContainer = document.getElementById('cesiumContainer');
-    const flyThroughToggle = document.getElementById('flyThroughToggle');
     if (statsContainer) {
         statsContainer.classList.remove('visible');
         statsContainer.innerHTML = '';
     }
     if (cesiumContainer) {
         cesiumContainer.classList.remove('with-stats');
-    }
-    if (flyThroughToggle) {
-        flyThroughToggle.classList.remove('visible');
-        flyThroughToggle.classList.remove('active');
     }
     
     // Clear the cleanup timer first
@@ -1505,7 +1542,8 @@ function calculateTrailAltitudes(currentTime) {
     return trailAltitudes;
 }
 
-// Toggle fly-through mode
+// Set fly-through mode (now internally managed based on playback state)
+// This function is kept for potential manual override but is primarily controlled automatically
 function setFlyThroughMode(enabled) {
     if (!viewer) {
         cesiumLog.error('Cannot set fly-through mode: viewer not initialized');
@@ -1629,10 +1667,7 @@ function setFlyThroughMode(enabled) {
         }
     }
     
-    // Send state change to Flutter
-    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-        window.flutter_inappwebview.callHandler('onFlyThroughModeChanged', enabled);
-    }
+    // No longer sending to Flutter since this is automatic
 }
 
 // Set the trail duration for fly-through mode
@@ -1692,21 +1727,6 @@ function getRibbonDuration() {
     return cesiumState.flyThroughMode.ribbonAnimationSeconds;
 }
 
-// Toggle function for the UI button
-function toggleFlyThroughMode() {
-    const newState = !cesiumState.flyThroughMode.enabled;
-    setFlyThroughMode(newState);
-    
-    // Update button appearance
-    const flyThroughToggle = document.getElementById('flyThroughToggle');
-    if (flyThroughToggle) {
-        if (newState) {
-            flyThroughToggle.classList.add('active');
-        } else {
-            flyThroughToggle.classList.remove('active');
-        }
-    }
-}
 
 // ============================================================================
 // Scene Mode Management Functions
@@ -2062,6 +2082,5 @@ window.setFlyThroughMode = setFlyThroughMode;
 window.getFlyThroughMode = getFlyThroughMode;
 window.setTrailDuration = setTrailDuration;
 window.getTrailDuration = getTrailDuration;
-window.toggleFlyThroughMode = toggleFlyThroughMode;
 window.setRibbonDuration = setRibbonDuration;
 window.getRibbonDuration = getRibbonDuration;
