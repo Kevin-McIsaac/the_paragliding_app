@@ -71,6 +71,46 @@
             font-size: 10px;
             color: #B0B0B0; /* Light grey for labels */
         }
+        /* Fly-through mode toggle button */
+        #flyThroughToggle {
+            position: absolute;
+            bottom: 100px;  /* Above stats container */
+            right: 20px;
+            z-index: 15;
+            background-color: #121212;
+            border: 1px solid #333333;
+            border-radius: 24px;
+            padding: 8px 16px;
+            display: none;  /* Hidden by default, shown when track is loaded */
+            align-items: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        #flyThroughToggle.visible {
+            display: flex;
+        }
+        #flyThroughToggle:hover {
+            background-color: #1e1e1e;
+            border-color: #4FC3F7;
+        }
+        #flyThroughToggle.active {
+            background-color: #1976D2;
+            border-color: #4FC3F7;
+        }
+        #flyThroughToggle .material-icons {
+            font-size: 20px;
+            color: #4FC3F7;
+            margin-right: 8px;
+        }
+        #flyThroughToggle.active .material-icons {
+            color: #FFFFFF;
+        }
+        #flyThroughToggle span {
+            font-size: 12px;
+            color: #FFFFFF;
+            font-weight: 500;
+        }
         #loadingOverlay {
             position: absolute;
             top: 50%;
@@ -87,6 +127,10 @@
     <div id="cesiumContainer"></div>
     <div id="loadingOverlay">Loading Cesium Globe...</div>
     <div id="statsContainer"></div>
+    <div id="flyThroughToggle" onclick="toggleFlyThroughMode()">
+        <i class="material-icons">route</i>
+        <span>Progressive Track</span>
+    </div>
     
     <script>{{JS_CONTENT}}</script>
     <script>

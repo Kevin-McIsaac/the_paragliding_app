@@ -15,7 +15,16 @@ const cesiumState = {
         positionProperty: null
     },
     sceneMode: null,  // Will be set to current scene mode
-    sceneModeChanging: false  // Flag to track if scene mode is changing
+    sceneModeChanging: false,  // Flag to track if scene mode is changing
+    flyThroughMode: {
+        enabled: false,
+        trailDuration: 5000,  // milliseconds (kept for future use but not used in progressive mode)
+        dynamicTrackEntity: null,
+        fullTrackEntity: null,
+        lastUpdateTime: null,
+        updateInterval: 100,  // Update every 100ms for smooth animation
+        progressiveMode: true  // Progressive rendering - track builds up without erasure
+    }
 };
 
 // Compatibility aliases for easier refactoring
@@ -363,6 +372,17 @@ function initializeCesium(config) {
             }, 500); // Small delay to ensure viewer is fully initialized
         }
         
+        // Apply saved fly-through mode preferences
+        if (config.savedFlyThroughMode !== undefined) {
+            cesiumState.flyThroughMode.enabled = config.savedFlyThroughMode;
+            cesiumLog.info('Applying saved fly-through mode: ' + (config.savedFlyThroughMode ? 'enabled' : 'disabled'));
+        }
+        
+        if (config.savedTrailDuration !== undefined) {
+            cesiumState.flyThroughMode.trailDuration = config.savedTrailDuration * 1000; // Convert to milliseconds
+            cesiumLog.info('Applying saved trail duration: ' + config.savedTrailDuration + ' seconds');
+        }
+        
         // If track points were provided, create the track immediately
         if (hasInitialTrack) {
             cesiumLog.info('Creating initial track with ' + config.trackPoints.length + ' points');
@@ -370,6 +390,13 @@ function initializeCesium(config) {
             setTimeout(() => {
                 createColoredFlightTrack(config.trackPoints);
                 cesiumLog.info('Initial track created and view set');
+                
+                // Apply fly-through mode if saved preference is enabled
+                if (config.savedFlyThroughMode) {
+                    setTimeout(() => {
+                        setFlyThroughMode(true);
+                    }, 200); // Small additional delay to ensure track entities are created
+                }
             }, 100);
         } else {
             cesiumLog.debug('Camera position: lat=' + config.lat + ', lon=' + config.lon + ', altitude=' + config.altitude);
@@ -601,14 +628,48 @@ function createColoredFlightTrack(points) {
     // Create single blue polyline for entire track
     const trackEntity = viewer.entities.add({
         name: 'Flight Track',
+        show: true,  // Entity itself is visible
         polyline: {
             positions: positions,
             width: 3,
             material: Cesium.Color.DODGERBLUE.withAlpha(0.9),
             clampToGround: false,
-            show: true
+            show: true  // Polyline is visible by default
         }
     });
+    
+    // Store the full track entity
+    cesiumState.flyThroughMode.fullTrackEntity = trackEntity;
+    
+    // Create dynamic track entity for fly-through mode (initially hidden)
+    const dynamicTrackEntity = viewer.entities.add({
+        name: 'Dynamic Flight Track',
+        show: true,  // Entity itself is always visible
+        polyline: {
+            positions: new Cesium.CallbackProperty(function(time, result) {
+                // This function will be called every frame to update positions
+                if (!cesiumState.flyThroughMode.enabled) {
+                    return [];  // Return empty array when disabled
+                }
+                
+                // Calculate trail positions based on current time
+                const trailPositions = calculateTrailPositions(time);
+                
+                // Debug logging (very occasionally to avoid spam)
+                if (Math.random() < 0.001) { // Log 0.1% of the time
+                    cesiumLog.debug('Dynamic track callback: ' + trailPositions.length + ' positions at time ' + time.toString());
+                }
+                
+                return trailPositions;
+            }, false),  // false = positions are not constant, will be re-evaluated each frame
+            width: 3,
+            material: Cesium.Color.DODGERBLUE.withAlpha(0.9),
+            clampToGround: false,
+            show: false  // Initially hidden
+        }
+    });
+    
+    cesiumState.flyThroughMode.dynamicTrackEntity = dynamicTrackEntity;
     
     // Set up time-based animation if timestamps are available
     if (points[0].timestamp) {
@@ -745,6 +806,16 @@ function setupTimeBasedAnimation(points) {
             setTimeout(() => {
                 viewer.resize();
             }, 350); // Wait for CSS transition
+        }
+    }
+    
+    // Show the fly-through toggle button when track is loaded
+    const flyThroughToggle = document.getElementById('flyThroughToggle');
+    if (flyThroughToggle) {
+        flyThroughToggle.classList.add('visible');
+        // Set initial state based on preference
+        if (cesiumState.flyThroughMode.enabled) {
+            flyThroughToggle.classList.add('active');
         }
     }
     
@@ -1036,12 +1107,17 @@ function cleanupCesium() {
     // Hide stats container and restore cesium container size
     const statsContainer = document.getElementById('statsContainer');
     const cesiumContainer = document.getElementById('cesiumContainer');
+    const flyThroughToggle = document.getElementById('flyThroughToggle');
     if (statsContainer) {
         statsContainer.classList.remove('visible');
         statsContainer.innerHTML = '';
     }
     if (cesiumContainer) {
         cesiumContainer.classList.remove('with-stats');
+    }
+    if (flyThroughToggle) {
+        flyThroughToggle.classList.remove('visible');
+        flyThroughToggle.classList.remove('active');
     }
     
     // Clear the cleanup timer first
@@ -1205,6 +1281,183 @@ function updatePilotPosition(index) {
     // This function is kept for backward compatibility but does nothing
     // The pilot position is now controlled by Cesium's clock and SampledPositionProperty
     return;
+}
+
+// ============================================================================
+// Fly-through Mode Functions
+// ============================================================================
+
+// Calculate trail positions for fly-through mode (progressive, no erasure)
+// In this mode, the track builds up progressively as the pilot moves,
+// showing the complete path traveled from start to current position.
+// Unlike the original "trailing" mode, the track is never erased.
+function calculateTrailPositions(currentTime) {
+    if (!viewer || !igcPoints || igcPoints.length === 0) {
+        return [];
+    }
+    
+    // Build trail from start to current position (progressive rendering)
+    const trailPositions = [];
+    let pointsInTrail = 0;
+    
+    for (let i = 0; i < igcPoints.length; i++) {
+        const point = igcPoints[i];
+        
+        // Skip points without timestamps
+        if (!point.timestamp) {
+            continue;
+        }
+        
+        // Parse the point's timestamp using the same method as the pilot animation
+        let pointTime;
+        try {
+            pointTime = Cesium.JulianDate.fromIso8601(point.timestamp);
+        } catch (e) {
+            cesiumLog.debug('Failed to parse timestamp at index ' + i + ': ' + point.timestamp);
+            continue;
+        }
+        
+        // Check if point is before or at the current time
+        const secondsFromCurrent = Cesium.JulianDate.secondsDifference(pointTime, currentTime);
+        
+        if (secondsFromCurrent <= 0) {
+            // Point is in the past or at current time - add to trail
+            trailPositions.push(
+                Cesium.Cartesian3.fromDegrees(
+                    point.longitude,
+                    point.latitude,
+                    point.altitude
+                )
+            );
+            pointsInTrail++;
+        } else {
+            // We've reached points in the future, stop here
+            break;
+        }
+    }
+    
+    // Debug logging (only occasionally to avoid spam)
+    if (Math.random() < 0.01) { // Log 1% of the time
+        cesiumLog.debug('Fly-through progressive trail: ' + pointsInTrail + ' points rendered');
+    }
+    
+    return trailPositions;
+}
+
+// Toggle fly-through mode
+function setFlyThroughMode(enabled) {
+    if (!viewer) {
+        cesiumLog.error('Cannot set fly-through mode: viewer not initialized');
+        return;
+    }
+    
+    cesiumState.flyThroughMode.enabled = enabled;
+    
+    if (enabled) {
+        // Enable fly-through mode
+        cesiumLog.info('Fly-through mode enabled - progressive track rendering');
+        
+        // Ensure we have track entities
+        if (!cesiumState.flyThroughMode.fullTrackEntity || !cesiumState.flyThroughMode.dynamicTrackEntity) {
+            cesiumLog.error('Track entities not initialized - cannot enable fly-through mode');
+            cesiumState.flyThroughMode.enabled = false;
+            return;
+        }
+        
+        // Hide full track (polyline only, not affecting pilot)
+        if (cesiumState.flyThroughMode.fullTrackEntity.polyline) {
+            cesiumState.flyThroughMode.fullTrackEntity.polyline.show = false;
+        }
+        cesiumLog.debug('Full track hidden');
+        
+        // Show dynamic track
+        if (cesiumState.flyThroughMode.dynamicTrackEntity.polyline) {
+            cesiumState.flyThroughMode.dynamicTrackEntity.polyline.show = true;
+        }
+        cesiumLog.debug('Dynamic track shown');
+        
+        // Ensure continuous rendering for smooth trail updates
+        viewer.scene.requestRenderMode = false;
+        
+        // Force initial render to update the dynamic track
+        viewer.scene.requestRender();
+        
+        // Debug: Check if we have points
+        cesiumLog.debug('IGC points available: ' + (igcPoints ? igcPoints.length : 0));
+        
+        // Debug: Test calculate trail positions with current time
+        if (viewer.clock && viewer.clock.currentTime) {
+            const testPositions = calculateTrailPositions(viewer.clock.currentTime);
+            cesiumLog.info('Initial trail calculation: ' + testPositions.length + ' positions');
+        }
+    } else {
+        // Disable fly-through mode
+        cesiumLog.info('Fly-through mode disabled - showing full track');
+        
+        // Show full track (polyline only, not affecting pilot)
+        if (cesiumState.flyThroughMode.fullTrackEntity && cesiumState.flyThroughMode.fullTrackEntity.polyline) {
+            cesiumState.flyThroughMode.fullTrackEntity.polyline.show = true;
+            cesiumLog.debug('Full track shown');
+        }
+        
+        // Hide dynamic track
+        if (cesiumState.flyThroughMode.dynamicTrackEntity && cesiumState.flyThroughMode.dynamicTrackEntity.polyline) {
+            cesiumState.flyThroughMode.dynamicTrackEntity.polyline.show = false;
+            cesiumLog.debug('Dynamic track hidden');
+        }
+    }
+    
+    // Send state change to Flutter
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+        window.flutter_inappwebview.callHandler('onFlyThroughModeChanged', enabled);
+    }
+}
+
+// Set the trail duration for fly-through mode
+function setTrailDuration(seconds) {
+    if (seconds < 1 || seconds > 60) {
+        cesiumLog.error('Invalid trail duration: ' + seconds + ' seconds (must be 1-60)');
+        return;
+    }
+    
+    cesiumState.flyThroughMode.trailDuration = seconds * 1000; // Convert to milliseconds
+    cesiumLog.info('Trail duration set to ' + seconds + ' seconds');
+    
+    // Force update if fly-through mode is active
+    if (cesiumState.flyThroughMode.enabled && viewer) {
+        viewer.scene.requestRender();
+    }
+    
+    // Send state change to Flutter
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+        window.flutter_inappwebview.callHandler('onTrailDurationChanged', seconds);
+    }
+}
+
+// Get current fly-through mode state
+function getFlyThroughMode() {
+    return cesiumState.flyThroughMode.enabled;
+}
+
+// Get current trail duration in seconds
+function getTrailDuration() {
+    return cesiumState.flyThroughMode.trailDuration / 1000;
+}
+
+// Toggle function for the UI button
+function toggleFlyThroughMode() {
+    const newState = !cesiumState.flyThroughMode.enabled;
+    setFlyThroughMode(newState);
+    
+    // Update button appearance
+    const flyThroughToggle = document.getElementById('flyThroughToggle');
+    if (flyThroughToggle) {
+        if (newState) {
+            flyThroughToggle.classList.add('active');
+        } else {
+            flyThroughToggle.classList.remove('active');
+        }
+    }
 }
 
 // ============================================================================
@@ -1555,3 +1808,10 @@ window.setSceneMode = setSceneMode;
 window.setNavigationHelpDialogOpen = setNavigationHelpDialogOpen;
 window.getSceneMode = getSceneMode;
 window.toggleSceneMode = toggleSceneMode;
+
+// Fly-through mode exports
+window.setFlyThroughMode = setFlyThroughMode;
+window.getFlyThroughMode = getFlyThroughMode;
+window.setTrailDuration = setTrailDuration;
+window.getTrailDuration = getTrailDuration;
+window.toggleFlyThroughMode = toggleFlyThroughMode;

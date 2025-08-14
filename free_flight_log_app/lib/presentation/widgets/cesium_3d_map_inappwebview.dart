@@ -65,6 +65,8 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   String _savedBaseMap = 'Bing Maps Aerial';
   bool _savedTerrainEnabled = true;
   bool _savedNavigationHelpDialogOpen = false;
+  bool _savedFlyThroughMode = false;
+  int _savedTrailDuration = 5;
   
   @override
   void initState() {
@@ -109,6 +111,8 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
       final baseMap = await _preferencesService.getBaseMap();
       final terrainEnabled = await _preferencesService.getTerrainEnabled();
       final navigationHelpDialogOpen = await _preferencesService.getNavigationHelpDialogOpen();
+      final flyThroughMode = await _preferencesService.getFlyThroughMode();
+      final trailDuration = await _preferencesService.getTrailDuration();
       
       if (mounted && !_isDisposed) {
         setState(() {
@@ -116,9 +120,11 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
           _savedBaseMap = baseMap;
           _savedTerrainEnabled = terrainEnabled;
           _savedNavigationHelpDialogOpen = navigationHelpDialogOpen;
+          _savedFlyThroughMode = flyThroughMode;
+          _savedTrailDuration = trailDuration;
         });
         
-        LoggingService.debug('Cesium3D: Loaded preferences - Scene: $sceneMode, BaseMap: $baseMap, Terrain: $terrainEnabled, NavDialog: $navigationHelpDialogOpen');
+        LoggingService.debug('Cesium3D: Loaded preferences - Scene: $sceneMode, BaseMap: $baseMap, Terrain: $terrainEnabled, NavDialog: $navigationHelpDialogOpen, FlyThrough: $flyThroughMode, Trail: ${trailDuration}s');
       }
     } catch (e) {
       LoggingService.error('Cesium3D', 'Failed to load preferences: $e');
@@ -319,6 +325,36 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                     // Save the preference
                     await _preferencesService.setNavigationHelpDialogOpen(isOpen);
                     _savedNavigationHelpDialogOpen = isOpen;
+                  }
+                },
+              );
+              
+              // Add handler for fly-through mode changes
+              controller.addJavaScriptHandler(
+                handlerName: 'onFlyThroughModeChanged',
+                callback: (args) async {
+                  if (args.isNotEmpty) {
+                    final enabled = args[0] as bool;
+                    LoggingService.info('Cesium3D: Fly-through mode ${enabled ? "enabled" : "disabled"}');
+                    
+                    // Save the preference
+                    await _preferencesService.setFlyThroughMode(enabled);
+                    _savedFlyThroughMode = enabled;
+                  }
+                },
+              );
+              
+              // Add handler for trail duration changes
+              controller.addJavaScriptHandler(
+                handlerName: 'onTrailDurationChanged',
+                callback: (args) async {
+                  if (args.isNotEmpty) {
+                    final seconds = args[0] as int;
+                    LoggingService.info('Cesium3D: Trail duration changed to $seconds seconds');
+                    
+                    // Save the preference
+                    await _preferencesService.setTrailDuration(seconds);
+                    _savedTrailDuration = seconds;
                   }
                 },
               );
@@ -551,7 +587,9 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
             savedSceneMode: "$_savedSceneMode",
             savedBaseMap: "$_savedBaseMap",
             savedTerrainEnabled: $_savedTerrainEnabled,
-            savedNavigationHelpDialogOpen: $_savedNavigationHelpDialogOpen,''');
+            savedNavigationHelpDialogOpen: $_savedNavigationHelpDialogOpen,
+            savedFlyThroughMode: $_savedFlyThroughMode,
+            savedTrailDuration: $_savedTrailDuration,''');
     }
     
     // Fallback to inline HTML (keeping original implementation as backup)
