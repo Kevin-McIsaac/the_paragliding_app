@@ -204,7 +204,6 @@ function initializeCesium(config) {
             shouldAnimate: false,  // Start paused
         });
         
-        cesiumLog.debug('Cesium viewer created, configuring aggressive memory optimizations...');
         
         // Load saved scene mode preference or default to 3D
         const savedSceneMode = loadSceneModePreference();
@@ -327,8 +326,7 @@ function initializeCesium(config) {
                 if (tileCount > 50) {  // Increased threshold for higher quality settings
                     // Only log occasionally to reduce spam
                     if (Math.random() < 0.1) {  // Log 10% of the time
-                        cesiumLog.debug('High tile count: ' + tileCount);
-                    }
+                        }
                     // Temporarily increase screen space error to reduce tile count
                     viewer.scene.globe.maximumScreenSpaceError = 3;  // Less aggressive reduction
                     
@@ -358,7 +356,6 @@ function initializeCesium(config) {
                 // Only log significant changes in debug mode
                 const change = Math.abs(lastTileCount - queuedTileCount);
                 if (change > 10 || (queuedTileCount === 0 && lastTileCount > 0)) {
-                    cesiumLog.debug('Tiles queued: ' + queuedTileCount);
                     lastTileCount = queuedTileCount;
                 }
             }
@@ -391,7 +388,6 @@ function initializeCesium(config) {
                 // Fly-through mode is now automatic - no manual setup needed
             }, 100);
         } else {
-            cesiumLog.debug('Camera position: lat=' + config.lat + ', lon=' + config.lon + ', altitude=' + config.altitude);
         }
         
         // Store viewer globally for cleanup
@@ -400,7 +396,6 @@ function initializeCesium(config) {
         // Track navigation help dialog state and restore saved preference
         if (viewer.navigationHelpButton && viewer.navigationHelpButton.viewModel) {
             const navHelpVM = viewer.navigationHelpButton.viewModel;
-            cesiumLog.debug('Navigation help button is present, setting up dialog state tracking');
             
             // Check if showInstructions observable exists (indicates dialog state)
             if (navHelpVM.showInstructions !== undefined) {
@@ -460,7 +455,6 @@ function setTerrainExaggeration(value) {
     currentTerrainExaggeration = value;
     viewer.scene.globe.terrainExaggeration = value;
     viewer.scene.globe.terrainExaggerationRelativeHeight = 0.0;
-    cesiumLog.debug('Terrain exaggeration set to: ' + value);
 }
 
 function switchBaseMap(mapType) {
@@ -511,8 +505,6 @@ function createColoredFlightTrack(points) {
     
     // Debug: Check what's in the first point
     if (points.length > 0) {
-        cesiumLog.debug('First point keys: ' + Object.keys(points[0]).join(', '));
-        cesiumLog.debug('First point timezone field: ' + points[0].timezone);
     }
     
     if (points.length > 0 && points[0].timezone) {
@@ -669,7 +661,6 @@ function createColoredFlightTrack(points) {
                 
                 // Very rare debug logging to avoid spam
                 if (Math.random() < 0.001) { // Log 0.1% of the time
-                    cesiumLog.debug('Ribbon trail: ' + trailPositions.length + ' positions');
                 }
                 
                 return trailPositions;
@@ -736,15 +727,11 @@ function setupTimeBasedAnimation(points) {
     if (!viewer || !points || points.length === 0) return;
     
     cesiumLog.info('Setting up time-based animation with ' + points.length + ' points');
-    cesiumLog.debug('First point timestamp: ' + points[0].timestamp);
-    cesiumLog.debug('Last point timestamp: ' + points[points.length - 1].timestamp);
     
     // Parse timestamps and create time intervals
     const startTime = Cesium.JulianDate.fromIso8601(points[0].timestamp);
     const stopTime = Cesium.JulianDate.fromIso8601(points[points.length - 1].timestamp);
     
-    cesiumLog.debug('Start time: ' + startTime.toString());
-    cesiumLog.debug('Stop time: ' + stopTime.toString());
     
     // Create sampled position property for smooth interpolation
     const positionProperty = new Cesium.SampledPositionProperty();
@@ -766,7 +753,6 @@ function setupTimeBasedAnimation(points) {
         sampleCount++;
         
         if (index % 100 === 0) {
-            cesiumLog.debug('Added sample ' + index + ' at time: ' + time.toString());
         }
     });
     
@@ -942,12 +928,10 @@ function setupTimeBasedAnimation(points) {
             if (justStartedPlaying) {
                 // Just started playing - enable continuous rendering
                 viewer.scene.requestRenderMode = false;
-                cesiumLog.debug('Enabled continuous rendering (playing)');
             } else if (justStoppedPlaying) {
                 // Just paused/stopped - switch to on-demand rendering
                 viewer.scene.requestRenderMode = true;
                 viewer.scene.requestRender(); // Render once to show current state
-                cesiumLog.debug('Switched to on-demand rendering (paused)');
             }
         } else {
             // Full track mode - always use on-demand rendering
@@ -1078,7 +1062,6 @@ function setTrackOpacity(opacity) {
         }
     });
     
-    cesiumLog.debug('Track opacity set to: ' + opacity);
 }
 
 // Feature 3: Camera Controls
@@ -1195,7 +1178,6 @@ function flyToLocation(lon, lat, alt, duration) {
         destination: Cesium.Cartesian3.fromDegrees(lon, lat, alt),
         duration: duration || 3.0,
         complete: function() {
-            cesiumLog.debug('Camera transition complete');
         }
     });
 }
@@ -1211,12 +1193,10 @@ function setCameraControlsEnabled(enabled) {
     controller.enableTilt = enabled;
     controller.enableLook = enabled;
     
-    cesiumLog.debug('Camera controls ' + (enabled ? 'enabled' : 'disabled'));
 }
 
 // Cleanup function to be called from Flutter before disposal
 function cleanupCesium() {
-    cesiumLog.debug('Cleaning up Cesium resources...');
     
     // Hide stats container and restore cesium container size
     const statsContainer = document.getElementById('statsContainer');
@@ -1263,11 +1243,10 @@ function cleanupCesium() {
             try {
                 viewer.destroy();
             } catch (destroyError) {
-                cesiumLog.debug('Viewer destroy error (expected): ' + destroyError.message);
+                // Expected during cleanup - ignore
             }
             
             window.viewer = null;
-            cesiumLog.debug('Cesium cleanup completed');
         } catch (e) {
             cesiumLog.error('Error during cleanup: ' + e.message);
             // Force clear the viewer reference even if cleanup fails
@@ -1300,10 +1279,8 @@ document.addEventListener('visibilitychange', function() {
         if (document.hidden) {
             viewer.scene.requestRenderMode = true;
             viewer.scene.maximumRenderTimeChange = Infinity;
-            cesiumLog.debug('Page hidden - rendering paused');
         } else {
             viewer.scene.requestRenderMode = false;
-            cesiumLog.debug('Page visible - rendering resumed');
         }
     }
 });
@@ -1401,7 +1378,6 @@ function updatePilotPosition(index) {
 // This creates a consistent visual trail regardless of playback speed
 function calculateTrailPositions(currentTime) {
     if (!viewer || !igcPoints || igcPoints.length === 0) {
-        cesiumLog.debug('calculateTrailPositions: No viewer or points');
         return [];
     }
     
@@ -1470,7 +1446,6 @@ function calculateTrailPositions(currentTime) {
     
     // Very rare debug logging to avoid spam when paused
     if (Math.random() < 0.001) { // Log 0.1% of the time
-        cesiumLog.debug('Trail positions: ' + trailPositions.length + ' points built');
     }
     
     return trailPositions;
@@ -1549,7 +1524,6 @@ function setFlyThroughMode(enabled) {
     
     if (enabled) {
         // Enable fly-through mode
-        cesiumLog.info('Ribbon trail mode enabled - ' + cesiumState.flyThroughMode.ribbonAnimationSeconds + ' second ribbon');
         
         // Ensure we have track entities
         if (!cesiumState.flyThroughMode.fullTrackEntity || !cesiumState.flyThroughMode.dynamicTrackEntity) {
@@ -1562,24 +1536,20 @@ function setFlyThroughMode(enabled) {
         if (cesiumState.flyThroughMode.fullTrackEntity.polyline) {
             cesiumState.flyThroughMode.fullTrackEntity.polyline.show = false;
         }
-        cesiumLog.debug('Full track hidden');
         
         // Show dynamic track
         if (cesiumState.flyThroughMode.dynamicTrackEntity.polyline) {
             cesiumState.flyThroughMode.dynamicTrackEntity.polyline.show = true;
         }
-        cesiumLog.debug('Dynamic track shown');
         
         // Hide static curtain wall
         if (cesiumState.flyThroughMode.curtainWallEntity) {
             cesiumState.flyThroughMode.curtainWallEntity.show = false;
-            cesiumLog.debug('Static curtain hidden');
         }
         
         // Show dynamic curtain wall
         if (cesiumState.flyThroughMode.dynamicCurtainEntity) {
             cesiumState.flyThroughMode.dynamicCurtainEntity.show = true;
-            cesiumLog.debug('Dynamic curtain shown');
         }
         
         // Only enable continuous rendering if animation is playing
@@ -1608,31 +1578,21 @@ function setFlyThroughMode(enabled) {
         viewer.scene.requestRender();
         
         // Debug: Check if we have points
-        cesiumLog.info('IGC points available: ' + (igcPoints ? igcPoints.length : 0));
         
         // Debug: Check clock state
         if (viewer.clock) {
-            cesiumLog.info('Clock state: shouldAnimate=' + viewer.clock.shouldAnimate + 
-                          ', multiplier=' + viewer.clock.multiplier);
-            cesiumLog.info('Clock times: start=' + viewer.clock.startTime + 
-                          ', current=' + viewer.clock.currentTime + 
-                          ', stop=' + viewer.clock.stopTime);
         }
         
         // Debug: Test calculate trail positions with current time
         if (viewer.clock && viewer.clock.currentTime) {
             const testPositions = calculateTrailPositions(viewer.clock.currentTime);
-            cesiumLog.info('Initial trail calculation: ' + testPositions.length + ' positions');
             
             // If we have positions, log details about first and last
             if (testPositions.length > 0) {
-                cesiumLog.info('First position in trail exists');
-                cesiumLog.info('Last position in trail exists');
             }
         }
     } else {
         // Disable fly-through mode
-        cesiumLog.info('Fly-through mode disabled - showing full track');
         
         // Switch back to on-demand rendering when ribbon mode is disabled
         viewer.scene.requestRenderMode = true;
@@ -1640,25 +1600,21 @@ function setFlyThroughMode(enabled) {
         // Show full track (polyline only, not affecting pilot)
         if (cesiumState.flyThroughMode.fullTrackEntity && cesiumState.flyThroughMode.fullTrackEntity.polyline) {
             cesiumState.flyThroughMode.fullTrackEntity.polyline.show = true;
-            cesiumLog.debug('Full track shown');
         }
         
         // Hide dynamic track
         if (cesiumState.flyThroughMode.dynamicTrackEntity && cesiumState.flyThroughMode.dynamicTrackEntity.polyline) {
             cesiumState.flyThroughMode.dynamicTrackEntity.polyline.show = false;
-            cesiumLog.debug('Dynamic track hidden');
         }
         
         // Show static curtain wall
         if (cesiumState.flyThroughMode.curtainWallEntity) {
             cesiumState.flyThroughMode.curtainWallEntity.show = true;
-            cesiumLog.debug('Static curtain shown');
         }
         
         // Hide dynamic curtain wall
         if (cesiumState.flyThroughMode.dynamicCurtainEntity) {
             cesiumState.flyThroughMode.dynamicCurtainEntity.show = false;
-            cesiumLog.debug('Dynamic curtain hidden');
         }
     }
     
@@ -1673,7 +1629,6 @@ function setTrailDuration(seconds) {
     }
     
     cesiumState.flyThroughMode.trailDuration = seconds * 1000; // Convert to milliseconds
-    cesiumLog.info('Trail duration set to ' + seconds + ' seconds');
     
     // Force update if fly-through mode is active
     if (cesiumState.flyThroughMode.enabled && viewer) {
@@ -1704,7 +1659,6 @@ function setRibbonDuration(seconds) {
     }
     
     cesiumState.flyThroughMode.ribbonAnimationSeconds = seconds;
-    cesiumLog.info('Ribbon duration set to ' + seconds + ' animation seconds');
     
     // Force update if fly-through mode is active
     if (cesiumState.flyThroughMode.enabled && viewer) {
@@ -1765,7 +1719,6 @@ function captureCurrentView() {
         roll: camera.roll
     };
     
-    cesiumLog.debug('Captured view: altitude=' + altitude + ', rectangle=' + (rectangle ? 'yes' : 'no'));
     return savedView;
 }
 
@@ -1796,7 +1749,6 @@ function restoreCameraView(savedView, targetMode) {
                 camera.setView({
                     destination: savedView.rectangle
                 });
-                cesiumLog.debug('Restored 2D view with rectangle');
             } else if (targetMode === Cesium.SceneMode.SCENE3D) {
                 // In 3D mode, position camera at the center with appropriate altitude
                 const position = Cesium.Cartesian3.fromRadians(centerLon, centerLat, altitude);
@@ -1809,7 +1761,6 @@ function restoreCameraView(savedView, targetMode) {
                         roll: savedView.roll || 0
                     }
                 });
-                cesiumLog.debug('Restored 3D view at altitude: ' + altitude);
             } else if (targetMode === Cesium.SceneMode.COLUMBUS_VIEW) {
                 // Columbus view - similar to 3D but with different projection
                 const position = Cesium.Cartesian3.fromRadians(centerLon, centerLat, altitude);
@@ -1822,7 +1773,6 @@ function restoreCameraView(savedView, targetMode) {
                         roll: savedView.roll || 0
                     }
                 });
-                cesiumLog.debug('Restored Columbus view at altitude: ' + altitude);
             }
         }
     } catch (e) {
@@ -1956,12 +1906,9 @@ function saveSceneModePreference(mode) {
         // Check if localStorage is available (may not be in WebView)
         if (typeof(Storage) !== "undefined" && window.localStorage) {
             localStorage.setItem('cesium_scene_mode', mode.toString());
-            cesiumLog.debug('Saved scene mode preference: ' + getSceneModeString(mode));
         } else {
-            cesiumLog.debug('localStorage not available - preference will be saved in Flutter');
         }
     } catch (e) {
-        cesiumLog.debug('Could not save to localStorage (expected in WebView): ' + e.message);
     }
 }
 
@@ -1973,13 +1920,11 @@ function loadSceneModePreference() {
             const saved = localStorage.getItem('cesium_scene_mode');
             if (saved !== null) {
                 const mode = parseInt(saved);
-                cesiumLog.debug('Loaded scene mode preference: ' + getSceneModeString(mode));
                 return mode;
             }
         }
     } catch (e) {
         // Expected in WebView context - preferences handled by Flutter
-        cesiumLog.debug('Could not load from localStorage (expected in WebView)');
     }
     return Cesium.SceneMode.SCENE3D; // Default to 3D
 }
@@ -2038,7 +1983,6 @@ function onSceneModeChanged() {
 // Event handler for when scene mode is changing
 function onSceneModeChanging() {
     cesiumState.sceneModeChanging = true;
-    cesiumLog.debug('Scene mode morphing started');
     
     // Capture the current view before the morph starts
     // This handles cases where the user uses the scene mode picker directly
