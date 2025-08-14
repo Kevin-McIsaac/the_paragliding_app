@@ -717,7 +717,7 @@ function createColoredFlightTrack(points) {
                 return calculateTrailAltitudes(time);
             }, false),
             // minimumHeights not specified = extends to ground automatically
-            material: Cesium.Color.DODGERBLUE.withAlpha(0.85),  // 85% opaque
+            material: Cesium.Color.DODGERBLUE.withAlpha(0.1),  // 10% opaque
             outline: false
         }
     });
