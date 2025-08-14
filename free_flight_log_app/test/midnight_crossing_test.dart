@@ -40,7 +40,7 @@ void main() {
     test('Midnight crossing flight duration calculation', () {
       // Create track points for a flight crossing midnight
       final launchPoint = IgcPoint(
-        timestamp: DateTime(2024, 1, 15, 23, 30, 0), // 23:30
+        timestamp: DateTime(2024, 1, 15, 23, 30, 0), // 23:30 on Jan 15
         latitude: 45.0,
         longitude: 6.0,
         pressureAltitude: 1000,
@@ -49,7 +49,7 @@ void main() {
       );
       
       final landingPoint = IgcPoint(
-        timestamp: DateTime(2024, 1, 15, 1, 45, 0), // 01:45 (appears to be same day due to UTC conversion)
+        timestamp: DateTime(2024, 1, 16, 1, 45, 0), // 01:45 on Jan 16 (next day)
         latitude: 45.1,
         longitude: 6.1,
         pressureAltitude: 800,
@@ -67,15 +67,14 @@ void main() {
         timezone: '+01:00',
       );
       
-      // Without midnight correction: 01:45 - 23:30 = -21:45 = -1305 minutes
-      // With midnight correction: -1305 + 1440 = 135 minutes (2 hours 15 minutes)
+      // Correct calculation: Jan 16 01:45 - Jan 15 23:30 = 2 hours 15 minutes = 135 minutes
       expect(igcFile.duration, equals(135));
     });
     
     test('Edge case: exactly midnight crossing', () {
       // Launch just before midnight, land just after
       final launchPoint = IgcPoint(
-        timestamp: DateTime(2024, 1, 15, 23, 59, 0), // 23:59
+        timestamp: DateTime(2024, 1, 15, 23, 59, 0), // 23:59 on Jan 15
         latitude: 45.0,
         longitude: 6.0,
         pressureAltitude: 1000,
@@ -84,7 +83,7 @@ void main() {
       );
       
       final landingPoint = IgcPoint(
-        timestamp: DateTime(2024, 1, 15, 0, 1, 0), // 00:01 (appears same day due to parsing)
+        timestamp: DateTime(2024, 1, 16, 0, 1, 0), // 00:01 on Jan 16 (next day)
         latitude: 45.1,
         longitude: 6.1,
         pressureAltitude: 800,
@@ -102,8 +101,7 @@ void main() {
         timezone: '+01:00',
       );
       
-      // Without midnight correction: 00:01 - 23:59 = -23:58 = -1438 minutes
-      // With midnight correction: -1438 + 1440 = 2 minutes
+      // Correct calculation: Jan 16 00:01 - Jan 15 23:59 = 2 minutes
       expect(igcFile.duration, equals(2));
     });
   });

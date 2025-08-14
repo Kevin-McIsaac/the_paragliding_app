@@ -29,6 +29,10 @@ class IgcParser {
     String gliderType = '';
     String gliderID = '';
     String? timezone;
+    
+    // Track current date for midnight crossing detection
+    DateTime? currentDate;
+    DateTime? previousTimestamp;
 
     for (final line in lines) {
       if (line.isEmpty) continue;
@@ -43,6 +47,7 @@ class IgcParser {
           // Extract specific header values
           if (line.startsWith('HFDTE')) {
             flightDate = _parseDate(line);
+            currentDate = flightDate; // Initialize current date
           } else if (line.startsWith('HFPLTPILOT')) {
             pilot = _extractHeaderValue(line, 'HFPLTPILOT');
           } else if (line.startsWith('HFGTYGLIDERTYPE')) {
@@ -58,9 +63,39 @@ class IgcParser {
           
         case 'B':
           // B record (track point) - parse as UTC initially, will convert later
-          final point = _parseBRecord(line, flightDate ?? DateTime.now(), null);
+          // Pass current date which may have been incremented for midnight crossing
+          final point = _parseBRecord(line, currentDate ?? flightDate ?? DateTime.now(), null);
           if (point != null) {
-            trackPoints.add(point);
+            // Check for midnight crossing
+            if (previousTimestamp != null) {
+              // If current time is earlier than previous time, we've crossed midnight
+              final currentTimeOnly = point.timestamp.hour * 3600 + 
+                                     point.timestamp.minute * 60 + 
+                                     point.timestamp.second;
+              final previousTimeOnly = previousTimestamp.hour * 3600 + 
+                                      previousTimestamp.minute * 60 + 
+                                      previousTimestamp.second;
+              
+              if (currentTimeOnly < previousTimeOnly) {
+                // Midnight crossing detected - increment the date
+                currentDate = currentDate?.add(const Duration(days: 1));
+                LoggingService.info('IgcParser: Midnight crossing detected at ${point.timestamp.hour}:${point.timestamp.minute}:${point.timestamp.second}');
+                
+                // Re-parse the B record with the incremented date
+                final correctedPoint = _parseBRecord(line, currentDate ?? DateTime.now(), null);
+                if (correctedPoint != null) {
+                  trackPoints.add(correctedPoint);
+                  previousTimestamp = correctedPoint.timestamp;
+                }
+              } else {
+                trackPoints.add(point);
+                previousTimestamp = point.timestamp;
+              }
+            } else {
+              // First point
+              trackPoints.add(point);
+              previousTimestamp = point.timestamp;
+            }
           }
           break;
           
@@ -139,6 +174,27 @@ class IgcParser {
             isValid: point.isValid,
           );
         }
+      }
+    }
+    
+    // Validate timestamps are in chronological order
+    if (trackPoints.length > 1) {
+      bool timestampsValid = true;
+      for (int i = 1; i < trackPoints.length; i++) {
+        if (trackPoints[i].timestamp.isBefore(trackPoints[i - 1].timestamp)) {
+          LoggingService.warning(
+            'IgcParser: Timestamp validation failed - point $i '
+            '(${trackPoints[i].timestamp.toIso8601String()}) is before point ${i - 1} '
+            '(${trackPoints[i - 1].timestamp.toIso8601String()})'
+          );
+          timestampsValid = false;
+        }
+      }
+      
+      if (timestampsValid) {
+        LoggingService.debug('IgcParser: All ${trackPoints.length} timestamps are in chronological order');
+      } else {
+        LoggingService.error('IgcParser: Timestamps are not in chronological order - midnight crossing may not be handled correctly');
       }
     }
 
@@ -296,7 +352,7 @@ class IgcParser {
       // GPS altitude
       final gpsAlt = int.parse(line.substring(30, 35));
       
-      // Create UTC timestamp
+      // Create UTC timestamp - timezone conversion will be done later in bulk
       DateTime timestamp = DateTime.utc(
         flightDate.year,
         flightDate.month,
@@ -306,11 +362,8 @@ class IgcParser {
         seconds,
       );
       
-      // Convert UTC to local time if timezone is known
-      if (timezone != null) {
-        timestamp = _convertUtcToLocal(timestamp, timezone);
-      }
-      // If no timezone provided, keep as UTC
+      // NOTE: Timezone conversion is done later in bulk after detection
+      // This avoids double conversion
       
       return IgcPoint(
         timestamp: timestamp,
