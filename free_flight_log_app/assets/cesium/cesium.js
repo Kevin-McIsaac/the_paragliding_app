@@ -29,7 +29,8 @@ const cesiumState = {
         ribbonMode: 'animation-time',  // Ribbon based on animation time
         ribbonAnimationSeconds: 3.0,   // Default 3 seconds of animation time
         ribbonStartTime: null          // Track when ribbon starts
-    }
+    },
+    flightTrackHomeView: null  // Store the home view for flight track
 };
 
 // Compatibility aliases for easier refactoring
@@ -436,6 +437,42 @@ function initializeCesium(config) {
             }
         }
         
+        // Customize home button behavior to return to flight track view
+        if (viewer.homeButton && viewer.homeButton.viewModel) {
+            cesiumLog.info('Customizing home button behavior for flight track');
+            
+            // Listen for home button clicks
+            viewer.homeButton.viewModel.command.beforeExecute.addEventListener(function(commandInfo) {
+                // If we have a stored flight track home view, use it
+                if (cesiumState.flightTrackHomeView) {
+                    cesiumLog.info('Home button: returning to flight track view');
+                    
+                    // Cancel the default behavior
+                    commandInfo.cancel = true;
+                    
+                    // Restore the saved flight track view
+                    const view = cesiumState.flightTrackHomeView;
+                    
+                    if (view.boundingSphere) {
+                        // Use the stored bounding sphere with padding
+                        viewer.camera.flyToBoundingSphere(view.boundingSphere, {
+                            duration: 1.5,
+                            offset: view.offset
+                        });
+                    } else if (view.destination) {
+                        // Fallback to position-based view
+                        viewer.camera.flyTo({
+                            destination: view.destination,
+                            orientation: view.orientation,
+                            duration: 1.5
+                        });
+                    }
+                } else {
+                    // No flight track loaded, let default behavior proceed
+                    cesiumLog.info('Home button: using default view (no flight track)');
+                }
+            });
+        }
         
     } catch (error) {
         cesiumLog.error('Initialization error: ' + error.message);
@@ -716,7 +753,7 @@ function createColoredFlightTrack(points) {
     }
     
     // Zoom to track with padding for UI
-    zoomToEntitiesWithPadding(0.3); // 30% padding
+    zoomToEntitiesWithPadding(0.9); // 90% screen coverage
     
     cesiumLog.info('Single blue track created with ' + points.length + ' points');
 }
@@ -1142,7 +1179,7 @@ function setCameraPreset(preset) {
             
         default:
             // Reset to default view with padding
-            zoomToEntitiesWithPadding(0.3);
+            zoomToEntitiesWithPadding(0.9); // 90% screen coverage
     }
     
     cesiumLog.info('Camera preset: ' + preset);
@@ -1150,24 +1187,82 @@ function setCameraPreset(preset) {
 
 // Zoom to entities with padding for UI elements
 function zoomToEntitiesWithPadding(padding) {
-    if (!viewer || viewer.entities.values.length === 0) return;
+    if (!viewer || !igcPoints || igcPoints.length === 0) return;
     
-    // Get the bounding sphere of all entities
-    viewer.zoomTo(viewer.entities).then(function() {
-        // After initial zoom, adjust the camera to add padding
-        if (padding && padding > 0) {
-            // Move camera back by the padding percentage
-            var camera = viewer.camera;
-            var distance = Cesium.Cartesian3.distance(camera.position, camera.pickEllipsoid(new Cesium.Cartesian2(
-                viewer.canvas.clientWidth / 2,
-                viewer.canvas.clientHeight / 2
-            )));
-            
-            if (distance) {
-                camera.moveBackward(distance * padding);
-            }
-        }
+    // Calculate bounding sphere from track points directly
+    const boundingSphere = Cesium.BoundingSphere.fromPoints(
+        igcPoints.map(point => 
+            Cesium.Cartesian3.fromDegrees(
+                point.longitude,
+                point.latitude,
+                point.altitude
+            )
+        )
+    );
+    
+    // Calculate the optimal range (distance) for desired screen coverage
+    // The track should FILL the specified percentage of the screen
+    // Lower values = closer zoom, higher values = farther zoom
+    // padding parameter represents how much of the screen the track should fill (0.9 = track fills 90% of screen)
+    const screenCoverage = padding || 0.9;  // Default to 90% if not specified
+    
+    // Get screen aspect ratio to adjust for portrait vs landscape tracks
+    const screenAspectRatio = viewer.canvas.clientWidth / viewer.canvas.clientHeight;
+    
+    // Calculate track's extent in each direction to determine its aspect ratio
+    let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+    igcPoints.forEach(point => {
+        minLat = Math.min(minLat, point.latitude);
+        maxLat = Math.max(maxLat, point.latitude);
+        minLon = Math.min(minLon, point.longitude);
+        maxLon = Math.max(maxLon, point.longitude);
     });
+    
+    // Calculate the track's aspect ratio (width/height in degrees)
+    const trackWidth = maxLon - minLon;
+    const trackHeight = maxLat - minLat;
+    // Correct for latitude distortion at track's center latitude
+    const centerLat = (minLat + maxLat) / 2;
+    const lonCorrection = Math.cos(Cesium.Math.toRadians(centerLat));
+    const correctedTrackWidth = trackWidth * lonCorrection;
+    const trackAspectRatio = correctedTrackWidth / trackHeight;
+    
+    // Determine which dimension is more constrained
+    // If track is taller than screen (relative to their aspect ratios), need more distance
+    const aspectRatioFactor = Math.max(1.0, trackAspectRatio / screenAspectRatio, screenAspectRatio / trackAspectRatio);
+    
+    // Base multiplier adjusted for aspect ratio mismatch
+    // When track and screen aspect ratios differ significantly, need more distance
+    const baseMultiplier = 2.8;
+    const rangeMultiplier = (baseMultiplier * Math.sqrt(aspectRatioFactor)) / screenCoverage;
+    const range = boundingSphere.radius * rangeMultiplier;
+    
+    cesiumLog.info('Track aspect: ' + trackAspectRatio.toFixed(2) + ', Screen aspect: ' + screenAspectRatio.toFixed(2) + 
+                   ', Coverage: ' + (screenCoverage * 100) + '%, Range multiplier: ' + rangeMultiplier.toFixed(2));
+    
+    // Create the view offset with heading, pitch, and calculated range
+    const offset = new Cesium.HeadingPitchRange(
+        Cesium.Math.toRadians(0),   // Heading: 0 = North
+        Cesium.Math.toRadians(-45), // Pitch: -45 = looking down at 45 degree angle
+        range                        // Distance from center of bounding sphere
+    );
+    
+    // Use viewBoundingSphere for precise control
+    viewer.camera.viewBoundingSphere(boundingSphere, offset);
+    
+    // Store this view as the home view for the flight track
+    cesiumState.flightTrackHomeView = {
+        boundingSphere: boundingSphere,
+        offset: offset,
+        destination: viewer.camera.position.clone(),
+        orientation: {
+            heading: viewer.camera.heading,
+            pitch: viewer.camera.pitch,
+            roll: viewer.camera.roll
+        }
+    };
+    
+    cesiumLog.info('Stored flight track home view with ' + igcPoints.length + ' points, radius: ' + boundingSphere.radius.toFixed(0) + 'm');
 }
 
 // Smooth camera fly to location
