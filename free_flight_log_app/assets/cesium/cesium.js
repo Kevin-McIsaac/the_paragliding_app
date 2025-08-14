@@ -191,7 +191,7 @@ function initializeCesium(config) {
             terrainProviderViewModels: terrainViewModels,  // Use custom limited terrain providers
             selectedTerrainProviderViewModel: selectedTerrainProvider,  // Use saved or default
             geocoder: true,
-            homeButton: false,  // Remove home button as requested
+            homeButton: true,  // Enable home button
             sceneModePicker: true,
             navigationHelpButton: true,  // Always show the button
             animation: true,  // Enable native animation widget
