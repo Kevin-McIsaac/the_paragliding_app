@@ -21,6 +21,8 @@ const cesiumState = {
         trailDuration: 5000,  // milliseconds (kept for future use but not used in progressive mode)
         dynamicTrackEntity: null,
         fullTrackEntity: null,
+        curtainWallEntity: null,      // Static curtain wall hanging from track
+        dynamicCurtainEntity: null,    // Dynamic curtain for progressive mode
         lastUpdateTime: null,
         updateInterval: 100,  // Update every 100ms for smooth animation
         progressiveMode: true  // Progressive rendering - track builds up without erasure
@@ -641,6 +643,26 @@ function createColoredFlightTrack(points) {
     // Store the full track entity
     cesiumState.flyThroughMode.fullTrackEntity = trackEntity;
     
+    // Create curtain wall that hangs from track to ground
+    // Extract altitudes for the wall
+    const wallHeights = points.map(point => point.altitude);
+    
+    const curtainWallEntity = viewer.entities.add({
+        name: 'Flight Track Curtain',
+        show: true,  // Visible by default
+        wall: {
+            positions: positions,  // Same positions as track
+            maximumHeights: wallHeights,  // Flight altitudes
+            // minimumHeights not specified = extends to ground automatically
+            material: Cesium.Color.DODGERBLUE.withAlpha(0.1),  // 10% opaque
+            outline: false
+        }
+    });
+    
+    // Store curtain wall entity
+    cesiumState.flyThroughMode.curtainWallEntity = curtainWallEntity;
+    cesiumLog.info('Created curtain wall with ' + wallHeights.length + ' segments');
+    
     // Create dynamic track entity for fly-through mode (initially hidden)
     const dynamicTrackEntity = viewer.entities.add({
         name: 'Dynamic Flight Track',
@@ -670,6 +692,38 @@ function createColoredFlightTrack(points) {
     });
     
     cesiumState.flyThroughMode.dynamicTrackEntity = dynamicTrackEntity;
+    
+    // Create dynamic curtain wall for fly-through mode (initially hidden)
+    const dynamicCurtainEntity = viewer.entities.add({
+        name: 'Dynamic Flight Curtain',
+        show: false,  // Initially hidden
+        wall: {
+            positions: new Cesium.CallbackProperty(function(time, result) {
+                // This function will be called every frame to update positions
+                if (!cesiumState.flyThroughMode.enabled) {
+                    return [];  // Return empty array when disabled
+                }
+                
+                // Use the same trail positions as the dynamic track
+                return calculateTrailPositions(time);
+            }, false),
+            maximumHeights: new Cesium.CallbackProperty(function(time, result) {
+                // This function will be called every frame to update heights
+                if (!cesiumState.flyThroughMode.enabled) {
+                    return [];  // Return empty array when disabled
+                }
+                
+                // Get altitudes for current trail positions
+                return calculateTrailAltitudes(time);
+            }, false),
+            // minimumHeights not specified = extends to ground automatically
+            material: Cesium.Color.DODGERBLUE.withAlpha(0.85),  // 85% opaque
+            outline: false
+        }
+    });
+    
+    cesiumState.flyThroughMode.dynamicCurtainEntity = dynamicCurtainEntity;
+    cesiumLog.info('Created dynamic curtain wall for progressive mode');
     
     // Set up time-based animation if timestamps are available
     if (points[0].timestamp) {
@@ -1344,6 +1398,46 @@ function calculateTrailPositions(currentTime) {
     return trailPositions;
 }
 
+// Calculate trail altitudes for the curtain wall in fly-through mode
+function calculateTrailAltitudes(currentTime) {
+    if (!viewer || !igcPoints || igcPoints.length === 0) {
+        return [];
+    }
+    
+    // Build altitude array for points from start to current position
+    const trailAltitudes = [];
+    
+    for (let i = 0; i < igcPoints.length; i++) {
+        const point = igcPoints[i];
+        
+        // Skip points without timestamps
+        if (!point.timestamp) {
+            continue;
+        }
+        
+        // Parse the point's timestamp
+        let pointTime;
+        try {
+            pointTime = Cesium.JulianDate.fromIso8601(point.timestamp);
+        } catch (e) {
+            continue;
+        }
+        
+        // Check if point is before or at the current time
+        const secondsFromCurrent = Cesium.JulianDate.secondsDifference(pointTime, currentTime);
+        
+        if (secondsFromCurrent <= 0) {
+            // Point is in the past or at current time - add its altitude
+            trailAltitudes.push(point.altitude);
+        } else {
+            // We've reached points in the future, stop here
+            break;
+        }
+    }
+    
+    return trailAltitudes;
+}
+
 // Toggle fly-through mode
 function setFlyThroughMode(enabled) {
     if (!viewer) {
@@ -1376,6 +1470,18 @@ function setFlyThroughMode(enabled) {
         }
         cesiumLog.debug('Dynamic track shown');
         
+        // Hide static curtain wall
+        if (cesiumState.flyThroughMode.curtainWallEntity) {
+            cesiumState.flyThroughMode.curtainWallEntity.show = false;
+            cesiumLog.debug('Static curtain hidden');
+        }
+        
+        // Show dynamic curtain wall
+        if (cesiumState.flyThroughMode.dynamicCurtainEntity) {
+            cesiumState.flyThroughMode.dynamicCurtainEntity.show = true;
+            cesiumLog.debug('Dynamic curtain shown');
+        }
+        
         // Ensure continuous rendering for smooth trail updates
         viewer.scene.requestRenderMode = false;
         
@@ -1404,6 +1510,18 @@ function setFlyThroughMode(enabled) {
         if (cesiumState.flyThroughMode.dynamicTrackEntity && cesiumState.flyThroughMode.dynamicTrackEntity.polyline) {
             cesiumState.flyThroughMode.dynamicTrackEntity.polyline.show = false;
             cesiumLog.debug('Dynamic track hidden');
+        }
+        
+        // Show static curtain wall
+        if (cesiumState.flyThroughMode.curtainWallEntity) {
+            cesiumState.flyThroughMode.curtainWallEntity.show = true;
+            cesiumLog.debug('Static curtain shown');
+        }
+        
+        // Hide dynamic curtain wall
+        if (cesiumState.flyThroughMode.dynamicCurtainEntity) {
+            cesiumState.flyThroughMode.dynamicCurtainEntity.show = false;
+            cesiumLog.debug('Dynamic curtain hidden');
         }
     }
     
