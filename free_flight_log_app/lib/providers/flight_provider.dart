@@ -25,6 +25,13 @@ class FlightProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _errorMessage;
   
+  // Pagination state
+  static const int _pageSize = 20;
+  int _currentPage = 0;
+  bool _hasMore = true;
+  bool _isLoadingMore = false;
+  int _totalFlights = 0;
+  
   // Statistics state
   List<Map<String, dynamic>> _yearlyStats = [];
   List<Map<String, dynamic>> _wingStats = [];
@@ -43,6 +50,9 @@ class FlightProvider extends ChangeNotifier {
   List<Flight> get flights => _flights;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
+  bool get hasMore => _hasMore;
+  bool get isLoadingMore => _isLoadingMore;
+  int get totalFlights => _totalFlights;
   List<Map<String, dynamic>> get yearlyStats => _yearlyStats;
   List<Map<String, dynamic>> get wingStats => _wingStats;
   List<Map<String, dynamic>> get siteStats => _siteStats;
@@ -68,26 +78,95 @@ class FlightProvider extends ChangeNotifier {
     return _sortedFlightsCache!;
   }
 
-  /// Load all flights from repository  
+  /// Load initial page of flights from repository  
   Future<void> loadFlights() async {
     _setLoading(true);
     _clearError();
     
     try {
-      LoggingService.debug('FlightProvider: Loading flights from repository');
+      LoggingService.debug('FlightProvider: Loading initial flights from repository');
       final startTime = DateTime.now();
       
-      // Load flights directly (isolate was causing overhead)
-      _flights = await _repository.getAllFlights();
+      // Get total count for pagination
+      _totalFlights = await _repository.getFlightCount();
+      
+      // Load first page of flights
+      _currentPage = 0;
+      _flights = await _repository.getFlightsPaginated(0, _pageSize);
+      _hasMore = _flights.length < _totalFlights;
       
       final duration = DateTime.now().difference(startTime);
-      LoggingService.performance('Load flights', duration, '${_flights.length} flights loaded');
+      LoggingService.performance('Load initial flights', duration, '${_flights.length}/$_totalFlights flights loaded');
       
-      LoggingService.info('FlightProvider: Loaded ${_flights.length} flights');
+      LoggingService.info('FlightProvider: Loaded ${_flights.length} of $_totalFlights total flights');
       _invalidateCache();
       notifyListeners();
     } catch (e) {
       LoggingService.error('FlightProvider: Failed to load flights', e);
+      _setError('Failed to load flights: $e');
+    } finally {
+      _setLoading(false);
+    }
+  }
+  
+  /// Load more flights for pagination
+  Future<void> loadMoreFlights() async {
+    if (_isLoadingMore || !_hasMore) return;
+    
+    _isLoadingMore = true;
+    notifyListeners();
+    
+    try {
+      _currentPage++;
+      final offset = _currentPage * _pageSize;
+      
+      LoggingService.debug('FlightProvider: Loading more flights (page $_currentPage, offset $offset)');
+      
+      final moreFlights = await _repository.getFlightsPaginated(offset, _pageSize);
+      
+      if (moreFlights.isNotEmpty) {
+        _flights.addAll(moreFlights);
+        _hasMore = _flights.length < _totalFlights;
+        _invalidateCache();
+        
+        LoggingService.info('FlightProvider: Loaded ${moreFlights.length} more flights (${_flights.length}/$_totalFlights total)');
+      } else {
+        _hasMore = false;
+        LoggingService.info('FlightProvider: No more flights to load');
+      }
+      
+      notifyListeners();
+    } catch (e) {
+      LoggingService.error('FlightProvider: Failed to load more flights', e);
+      _currentPage--; // Revert page on error
+    } finally {
+      _isLoadingMore = false;
+      notifyListeners();
+    }
+  }
+  
+  /// Load all flights (for operations that need complete data)
+  Future<void> loadAllFlights() async {
+    _setLoading(true);
+    _clearError();
+    
+    try {
+      LoggingService.debug('FlightProvider: Loading all flights from repository');
+      final startTime = DateTime.now();
+      
+      // Load all flights at once
+      _flights = await _repository.getAllFlights();
+      _totalFlights = _flights.length;
+      _hasMore = false;
+      
+      final duration = DateTime.now().difference(startTime);
+      LoggingService.performance('Load all flights', duration, '${_flights.length} flights loaded');
+      
+      LoggingService.info('FlightProvider: Loaded all ${_flights.length} flights');
+      _invalidateCache();
+      notifyListeners();
+    } catch (e) {
+      LoggingService.error('FlightProvider: Failed to load all flights', e);
       _setError('Failed to load flights: $e');
     } finally {
       _setLoading(false);
@@ -157,8 +236,10 @@ class FlightProvider extends ChangeNotifier {
       
       // Remove from local list
       _flights.removeWhere((f) => f.id == flightId);
+      _totalFlights--; // Update total count
       
       LoggingService.info('FlightProvider: Deleted flight $flightId');
+      _invalidateCache();
       notifyListeners();
       return true;
     } catch (e) {
@@ -193,6 +274,7 @@ class FlightProvider extends ChangeNotifier {
       
       // Remove from local list
       _flights.removeWhere((f) => existingIds.contains(f.id));
+      _totalFlights -= existingIds.length; // Update total count
       
       LoggingService.info('FlightProvider: Deleted ${existingIds.length} flights');
       _invalidateCache();
