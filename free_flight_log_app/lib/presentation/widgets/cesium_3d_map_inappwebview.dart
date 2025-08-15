@@ -240,6 +240,11 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
             javaScriptEnabled: true,
             mediaPlaybackRequiresUserGesture: false,
             transparentBackground: true,
+            
+            // Dark mode handling for Android 13+ (API 33+)
+            // Uses the newer algorithmicDarkeningAllowed instead of deprecated forceDark
+            algorithmicDarkeningAllowed: Theme.of(context).brightness == Brightness.dark,
+            
             // Android-specific settings that bypass CORS
             allowFileAccessFromFileURLs: true,
             allowUniversalAccessFromFileURLs: true,  // This is the key setting for CORS bypass
@@ -599,6 +604,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no">
+    <meta name="color-scheme" content="dark light">
     <script src="https://cesium.com/downloads/cesiumjs/releases/1.127/Build/Cesium/Cesium.js"></script>
     <link href="https://cesium.com/downloads/cesiumjs/releases/1.127/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
     <style>

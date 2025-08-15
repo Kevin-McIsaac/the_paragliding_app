@@ -58,7 +58,7 @@ dependencies:
   # webview_flutter: ^4.4.0   # WebView for 3D Cesium integration (replaced with flutter_inappwebview)
   # webview_flutter_android: ^3.13.0  # Android-specific WebView features
   # webview_flutter_wkwebview: ^3.10.0  # iOS-specific WebView features
-  flutter_inappwebview: ^6.0.0  # Better WebView with CORS bypass capabilities
+  flutter_inappwebview: ^6.1.5  # Better WebView with CORS bypass capabilities and Android 13+ dark mode support
 
   http: any
 dev_dependencies:
