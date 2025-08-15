@@ -195,6 +195,7 @@ function initializeCesium(config) {
             homeButton: true,  // Enable home button
             sceneModePicker: true,
             navigationHelpButton: true,  // Always show the button
+            navigationInstructionsInitiallyVisible: navigationHelpDialogOpen,  // Set initial state based on saved preference
             animation: true,  // Enable native animation widget
             timeline: true,   // Enable native timeline widget
             fullscreenButton: true,
@@ -394,7 +395,7 @@ function initializeCesium(config) {
         // Store viewer globally for cleanup
         window.viewer = viewer;
         
-        // Track navigation help dialog state and restore saved preference
+        // Track navigation help dialog state changes for saving preferences
         if (viewer.navigationHelpButton && viewer.navigationHelpButton.viewModel) {
             const navHelpVM = viewer.navigationHelpButton.viewModel;
             
@@ -402,37 +403,26 @@ function initializeCesium(config) {
             if (navHelpVM.showInstructions !== undefined) {
                 const instructionsObservable = Cesium.knockout.getObservable(navHelpVM, 'showInstructions');
                 if (instructionsObservable) {
-                    // First, restore saved state if needed (before subscribing to avoid feedback loop)
-                    // Note: Cesium might open the dialog by default on first use
-                    // We need to explicitly close it if saved state says it should be closed
+                    // The dialog is already in the correct initial state thanks to navigationInstructionsInitiallyVisible
+                    // Now we just need to track future changes for saving preferences
+                    
+                    // Use a flag to prevent saving the initial state
+                    let isInitialState = true;
                     setTimeout(function() {
-                        // Check current state and apply saved preference
-                        const currentState = navHelpVM.showInstructions;
-                        
-                        if (navigationHelpDialogOpen && !currentState) {
-                            cesiumLog.info('Restoring navigation help dialog to open state');
-                            navHelpVM.showInstructions = true;
-                        } else if (!navigationHelpDialogOpen && currentState) {
-                            cesiumLog.info('Closing navigation help dialog based on saved preference');
-                            navHelpVM.showInstructions = false;
+                        isInitialState = false;
+                        cesiumLog.info('Navigation help dialog initialized with saved preference: ' + 
+                                      (navigationHelpDialogOpen ? 'open' : 'closed'));
+                    }, 1000);
+                    
+                    // Subscribe to future changes
+                    instructionsObservable.subscribe(function(isShowing) {
+                        cesiumLog.info('Navigation help dialog ' + (isShowing ? 'opened' : 'closed') + 
+                                     (isInitialState ? ' (initial)' : ' (user action)'));
+                        // Only save if this is a user action, not the initial state
+                        if (!isInitialState && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+                            window.flutter_inappwebview.callHandler('onNavigationHelpDialogStateChanged', isShowing);
                         }
-                        
-                        // Now subscribe to future changes (after initial state is set)
-                        // Use a flag to prevent saving the initial state
-                        let isInitialState = true;
-                        setTimeout(function() {
-                            isInitialState = false;
-                        }, 1000);
-                        
-                        instructionsObservable.subscribe(function(isShowing) {
-                            cesiumLog.info('Navigation help dialog ' + (isShowing ? 'opened' : 'closed') + 
-                                         (isInitialState ? ' (initial)' : ' (user action)'));
-                            // Only save if this is a user action, not the initial state
-                            if (!isInitialState && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-                                window.flutter_inappwebview.callHandler('onNavigationHelpDialogStateChanged', isShowing);
-                            }
-                        });
-                    }, 500); // Give viewer time to fully initialize
+                    });
                 }
             }
         }
@@ -443,30 +433,25 @@ function initializeCesium(config) {
             
             // Listen for home button clicks
             viewer.homeButton.viewModel.command.beforeExecute.addEventListener(function(commandInfo) {
-                // If we have a stored flight track home view, use it
-                if (cesiumState.flightTrackHomeView) {
+                // If we have a flight track entity, fly to it
+                if (flightTrackEntity) {
                     cesiumLog.info('Home button: returning to flight track view');
                     
                     // Cancel the default behavior
                     commandInfo.cancel = true;
                     
-                    // Restore the saved flight track view
-                    const view = cesiumState.flightTrackHomeView;
+                    // Fly to the track entity with the saved offset
+                    const offset = cesiumState.flightTrackHomeView?.offset || 
+                                 new Cesium.HeadingPitchRange(
+                                     Cesium.Math.toRadians(0),
+                                     Cesium.Math.toRadians(-45),
+                                     0
+                                 );
                     
-                    if (view.boundingSphere) {
-                        // Use the stored bounding sphere with padding
-                        viewer.camera.flyToBoundingSphere(view.boundingSphere, {
-                            duration: 1.5,
-                            offset: view.offset
-                        });
-                    } else if (view.destination) {
-                        // Fallback to position-based view
-                        viewer.camera.flyTo({
-                            destination: view.destination,
-                            orientation: view.orientation,
-                            duration: 1.5
-                        });
-                    }
+                    viewer.flyTo(flightTrackEntity, {
+                        duration: 3.0,
+                        offset: offset
+                    });
                 } else {
                     // No flight track loaded, let default behavior proceed
                     cesiumLog.info('Home button: using default view (no flight track)');
@@ -658,6 +643,9 @@ function createColoredFlightTrack(points) {
             show: true  // Polyline is visible by default
         }
     });
+    
+    // Store reference for framing and home button
+    flightTrackEntity = trackEntity;
     
     // Store the full track entity
     cesiumState.flyThroughMode.fullTrackEntity = trackEntity;
@@ -1187,82 +1175,29 @@ function setCameraPreset(preset) {
 
 // Zoom to entities with padding for UI elements
 function zoomToEntitiesWithPadding(padding) {
-    if (!viewer || !igcPoints || igcPoints.length === 0) return;
+    if (!viewer || !flightTrackEntity) return;
     
-    // Calculate bounding sphere from track points directly
-    const boundingSphere = Cesium.BoundingSphere.fromPoints(
-        igcPoints.map(point => 
-            Cesium.Cartesian3.fromDegrees(
-                point.longitude,
-                point.latitude,
-                point.altitude
-            )
+    // Use Cesium's built-in entity framing with custom offset
+    // This doesn't change the camera transform mode, so left-drag remains pan
+    viewer.flyTo(flightTrackEntity, {
+        duration: 3.0,
+        offset: new Cesium.HeadingPitchRange(
+            Cesium.Math.toRadians(0),   // Heading: 0 = North
+            Cesium.Math.toRadians(-45), // Pitch: -45 = looking down at 45 degree angle
+            0                            // Range: 0 = auto-calculate based on entity size
         )
-    );
-    
-    // Calculate the optimal range (distance) for desired screen coverage
-    // The track should FILL the specified percentage of the screen
-    // Lower values = closer zoom, higher values = farther zoom
-    // padding parameter represents how much of the screen the track should fill (0.9 = track fills 90% of screen)
-    const screenCoverage = padding || 0.9;  // Default to 90% if not specified
-    
-    // Get screen aspect ratio to adjust for portrait vs landscape tracks
-    const screenAspectRatio = viewer.canvas.clientWidth / viewer.canvas.clientHeight;
-    
-    // Calculate track's extent in each direction to determine its aspect ratio
-    let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
-    igcPoints.forEach(point => {
-        minLat = Math.min(minLat, point.latitude);
-        maxLat = Math.max(maxLat, point.latitude);
-        minLon = Math.min(minLon, point.longitude);
-        maxLon = Math.max(maxLon, point.longitude);
+    }).then(function() {
+        // Store this view as the home view for the flight track
+        cesiumState.flightTrackHomeView = {
+            entity: flightTrackEntity,
+            offset: new Cesium.HeadingPitchRange(
+                Cesium.Math.toRadians(0),
+                Cesium.Math.toRadians(-45),
+                0
+            )
+        };
+        cesiumLog.info('Flight track framed in view');
     });
-    
-    // Calculate the track's aspect ratio (width/height in degrees)
-    const trackWidth = maxLon - minLon;
-    const trackHeight = maxLat - minLat;
-    // Correct for latitude distortion at track's center latitude
-    const centerLat = (minLat + maxLat) / 2;
-    const lonCorrection = Math.cos(Cesium.Math.toRadians(centerLat));
-    const correctedTrackWidth = trackWidth * lonCorrection;
-    const trackAspectRatio = correctedTrackWidth / trackHeight;
-    
-    // Determine which dimension is more constrained
-    // If track is taller than screen (relative to their aspect ratios), need more distance
-    const aspectRatioFactor = Math.max(1.0, trackAspectRatio / screenAspectRatio, screenAspectRatio / trackAspectRatio);
-    
-    // Base multiplier adjusted for aspect ratio mismatch
-    // When track and screen aspect ratios differ significantly, need more distance
-    const baseMultiplier = 2.8;
-    const rangeMultiplier = (baseMultiplier * Math.sqrt(aspectRatioFactor)) / screenCoverage;
-    const range = boundingSphere.radius * rangeMultiplier;
-    
-    cesiumLog.info('Track aspect: ' + trackAspectRatio.toFixed(2) + ', Screen aspect: ' + screenAspectRatio.toFixed(2) + 
-                   ', Coverage: ' + (screenCoverage * 100) + '%, Range multiplier: ' + rangeMultiplier.toFixed(2));
-    
-    // Create the view offset with heading, pitch, and calculated range
-    const offset = new Cesium.HeadingPitchRange(
-        Cesium.Math.toRadians(0),   // Heading: 0 = North
-        Cesium.Math.toRadians(-45), // Pitch: -45 = looking down at 45 degree angle
-        range                        // Distance from center of bounding sphere
-    );
-    
-    // Use viewBoundingSphere for precise control
-    viewer.camera.viewBoundingSphere(boundingSphere, offset);
-    
-    // Store this view as the home view for the flight track
-    cesiumState.flightTrackHomeView = {
-        boundingSphere: boundingSphere,
-        offset: offset,
-        destination: viewer.camera.position.clone(),
-        orientation: {
-            heading: viewer.camera.heading,
-            pitch: viewer.camera.pitch,
-            roll: viewer.camera.roll
-        }
-    };
-    
-    cesiumLog.info('Stored flight track home view with ' + igcPoints.length + ' points, radius: ' + boundingSphere.radius.toFixed(0) + 'm');
 }
 
 // Smooth camera fly to location

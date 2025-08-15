@@ -31,6 +31,7 @@ class FlightProvider extends ChangeNotifier {
   bool _hasMore = true;
   bool _isLoadingMore = false;
   int _totalFlights = 0;
+  int _totalDuration = 0;
   
   // Statistics state
   List<Map<String, dynamic>> _yearlyStats = [];
@@ -53,6 +54,7 @@ class FlightProvider extends ChangeNotifier {
   bool get hasMore => _hasMore;
   bool get isLoadingMore => _isLoadingMore;
   int get totalFlights => _totalFlights;
+  int get totalDuration => _totalDuration;
   List<Map<String, dynamic>> get yearlyStats => _yearlyStats;
   List<Map<String, dynamic>> get wingStats => _wingStats;
   List<Map<String, dynamic>> get siteStats => _siteStats;
@@ -87,8 +89,10 @@ class FlightProvider extends ChangeNotifier {
       LoggingService.debug('FlightProvider: Loading initial flights from repository');
       final startTime = DateTime.now();
       
-      // Get total count for pagination
-      _totalFlights = await _repository.getFlightCount();
+      // Get overall statistics (total count and duration)
+      final stats = await _statisticsService.getOverallStatistics();
+      _totalFlights = stats['totalFlights'] ?? 0;
+      _totalDuration = stats['totalDuration'] ?? 0;
       
       // Load first page of flights
       _currentPage = 0;
