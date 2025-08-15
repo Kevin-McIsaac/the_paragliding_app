@@ -28,14 +28,12 @@ class _FlightListScreenState extends State<FlightListScreen> {
   @override
   void initState() {
     super.initState();
-    // Defer flight loading to next frame to allow UI to render first
+    // Load flights immediately without delay
+    // The splash screen already handled initialization
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Small delay to ensure splash screen transition completes
-      Future.delayed(const Duration(milliseconds: 100), () {
-        if (mounted) {
-          context.read<FlightProvider>().loadFlights();
-        }
-      });
+      if (mounted) {
+        context.read<FlightProvider>().loadFlights();
+      }
     });
     
     // Setup infinite scroll
