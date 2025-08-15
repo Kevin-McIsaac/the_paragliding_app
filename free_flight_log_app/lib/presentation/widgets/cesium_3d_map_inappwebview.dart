@@ -587,14 +587,15 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
         .replaceAll('{{ALTITUDE}}', altitude.toString())
         .replaceAll('{{DEBUG}}', isDebugMode.toString())
         .replaceAll('{{TOKEN}}', CesiumConfig.ionAccessToken)
-        .replaceAll('window.cesiumConfig = {', '''window.cesiumConfig = {
+        .replaceAll('window.cesiumConfig = {lat:', '''window.cesiumConfig = {
             trackPoints: $trackPointsJs,
             savedSceneMode: "$_savedSceneMode",
             savedBaseMap: "$_savedBaseMap",
             savedTerrainEnabled: $_savedTerrainEnabled,
             savedNavigationHelpDialogOpen: $_savedNavigationHelpDialogOpen,
             savedFlyThroughMode: $_savedFlyThroughMode,
-            savedTrailDuration: $_savedTrailDuration,''');
+            savedTrailDuration: $_savedTrailDuration,
+            lat:''');
     }
     
     // Fallback to inline HTML (keeping original implementation as backup)

@@ -92,13 +92,7 @@
     <script>
         // Initialize Cesium with parameters from Flutter
         // These will be injected by the Flutter app
-        window.cesiumConfig = {
-            lat: {{LAT}},
-            lon: {{LON}},
-            altitude: {{ALTITUDE}},
-            debug: {{DEBUG}},
-            token: '{{TOKEN}}'
-        };
+        window.cesiumConfig = {lat: {{LAT}}, lon: {{LON}}, altitude: {{ALTITUDE}}, debug: {{DEBUG}}, token: '{{TOKEN}}'};
         
         // Initialize Cesium after config is set
         if (typeof initializeCesium === 'function') {

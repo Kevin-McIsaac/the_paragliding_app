@@ -195,6 +195,7 @@ function initializeCesium(config) {
             homeButton: true,  // Enable home button
             sceneModePicker: true,
             navigationHelpButton: true,  // Always show the button
+            navigationInstructionsInitiallyVisible: navigationHelpDialogOpen,  // Set initial state based on saved preference
             animation: true,  // Enable native animation widget
             timeline: true,   // Enable native timeline widget
             fullscreenButton: true,
@@ -394,7 +395,7 @@ function initializeCesium(config) {
         // Store viewer globally for cleanup
         window.viewer = viewer;
         
-        // Track navigation help dialog state and restore saved preference
+        // Track navigation help dialog state changes for saving preferences
         if (viewer.navigationHelpButton && viewer.navigationHelpButton.viewModel) {
             const navHelpVM = viewer.navigationHelpButton.viewModel;
             
@@ -402,37 +403,26 @@ function initializeCesium(config) {
             if (navHelpVM.showInstructions !== undefined) {
                 const instructionsObservable = Cesium.knockout.getObservable(navHelpVM, 'showInstructions');
                 if (instructionsObservable) {
-                    // First, restore saved state if needed (before subscribing to avoid feedback loop)
-                    // Note: Cesium might open the dialog by default on first use
-                    // We need to explicitly close it if saved state says it should be closed
+                    // The dialog is already in the correct initial state thanks to navigationInstructionsInitiallyVisible
+                    // Now we just need to track future changes for saving preferences
+                    
+                    // Use a flag to prevent saving the initial state
+                    let isInitialState = true;
                     setTimeout(function() {
-                        // Check current state and apply saved preference
-                        const currentState = navHelpVM.showInstructions;
-                        
-                        if (navigationHelpDialogOpen && !currentState) {
-                            cesiumLog.info('Restoring navigation help dialog to open state');
-                            navHelpVM.showInstructions = true;
-                        } else if (!navigationHelpDialogOpen && currentState) {
-                            cesiumLog.info('Closing navigation help dialog based on saved preference');
-                            navHelpVM.showInstructions = false;
+                        isInitialState = false;
+                        cesiumLog.info('Navigation help dialog initialized with saved preference: ' + 
+                                      (navigationHelpDialogOpen ? 'open' : 'closed'));
+                    }, 1000);
+                    
+                    // Subscribe to future changes
+                    instructionsObservable.subscribe(function(isShowing) {
+                        cesiumLog.info('Navigation help dialog ' + (isShowing ? 'opened' : 'closed') + 
+                                     (isInitialState ? ' (initial)' : ' (user action)'));
+                        // Only save if this is a user action, not the initial state
+                        if (!isInitialState && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+                            window.flutter_inappwebview.callHandler('onNavigationHelpDialogStateChanged', isShowing);
                         }
-                        
-                        // Now subscribe to future changes (after initial state is set)
-                        // Use a flag to prevent saving the initial state
-                        let isInitialState = true;
-                        setTimeout(function() {
-                            isInitialState = false;
-                        }, 1000);
-                        
-                        instructionsObservable.subscribe(function(isShowing) {
-                            cesiumLog.info('Navigation help dialog ' + (isShowing ? 'opened' : 'closed') + 
-                                         (isInitialState ? ' (initial)' : ' (user action)'));
-                            // Only save if this is a user action, not the initial state
-                            if (!isInitialState && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-                                window.flutter_inappwebview.callHandler('onNavigationHelpDialogStateChanged', isShowing);
-                            }
-                        });
-                    }, 500); // Give viewer time to fully initialize
+                    });
                 }
             }
         }
