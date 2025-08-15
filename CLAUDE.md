@@ -93,3 +93,4 @@ For complete project history and detailed changelog, see [CHANGELOG.md](CHANGELO
 - Prefer running app tests in flutter on the emulator
 - Store documentation in the document directory
 - Do not try to modularise cesium JS as ES6 Modules Don't Work in WebView
+- Allways test app on emulator
