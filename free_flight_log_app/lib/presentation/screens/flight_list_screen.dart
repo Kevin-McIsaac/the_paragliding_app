@@ -547,12 +547,19 @@ class _FlightListScreenState extends State<FlightListScreen> {
 
   Widget _buildFlightList(List<Flight> flights, FlightProvider flightProvider) {
     // Calculate stats based on selection mode
-    final flightsToCount = _isSelectionMode && _selectedFlightIds.isNotEmpty 
-        ? flights.where((flight) => _selectedFlightIds.contains(flight.id)).toList()
-        : flights;
+    int totalFlights;
+    int totalTime;
     
-    final totalFlights = flightsToCount.length;
-    final totalTime = flightsToCount.fold(0, (sum, flight) => sum + flight.duration);
+    if (_isSelectionMode && _selectedFlightIds.isNotEmpty) {
+      // In selection mode, count only selected flights
+      final selectedFlights = flights.where((flight) => _selectedFlightIds.contains(flight.id)).toList();
+      totalFlights = selectedFlights.length;
+      totalTime = selectedFlights.fold(0, (sum, flight) => sum + flight.duration);
+    } else {
+      // Normal mode: use totals from the database
+      totalFlights = flightProvider.totalFlights;
+      totalTime = flightProvider.totalDuration;
+    }
     
     return Column(
       children: [
