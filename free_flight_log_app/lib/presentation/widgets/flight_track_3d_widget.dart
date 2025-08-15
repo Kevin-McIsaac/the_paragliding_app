@@ -179,11 +179,6 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
       // Use the virtual properties if available, otherwise fall back to calculated values
       final climbRate = point.climbRate;
       
-      // Debug log to verify climb rates are being passed
-      if (point.pointIndex != null && point.pointIndex! % 30 == 0) {
-        LoggingService.debug('FlightTrack3D: Point ${point.pointIndex} - climbRate: $climbRate, groundSpeed: ${point.groundSpeed}');
-      }
-      
       return {
         'latitude': point.latitude,
         'longitude': point.longitude,
