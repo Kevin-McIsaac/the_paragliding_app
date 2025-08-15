@@ -158,8 +158,16 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
       });
       
       try {
-        // Check for duplicates first
-        final existingFlight = await flightProvider.checkIgcForDuplicate(filePath);
+        // Phase 1: Quick filename check (no parsing needed)
+        final filename = filePath.split('/').last;
+        var existingFlight = await flightProvider.checkForDuplicateByFilename(filename);
+        bool isFilenameDuplicate = existingFlight != null;
+        
+        // Phase 2: If no filename match, check by date/time (requires parsing)
+        if (existingFlight == null) {
+          existingFlight = await flightProvider.checkIgcForDuplicate(filePath);
+        }
+        
         bool shouldReplace = false;
         
         if (existingFlight != null) {
@@ -178,7 +186,7 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
             shouldReplace = true;
           } else {
             // Show dialog to user
-            final action = await _showDuplicateDialog(existingFlight, filePath);
+            final action = await _showDuplicateDialog(existingFlight, filePath, isFilenameDuplicate);
             
             if (action == DuplicateAction.skip) {
               // Skip this file
@@ -248,7 +256,7 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
   }
 
   /// Show duplicate handling dialog to user
-  Future<DuplicateAction?> _showDuplicateDialog(Flight existingFlight, String filePath) async {
+  Future<DuplicateAction?> _showDuplicateDialog(Flight existingFlight, String filePath, bool isFilenameDuplicate) async {
     // Parse the IGC file to get details for comparison
     try {
       final igcData = await _igcParser.parseFile(filePath);
@@ -265,6 +273,7 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
           newFlightDate: igcData.date,
           newFlightTime: _formatTime(igcData.launchTime),
           newFlightDuration: igcData.duration,
+          isFilenameDuplicate: isFilenameDuplicate,
         ),
       );
     } catch (e) {

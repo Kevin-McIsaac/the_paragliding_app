@@ -23,7 +23,17 @@ class IgcImportService {
   final FlightQueryService _queryService = serviceLocator<FlightQueryService>();
   final IgcParser parser = IgcParser();
 
-  /// Check if a flight with the same date and time already exists
+  /// Phase 1: Quick check for duplicate by filename (no parsing needed)
+  Future<Flight?> checkForDuplicateByFilename(String filename) async {
+    try {
+      return await _queryService.findFlightByFilename(filename);
+    } catch (e) {
+      LoggingService.error('IgcImportService: Error checking filename duplicate', e);
+      return null;
+    }
+  }
+
+  /// Phase 2: Check if a flight with the same date and time already exists
   Future<Flight?> checkForDuplicate(String filePath) async {
     try {
       // Parse IGC file to get flight details
@@ -107,6 +117,7 @@ class IgcImportService {
           distance: flight.distance,
           straightDistance: flight.straightDistance,
           trackLogPath: flight.trackLogPath,
+          originalFilename: flight.originalFilename,
           source: flight.source,
           timezone: flight.timezone,
           notes: flight.notes,
@@ -235,6 +246,9 @@ class IgcImportService {
 
     // Copy IGC file to app storage
     final trackLogPath = await _saveIgcFile(filePath);
+    
+    // Get original filename
+    final originalFilename = path.basename(filePath);
 
     // Create flight record
     return Flight(
@@ -256,9 +270,10 @@ class IgcImportService {
       distance: groundTrackDistance,
       straightDistance: straightDistance,
       trackLogPath: trackLogPath,
+      originalFilename: originalFilename,
       source: 'igc',
       timezone: igcData.timezone,
-      notes: 'Imported from IGC file: ${path.basename(filePath)}${igcData.pilot.isNotEmpty ? '\nPilot: ${igcData.pilot}' : ''}${igcData.gliderType.isNotEmpty ? '\nGlider: ${igcData.gliderType}' : ''}',
+      notes: 'Imported from IGC file: ${originalFilename}${igcData.pilot.isNotEmpty ? '\nPilot: ${igcData.pilot}' : ''}${igcData.gliderType.isNotEmpty ? '\nGlider: ${igcData.gliderType}' : ''}',
     );
   }
 
@@ -299,6 +314,7 @@ class IgcImportService {
       straightDistance: flight.straightDistance,
       notes: flight.notes,
       trackLogPath: flight.trackLogPath,
+      originalFilename: flight.originalFilename,
       source: flight.source,
       timezone: flight.timezone,
     );

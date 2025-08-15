@@ -5,7 +5,7 @@ import '../../services/logging_service.dart';
 
 class DatabaseHelper {
   static const _databaseName = "FlightLog.db";
-  static const _databaseVersion = 7;
+  static const _databaseVersion = 8;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -46,6 +46,7 @@ class DatabaseHelper {
         wing_id INTEGER,
         notes TEXT,
         track_log_path TEXT,
+        original_filename TEXT,
         source TEXT CHECK(source IN ('manual', 'igc', 'parajournal')),
         timezone TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -98,6 +99,9 @@ class DatabaseHelper {
       
       // Composite index for most common query pattern: ORDER BY date DESC, launch_time DESC
       await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_date_time ON flights(date DESC, launch_time DESC)');
+      
+      // Index for fast filename duplicate detection
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_original_filename ON flights(original_filename)');
       
       // Index for date range queries (statistics, filtering)
       await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_date ON flights(date)');
@@ -242,6 +246,21 @@ class DatabaseHelper {
         LoggingService.database('MIGRATION', 'Successfully created performance indexes');
       } catch (e) {
         LoggingService.database('MIGRATION', 'Error during index creation', e);
+        rethrow;
+      }
+    }
+    
+    if (oldVersion < 8) {
+      try {
+        // Add original_filename column for better duplicate detection and traceability
+        await db.execute('ALTER TABLE flights ADD COLUMN original_filename TEXT');
+        
+        // Create index for fast filename-based duplicate detection
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_original_filename ON flights(original_filename)');
+        
+        LoggingService.database('MIGRATION', 'Successfully added original_filename column and index');
+      } catch (e) {
+        LoggingService.database('MIGRATION', 'Error during original_filename migration', e);
         rethrow;
       }
     }

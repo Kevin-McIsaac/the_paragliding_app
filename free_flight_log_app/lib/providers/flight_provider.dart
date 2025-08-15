@@ -299,7 +299,17 @@ class FlightProvider extends ChangeNotifier {
     }
   }
   
-  /// Check if an IGC file would be a duplicate import
+  /// Phase 1: Quick check for duplicate by filename (no parsing needed)
+  Future<Flight?> checkForDuplicateByFilename(String filename) async {
+    try {
+      return await _igcImportService.checkForDuplicateByFilename(filename);
+    } catch (e) {
+      LoggingService.error('FlightProvider: Failed to check filename for duplicates', e);
+      return null;
+    }
+  }
+  
+  /// Phase 2: Check if an IGC file would be a duplicate import (requires parsing)
   Future<Flight?> checkIgcForDuplicate(String filePath) async {
     try {
       return await _igcImportService.checkForDuplicate(filePath);
