@@ -72,6 +72,31 @@ class FlightQueryService {
     return flights;
   }
 
+  /// Find a flight by original filename (used for fast duplicate detection)
+  Future<Flight?> findFlightByFilename(String filename) async {
+    LoggingService.debug('FlightQueryService: Checking for duplicate by filename: $filename');
+    
+    Database db = await _databaseHelper.database;
+    
+    List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT f.*, 
+             ls.name as launch_site_name
+      FROM flights f
+      LEFT JOIN sites ls ON f.launch_site_id = ls.id
+      WHERE f.original_filename = ?
+      LIMIT 1
+    ''', [filename]);
+    
+    if (maps.isNotEmpty) {
+      final flight = Flight.fromMap(maps.first);
+      LoggingService.debug('FlightQueryService: Found duplicate by filename - Flight ID: ${flight.id}');
+      return flight;
+    }
+    
+    LoggingService.debug('FlightQueryService: No duplicate found for filename: $filename');
+    return null;
+  }
+
   /// Find flight by date and launch time to check for duplicates during import
   Future<Flight?> findFlightByDateTime(DateTime date, String launchTime) async {
     LoggingService.debug('FlightQueryService: Checking for duplicate flight on ${date.toIso8601String()} at $launchTime');

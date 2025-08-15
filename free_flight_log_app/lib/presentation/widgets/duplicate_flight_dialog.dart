@@ -16,6 +16,7 @@ class DuplicateFlightDialog extends StatelessWidget {
   final DateTime newFlightDate;
   final String newFlightTime;
   final int newFlightDuration;
+  final bool isFilenameDuplicate;
 
   const DuplicateFlightDialog({
     super.key,
@@ -24,6 +25,7 @@ class DuplicateFlightDialog extends StatelessWidget {
     required this.newFlightDate,
     required this.newFlightTime,
     required this.newFlightDuration,
+    this.isFilenameDuplicate = false,
   });
 
   @override
@@ -46,7 +48,9 @@ class DuplicateFlightDialog extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'A flight with the same date and launch time already exists.',
+              isFilenameDuplicate 
+                ? 'This file has already been imported.'
+                : 'A flight with the same date and launch time already exists.',
               style: TextStyle(
                 fontSize: 16,
                 color: Theme.of(context).colorScheme.onSurface,

@@ -20,6 +20,7 @@ class Flight {
   final int? wingId;
   final String? notes;
   final String? trackLogPath;
+  final String? originalFilename; // Original IGC filename for traceability
   final String source;
   final String? timezone; // Timezone offset (e.g., "+10:00", "-05:30", null for UTC)
   final DateTime? createdAt;
@@ -47,6 +48,7 @@ class Flight {
     this.wingId,
     this.notes,
     this.trackLogPath,
+    this.originalFilename,
     this.source = 'manual',
     this.timezone,
     this.createdAt,
@@ -76,6 +78,7 @@ class Flight {
       'wing_id': wingId,
       'notes': notes,
       'track_log_path': trackLogPath,
+      'original_filename': originalFilename,
       'source': source,
       'timezone': timezone,
       'created_at': createdAt?.toIso8601String(),
@@ -106,6 +109,7 @@ class Flight {
       wingId: map['wing_id'],
       notes: map['notes'],
       trackLogPath: map['track_log_path'],
+      originalFilename: map['original_filename'],
       source: map['source'] ?? 'manual',
       timezone: map['timezone'],
       createdAt: map['created_at'] != null ? DateTime.parse(map['created_at']) : null,
