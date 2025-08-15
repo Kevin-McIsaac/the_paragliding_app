@@ -92,6 +92,18 @@ class FlightRepository {
     return flights;
   }
 
+  /// Get total number of flights
+  Future<int> getFlightCount() async {
+    LoggingService.debug('FlightRepository: Getting flight count');
+    
+    Database db = await _databaseHelper.database;
+    final result = await db.rawQuery('SELECT COUNT(*) as count FROM flights');
+    final count = result.first['count'] as int;
+    
+    LoggingService.debug('FlightRepository: Total flights: $count');
+    return count;
+  }
+
   /// Get a specific flight by ID
   Future<Flight?> getFlight(int id) async {
     LoggingService.debug('FlightRepository: Getting flight $id');

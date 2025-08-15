@@ -23,14 +23,35 @@ class _FlightListScreenState extends State<FlightListScreen> {
   bool _isSelectionMode = false;
   Set<int> _selectedFlightIds = {};
   bool _isDeleting = false;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
-    // Load flights when the widget is first created
+    // Load flights immediately without delay
+    // The splash screen already handled initialization
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<FlightProvider>().loadFlights();
+      if (mounted) {
+        context.read<FlightProvider>().loadFlights();
+      }
     });
+    
+    // Setup infinite scroll
+    _scrollController.addListener(_onScroll);
+  }
+  
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+  
+  void _onScroll() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      // Load more when within 200 pixels of the bottom
+      context.read<FlightProvider>().loadMoreFlights();
+    }
   }
 
   // Refresh flights from provider
@@ -331,8 +352,8 @@ class _FlightListScreenState extends State<FlightListScreen> {
       ),
       body: Consumer<FlightProvider>(
         builder: (context, flightProvider, child) {
-          if (flightProvider.isLoading) {
-            return const Center(child: CircularProgressIndicator());
+          if (flightProvider.isLoading && flightProvider.flights.isEmpty) {
+            return _buildLoadingSkeleton();
           }
           
           if (flightProvider.errorMessage != null) {
@@ -388,6 +409,109 @@ class _FlightListScreenState extends State<FlightListScreen> {
         },
         tooltip: 'Add Flight',
         child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  Widget _buildLoadingSkeleton() {
+    return Column(
+      children: [
+        // Stats skeleton
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          color: Theme.of(context).colorScheme.surface,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildSkeletonStatCard(),
+              _buildSkeletonStatCard(),
+            ],
+          ),
+        ),
+        // List skeleton
+        Expanded(
+          child: ListView.builder(
+            itemCount: 10,
+            itemBuilder: (context, index) => _buildSkeletonRow(),
+          ),
+        ),
+      ],
+    );
+  }
+  
+  Widget _buildSkeletonStatCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          Container(
+            width: 60,
+            height: 12,
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+              borderRadius: BorderRadius.circular(6),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: 40,
+            height: 20,
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+              borderRadius: BorderRadius.circular(6),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildSkeletonRow() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 2,
+            child: Container(
+              height: 16,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            flex: 2,
+            child: Container(
+              height: 16,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Container(
+              height: 16,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Container(
+            width: 40,
+            height: 16,
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -464,7 +588,10 @@ class _FlightListScreenState extends State<FlightListScreen> {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: SingleChildScrollView(
-        child: DataTable(
+        controller: _scrollController,
+        child: Column(
+          children: [
+            DataTable(
           showCheckboxColumn: _isSelectionMode,
           sortColumnIndex: flightProvider.sortColumn == 'launch_site' ? 0
               : flightProvider.sortColumn == 'datetime' ? 1
@@ -629,6 +756,29 @@ class _FlightListScreenState extends State<FlightListScreen> {
               ],
             );
           }).toList(),
+        ),
+        // Show loading indicator at bottom when loading more
+        if (flightProvider.isLoadingMore)
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Center(
+              child: CircularProgressIndicator(),
+            ),
+          ),
+        // Show message when all flights are loaded
+        if (!flightProvider.hasMore && flights.length > 0)
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Center(
+              child: Text(
+                'All ${flightProvider.totalFlights} flights loaded',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.grey[600],
+                ),
+              ),
+            ),
+          ),
+        ],
         ),
       ),
     );

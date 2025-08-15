@@ -39,7 +39,7 @@ flutter run -d emulator-5554
 adb -s 192.168.86.250:45781 exec-out screencap -p > ~Projects/free_flight_log/screenshots/123456.png
 ```
 
-For comprehensive development setup, build commands, testing, and troubleshooting, see [DEVELOPMENT.md](DEVELOPMENT.md).
+For comprehensive development setup, build commands, testing, and troubleshooting, see [DEVELOPMENT.md](documentation/DEVELOPMENT.md).
 
 ## Architecture Overview
 
@@ -93,3 +93,4 @@ For complete project history and detailed changelog, see [CHANGELOG.md](CHANGELO
 - Prefer running app tests in flutter on the emulator
 - Store documentation in the document directory
 - Do not try to modularise cesium JS as ES6 Modules Don't Work in WebView
+- Allways test app on emulator

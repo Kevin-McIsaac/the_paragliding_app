@@ -651,18 +651,15 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
         cesiumLog.info('Starting Cesium initialization...');
         
         try {
-            // Aggressively optimized Cesium viewer settings for minimal memory usage
+            // Progressive loading: Start with minimal settings for fast initial render
             const viewer = new Cesium.Viewer("cesiumContainer", {
-                terrain: Cesium.Terrain.fromWorldTerrain({
-                    requestWaterMask: false,  // Disable water effects
-                    requestVertexNormals: false,  // Disable lighting calculations
-                    requestMetadata: false  // Disable metadata
-                }),
+                // Start without terrain for faster initial load
+                terrain: undefined,  // Will add terrain progressively after initial render
                 scene3DOnly: true,  // Disable 2D/Columbus view modes for performance
                 requestRenderMode: true,  // Only render on demand
                 maximumRenderTimeChange: Infinity,  // Reduce re-renders
-                targetFrameRate: 30,  // Balanced frame rate
-                resolutionScale: 0.85,  // Better quality while still saving memory
+                targetFrameRate: 24,  // Lower initial frame rate for faster load
+                resolutionScale: 0.7,  // Lower initial quality for faster render
                 
                 // WebGL context options for low memory usage
                 contextOptions: {
@@ -693,32 +690,72 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                 shouldAnimate: false,
             });
             
-            cesiumLog.debug('Cesium viewer created, configuring aggressive memory optimizations...');
+            cesiumLog.debug('Cesium viewer created, configuring progressive loading...');
             
-            // Configure scene for minimal memory usage
+            // Configure scene for minimal initial load
             viewer.scene.globe.enableLighting = false;
             viewer.scene.globe.showGroundAtmosphere = false;  // Disable atmosphere
             viewer.scene.fog.enabled = false;  // Disable fog
             viewer.scene.globe.depthTestAgainstTerrain = false;  // Faster rendering
             viewer.scene.screenSpaceCameraController.enableCollisionDetection = false;
             
-            // Strict tile cache management to prevent memory limit warnings
-            viewer.scene.globe.tileCacheSize = ${CesiumConfig.tileCacheSize};  // From config
+            // START WITH MINIMAL SETTINGS FOR FAST INITIAL RENDER
+            // Progressive loading: Start very low, improve over time
+            viewer.scene.globe.tileCacheSize = 15;  // Minimal initial cache
             viewer.scene.globe.preloadSiblings = false;  // Don't preload adjacent tiles
             viewer.scene.globe.preloadAncestors = false;  // Don't preload parent tiles
             
-            // Tile memory budget - set explicit memory limit for tiles
-            viewer.scene.globe.maximumMemoryUsage = ${CesiumConfig.maximumMemoryUsageMB};  // From config
+            // Start with low memory and quality
+            viewer.scene.globe.maximumMemoryUsage = 100;  // Start with 100MB
+            viewer.scene.globe.maximumScreenSpaceError = 10;  // Very low initial quality
+            viewer.scene.maximumTextureSize = 512;  // Smaller initial textures
             
-            // Balanced screen space error for decent quality with good performance
-            viewer.scene.globe.maximumScreenSpaceError = ${CesiumConfig.maximumScreenSpaceError};  // From config
-            
-            // Moderate texture size limit
-            viewer.scene.maximumTextureSize = ${CesiumConfig.maximumTextureSize};  // From config
-            
-            // Set explicit tile load limits
-            viewer.scene.globe.loadingDescendantLimit = 10;  // Limit concurrent tile loads
+            // Minimal tile loading initially
+            viewer.scene.globe.loadingDescendantLimit = 5;  // Fewer concurrent loads
             viewer.scene.globe.immediatelyLoadDesiredLevelOfDetail = false;  // Progressive loading
+            
+            // Progressive quality improvement
+            let qualityLevel = 0;
+            const improveQuality = () => {
+                if (!viewer || qualityLevel >= 2) return;
+                
+                qualityLevel++;
+                if (qualityLevel === 1) {
+                    // Step 1: Improve basic quality after 2 seconds
+                    cesiumLog.debug('Improving render quality to level 1...');
+                    viewer.scene.globe.maximumScreenSpaceError = 6;
+                    viewer.scene.globe.tileCacheSize = 30;
+                    viewer.scene.globe.maximumMemoryUsage = 200;
+                    viewer.scene.globe.loadingDescendantLimit = 8;
+                    viewer.resolutionScale = 0.8;
+                    viewer.targetFrameRate = 30;
+                } else if (qualityLevel === 2) {
+                    // Step 2: Full quality after 5 seconds
+                    cesiumLog.debug('Improving render quality to level 2 (full)...');
+                    viewer.scene.globe.maximumMemoryUsage = ${CesiumConfig.maximumMemoryUsageMB};
+                    viewer.scene.globe.maximumScreenSpaceError = ${CesiumConfig.maximumScreenSpaceError};
+                    viewer.scene.maximumTextureSize = ${CesiumConfig.maximumTextureSize};
+                    viewer.scene.globe.tileCacheSize = ${CesiumConfig.tileCacheSize};
+                    viewer.scene.globe.loadingDescendantLimit = 10;
+                    viewer.resolutionScale = 0.85;
+                    
+                    // Add terrain if configured and not already added
+                    const terrainEnabled = window.cesiumConfig?.savedTerrainEnabled;
+                    if (terrainEnabled && (!viewer.terrainProvider || viewer.terrainProvider === viewer.scene.globe.ellipsoid)) {
+                        cesiumLog.debug('Adding terrain...');
+                        viewer.terrainProvider = Cesium.createWorldTerrain({
+                            requestWaterMask: false,
+                            requestVertexNormals: false,
+                            requestMetadata: false
+                        });
+                    }
+                }
+                viewer.scene.requestRender();
+            };
+            
+            // Schedule progressive improvements
+            setTimeout(improveQuality, 2000);  // Level 1 after 2s
+            setTimeout(improveQuality, 5000);  // Level 2 after 5s
             
             // Disable terrain exaggeration
             viewer.scene.globe.terrainExaggeration = 1.0;
@@ -807,7 +844,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                     if (viewer.scene.globe._surface && viewer.scene.globe._surface._tilesToRender) {
                         const tileCount = viewer.scene.globe._surface._tilesToRender.length;
                         if (tileCount > 25) {
-                            cesiumLog.debug('High tile count: ' + tileCount + ' - reducing quality');
+                            // Silently reduce quality without logging to avoid console spam
                             // Temporarily increase screen space error to reduce tile count
                             viewer.scene.globe.maximumScreenSpaceError = 6;
                             

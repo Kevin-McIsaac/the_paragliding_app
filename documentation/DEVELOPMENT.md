@@ -41,14 +41,14 @@ cd ~/Projects/free_flight_log_app
 # Install dependencies
 flutter pub get
 
-# Run on Linux desktop (recommended for development)
-flutter run -d linux --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
+# Run on emulator (recommended for development):
+flutter run -d emulator-5554 
+
+# Run on Linux desktop 
+flutter run -d linux
 
 # Run on Android (device must be connected)
-flutter run -d pixel --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
-
-# Run on emulator:
-flutter run -d emulator-5554 --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
+flutter run -d pixel
 
 # Check available devices
 flutter devices
@@ -63,17 +63,16 @@ flutter devices
 flutter clean
 
 # Build Linux desktop app
-# Note: Includes OSM compliance flag to suppress flutter_map warning
-flutter build linux --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
+flutter build linux 
 
 # Build Android APK (debug)
-flutter build apk --debug --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
+flutter build apk --debug 
 
 # Build Android APK (release)
-flutter build apk --release --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
+flutter build apk --release 
 
 # Build Android App Bundle for Play Store
-flutter build appbundle --release --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
+flutter build appbundle --release 
 ```
 
 ### Development Tools
@@ -96,44 +95,16 @@ flutter upgrade
 
 ## Testing Approach
 
-### Current Testing Status
-
-✅ **Manual testing completed** with flight entry and display  
-✅ **CRUD operations verified** with database persistence  
-✅ **Form validation tested** with edge cases  
-✅ **Cross-platform verified** on Linux desktop  
-✅ **IGC import tested** with real flight data
-✅ **Climb rate calculations tested** with unit tests for 15-second averaging
-✅ **Database migration tested** from v1 to v3 schema (climb rates + timezone)
-✅ **Flight track visualization tested** on OpenStreetMap (flutter_map)
-
-### Recommended Testing
-
-1. Test flight entry with various time combinations
-2. Verify database persistence across app restarts
-3. Test form validation edge cases (e.g., landing before launch)
-4. Performance testing with multiple flight entries
-5. Cross-platform testing (Linux, Android, iOS)
-6. IGC import with various file formats and sizes
-7. Climb rate accuracy with real flight instrument data
-
 ## Known Issues and Troubleshooting
 
 ### Common Issues
 
-1. **"Database factory not initialized" Error**
-   - Fixed in main.dart with sqflite_common_ffi initialization
-   - Rebuild app if error persists: `flutter clean && flutter build linux`
 
-2. **File Picker Warnings**
+1. **File Picker Warnings**
    - Informational warnings about plugin implementations
    - Safe to ignore - don't affect app functionality
 
-3. **App Screen Disappears**
-   - Run built binary directly: `./build/linux/x64/release/bundle/free_flight_log_app`
-   - Or use: `flutter run -d linux` after ensuring clean build
-
-4. **Android Device Not Detected**
+2. **Android Device Not Detected**
    - Enable USB debugging in Developer Options
    - Use `adb devices` to verify connection
    - Use `flutter devices` to check Flutter detection

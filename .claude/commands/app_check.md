@@ -1,4 +1,2 @@
-
-1. Run the command flutter run -d pixel --dart-define=flutter.flutter_map.unblockOSM="Our tile servers are not."
-2. Wait for it to close.
-3. Review the logs for errors or opportunities and propose fixes for my feedback.
+# check app
+Run on emulator keep in foreground without time outs, wait till run completes then review the logs for errors or opportunities, create a report and propose fixes for my feedback.
