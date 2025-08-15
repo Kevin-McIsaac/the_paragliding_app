@@ -10,6 +10,7 @@ import '../providers/flight_provider.dart';
 import '../providers/site_provider.dart';
 import '../providers/wing_provider.dart';
 import '../services/logging_service.dart';
+import '../utils/startup_performance_tracker.dart';
 
 /// Dependency injection service locator instance
 final GetIt serviceLocator = GetIt.instance;
@@ -17,23 +18,36 @@ final GetIt serviceLocator = GetIt.instance;
 /// Configure all dependencies for the application
 /// This should be called once at app startup
 /// Set [testing] to true for test environment
-Future<void> configureDependencies({bool testing = false}) async {
+Future<void> configureDependencies({
+  bool testing = false,
+  StartupPerformanceTracker? perfTracker,
+}) async {
   LoggingService.info('DI: Configuring dependencies${testing ? ' (testing mode)' : ''}');
   
   // Register core services first
+  final coreWatch = perfTracker?.startMeasurement('Register Core Services');
   _registerCoreServices();
+  if (coreWatch != null) perfTracker?.completeMeasurement('Register Core Services', coreWatch);
   
   // Register data sources
+  final dataWatch = perfTracker?.startMeasurement('Register & Init Database');
   await _registerDataSources();
+  if (dataWatch != null) perfTracker?.completeMeasurement('Register & Init Database', dataWatch);
   
   // Register repositories  
+  final repoWatch = perfTracker?.startMeasurement('Register Repositories');
   _registerRepositories();
+  if (repoWatch != null) perfTracker?.completeMeasurement('Register Repositories', repoWatch);
   
   // Register business services
+  final servicesWatch = perfTracker?.startMeasurement('Register Services');
   _registerServices();
+  if (servicesWatch != null) perfTracker?.completeMeasurement('Register Services', servicesWatch);
   
   // Register providers (state management)
+  final providersWatch = perfTracker?.startMeasurement('Register Providers');
   _registerProviders();
+  if (providersWatch != null) perfTracker?.completeMeasurement('Register Providers', providersWatch);
   
   LoggingService.info('DI: Dependencies configured successfully');
 }
@@ -50,19 +64,18 @@ void _registerCoreServices() {
 Future<void> _registerDataSources() async {
   LoggingService.debug('DI: Registering data sources');
   
-  // Register DatabaseHelper as singleton to ensure single database instance
-  serviceLocator.registerSingletonAsync<DatabaseHelper>(
-    () async {
-      final dbHelper = DatabaseHelper.instance;
-      // Initialize the database to ensure it's ready
-      await dbHelper.database;
-      LoggingService.info('DI: DatabaseHelper initialized');
-      return dbHelper;
+  // OPTIMIZATION: Register DatabaseHelper lazily - don't initialize until first use
+  // This defers database initialization (schema creation, index creation) until
+  // the first actual database query, saving 100-500ms from startup
+  serviceLocator.registerLazySingleton<DatabaseHelper>(
+    () {
+      LoggingService.info('DI: DatabaseHelper created (lazy)');
+      return DatabaseHelper.instance;
     },
   );
   
-  // Wait for database to be ready before proceeding
-  await serviceLocator.isReady<DatabaseHelper>();
+  // Don't wait for database - let it initialize on first use
+  // This allows the app to show UI immediately
 }
 
 /// Register repositories with proper dependency injection

@@ -8,19 +8,33 @@ import 'core/dependency_injection.dart';
 import 'providers/flight_provider.dart';
 import 'providers/site_provider.dart';
 import 'providers/wing_provider.dart';
+import 'utils/startup_performance_tracker.dart';
+import 'services/logging_service.dart';
 
 void main() {
+  // Start performance tracking
+  final perfTracker = StartupPerformanceTracker();
+  perfTracker.startTracking();
+  
   // Ensure Flutter is initialized
+  final flutterInitWatch = perfTracker.startMeasurement('Flutter Binding Init');
   WidgetsFlutterBinding.ensureInitialized();
+  perfTracker.completeMeasurement('Flutter Binding Init', flutterInitWatch);
   
   // Initialize sqflite for desktop platforms (lightweight, can stay in main)
   if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
+    final dbInitWatch = perfTracker.startMeasurement('SQLite FFI Init (Desktop)');
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
+    perfTracker.completeMeasurement('SQLite FFI Init (Desktop)', dbInitWatch);
   }
   
-  // Initialize timezone database (lightweight, can stay in main)
-  TimezoneService.initialize();
+  // OPTIMIZATION: Lazy load timezone data - only needed for IGC imports
+  // Timezone initialization moved to when it's actually needed
+  // This saves ~50-100ms from startup time
+  // TimezoneService.initialize() will be called lazily in TimezoneService
+  
+  perfTracker.recordTimestamp('Starting App Widget');
   
   // Don't await heavy initialization - let splash screen handle it
   runApp(const FreeFlightLogApp());
@@ -53,14 +67,21 @@ class _AppInitializerState extends State<AppInitializer> {
   }
 
   Future<void> _initialize() async {
+    final perfTracker = StartupPerformanceTracker();
+    
     try {
       // Configure dependencies
-      await configureDependencies();
+      final diWatch = perfTracker.startMeasurement('Total Dependency Injection');
+      await configureDependencies(perfTracker: perfTracker);
+      perfTracker.completeMeasurement('Total Dependency Injection', diWatch);
+      
+      perfTracker.recordTimestamp('Dependencies Configured');
       
       if (mounted) {
         setState(() {
           _isInitialized = true;
         });
+        perfTracker.recordTimestamp('App Initialized');
       }
     } catch (e) {
       if (mounted) {

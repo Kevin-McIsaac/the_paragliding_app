@@ -10,8 +10,6 @@ Free Flight Log is a cross-platform application for logging paraglider, hang gli
 - **Planning Documents**: Original functional specification, technical design, and MVP build plan
 - **Legacy Design Assets**: An old app design from December 2022 created in Appery.io (a visual app builder)
 - **Working Implementation**: Flutter app with database, UI screens, and core functionality
-
-
 📋 **Planning Documents** (for reference):
 
 - Complete functional requirements (FUNCTIONAL_SPECIFICATION.md)
@@ -26,17 +24,25 @@ cd ~/Projects/free_flight_log_app
 # Install dependencies
 flutter pub get
 
-# Run on Linux desktop (recommended for development)
-flutter run -d linux"
+```
 
-# Run on Android (device must be connected)
-flutter run -d pixel"
+### Running Flutter in Background
 
-# Run on emulator:
-flutter run -d emulator-5554
+When asked to run Flutter app ALLWAYS use background execution:
 
-# Get pixel screen shot
-adb -s 192.168.86.250:45781 exec-out screencap -p > ~Projects/free_flight_log/screenshots/123456.png
+```bash
+
+# Run in background (won't timeout)
+flutter run -d [device]
+
+# Get logs from running Flutter app
+flutter logs -d [device]
+
+# Clear logs before capturing new ones
+flutter logs -c -d [device]
+
+# Take screenshot from running app
+flutter screenshot -o screenshots/$(date +%Y%m%d_%H%M%S).png -d [device]
 ```
 
 For comprehensive development setup, build commands, testing, and troubleshooting, see [DEVELOPMENT.md](documentation/DEVELOPMENT.md).
