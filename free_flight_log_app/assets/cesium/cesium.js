@@ -1240,6 +1240,10 @@ function zoomToEntitiesWithPadding(padding) {
     // Use viewBoundingSphere for precise control
     viewer.camera.viewBoundingSphere(boundingSphere, offset);
     
+    // Reset camera transform to restore normal pan behavior (instead of rotate)
+    // viewBoundingSphere changes the camera mode to orbit/rotate, but we want pan
+    viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+    
     // Store this view as the home view for the flight track
     cesiumState.flightTrackHomeView = {
         boundingSphere: boundingSphere,
