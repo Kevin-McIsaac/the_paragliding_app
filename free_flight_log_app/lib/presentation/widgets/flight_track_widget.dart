@@ -1,9 +1,6 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:math';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:crypto/crypto.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -24,81 +21,6 @@ import '../controllers/flight_playback_controller.dart';
 // 
 // This approach is faster and cleaner than artificial delays or forced rebuilds.
 
-/// Isolate-compatible polyline calculation to prevent main thread blocking
-/// This function runs in a background isolate for heavy computational tasks
-List<Polyline> _calculatePolylinesIsolate(Map<String, dynamic> data) {
-  final List<Map<String, dynamic>> pointMaps = List<Map<String, dynamic>>.from(data['points']);
-  final List<double> climbRates = List<double>.from(data['climbRates']);
-  final bool showLabels = data['showLabels'] as bool;
-  
-  // Convert point maps back to coordinate objects
-  final List<LatLng> trackCoordinates = pointMaps
-      .map((pointMap) => LatLng(pointMap['lat'] as double, pointMap['lng'] as double))
-      .toList();
-  
-  final polylines = <Polyline>[];
-  
-  if (climbRates.isEmpty) {
-    // Simple red track for flights without climb rate data
-    polylines.add(Polyline(
-      points: trackCoordinates,
-      color: const Color(0xFFFF0000), // Colors.red
-      strokeWidth: 3.0,
-    ));
-    return polylines;
-  }
-  
-  // Create colored segments between consecutive points
-  for (int i = 0; i < trackCoordinates.length - 1; i++) {
-    final currentPoint = trackCoordinates[i];
-    final nextPoint = trackCoordinates[i + 1];
-    
-    // Get climb rate for current point (handle index bounds)
-    final climbRate = i < climbRates.length ? climbRates[i] : 0.0;
-    
-    // Calculate color based on climb rate using helper function
-    final color = _getClimbRateColorStatic(climbRate);
-    
-    polylines.add(
-      Polyline(
-        points: [currentPoint, nextPoint],
-        color: color,
-        strokeWidth: 3.0,
-      ),
-    );
-  }
-  
-  // Add straight line polyline if enabled
-  if (showLabels && trackCoordinates.length >= 2) {
-    final launchPoint = trackCoordinates.first;
-    final landingPoint = trackCoordinates.last;
-    
-    polylines.add(Polyline(
-      points: [launchPoint, landingPoint],
-      color: const Color(0xFF9E9E9E), // Colors.grey
-      strokeWidth: 4.0,
-      pattern: const StrokePattern.dotted(),
-    ));
-  }
-  
-  return polylines;
-}
-
-/// Helper function for climb rate color calculation (isolate-compatible)
-Color _getClimbRateColorStatic(double climbRate) {
-  // Simple 3-tier color scheme based on fixed thresholds
-  // Red: Strong sink (rate <= -1.5 m/s)
-  // Royal Blue: Weak sink (-1.5 < rate < 0 m/s)  
-  // Green: Any climb (rate >= 0 m/s)
-  
-  if (climbRate <= -1.5) {
-    return const Color(0xFFFF0000); // Colors.red
-  } else if (climbRate < 0) {
-    return const Color(0xFF1976D2); // Colors.blue[700]
-  } else {
-    return const Color(0xFF4CAF50); // Colors.green
-  }
-}
 
 class FlightTrackConfig {
   final bool embedded;
@@ -365,7 +287,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     }
   }
 
-  /// Async polyline creation using background isolate to prevent main thread blocking
+  /// Create polylines directly without isolate overhead
   Future<void> _createPolylinesAsync() async {
     if (_trackPoints.isEmpty) return;
 
@@ -387,21 +309,11 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     try {
       final startTime = DateTime.now();
       
-      // Prepare data for isolate (must be serializable)
-      final polylineData = {
-        'points': _trackPoints.map((point) => {
-          'lat': point.latitude,
-          'lng': point.longitude,
-        }).toList(),
-        'climbRates': _fifteenSecondRates,
-        'showLabels': _showLabels,
-      };
-
-      // Generate polylines in background isolate
-      final polylines = await compute(_calculatePolylinesIsolate, polylineData);
+      // Generate polylines directly (no isolate overhead)
+      final polylines = _createClimbRateColoredPolylines();
       
       final duration = DateTime.now().difference(startTime);
-      LoggingService.performance('Generate polylines (isolate)', duration, '${polylines.length} polylines created');
+      LoggingService.performance('Generate polylines', duration, '${polylines.length} polylines created');
 
       // Cache and update UI
       if (mounted) {
@@ -413,9 +325,9 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
       }
       
     } catch (e) {
-      LoggingService.error('FlightTrackWidget: Failed to generate polylines in background', e);
+      LoggingService.error('FlightTrackWidget: Failed to generate polylines', e);
       
-      // Fallback to synchronous generation
+      // Fallback to simple polylines
       if (mounted) {
         final fallbackPolylines = _createClimbRateColoredPolylinesFallback();
         setState(() {
@@ -426,7 +338,7 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
     }
   }
 
-  /// Fallback synchronous polyline generation for error cases
+  /// Fallback simple polyline generation for error cases
   List<Polyline> _createClimbRateColoredPolylinesFallback() {
     if (_trackPoints.length < 2) return [];
     
@@ -505,48 +417,55 @@ class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindi
       );
     }
     
+    // Add straight line polyline if labels are shown
+    if (_showLabels && _trackPoints.length >= 2) {
+      final launchPoint = _trackPoints.first;
+      final landingPoint = _trackPoints.last;
+      
+      polylines.add(Polyline(
+        points: [
+          LatLng(launchPoint.latitude, launchPoint.longitude),
+          LatLng(landingPoint.latitude, landingPoint.longitude),
+        ],
+        color: Colors.grey,
+        strokeWidth: 4.0,
+        pattern: const StrokePattern.dotted(),
+      ));
+    }
+    
     // Cache the result globally
     _cachePolylines(cacheKey, polylines);
     return polylines;
   }
   
-  /// Create a comprehensive cache key based on flight ID and data fingerprint
+  /// Create a simple cache key based on flight ID and data metrics
   String _createPolylineseCacheKey() {
     // Use flight ID as primary key
     final flightId = widget.flight.id?.toString() ?? 'unknown';
     
-    // Create data fingerprint using critical data points
-    final dataPoints = <String>[];
+    // Create simple fingerprint using key metrics
+    final metrics = <String>[];
     
     // Add basic metrics
-    dataPoints.add('pts:${_trackPoints.length}');
-    dataPoints.add('rates:${_fifteenSecondRates.length}');
+    metrics.add('pts:${_trackPoints.length}');
+    metrics.add('rates:${_fifteenSecondRates.length}');
+    metrics.add('labels:$_showLabels');
     
-    // Sample key points for fingerprint (first, middle, last + every 10th point)
+    // Sample key points for fingerprint
     if (_trackPoints.isNotEmpty) {
-      dataPoints.add('f:${_trackPoints.first.latitude.toStringAsFixed(6)},${_trackPoints.first.longitude.toStringAsFixed(6)},${_trackPoints.first.gpsAltitude}');
+      metrics.add('first:${_trackPoints.first.latitude.toStringAsFixed(4)},${_trackPoints.first.longitude.toStringAsFixed(4)}');
       
       if (_trackPoints.length > 1) {
         final mid = _trackPoints.length ~/ 2;
-        dataPoints.add('m:${_trackPoints[mid].latitude.toStringAsFixed(6)},${_trackPoints[mid].longitude.toStringAsFixed(6)},${_trackPoints[mid].gpsAltitude}');
-        dataPoints.add('l:${_trackPoints.last.latitude.toStringAsFixed(6)},${_trackPoints.last.longitude.toStringAsFixed(6)},${_trackPoints.last.gpsAltitude}');
+        metrics.add('mid:${_trackPoints[mid].latitude.toStringAsFixed(4)},${_trackPoints[mid].longitude.toStringAsFixed(4)}');
+        metrics.add('last:${_trackPoints.last.latitude.toStringAsFixed(4)},${_trackPoints.last.longitude.toStringAsFixed(4)}');
       }
     }
     
-    // Sample climb rates (first, middle, last)
-    if (_fifteenSecondRates.isNotEmpty) {
-      dataPoints.add('cr_f:${_fifteenSecondRates.first.toStringAsFixed(2)}');
-      if (_fifteenSecondRates.length > 1) {
-        final mid = _fifteenSecondRates.length ~/ 2;
-        dataPoints.add('cr_m:${_fifteenSecondRates[mid].toStringAsFixed(2)}');
-        dataPoints.add('cr_l:${_fifteenSecondRates.last.toStringAsFixed(2)}');
-      }
-    }
-    
-    // Create hash of the data fingerprint
-    final fingerprint = dataPoints.join('|');
-    final bytes = utf8.encode(fingerprint);
-    final hash = sha256.convert(bytes).toString();
+    // Create simple hash from metrics
+    final fingerprint = metrics.join('_');
+    // Simple hash using Dart's built-in hashCode
+    final hash = fingerprint.hashCode.toRadixString(16);
     
     return 'flight_${flightId}_$hash';
   }
