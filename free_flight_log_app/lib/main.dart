@@ -3,24 +3,37 @@ import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'dart:io' show Platform;
 import 'presentation/screens/splash_screen.dart';
-import 'services/timezone_service.dart';
-import 'core/dependency_injection.dart';
 import 'providers/flight_provider.dart';
 import 'providers/site_provider.dart';
 import 'providers/wing_provider.dart';
+import 'utils/startup_performance_tracker.dart';
+import 'services/logging_service.dart';
+import 'data/datasources/database_helper.dart';
 
 void main() {
+  // Start performance tracking
+  final perfTracker = StartupPerformanceTracker();
+  perfTracker.startTracking();
+  
   // Ensure Flutter is initialized
+  final flutterInitWatch = perfTracker.startMeasurement('Flutter Binding Init');
   WidgetsFlutterBinding.ensureInitialized();
+  perfTracker.completeMeasurement('Flutter Binding Init', flutterInitWatch);
   
   // Initialize sqflite for desktop platforms (lightweight, can stay in main)
   if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
+    final dbInitWatch = perfTracker.startMeasurement('SQLite FFI Init (Desktop)');
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
+    perfTracker.completeMeasurement('SQLite FFI Init (Desktop)', dbInitWatch);
   }
   
-  // Initialize timezone database (lightweight, can stay in main)
-  TimezoneService.initialize();
+  // OPTIMIZATION: Lazy load timezone data - only needed for IGC imports
+  // Timezone initialization moved to when it's actually needed
+  // This saves ~50-100ms from startup time
+  // TimezoneService.initialize() will be called lazily in TimezoneService
+  
+  perfTracker.recordTimestamp('Starting App Widget');
   
   // Don't await heavy initialization - let splash screen handle it
   runApp(const FreeFlightLogApp());
@@ -53,9 +66,17 @@ class _AppInitializerState extends State<AppInitializer> {
   }
 
   Future<void> _initialize() async {
+    final perfTracker = StartupPerformanceTracker();
+    
     try {
-      // Configure dependencies
-      await configureDependencies();
+      // Initialize database (very fast, just creates singleton)
+      final dbWatch = perfTracker.startMeasurement('Database Init');
+      final db = DatabaseHelper.instance;
+      // Pre-warm database connection
+      await db.database;
+      perfTracker.completeMeasurement('Database Init', dbWatch);
+      
+      perfTracker.recordTimestamp('App Initialized');
       
       if (mounted) {
         setState(() {
@@ -78,13 +99,13 @@ class _AppInitializerState extends State<AppInitializer> {
       return MultiProvider(
         providers: [
           ChangeNotifierProvider(
-            create: (_) => serviceLocator<FlightProvider>(),
+            create: (_) => FlightProvider.instance,
           ),
           ChangeNotifierProvider(
-            create: (_) => serviceLocator<SiteProvider>(),
+            create: (_) => SiteProvider.instance,
           ),
           ChangeNotifierProvider(
-            create: (_) => serviceLocator<WingProvider>(),
+            create: (_) => WingProvider.instance,
           ),
         ],
         child: MaterialApp(

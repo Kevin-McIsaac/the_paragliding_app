@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'flight_list_screen.dart';
+import '../../utils/startup_performance_tracker.dart';
+import '../../services/logging_service.dart';
 
 /// Lightweight splash screen that shows loading and then navigates
 class SplashScreen extends StatefulWidget {
@@ -18,8 +20,14 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _navigateToMain() async {
-    // Short delay to show splash
-    await Future.delayed(const Duration(milliseconds: 500));
+    final perfTracker = StartupPerformanceTracker();
+    
+    // OPTIMIZATION: Removed 500ms artificial delay - navigate immediately
+    // This saves 500ms from startup time
+    perfTracker.recordTimestamp('Navigating to Main Screen (No Delay)');
+    
+    // Use a microtask to ensure the splash screen renders at least once
+    await Future.microtask(() {});
     
     if (mounted) {
       Navigator.of(context).pushReplacement(
@@ -27,6 +35,11 @@ class _SplashScreenState extends State<SplashScreen> {
           builder: (context) => const FlightListScreen(),
         ),
       );
+      
+      // Print performance report after navigation
+      final report = perfTracker.generateReport();
+      LoggingService.info(report);
+      print(report); // Also print to console for visibility
     }
   }
 

@@ -2,11 +2,13 @@ import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:path/path.dart';
 import '../../services/logging_service.dart';
+import '../../utils/startup_performance_tracker.dart';
 
 class DatabaseHelper {
   static const _databaseName = "FlightLog.db";
   static const _databaseVersion = 8;
 
+  // Singleton pattern
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
@@ -14,13 +16,32 @@ class DatabaseHelper {
   Future<Database> get database async => _database ??= await _initDatabase();
 
   Future<Database> _initDatabase() async {
+    final perfTracker = StartupPerformanceTracker();
+    
+    final pathWatch = perfTracker.startMeasurement('Get Database Path');
     String path = join(await getDatabasesPath(), _databaseName);
-    return await openDatabase(
+    perfTracker.completeMeasurement('Get Database Path', pathWatch);
+    
+    LoggingService.database('INIT', 'Opening database at: $path');
+    
+    final openWatch = perfTracker.startMeasurement('Open Database');
+    final db = await openDatabase(
       path,
       version: _databaseVersion,
-      onCreate: _onCreate,
-      onUpgrade: _onUpgrade,
+      onCreate: (db, version) async {
+        final createWatch = perfTracker.startMeasurement('Create Database Schema');
+        await _onCreate(db, version);
+        perfTracker.completeMeasurement('Create Database Schema', createWatch);
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        final upgradeWatch = perfTracker.startMeasurement('Upgrade Database');
+        await _onUpgrade(db, oldVersion, newVersion);
+        perfTracker.completeMeasurement('Upgrade Database', upgradeWatch);
+      },
     );
+    perfTracker.completeMeasurement('Open Database', openWatch);
+    
+    return db;
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -91,6 +112,8 @@ class DatabaseHelper {
   /// Create database indexes for optimal query performance
   Future<void> _createIndexes(Database db) async {
     LoggingService.database('INDEX', 'Creating database indexes for performance optimization');
+    final perfTracker = StartupPerformanceTracker();
+    final indexWatch = perfTracker.startMeasurement('Create All Indexes');
     
     try {
       // Basic indexes for foreign key relationships
@@ -129,8 +152,10 @@ class DatabaseHelper {
       await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_duplicate_check ON flights(date, launch_time)');
       
       LoggingService.database('INDEX', 'Successfully created all database indexes');
+      perfTracker.completeMeasurement('Create All Indexes', indexWatch);
     } catch (e) {
       LoggingService.error('DatabaseHelper: Failed to create indexes', e);
+      perfTracker.completeMeasurement('Create All Indexes', indexWatch);
       rethrow;
     }
   }

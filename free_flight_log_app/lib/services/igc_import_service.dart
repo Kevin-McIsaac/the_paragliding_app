@@ -13,14 +13,22 @@ import 'logging_service.dart';
 import '../data/repositories/wing_repository.dart';
 import 'igc_parser.dart';
 import 'site_matching_service.dart';
-import '../core/dependency_injection.dart';
 
 /// Service for importing IGC files into the flight log
 class IgcImportService {
-  final FlightRepository _flightRepository = serviceLocator<FlightRepository>();
-  final SiteRepository _siteRepository = serviceLocator<SiteRepository>();
-  final WingRepository _wingRepository = serviceLocator<WingRepository>();
-  final FlightQueryService _queryService = serviceLocator<FlightQueryService>();
+  // Singleton pattern
+  static IgcImportService? _instance;
+  static IgcImportService get instance {
+    _instance ??= IgcImportService._internal();
+    return _instance!;
+  }
+  
+  IgcImportService._internal();
+  
+  final FlightRepository _flightRepository = FlightRepository.instance;
+  final SiteRepository _siteRepository = SiteRepository.instance;
+  final WingRepository _wingRepository = WingRepository.instance;
+  final FlightQueryService _queryService = FlightQueryService.instance;
   final IgcParser parser = IgcParser();
 
   /// Phase 1: Quick check for duplicate by filename (no parsing needed)

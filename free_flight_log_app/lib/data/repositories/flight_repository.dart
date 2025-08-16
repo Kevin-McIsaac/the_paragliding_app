@@ -6,10 +6,16 @@ import '../../services/logging_service.dart';
 /// Repository for basic Flight CRUD operations
 /// Handles only data persistence operations, not business logic or complex queries
 class FlightRepository {
-  final DatabaseHelper _databaseHelper;
+  // Singleton pattern
+  static FlightRepository? _instance;
+  static FlightRepository get instance {
+    _instance ??= FlightRepository._internal();
+    return _instance!;
+  }
   
-  /// Constructor with dependency injection
-  FlightRepository(this._databaseHelper);
+  FlightRepository._internal();
+  
+  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
 
   /// Insert a new flight into the database
   Future<int> insertFlight(Flight flight) async {
@@ -72,26 +78,6 @@ class FlightRepository {
     return maps;
   }
   
-  /// Get paginated flights for better performance
-  Future<List<Flight>> getFlightsPaginated(int offset, int limit) async {
-    LoggingService.debug('FlightRepository: Getting flights (offset: $offset, limit: $limit)');
-    
-    Database db = await _databaseHelper.database;
-    List<Map<String, dynamic>> maps = await db.rawQuery('''
-      SELECT f.*, 
-             ls.name as launch_site_name
-      FROM flights f
-      LEFT JOIN sites ls ON f.launch_site_id = ls.id
-      ORDER BY f.date DESC, f.launch_time DESC
-      LIMIT ? OFFSET ?
-    ''', [limit, offset]);
-    
-    final flights = maps.map((map) => Flight.fromMap(map)).toList();
-    LoggingService.debug('FlightRepository: Retrieved ${flights.length} flights');
-    
-    return flights;
-  }
-
   /// Get total number of flights
   Future<int> getFlightCount() async {
     LoggingService.debug('FlightRepository: Getting flight count');

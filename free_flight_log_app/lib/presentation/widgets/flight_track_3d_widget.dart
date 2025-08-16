@@ -51,7 +51,7 @@ class FlightTrack3DWidget extends StatefulWidget {
 }
 
 class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
-  final IgcImportService _igcService = IgcImportService();
+  final IgcImportService _igcService = IgcImportService.instance;
   
   List<IgcPoint> _trackPoints = [];
   String? _timezone;

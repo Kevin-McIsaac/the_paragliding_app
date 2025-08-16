@@ -1,16 +1,21 @@
 import 'package:sqflite/sqflite.dart';
 import '../datasources/database_helper.dart';
 import '../models/flight.dart';
-import '../utils/pagination_result.dart';
 import '../../services/logging_service.dart';
 
 /// Service for complex flight queries and filtering operations
 /// Handles all query-related operations that don't involve basic CRUD
 class FlightQueryService {
-  final DatabaseHelper _databaseHelper;
-
-  /// Constructor with dependency injection
-  FlightQueryService(this._databaseHelper);
+  // Singleton pattern
+  static FlightQueryService? _instance;
+  static FlightQueryService get instance {
+    _instance ??= FlightQueryService._internal();
+    return _instance!;
+  }
+  
+  FlightQueryService._internal();
+  
+  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
 
   /// Get flights within a date range
   Future<List<Flight>> getFlightsByDateRange(DateTime start, DateTime end) async {
@@ -152,214 +157,13 @@ class FlightQueryService {
     return flights;
   }
 
-  /// Get flights with advanced pagination support
-  Future<PaginationResult<Flight>> getFlightsPaginated(PaginationParams params) async {
-    LoggingService.debug('FlightQueryService: Getting paginated flights with params: $params');
-    
-    Database db = await _databaseHelper.database;
-    
-    // Build query components
-    String whereClause = _buildWhereClause(params);
-    String orderClause = _buildOrderClause(params);
-    List<dynamic> queryArgs = _buildQueryArgs(params);
-    
-    // Get total count for pagination metadata
-    final totalCount = await _getTotalCount(whereClause, queryArgs);
-    
-    if (totalCount == 0) {
-      return PaginationResult.empty<Flight>(page: params.page, pageSize: params.pageSize);
-    }
-    
-    // Build main query with pagination
-    final query = '''
-      SELECT f.*, ls.name as launch_site_name
-      FROM flights f
-      LEFT JOIN sites ls ON f.launch_site_id = ls.id
-      $whereClause
-      $orderClause
-      LIMIT ? OFFSET ?
-    ''';
-    
-    final allArgs = [...queryArgs, params.pageSize, params.offset];
-    
-    List<Map<String, dynamic>> maps = await db.rawQuery(query, allArgs);
-    final flights = maps.map((map) => Flight.fromMap(map)).toList();
-    
-    LoggingService.info('FlightQueryService: Retrieved ${flights.length}/$totalCount flights (page ${params.page})');
-    
-    return PaginationResult<Flight>(
-      items: flights,
-      totalCount: totalCount,
-      page: params.page,
-      pageSize: params.pageSize,
-    );
-  }
 
-  /// Get flights with simple pagination (legacy method)
-  Future<List<Flight>> getFlightsSimplePaginated({
-    required int offset,
-    required int limit,
-    String? orderBy,
-    bool ascending = false,
-  }) async {
-    final params = PaginationParams(
-      page: (offset / limit).floor() + 1,
-      pageSize: limit,
-      sortBy: orderBy,
-      ascending: ascending,
-    );
-    
-    final result = await getFlightsPaginated(params);
-    return result.items;
-  }
-
-  /// Get total count of flights (useful for pagination)
+  /// Get total count of flights
   Future<int> getTotalFlightCount() async {
     Database db = await _databaseHelper.database;
     List<Map<String, dynamic>> result = await db.rawQuery(
       'SELECT COUNT(*) as count FROM flights'
     );
-    return result.first['count'] as int;
-  }
-  
-  /// Search flights with pagination support
-  Future<PaginationResult<Flight>> searchFlightsPaginated(
-    String searchQuery, 
-    PaginationParams params
-  ) async {
-    LoggingService.debug('FlightQueryService: Searching flights with pagination: "$searchQuery"');
-    
-    final searchParams = params.copyWith(searchQuery: searchQuery);
-    return await getFlightsPaginated(searchParams);
-  }
-  
-  /// Get flights by date range with pagination
-  Future<PaginationResult<Flight>> getFlightsByDateRangePaginated(
-    DateTime startDate,
-    DateTime endDate,
-    PaginationParams params
-  ) async {
-    LoggingService.debug('FlightQueryService: Getting flights by date range with pagination');
-    
-    final filters = {
-      'startDate': startDate.toIso8601String(),
-      'endDate': endDate.toIso8601String(),
-      ...(params.filters ?? {})
-    };
-    
-    final dateParams = params.copyWith(filters: filters);
-    return await getFlightsPaginated(dateParams);
-  }
-  
-  // Helper methods for query building
-  
-  String _buildWhereClause(PaginationParams params) {
-    List<String> conditions = [];
-    
-    // Search query condition
-    if (params.searchQuery != null && params.searchQuery!.isNotEmpty) {
-      conditions.add('(LOWER(f.notes) LIKE ? OR LOWER(ls.name) LIKE ?)');
-    }
-    
-    // Date range filter
-    if (params.filters?['startDate'] != null) {
-      conditions.add('f.date >= ?');
-    }
-    if (params.filters?['endDate'] != null) {
-      conditions.add('f.date <= ?');
-    }
-    
-    // Wing filter
-    if (params.filters?['wingId'] != null) {
-      conditions.add('f.wing_id = ?');
-    }
-    
-    // Site filter
-    if (params.filters?['siteId'] != null) {
-      conditions.add('f.launch_site_id = ?');
-    }
-    
-    return conditions.isEmpty ? '' : 'WHERE ${conditions.join(' AND ')}';
-  }
-  
-  String _buildOrderClause(PaginationParams params) {
-    final sortColumn = _getSortColumn(params.sortBy);
-    final direction = params.ascending ? 'ASC' : 'DESC';
-    
-    // Default sort: date DESC, launch_time DESC (optimized by composite index)
-    if (params.sortBy == null || params.sortBy == 'date') {
-      return 'ORDER BY f.date $direction, f.launch_time $direction';
-    }
-    
-    return 'ORDER BY $sortColumn $direction, f.date DESC, f.launch_time DESC';
-  }
-  
-  String _getSortColumn(String? sortBy) {
-    switch (sortBy?.toLowerCase()) {
-      case 'date':
-      case 'datetime':
-        return 'f.date';
-      case 'duration':
-        return 'f.duration';
-      case 'altitude':
-        return 'f.max_altitude';
-      case 'distance':
-        return 'f.distance';
-      case 'straight_distance':
-        return 'f.straight_distance';
-      case 'site':
-      case 'launch_site':
-        return 'ls.name';
-      case 'created':
-        return 'f.created_at';
-      case 'updated':
-        return 'f.updated_at';
-      default:
-        return 'f.date';
-    }
-  }
-  
-  List<dynamic> _buildQueryArgs(PaginationParams params) {
-    List<dynamic> args = [];
-    
-    // Search query arguments (add twice for notes and site name)
-    if (params.searchQuery != null && params.searchQuery!.isNotEmpty) {
-      final searchTerm = '%${params.searchQuery!.toLowerCase()}%';
-      args.addAll([searchTerm, searchTerm]);
-    }
-    
-    // Date range arguments
-    if (params.filters?['startDate'] != null) {
-      args.add(params.filters!['startDate']);
-    }
-    if (params.filters?['endDate'] != null) {
-      args.add(params.filters!['endDate']);
-    }
-    
-    // Wing filter
-    if (params.filters?['wingId'] != null) {
-      args.add(params.filters!['wingId']);
-    }
-    
-    // Site filter
-    if (params.filters?['siteId'] != null) {
-      args.add(params.filters!['siteId']);
-    }
-    
-    return args;
-  }
-  
-  Future<int> _getTotalCount(String whereClause, List<dynamic> args) async {
-    Database db = await _databaseHelper.database;
-    
-    final countQuery = '''
-      SELECT COUNT(*) as count
-      FROM flights f
-      LEFT JOIN sites ls ON f.launch_site_id = ls.id
-      $whereClause
-    ''';
-    
-    List<Map<String, dynamic>> result = await db.rawQuery(countQuery, args);
     return result.first['count'] as int;
   }
 }

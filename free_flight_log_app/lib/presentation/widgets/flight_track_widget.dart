@@ -170,7 +170,7 @@ class FlightTrackWidget extends StatefulWidget {
 
 class _FlightTrackWidgetState extends State<FlightTrackWidget> with WidgetsBindingObserver {
   MapController? _mapController;
-  final IgcImportService _igcService = IgcImportService();
+  final IgcImportService _igcService = IgcImportService.instance;
   
   List<IgcPoint> _trackPoints = [];
   List<double> _instantaneousRates = [];

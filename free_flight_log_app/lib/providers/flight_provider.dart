@@ -5,31 +5,29 @@ import '../data/repositories/flight_repository.dart';
 import '../data/services/flight_query_service.dart';
 import '../data/services/flight_statistics_service.dart';
 import '../services/igc_import_service.dart';
-import '../core/dependency_injection.dart';
 import '../services/logging_service.dart';
 
 /// State management for flight data
 class FlightProvider extends ChangeNotifier {
-  final FlightRepository _repository;
-  late final FlightQueryService _queryService;
-  late final FlightStatisticsService _statisticsService;
-  late final IgcImportService _igcImportService;
-  
-  FlightProvider(this._repository) {
-    _queryService = serviceLocator<FlightQueryService>();
-    _statisticsService = serviceLocator<FlightStatisticsService>();
-    _igcImportService = serviceLocator<IgcImportService>();
+  // Singleton pattern
+  static FlightProvider? _instance;
+  static FlightProvider get instance {
+    _instance ??= FlightProvider._internal();
+    return _instance!;
   }
+  
+  FlightProvider._internal();
+  
+  final FlightRepository _repository = FlightRepository.instance;
+  final FlightQueryService _queryService = FlightQueryService.instance;
+  final FlightStatisticsService _statisticsService = FlightStatisticsService.instance;
+  final IgcImportService _igcImportService = IgcImportService.instance;
 
   List<Flight> _flights = [];
   bool _isLoading = false;
   String? _errorMessage;
   
-  // Pagination state
-  static const int _pageSize = 20;
-  int _currentPage = 0;
-  bool _hasMore = true;
-  bool _isLoadingMore = false;
+  // Statistics state
   int _totalFlights = 0;
   int _totalDuration = 0;
   
@@ -51,8 +49,6 @@ class FlightProvider extends ChangeNotifier {
   List<Flight> get flights => _flights;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
-  bool get hasMore => _hasMore;
-  bool get isLoadingMore => _isLoadingMore;
   int get totalFlights => _totalFlights;
   int get totalDuration => _totalDuration;
   List<Map<String, dynamic>> get yearlyStats => _yearlyStats;
@@ -80,13 +76,13 @@ class FlightProvider extends ChangeNotifier {
     return _sortedFlightsCache!;
   }
 
-  /// Load initial page of flights from repository  
+  /// Load all flights from repository  
   Future<void> loadFlights() async {
     _setLoading(true);
     _clearError();
     
     try {
-      LoggingService.debug('FlightProvider: Loading initial flights from repository');
+      LoggingService.debug('FlightProvider: Loading all flights from repository');
       final startTime = DateTime.now();
       
       // Get overall statistics (total count and duration)
@@ -94,15 +90,13 @@ class FlightProvider extends ChangeNotifier {
       _totalFlights = stats['totalFlights'] ?? 0;
       _totalDuration = stats['totalDuration'] ?? 0;
       
-      // Load first page of flights
-      _currentPage = 0;
-      _flights = await _repository.getFlightsPaginated(0, _pageSize);
-      _hasMore = _flights.length < _totalFlights;
+      // Load all flights at once
+      _flights = await _repository.getAllFlights();
       
       final duration = DateTime.now().difference(startTime);
-      LoggingService.performance('Load initial flights', duration, '${_flights.length}/$_totalFlights flights loaded');
+      LoggingService.performance('Load all flights', duration, '${_flights.length} flights loaded');
       
-      LoggingService.info('FlightProvider: Loaded ${_flights.length} of $_totalFlights total flights');
+      LoggingService.info('FlightProvider: Loaded ${_flights.length} flights');
       _invalidateCache();
       notifyListeners();
     } catch (e) {
@@ -110,42 +104,6 @@ class FlightProvider extends ChangeNotifier {
       _setError('Failed to load flights: $e');
     } finally {
       _setLoading(false);
-    }
-  }
-  
-  /// Load more flights for pagination
-  Future<void> loadMoreFlights() async {
-    if (_isLoadingMore || !_hasMore) return;
-    
-    _isLoadingMore = true;
-    notifyListeners();
-    
-    try {
-      _currentPage++;
-      final offset = _currentPage * _pageSize;
-      
-      LoggingService.debug('FlightProvider: Loading more flights (page $_currentPage, offset $offset)');
-      
-      final moreFlights = await _repository.getFlightsPaginated(offset, _pageSize);
-      
-      if (moreFlights.isNotEmpty) {
-        _flights.addAll(moreFlights);
-        _hasMore = _flights.length < _totalFlights;
-        _invalidateCache();
-        
-        LoggingService.info('FlightProvider: Loaded ${moreFlights.length} more flights (${_flights.length}/$_totalFlights total)');
-      } else {
-        _hasMore = false;
-        LoggingService.info('FlightProvider: No more flights to load');
-      }
-      
-      notifyListeners();
-    } catch (e) {
-      LoggingService.error('FlightProvider: Failed to load more flights', e);
-      _currentPage--; // Revert page on error
-    } finally {
-      _isLoadingMore = false;
-      notifyListeners();
     }
   }
   
@@ -161,7 +119,6 @@ class FlightProvider extends ChangeNotifier {
       // Load all flights at once
       _flights = await _repository.getAllFlights();
       _totalFlights = _flights.length;
-      _hasMore = false;
       
       final duration = DateTime.now().difference(startTime);
       LoggingService.performance('Load all flights', duration, '${_flights.length} flights loaded');

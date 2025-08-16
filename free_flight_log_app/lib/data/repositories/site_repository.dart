@@ -3,10 +3,16 @@ import '../datasources/database_helper.dart';
 import '../models/site.dart';
 
 class SiteRepository {
-  final DatabaseHelper _databaseHelper;
+  // Singleton pattern
+  static SiteRepository? _instance;
+  static SiteRepository get instance {
+    _instance ??= SiteRepository._internal();
+    return _instance!;
+  }
   
-  /// Constructor with dependency injection
-  SiteRepository(this._databaseHelper);
+  SiteRepository._internal();
+  
+  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
 
   Future<int> insertSite(Site site) async {
     Database db = await _databaseHelper.database;

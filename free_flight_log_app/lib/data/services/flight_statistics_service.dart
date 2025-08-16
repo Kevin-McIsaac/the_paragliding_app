@@ -5,10 +5,16 @@ import '../../services/logging_service.dart';
 /// Service for flight statistics and data aggregation operations
 /// Handles all statistical calculations and reporting functionality
 class FlightStatisticsService {
-  final DatabaseHelper _databaseHelper;
-
-  /// Constructor with dependency injection
-  FlightStatisticsService(this._databaseHelper);
+  // Singleton pattern
+  static FlightStatisticsService? _instance;
+  static FlightStatisticsService get instance {
+    _instance ??= FlightStatisticsService._internal();
+    return _instance!;
+  }
+  
+  FlightStatisticsService._internal();
+  
+  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
 
   /// Get overall flight statistics (total flights, hours, max altitude)
   Future<Map<String, dynamic>> getOverallStatistics() async {
