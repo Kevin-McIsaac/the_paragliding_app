@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../../data/models/site.dart';
 import '../../utils/ui_utils.dart';
 import '../widgets/edit_site_dialog.dart';
-import '../../providers/site_provider.dart';
+import '../../services/database_service.dart';
+import '../../services/logging_service.dart';
 
 class ManageSitesScreen extends StatefulWidget {
   const ManageSitesScreen({super.key});
@@ -13,20 +13,21 @@ class ManageSitesScreen extends StatefulWidget {
 }
 
 class _ManageSitesScreenState extends State<ManageSitesScreen> {
+  final DatabaseService _databaseService = DatabaseService.instance;
+  List<Site> _sites = [];
   List<Site> _filteredSites = [];
   Map<String, List<Site>> _groupedSites = {};
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   String _sortBy = 'country'; // 'name', 'country', 'date' - default to country grouping
   bool _groupByCountry = true;
-  bool _hasInitialized = false; // Track if we've initialized the filtered list
+  bool _isLoading = false;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<SiteProvider>().loadSitesWithFlightCounts();
-    });
+    _loadSites();
     _searchController.addListener(_onSearchChanged);
   }
 
@@ -37,12 +38,39 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
     super.dispose();
   }
 
+  Future<void> _loadSites() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    
+    try {
+      LoggingService.debug('ManageSitesScreen: Loading sites with flight counts');
+      final sites = await _databaseService.getSitesWithFlightCounts();
+      
+      if (mounted) {
+        setState(() {
+          _sites = sites;
+          _filterSites(sites);
+          _isLoading = false;
+        });
+        LoggingService.info('ManageSitesScreen: Loaded ${sites.length} sites');
+      }
+    } catch (e) {
+      LoggingService.error('ManageSitesScreen: Failed to load sites', e);
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Failed to load sites: $e';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
   void _onSearchChanged() {
     setState(() {
       _searchQuery = _searchController.text.toLowerCase();
-      if (_hasInitialized) {
-        _filterSites(context.read<SiteProvider>().sites);
-      }
+      _filterSites(_sites);
     });
   }
 
@@ -135,7 +163,25 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
 
     if (!confirmed || !mounted) return;
 
-    final success = await context.read<SiteProvider>().deleteSite(site.id!);
+    bool success = false;
+    String? errorMessage;
+    
+    try {
+      // Check if site can be deleted
+      final canDelete = await _databaseService.canDeleteSite(site.id!);
+      if (!canDelete) {
+        errorMessage = 'Cannot delete site - it is used in flight records';
+      } else {
+        LoggingService.debug('ManageSitesScreen: Deleting site ${site.id}');
+        await _databaseService.deleteSite(site.id!);
+        success = true;
+        LoggingService.info('ManageSitesScreen: Deleted site ${site.id}');
+        await _loadSites(); // Reload the list
+      }
+    } catch (e) {
+      LoggingService.error('ManageSitesScreen: Failed to delete site', e);
+      errorMessage = 'Failed to delete site: $e';
+    }
     
     if (mounted) {
       if (success) {
@@ -143,7 +189,6 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
         // Return true to indicate sites were modified
         Navigator.of(context).pop(true);
       } else {
-        final errorMessage = context.read<SiteProvider>().errorMessage;
         if (errorMessage != null) {
           if (errorMessage.contains('used in flight records')) {
             UiUtils.showErrorDialog(
@@ -167,13 +212,24 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
     );
 
     if (result != null && mounted) {
-      final success = await context.read<SiteProvider>().updateSite(result);
+      bool success = false;
+      String? errorMessage;
+      
+      try {
+        LoggingService.debug('ManageSitesScreen: Updating site ${result.id}');
+        await _databaseService.updateSite(result);
+        success = true;
+        LoggingService.info('ManageSitesScreen: Updated site ${result.id}');
+        await _loadSites(); // Reload the list
+      } catch (e) {
+        LoggingService.error('ManageSitesScreen: Failed to update site', e);
+        errorMessage = 'Failed to update site: $e';
+      }
       
       if (mounted) {
         if (success) {
           UiUtils.showSuccessMessage(context, 'Site "${result.name}" updated');
         } else {
-          final errorMessage = context.read<SiteProvider>().errorMessage;
           if (errorMessage != null) {
             UiUtils.showErrorDialog(context, 'Error', errorMessage);
           }
@@ -197,8 +253,7 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
               setState(() {
                 _sortBy = value;
                 _groupByCountry = (value == 'country');
-                final provider = context.read<SiteProvider>();
-                _filterSites(provider.sites); // Re-apply sort and grouping
+                _filterSites(_sites); // Re-apply sort and grouping
               });
             },
             itemBuilder: (context) => [
@@ -278,143 +333,110 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
           ),
         ),
       ),
-      body: Consumer<SiteProvider>(
-        builder: (context, siteProvider, child) {
-          // Initialize filtered sites on first load
-          if (!_hasInitialized && siteProvider.sites.isNotEmpty) {
-            _filteredSites = List.from(siteProvider.sites);
-            _sortSites();
-            if (_groupByCountry) {
-              _groupSitesByCountry();
-            }
-            _hasInitialized = true;
-          } else if (_hasInitialized && siteProvider.sites.isNotEmpty) {
-            // Update filtered sites when provider data changes after initialization
-            // This handles cases where sites are edited/deleted
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                setState(() {
-                  _filterSites(siteProvider.sites);
-                });
-              }
-            });
-          }
-
-          if (siteProvider.isLoading) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (siteProvider.errorMessage != null) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    Icons.error_outline,
-                    size: 64,
-                    color: Colors.red,
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _errorMessage != null
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        size: 64,
+                        color: Colors.red,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Error loading sites',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _errorMessage!,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Colors.grey,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () {
+                          setState(() => _errorMessage = null);
+                          _loadSites();
+                        },
+                        child: const Text('Retry'),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Error loading sites',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    siteProvider.errorMessage!,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () {
-                      siteProvider.clearError();
-                      siteProvider.loadSitesWithFlightCounts();
-                    },
-                    child: const Text('Retry'),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          // Show empty state only after initialization or when truly empty
-          if (siteProvider.sites.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    Icons.location_off,
-                    size: 64,
-                    color: Colors.grey,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No sites found',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Sites will appear here after importing flights',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          if (_hasInitialized && _filteredSites.isEmpty && siteProvider.sites.isNotEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    Icons.search_off,
-                    size: 64,
-                    color: Colors.grey,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No sites match your search',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Try a different search term',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          return Column(
-            children: [
-              // Summary header  
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.only(top: 16, bottom: 16),
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                child: Text(
-                  'Showing ${_filteredSites.length} of ${siteProvider.sites.length} sites',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ),
-              // Site list
-              Expanded(
-                child: _groupByCountry ? _buildGroupedSiteList() : _buildFlatSiteList(),
-              ),
-            ],
-          );
-        },
-      ),
+                )
+              : _sites.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.location_off,
+                            size: 64,
+                            color: Colors.grey,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No sites found',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Sites will appear here after importing flights',
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : _filteredSites.isEmpty && _sites.isNotEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(
+                                Icons.search_off,
+                                size: 64,
+                                color: Colors.grey,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'No sites match your search',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Try a different search term',
+                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : Column(
+                          children: [
+                            // Summary header  
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.only(top: 16, bottom: 16),
+                              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                              child: Text(
+                                'Showing ${_filteredSites.length} of ${_sites.length} sites',
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                            ),
+                            // Site list
+                            Expanded(
+                              child: _groupByCountry ? _buildGroupedSiteList() : _buildFlatSiteList(),
+                            ),
+                          ],
+                        ),
     );
   }
 

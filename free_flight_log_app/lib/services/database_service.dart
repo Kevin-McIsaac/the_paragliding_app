@@ -421,8 +421,17 @@ class DatabaseService {
       ORDER BY flight_count DESC
     ''');
     
-    LoggingService.debug('DatabaseService: Generated statistics for ${results.length} wings');
-    return results;
+    // Convert duration from minutes to hours
+    final wingStats = results.map((row) {
+      final totalMinutes = (row['total_duration'] as int?) ?? 0;
+      return {
+        ...row,
+        'total_hours': totalMinutes / 60.0,
+      };
+    }).toList();
+    
+    LoggingService.debug('DatabaseService: Generated statistics for ${wingStats.length} wings');
+    return wingStats;
   }
 
   /// Get statistics for sites
@@ -446,8 +455,17 @@ class DatabaseService {
       ORDER BY flight_count DESC
     ''');
     
-    LoggingService.debug('DatabaseService: Generated statistics for ${results.length} sites');
-    return results;
+    // Convert duration from minutes to hours
+    final siteStats = results.map((row) {
+      final totalMinutes = (row['total_duration'] as int?) ?? 0;
+      return {
+        ...row,
+        'total_hours': totalMinutes / 60.0,
+      };
+    }).toList();
+    
+    LoggingService.debug('DatabaseService: Generated statistics for ${siteStats.length} sites');
+    return siteStats;
   }
 
   // ========================================================================

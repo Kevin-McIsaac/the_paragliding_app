@@ -2,25 +2,17 @@ import 'package:flutter/foundation.dart';
 import '../../data/models/flight.dart';
 import '../../data/models/site.dart';
 import '../../data/models/wing.dart';
-import '../../data/repositories/flight_repository.dart';
-import '../../data/repositories/site_repository.dart';
-import '../../data/repositories/wing_repository.dart';
+import '../../services/database_service.dart';
 import '../../services/logging_service.dart';
 
 /// View model for flight detail screen
 /// Handles all business logic and state management
 class FlightDetailViewModel extends ChangeNotifier {
-  final FlightRepository _flightRepository;
-  final SiteRepository _siteRepository;
-  final WingRepository _wingRepository;
+  final DatabaseService _databaseService;
 
   FlightDetailViewModel({
-    required FlightRepository flightRepository,
-    required SiteRepository siteRepository,
-    required WingRepository wingRepository,
-  })  : _flightRepository = flightRepository,
-        _siteRepository = siteRepository,
-        _wingRepository = wingRepository;
+    required DatabaseService databaseService,
+  })  : _databaseService = databaseService;
 
   Flight? _flight;
   Site? _launchSite;
@@ -57,7 +49,7 @@ class FlightDetailViewModel extends ChangeNotifier {
       // Load launch site
       if (flight.launchSiteId != null) {
         futures.add(
-          _siteRepository.getSite(flight.launchSiteId!).then((site) {
+          _databaseService.getSite(flight.launchSiteId!).then((site) {
             _launchSite = site;
           }),
         );
@@ -70,7 +62,7 @@ class FlightDetailViewModel extends ChangeNotifier {
       // Load wing
       if (flight.wingId != null) {
         futures.add(
-          _wingRepository.getWing(flight.wingId!).then((wing) {
+          _databaseService.getWing(flight.wingId!).then((wing) {
             _wing = wing;
           }),
         );
@@ -98,7 +90,7 @@ class FlightDetailViewModel extends ChangeNotifier {
 
     try {
       _flight = _flight!.copyWith(notes: notes);
-      await _flightRepository.updateFlight(_flight!);
+      await _databaseService.updateFlight(_flight!);
       _flightModified = true;
       _isSaving = false;
       notifyListeners();
@@ -123,7 +115,7 @@ class FlightDetailViewModel extends ChangeNotifier {
         launchSiteId: site.id,
         launchSiteName: site.name,
       );
-      await _flightRepository.updateFlight(_flight!);
+      await _databaseService.updateFlight(_flight!);
       _launchSite = site;
       _flightModified = true;
       _isSaving = false;
@@ -152,7 +144,7 @@ class FlightDetailViewModel extends ChangeNotifier {
         landingLongitude: site.longitude,
         landingDescription: site.name,
       );
-      await _flightRepository.updateFlight(_flight!);
+      await _databaseService.updateFlight(_flight!);
       _landingSite = site;
       _flightModified = true;
       _isSaving = false;
@@ -178,7 +170,7 @@ class FlightDetailViewModel extends ChangeNotifier {
         wingId: wing.id,
         // Note: wingName is not stored in Flight model, it's joined from wings table
       );
-      await _flightRepository.updateFlight(_flight!);
+      await _databaseService.updateFlight(_flight!);
       _wing = wing;
       _flightModified = true;
       _isSaving = false;
@@ -196,7 +188,7 @@ class FlightDetailViewModel extends ChangeNotifier {
     if (_flight?.id == null) return false;
 
     try {
-      await _flightRepository.deleteFlight(_flight!.id!);
+      await _databaseService.deleteFlight(_flight!.id!);
       return true;
     } catch (e) {
       LoggingService.error('FlightDetailViewModel: Error deleting flight', e);

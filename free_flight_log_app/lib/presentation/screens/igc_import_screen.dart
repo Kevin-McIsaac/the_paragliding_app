@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:provider/provider.dart';
 import 'dart:io';
 import '../../data/models/flight.dart';
 import '../../data/models/import_result.dart';
-import '../../providers/flight_provider.dart';
 import '../widgets/duplicate_flight_dialog.dart';
 import '../../services/igc_parser.dart';
+import '../../services/database_service.dart';
+import '../../services/logging_service.dart';
+import '../../services/igc_import_service.dart';
 
 class IgcImportScreen extends StatefulWidget {
   const IgcImportScreen({super.key});
@@ -150,7 +151,8 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
       _replaceAllDuplicates = false;
     });
     
-    final flightProvider = context.read<FlightProvider>();
+    final databaseService = DatabaseService.instance;
+    final importService = IgcImportService.instance;
 
     for (final filePath in _selectedFilePaths) {
       setState(() {
@@ -160,12 +162,16 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
       try {
         // Phase 1: Quick filename check (no parsing needed)
         final filename = filePath.split('/').last;
-        var existingFlight = await flightProvider.checkForDuplicateByFilename(filename);
+        var existingFlight = await importService.checkForDuplicateByFilename(filename);
         bool isFilenameDuplicate = existingFlight != null;
         
         // Phase 2: If no filename match, check by date/time (requires parsing)
         if (existingFlight == null) {
-          existingFlight = await flightProvider.checkIgcForDuplicate(filePath);
+          try {
+            existingFlight = await importService.checkForDuplicate(filePath);
+          } catch (e) {
+            LoggingService.error('IgcImportScreen: Error checking for duplicate', e);
+          }
         }
         
         bool shouldReplace = false;
@@ -174,9 +180,11 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
           // Duplicate found - check user preferences
           if (_skipAllDuplicates) {
             // User chose skip all, create skipped result
-            final result = await flightProvider.importIgcFile(
-              filePath,
-              skipDuplicate: true,
+            final result = ImportResult.skipped(
+              fileName: filePath.split('/').last,
+              flightDate: existingFlight.date,
+              flightTime: existingFlight.launchTime,
+              duration: existingFlight.duration,
             );
             setState(() {
               _importResults.add(result);
@@ -190,9 +198,11 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
             
             if (action == DuplicateAction.skip) {
               // Skip this file
-              final result = await flightProvider.importIgcFile(
-                filePath,
-                skipDuplicate: true,
+              final result = ImportResult.skipped(
+                fileName: filePath.split('/').last,
+                flightDate: existingFlight.date,
+                flightTime: existingFlight.launchTime,
+                duration: existingFlight.duration,
               );
               setState(() {
                 _importResults.add(result);
@@ -203,9 +213,11 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
               setState(() {
                 _skipAllDuplicates = true;
               });
-              final result = await flightProvider.importIgcFile(
-                filePath,
-                skipDuplicate: true,
+              final result = ImportResult.skipped(
+                fileName: filePath.split('/').last,
+                flightDate: existingFlight.date,
+                flightTime: existingFlight.launchTime,
+                duration: existingFlight.duration,
               );
               setState(() {
                 _importResults.add(result);
@@ -224,9 +236,9 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
         }
         
         // Import the file (either new or replace)
-        final result = await flightProvider.importIgcFile(
+        final result = await importService.importIgcFileWithDuplicateHandling(
           filePath,
-          replaceDuplicate: shouldReplace,
+          replace: shouldReplace,
         );
         
         setState(() {

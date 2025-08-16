@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../../data/models/wing.dart';
-import '../../providers/wing_provider.dart';
+import '../../services/database_service.dart';
+import '../../services/logging_service.dart';
 import 'edit_wing_screen.dart';
 
 class WingManagementScreen extends StatefulWidget {
@@ -12,13 +12,43 @@ class WingManagementScreen extends StatefulWidget {
 }
 
 class _WingManagementScreenState extends State<WingManagementScreen> {
+  final DatabaseService _databaseService = DatabaseService.instance;
+  List<Wing> _wings = [];
+  bool _isLoading = false;
+  String? _errorMessage;
+
   @override
   void initState() {
     super.initState();
-    // Load wings when the widget is first created
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<WingProvider>().loadWings();
+    _loadWings();
+  }
+
+  Future<void> _loadWings() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
     });
+    
+    try {
+      LoggingService.debug('WingManagementScreen: Loading wings');
+      final wings = await _databaseService.getAllWings();
+      
+      if (mounted) {
+        setState(() {
+          _wings = wings;
+          _isLoading = false;
+        });
+        LoggingService.info('WingManagementScreen: Loaded ${wings.length} wings');
+      }
+    } catch (e) {
+      LoggingService.error('WingManagementScreen: Failed to load wings', e);
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Failed to load wings: $e';
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   Future<void> _addNewWing() async {
@@ -29,7 +59,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
     );
 
     if (result == true && mounted) {
-      context.read<WingProvider>().loadWings();
+      _loadWings();
     }
   }
 
@@ -41,7 +71,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
     );
 
     if (result == true && mounted) {
-      context.read<WingProvider>().loadWings();
+      _loadWings();
     }
   }
 
@@ -66,13 +96,32 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
     );
 
     if (confirmed == true && mounted) {
-      final success = await context.read<WingProvider>().deleteWing(wing.id!);
+      bool success = false;
+      String? errorMessage;
+      
+      try {
+        // Check if wing can be deleted
+        final canDelete = await _databaseService.canDeleteWing(wing.id!);
+        if (!canDelete) {
+          errorMessage = 'Cannot delete wing - it is used in flight records';
+        } else {
+          LoggingService.debug('WingManagementScreen: Deleting wing ${wing.id}');
+          await _databaseService.deleteWing(wing.id!);
+          success = true;
+          LoggingService.info('WingManagementScreen: Deleted wing ${wing.id}');
+          _loadWings(); // Reload the list
+        }
+      } catch (e) {
+        LoggingService.error('WingManagementScreen: Failed to delete wing', e);
+        errorMessage = 'Failed to delete wing: $e';
+      }
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(success 
                 ? 'Wing "${wing.name}" deleted successfully'
-                : 'Error deleting wing'),
+                : errorMessage ?? 'Error deleting wing'),
             backgroundColor: success ? null : Colors.red,
           ),
         );
@@ -95,7 +144,17 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
       createdAt: wing.createdAt,
     );
     
-    final success = await context.read<WingProvider>().updateWing(deactivatedWing);
+    bool success = false;
+    try {
+      LoggingService.debug('WingManagementScreen: Deactivating wing ${wing.id}');
+      await _databaseService.updateWing(deactivatedWing);
+      success = true;
+      LoggingService.info('WingManagementScreen: Deactivated wing ${wing.id}');
+      _loadWings(); // Reload the list
+    } catch (e) {
+      LoggingService.error('WingManagementScreen: Failed to deactivate wing', e);
+    }
+    
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -122,7 +181,16 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
       createdAt: wing.createdAt,
     );
 
-    final success = await context.read<WingProvider>().updateWing(updatedWing);
+    bool success = false;
+    try {
+      LoggingService.debug('WingManagementScreen: Toggling wing ${wing.id} status');
+      await _databaseService.updateWing(updatedWing);
+      success = true;
+      LoggingService.info('WingManagementScreen: Updated wing ${wing.id} status');
+      _loadWings(); // Reload the list
+    } catch (e) {
+      LoggingService.error('WingManagementScreen: Failed to update wing status', e);
+    }
     
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -150,51 +218,39 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
           ),
         ],
       ),
-      body: Consumer<WingProvider>(
-        builder: (context, wingProvider, child) {
-          if (wingProvider.isLoading) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          
-          if (wingProvider.errorMessage != null) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.error, size: 64, color: Colors.red[400]),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Error loading wings',
-                    style: Theme.of(context).textTheme.headlineSmall,
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _errorMessage != null
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.error, size: 64, color: Colors.red[400]),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Error loading wings',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _errorMessage!,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () {
+                          setState(() => _errorMessage = null);
+                          _loadWings();
+                        },
+                        child: const Text('Retry'),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    wingProvider.errorMessage!,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () {
-                      wingProvider.clearError();
-                      wingProvider.loadWings();
-                    },
-                    child: const Text('Retry'),
-                  ),
-                ],
-              ),
-            );
-          }
-          
-          final wings = wingProvider.wings;
-          
-          if (wings.isEmpty) {
-            return _buildEmptyState();
-          }
-          
-          return _buildWingList(wings);
-        },
-      ),
+                )
+              : _wings.isEmpty
+                  ? _buildEmptyState()
+                  : _buildWingList(_wings),
       floatingActionButton: FloatingActionButton(
         onPressed: _addNewWing,
         tooltip: 'Add Wing',
