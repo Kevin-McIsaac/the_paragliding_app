@@ -6,7 +6,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../services/logging_service.dart';
-import '../../services/preferences_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../config/cesium_config.dart';
 
 class Cesium3DMapInAppWebView extends StatefulWidget {
@@ -57,11 +57,16 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   String? _cesiumHtml;
   bool _htmlLoadError = false;
   
-  // Preferences service
-  final PreferencesService _preferencesService = PreferencesService();
+  // Preference keys
+  static const String _sceneModeKey = 'cesium_scene_mode';
+  static const String _terrainEnabledKey = 'cesium_terrain_enabled';
+  static const String _baseMapKey = 'cesium_base_map';
+  static const String _navigationHelpDialogKey = 'cesium_navigation_help_dialog';
+  static const String _flyThroughModeKey = 'cesium_flythrough_mode';
+  static const String _trailDurationKey = 'cesium_trail_duration';
   
-  // Saved preferences
-  String _savedSceneMode = PreferencesService.sceneMode3D;
+  // Saved preferences with defaults
+  String _savedSceneMode = '3D';
   String _savedBaseMap = 'Bing Maps Aerial';
   bool _savedTerrainEnabled = true;
   bool _savedNavigationHelpDialogOpen = false;
@@ -107,12 +112,14 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   
   Future<void> _loadPreferences() async {
     try {
-      final sceneMode = await _preferencesService.getSceneMode();
-      final baseMap = await _preferencesService.getBaseMap();
-      final terrainEnabled = await _preferencesService.getTerrainEnabled();
-      final navigationHelpDialogOpen = await _preferencesService.getNavigationHelpDialogOpen();
-      final flyThroughMode = await _preferencesService.getFlyThroughMode();
-      final trailDuration = await _preferencesService.getTrailDuration();
+      final prefs = await SharedPreferences.getInstance();
+      
+      final sceneMode = prefs.getString(_sceneModeKey) ?? '3D';
+      final baseMap = prefs.getString(_baseMapKey) ?? 'Bing Maps Aerial';
+      final terrainEnabled = prefs.getBool(_terrainEnabledKey) ?? true;
+      final navigationHelpDialogOpen = prefs.getBool(_navigationHelpDialogKey) ?? false;
+      final flyThroughMode = prefs.getBool(_flyThroughModeKey) ?? false;
+      final trailDuration = prefs.getInt(_trailDurationKey) ?? 5;
       
       if (mounted && !_isDisposed) {
         setState(() {
@@ -284,7 +291,8 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                     LoggingService.info('Cesium3D: Scene mode changed to $sceneMode');
                     
                     // Save the preference to Flutter side
-                    await _preferencesService.setSceneMode(sceneMode);
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setString(_sceneModeKey, sceneMode);
                   }
                 },
               );
@@ -298,7 +306,8 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                     LoggingService.info('Cesium3D: Imagery provider changed to $imageryName');
                     
                     // Save the preference
-                    await _preferencesService.setBaseMap(imageryName);
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setString(_baseMapKey, imageryName);
                     _savedBaseMap = imageryName;
                   }
                 },
@@ -313,7 +322,8 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                     LoggingService.info('Cesium3D: Terrain changed to ${terrainEnabled ? "enabled" : "disabled"}');
                     
                     // Save the preference
-                    await _preferencesService.setTerrainEnabled(terrainEnabled);
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setBool(_terrainEnabledKey, terrainEnabled);
                     _savedTerrainEnabled = terrainEnabled;
                   }
                 },
@@ -328,7 +338,8 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                     LoggingService.info('Cesium3D: Navigation help dialog ${isOpen ? "opened" : "closed"}');
                     
                     // Save the preference
-                    await _preferencesService.setNavigationHelpDialogOpen(isOpen);
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setBool(_navigationHelpDialogKey, isOpen);
                     _savedNavigationHelpDialogOpen = isOpen;
                   }
                 },
@@ -343,7 +354,8 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                     LoggingService.info('Cesium3D: Fly-through mode ${enabled ? "enabled" : "disabled"}');
                     
                     // Save the preference
-                    await _preferencesService.setFlyThroughMode(enabled);
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setBool(_flyThroughModeKey, enabled);
                     _savedFlyThroughMode = enabled;
                   }
                 },
@@ -358,7 +370,8 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                     LoggingService.info('Cesium3D: Trail duration changed to $seconds seconds');
                     
                     // Save the preference
-                    await _preferencesService.setTrailDuration(seconds);
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setInt(_trailDurationKey, seconds);
                     _savedTrailDuration = seconds;
                   }
                 },
