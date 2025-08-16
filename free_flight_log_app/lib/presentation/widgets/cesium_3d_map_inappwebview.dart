@@ -429,7 +429,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
           onReceivedError: (controller, request, error) {
             // Ignore development server connection errors
             final errorDesc = error.description ?? '';
-            final urlString = request.url?.toString() ?? '';
+            final urlString = request.url.toString() ?? '';
             
             if (errorDesc.contains('ERR_CONNECTION_REFUSED')) {
               if (kDebugMode && (urlString.contains('localhost') || urlString.contains('127.0.0.1'))) {

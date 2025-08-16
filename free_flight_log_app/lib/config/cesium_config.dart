@@ -7,6 +7,7 @@
 /// - Flutter secure storage
 /// - Remote configuration service
 /// - Build-time injection
+library;
 
 class CesiumConfig {
   // WARNING: This token should not be hardcoded in production

@@ -346,7 +346,7 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
                                 labelText: 'Launch Site',
                                 prefixIcon: Icon(Icons.flight_takeoff),
                               ),
-                              value: _selectedLaunchSite,
+                              initialValue: _selectedLaunchSite,
                               items: [
                                 const DropdownMenuItem<Site>(
                                   value: null,
@@ -369,7 +369,7 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
                                 labelText: 'Landing Site',
                                 prefixIcon: Icon(Icons.flight_land),
                               ),
-                              value: _selectedLandingSite,
+                              initialValue: _selectedLandingSite,
                               items: [
                                 const DropdownMenuItem<Site>(
                                   value: null,
@@ -410,7 +410,7 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
                                 labelText: 'Wing',
                                 prefixIcon: Icon(Icons.paragliding),
                               ),
-                              value: _selectedWing,
+                              initialValue: _selectedWing,
                               items: [
                                 const DropdownMenuItem<Wing>(
                                   value: null,
