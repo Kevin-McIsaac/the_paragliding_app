@@ -44,9 +44,9 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       
       if (mounted) {
         setState(() {
-          _yearlyStats = results[0] as List<Map<String, dynamic>>;
-          _wingStats = results[1] as List<Map<String, dynamic>>;
-          _siteStats = results[2] as List<Map<String, dynamic>>;
+          _yearlyStats = results[0];
+          _wingStats = results[1];
+          _siteStats = results[2];
           _isLoading = false;
         });
         

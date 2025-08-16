@@ -37,7 +37,7 @@ B0145003386940S15120960EA019780209600807000
           expect(
             result.trackPoints[i].timestamp.isAfter(result.trackPoints[i - 1].timestamp),
             isTrue,
-            reason: 'Timestamp ${i} should be after timestamp ${i - 1}',
+            reason: 'Timestamp $i should be after timestamp ${i - 1}',
           );
         }
         

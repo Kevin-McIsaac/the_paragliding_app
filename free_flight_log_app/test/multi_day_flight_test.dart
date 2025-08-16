@@ -476,7 +476,7 @@ B0200004700400N00800400EA019780209600807000
           final secStr = '00';
           final latMin = (i % 60).toString().padLeft(3, '0');
           // B record format: BHHMMSS DDMMmmmN DDDMMmmmE V PPPPP GGGGG (35 chars after B)
-          buffer.writeln('B${hourStr}${minuteStr}${secStr}4700${latMin}N00800${latMin}EA0197802096');
+          buffer.writeln('B$hourStr$minuteStr${secStr}4700${latMin}N00800${latMin}EA0197802096');
           
           minute++;
           if (minute >= 60) {

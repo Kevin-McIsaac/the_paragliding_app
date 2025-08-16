@@ -275,7 +275,7 @@ class IgcImportService {
       originalFilename: originalFilename,
       source: 'igc',
       timezone: igcData.timezone,
-      notes: 'Imported from IGC file: ${originalFilename}${igcData.pilot.isNotEmpty ? '\nPilot: ${igcData.pilot}' : ''}${igcData.gliderType.isNotEmpty ? '\nGlider: ${igcData.gliderType}' : ''}',
+      notes: 'Imported from IGC file: $originalFilename${igcData.pilot.isNotEmpty ? '\nPilot: ${igcData.pilot}' : ''}${igcData.gliderType.isNotEmpty ? '\nGlider: ${igcData.gliderType}' : ''}',
     );
   }
 
