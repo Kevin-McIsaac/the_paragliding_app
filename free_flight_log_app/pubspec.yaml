@@ -37,19 +37,19 @@ dependencies:
   
   # Core dependencies for Free Flight Log
   async: ^2.11.0            # Async utilities including CancelableOperation
-  sqflite: ^2.3.0           # Local SQLite database
-  sqflite_common_ffi: ^2.3.0 # SQLite for desktop platforms
-  shared_preferences: ^2.2.0 # Settings storage
+  sqflite: ^2.4.2           # Local SQLite database - platform architecture updates
+  sqflite_common_ffi: ^2.3.6 # SQLite for desktop platforms - latest stable version
+  shared_preferences: ^2.5.3 # Settings storage - new async APIs
   flutter_map: ^8.2.1         # Cross-platform map visualization with OpenStreetMap
   latlong2: ^0.9.1            # Coordinate handling for flutter_map
-  file_picker: ^10.2.1      # IGC file import
+  file_picker: ^10.3.1      # IGC file import - minor improvements
   fl_chart: ^1.0.0         # Charts for altitude/climb rate
   intl: ^0.20.2             # Date/time formatting
   path: ^1.8.0              # Database path utilities
   path_provider: ^2.1.5     # App directory paths - bug fixes & stability
   timezone: ^0.10.1         # Timezone database and lookup
   xml: ^6.5.0               # XML/KML parsing for paragliding sites
-  connectivity_plus: ^6.0.3 # Network connectivity detection
+  connectivity_plus: ^6.1.5 # Network connectivity detection - WASM support & fixes
   url_launcher: ^6.3.2      # Open external URLs for OSM links
   logger: ^2.6.1            # Structured logging framework
   crypto: ^3.0.5            # SHA256 hashing for cache keys
