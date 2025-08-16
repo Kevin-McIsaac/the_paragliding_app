@@ -46,7 +46,7 @@ dependencies:
   fl_chart: ^1.0.0         # Charts for altitude/climb rate
   intl: ^0.20.2             # Date/time formatting
   path: ^1.8.0              # Database path utilities
-  path_provider: ^2.1.0     # App directory paths
+  path_provider: ^2.1.5     # App directory paths - bug fixes & stability
   timezone: ^0.10.1         # Timezone database and lookup
   xml: ^6.5.0               # XML/KML parsing for paragliding sites
   connectivity_plus: ^6.0.3 # Network connectivity detection
@@ -58,7 +58,7 @@ dependencies:
   # webview_flutter_wkwebview: ^3.10.0  # iOS-specific WebView features
   flutter_inappwebview: ^6.1.5  # Better WebView with CORS bypass capabilities and Android 13+ dark mode support
 
-  http: any
+  http: ^1.2.2              # HTTP client - pinned from "any" to stable
 dev_dependencies:
   flutter_test:
     sdk: flutter
