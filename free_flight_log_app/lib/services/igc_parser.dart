@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import '../data/models/igc_file.dart';
 import 'timezone_service.dart';
 import 'logging_service.dart';
@@ -15,21 +14,6 @@ class IgcParser {
     return _parseLines(lines);
   }
 
-  /// Parse IGC file from file path using isolate for better performance
-  Future<IgcFile> parseFileInIsolate(String filePath) async {
-    // Read file contents first (I/O can't be done in isolate)
-    final file = File(filePath);
-    final lines = await file.readAsLines();
-    
-    // Parse in isolate to avoid blocking main thread
-    return await compute(_parseLinesStatic, lines);
-  }
-
-  /// Static method for isolate execution
-  static IgcFile _parseLinesStatic(List<String> lines) {
-    final parser = IgcParser();
-    return parser._parseLines(lines);
-  }
 
   /// Parse IGC content from string
   IgcFile parseString(String content) {

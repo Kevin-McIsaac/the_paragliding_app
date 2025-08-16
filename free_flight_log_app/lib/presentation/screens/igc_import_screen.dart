@@ -259,8 +259,8 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
   Future<DuplicateAction?> _showDuplicateDialog(Flight existingFlight, String filePath, bool isFilenameDuplicate) async {
     // Parse the IGC file to get details for comparison
     try {
-      // Use isolate parsing for better performance
-      final igcData = await _igcParser.parseFileInIsolate(filePath);
+      // Parse IGC file to get details for comparison
+      final igcData = await _igcParser.parseFile(filePath);
       
       // Check if widget is still mounted before using context
       if (!mounted) return DuplicateAction.skip;

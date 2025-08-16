@@ -39,7 +39,7 @@ class IgcImportService {
   Future<Flight?> checkForDuplicate(String filePath) async {
     try {
       // Parse IGC file to get flight details
-      final igcData = await parser.parseFileInIsolate(filePath);
+      final igcData = await parser.parseFile(filePath);
       
       if (igcData.trackPoints.isEmpty) {
         return null;
@@ -66,7 +66,7 @@ class IgcImportService {
     
     try {
       // Parse IGC file
-      final igcData = await parser.parseFileInIsolate(filePath);
+      final igcData = await parser.parseFile(filePath);
       
       if (igcData.trackPoints.isEmpty) {
         return ImportResult.failed(
@@ -282,7 +282,7 @@ class IgcImportService {
   /// Import an IGC file and create a flight record (legacy method)
   Future<Flight> importIgcFile(String filePath) async {
     // Parse IGC file
-    final igcData = await parser.parseFileInIsolate(filePath);
+    final igcData = await parser.parseFile(filePath);
     
     if (igcData.trackPoints.isEmpty) {
       throw Exception('No track points found in IGC file');
@@ -381,7 +381,7 @@ class IgcImportService {
   Future<List<IgcPoint>> getTrackPoints(String trackLogPath) async {
     try {
       // Use isolate parsing for better performance
-      final igcData = await parser.parseFileInIsolate(trackLogPath);
+      final igcData = await parser.parseFile(trackLogPath);
       return igcData.trackPoints;
     } catch (e) {
       LoggingService.error('IgcImportService: Error reading track points', e);
@@ -393,7 +393,7 @@ class IgcImportService {
   Future<({List<IgcPoint> points, String? timezone})> getTrackPointsWithTimezone(String trackLogPath) async {
     try {
       // Use isolate parsing for better performance
-      final igcData = await parser.parseFileInIsolate(trackLogPath);
+      final igcData = await parser.parseFile(trackLogPath);
       return (points: igcData.trackPoints, timezone: igcData.timezone);
     } catch (e) {
       LoggingService.error('IgcImportService: Error reading track points with timezone', e);
@@ -404,7 +404,7 @@ class IgcImportService {
   /// Get full IGC file data from saved file
   Future<IgcFile> getIgcFile(String trackLogPath) async {
     // Use isolate parsing for better performance
-    return await parser.parseFileInIsolate(trackLogPath);
+    return await parser.parseFile(trackLogPath);
   }
 
   /// Find existing wing or create new one from IGC glider information
