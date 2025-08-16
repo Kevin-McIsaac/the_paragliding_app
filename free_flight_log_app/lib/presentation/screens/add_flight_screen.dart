@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:provider/provider.dart';
 import '../../data/models/flight.dart';
 import '../../utils/date_time_utils.dart';
-import '../../providers/flight_provider.dart';
+import '../../services/database_service.dart';
+import '../../services/logging_service.dart';
 
 class AddFlightScreen extends StatefulWidget {
   const AddFlightScreen({super.key});
@@ -14,6 +14,7 @@ class AddFlightScreen extends StatefulWidget {
 
 class _AddFlightScreenState extends State<AddFlightScreen> {
   final _formKey = GlobalKey<FormState>();
+  final DatabaseService _databaseService = DatabaseService.instance;
   
   // Form controllers
   final _notesController = TextEditingController();
@@ -25,6 +26,10 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _launchTime = TimeOfDay.now();
   TimeOfDay _landingTime = TimeOfDay.now();
+  
+  // State
+  bool _isSaving = false;
+  String? _errorMessage;
 
   @override
   void dispose() {
@@ -85,35 +90,45 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
     return duration;
   }
 
+  String _formatTime(TimeOfDay time) {
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
 
   Future<void> _saveFlight() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
 
-    final flight = Flight(
-      date: _selectedDate,
-      launchTime: _launchTime.format(context),
-      landingTime: _landingTime.format(context),
-      duration: _calculateDuration(),
-      maxAltitude: _maxAltitudeController.text.isNotEmpty 
-          ? double.tryParse(_maxAltitudeController.text)
-          : null,
-      distance: _distanceController.text.isNotEmpty
-          ? double.tryParse(_distanceController.text)
-          : null,
-      straightDistance: _straightDistanceController.text.isNotEmpty
-          ? double.tryParse(_straightDistanceController.text)
-          : null,
-      notes: _notesController.text.isNotEmpty ? _notesController.text : null,
-      source: 'manual',
-      timezone: null, // Manual flights don't have timezone info
-    );
+    setState(() {
+      _isSaving = true;
+      _errorMessage = null;
+    });
 
-    final success = await context.read<FlightProvider>().addFlight(flight);
+    try {
+      final flight = Flight(
+        date: _selectedDate,
+        launchTime: _formatTime(_launchTime),
+        landingTime: _formatTime(_landingTime),
+        duration: _calculateDuration(),
+        maxAltitude: _maxAltitudeController.text.isNotEmpty 
+            ? double.tryParse(_maxAltitudeController.text)
+            : null,
+        distance: _distanceController.text.isNotEmpty
+            ? double.tryParse(_distanceController.text)
+            : null,
+        straightDistance: _straightDistanceController.text.isNotEmpty
+            ? double.tryParse(_straightDistanceController.text)
+            : null,
+        notes: _notesController.text.isNotEmpty ? _notesController.text : null,
+        source: 'manual',
+        timezone: null, // Manual flights don't have timezone info
+      );
 
-    if (mounted) {
-      if (success) {
+      LoggingService.debug('AddFlightScreen: Saving new flight');
+      final flightId = await _databaseService.insertFlight(flight);
+      LoggingService.info('AddFlightScreen: Flight saved with ID: $flightId');
+
+      if (mounted) {
         Navigator.of(context).pop(true);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -121,11 +136,17 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
             backgroundColor: Colors.green,
           ),
         );
-      } else {
-        final errorMessage = context.read<FlightProvider>().errorMessage;
+      }
+    } catch (e) {
+      LoggingService.error('AddFlightScreen: Failed to save flight', e);
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+          _errorMessage = 'Failed to save flight: $e';
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(errorMessage ?? 'Error saving flight'),
+            content: Text(_errorMessage ?? 'Error saving flight'),
             backgroundColor: Colors.red,
           ),
         );
@@ -142,26 +163,22 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
         title: const Text('Add Flight'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
-          Consumer<FlightProvider>(
-            builder: (context, flightProvider, child) {
-              if (flightProvider.isLoading) {
-                return const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
-                );
-              }
-              return TextButton(
-                onPressed: _saveFlight,
-                child: const Text('SAVE'),
-              );
-            },
-          ),
+          if (_isSaving)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(16.0),
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          else
+            TextButton(
+              onPressed: _saveFlight,
+              child: const Text('SAVE'),
+            ),
         ],
       ),
       body: Form(
@@ -189,7 +206,7 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
                     child: ListTile(
                       leading: const Icon(Icons.flight_takeoff),
                       title: const Text('Launch Time'),
-                      subtitle: Text(_launchTime.format(context)),
+                      subtitle: Text(_formatTime(_launchTime)),
                       onTap: _selectLaunchTime,
                     ),
                   ),
@@ -200,7 +217,7 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
                     child: ListTile(
                       leading: const Icon(Icons.flight_land),
                       title: const Text('Landing Time'),
-                      subtitle: Text(_landingTime.format(context)),
+                      subtitle: Text(_formatTime(_landingTime)),
                       onTap: _selectLandingTime,
                     ),
                   ),
@@ -217,10 +234,10 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
                 title: const Text('Flight Duration'),
                 subtitle: Text(DateTimeUtils.formatDuration(duration)),
                 trailing: duration < 5 
-                    ? Icon(Icons.warning, color: Colors.orange)
+                    ? const Icon(Icons.warning, color: Colors.orange)
                     : duration > 480 
-                        ? Icon(Icons.warning, color: Colors.red)
-                        : Icon(Icons.check, color: Colors.green),
+                        ? const Icon(Icons.warning, color: Colors.red)
+                        : const Icon(Icons.check, color: Colors.green),
               ),
             ),
             const SizedBox(height: 24),
@@ -312,23 +329,19 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
             const SizedBox(height: 32),
 
             // Save Button
-            Consumer<FlightProvider>(
-              builder: (context, flightProvider, child) {
-                return ElevatedButton.icon(
-                  onPressed: flightProvider.isLoading ? null : _saveFlight,
-                  icon: flightProvider.isLoading 
-                      ? const SizedBox(
-                          width: 20, 
-                          height: 20, 
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.save),
-                  label: Text(flightProvider.isLoading ? 'Saving...' : 'Save Flight'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                );
-              },
+            ElevatedButton.icon(
+              onPressed: _isSaving ? null : _saveFlight,
+              icon: _isSaving 
+                  ? const SizedBox(
+                      width: 20, 
+                      height: 20, 
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.save),
+              label: Text(_isSaving ? 'Saving...' : 'Save Flight'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
             ),
           ],
         ),

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../../utils/date_time_utils.dart';
-import '../../providers/flight_provider.dart';
+import '../../services/database_service.dart';
+import '../../services/logging_service.dart';
 
 class StatisticsScreen extends StatefulWidget {
   const StatisticsScreen({super.key});
@@ -11,12 +11,62 @@ class StatisticsScreen extends StatefulWidget {
 }
 
 class _StatisticsScreenState extends State<StatisticsScreen> {
+  final DatabaseService _databaseService = DatabaseService.instance;
+  
+  // State variables
+  List<Map<String, dynamic>> _yearlyStats = [];
+  List<Map<String, dynamic>> _wingStats = [];
+  List<Map<String, dynamic>> _siteStats = [];
+  bool _isLoading = false;
+  String? _errorMessage;
   
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<FlightProvider>().loadAllStatistics();
+    _loadAllStatistics();
+  }
+  
+  Future<void> _loadAllStatistics() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    
+    try {
+      LoggingService.debug('StatisticsScreen: Loading all statistics');
+      
+      // Load all statistics in parallel
+      final results = await Future.wait([
+        _databaseService.getYearlyStatistics(),
+        _databaseService.getWingStatistics(),
+        _databaseService.getSiteStatistics(),
+      ]);
+      
+      if (mounted) {
+        setState(() {
+          _yearlyStats = results[0] as List<Map<String, dynamic>>;
+          _wingStats = results[1] as List<Map<String, dynamic>>;
+          _siteStats = results[2] as List<Map<String, dynamic>>;
+          _isLoading = false;
+        });
+        
+        LoggingService.info('StatisticsScreen: Loaded statistics - '
+            '${_yearlyStats.length} years, ${_wingStats.length} wings, ${_siteStats.length} sites');
+      }
+    } catch (e) {
+      LoggingService.error('StatisticsScreen: Failed to load statistics', e);
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Failed to load statistics: $e';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+  
+  void _clearError() {
+    setState(() {
+      _errorMessage = null;
     });
   }
   
@@ -29,86 +79,77 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         title: const Text('Flight Statistics'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: Consumer<FlightProvider>(
-        builder: (context, flightProvider, child) {
-          if (flightProvider.isLoading) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (flightProvider.errorMessage != null) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    Icons.error_outline,
-                    size: 64,
-                    color: Colors.red,
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _errorMessage != null
+              ?
+ Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        size: 64,
+                        color: Colors.red,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Error loading statistics',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _errorMessage!,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Colors.grey,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () {
+                          _clearError();
+                          _loadAllStatistics();
+                        },
+                        child: const Text('Retry'),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Error loading statistics',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    flightProvider.errorMessage!,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () {
-                      flightProvider.clearError();
-                      flightProvider.loadAllStatistics();
-                    },
-                    child: const Text('Retry'),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          if (flightProvider.yearlyStats.isEmpty && 
-              flightProvider.wingStats.isEmpty && 
-              flightProvider.siteStats.isEmpty) {
-            return _buildEmptyState();
-          }
-
-          return SingleChildScrollView(
+                )
+              : _yearlyStats.isEmpty && 
+                  _wingStats.isEmpty && 
+                  _siteStats.isEmpty
+                  ? _buildEmptyState()
+                  : SingleChildScrollView(
             padding: const EdgeInsets.only(top: 16.0, bottom: 16.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Yearly Statistics Section
-                if (flightProvider.yearlyStats.isNotEmpty) ...[
+                if (_yearlyStats.isNotEmpty) ...[
                   _buildSectionHeader('Flights by Year', Icons.calendar_today),
                   const SizedBox(height: 8),
-                  _buildYearlyStatsTable(flightProvider.yearlyStats),
+                  _buildYearlyStatsTable(_yearlyStats),
                   const SizedBox(height: 24),
                 ],
                 
                 // Wing Statistics Section
-                if (flightProvider.wingStats.isNotEmpty) ...[
+                if (_wingStats.isNotEmpty) ...[
                   _buildSectionHeader('Flights by Wing', Icons.paragliding),
                   const SizedBox(height: 8),
-                  _buildWingStatsTable(flightProvider.wingStats),
+                  _buildWingStatsTable(_wingStats),
                   const SizedBox(height: 24),
                 ],
                 
                 // Site Statistics Section
-                if (flightProvider.siteStats.isNotEmpty) ...[
+                if (_siteStats.isNotEmpty) ...[
                   _buildSectionHeader('Flights by Site', Icons.location_on),
                   const SizedBox(height: 8),
-                  _buildSiteStatsTable(flightProvider.siteStats),
+                  _buildSiteStatsTable(_siteStats),
                 ],
               ],
             ),
-          );
-        },
-      ),
+          ),
     );
   }
   
@@ -162,7 +203,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     double totalHours = 0;
     int totalFlights = 0;
     for (final stat in yearlyStats) {
-      totalHours += stat['total_hours'] as double;
+      totalHours += (stat['total_hours'] as num?)?.toDouble() ?? 0.0;
       totalFlights += stat['flight_count'] as int;
     }
     
@@ -250,7 +291,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                   Expanded(
                     flex: 3,
                     child: Text(
-                      DateTimeUtils.formatHours(stat['total_hours'] as double),
+                      DateTimeUtils.formatHours((stat['total_hours'] as num?)?.toDouble() ?? 0.0),
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: Theme.of(context).colorScheme.primary,
                         fontWeight: FontWeight.w500,
@@ -320,7 +361,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     double totalHours = 0;
     int totalFlights = 0;
     for (final stat in wingStats) {
-      totalHours += stat['total_hours'] as double;
+      totalHours += (stat['total_hours'] as num?)?.toDouble() ?? 0.0;
       totalFlights += stat['flight_count'] as int;
     }
     
@@ -397,7 +438,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                           children: [
                             Expanded(
                               child: Text(
-                                stat['name'] as String,
+                                (stat['name'] as String?) ?? 'Unknown Wing',
                                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -439,7 +480,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                   Expanded(
                     flex: 3,
                     child: Text(
-                      DateTimeUtils.formatHours(stat['total_hours'] as double),
+                      DateTimeUtils.formatHours((stat['total_hours'] as num?)?.toDouble() ?? 0.0),
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: Theme.of(context).colorScheme.primary,
                         fontWeight: FontWeight.w500,
@@ -512,14 +553,14 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     int totalFlights = 0;
     
     for (final stat in siteStats) {
-      final country = stat['country'] as String;
+      final country = (stat['country'] as String?) ?? 'Unknown Country';
       if (!groupedSites.containsKey(country)) {
         groupedSites[country] = [];
       }
       groupedSites[country]!.add(stat);
       
       // Calculate totals
-      totalHours += stat['total_hours'] as double;
+      totalHours += (stat['total_hours'] as num?)?.toDouble() ?? 0.0;
       totalFlights += stat['flight_count'] as int;
     }
     
@@ -641,7 +682,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                         child: Padding(
                           padding: EdgeInsets.only(left: groupedSites.keys.length > 1 ? 24.0 : 0.0),
                           child: Text(
-                            stat['site_name'] as String,
+                            (stat['name'] as String?) ?? 'Unknown Site',
                             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                               fontWeight: FontWeight.w500,
                             ),
@@ -659,7 +700,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                       Expanded(
                         flex: 3,
                         child: Text(
-                          DateTimeUtils.formatHours(stat['total_hours'] as double),
+                          DateTimeUtils.formatHours((stat['total_hours'] as num?)?.toDouble() ?? 0.0),
                           style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                             color: Theme.of(context).colorScheme.primary,
                             fontWeight: FontWeight.w500,

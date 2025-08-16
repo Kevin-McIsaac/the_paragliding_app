@@ -3,9 +3,7 @@ import 'package:intl/intl.dart';
 import '../../data/models/flight.dart';
 import '../../data/models/site.dart';
 import '../../data/models/wing.dart';
-import '../../data/repositories/flight_repository.dart';
-import '../../data/repositories/site_repository.dart';
-import '../../data/repositories/wing_repository.dart';
+import '../../services/database_service.dart';
 import 'edit_wing_screen.dart';
 
 class EditFlightScreen extends StatefulWidget {
@@ -19,9 +17,7 @@ class EditFlightScreen extends StatefulWidget {
 
 class _EditFlightScreenState extends State<EditFlightScreen> {
   final _formKey = GlobalKey<FormState>();
-  final FlightRepository _flightRepository = FlightRepository.instance;
-  final SiteRepository _siteRepository = SiteRepository.instance;
-  final WingRepository _wingRepository = WingRepository.instance;
+  final DatabaseService _databaseService = DatabaseService.instance;
 
   late TextEditingController _notesController;
 
@@ -63,8 +59,8 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
 
   Future<void> _loadSitesAndWings() async {
     try {
-      final sites = await _siteRepository.getAllSites();
-      final wings = await _wingRepository.getAllWings();
+      final sites = await _databaseService.getAllSites();
+      final wings = await _databaseService.getAllWings();
       
       setState(() {
         _sites = sites;
@@ -228,7 +224,7 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
         timezone: widget.flight.timezone,
       );
 
-      await _flightRepository.updateFlight(updatedFlight);
+      await _databaseService.updateFlight(updatedFlight);
 
       if (mounted) {
         Navigator.of(context).pop(updatedFlight);
