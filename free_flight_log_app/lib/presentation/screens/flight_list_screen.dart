@@ -25,7 +25,6 @@ class _FlightListScreenState extends State<FlightListScreen> {
   bool _isSelectionMode = false;
   Set<int> _selectedFlightIds = {};
   bool _isDeleting = false;
-  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -49,23 +48,11 @@ class _FlightListScreenState extends State<FlightListScreen> {
         print('\nFINAL STARTUP REPORT:\n$finalReport');
       }
     });
-    
-    // Setup infinite scroll
-    _scrollController.addListener(_onScroll);
   }
   
   @override
   void dispose() {
-    _scrollController.removeListener(_onScroll);
-    _scrollController.dispose();
     super.dispose();
-  }
-  
-  void _onScroll() {
-    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
-      // Load more when within 200 pixels of the bottom
-      context.read<FlightProvider>().loadMoreFlights();
-    }
   }
 
   // Refresh flights from provider
@@ -609,7 +596,6 @@ class _FlightListScreenState extends State<FlightListScreen> {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: SingleChildScrollView(
-        controller: _scrollController,
         child: Column(
           children: [
             DataTable(
@@ -778,27 +764,6 @@ class _FlightListScreenState extends State<FlightListScreen> {
             );
           }).toList(),
         ),
-        // Show loading indicator at bottom when loading more
-        if (flightProvider.isLoadingMore)
-          const Padding(
-            padding: EdgeInsets.all(16.0),
-            child: Center(
-              child: CircularProgressIndicator(),
-            ),
-          ),
-        // Show message when all flights are loaded
-        if (!flightProvider.hasMore && flights.length > 0)
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Center(
-              child: Text(
-                'All ${flightProvider.totalFlights} flights loaded',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.grey[600],
-                ),
-              ),
-            ),
-          ),
         ],
         ),
       ),
