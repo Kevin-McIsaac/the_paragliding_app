@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../../utils/preferences_helper.dart';
 import 'dart:io';
 import '../../data/models/flight.dart';
 import '../../data/models/import_result.dart';
@@ -30,7 +30,7 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
   bool _skipAllDuplicates = false;
   bool _replaceAllDuplicates = false;
   
-  static const String _lastFolderKey = 'last_igc_import_folder';
+  // Preference key is now in PreferencesHelper
   
   @override
   void initState() {
@@ -48,22 +48,19 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
   }
 
   Future<String?> _getLastFolder() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_lastFolderKey);
+    return await PreferencesHelper.getIgcLastFolder();
   }
 
   Future<void> _saveLastFolder(String filePath) async {
-    final prefs = await SharedPreferences.getInstance();
     final directory = File(filePath).parent.path;
-    await prefs.setString(_lastFolderKey, directory);
+    await PreferencesHelper.setIgcLastFolder(directory);
     setState(() {
       _lastFolder = directory;
     });
   }
   
   Future<void> _clearLastFolder() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_lastFolderKey);
+    await PreferencesHelper.removeIgcLastFolder();
     setState(() {
       _lastFolder = null;
     });

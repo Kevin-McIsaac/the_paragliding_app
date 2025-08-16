@@ -4,13 +4,11 @@ import '../../data/models/flight.dart';
 import '../../data/models/site.dart';
 import '../../data/models/wing.dart';
 import '../../services/database_service.dart';
-import '../widgets/flight_track_widget.dart';
 import '../widgets/flight_track_3d_widget.dart';
 import '../widgets/flight_statistics_widget.dart';
 import '../widgets/edit_site_dialog.dart';
 import '../widgets/site_selection_dialog.dart';
 import '../widgets/wing_selection_dialog.dart';
-import 'flight_track_screen.dart';
 
 class FlightDetailScreen extends StatefulWidget {
   final Flight flight;
