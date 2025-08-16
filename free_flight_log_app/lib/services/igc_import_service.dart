@@ -6,11 +6,8 @@ import '../data/models/site.dart';
 import '../data/models/wing.dart';
 import '../data/models/igc_file.dart';
 import '../data/models/import_result.dart';
-import '../data/repositories/flight_repository.dart';
-import '../data/repositories/site_repository.dart';
-import '../data/services/flight_query_service.dart';
+import 'database_service.dart';
 import 'logging_service.dart';
-import '../data/repositories/wing_repository.dart';
 import 'igc_parser.dart';
 import 'site_matching_service.dart';
 
@@ -25,16 +22,13 @@ class IgcImportService {
   
   IgcImportService._internal();
   
-  final FlightRepository _flightRepository = FlightRepository.instance;
-  final SiteRepository _siteRepository = SiteRepository.instance;
-  final WingRepository _wingRepository = WingRepository.instance;
-  final FlightQueryService _queryService = FlightQueryService.instance;
+  final DatabaseService _databaseService = DatabaseService.instance;
   final IgcParser parser = IgcParser();
 
   /// Phase 1: Quick check for duplicate by filename (no parsing needed)
   Future<Flight?> checkForDuplicateByFilename(String filename) async {
     try {
-      return await _queryService.findFlightByFilename(filename);
+      return await _databaseService.findFlightByFilename(filename);
     } catch (e) {
       LoggingService.error('IgcImportService: Error checking filename duplicate', e);
       return null;
@@ -55,7 +49,7 @@ class IgcImportService {
       final launchTime = _formatTime(igcData.launchTime);
       
       // Check for existing flight with same date and launch time
-      return await _queryService.findFlightByDateTime(igcData.date, launchTime);
+      return await _databaseService.findFlightByDateTime(igcData.date, launchTime);
     } catch (e) {
       // If we can't parse the file, we can't check for duplicates
       return null;
@@ -85,7 +79,7 @@ class IgcImportService {
       final launchTime = _formatTime(igcData.launchTime);
       
       // Check for existing flight
-      final existingFlight = await _queryService.findFlightByDateTime(
+      final existingFlight = await _databaseService.findFlightByDateTime(
         igcData.date, 
         launchTime,
       );
@@ -132,7 +126,7 @@ class IgcImportService {
           createdAt: existingFlight.createdAt, // Keep original creation time
         );
         
-        await _flightRepository.updateFlight(updatedFlight);
+        await _databaseService.updateFlight(updatedFlight);
         
         // Refresh site matching service after successful replacement
         // This updates the personalized fallback with potentially new sites
@@ -148,7 +142,7 @@ class IgcImportService {
         );
       } else {
         // Import as new flight
-        final savedFlightId = await _flightRepository.insertFlight(flight);
+        final savedFlightId = await _databaseService.insertFlight(flight);
         
         // Refresh site matching service after successful import
         // This updates the personalized fallback with new sites
@@ -214,7 +208,7 @@ class IgcImportService {
         LoggingService.info('IgcImportService: No API site found for coordinates ${launchPoint.latitude.toStringAsFixed(4)}, ${launchPoint.longitude.toStringAsFixed(4)}');
       }
       
-      launchSite = await _siteRepository.findOrCreateSite(
+      launchSite = await _databaseService.findOrCreateSite(
         latitude: launchPoint.latitude,
         longitude: launchPoint.longitude,
         altitude: launchPoint.gpsAltitude.toDouble(),
@@ -298,7 +292,7 @@ class IgcImportService {
     final flight = await _createFlightFromIgcData(igcData, filePath);
 
     // Save to database
-    final savedFlightId = await _flightRepository.insertFlight(flight);
+    final savedFlightId = await _databaseService.insertFlight(flight);
     
     // Return the flight with the new ID
     return Flight(
@@ -425,7 +419,7 @@ class IgcImportService {
     }
 
     // Get all existing wings
-    final existingWings = await _wingRepository.getAllWings();
+    final existingWings = await _databaseService.getAllWings();
     
     // Try to find existing wing by matching glider type or ID
     for (final wing in existingWings) {
@@ -468,7 +462,7 @@ class IgcImportService {
 
     LoggingService.debug('IgcImportService: Creating wing with name="$wingName", manufacturer="$manufacturer", model="$model"');
 
-    final wingId = await _wingRepository.insertWing(newWing);
+    final wingId = await _databaseService.insertWing(newWing);
     
     return Wing(
       id: wingId,
