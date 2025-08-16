@@ -8,6 +8,7 @@ class DatabaseHelper {
   static const _databaseName = "FlightLog.db";
   static const _databaseVersion = 8;
 
+  // Singleton pattern
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 

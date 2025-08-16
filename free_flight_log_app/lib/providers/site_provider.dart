@@ -3,16 +3,20 @@ import '../data/models/site.dart';
 import '../data/repositories/site_repository.dart';
 import '../data/services/flight_statistics_service.dart';
 import '../services/logging_service.dart';
-import '../core/dependency_injection.dart';
 
 /// State management for site data
 class SiteProvider extends ChangeNotifier {
-  final SiteRepository _repository;
-  late final FlightStatisticsService _statisticsService;
-  
-  SiteProvider(this._repository) {
-    _statisticsService = serviceLocator<FlightStatisticsService>();
+  // Singleton pattern
+  static SiteProvider? _instance;
+  static SiteProvider get instance {
+    _instance ??= SiteProvider._internal();
+    return _instance!;
   }
+  
+  SiteProvider._internal();
+  
+  final SiteRepository _repository = SiteRepository.instance;
+  final FlightStatisticsService _statisticsService = FlightStatisticsService.instance;
 
   List<Site> _sites = [];
   bool _isLoading = false;

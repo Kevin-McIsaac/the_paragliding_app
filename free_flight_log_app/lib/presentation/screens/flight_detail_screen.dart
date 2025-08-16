@@ -13,7 +13,6 @@ import '../widgets/edit_site_dialog.dart';
 import '../widgets/site_selection_dialog.dart';
 import '../widgets/wing_selection_dialog.dart';
 import 'flight_track_screen.dart';
-import '../../core/dependency_injection.dart';
 
 class FlightDetailScreen extends StatefulWidget {
   final Flight flight;
@@ -25,9 +24,9 @@ class FlightDetailScreen extends StatefulWidget {
 }
 
 class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBindingObserver {
-  final FlightRepository _flightRepository = serviceLocator<FlightRepository>();
-  final SiteRepository _siteRepository = serviceLocator<SiteRepository>();
-  final WingRepository _wingRepository = serviceLocator<WingRepository>();
+  final FlightRepository _flightRepository = FlightRepository.instance;
+  final SiteRepository _siteRepository = SiteRepository.instance;
+  final WingRepository _wingRepository = WingRepository.instance;
   
   late Flight _flight;
   Site? _launchSite;

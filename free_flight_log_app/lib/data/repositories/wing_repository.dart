@@ -3,10 +3,16 @@ import '../datasources/database_helper.dart';
 import '../models/wing.dart';
 
 class WingRepository {
-  final DatabaseHelper _databaseHelper;
+  // Singleton pattern
+  static WingRepository? _instance;
+  static WingRepository get instance {
+    _instance ??= WingRepository._internal();
+    return _instance!;
+  }
   
-  /// Constructor with dependency injection
-  WingRepository(this._databaseHelper);
+  WingRepository._internal();
+  
+  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
 
   Future<int> insertWing(Wing wing) async {
     Database db = await _databaseHelper.database;

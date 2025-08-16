@@ -7,10 +7,16 @@ import '../../services/logging_service.dart';
 /// Service for complex flight queries and filtering operations
 /// Handles all query-related operations that don't involve basic CRUD
 class FlightQueryService {
-  final DatabaseHelper _databaseHelper;
-
-  /// Constructor with dependency injection
-  FlightQueryService(this._databaseHelper);
+  // Singleton pattern
+  static FlightQueryService? _instance;
+  static FlightQueryService get instance {
+    _instance ??= FlightQueryService._internal();
+    return _instance!;
+  }
+  
+  FlightQueryService._internal();
+  
+  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
 
   /// Get flights within a date range
   Future<List<Flight>> getFlightsByDateRange(DateTime start, DateTime end) async {

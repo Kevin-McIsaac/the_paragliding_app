@@ -6,10 +6,16 @@ import '../../services/logging_service.dart';
 /// Repository for basic Flight CRUD operations
 /// Handles only data persistence operations, not business logic or complex queries
 class FlightRepository {
-  final DatabaseHelper _databaseHelper;
+  // Singleton pattern
+  static FlightRepository? _instance;
+  static FlightRepository get instance {
+    _instance ??= FlightRepository._internal();
+    return _instance!;
+  }
   
-  /// Constructor with dependency injection
-  FlightRepository(this._databaseHelper);
+  FlightRepository._internal();
+  
+  final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
 
   /// Insert a new flight into the database
   Future<int> insertFlight(Flight flight) async {

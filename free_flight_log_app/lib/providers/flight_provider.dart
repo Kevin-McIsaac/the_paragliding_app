@@ -5,21 +5,23 @@ import '../data/repositories/flight_repository.dart';
 import '../data/services/flight_query_service.dart';
 import '../data/services/flight_statistics_service.dart';
 import '../services/igc_import_service.dart';
-import '../core/dependency_injection.dart';
 import '../services/logging_service.dart';
 
 /// State management for flight data
 class FlightProvider extends ChangeNotifier {
-  final FlightRepository _repository;
-  late final FlightQueryService _queryService;
-  late final FlightStatisticsService _statisticsService;
-  late final IgcImportService _igcImportService;
-  
-  FlightProvider(this._repository) {
-    _queryService = serviceLocator<FlightQueryService>();
-    _statisticsService = serviceLocator<FlightStatisticsService>();
-    _igcImportService = serviceLocator<IgcImportService>();
+  // Singleton pattern
+  static FlightProvider? _instance;
+  static FlightProvider get instance {
+    _instance ??= FlightProvider._internal();
+    return _instance!;
   }
+  
+  FlightProvider._internal();
+  
+  final FlightRepository _repository = FlightRepository.instance;
+  final FlightQueryService _queryService = FlightQueryService.instance;
+  final FlightStatisticsService _statisticsService = FlightStatisticsService.instance;
+  final IgcImportService _igcImportService = IgcImportService.instance;
 
   List<Flight> _flights = [];
   bool _isLoading = false;

@@ -3,16 +3,20 @@ import '../data/models/wing.dart';
 import '../data/repositories/wing_repository.dart';
 import '../data/services/flight_statistics_service.dart';
 import '../services/logging_service.dart';
-import '../core/dependency_injection.dart';
 
 /// State management for wing data
 class WingProvider extends ChangeNotifier {
-  final WingRepository _repository;
-  late final FlightStatisticsService _statisticsService;
-  
-  WingProvider(this._repository) {
-    _statisticsService = serviceLocator<FlightStatisticsService>();
+  // Singleton pattern
+  static WingProvider? _instance;
+  static WingProvider get instance {
+    _instance ??= WingProvider._internal();
+    return _instance!;
   }
+  
+  WingProvider._internal();
+  
+  final WingRepository _repository = WingRepository.instance;
+  final FlightStatisticsService _statisticsService = FlightStatisticsService.instance;
 
   List<Wing> _wings = [];
   bool _isLoading = false;

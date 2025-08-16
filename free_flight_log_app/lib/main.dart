@@ -3,13 +3,12 @@ import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'dart:io' show Platform;
 import 'presentation/screens/splash_screen.dart';
-import 'services/timezone_service.dart';
-import 'core/dependency_injection.dart';
 import 'providers/flight_provider.dart';
 import 'providers/site_provider.dart';
 import 'providers/wing_provider.dart';
 import 'utils/startup_performance_tracker.dart';
 import 'services/logging_service.dart';
+import 'data/datasources/database_helper.dart';
 
 void main() {
   // Start performance tracking
@@ -70,18 +69,19 @@ class _AppInitializerState extends State<AppInitializer> {
     final perfTracker = StartupPerformanceTracker();
     
     try {
-      // Configure dependencies
-      final diWatch = perfTracker.startMeasurement('Total Dependency Injection');
-      await configureDependencies(perfTracker: perfTracker);
-      perfTracker.completeMeasurement('Total Dependency Injection', diWatch);
+      // Initialize database (very fast, just creates singleton)
+      final dbWatch = perfTracker.startMeasurement('Database Init');
+      final db = DatabaseHelper.instance;
+      // Pre-warm database connection
+      await db.database;
+      perfTracker.completeMeasurement('Database Init', dbWatch);
       
-      perfTracker.recordTimestamp('Dependencies Configured');
+      perfTracker.recordTimestamp('App Initialized');
       
       if (mounted) {
         setState(() {
           _isInitialized = true;
         });
-        perfTracker.recordTimestamp('App Initialized');
       }
     } catch (e) {
       if (mounted) {
@@ -99,13 +99,13 @@ class _AppInitializerState extends State<AppInitializer> {
       return MultiProvider(
         providers: [
           ChangeNotifierProvider(
-            create: (_) => serviceLocator<FlightProvider>(),
+            create: (_) => FlightProvider.instance,
           ),
           ChangeNotifierProvider(
-            create: (_) => serviceLocator<SiteProvider>(),
+            create: (_) => SiteProvider.instance,
           ),
           ChangeNotifierProvider(
-            create: (_) => serviceLocator<WingProvider>(),
+            create: (_) => WingProvider.instance,
           ),
         ],
         child: MaterialApp(
