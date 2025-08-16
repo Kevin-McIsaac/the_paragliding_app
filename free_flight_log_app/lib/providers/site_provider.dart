@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../data/models/site.dart';
-import '../data/repositories/site_repository.dart';
-import '../data/services/flight_statistics_service.dart';
+import '../services/database_service.dart';
 import '../services/logging_service.dart';
 
 /// State management for site data
@@ -15,8 +14,7 @@ class SiteProvider extends ChangeNotifier {
   
   SiteProvider._internal();
   
-  final SiteRepository _repository = SiteRepository.instance;
-  final FlightStatisticsService _statisticsService = FlightStatisticsService.instance;
+  final DatabaseService _databaseService = DatabaseService.instance;
 
   List<Site> _sites = [];
   bool _isLoading = false;
@@ -36,7 +34,7 @@ class SiteProvider extends ChangeNotifier {
       LoggingService.debug('SiteProvider: Loading sites from repository');
       final startTime = DateTime.now();
       
-      _sites = await _repository.getAllSites();
+      _sites = await _databaseService.getAllSites();
       
       final duration = DateTime.now().difference(startTime);
       LoggingService.performance('Load sites', duration, '${_sites.length} sites loaded');
@@ -60,7 +58,7 @@ class SiteProvider extends ChangeNotifier {
       LoggingService.debug('SiteProvider: Loading sites with flight counts from repository');
       final startTime = DateTime.now();
       
-      _sites = await _repository.getSitesWithFlightCounts();
+      _sites = await _databaseService.getSitesWithFlightCounts();
       
       final duration = DateTime.now().difference(startTime);
       LoggingService.performance('Load sites with flight counts', duration, '${_sites.length} sites loaded');
@@ -81,7 +79,7 @@ class SiteProvider extends ChangeNotifier {
     
     try {
       LoggingService.debug('SiteProvider: Adding new site');
-      final id = await _repository.insertSite(site);
+      final id = await _databaseService.insertSite(site);
       
       // Add to local list with the new ID
       final newSite = site.copyWith(id: id);
@@ -103,7 +101,7 @@ class SiteProvider extends ChangeNotifier {
     
     try {
       LoggingService.debug('SiteProvider: Updating site ${site.id}');
-      await _repository.updateSite(site);
+      await _databaseService.updateSite(site);
       
       // Update in local list
       final index = _sites.indexWhere((s) => s.id == site.id);
@@ -126,14 +124,14 @@ class SiteProvider extends ChangeNotifier {
     
     try {
       // Check if site can be deleted
-      final canDelete = await _repository.canDeleteSite(siteId);
+      final canDelete = await _databaseService.canDeleteSite(siteId);
       if (!canDelete) {
         _setError('Cannot delete site - it is used in flight records');
         return false;
       }
       
       LoggingService.debug('SiteProvider: Deleting site $siteId');
-      await _repository.deleteSite(siteId);
+      await _databaseService.deleteSite(siteId);
       
       // Remove from local list
       _sites.removeWhere((s) => s.id == siteId);
@@ -159,7 +157,7 @@ class SiteProvider extends ChangeNotifier {
     try {
       LoggingService.debug('SiteProvider: Finding or creating site: $name');
       
-      final site = await _repository.findOrCreateSite(
+      final site = await _databaseService.findOrCreateSite(
         name: name,
         latitude: latitude,
         longitude: longitude,
@@ -187,7 +185,7 @@ class SiteProvider extends ChangeNotifier {
   Future<List<Map<String, dynamic>>> getSiteStatistics() async {
     try {
       LoggingService.debug('SiteProvider: Loading site statistics');
-      return await _statisticsService.getSiteStatistics();
+      return await _databaseService.getSiteStatistics();
     } catch (e) {
       LoggingService.error('SiteProvider: Failed to load site statistics', e);
       _setError('Failed to load site statistics: $e');

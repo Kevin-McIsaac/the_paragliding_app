@@ -1,10 +1,10 @@
-import '../data/repositories/site_repository.dart';
-import '../services/logging_service.dart';
+import 'database_service.dart';
+import 'logging_service.dart';
 import 'site_matching_service.dart';
 
 /// Service for migrating existing sites to populate country field
 class SiteMigrationService {
-  final SiteRepository _siteRepository = SiteRepository.instance;
+  final DatabaseService _databaseService = DatabaseService.instance;
   final SiteMatchingService _siteMatchingService = SiteMatchingService.instance;
 
   /// Migrate all sites that are missing country information
@@ -19,7 +19,7 @@ class SiteMigrationService {
       }
       
       // Get all sites that need location info
-      final sitesToMigrate = await _siteRepository.getSitesWithoutLocationInfo();
+      final sitesToMigrate = await _databaseService.getSitesWithoutLocationInfo();
       result.totalSites = sitesToMigrate.length;
       
       if (sitesToMigrate.isEmpty) {
@@ -41,7 +41,7 @@ class SiteMigrationService {
           
           if (matchedSite != null && matchedSite.country != null) {
             // Update the site with country information
-            await _siteRepository.updateSiteLocationInfo(
+            await _databaseService.updateSiteLocationInfo(
               site.id!,
               matchedSite.country,
             );

@@ -1,9 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../data/models/flight.dart';
 import '../data/models/import_result.dart';
-import '../data/repositories/flight_repository.dart';
-import '../data/services/flight_query_service.dart';
-import '../data/services/flight_statistics_service.dart';
+import '../services/database_service.dart';
 import '../services/igc_import_service.dart';
 import '../services/logging_service.dart';
 
@@ -18,9 +16,7 @@ class FlightProvider extends ChangeNotifier {
   
   FlightProvider._internal();
   
-  final FlightRepository _repository = FlightRepository.instance;
-  final FlightQueryService _queryService = FlightQueryService.instance;
-  final FlightStatisticsService _statisticsService = FlightStatisticsService.instance;
+  final DatabaseService _databaseService = DatabaseService.instance;
   final IgcImportService _igcImportService = IgcImportService.instance;
 
   List<Flight> _flights = [];
@@ -86,12 +82,12 @@ class FlightProvider extends ChangeNotifier {
       final startTime = DateTime.now();
       
       // Get overall statistics (total count and duration)
-      final stats = await _statisticsService.getOverallStatistics();
+      final stats = await _databaseService.getOverallStatistics();
       _totalFlights = stats['totalFlights'] ?? 0;
       _totalDuration = stats['totalDuration'] ?? 0;
       
       // Load all flights at once
-      _flights = await _repository.getAllFlights();
+      _flights = await _databaseService.getAllFlights();
       
       final duration = DateTime.now().difference(startTime);
       LoggingService.performance('Load all flights', duration, '${_flights.length} flights loaded');
@@ -117,7 +113,7 @@ class FlightProvider extends ChangeNotifier {
       final startTime = DateTime.now();
       
       // Load all flights at once
-      _flights = await _repository.getAllFlights();
+      _flights = await _databaseService.getAllFlights();
       _totalFlights = _flights.length;
       
       final duration = DateTime.now().difference(startTime);
@@ -140,7 +136,7 @@ class FlightProvider extends ChangeNotifier {
     
     try {
       LoggingService.debug('FlightProvider: Adding new flight');
-      final id = await _repository.insertFlight(flight);
+      final id = await _databaseService.insertFlight(flight);
       
       // Add to local list with the new ID
       final newFlight = flight.copyWith(id: id);
@@ -163,7 +159,7 @@ class FlightProvider extends ChangeNotifier {
     
     try {
       LoggingService.debug('FlightProvider: Updating flight ${flight.id}');
-      await _repository.updateFlight(flight);
+      await _databaseService.updateFlight(flight);
       
       // Update in local list
       final index = _flights.indexWhere((f) => f.id == flight.id);
@@ -193,7 +189,7 @@ class FlightProvider extends ChangeNotifier {
     
     try {
       LoggingService.debug('FlightProvider: Deleting flight $flightId');
-      await _repository.deleteFlight(flightId);
+      await _databaseService.deleteFlight(flightId);
       
       // Remove from local list
       _flights.removeWhere((f) => f.id == flightId);
@@ -230,7 +226,7 @@ class FlightProvider extends ChangeNotifier {
       LoggingService.debug('FlightProvider: Deleting ${existingIds.length} flights');
       
       for (final id in existingIds) {
-        await _repository.deleteFlight(id);
+        await _databaseService.deleteFlight(id);
       }
       
       // Remove from local list
@@ -252,7 +248,7 @@ class FlightProvider extends ChangeNotifier {
   Future<Map<String, dynamic>> getStatistics() async {
     try {
       LoggingService.debug('FlightProvider: Loading statistics');
-      return await _statisticsService.getOverallStatistics();
+      return await _databaseService.getOverallStatistics();
     } catch (e) {
       LoggingService.error('FlightProvider: Failed to load statistics', e);
       _setError('Failed to load statistics: $e');
@@ -264,7 +260,7 @@ class FlightProvider extends ChangeNotifier {
   Future<List<Map<String, dynamic>>> getYearlyStatistics() async {
     try {
       LoggingService.debug('FlightProvider: Loading yearly statistics');
-      return await _statisticsService.getYearlyStatistics();
+      return await _databaseService.getYearlyStatistics();
     } catch (e) {
       LoggingService.error('FlightProvider: Failed to load yearly statistics', e);
       _setError('Failed to load yearly statistics: $e');
@@ -276,7 +272,7 @@ class FlightProvider extends ChangeNotifier {
   Future<List<Map<String, dynamic>>> getWingStatistics() async {
     try {
       LoggingService.debug('FlightProvider: Loading wing statistics');
-      return await _statisticsService.getWingStatistics();
+      return await _databaseService.getWingStatistics();
     } catch (e) {
       LoggingService.error('FlightProvider: Failed to load wing statistics', e);
       _setError('Failed to load wing statistics: $e');
@@ -288,7 +284,7 @@ class FlightProvider extends ChangeNotifier {
   Future<List<Map<String, dynamic>>> getSiteStatistics() async {
     try {
       LoggingService.debug('FlightProvider: Loading site statistics');
-      return await _statisticsService.getSiteStatistics();
+      return await _databaseService.getSiteStatistics();
     } catch (e) {
       LoggingService.error('FlightProvider: Failed to load site statistics', e);
       _setError('Failed to load site statistics: $e');
@@ -307,9 +303,9 @@ class FlightProvider extends ChangeNotifier {
       
       // Load all statistics in parallel
       final results = await Future.wait([
-        _statisticsService.getYearlyStatistics(),
-        _statisticsService.getWingStatistics(),
-        _statisticsService.getSiteStatistics(),
+        _databaseService.getYearlyStatistics(),
+        _databaseService.getWingStatistics(),
+        _databaseService.getSiteStatistics(),
       ]);
       
       _yearlyStats = results[0];
@@ -335,7 +331,7 @@ class FlightProvider extends ChangeNotifier {
   /// Find duplicate flight
   Future<Flight?> findDuplicateFlight(DateTime date, String launchTime) async {
     try {
-      return await _queryService.findFlightByDateTime(date, launchTime);
+      return await _databaseService.findFlightByDateTime(date, launchTime);
     } catch (e) {
       LoggingService.error('FlightProvider: Failed to check for duplicates', e);
       return null;

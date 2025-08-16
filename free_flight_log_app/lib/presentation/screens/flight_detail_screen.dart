@@ -3,9 +3,7 @@ import 'package:intl/intl.dart';
 import '../../data/models/flight.dart';
 import '../../data/models/site.dart';
 import '../../data/models/wing.dart';
-import '../../data/repositories/flight_repository.dart';
-import '../../data/repositories/site_repository.dart';
-import '../../data/repositories/wing_repository.dart';
+import '../../services/database_service.dart';
 import '../widgets/flight_track_widget.dart';
 import '../widgets/flight_track_3d_widget.dart';
 import '../widgets/flight_statistics_widget.dart';
@@ -24,9 +22,7 @@ class FlightDetailScreen extends StatefulWidget {
 }
 
 class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBindingObserver {
-  final FlightRepository _flightRepository = FlightRepository.instance;
-  final SiteRepository _siteRepository = SiteRepository.instance;
-  final WingRepository _wingRepository = WingRepository.instance;
+  final DatabaseService _databaseService = DatabaseService.instance;
   
   late Flight _flight;
   Site? _launchSite;
@@ -54,10 +50,10 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
   Future<void> _loadFlightDetails() async {
     try {
       if (_flight.launchSiteId != null) {
-        _launchSite = await _siteRepository.getSite(_flight.launchSiteId!);
+        _launchSite = await _databaseService.getSite(_flight.launchSiteId!);
       }
       if (_flight.wingId != null) {
-        _wing = await _wingRepository.getWing(_flight.wingId!);
+        _wing = await _databaseService.getWing(_flight.wingId!);
       }
     } catch (e) {
       // Error loading flight details - UI will show loading state ended
@@ -137,7 +133,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
 
   Future<void> _editSite(bool isLaunchSite) async {
     try {
-      final sites = await _siteRepository.getAllSites();
+      final sites = await _databaseService.getAllSites();
       
       if (!mounted) return;
       
@@ -174,7 +170,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
       );
       
       if (editedSite != null && mounted) {
-        await _siteRepository.updateSite(editedSite);
+        await _databaseService.updateSite(editedSite);
         
         // Update the current flight's site
         setState(() {
@@ -199,7 +195,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
 
   Future<void> _editWing() async {
     try {
-      final wings = await _wingRepository.getAllWings();
+      final wings = await _databaseService.getAllWings();
       
       if (!mounted) return;
       
@@ -256,7 +252,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
         createdAt: _flight.createdAt,
       );
 
-      await _flightRepository.updateFlight(updatedFlight);
+      await _databaseService.updateFlight(updatedFlight);
       
       setState(() {
         _flight = updatedFlight;
@@ -327,7 +323,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
         createdAt: _flight.createdAt,
       );
 
-      await _flightRepository.updateFlight(updatedFlight);
+      await _databaseService.updateFlight(updatedFlight);
       
       setState(() {
         _flight = updatedFlight;
@@ -384,7 +380,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
         createdAt: _flight.createdAt,
       );
 
-      await _flightRepository.updateFlight(updatedFlight);
+      await _databaseService.updateFlight(updatedFlight);
       
       setState(() {
         _flight = updatedFlight;
@@ -442,7 +438,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
         createdAt: _flight.createdAt,
       );
 
-      await _flightRepository.updateFlight(updatedFlight);
+      await _databaseService.updateFlight(updatedFlight);
       
       setState(() {
         _flight = updatedFlight;
@@ -500,7 +496,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
         createdAt: _flight.createdAt,
       );
 
-      await _flightRepository.updateFlight(updatedFlight);
+      await _databaseService.updateFlight(updatedFlight);
       
       setState(() {
         _flight = updatedFlight;
@@ -1317,7 +1313,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
         createdAt: _flight.createdAt,
       );
 
-      await _flightRepository.updateFlight(updatedFlight);
+      await _databaseService.updateFlight(updatedFlight);
       
       setState(() {
         _flight = updatedFlight;

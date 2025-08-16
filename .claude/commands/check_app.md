@@ -1,3 +1,3 @@
 # Check logs and errors
 
-Review the flutter logs and list any errors.
+Review the bash logs and list any errors.

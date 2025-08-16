@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../data/models/wing.dart';
-import '../data/repositories/wing_repository.dart';
-import '../data/services/flight_statistics_service.dart';
+import '../services/database_service.dart';
 import '../services/logging_service.dart';
 
 /// State management for wing data
@@ -15,8 +14,7 @@ class WingProvider extends ChangeNotifier {
   
   WingProvider._internal();
   
-  final WingRepository _repository = WingRepository.instance;
-  final FlightStatisticsService _statisticsService = FlightStatisticsService.instance;
+  final DatabaseService _databaseService = DatabaseService.instance;
 
   List<Wing> _wings = [];
   bool _isLoading = false;
@@ -37,7 +35,7 @@ class WingProvider extends ChangeNotifier {
       LoggingService.debug('WingProvider: Loading wings from repository');
       final startTime = DateTime.now();
       
-      _wings = await _repository.getAllWings();
+      _wings = await _databaseService.getAllWings();
       
       final duration = DateTime.now().difference(startTime);
       LoggingService.performance('Load wings', duration, '${_wings.length} wings loaded');
@@ -58,7 +56,7 @@ class WingProvider extends ChangeNotifier {
     
     try {
       LoggingService.debug('WingProvider: Adding new wing');
-      final id = await _repository.insertWing(wing);
+      final id = await _databaseService.insertWing(wing);
       
       // Add to local list with the new ID
       final newWing = wing.copyWith(id: id);
@@ -80,7 +78,7 @@ class WingProvider extends ChangeNotifier {
     
     try {
       LoggingService.debug('WingProvider: Updating wing ${wing.id}');
-      await _repository.updateWing(wing);
+      await _databaseService.updateWing(wing);
       
       // Update in local list
       final index = _wings.indexWhere((w) => w.id == wing.id);
@@ -103,14 +101,14 @@ class WingProvider extends ChangeNotifier {
     
     try {
       // Check if wing can be deleted
-      final canDelete = await _repository.canDeleteWing(wingId);
+      final canDelete = await _databaseService.canDeleteWing(wingId);
       if (!canDelete) {
         _setError('Cannot delete wing - it is used in flight records');
         return false;
       }
       
       LoggingService.debug('WingProvider: Deleting wing $wingId');
-      await _repository.deleteWing(wingId);
+      await _databaseService.deleteWing(wingId);
       
       // Remove from local list
       _wings.removeWhere((w) => w.id == wingId);
@@ -135,7 +133,7 @@ class WingProvider extends ChangeNotifier {
       final wing = _wings.firstWhere((w) => w.id == wingId);
       final deactivatedWing = wing.copyWith(active: false);
       
-      await _repository.updateWing(deactivatedWing);
+      await _databaseService.updateWing(deactivatedWing);
       
       // Update in local list
       final index = _wings.indexWhere((w) => w.id == wingId);
@@ -204,7 +202,7 @@ class WingProvider extends ChangeNotifier {
   Future<List<Map<String, dynamic>>> getWingStatistics() async {
     try {
       LoggingService.debug('WingProvider: Loading wing statistics');
-      return await _statisticsService.getWingStatistics();
+      return await _databaseService.getWingStatistics();
     } catch (e) {
       LoggingService.error('WingProvider: Failed to load wing statistics', e);
       _setError('Failed to load wing statistics: $e');

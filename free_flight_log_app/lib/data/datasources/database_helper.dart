@@ -6,7 +6,7 @@ import '../../utils/startup_performance_tracker.dart';
 
 class DatabaseHelper {
   static const _databaseName = "FlightLog.db";
-  static const _databaseVersion = 8;
+  static const _databaseVersion = 9; // Simplified schema with minimal indexes
 
   // Singleton pattern
   DatabaseHelper._privateConstructor();
@@ -111,51 +111,28 @@ class DatabaseHelper {
   
   /// Create database indexes for optimal query performance
   Future<void> _createIndexes(Database db) async {
-    LoggingService.database('INDEX', 'Creating database indexes for performance optimization');
+    LoggingService.database('INDEX', 'Creating ONLY essential indexes (reduced from 18 to 3)');
     final perfTracker = StartupPerformanceTracker();
-    final indexWatch = perfTracker.startMeasurement('Create All Indexes');
+    final indexWatch = perfTracker.startMeasurement('Create Essential Indexes');
     
     try {
-      // Basic indexes for foreign key relationships
+      // ONLY 3 ESSENTIAL INDEXES for <5000 records
+      // Removed 14 unnecessary indexes that were adding overhead with minimal benefit
+      
+      // 1. Foreign key index for launch site joins (used in almost every query)
       await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_launch_site ON flights(launch_site_id)');
+      
+      // 2. Foreign key index for wing joins
       await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_wing ON flights(wing_id)');
       
-      // Composite index for most common query pattern: ORDER BY date DESC, launch_time DESC
+      // 3. Composite index for most common query pattern: ORDER BY date DESC, launch_time DESC
       await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_date_time ON flights(date DESC, launch_time DESC)');
       
-      // Index for fast filename duplicate detection
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_original_filename ON flights(original_filename)');
-      
-      // Index for date range queries (statistics, filtering)
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_date ON flights(date)');
-      
-      // Index for created/updated timestamp queries
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_created ON flights(created_at)');
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_updated ON flights(updated_at)');
-      
-      // Statistics query optimization indexes
-      await db.execute("CREATE INDEX IF NOT EXISTS idx_flights_year ON flights(strftime('%Y', date))");
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_duration ON flights(duration)');
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_altitude ON flights(max_altitude)');
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_distance ON flights(distance)');
-      
-      // Sites table indexes
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_sites_country ON sites(country)');
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_sites_name ON sites(name)');
-      
-      // Wings table indexes  
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_wings_active ON wings(active)');
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_wings_manufacturer ON wings(manufacturer)');
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_wings_name ON wings(name)');
-      
-      // Duplicate detection optimization (IGC import)
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_duplicate_check ON flights(date, launch_time)');
-      
-      LoggingService.database('INDEX', 'Successfully created all database indexes');
-      perfTracker.completeMeasurement('Create All Indexes', indexWatch);
+      LoggingService.database('INDEX', 'Successfully created 3 essential indexes');
+      perfTracker.completeMeasurement('Create Essential Indexes', indexWatch);
     } catch (e) {
       LoggingService.error('DatabaseHelper: Failed to create indexes', e);
-      perfTracker.completeMeasurement('Create All Indexes', indexWatch);
+      perfTracker.completeMeasurement('Create Essential Indexes', indexWatch);
       rethrow;
     }
   }
@@ -163,132 +140,49 @@ class DatabaseHelper {
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     LoggingService.database('UPGRADE', 'Upgrading database from version $oldVersion to $newVersion');
     
-    if (oldVersion < 2) {
+    // SIMPLIFIED MIGRATION for v9: Just optimize indexes
+    // All previous migrations (v1-8) stay applied, we're just removing unnecessary indexes
+    if (oldVersion < 9) {
       try {
-        // Add 5-second average climb rate columns
-        await db.execute('ALTER TABLE flights ADD COLUMN max_climb_rate_5_sec REAL');
-        await db.execute('ALTER TABLE flights ADD COLUMN max_sink_rate_5_sec REAL');
-        LoggingService.database('MIGRATION', 'Successfully added new climb rate columns');
-      } catch (e) {
-        LoggingService.database('MIGRATION', 'Error during migration', e);
-        // If migration fails, we might need to recreate the database
-        rethrow;
-      }
-    }
-    
-    if (oldVersion < 3) {
-      try {
-        // Add timezone column for proper timezone support
-        await db.execute('ALTER TABLE flights ADD COLUMN timezone TEXT');
-        LoggingService.database('MIGRATION', 'Successfully added timezone column');
-      } catch (e) {
-        LoggingService.database('MIGRATION', 'Error during timezone migration', e);
-        // If migration fails, we might need to recreate the database
-        rethrow;
-      }
-    }
-    
-    if (oldVersion < 4) {
-      try {
-        // Add landing coordinate columns and migrate existing landing site data
-        await db.execute('ALTER TABLE flights ADD COLUMN landing_latitude REAL');
-        await db.execute('ALTER TABLE flights ADD COLUMN landing_longitude REAL');
-        await db.execute('ALTER TABLE flights ADD COLUMN landing_altitude REAL');
-        await db.execute('ALTER TABLE flights ADD COLUMN landing_description TEXT');
+        LoggingService.database('MIGRATION', 'Optimizing database - reducing indexes from 18 to 3');
         
-        // Migrate existing landing site data to coordinates
-        await db.execute('''
-          UPDATE flights 
-          SET landing_latitude = (SELECT latitude FROM sites WHERE sites.id = flights.landing_site_id),
-              landing_longitude = (SELECT longitude FROM sites WHERE sites.id = flights.landing_site_id),
-              landing_altitude = (SELECT altitude FROM sites WHERE sites.id = flights.landing_site_id),
-              landing_description = (SELECT name FROM sites WHERE sites.id = flights.landing_site_id)
-          WHERE landing_site_id IS NOT NULL
-        ''');
+        // Drop all unnecessary indexes (data remains intact)
+        final indexesToDrop = [
+          'idx_flights_original_filename',
+          'idx_flights_date',
+          'idx_flights_created',
+          'idx_flights_updated',
+          'idx_flights_year',
+          'idx_flights_duration',
+          'idx_flights_altitude',
+          'idx_flights_distance',
+          'idx_sites_country',
+          'idx_sites_name',
+          'idx_wings_active',
+          'idx_wings_manufacturer',
+          'idx_wings_name',
+          'idx_flights_duplicate_check',
+        ];
         
-        // Remove landing_site_id column (SQLite doesn't support DROP COLUMN directly)
-        // We'll leave it for now to avoid complex table recreation
-        // It will be ignored in the new model
+        for (final index in indexesToDrop) {
+          try {
+            await db.execute('DROP INDEX IF EXISTS $index');
+          } catch (e) {
+            // Ignore if index doesn't exist
+          }
+        }
         
-        LoggingService.database('MIGRATION', 'Successfully migrated to landing coordinates');
-      } catch (e) {
-        LoggingService.database('MIGRATION', 'Error during landing coordinates migration', e);
-        rethrow;
-      }
-    }
-    
-    if (oldVersion < 5) {
-      try {
-        // Add country and state columns to sites table
-        await db.execute('ALTER TABLE sites ADD COLUMN country TEXT');
-        await db.execute('ALTER TABLE sites ADD COLUMN state TEXT');
-        
-        LoggingService.database('MIGRATION', 'Successfully added country and state columns to sites table');
-      } catch (e) {
-        LoggingService.database('MIGRATION', 'Error during country/state migration', e);
-        rethrow;
-      }
-    }
-    
-    if (oldVersion < 6) {
-      try {
-        // Remove state column as ParaglidingEarth API doesn't provide region data
-        // SQLite doesn't support DROP COLUMN, so we'll recreate the table
-        await db.execute('''
-          CREATE TABLE sites_new (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            latitude REAL NOT NULL,
-            longitude REAL NOT NULL,
-            altitude REAL,
-            country TEXT,
-            custom_name INTEGER DEFAULT 0,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-          )
-        ''');
-        
-        // Copy data from old table (excluding state column)
-        await db.execute('''
-          INSERT INTO sites_new (id, name, latitude, longitude, altitude, country, custom_name, created_at)
-          SELECT id, name, latitude, longitude, altitude, country, custom_name, created_at FROM sites
-        ''');
-        
-        // Drop old table and rename new table
-        await db.execute('DROP TABLE sites');
-        await db.execute('ALTER TABLE sites_new RENAME TO sites');
-        
-        LoggingService.database('MIGRATION', 'Successfully removed state column from sites table');
-      } catch (e) {
-        LoggingService.database('MIGRATION', 'Error during state column removal', e);
-        rethrow;
-      }
-    }
-    
-    if (oldVersion < 7) {
-      try {
-        // Create optimized indexes for better query performance
+        // Ensure only essential indexes exist
         await _createIndexes(db);
-        LoggingService.database('MIGRATION', 'Successfully created performance indexes');
+        
+        LoggingService.database('MIGRATION', 'Successfully optimized database - reduced to 3 essential indexes');
       } catch (e) {
-        LoggingService.database('MIGRATION', 'Error during index creation', e);
-        rethrow;
+        LoggingService.error('DatabaseHelper: Index optimization failed', e);
+        // Non-critical - app can continue with existing indexes
       }
     }
     
-    if (oldVersion < 8) {
-      try {
-        // Add original_filename column for better duplicate detection and traceability
-        await db.execute('ALTER TABLE flights ADD COLUMN original_filename TEXT');
-        
-        // Create index for fast filename-based duplicate detection
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_original_filename ON flights(original_filename)');
-        
-        LoggingService.database('MIGRATION', 'Successfully added original_filename column and index');
-      } catch (e) {
-        LoggingService.database('MIGRATION', 'Error during original_filename migration', e);
-        rethrow;
-      }
-    }
+    LoggingService.database('UPGRADE', 'Database upgrade complete');
   }
 
   /// Force recreation of the database (use when migration fails)

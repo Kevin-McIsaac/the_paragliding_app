@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../data/models/wing.dart';
-import '../../data/repositories/wing_repository.dart';
+import '../../services/database_service.dart';
 
 class EditWingScreen extends StatefulWidget {
   final Wing? wing;
@@ -14,7 +14,7 @@ class EditWingScreen extends StatefulWidget {
 
 class _EditWingScreenState extends State<EditWingScreen> {
   final _formKey = GlobalKey<FormState>();
-  final WingRepository _wingRepository = WingRepository.instance;
+  final DatabaseService _databaseService = DatabaseService.instance;
 
   late TextEditingController _nameController;
   late TextEditingController _manufacturerController;
@@ -104,10 +104,10 @@ class _EditWingScreenState extends State<EditWingScreen> {
 
       if (widget.wing == null) {
         // Creating new wing
-        await _wingRepository.insertWing(wing);
+        await _databaseService.insertWing(wing);
       } else {
         // Updating existing wing
-        await _wingRepository.updateWing(wing);
+        await _databaseService.updateWing(wing);
       }
 
       if (mounted) {

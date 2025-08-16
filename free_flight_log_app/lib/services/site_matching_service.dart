@@ -1,6 +1,6 @@
 import '../data/models/paragliding_site.dart';
 import '../data/models/site.dart';
-import '../data/repositories/site_repository.dart';
+import 'database_service.dart';
 import '../services/logging_service.dart';
 import 'paragliding_earth_api.dart';
 
@@ -13,7 +13,7 @@ class SiteMatchingService {
   List<ParaglidingSite>? _sites;
   bool _isInitialized = false;
   bool _useApi = true; // Enable API by default, can be configured
-  final SiteRepository _siteRepository = SiteRepository.instance;
+  final DatabaseService _databaseService = DatabaseService.instance;
 
   /// Initialize the service by loading sites from user's flight log
   /// This provides personalized fallback based on actual flight history
@@ -22,7 +22,7 @@ class SiteMatchingService {
 
     try {
       // Load sites that have been used in actual flights
-      final usedSites = await _siteRepository.getSitesUsedInFlights();
+      final usedSites = await _databaseService.getSitesUsedInFlights();
       
       // Convert Site objects to ParaglidingSite objects
       _sites = usedSites.map((site) => _convertSiteToParaglidingSite(site)).toList();
