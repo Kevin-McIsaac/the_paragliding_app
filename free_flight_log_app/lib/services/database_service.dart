@@ -597,31 +597,6 @@ class DatabaseService {
     }).toList();
   }
 
-  /// Get all sites that are missing country information
-  Future<List<Site>> getSitesWithoutLocationInfo() async {
-    Database db = await _databaseHelper.database;
-    List<Map<String, dynamic>> maps = await db.query(
-      'sites',
-      where: 'country IS NULL AND name != ?',
-      whereArgs: ['Unknown'],
-      orderBy: 'name ASC',
-    );
-    return List.generate(maps.length, (i) => Site.fromMap(maps[i]));
-  }
-
-  /// Update country for an existing site
-  Future<int> updateSiteLocationInfo(int siteId, String? country) async {
-    Database db = await _databaseHelper.database;
-    return await db.update(
-      'sites',
-      {
-        'country': country,
-      },
-      where: 'id = ?',
-      whereArgs: [siteId],
-    );
-  }
-
   /// Get all sites that have been used in flights (for personalized fallback)
   /// Returns sites ordered by usage frequency (most used first)
   Future<List<Site>> getSitesUsedInFlights() async {
