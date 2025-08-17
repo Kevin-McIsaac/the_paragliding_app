@@ -22,6 +22,8 @@ const cesiumState = {
         dynamicTrackPrimitive: null, // Primitive for per-vertex colored dynamic track
         showDynamicTrack: false,      // Track visibility state
         igcPoints: null,              // Store the IGC points for global access
+        lastWindowStart: -1,          // Track last window start to avoid unnecessary updates
+        lastWindowEnd: -1,            // Track last window end to avoid unnecessary updates
         fullTrackEntity: null,
         curtainWallEntity: null,      // Static curtain wall hanging from track
         dynamicCurtainEntity: null,    // Dynamic curtain for progressive mode
@@ -1483,14 +1485,15 @@ function updateDynamicTrackPrimitive() {
         return;
     }
     
-    // Remove old primitive if exists
-    if (cesiumState.flyThroughMode.dynamicTrackPrimitive) {
-        viewer.scene.primitives.remove(cesiumState.flyThroughMode.dynamicTrackPrimitive);
-        cesiumState.flyThroughMode.dynamicTrackPrimitive = null;
-    }
-    
     // Only create new primitive if fly-through mode is enabled and track should be shown
     if (!cesiumState.flyThroughMode.enabled || !cesiumState.flyThroughMode.showDynamicTrack) {
+        // If we should hide, remove existing primitive
+        if (cesiumState.flyThroughMode.dynamicTrackPrimitive) {
+            viewer.scene.primitives.remove(cesiumState.flyThroughMode.dynamicTrackPrimitive);
+            cesiumState.flyThroughMode.dynamicTrackPrimitive = null;
+            cesiumState.flyThroughMode.lastWindowStart = -1;
+            cesiumState.flyThroughMode.lastWindowEnd = -1;
+        }
         return;
     }
     
@@ -1538,6 +1541,12 @@ function updateDynamicTrackPrimitive() {
     const windowStart = Math.max(0, pointsUpToCurrent - maxPointsInRibbon);
     const windowEnd = currentIndex; // Never go past current position
     
+    // Check if window has changed - skip update if unchanged
+    if (windowStart === cesiumState.flyThroughMode.lastWindowStart && 
+        windowEnd === cesiumState.flyThroughMode.lastWindowEnd) {
+        return; // No change needed, avoid flickering
+    }
+    
     // Build positions and colors arrays for the window
     const positions = [];
     const colors = [];
@@ -1565,7 +1574,7 @@ function updateDynamicTrackPrimitive() {
         return;
     }
     
-    // Create the polyline primitive with per-vertex colors
+    // Create the polyline primitive with per-vertex colors (synchronous to prevent flickering)
     const primitive = new Cesium.Primitive({
         geometryInstances: new Cesium.GeometryInstance({
             geometry: new Cesium.PolylineGeometry({
@@ -1578,11 +1587,22 @@ function updateDynamicTrackPrimitive() {
         }),
         appearance: new Cesium.PolylineColorAppearance({
             translucent: true
-        })
+        }),
+        asynchronous: false  // Synchronous rendering to prevent flickering
     });
     
-    // Add to scene
+    // Double buffering: Add new primitive before removing old one
+    const oldPrimitive = cesiumState.flyThroughMode.dynamicTrackPrimitive;
     cesiumState.flyThroughMode.dynamicTrackPrimitive = viewer.scene.primitives.add(primitive);
+    
+    // Remove old primitive after new one is added
+    if (oldPrimitive) {
+        viewer.scene.primitives.remove(oldPrimitive);
+    }
+    
+    // Update tracking for next comparison
+    cesiumState.flyThroughMode.lastWindowStart = windowStart;
+    cesiumState.flyThroughMode.lastWindowEnd = windowEnd;
 }
 
 // Show or hide the dynamic track
@@ -1594,7 +1614,13 @@ function showDynamicTrackSegments(show) {
         // Remove the primitive when hiding
         viewer.scene.primitives.remove(cesiumState.flyThroughMode.dynamicTrackPrimitive);
         cesiumState.flyThroughMode.dynamicTrackPrimitive = null;
+        // Reset window tracking
+        cesiumState.flyThroughMode.lastWindowStart = -1;
+        cesiumState.flyThroughMode.lastWindowEnd = -1;
     } else if (show) {
+        // Reset window tracking to force update when showing
+        cesiumState.flyThroughMode.lastWindowStart = -1;
+        cesiumState.flyThroughMode.lastWindowEnd = -1;
         // Force an update to create the primitive when showing
         updateDynamicTrackPrimitive();
     }
