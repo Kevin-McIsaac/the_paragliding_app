@@ -1519,9 +1519,9 @@ function updateDynamicTrackPrimitive() {
         return;
     }
     
-    // Calculate window size based on ribbon settings
+    // Calculate window size based on ribbon settings (matching wall logic exactly)
     const ribbonSeconds = cesiumState.flyThroughMode.ribbonAnimationSeconds || 3.0;
-    const playbackSpeed = viewer.clock.multiplier || 60.0;
+    const playbackSpeed = viewer.clock.multiplier || 1;  // Use 1 as default like the wall
     const flightSecondsInWindow = ribbonSeconds * playbackSpeed;
     
     // Estimate how many points to show based on flight duration
@@ -1530,10 +1530,12 @@ function updateDynamicTrackPrimitive() {
         Cesium.JulianDate.fromIso8601(igcPoints[0].timestamp)
     );
     const pointsPerSecond = igcPoints.length / totalDuration;
-    const windowSize = Math.ceil(flightSecondsInWindow * pointsPerSecond);
+    const maxPointsInRibbon = Math.ceil(flightSecondsInWindow * pointsPerSecond);
     
-    // Calculate window bounds
-    const windowStart = Math.max(0, currentIndex - windowSize + 1);
+    // Calculate window bounds - matching wall's slice logic exactly
+    // The wall keeps the last maxPointsInRibbon points from 0 to currentIndex
+    const pointsUpToCurrent = currentIndex + 1;  // Number of points from 0 to currentIndex inclusive
+    const windowStart = Math.max(0, pointsUpToCurrent - maxPointsInRibbon);
     const windowEnd = currentIndex; // Never go past current position
     
     // Build positions and colors arrays for the window
