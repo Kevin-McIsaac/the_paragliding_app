@@ -1247,26 +1247,54 @@ function zoomToEntitiesWithPadding(padding) {
         );
         const boundingSphere = Cesium.BoundingSphere.fromPoints(positions);
         
-        // Fly to the bounding sphere with custom offset
-        viewer.camera.flyToBoundingSphere(boundingSphere, {
-            duration: 3.0,
-            offset: new Cesium.HeadingPitchRange(
-                Cesium.Math.toRadians(0),   // Heading: 0 = North
-                Cesium.Math.toRadians(-45), // Pitch: -45 = looking down at 45 degree angle
-                boundingSphere.radius * 2.5  // Range: 2.5x the radius for good framing
-            )
+        // Get launch coordinates from first point
+        const launchPoint = igcPoints[0];
+        const launchLon = launchPoint.longitude;
+        const launchLat = launchPoint.latitude;
+        
+        // Step 1: Set initial view at 30,000 km above launch
+        viewer.camera.setView({
+            destination: Cesium.Cartesian3.fromDegrees(launchLon, launchLat, 30000000), // 30,000 km
+            orientation: {
+                heading: 0,
+                pitch: Cesium.Math.toRadians(-90), // Looking straight down
+                roll: 0
+            }
         });
+        
+        // Step 2: Wait 5 seconds, then fly to bounding sphere view
+        setTimeout(function() {
+            viewer.camera.flyToBoundingSphere(boundingSphere, {
+                duration: 5.0,
+                offset: new Cesium.HeadingPitchRange(
+                    Cesium.Math.toRadians(0),   // Heading: 0 = North
+                    Cesium.Math.toRadians(-90), // Pitch: -90 = looking straight down
+                    boundingSphere.radius * 2.5  // Range: 2.5x the radius for good framing
+                ),
+                complete: function() {
+                    // Step 3: Fly to home view with -30 degree angle
+                    viewer.camera.flyToBoundingSphere(boundingSphere, {
+                        duration: 3.0,
+                        offset: new Cesium.HeadingPitchRange(
+                            Cesium.Math.toRadians(0),   // Heading: 0 = North
+                            Cesium.Math.toRadians(-30), // Pitch: -30 = looking down at 30 degree angle
+                            boundingSphere.radius * 2.75  // Range: 2.75x the radius for better framing
+                        )
+                    });
+                }
+            });
+        }, 5000);
         
         // Store this view as the home view for the flight track
         cesiumState.flightTrackHomeView = {
             boundingSphere: boundingSphere,
             offset: new Cesium.HeadingPitchRange(
                 Cesium.Math.toRadians(0),
-                Cesium.Math.toRadians(-45),
-                boundingSphere.radius * 2.5
+                Cesium.Math.toRadians(-30),
+                boundingSphere.radius * 2.75
             )
         };
-        cesiumLog.info('Flight track framed in view (primitive-based)');
+        cesiumLog.info('Flight track multi-step animation started');
     }
     // Fallback for entity-based tracks
     else {
