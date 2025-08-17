@@ -19,7 +19,12 @@ const cesiumState = {
     flyThroughMode: {
         enabled: false,
         trailDuration: 5000,  // milliseconds (kept for future use but not used in progressive mode)
-        dynamicTrackEntity: null,
+        staticTrackPrimitive: null,  // Static track primitive with per-vertex colors
+        dynamicTrackPrimitive: null, // Primitive for per-vertex colored dynamic track
+        showDynamicTrack: false,      // Track visibility state
+        igcPoints: null,              // Store the IGC points for global access
+        lastWindowStart: -1,          // Track last window start to avoid unnecessary updates
+        lastWindowEnd: -1,            // Track last window end to avoid unnecessary updates
         fullTrackEntity: null,
         curtainWallEntity: null,      // Static curtain wall hanging from track
         dynamicCurtainEntity: null,    // Dynamic curtain for progressive mode
@@ -28,7 +33,8 @@ const cesiumState = {
         progressiveMode: false,  // Changed to false - now using ribbon mode
         ribbonMode: 'animation-time',  // Ribbon based on animation time
         ribbonAnimationSeconds: 3.0,   // Default 3 seconds of animation time
-        ribbonStartTime: null          // Track when ribbon starts
+        ribbonStartTime: null,         // Track when ribbon starts
+        onTickCallback: null           // Store the onTick callback for cleanup
     },
     flightTrackHomeView: null  // Store the home view for flight track
 };
@@ -433,28 +439,46 @@ function initializeCesium(config) {
             
             // Listen for home button clicks
             viewer.homeButton.viewModel.command.beforeExecute.addEventListener(function(commandInfo) {
-                // If we have a flight track entity, fly to it
-                if (flightTrackEntity) {
-                    cesiumLog.info('Home button: returning to flight track view');
+                // Check for primitive-based track first
+                if (cesiumState.flyThroughMode.staticTrackPrimitive && cesiumState.flightTrackHomeView?.boundingSphere) {
+                    cesiumLog.info('Home button: returning to flight track view (primitive)');
                     
                     // Cancel the default behavior
                     commandInfo.cancel = true;
                     
-                    // Fly to the track entity with the saved offset
-                    const offset = cesiumState.flightTrackHomeView?.offset || 
-                                 new Cesium.HeadingPitchRange(
-                                     Cesium.Math.toRadians(0),
-                                     Cesium.Math.toRadians(-45),
-                                     0
-                                 );
-                    
-                    viewer.flyTo(flightTrackEntity, {
+                    // Fly to the bounding sphere with saved offset
+                    viewer.camera.flyToBoundingSphere(cesiumState.flightTrackHomeView.boundingSphere, {
                         duration: 3.0,
-                        offset: offset
+                        offset: cesiumState.flightTrackHomeView.offset
                     });
-                } else {
-                    // No flight track loaded, let default behavior proceed
-                    cesiumLog.info('Home button: using default view (no flight track)');
+                }
+                // Fallback to entity-based track
+                else {
+                    const trackEntities = cesiumState.flyThroughMode.fullTrackEntities || 
+                                        (flightTrackEntity ? [flightTrackEntity] : null);
+                    
+                    if (trackEntities && trackEntities.length > 0) {
+                        cesiumLog.info('Home button: returning to flight track view (entities)');
+                        
+                        // Cancel the default behavior
+                        commandInfo.cancel = true;
+                        
+                        // Fly to the track entities with the saved offset
+                        const offset = cesiumState.flightTrackHomeView?.offset || 
+                                     new Cesium.HeadingPitchRange(
+                                         Cesium.Math.toRadians(0),
+                                         Cesium.Math.toRadians(-45),
+                                         0
+                                     );
+                        
+                        viewer.flyTo(trackEntities, {
+                            duration: 3.0,
+                            offset: offset
+                        });
+                    } else {
+                        // No flight track loaded, let default behavior proceed
+                        cesiumLog.info('Home button: using default view (no flight track)');
+                    }
                 }
             });
         }
@@ -512,6 +536,24 @@ function switchBaseMap(mapType) {
     }
     
     cesiumLog.info('Base map switched to: ' + mapType);
+}
+
+// Helper functions for managing track visibility
+function showAllTrackSegments(show) {
+    // Handle primitive-based static track
+    if (cesiumState.flyThroughMode.staticTrackPrimitive) {
+        cesiumState.flyThroughMode.staticTrackPrimitive.show = show;
+    }
+    // Backwards compatibility for entity-based tracks
+    else if (cesiumState.flyThroughMode.fullTrackEntities) {
+        cesiumState.flyThroughMode.fullTrackEntities.forEach(entity => {
+            if (entity && entity.polyline) {
+                entity.polyline.show = show;
+            }
+        });
+    } else if (cesiumState.flyThroughMode.fullTrackEntity && cesiumState.flyThroughMode.fullTrackEntity.polyline) {
+        cesiumState.flyThroughMode.fullTrackEntity.polyline.show = show;
+    }
 }
 
 // Feature 2: 3D Flight Track Rendering
@@ -622,8 +664,68 @@ function createColoredFlightTrack(points) {
     viewer.entities.removeAll();
     playbackState.showPilot = null;
     
-    // Convert points to Cartesian3 positions for the single polyline
-    const positions = points.map(point => 
+    // Helper function to get color based on 15s climb rate
+    function getClimbRateColorForPoint(climbRate15s) {
+        if (climbRate15s >= 0) {
+            return Cesium.Color.GREEN; // Green: Any climb (rate >= 0 m/s)
+        } else if (climbRate15s > -1.5) {
+            return Cesium.Color.DODGERBLUE; // Blue: Weak sink (-1.5 < rate < 0 m/s)
+        } else {
+            return Cesium.Color.RED; // Red: Strong sink (rate <= -1.5 m/s)
+        }
+    }
+    
+    // Build positions and colors arrays for per-vertex colored primitive
+    const positions = [];
+    const colors = [];
+    
+    for (let i = 0; i < points.length; i++) {
+        const point = points[i];
+        
+        // Add position
+        positions.push(
+            Cesium.Cartesian3.fromDegrees(
+                point.longitude,
+                point.latitude,
+                point.altitude
+            )
+        );
+        
+        // Add color based on 15s climb rate
+        const climbRate15s = point.climbRate15s || point.climbRate || 0;
+        const color = getClimbRateColorForPoint(climbRate15s);
+        colors.push(color.withAlpha(0.9)); // Slightly transparent
+    }
+    
+    // Create a single primitive with per-vertex colors for smooth gradients
+    const staticTrackPrimitive = new Cesium.Primitive({
+        geometryInstances: new Cesium.GeometryInstance({
+            geometry: new Cesium.PolylineGeometry({
+                positions: positions,
+                width: 3.0,
+                vertexFormat: Cesium.PolylineColorAppearance.VERTEX_FORMAT,
+                colors: colors,
+                colorsPerVertex: true
+            })
+        }),
+        appearance: new Cesium.PolylineColorAppearance({
+            translucent: true
+        }),
+        asynchronous: false  // Synchronous rendering for consistency
+    });
+    
+    // Add primitive to scene
+    cesiumState.flyThroughMode.staticTrackPrimitive = viewer.scene.primitives.add(staticTrackPrimitive);
+    
+    // Store references for compatibility
+    cesiumState.flyThroughMode.fullTrackEntities = null; // No longer using entities
+    cesiumState.flyThroughMode.fullTrackEntity = null; // No longer using entities
+    
+    cesiumLog.info(`Created colored track with per-vertex coloring (${points.length} points)`);
+    
+    // Create curtain wall that hangs from track to ground
+    // Build positions array for the wall (all track points)
+    const wallPositions = points.map(point => 
         Cesium.Cartesian3.fromDegrees(
             point.longitude,
             point.latitude,
@@ -631,26 +733,6 @@ function createColoredFlightTrack(points) {
         )
     );
     
-    // Create single blue polyline for entire track
-    const trackEntity = viewer.entities.add({
-        name: 'Flight Track',
-        show: true,  // Entity itself is visible
-        polyline: {
-            positions: positions,
-            width: 3,
-            material: Cesium.Color.DODGERBLUE.withAlpha(0.9),
-            clampToGround: false,
-            show: true  // Polyline is visible by default
-        }
-    });
-    
-    // Store reference for framing and home button
-    flightTrackEntity = trackEntity;
-    
-    // Store the full track entity
-    cesiumState.flyThroughMode.fullTrackEntity = trackEntity;
-    
-    // Create curtain wall that hangs from track to ground
     // Extract altitudes for the wall
     const wallHeights = points.map(point => point.altitude);
     
@@ -658,7 +740,7 @@ function createColoredFlightTrack(points) {
         name: 'Flight Track Curtain',
         show: true,  // Visible by default
         wall: {
-            positions: positions,  // Same positions as track
+            positions: wallPositions,  // All track positions
             maximumHeights: wallHeights,  // Flight altitudes
             // minimumHeights not specified = extends to ground automatically
             material: Cesium.Color.DODGERBLUE.withAlpha(0.1),  // 10% opaque
@@ -670,34 +752,22 @@ function createColoredFlightTrack(points) {
     cesiumState.flyThroughMode.curtainWallEntity = curtainWallEntity;
     cesiumLog.info('Created curtain wall with ' + wallHeights.length + ' segments');
     
-    // Create dynamic track entity for fly-through mode (initially hidden)
-    const dynamicTrackEntity = viewer.entities.add({
-        name: 'Dynamic Flight Track',
-        show: true,  // Entity itself is always visible
-        polyline: {
-            positions: new Cesium.CallbackProperty(function(time, result) {
-                // This function will be called every frame to update positions
-                if (!cesiumState.flyThroughMode.enabled) {
-                    return [];  // Return empty array when disabled
-                }
-                
-                // Calculate trail positions based on current time
-                const trailPositions = calculateTrailPositions(time);
-                
-                // Very rare debug logging to avoid spam
-                if (Math.random() < 0.001) { // Log 0.1% of the time
-                }
-                
-                return trailPositions;
-            }, false),  // false = positions are not constant, will be re-evaluated each frame
-            width: 2,  // Thin ribbon trail
-            material: Cesium.Color.DODGERBLUE.withAlpha(0.5),  // 50% transparent blue matching the wall
-            clampToGround: false,
-            show: false  // Initially hidden
-        }
-    });
+    // Store the igcPoints for global access
+    cesiumState.flyThroughMode.igcPoints = igcPoints;
     
-    cesiumState.flyThroughMode.dynamicTrackEntity = dynamicTrackEntity;
+    // Set up onTick callback for dynamic updates
+    cesiumState.flyThroughMode.onTickCallback = function() {
+        // Throttle updates to every 100ms
+        const now = Date.now();
+        if (!cesiumState.flyThroughMode.lastUpdateTime || 
+            now - cesiumState.flyThroughMode.lastUpdateTime > cesiumState.flyThroughMode.updateInterval) {
+            cesiumState.flyThroughMode.lastUpdateTime = now;
+            updateDynamicTrackPrimitive();
+        }
+    };
+    
+    // Add the onTick listener
+    viewer.clock.onTick.addEventListener(cesiumState.flyThroughMode.onTickCallback);
     
     // Create dynamic curtain wall for fly-through mode (initially hidden)
     const dynamicCurtainEntity = viewer.entities.add({
@@ -897,12 +967,8 @@ function setupTimeBasedAnimation(points) {
                 cesiumLog.info('Auto-enabling ribbon trail (playing or mid-flight)');
                 
                 // Hide full track, show dynamic track
-                if (cesiumState.flyThroughMode.fullTrackEntity && cesiumState.flyThroughMode.fullTrackEntity.polyline) {
-                    cesiumState.flyThroughMode.fullTrackEntity.polyline.show = false;
-                }
-                if (cesiumState.flyThroughMode.dynamicTrackEntity && cesiumState.flyThroughMode.dynamicTrackEntity.polyline) {
-                    cesiumState.flyThroughMode.dynamicTrackEntity.polyline.show = true;
-                }
+                showAllTrackSegments(false);
+                showDynamicTrackSegments(true);
                 
                 // Hide static curtain, show dynamic curtain
                 if (cesiumState.flyThroughMode.curtainWallEntity) {
@@ -918,12 +984,8 @@ function setupTimeBasedAnimation(points) {
                 cesiumLog.info('Auto-disabling ribbon trail (stopped at start/end)');
                 
                 // Show full track, hide dynamic track
-                if (cesiumState.flyThroughMode.fullTrackEntity && cesiumState.flyThroughMode.fullTrackEntity.polyline) {
-                    cesiumState.flyThroughMode.fullTrackEntity.polyline.show = true;
-                }
-                if (cesiumState.flyThroughMode.dynamicTrackEntity && cesiumState.flyThroughMode.dynamicTrackEntity.polyline) {
-                    cesiumState.flyThroughMode.dynamicTrackEntity.polyline.show = false;
-                }
+                showAllTrackSegments(true);
+                showDynamicTrackSegments(false);
                 
                 // Show static curtain, hide dynamic curtain
                 if (cesiumState.flyThroughMode.curtainWallEntity) {
@@ -1175,29 +1237,63 @@ function setCameraPreset(preset) {
 
 // Zoom to entities with padding for UI elements
 function zoomToEntitiesWithPadding(padding) {
-    if (!viewer || !flightTrackEntity) return;
+    if (!viewer) return;
     
-    // Use Cesium's built-in entity framing with custom offset
-    // This doesn't change the camera transform mode, so left-drag remains pan
-    viewer.flyTo(flightTrackEntity, {
-        duration: 3.0,
-        offset: new Cesium.HeadingPitchRange(
-            Cesium.Math.toRadians(0),   // Heading: 0 = North
-            Cesium.Math.toRadians(-45), // Pitch: -45 = looking down at 45 degree angle
-            0                            // Range: 0 = auto-calculate based on entity size
-        )
-    }).then(function() {
+    // If we have a primitive-based track, zoom to its bounds
+    if (cesiumState.flyThroughMode.staticTrackPrimitive && igcPoints && igcPoints.length > 0) {
+        // Calculate bounding sphere from track points
+        const positions = igcPoints.map(point => 
+            Cesium.Cartesian3.fromDegrees(point.longitude, point.latitude, point.altitude)
+        );
+        const boundingSphere = Cesium.BoundingSphere.fromPoints(positions);
+        
+        // Fly to the bounding sphere with custom offset
+        viewer.camera.flyToBoundingSphere(boundingSphere, {
+            duration: 3.0,
+            offset: new Cesium.HeadingPitchRange(
+                Cesium.Math.toRadians(0),   // Heading: 0 = North
+                Cesium.Math.toRadians(-45), // Pitch: -45 = looking down at 45 degree angle
+                boundingSphere.radius * 2.5  // Range: 2.5x the radius for good framing
+            )
+        });
+        
         // Store this view as the home view for the flight track
         cesiumState.flightTrackHomeView = {
-            entity: flightTrackEntity,
+            boundingSphere: boundingSphere,
+            offset: new Cesium.HeadingPitchRange(
+                Cesium.Math.toRadians(0),
+                Cesium.Math.toRadians(-45),
+                boundingSphere.radius * 2.5
+            )
+        };
+        cesiumLog.info('Flight track framed in view (primitive-based)');
+    }
+    // Fallback for entity-based tracks
+    else {
+        const entitiesToFrame = cesiumState.flyThroughMode.fullTrackEntities || 
+                               (flightTrackEntity ? [flightTrackEntity] : []);
+        
+        if (entitiesToFrame.length === 0) return;
+        
+        viewer.flyTo(entitiesToFrame, {
+            duration: 3.0,
             offset: new Cesium.HeadingPitchRange(
                 Cesium.Math.toRadians(0),
                 Cesium.Math.toRadians(-45),
                 0
             )
-        };
-        cesiumLog.info('Flight track framed in view');
-    });
+        }).then(function() {
+            cesiumState.flightTrackHomeView = {
+                entities: entitiesToFrame,
+                offset: new Cesium.HeadingPitchRange(
+                    Cesium.Math.toRadians(0),
+                    Cesium.Math.toRadians(-45),
+                    0
+                )
+            };
+            cesiumLog.info('Flight track framed in view (entity-based)');
+        });
+    }
 }
 
 // Smooth camera fly to location
@@ -1403,6 +1499,166 @@ function updatePilotPosition(index) {
 // Fly-through Mode Functions
 // ============================================================================
 
+// Helper function to get color based on 15s climb rate (for dynamic track)
+function getClimbRateColorForPoint(climbRate15s) {
+    if (climbRate15s >= 0) {
+        return Cesium.Color.GREEN; // Green: Any climb (rate >= 0 m/s)
+    } else if (climbRate15s > -1.5) {
+        return Cesium.Color.DODGERBLUE; // Blue: Weak sink (-1.5 < rate < 0 m/s)
+    } else {
+        return Cesium.Color.RED; // Red: Strong sink (rate <= -1.5 m/s)
+    }
+}
+
+// Function to update the dynamic track primitive with per-vertex colors
+function updateDynamicTrackPrimitive() {
+    if (!viewer || !cesiumState.flyThroughMode.igcPoints || cesiumState.flyThroughMode.igcPoints.length === 0) {
+        return;
+    }
+    
+    // Only create new primitive if fly-through mode is enabled and track should be shown
+    if (!cesiumState.flyThroughMode.enabled || !cesiumState.flyThroughMode.showDynamicTrack) {
+        // If we should hide, remove existing primitive
+        if (cesiumState.flyThroughMode.dynamicTrackPrimitive) {
+            viewer.scene.primitives.remove(cesiumState.flyThroughMode.dynamicTrackPrimitive);
+            cesiumState.flyThroughMode.dynamicTrackPrimitive = null;
+            cesiumState.flyThroughMode.lastWindowStart = -1;
+            cesiumState.flyThroughMode.lastWindowEnd = -1;
+        }
+        return;
+    }
+    
+    const igcPoints = cesiumState.flyThroughMode.igcPoints;
+    
+    // Find current point index based on time
+    const currentTime = viewer.clock.currentTime;
+    let currentIndex = -1;
+    for (let i = 0; i < igcPoints.length; i++) {
+        const point = igcPoints[i];
+        if (!point.timestamp) continue;
+        
+        try {
+            const pointTime = Cesium.JulianDate.fromIso8601(point.timestamp);
+            if (Cesium.JulianDate.secondsDifference(pointTime, currentTime) > 0) {
+                break; // Found first point after current time
+            }
+            currentIndex = i;
+        } catch (e) {
+            continue;
+        }
+    }
+    
+    // If we haven't started yet, return
+    if (currentIndex < 0) {
+        return;
+    }
+    
+    // Calculate window size based on ribbon settings (matching wall logic exactly)
+    const ribbonSeconds = cesiumState.flyThroughMode.ribbonAnimationSeconds || 3.0;
+    const playbackSpeed = viewer.clock.multiplier || 1;  // Use 1 as default like the wall
+    const flightSecondsInWindow = ribbonSeconds * playbackSpeed;
+    
+    // Estimate how many points to show based on flight duration
+    const totalDuration = Cesium.JulianDate.secondsDifference(
+        Cesium.JulianDate.fromIso8601(igcPoints[igcPoints.length - 1].timestamp),
+        Cesium.JulianDate.fromIso8601(igcPoints[0].timestamp)
+    );
+    const pointsPerSecond = igcPoints.length / totalDuration;
+    const maxPointsInRibbon = Math.ceil(flightSecondsInWindow * pointsPerSecond);
+    
+    // Calculate window bounds - matching wall's slice logic exactly
+    // The wall keeps the last maxPointsInRibbon points from 0 to currentIndex
+    const pointsUpToCurrent = currentIndex + 1;  // Number of points from 0 to currentIndex inclusive
+    const windowStart = Math.max(0, pointsUpToCurrent - maxPointsInRibbon);
+    const windowEnd = currentIndex; // Never go past current position
+    
+    // Check if window has changed - skip update if unchanged
+    if (windowStart === cesiumState.flyThroughMode.lastWindowStart && 
+        windowEnd === cesiumState.flyThroughMode.lastWindowEnd) {
+        return; // No change needed, avoid flickering
+    }
+    
+    // Build positions and colors arrays for the window
+    const positions = [];
+    const colors = [];
+    
+    for (let i = windowStart; i <= windowEnd && i < igcPoints.length; i++) {
+        const point = igcPoints[i];
+        
+        // Add position
+        positions.push(
+            Cesium.Cartesian3.fromDegrees(
+                point.longitude,
+                point.latitude,
+                point.altitude
+            )
+        );
+        
+        // Add color based on climb rate
+        const climbRate15s = point.climbRate15s || point.climbRate || 0;
+        const color = getClimbRateColorForPoint(climbRate15s);
+        colors.push(color.withAlpha(0.9)); // Slightly transparent
+    }
+    
+    // Only create primitive if we have at least 2 positions
+    if (positions.length < 2) {
+        return;
+    }
+    
+    // Create the polyline primitive with per-vertex colors (synchronous to prevent flickering)
+    const primitive = new Cesium.Primitive({
+        geometryInstances: new Cesium.GeometryInstance({
+            geometry: new Cesium.PolylineGeometry({
+                positions: positions,
+                width: 3.0,
+                vertexFormat: Cesium.PolylineColorAppearance.VERTEX_FORMAT,
+                colors: colors,
+                colorsPerVertex: true
+            })
+        }),
+        appearance: new Cesium.PolylineColorAppearance({
+            translucent: true
+        }),
+        asynchronous: false  // Synchronous rendering to prevent flickering
+    });
+    
+    // Double buffering: Add new primitive before removing old one
+    const oldPrimitive = cesiumState.flyThroughMode.dynamicTrackPrimitive;
+    cesiumState.flyThroughMode.dynamicTrackPrimitive = viewer.scene.primitives.add(primitive);
+    
+    // Remove old primitive after new one is added
+    if (oldPrimitive) {
+        viewer.scene.primitives.remove(oldPrimitive);
+    }
+    
+    // Update tracking for next comparison
+    cesiumState.flyThroughMode.lastWindowStart = windowStart;
+    cesiumState.flyThroughMode.lastWindowEnd = windowEnd;
+}
+
+// Show or hide the dynamic track
+function showDynamicTrackSegments(show) {
+    // Handle primitive visibility through updates
+    cesiumState.flyThroughMode.showDynamicTrack = show;
+    
+    if (!show && cesiumState.flyThroughMode.dynamicTrackPrimitive) {
+        // Remove the primitive when hiding
+        viewer.scene.primitives.remove(cesiumState.flyThroughMode.dynamicTrackPrimitive);
+        cesiumState.flyThroughMode.dynamicTrackPrimitive = null;
+        // Reset window tracking
+        cesiumState.flyThroughMode.lastWindowStart = -1;
+        cesiumState.flyThroughMode.lastWindowEnd = -1;
+    } else if (show) {
+        // Reset window tracking to force update when showing
+        cesiumState.flyThroughMode.lastWindowStart = -1;
+        cesiumState.flyThroughMode.lastWindowEnd = -1;
+        // Force an update to create the primitive when showing
+        updateDynamicTrackPrimitive();
+    }
+}
+
+// Note: Dynamic segment creation/update functions removed - segments are now pre-created at initialization
+
 // Calculate trail positions for ribbon mode (animation-time based)
 // Shows a ribbon trail of X seconds of animation time behind the pilot
 // This creates a consistent visual trail regardless of playback speed
@@ -1562,15 +1818,11 @@ function setFlyThroughMode(enabled) {
             return;
         }
         
-        // Hide full track (polyline only, not affecting pilot)
-        if (cesiumState.flyThroughMode.fullTrackEntity.polyline) {
-            cesiumState.flyThroughMode.fullTrackEntity.polyline.show = false;
-        }
+        // Hide full track (polylines only, not affecting pilot)
+        showAllTrackSegments(false);
         
         // Show dynamic track
-        if (cesiumState.flyThroughMode.dynamicTrackEntity.polyline) {
-            cesiumState.flyThroughMode.dynamicTrackEntity.polyline.show = true;
-        }
+        showDynamicTrackSegments(true);
         
         // Hide static curtain wall
         if (cesiumState.flyThroughMode.curtainWallEntity) {
@@ -1627,15 +1879,11 @@ function setFlyThroughMode(enabled) {
         // Switch back to on-demand rendering when ribbon mode is disabled
         viewer.scene.requestRenderMode = true;
         
-        // Show full track (polyline only, not affecting pilot)
-        if (cesiumState.flyThroughMode.fullTrackEntity && cesiumState.flyThroughMode.fullTrackEntity.polyline) {
-            cesiumState.flyThroughMode.fullTrackEntity.polyline.show = true;
-        }
+        // Show full track (polylines only, not affecting pilot)
+        showAllTrackSegments(true);
         
-        // Hide dynamic track
-        if (cesiumState.flyThroughMode.dynamicTrackEntity && cesiumState.flyThroughMode.dynamicTrackEntity.polyline) {
-            cesiumState.flyThroughMode.dynamicTrackEntity.polyline.show = false;
-        }
+        // Hide dynamic track segments
+        showDynamicTrackSegments(false);
         
         // Show static curtain wall
         if (cesiumState.flyThroughMode.curtainWallEntity) {
