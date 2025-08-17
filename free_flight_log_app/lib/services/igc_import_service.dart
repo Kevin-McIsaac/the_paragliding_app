@@ -171,6 +171,7 @@ class IgcImportService {
     final groundTrackDistance = igcData.calculateGroundTrackDistance();
     final straightDistance = igcData.calculateLaunchToLandingDistance();
     final climbRates = igcData.calculateClimbRates();
+    final climbRates5Sec = igcData.calculate5SecondMaxClimbRates();
     final climbRates15Sec = igcData.calculate15SecondMaxClimbRates();
     
     // Get or create launch site with paragliding site matching
@@ -267,8 +268,8 @@ class IgcImportService {
       maxAltitude: igcData.maxAltitude,
       maxClimbRate: climbRates['maxClimb'],
       maxSinkRate: climbRates['maxSink'],
-      maxClimbRate5Sec: climbRates15Sec['maxClimb15Sec'],
-      maxSinkRate5Sec: climbRates15Sec['maxSink15Sec'],
+      maxClimbRate5Sec: climbRates5Sec['maxClimb5Sec'],
+      maxSinkRate5Sec: climbRates5Sec['maxSink5Sec'],
       distance: groundTrackDistance,
       straightDistance: straightDistance,
       trackLogPath: trackLogPath,

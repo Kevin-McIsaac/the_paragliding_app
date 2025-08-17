@@ -101,7 +101,7 @@ class FlightStatisticsWidget extends StatelessWidget {
                 if (flight.maxClimbRate5Sec != null)
                   Expanded(
                     child: _buildStatItem(
-                      'Max Climb (15s)',
+                      'Max Climb (5s)',
                       '${flight.maxClimbRate5Sec!.toStringAsFixed(1)} m/s',
                       Icons.trending_up,
                       context,
@@ -110,7 +110,7 @@ class FlightStatisticsWidget extends StatelessWidget {
                 if (flight.maxSinkRate5Sec != null)
                   Expanded(
                     child: _buildStatItem(
-                      'Max Sink (15s)',
+                      'Max Sink (5s)',
                       '${flight.maxSinkRate5Sec!.toStringAsFixed(1)} m/s',
                       Icons.trending_down,
                       context,
