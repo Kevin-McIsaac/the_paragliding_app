@@ -433,14 +433,17 @@ function initializeCesium(config) {
             
             // Listen for home button clicks
             viewer.homeButton.viewModel.command.beforeExecute.addEventListener(function(commandInfo) {
-                // If we have a flight track entity, fly to it
-                if (flightTrackEntity) {
+                // If we have flight track entities, fly to them
+                const trackEntities = cesiumState.flyThroughMode.fullTrackEntities || 
+                                    (flightTrackEntity ? [flightTrackEntity] : null);
+                
+                if (trackEntities && trackEntities.length > 0) {
                     cesiumLog.info('Home button: returning to flight track view');
                     
                     // Cancel the default behavior
                     commandInfo.cancel = true;
                     
-                    // Fly to the track entity with the saved offset
+                    // Fly to the track entities with the saved offset
                     const offset = cesiumState.flightTrackHomeView?.offset || 
                                  new Cesium.HeadingPitchRange(
                                      Cesium.Math.toRadians(0),
@@ -448,7 +451,7 @@ function initializeCesium(config) {
                                      0
                                  );
                     
-                    viewer.flyTo(flightTrackEntity, {
+                    viewer.flyTo(trackEntities, {
                         duration: 3.0,
                         offset: offset
                     });
@@ -512,6 +515,20 @@ function switchBaseMap(mapType) {
     }
     
     cesiumLog.info('Base map switched to: ' + mapType);
+}
+
+// Helper functions for managing multiple track segments
+function showAllTrackSegments(show) {
+    if (cesiumState.flyThroughMode.fullTrackEntities) {
+        cesiumState.flyThroughMode.fullTrackEntities.forEach(entity => {
+            if (entity && entity.polyline) {
+                entity.polyline.show = show;
+            }
+        });
+    } else if (cesiumState.flyThroughMode.fullTrackEntity && cesiumState.flyThroughMode.fullTrackEntity.polyline) {
+        // Fallback for single entity (backwards compatibility)
+        cesiumState.flyThroughMode.fullTrackEntity.polyline.show = show;
+    }
 }
 
 // Feature 2: 3D Flight Track Rendering
@@ -622,8 +639,85 @@ function createColoredFlightTrack(points) {
     viewer.entities.removeAll();
     playbackState.showPilot = null;
     
-    // Convert points to Cartesian3 positions for the single polyline
-    const positions = points.map(point => 
+    // Helper function to get color based on 15s climb rate
+    function getClimbRateColorForPoint(climbRate15s) {
+        if (climbRate15s >= 0) {
+            return Cesium.Color.GREEN; // Green: Any climb (rate >= 0 m/s)
+        } else if (climbRate15s > -1.5) {
+            return Cesium.Color.DODGERBLUE; // Blue: Weak sink (-1.5 < rate < 0 m/s)
+        } else {
+            return Cesium.Color.RED; // Red: Strong sink (rate <= -1.5 m/s)
+        }
+    }
+    
+    // Create colored segments based on 15s climb rate
+    const segments = [];
+    let currentSegment = null;
+    
+    for (let i = 0; i < points.length; i++) {
+        const point = points[i];
+        const climbRate15s = point.climbRate15s || point.climbRate || 0; // Use 15s rate, fallback to instantaneous
+        const color = getClimbRateColorForPoint(climbRate15s);
+        
+        const position = Cesium.Cartesian3.fromDegrees(
+            point.longitude,
+            point.latitude,
+            point.altitude
+        );
+        
+        // Check if we need to start a new segment (color changed)
+        if (!currentSegment || !color.equals(currentSegment.color)) {
+            // Save previous segment if it has at least 2 points
+            if (currentSegment && currentSegment.positions.length >= 2) {
+                segments.push(currentSegment);
+            }
+            
+            // Start new segment with overlap point for continuity
+            currentSegment = {
+                color: color,
+                positions: currentSegment && currentSegment.positions.length > 0 
+                    ? [currentSegment.positions[currentSegment.positions.length - 1], position]
+                    : [position]
+            };
+        } else {
+            currentSegment.positions.push(position);
+        }
+    }
+    
+    // Add the last segment
+    if (currentSegment && currentSegment.positions.length >= 2) {
+        segments.push(currentSegment);
+    }
+    
+    // Create polyline entities for each segment
+    const trackEntities = [];
+    segments.forEach((segment, index) => {
+        const entity = viewer.entities.add({
+            name: `Flight Track Segment ${index + 1}`,
+            show: true,
+            polyline: {
+                positions: segment.positions,
+                width: 3,
+                material: segment.color.withAlpha(0.9),
+                clampToGround: false,
+                show: true
+            }
+        });
+        trackEntities.push(entity);
+    });
+    
+    // Store reference to first entity for framing (or create a combined entity)
+    flightTrackEntity = trackEntities[0] || null;
+    
+    // Store all track entities for fly-through mode management
+    cesiumState.flyThroughMode.fullTrackEntities = trackEntities;
+    cesiumState.flyThroughMode.fullTrackEntity = flightTrackEntity; // Keep for compatibility
+    
+    cesiumLog.info(`Created colored track with ${segments.length} segments`);
+    
+    // Create curtain wall that hangs from track to ground
+    // Build positions array for the wall (all track points)
+    const wallPositions = points.map(point => 
         Cesium.Cartesian3.fromDegrees(
             point.longitude,
             point.latitude,
@@ -631,26 +725,6 @@ function createColoredFlightTrack(points) {
         )
     );
     
-    // Create single blue polyline for entire track
-    const trackEntity = viewer.entities.add({
-        name: 'Flight Track',
-        show: true,  // Entity itself is visible
-        polyline: {
-            positions: positions,
-            width: 3,
-            material: Cesium.Color.DODGERBLUE.withAlpha(0.9),
-            clampToGround: false,
-            show: true  // Polyline is visible by default
-        }
-    });
-    
-    // Store reference for framing and home button
-    flightTrackEntity = trackEntity;
-    
-    // Store the full track entity
-    cesiumState.flyThroughMode.fullTrackEntity = trackEntity;
-    
-    // Create curtain wall that hangs from track to ground
     // Extract altitudes for the wall
     const wallHeights = points.map(point => point.altitude);
     
@@ -658,7 +732,7 @@ function createColoredFlightTrack(points) {
         name: 'Flight Track Curtain',
         show: true,  // Visible by default
         wall: {
-            positions: positions,  // Same positions as track
+            positions: wallPositions,  // All track positions
             maximumHeights: wallHeights,  // Flight altitudes
             // minimumHeights not specified = extends to ground automatically
             material: Cesium.Color.DODGERBLUE.withAlpha(0.1),  // 10% opaque
@@ -897,9 +971,7 @@ function setupTimeBasedAnimation(points) {
                 cesiumLog.info('Auto-enabling ribbon trail (playing or mid-flight)');
                 
                 // Hide full track, show dynamic track
-                if (cesiumState.flyThroughMode.fullTrackEntity && cesiumState.flyThroughMode.fullTrackEntity.polyline) {
-                    cesiumState.flyThroughMode.fullTrackEntity.polyline.show = false;
-                }
+                showAllTrackSegments(false);
                 if (cesiumState.flyThroughMode.dynamicTrackEntity && cesiumState.flyThroughMode.dynamicTrackEntity.polyline) {
                     cesiumState.flyThroughMode.dynamicTrackEntity.polyline.show = true;
                 }
@@ -918,9 +990,7 @@ function setupTimeBasedAnimation(points) {
                 cesiumLog.info('Auto-disabling ribbon trail (stopped at start/end)');
                 
                 // Show full track, hide dynamic track
-                if (cesiumState.flyThroughMode.fullTrackEntity && cesiumState.flyThroughMode.fullTrackEntity.polyline) {
-                    cesiumState.flyThroughMode.fullTrackEntity.polyline.show = true;
-                }
+                showAllTrackSegments(true);
                 if (cesiumState.flyThroughMode.dynamicTrackEntity && cesiumState.flyThroughMode.dynamicTrackEntity.polyline) {
                     cesiumState.flyThroughMode.dynamicTrackEntity.polyline.show = false;
                 }
@@ -1175,11 +1245,17 @@ function setCameraPreset(preset) {
 
 // Zoom to entities with padding for UI elements
 function zoomToEntitiesWithPadding(padding) {
-    if (!viewer || !flightTrackEntity) return;
+    if (!viewer) return;
+    
+    // If we have multiple track segments, zoom to all of them
+    const entitiesToFrame = cesiumState.flyThroughMode.fullTrackEntities || 
+                           (flightTrackEntity ? [flightTrackEntity] : []);
+    
+    if (entitiesToFrame.length === 0) return;
     
     // Use Cesium's built-in entity framing with custom offset
     // This doesn't change the camera transform mode, so left-drag remains pan
-    viewer.flyTo(flightTrackEntity, {
+    viewer.flyTo(entitiesToFrame, {
         duration: 3.0,
         offset: new Cesium.HeadingPitchRange(
             Cesium.Math.toRadians(0),   // Heading: 0 = North
@@ -1189,7 +1265,7 @@ function zoomToEntitiesWithPadding(padding) {
     }).then(function() {
         // Store this view as the home view for the flight track
         cesiumState.flightTrackHomeView = {
-            entity: flightTrackEntity,
+            entities: entitiesToFrame,
             offset: new Cesium.HeadingPitchRange(
                 Cesium.Math.toRadians(0),
                 Cesium.Math.toRadians(-45),
@@ -1562,10 +1638,8 @@ function setFlyThroughMode(enabled) {
             return;
         }
         
-        // Hide full track (polyline only, not affecting pilot)
-        if (cesiumState.flyThroughMode.fullTrackEntity.polyline) {
-            cesiumState.flyThroughMode.fullTrackEntity.polyline.show = false;
-        }
+        // Hide full track (polylines only, not affecting pilot)
+        showAllTrackSegments(false);
         
         // Show dynamic track
         if (cesiumState.flyThroughMode.dynamicTrackEntity.polyline) {
@@ -1627,10 +1701,8 @@ function setFlyThroughMode(enabled) {
         // Switch back to on-demand rendering when ribbon mode is disabled
         viewer.scene.requestRenderMode = true;
         
-        // Show full track (polyline only, not affecting pilot)
-        if (cesiumState.flyThroughMode.fullTrackEntity && cesiumState.flyThroughMode.fullTrackEntity.polyline) {
-            cesiumState.flyThroughMode.fullTrackEntity.polyline.show = true;
-        }
+        // Show full track (polylines only, not affecting pilot)
+        showAllTrackSegments(true);
         
         // Hide dynamic track
         if (cesiumState.flyThroughMode.dynamicTrackEntity && cesiumState.flyThroughMode.dynamicTrackEntity.polyline) {
