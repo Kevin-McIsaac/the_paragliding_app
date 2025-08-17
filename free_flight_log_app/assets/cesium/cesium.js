@@ -745,32 +745,115 @@ function createColoredFlightTrack(points) {
     cesiumState.flyThroughMode.curtainWallEntity = curtainWallEntity;
     cesiumLog.info('Created curtain wall with ' + wallHeights.length + ' segments');
     
-    // Create placeholder for dynamic track segments (will be updated per frame)
-    // We'll create and update segment entities as needed based on color changes
+    // Pre-create all dynamic track segments (colored by climb rate)
+    // These will be shown/hidden during animation
     cesiumState.flyThroughMode.dynamicTrackSegments = [];
     
-    // Create a single entity with callback to manage all segments
+    // Calculate all color segments for the entire flight (same as static track)
+    const dynamicSegments = [];
+    let currentSegment = null;
+    
+    for (let i = 0; i < points.length; i++) {
+        const point = points[i];
+        const climbRate15s = point.climbRate15s || point.climbRate || 0;
+        const color = getClimbRateColorForPoint(climbRate15s);
+        
+        const position = Cesium.Cartesian3.fromDegrees(
+            point.longitude,
+            point.latitude,
+            point.altitude
+        );
+        
+        // Check if we need to start a new segment (color changed)
+        if (!currentSegment || !color.equals(currentSegment.color)) {
+            // Save previous segment if it has at least 2 points
+            if (currentSegment && currentSegment.positions.length >= 2) {
+                currentSegment.endIndex = i - 1; // Store the end index
+                dynamicSegments.push(currentSegment);
+            }
+            
+            // Start new segment with overlap point for continuity
+            currentSegment = {
+                color: color,
+                positions: currentSegment && currentSegment.positions.length > 0 
+                    ? [currentSegment.positions[currentSegment.positions.length - 1], position]
+                    : [position],
+                startIndex: currentSegment && currentSegment.positions.length > 0 ? i - 1 : i, // Store start index
+                endIndex: i // Will be updated
+            };
+        } else {
+            currentSegment.positions.push(position);
+            currentSegment.endIndex = i; // Update end index
+        }
+    }
+    
+    // Add the last segment
+    if (currentSegment && currentSegment.positions.length >= 2) {
+        dynamicSegments.push(currentSegment);
+    }
+    
+    // Create hidden polyline entities for each segment
+    dynamicSegments.forEach((segment, index) => {
+        const entity = viewer.entities.add({
+            name: `Dynamic Track Segment ${index + 1}`,
+            show: false, // Initially hidden
+            polyline: {
+                positions: segment.positions,
+                width: 2,
+                material: segment.color.withAlpha(0.8),
+                clampToGround: false,
+                show: true // Polyline itself is visible when entity is shown
+            }
+        });
+        // Store the entity reference with its time range
+        cesiumState.flyThroughMode.dynamicTrackSegments.push({
+            entity: entity,
+            startIndex: segment.startIndex,
+            endIndex: segment.endIndex
+        });
+    });
+    
+    // Create a simple entity with callback to control segment visibility
     const dynamicTrackEntity = viewer.entities.add({
-        name: 'Dynamic Flight Track Manager',
+        name: 'Dynamic Flight Track Controller',
         show: true,
         polyline: {
             positions: new Cesium.CallbackProperty(function(time, result) {
                 if (!cesiumState.flyThroughMode.enabled) {
-                    // Clear all segment entities when disabled
-                    clearDynamicTrackSegments();
+                    // Hide all segments when disabled
+                    cesiumState.flyThroughMode.dynamicTrackSegments.forEach(seg => {
+                        seg.entity.show = false;
+                    });
                     return [];
                 }
                 
-                // Calculate colored segments based on current time
-                const segments = calculateTrailSegments(time);
+                // Find current point index based on time
+                let currentIndex = 0;
+                for (let i = 0; i < igcPoints.length; i++) {
+                    const point = igcPoints[i];
+                    if (!point.timestamp) continue;
+                    
+                    try {
+                        const pointTime = Cesium.JulianDate.fromIso8601(point.timestamp);
+                        if (Cesium.JulianDate.secondsDifference(pointTime, time) > 0) {
+                            break; // Found first point after current time
+                        }
+                        currentIndex = i;
+                    } catch (e) {
+                        continue;
+                    }
+                }
                 
-                // Update segment entities
-                updateDynamicTrackSegments(segments);
+                // Show/hide segments based on current index
+                cesiumState.flyThroughMode.dynamicTrackSegments.forEach(seg => {
+                    seg.entity.show = seg.startIndex <= currentIndex;
+                });
                 
-                // Return empty array since we're using separate entities for segments
-                return [];
-            }, false),  // false = positions are not constant, will be re-evaluated each frame
-            show: false  // Keep this hidden as it's just a manager
+                return []; // Return empty array, segments handle their own display
+            }, false),
+            show: true, // Must be visible for callback to run
+            width: 0, // Invisible line
+            material: Cesium.Color.TRANSPARENT
         }
     });
     
@@ -1489,152 +1572,22 @@ function getClimbRateColorForPoint(climbRate15s) {
     }
 }
 
-// Clear all dynamic track segment entities
-function clearDynamicTrackSegments() {
-    if (!viewer) return;
-    
-    for (const segment of cesiumState.flyThroughMode.dynamicTrackSegments) {
-        viewer.entities.remove(segment);
-    }
-    cesiumState.flyThroughMode.dynamicTrackSegments = [];
-}
-
-// Show or hide dynamic track segments
+// Show or hide all dynamic track segments
 function showDynamicTrackSegments(show) {
-    for (const segment of cesiumState.flyThroughMode.dynamicTrackSegments) {
-        if (segment.polyline) {
-            segment.polyline.show = show;
-        }
+    if (!cesiumState.flyThroughMode.dynamicTrackSegments) return;
+    
+    if (!show) {
+        // When hiding, hide all segments
+        cesiumState.flyThroughMode.dynamicTrackSegments.forEach(seg => {
+            if (seg.entity) {
+                seg.entity.show = false;
+            }
+        });
     }
-    // Also trigger the manager entity to update if showing
-    if (show && cesiumState.flyThroughMode.dynamicTrackEntity && cesiumState.flyThroughMode.dynamicTrackEntity.polyline) {
-        cesiumState.flyThroughMode.dynamicTrackEntity.polyline.show = false; // Keep manager hidden but active
-    }
+    // When showing, the callback will control which segments are visible
 }
 
-// Update dynamic track segment entities based on calculated segments
-function updateDynamicTrackSegments(segments) {
-    if (!viewer) return;
-    
-    // Clear existing segments if count doesn't match
-    if (cesiumState.flyThroughMode.dynamicTrackSegments.length !== segments.length) {
-        clearDynamicTrackSegments();
-    }
-    
-    // Create or update segment entities
-    for (let i = 0; i < segments.length; i++) {
-        const segment = segments[i];
-        
-        if (i < cesiumState.flyThroughMode.dynamicTrackSegments.length) {
-            // Update existing entity
-            const entity = cesiumState.flyThroughMode.dynamicTrackSegments[i];
-            if (entity.polyline) {
-                entity.polyline.positions = segment.positions;
-                entity.polyline.material = segment.color;
-            }
-        } else {
-            // Create new entity
-            const entity = viewer.entities.add({
-                name: `Dynamic Track Segment ${i}`,
-                show: true,
-                polyline: {
-                    positions: segment.positions,
-                    width: 2,  // Thin ribbon trail
-                    material: segment.color.withAlpha(0.8),  // 80% opacity for visibility
-                    clampToGround: false,
-                    show: true
-                }
-            });
-            cesiumState.flyThroughMode.dynamicTrackSegments.push(entity);
-        }
-    }
-    
-    // Remove extra entities if we have fewer segments now
-    while (cesiumState.flyThroughMode.dynamicTrackSegments.length > segments.length) {
-        const entity = cesiumState.flyThroughMode.dynamicTrackSegments.pop();
-        viewer.entities.remove(entity);
-    }
-}
-
-// Calculate trail segments for ribbon mode (colored by climb rate)
-// Returns an array of segments, each with positions and color
-function calculateTrailSegments(currentTime) {
-    if (!viewer || !igcPoints || igcPoints.length === 0) {
-        return [];
-    }
-    
-    const segments = [];
-    let currentSegment = null;
-    let pointsInTrail = 0;
-    
-    for (let i = 0; i < igcPoints.length; i++) {
-        const point = igcPoints[i];
-        
-        // Skip points without timestamps
-        if (!point.timestamp) {
-            continue;
-        }
-        
-        // Parse timestamp
-        let pointTime;
-        try {
-            pointTime = Cesium.JulianDate.fromIso8601(point.timestamp);
-        } catch (e) {
-            continue;
-        }
-        
-        // Check if point is before or at current time
-        const secondsFromCurrent = Cesium.JulianDate.secondsDifference(pointTime, currentTime);
-        
-        // Include all points up to current time
-        if (secondsFromCurrent <= 0) {
-            const climbRate15s = point.climbRate15s || point.climbRate || 0;
-            const color = getClimbRateColorForPoint(climbRate15s);
-            
-            const position = Cesium.Cartesian3.fromDegrees(
-                point.longitude,
-                point.latitude,
-                point.altitude
-            );
-            
-            // Check if we need to start a new segment (color changed)
-            if (!currentSegment || !color.equals(currentSegment.color)) {
-                // Save previous segment if it has at least 2 points
-                if (currentSegment && currentSegment.positions.length >= 2) {
-                    segments.push(currentSegment);
-                }
-                
-                // Start new segment with overlap point for continuity
-                currentSegment = {
-                    color: color,
-                    positions: currentSegment && currentSegment.positions.length > 0 
-                        ? [currentSegment.positions[currentSegment.positions.length - 1], position]
-                        : [position]
-                };
-            } else {
-                currentSegment.positions.push(position);
-            }
-            
-            pointsInTrail++;
-        } else {
-            // We've passed the current time, stop checking
-            break;
-        }
-    }
-    
-    // Add the last segment
-    if (currentSegment && currentSegment.positions.length >= 2) {
-        segments.push(currentSegment);
-    }
-    
-    // For ribbon mode, trim to last N seconds worth
-    if (cesiumState.flyThroughMode.ribbonMode === 'animation-time' && segments.length > 0) {
-        // This is complex with segments, so for now return all segments up to current time
-        // TODO: Implement segment trimming for ribbon mode
-    }
-    
-    return segments;
-}
+// Note: Dynamic segment creation/update functions removed - segments are now pre-created at initialization
 
 // Calculate trail positions for ribbon mode (animation-time based)
 // Shows a ribbon trail of X seconds of animation time behind the pilot
@@ -1859,9 +1812,8 @@ function setFlyThroughMode(enabled) {
         // Show full track (polylines only, not affecting pilot)
         showAllTrackSegments(true);
         
-        // Hide and clear dynamic track segments
+        // Hide dynamic track segments
         showDynamicTrackSegments(false);
-        clearDynamicTrackSegments();
         
         // Show static curtain wall
         if (cesiumState.flyThroughMode.curtainWallEntity) {
