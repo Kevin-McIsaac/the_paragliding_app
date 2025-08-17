@@ -129,20 +129,86 @@ class IgcFile {
     };
   }
   
-  /// Deprecated: Use calculate15SecondMaxClimbRates instead
-  @deprecated
+  /// Calculate maximum 5-second average climb rates
   Map<String, double> calculate5SecondMaxClimbRates() {
-    final result = calculate15SecondMaxClimbRates();
+    if (trackPoints.length < 2) {
+      return {'maxClimb5Sec': 0, 'maxSink5Sec': 0};
+    }
+
+    final fiveSecRates = calculate5SecondClimbRates();
+    
+    if (fiveSecRates.isEmpty) {
+      return {'maxClimb5Sec': 0, 'maxSink5Sec': 0};
+    }
+    
+    double maxClimb5Sec = 0;
+    double maxSink5Sec = 0;
+
+    for (final rate in fiveSecRates) {
+      if (rate > maxClimb5Sec) maxClimb5Sec = rate;
+      if (rate < maxSink5Sec) maxSink5Sec = rate;
+    }
+
     return {
-      'maxClimb5Sec': result['maxClimb15Sec'] ?? 0,
-      'maxSink5Sec': result['maxSink15Sec'] ?? 0,
+      'maxClimb5Sec': maxClimb5Sec,
+      'maxSink5Sec': maxSink5Sec.abs(),
     };
   }
   
-  /// Deprecated: Use calculate15SecondClimbRates instead
-  @deprecated
+  /// Calculate 5-second average climb rates for each point
   List<double> calculate5SecondClimbRates() {
-    return calculate15SecondClimbRates();
+    if (trackPoints.length < 2) return [];
+
+    final climbRates = <double>[];
+    
+    for (int i = 0; i < trackPoints.length; i++) {
+      // Find the point 5 seconds before
+      int firstInWindowIndex = i;
+      for (int j = i - 1; j >= 0; j--) {
+        final timeDiff = trackPoints[i].timestamp.difference(trackPoints[j].timestamp).inSeconds;
+        if (timeDiff >= 5) {
+          firstInWindowIndex = j;
+          break;
+        }
+      }
+      
+      // Special cases
+      if (i == 0) {
+        // First point has no history
+        climbRates.add(0.0);
+        continue;
+      }
+      
+      if (firstInWindowIndex == i) {
+        // Not enough history for 5-second average, use instantaneous
+        if (i > 0) {
+          final timeDiff = trackPoints[i].timestamp.difference(trackPoints[i-1].timestamp).inSeconds;
+          if (timeDiff > 0) {
+            final altDiff = _getAltitudeDifference(trackPoints[i], trackPoints[i-1]);
+            climbRates.add(altDiff / timeDiff);
+          } else {
+            climbRates.add(0.0);
+          }
+        } else {
+          climbRates.add(0.0);
+        }
+        continue;
+      }
+      
+      // Calculate 5-second average
+      final firstInWindow = trackPoints[firstInWindowIndex];
+      final lastInWindow = trackPoints[i];
+      final timeDiffSeconds = lastInWindow.timestamp.difference(firstInWindow.timestamp).inSeconds;
+      
+      if (timeDiffSeconds > 0) {
+        final altDiff = _getAltitudeDifference(lastInWindow, firstInWindow);
+        climbRates.add(altDiff / timeDiffSeconds);
+      } else {
+        climbRates.add(0.0);
+      }
+    }
+
+    return climbRates;
   }
 
   /// Calculate instantaneous climb rates for each point
@@ -358,6 +424,90 @@ class IgcPoint {
     if (timeDiff <= 0) return 0.0;
     
     return (distance / timeDiff) * 3.6; // Convert m/s to km/h
+  }
+  
+  /// Virtual getter for 5-second trailing average climb rate in m/s
+  /// Calculates average climb rate over the past 5 seconds from current point
+  double get climbRate5s {
+    if (parentFile == null || pointIndex == null) {
+      return 0.0;
+    }
+    
+    final tracks = parentFile!.trackPoints;
+    if (pointIndex! >= tracks.length || pointIndex! == 0) {
+      return climbRate; // Fallback to instantaneous for first point
+    }
+    
+    // Find the first point in the 5-second window
+    IgcPoint? firstInWindow;
+    for (int i = pointIndex! - 1; i >= 0; i--) {
+      final timeDiff = timestamp.difference(tracks[i].timestamp).inSeconds;
+      if (timeDiff >= 5) {
+        firstInWindow = tracks[i];
+        break;
+      }
+    }
+    
+    // If we don't have enough points in the window, use instantaneous rate
+    if (firstInWindow == null || firstInWindow == this) {
+      return climbRate;
+    }
+    
+    // Calculate the average climb rate over the window
+    final timeDiffSeconds = timestamp.difference(firstInWindow.timestamp).inSeconds.toDouble();
+    
+    if (timeDiffSeconds <= 0) {
+      return climbRate; // Fallback to instantaneous
+    }
+    
+    // Use pressure altitude if available (more accurate for vertical speed)
+    final altDiff = (pressureAltitude > 0 && firstInWindow.pressureAltitude > 0)
+        ? (pressureAltitude - firstInWindow.pressureAltitude).toDouble()
+        : (gpsAltitude - firstInWindow.gpsAltitude).toDouble();
+    
+    return altDiff / timeDiffSeconds; // m/s
+  }
+  
+  /// Virtual getter for 15-second trailing average climb rate in m/s
+  /// Calculates average climb rate over the past 15 seconds from current point
+  double get climbRate15s {
+    if (parentFile == null || pointIndex == null) {
+      return 0.0;
+    }
+    
+    final tracks = parentFile!.trackPoints;
+    if (pointIndex! >= tracks.length || pointIndex! == 0) {
+      return climbRate; // Fallback to instantaneous for first point
+    }
+    
+    // Find the first point in the 15-second window
+    IgcPoint? firstInWindow;
+    for (int i = pointIndex! - 1; i >= 0; i--) {
+      final timeDiff = timestamp.difference(tracks[i].timestamp).inSeconds;
+      if (timeDiff >= 15) {
+        firstInWindow = tracks[i];
+        break;
+      }
+    }
+    
+    // If we don't have enough points in the window, use instantaneous rate
+    if (firstInWindow == null || firstInWindow == this) {
+      return climbRate;
+    }
+    
+    // Calculate the average climb rate over the window
+    final timeDiffSeconds = timestamp.difference(firstInWindow.timestamp).inSeconds.toDouble();
+    
+    if (timeDiffSeconds <= 0) {
+      return climbRate; // Fallback to instantaneous
+    }
+    
+    // Use pressure altitude if available (more accurate for vertical speed)
+    final altDiff = (pressureAltitude > 0 && firstInWindow.pressureAltitude > 0)
+        ? (pressureAltitude - firstInWindow.pressureAltitude).toDouble()
+        : (gpsAltitude - firstInWindow.gpsAltitude).toDouble();
+    
+    return altDiff / timeDiffSeconds; // m/s
   }
   
   /// Calculate distance between two points in meters using Haversine formula

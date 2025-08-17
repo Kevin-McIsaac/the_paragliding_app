@@ -176,8 +176,10 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
 
     // Convert IgcPoints to format expected by Cesium widget with timestamps and climb rates
     final trackPointsForCesium = _trackPoints.map((point) {
-      // Use the virtual properties if available, otherwise fall back to calculated values
+      // Use the virtual properties for all three climb rates
       final climbRate = point.climbRate;
+      final climbRate5s = point.climbRate5s;
+      final climbRate15s = point.climbRate15s;
       
       return {
         'latitude': point.latitude,
@@ -187,6 +189,8 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
         'pressureAltitude': point.pressureAltitude,
         'timestamp': _formatTimestampWithTimezone(point.timestamp, _timezone),
         'climbRate': climbRate,
+        'climbRate5s': climbRate5s,
+        'climbRate15s': climbRate15s,
         'groundSpeed': point.groundSpeed,
         'timezone': _timezone ?? '+00:00',  // Pass timezone to Cesium
       };

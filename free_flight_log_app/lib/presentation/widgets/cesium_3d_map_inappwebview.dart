@@ -1299,7 +1299,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
       // Convert track points to JavaScript format
       final jsPoints = widget.trackPoints!.map((point) {
         // Handle Map objects (which is what we're getting from flight_track_widget)
-        double lat, lon, alt, climbRate;
+        double lat, lon, alt, climbRate, climbRate5s, climbRate15s;
         String timezone, timestamp;
         
         if (point is Map) {
@@ -1307,6 +1307,8 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
           lon = (point['longitude'] ?? 0.0).toDouble();
           alt = (point['altitude'] ?? 0.0).toDouble();
           climbRate = (point['climbRate'] ?? 0.0).toDouble();
+          climbRate5s = (point['climbRate5s'] ?? 0.0).toDouble();
+          climbRate15s = (point['climbRate15s'] ?? 0.0).toDouble();
           timezone = point['timezone'] ?? '+00:00';
           timestamp = point['timestamp'] ?? '';
         } else {
@@ -1315,11 +1317,13 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
           lon = (point.longitude ?? 0.0).toDouble();
           alt = (point.altitude ?? 0.0).toDouble();
           climbRate = (point.climbRate ?? 0.0).toDouble();
+          climbRate5s = (point.climbRate5s ?? 0.0).toDouble();
+          climbRate15s = (point.climbRate15s ?? 0.0).toDouble();
           timezone = point.timezone ?? '+00:00';
           timestamp = point.timestamp ?? '';
         }
         
-        return '{latitude:$lat,longitude:$lon,altitude:$alt,climbRate:$climbRate,timestamp:"$timestamp",timezone:"$timezone"}';
+        return '{latitude:$lat,longitude:$lon,altitude:$alt,climbRate:$climbRate,climbRate5s:$climbRate5s,climbRate15s:$climbRate15s,timestamp:"$timestamp",timezone:"$timezone"}';
       }).join(',');
       
       // Log first and last points for debugging
