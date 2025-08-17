@@ -19,6 +19,7 @@ const cesiumState = {
     flyThroughMode: {
         enabled: false,
         trailDuration: 5000,  // milliseconds (kept for future use but not used in progressive mode)
+        staticTrackPrimitive: null,  // Static track primitive with per-vertex colors
         dynamicTrackPrimitive: null, // Primitive for per-vertex colored dynamic track
         showDynamicTrack: false,      // Track visibility state
         igcPoints: null,              // Store the IGC points for global access
@@ -438,31 +439,46 @@ function initializeCesium(config) {
             
             // Listen for home button clicks
             viewer.homeButton.viewModel.command.beforeExecute.addEventListener(function(commandInfo) {
-                // If we have flight track entities, fly to them
-                const trackEntities = cesiumState.flyThroughMode.fullTrackEntities || 
-                                    (flightTrackEntity ? [flightTrackEntity] : null);
-                
-                if (trackEntities && trackEntities.length > 0) {
-                    cesiumLog.info('Home button: returning to flight track view');
+                // Check for primitive-based track first
+                if (cesiumState.flyThroughMode.staticTrackPrimitive && cesiumState.flightTrackHomeView?.boundingSphere) {
+                    cesiumLog.info('Home button: returning to flight track view (primitive)');
                     
                     // Cancel the default behavior
                     commandInfo.cancel = true;
                     
-                    // Fly to the track entities with the saved offset
-                    const offset = cesiumState.flightTrackHomeView?.offset || 
-                                 new Cesium.HeadingPitchRange(
-                                     Cesium.Math.toRadians(0),
-                                     Cesium.Math.toRadians(-45),
-                                     0
-                                 );
-                    
-                    viewer.flyTo(trackEntities, {
+                    // Fly to the bounding sphere with saved offset
+                    viewer.camera.flyToBoundingSphere(cesiumState.flightTrackHomeView.boundingSphere, {
                         duration: 3.0,
-                        offset: offset
+                        offset: cesiumState.flightTrackHomeView.offset
                     });
-                } else {
-                    // No flight track loaded, let default behavior proceed
-                    cesiumLog.info('Home button: using default view (no flight track)');
+                }
+                // Fallback to entity-based track
+                else {
+                    const trackEntities = cesiumState.flyThroughMode.fullTrackEntities || 
+                                        (flightTrackEntity ? [flightTrackEntity] : null);
+                    
+                    if (trackEntities && trackEntities.length > 0) {
+                        cesiumLog.info('Home button: returning to flight track view (entities)');
+                        
+                        // Cancel the default behavior
+                        commandInfo.cancel = true;
+                        
+                        // Fly to the track entities with the saved offset
+                        const offset = cesiumState.flightTrackHomeView?.offset || 
+                                     new Cesium.HeadingPitchRange(
+                                         Cesium.Math.toRadians(0),
+                                         Cesium.Math.toRadians(-45),
+                                         0
+                                     );
+                        
+                        viewer.flyTo(trackEntities, {
+                            duration: 3.0,
+                            offset: offset
+                        });
+                    } else {
+                        // No flight track loaded, let default behavior proceed
+                        cesiumLog.info('Home button: using default view (no flight track)');
+                    }
                 }
             });
         }
@@ -522,16 +538,20 @@ function switchBaseMap(mapType) {
     cesiumLog.info('Base map switched to: ' + mapType);
 }
 
-// Helper functions for managing multiple track segments
+// Helper functions for managing track visibility
 function showAllTrackSegments(show) {
-    if (cesiumState.flyThroughMode.fullTrackEntities) {
+    // Handle primitive-based static track
+    if (cesiumState.flyThroughMode.staticTrackPrimitive) {
+        cesiumState.flyThroughMode.staticTrackPrimitive.show = show;
+    }
+    // Backwards compatibility for entity-based tracks
+    else if (cesiumState.flyThroughMode.fullTrackEntities) {
         cesiumState.flyThroughMode.fullTrackEntities.forEach(entity => {
             if (entity && entity.polyline) {
                 entity.polyline.show = show;
             }
         });
     } else if (cesiumState.flyThroughMode.fullTrackEntity && cesiumState.flyThroughMode.fullTrackEntity.polyline) {
-        // Fallback for single entity (backwards compatibility)
         cesiumState.flyThroughMode.fullTrackEntity.polyline.show = show;
     }
 }
@@ -655,70 +675,53 @@ function createColoredFlightTrack(points) {
         }
     }
     
-    // Create colored segments based on 15s climb rate
-    const segments = [];
-    let currentSegment = null;
+    // Build positions and colors arrays for per-vertex colored primitive
+    const positions = [];
+    const colors = [];
     
     for (let i = 0; i < points.length; i++) {
         const point = points[i];
-        const climbRate15s = point.climbRate15s || point.climbRate || 0; // Use 15s rate, fallback to instantaneous
-        const color = getClimbRateColorForPoint(climbRate15s);
         
-        const position = Cesium.Cartesian3.fromDegrees(
-            point.longitude,
-            point.latitude,
-            point.altitude
+        // Add position
+        positions.push(
+            Cesium.Cartesian3.fromDegrees(
+                point.longitude,
+                point.latitude,
+                point.altitude
+            )
         );
         
-        // Check if we need to start a new segment (color changed)
-        if (!currentSegment || !color.equals(currentSegment.color)) {
-            // Save previous segment if it has at least 2 points
-            if (currentSegment && currentSegment.positions.length >= 2) {
-                segments.push(currentSegment);
-            }
-            
-            // Start new segment with overlap point for continuity
-            currentSegment = {
-                color: color,
-                positions: currentSegment && currentSegment.positions.length > 0 
-                    ? [currentSegment.positions[currentSegment.positions.length - 1], position]
-                    : [position]
-            };
-        } else {
-            currentSegment.positions.push(position);
-        }
+        // Add color based on 15s climb rate
+        const climbRate15s = point.climbRate15s || point.climbRate || 0;
+        const color = getClimbRateColorForPoint(climbRate15s);
+        colors.push(color.withAlpha(0.9)); // Slightly transparent
     }
     
-    // Add the last segment
-    if (currentSegment && currentSegment.positions.length >= 2) {
-        segments.push(currentSegment);
-    }
-    
-    // Create polyline entities for each segment
-    const trackEntities = [];
-    segments.forEach((segment, index) => {
-        const entity = viewer.entities.add({
-            name: `Flight Track Segment ${index + 1}`,
-            show: true,
-            polyline: {
-                positions: segment.positions,
-                width: 3,
-                material: segment.color.withAlpha(0.9),
-                clampToGround: false,
-                show: true
-            }
-        });
-        trackEntities.push(entity);
+    // Create a single primitive with per-vertex colors for smooth gradients
+    const staticTrackPrimitive = new Cesium.Primitive({
+        geometryInstances: new Cesium.GeometryInstance({
+            geometry: new Cesium.PolylineGeometry({
+                positions: positions,
+                width: 3.0,
+                vertexFormat: Cesium.PolylineColorAppearance.VERTEX_FORMAT,
+                colors: colors,
+                colorsPerVertex: true
+            })
+        }),
+        appearance: new Cesium.PolylineColorAppearance({
+            translucent: true
+        }),
+        asynchronous: false  // Synchronous rendering for consistency
     });
     
-    // Store reference to first entity for framing (or create a combined entity)
-    flightTrackEntity = trackEntities[0] || null;
+    // Add primitive to scene
+    cesiumState.flyThroughMode.staticTrackPrimitive = viewer.scene.primitives.add(staticTrackPrimitive);
     
-    // Store all track entities for fly-through mode management
-    cesiumState.flyThroughMode.fullTrackEntities = trackEntities;
-    cesiumState.flyThroughMode.fullTrackEntity = flightTrackEntity; // Keep for compatibility
+    // Store references for compatibility
+    cesiumState.flyThroughMode.fullTrackEntities = null; // No longer using entities
+    cesiumState.flyThroughMode.fullTrackEntity = null; // No longer using entities
     
-    cesiumLog.info(`Created colored track with ${segments.length} segments`);
+    cesiumLog.info(`Created colored track with per-vertex coloring (${points.length} points)`);
     
     // Create curtain wall that hangs from track to ground
     // Build positions array for the wall (all track points)
@@ -1236,33 +1239,61 @@ function setCameraPreset(preset) {
 function zoomToEntitiesWithPadding(padding) {
     if (!viewer) return;
     
-    // If we have multiple track segments, zoom to all of them
-    const entitiesToFrame = cesiumState.flyThroughMode.fullTrackEntities || 
-                           (flightTrackEntity ? [flightTrackEntity] : []);
-    
-    if (entitiesToFrame.length === 0) return;
-    
-    // Use Cesium's built-in entity framing with custom offset
-    // This doesn't change the camera transform mode, so left-drag remains pan
-    viewer.flyTo(entitiesToFrame, {
-        duration: 3.0,
-        offset: new Cesium.HeadingPitchRange(
-            Cesium.Math.toRadians(0),   // Heading: 0 = North
-            Cesium.Math.toRadians(-45), // Pitch: -45 = looking down at 45 degree angle
-            0                            // Range: 0 = auto-calculate based on entity size
-        )
-    }).then(function() {
+    // If we have a primitive-based track, zoom to its bounds
+    if (cesiumState.flyThroughMode.staticTrackPrimitive && igcPoints && igcPoints.length > 0) {
+        // Calculate bounding sphere from track points
+        const positions = igcPoints.map(point => 
+            Cesium.Cartesian3.fromDegrees(point.longitude, point.latitude, point.altitude)
+        );
+        const boundingSphere = Cesium.BoundingSphere.fromPoints(positions);
+        
+        // Fly to the bounding sphere with custom offset
+        viewer.camera.flyToBoundingSphere(boundingSphere, {
+            duration: 3.0,
+            offset: new Cesium.HeadingPitchRange(
+                Cesium.Math.toRadians(0),   // Heading: 0 = North
+                Cesium.Math.toRadians(-45), // Pitch: -45 = looking down at 45 degree angle
+                boundingSphere.radius * 2.5  // Range: 2.5x the radius for good framing
+            )
+        });
+        
         // Store this view as the home view for the flight track
         cesiumState.flightTrackHomeView = {
-            entities: entitiesToFrame,
+            boundingSphere: boundingSphere,
+            offset: new Cesium.HeadingPitchRange(
+                Cesium.Math.toRadians(0),
+                Cesium.Math.toRadians(-45),
+                boundingSphere.radius * 2.5
+            )
+        };
+        cesiumLog.info('Flight track framed in view (primitive-based)');
+    }
+    // Fallback for entity-based tracks
+    else {
+        const entitiesToFrame = cesiumState.flyThroughMode.fullTrackEntities || 
+                               (flightTrackEntity ? [flightTrackEntity] : []);
+        
+        if (entitiesToFrame.length === 0) return;
+        
+        viewer.flyTo(entitiesToFrame, {
+            duration: 3.0,
             offset: new Cesium.HeadingPitchRange(
                 Cesium.Math.toRadians(0),
                 Cesium.Math.toRadians(-45),
                 0
             )
-        };
-        cesiumLog.info('Flight track framed in view');
-    });
+        }).then(function() {
+            cesiumState.flightTrackHomeView = {
+                entities: entitiesToFrame,
+                offset: new Cesium.HeadingPitchRange(
+                    Cesium.Math.toRadians(0),
+                    Cesium.Math.toRadians(-45),
+                    0
+                )
+            };
+            cesiumLog.info('Flight track framed in view (entity-based)');
+        });
+    }
 }
 
 // Smooth camera fly to location
