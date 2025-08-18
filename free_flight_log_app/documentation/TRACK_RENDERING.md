@@ -12,13 +12,14 @@ Tracks are coloured based on the 15-second trailing average climb rate:
 - **Blue**: Weak sink (-1.5 to 0 m/s) - Normal glide or weak sink
 - **Red**: Strong sink (≤-1.5 m/s) - Strong sink or descending flight
 
-### Overview
-The static track displays the complete flight path with smooth 
+### Details
+
+The static track displays the complete flight path with smooth
 color gradients based on climb rate at each point. Under
 the track is a curtain effect (transparent wall) that helps show the distance form terrain.
 
 Their is a  dynamic track looks like a trailing ribbon
-coloured by climb rate with a curtain effect. The colouring of the 
+coloured by climb rate with a curtain effect. The colouring of the
 dynamic track created additional  complexity that required exploring
  multiple different way to implement this. After many failures we
 found the  simplest, most reliable was:
@@ -29,6 +30,7 @@ found the  simplest, most reliable was:
 - **GPU Optimized**: Primitive-based rendering is more efficient than entities
 
 ### Performance Characteristics
+
 - **Static Track**: O(n) creation, O(1) rendering
 - **Dynamic Track**: O(w) updates where w = window size
 - **Memory**: ~100 bytes per track point
