@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'dart:io' show Platform;
+import 'dart:async';
 import 'presentation/screens/splash_screen.dart';
+import 'presentation/screens/igc_import_screen.dart';
 import 'utils/startup_performance_tracker.dart';
+import 'utils/file_sharing_handler.dart';
 import 'data/datasources/database_helper.dart';
 
 void main() {
@@ -53,11 +56,37 @@ class AppInitializer extends StatefulWidget {
 class _AppInitializerState extends State<AppInitializer> {
   bool _isInitialized = false;
   String? _error;
+  StreamSubscription? _intentDataStreamSubscription;
+  List<String>? _sharedFiles;
 
   @override
   void initState() {
     super.initState();
     _initialize();
+    _handleIncomingFiles();
+  }
+  
+  void _handleIncomingFiles() async {
+    // Get initial shared files (if any)
+    final initialFiles = await FileSharingHandler.initialize();
+    if (initialFiles != null && initialFiles.isNotEmpty) {
+      setState(() {
+        _sharedFiles = initialFiles;
+      });
+    }
+    
+    // Listen for incoming shared files
+    _intentDataStreamSubscription = FileSharingHandler.listen((files) {
+      setState(() {
+        _sharedFiles = files;
+      });
+    });
+  }
+  
+  @override
+  void dispose() {
+    _intentDataStreamSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _initialize() async {
@@ -107,7 +136,9 @@ class _AppInitializerState extends State<AppInitializer> {
             ),
             useMaterial3: true,
           ),
-          home: const SplashScreen(),
+          home: _sharedFiles != null && _sharedFiles!.isNotEmpty
+              ? IgcImportScreen(initialFiles: _sharedFiles!)
+              : const SplashScreen(),
       );
     }
     

@@ -11,7 +11,9 @@ import '../../services/logging_service.dart';
 import '../../services/igc_import_service.dart';
 
 class IgcImportScreen extends StatefulWidget {
-  const IgcImportScreen({super.key});
+  final List<String>? initialFiles;
+  
+  const IgcImportScreen({super.key, this.initialFiles});
 
   @override
   State<IgcImportScreen> createState() => _IgcImportScreenState();
@@ -36,6 +38,15 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
   void initState() {
     super.initState();
     _loadLastFolder();
+    
+    // If initial files were provided (from intent), set them
+    if (widget.initialFiles != null && widget.initialFiles!.isNotEmpty) {
+      _selectedFilePaths = widget.initialFiles!;
+      // Automatically start import for shared files
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _importFiles();
+      });
+    }
   }
   
   Future<void> _loadLastFolder() async {
@@ -72,17 +83,21 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
       FilePickerResult? result;
       
       try {
-        // Try with custom type and igc extension
+        // For Android, use withData to ensure file content is accessible
         result = await FilePicker.platform.pickFiles(
           type: FileType.custom,
-          allowedExtensions: ['igc'],
+          allowedExtensions: ['igc', 'IGC'],
           allowMultiple: true,
+          withData: false,
+          withReadStream: false,
         );
       } catch (e) {
         // Fallback: try with any file type and filter manually
         result = await FilePicker.platform.pickFiles(
           type: FileType.any,
           allowMultiple: true,
+          withData: false,
+          withReadStream: false,
         );
         
         // Filter for .igc files manually
