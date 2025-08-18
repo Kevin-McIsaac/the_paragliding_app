@@ -4,21 +4,15 @@
 // Global state management
 const cesiumState = {
     viewer: null,
-    flightTrackEntity: null,
     igcPoints: [],
     terrainExaggeration: 1.0,
     timezone: '+00:00',
     timezoneOffsetSeconds: 0,
-    playback: {
-        followMode: false,
-        showPilot: null,
-        positionProperty: null
-    },
     sceneMode: null,  // Will be set to current scene mode
     sceneModeChanging: false,  // Flag to track if scene mode is changing
     flyThroughMode: {
         enabled: false,
-        trailDuration: 5000,  // milliseconds (kept for future use but not used in progressive mode)
+        trailDuration: 5000,  // milliseconds
         staticTrackPrimitive: null,  // Static track primitive with per-vertex colors
         dynamicTrackPrimitive: null, // Primitive for per-vertex colored dynamic track
         showDynamicTrack: false,      // Track visibility state
@@ -30,8 +24,7 @@ const cesiumState = {
         dynamicCurtainEntity: null,    // Dynamic curtain for progressive mode
         lastUpdateTime: null,
         updateInterval: 100,  // Update every 100ms for smooth animation
-        progressiveMode: false,  // Changed to false - now using ribbon mode
-        ribbonMode: 'animation-time',  // Ribbon based on animation time
+        ribbonMode: 'animation-time',  // Always using animation-time mode
         ribbonAnimationSeconds: 3.0,   // Default 3 seconds of animation time
         ribbonStartTime: null,         // Track when ribbon starts
         onTickCallback: null           // Store the onTick callback for cleanup
@@ -39,11 +32,9 @@ const cesiumState = {
     flightTrackHomeView: null  // Store the home view for flight track
 };
 
-// Compatibility aliases for easier refactoring
+// Global variables
 let viewer = null;
-let flightTrackEntity = null;
 let igcPoints = [];
-let currentTerrainExaggeration = 1.0;
 
 // Logging wrapper for conditional output
 const cesiumLog = {
@@ -454,8 +445,7 @@ function initializeCesium(config) {
                 }
                 // Fallback to entity-based track
                 else {
-                    const trackEntities = cesiumState.flyThroughMode.fullTrackEntities || 
-                                        (flightTrackEntity ? [flightTrackEntity] : null);
+                    const trackEntities = null; // Entities no longer used
                     
                     if (trackEntities && trackEntities.length > 0) {
                         cesiumLog.info('Home button: returning to flight track view (entities)');
@@ -498,7 +488,7 @@ function initializeCesium(config) {
 function setTerrainExaggeration(value) {
     if (!viewer || !viewer.scene || !viewer.scene.globe) return;
     
-    currentTerrainExaggeration = value;
+    cesiumState.terrainExaggeration = value;
     viewer.scene.globe.terrainExaggeration = value;
     viewer.scene.globe.terrainExaggerationRelativeHeight = 0.0;
 }
@@ -545,15 +535,7 @@ function showAllTrackSegments(show) {
         cesiumState.flyThroughMode.staticTrackPrimitive.show = show;
     }
     // Backwards compatibility for entity-based tracks
-    else if (cesiumState.flyThroughMode.fullTrackEntities) {
-        cesiumState.flyThroughMode.fullTrackEntities.forEach(entity => {
-            if (entity && entity.polyline) {
-                entity.polyline.show = show;
-            }
-        });
-    } else if (cesiumState.flyThroughMode.fullTrackEntity && cesiumState.flyThroughMode.fullTrackEntity.polyline) {
-        cesiumState.flyThroughMode.fullTrackEntity.polyline.show = show;
-    }
+    // Entity fallback removed - only using primitives now
 }
 
 // Feature 2: 3D Flight Track Rendering
@@ -664,16 +646,6 @@ function createColoredFlightTrack(points) {
     viewer.entities.removeAll();
     playbackState.showPilot = null;
     
-    // Helper function to get color based on 15s climb rate
-    function getClimbRateColorForPoint(climbRate15s) {
-        if (climbRate15s >= 0) {
-            return Cesium.Color.GREEN; // Green: Any climb (rate >= 0 m/s)
-        } else if (climbRate15s > -1.5) {
-            return Cesium.Color.DODGERBLUE; // Blue: Weak sink (-1.5 < rate < 0 m/s)
-        } else {
-            return Cesium.Color.RED; // Red: Strong sink (rate <= -1.5 m/s)
-        }
-    }
     
     // Build positions and colors arrays for per-vertex colored primitive
     const positions = [];
@@ -1125,16 +1097,7 @@ function setupTimeBasedAnimation(points) {
     cesiumLog.info('Time-based animation configured with Cesium native features and clock listener');
 }
 
-function getClimbRateColor(climbRate) {
-    // Kept for compatibility but no longer used for track visualization
-    if (climbRate >= 0) {
-        return '#4CAF50';  // Green: Any climb (rate >= 0 m/s)
-    } else if (climbRate > -1.5) {
-        return '#1976D2';  // Royal Blue: Weak sink (-1.5 < rate < 0 m/s)
-    } else {
-        return '#FF0000';  // Red: Strong sink (rate <= -1.5 m/s)
-    }
-}
+// Removed unused getClimbRateColor function
 
 // Set track transparency
 function setTrackOpacity(opacity) {
@@ -1298,8 +1261,7 @@ function zoomToEntitiesWithPadding(padding) {
     }
     // Fallback for entity-based tracks
     else {
-        const entitiesToFrame = cesiumState.flyThroughMode.fullTrackEntities || 
-                               (flightTrackEntity ? [flightTrackEntity] : []);
+        const entitiesToFrame = []; // Entities no longer used
         
         if (entitiesToFrame.length === 0) return;
         
@@ -2271,11 +2233,7 @@ function onSceneModeChanged() {
         viewer.scene.screenSpaceCameraController.enableTilt = true;
     }
     
-    // Ensure flight track is visible in new mode
-    if (flightTrackEntity && viewer.scene.mode === Cesium.SceneMode.SCENE2D) {
-        // Adjust entity properties for 2D if needed
-        flightTrackEntity.polyline.clampToGround = false;
-    }
+    // Track entities no longer used - using primitives instead
     
     // Restore camera view if it was saved before morphing (for scene mode picker usage)
     if (cesiumState.savedViewBeforeMorph) {
@@ -2311,10 +2269,8 @@ window.setTrackOpacity = setTrackOpacity;
 window.setCameraPreset = setCameraPreset;
 window.flyToLocation = flyToLocation;
 window.setCameraControlsEnabled = setCameraControlsEnabled;
-window.getClimbRateColor = getClimbRateColor;
 
-// Phase 2 Feature exports (Playback)
-window.setFollowMode = setFollowMode;
+// Removed unused setFollowMode export
 
 // Scene mode management exports
 window.setSceneMode = setSceneMode;
@@ -2325,7 +2281,5 @@ window.toggleSceneMode = toggleSceneMode;
 // Fly-through mode exports
 window.setFlyThroughMode = setFlyThroughMode;
 window.getFlyThroughMode = getFlyThroughMode;
-window.setTrailDuration = setTrailDuration;
-window.getTrailDuration = getTrailDuration;
-window.setRibbonDuration = setRibbonDuration;
-window.getRibbonDuration = getRibbonDuration;
+// Removed unused trail duration exports
+// Removed unused ribbon duration exports
