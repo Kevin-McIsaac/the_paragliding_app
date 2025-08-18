@@ -1,63 +1,39 @@
 // Cesium 3D Map JavaScript Module
 // Handles initialization, memory management, and lifecycle
 
-// Global state management
+// Simplified state management
 const cesiumState = {
-    viewer: null,
-    flightTrackEntity: null,
-    igcPoints: [],
-    terrainExaggeration: 1.0,
-    timezone: '+00:00',
-    timezoneOffsetSeconds: 0,
-    playback: {
-        followMode: false,
-        showPilot: null,
-        positionProperty: null
-    },
-    sceneMode: null,  // Will be set to current scene mode
-    sceneModeChanging: false,  // Flag to track if scene mode is changing
     flyThroughMode: {
         enabled: false,
-        trailDuration: 5000,  // milliseconds (kept for future use but not used in progressive mode)
-        staticTrackPrimitive: null,  // Static track primitive with per-vertex colors
-        dynamicTrackPrimitive: null, // Primitive for per-vertex colored dynamic track
-        showDynamicTrack: false,      // Track visibility state
-        igcPoints: null,              // Store the IGC points for global access
-        lastWindowStart: -1,          // Track last window start to avoid unnecessary updates
-        lastWindowEnd: -1,            // Track last window end to avoid unnecessary updates
-        fullTrackEntity: null,
-        curtainWallEntity: null,      // Static curtain wall hanging from track
-        dynamicCurtainEntity: null,    // Dynamic curtain for progressive mode
+        staticTrackPrimitive: null,
+        dynamicTrackPrimitive: null,
+        showDynamicTrack: false,
+        igcPoints: null,
+        lastWindowStart: -1,
+        lastWindowEnd: -1,
+        curtainWallEntity: null,
+        dynamicCurtainEntity: null,
         lastUpdateTime: null,
-        updateInterval: 100,  // Update every 100ms for smooth animation
-        progressiveMode: false,  // Changed to false - now using ribbon mode
-        ribbonMode: 'animation-time',  // Ribbon based on animation time
-        ribbonAnimationSeconds: 3.0,   // Default 3 seconds of animation time
-        ribbonStartTime: null,         // Track when ribbon starts
-        onTickCallback: null           // Store the onTick callback for cleanup
+        updateInterval: 100,
+        ribbonAnimationSeconds: 3.0,
+        onTickCallback: null
     },
-    flightTrackHomeView: null  // Store the home view for flight track
+    flightTrackHomeView: null
 };
 
-// Compatibility aliases for easier refactoring
+// Global variables
 let viewer = null;
-let flightTrackEntity = null;
 let igcPoints = [];
-let currentTerrainExaggeration = 1.0;
 
-// Logging wrapper for conditional output
+// Simplified logging
 const cesiumLog = {
     debug: (message) => {
         if (window.cesiumConfig && window.cesiumConfig.debug) {
             console.log('[Cesium Debug] ' + message);
         }
     },
-    info: (message) => {
-        console.log('[Cesium] ' + message);
-    },
-    error: (message) => {
-        console.error('[Cesium Error] ' + message);
-    }
+    info: (message) => console.log('[Cesium] ' + message),
+    error: (message) => console.error('[Cesium Error] ' + message)
 };
 
 // Main initialization function
@@ -65,164 +41,75 @@ function initializeCesium(config) {
     // Set Cesium Ion token
     Cesium.Ion.defaultAccessToken = config.token;
     
-    cesiumLog.info('Starting Cesium initialization...');
     
     // Store track points if provided during initialization
     const hasInitialTrack = config.trackPoints && config.trackPoints.length > 0;
-    if (hasInitialTrack) {
-        cesiumLog.info('Initial track data provided with ' + config.trackPoints.length + ' points');
-    }
     
     try {
-        // Create custom imagery provider view models for limited base layer options
-        const imageryViewModels = [];
-        
-        // Bing Maps Aerial
-        imageryViewModels.push(new Cesium.ProviderViewModel({
-            name: 'Bing Maps Aerial',
-            iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerial.png'),
-            tooltip: 'Bing Maps aerial imagery',
-            creationFunction: function () {
-                return Cesium.IonImageryProvider.fromAssetId(2);
-            }
-        }));
-        
-        // Bing Maps Aerial with Labels
-        imageryViewModels.push(new Cesium.ProviderViewModel({
-            name: 'Bing Maps Aerial with Labels',
-            iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerialLabels.png'),
-            tooltip: 'Bing Maps aerial imagery with labels',
-            creationFunction: function () {
-                return Cesium.IonImageryProvider.fromAssetId(3);
-            }
-        }));
-        
-        // Bing Maps Roads
-        imageryViewModels.push(new Cesium.ProviderViewModel({
-            name: 'Bing Maps Roads',
-            iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingRoads.png'),
-            tooltip: 'Bing Maps standard road maps',
-            creationFunction: function () {
-                return Cesium.IonImageryProvider.fromAssetId(4);
-            }
-        }));
-        
-        // OpenStreetMap
-        imageryViewModels.push(new Cesium.ProviderViewModel({
-            name: 'OpenStreetMap',
-            iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/openStreetMap.png'),
-            tooltip: 'OpenStreetMap',
-            creationFunction: function () {
-                return new Cesium.OpenStreetMapImageryProvider({
+        // Essential imagery providers
+        const imageryViewModels = [
+            new Cesium.ProviderViewModel({
+                name: 'Bing Maps Aerial with Labels',
+                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerialLabels.png'),
+                tooltip: 'Bing Maps aerial imagery with labels',
+                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3)
+            }),
+            new Cesium.ProviderViewModel({
+                name: 'Bing Maps Aerial',
+                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerial.png'),
+                tooltip: 'Bing Maps aerial imagery without labels',
+                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(2)
+            }),
+            new Cesium.ProviderViewModel({
+                name: 'Bing Maps Roads',
+                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingRoads.png'),
+                tooltip: 'Bing Maps road imagery',
+                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(4)
+            }),
+            new Cesium.ProviderViewModel({
+                name: 'OpenStreetMap',
+                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/openStreetMap.png'),
+                tooltip: 'OpenStreetMap',
+                creationFunction: () => new Cesium.OpenStreetMapImageryProvider({
                     url: 'https://a.tile.openstreetmap.org/'
-                });
-            }
-        }));
+                })
+            })
+        ];
         
-        // Create terrain provider view models (only world terrain)
-        const terrainViewModels = [];
-        terrainViewModels.push(new Cesium.ProviderViewModel({
-            name: 'World Terrain',
-            iconUrl: Cesium.buildModuleUrl('Widgets/Images/TerrainProviders/CesiumWorldTerrain.png'),
-            tooltip: 'High-resolution global terrain',
-            creationFunction: function () {
-                return Cesium.createWorldTerrainAsync({
-                    requestWaterMask: false,
-                    requestVertexNormals: true  // Enable for better terrain shading
-                });
-            }
-        }));
+        // Apply saved base map preference or use default
+        const selectedImageryProvider = config.savedBaseMap ? 
+            imageryViewModels.find(vm => vm.name === config.savedBaseMap) || imageryViewModels[0] :
+            imageryViewModels[0];
         
-        terrainViewModels.push(new Cesium.ProviderViewModel({
-            name: 'No Terrain',
-            iconUrl: Cesium.buildModuleUrl('Widgets/Images/TerrainProviders/Ellipsoid.png'),
-            tooltip: 'WGS84 ellipsoid',
-            creationFunction: function () {
-                return new Cesium.EllipsoidTerrainProvider();
-            }
-        }));
-        
-        // Apply saved preferences from Flutter
-        let selectedImageryProvider = imageryViewModels[0]; // Default to Bing Aerial
-        let selectedTerrainProvider = terrainViewModels[0]; // Default to World Terrain
-        let navigationHelpDialogOpen = false; // Default to closed
-        
-        if (config.savedBaseMap) {
-            const found = imageryViewModels.find(vm => vm.name === config.savedBaseMap);
-            if (found) {
-                selectedImageryProvider = found;
-                cesiumLog.info('Applying saved base map preference: ' + config.savedBaseMap);
-            }
-        }
-        
-        if (config.savedTerrainEnabled !== undefined) {
-            selectedTerrainProvider = config.savedTerrainEnabled ? terrainViewModels[0] : terrainViewModels[1];
-            cesiumLog.info('Applying saved terrain preference: ' + (config.savedTerrainEnabled ? 'enabled' : 'disabled'));
-        }
-        
-        if (config.savedNavigationHelpDialogOpen !== undefined) {
-            navigationHelpDialogOpen = config.savedNavigationHelpDialogOpen;
-            cesiumLog.info('Navigation help dialog should be ' + (navigationHelpDialogOpen ? 'open' : 'closed'));
-        }
-        
-        // Aggressively optimized Cesium viewer settings for minimal memory usage
+        // Simplified Cesium viewer settings
         viewer = new Cesium.Viewer("cesiumContainer", {
             terrain: Cesium.Terrain.fromWorldTerrain({
-                requestWaterMask: false,  // Disable water effects
-                requestVertexNormals: true,  // Enable for better terrain shading
-                requestMetadata: false  // Disable metadata
+                requestWaterMask: false,
+                requestVertexNormals: true
             }),
-            scene3DOnly: false,  // Enable 2D/3D/Columbus view modes
             requestRenderMode: true,  // Only render on demand
-            maximumRenderTimeChange: Infinity,  // Reduce re-renders
-            targetFrameRate: 60,  // Higher frame rate for smoother experience
-            resolutionScale: 1.0,  // Full resolution for better quality
+            maximumRenderTimeChange: Infinity,
             
-            // WebGL context options for better quality
-            contextOptions: {
-                webgl: {
-                    powerPreference: 'high-performance',  // Use high-performance GPU
-                    antialias: true,  // Enable antialiasing for smoother edges
-                    preserveDrawingBuffer: false,
-                    failIfMajorPerformanceCaveat: false,
-                    depth: true,
-                    stencil: false,
-                    alpha: false
-                }
-            },
-            
-            // Enable Cesium's native animation controls
+            // Essential UI controls
             baseLayerPicker: true,
-            imageryProviderViewModels: imageryViewModels,  // Use custom limited imagery providers
-            selectedImageryProviderViewModel: selectedImageryProvider,  // Use saved or default
-            terrainProviderViewModels: terrainViewModels,  // Use custom limited terrain providers
-            selectedTerrainProviderViewModel: selectedTerrainProvider,  // Use saved or default
+            imageryProviderViewModels: imageryViewModels,
+            selectedImageryProviderViewModel: selectedImageryProvider,
             geocoder: true,
-            homeButton: true,  // Enable home button
+            homeButton: true,
             sceneModePicker: true,
-            navigationHelpButton: true,  // Always show the button
-            navigationInstructionsInitiallyVisible: navigationHelpDialogOpen,  // Set initial state based on saved preference
-            animation: true,  // Enable native animation widget
-            timeline: true,   // Enable native timeline widget
+            navigationHelpButton: true,
+            navigationInstructionsInitiallyVisible: config.savedNavigationHelpDialogOpen || false,
+            animation: true,
+            timeline: true,
             fullscreenButton: true,
             vrButton: false,
-            infoBox: true,  // Enable info box for entity information
-            selectionIndicator: true,
             shadows: false,
             shouldAnimate: false,  // Start paused
+            
+            // Custom credit container to minimize Ion branding
+            creditContainer: document.getElementById('customCreditContainer'),
         });
         
-        
-        // Load saved scene mode preference or default to 3D
-        const savedSceneMode = loadSceneModePreference();
-        if (savedSceneMode && savedSceneMode !== Cesium.SceneMode.SCENE3D) {
-            viewer.scene.mode = savedSceneMode;
-        }
-        cesiumState.sceneMode = viewer.scene.mode;
-        
-        // Add scene mode change listener
-        viewer.scene.morphComplete.addEventListener(onSceneModeChanged);
-        viewer.scene.morphStart.addEventListener(onSceneModeChanging);
         
         // Configure scene for better quality
         viewer.scene.globe.enableLighting = false;
@@ -231,7 +118,13 @@ function initializeCesium(config) {
         viewer.scene.fog.density = 0.0001;  // Reduce fog density for clearer distant views
         viewer.scene.fog.screenSpaceErrorFactor = 2.0;  // Adjust fog based on terrain detail
         viewer.scene.globe.depthTestAgainstTerrain = true;  // Enable terrain occlusion
-        viewer.scene.screenSpaceCameraController.enableCollisionDetection = false;
+        
+        // Configure camera collision detection to prevent going under terrain
+        const controller = viewer.scene.screenSpaceCameraController;
+        controller.enableCollisionDetection = true;  // Prevent camera from going through terrain
+        controller.minimumZoomDistance = 10.0;  // Minimum 10 meters from surface
+        controller.minimumCollisionTerrainHeight = 5000.0;  // Start collision detection at 5km altitude
+        controller.collisionDetectionHeightBuffer = 10.0;  // Buffer for smoother collision behavior
         
         // Enable HDR rendering for better dynamic range
         viewer.scene.highDynamicRange = true;
@@ -262,8 +155,8 @@ function initializeCesium(config) {
         viewer.scene.fxaa = true;
         viewer.scene.msaaSamples = 8;  // Increased MSAA for smoother edges
         
-        // Set terrain exaggeration for better visibility
-        viewer.scene.globe.terrainExaggeration = 1.2;  // 20% exaggeration for clearer elevation changes
+        // Set terrain exaggeration to 1.0 for accurate GPS altitude representation
+        viewer.scene.globe.terrainExaggeration = 1.0;  // No exaggeration - true GPS altitudes
         viewer.scene.globe.terrainExaggerationRelativeHeight = 0.0;
         
         // Configure imagery provider for better performance
@@ -274,132 +167,63 @@ function initializeCesium(config) {
             imageryProvider.saturation = 1.0;
         }
         
-        // Only set initial camera view if no track points provided
-        // If track points are provided, the view will be set after creating the track
+        // Apply saved scene mode preference
+        if (config.savedSceneMode && config.savedSceneMode !== '3D') {
+            const sceneMode = config.savedSceneMode === '2D' ? Cesium.SceneMode.SCENE2D :
+                             config.savedSceneMode === 'Columbus' ? Cesium.SceneMode.COLUMBUS_VIEW :
+                             Cesium.SceneMode.SCENE3D;
+            viewer.scene.mode = sceneMode;
+        }
+        
+        // Set initial camera view if no track points provided
         if (!hasInitialTrack) {
             viewer.camera.setView({
                 destination: Cesium.Cartesian3.fromDegrees(config.lon, config.lat, config.altitude),
                 orientation: {
-                    heading: Cesium.Math.toRadians(0),
+                    heading: 0,
                     pitch: Cesium.Math.toRadians(-45),
-                    roll: 0.0
+                    roll: 0
                 }
             });
         }
         
-        // Add keyboard listener for stats position control
-        document.addEventListener('keydown', function(event) {
-        });
-        
-        // Add Cesium native event listeners for preference changes
+        // Basic layer picker event handling
         if (viewer.baseLayerPicker) {
-            // Watch for imagery provider changes
             const imageryObservable = Cesium.knockout.getObservable(
                 viewer.baseLayerPicker.viewModel, 
                 'selectedImagery'
             );
             imageryObservable.subscribe(function(newImagery) {
-                if (newImagery) {
-                    cesiumLog.info('Imagery provider changed to: ' + newImagery.name);
-                    // Send to Flutter
-                    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-                        window.flutter_inappwebview.callHandler('onImageryProviderChanged', newImagery.name);
-                    }
-                }
-            });
-            
-            // Watch for terrain provider changes
-            const terrainObservable = Cesium.knockout.getObservable(
-                viewer.baseLayerPicker.viewModel,
-                'selectedTerrain'
-            );
-            terrainObservable.subscribe(function(newTerrain) {
-                if (newTerrain) {
-                    const isTerrainEnabled = newTerrain.name !== 'No Terrain';
-                    cesiumLog.info('Terrain changed to: ' + newTerrain.name + ' (enabled: ' + isTerrainEnabled + ')');
-                    // Send to Flutter
-                    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-                        window.flutter_inappwebview.callHandler('onTerrainProviderChanged', isTerrainEnabled);
-                    }
+                if (newImagery && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+                    window.flutter_inappwebview.callHandler('onImageryProviderChanged', newImagery.name);
                 }
             });
         }
         
-        // Handle tile memory exceeded events
-        viewer.scene.globe.tileLoadProgressEvent.addEventListener(function() {
-            // Monitor for memory issues
-            const globe = viewer.scene.globe;
-            if (globe._surface && globe._surface._tilesToRender) {
-                const tileCount = globe._surface._tilesToRender.length;
-                if (tileCount > 50) {  // Increased threshold for higher quality settings
-                    // Only log occasionally to reduce spam
-                    if (Math.random() < 0.1) {  // Log 10% of the time
-                        }
-                    // Temporarily increase screen space error to reduce tile count
-                    viewer.scene.globe.maximumScreenSpaceError = 3;  // Less aggressive reduction
-                    
-                    // Reset after a delay
-                    setTimeout(() => {
-                        viewer.scene.globe.maximumScreenSpaceError = 2;  // Reset to our new default
-                    }, 3000);
-                }
-            }
-        });
-        
-        // Track initial load with minimal logging
-        let lastTileCount = -1;
-        let loadComplete = false;
-        const loadingStartTime = Date.now();
-        
+        // Simple loading overlay handler
         const tileLoadHandler = function(queuedTileCount) {
-            if (queuedTileCount === 0 && !loadComplete) {
-                loadComplete = true;
-                const loadTime = ((Date.now() - loadingStartTime) / 1000).toFixed(2);
-                cesiumLog.info('Initial tile load complete in ' + loadTime + 's');
+            if (queuedTileCount === 0) {
                 document.getElementById('loadingOverlay').style.display = 'none';
-                
-                // Remove the listener after initial load
                 viewer.scene.globe.tileLoadProgressEvent.removeEventListener(tileLoadHandler);
-            } else if (config.debug && !loadComplete) {
-                // Only log significant changes in debug mode
-                const change = Math.abs(lastTileCount - queuedTileCount);
-                if (change > 10 || (queuedTileCount === 0 && lastTileCount > 0)) {
-                    lastTileCount = queuedTileCount;
-                }
             }
         };
         viewer.scene.globe.tileLoadProgressEvent.addEventListener(tileLoadHandler);
         
-        // Simple memory management - let browser handle most cleanup
-        
-        cesiumLog.info('Cesium viewer initialized successfully');
-        
-        // Apply saved scene mode preference if not 3D (the default)
-        if (config.savedSceneMode && config.savedSceneMode !== '3D') {
-            cesiumLog.info('Applying saved scene mode: ' + config.savedSceneMode);
-            setTimeout(function() {
-                setSceneMode(config.savedSceneMode);
-            }, 500); // Small delay to ensure viewer is fully initialized
-        }
-        
-        // Fly-through mode is now automatic based on playback state
-        // No need to load preferences
+        // Fly-through mode is automatic based on playback state
         
         // If track points were provided, create the track immediately
         if (hasInitialTrack) {
-            cesiumLog.info('Creating initial track with ' + config.trackPoints.length + ' points');
             // Use a small delay to ensure viewer is fully ready
             setTimeout(() => {
                 createColoredFlightTrack(config.trackPoints);
-                cesiumLog.info('Initial track created and view set');
-                
-                // Fly-through mode is now automatic - no manual setup needed
             }, 100);
-        } else {
         }
         
         // Store viewer globally for cleanup
         window.viewer = viewer;
+        
+        // Add scene mode change listener
+        viewer.scene.morphComplete.addEventListener(onSceneModeChanged);
         
         // Track navigation help dialog state changes for saving preferences
         if (viewer.navigationHelpButton && viewer.navigationHelpButton.viewModel) {
@@ -417,7 +241,7 @@ function initializeCesium(config) {
                     setTimeout(function() {
                         isInitialState = false;
                         cesiumLog.info('Navigation help dialog initialized with saved preference: ' + 
-                                      (navigationHelpDialogOpen ? 'open' : 'closed'));
+                                      (config.savedNavigationHelpDialogOpen ? 'open' : 'closed'));
                     }, 1000);
                     
                     // Subscribe to future changes
@@ -433,52 +257,15 @@ function initializeCesium(config) {
             }
         }
         
-        // Customize home button behavior to return to flight track view
+        // Basic home button behavior - custom flight track view if available
         if (viewer.homeButton && viewer.homeButton.viewModel) {
-            cesiumLog.info('Customizing home button behavior for flight track');
-            
-            // Listen for home button clicks
             viewer.homeButton.viewModel.command.beforeExecute.addEventListener(function(commandInfo) {
-                // Check for primitive-based track first
                 if (cesiumState.flyThroughMode.staticTrackPrimitive && cesiumState.flightTrackHomeView?.boundingSphere) {
-                    cesiumLog.info('Home button: returning to flight track view (primitive)');
-                    
-                    // Cancel the default behavior
                     commandInfo.cancel = true;
-                    
-                    // Fly to the bounding sphere with saved offset
                     viewer.camera.flyToBoundingSphere(cesiumState.flightTrackHomeView.boundingSphere, {
                         duration: 3.0,
                         offset: cesiumState.flightTrackHomeView.offset
                     });
-                }
-                // Fallback to entity-based track
-                else {
-                    const trackEntities = cesiumState.flyThroughMode.fullTrackEntities || 
-                                        (flightTrackEntity ? [flightTrackEntity] : null);
-                    
-                    if (trackEntities && trackEntities.length > 0) {
-                        cesiumLog.info('Home button: returning to flight track view (entities)');
-                        
-                        // Cancel the default behavior
-                        commandInfo.cancel = true;
-                        
-                        // Fly to the track entities with the saved offset
-                        const offset = cesiumState.flightTrackHomeView?.offset || 
-                                     new Cesium.HeadingPitchRange(
-                                         Cesium.Math.toRadians(0),
-                                         Cesium.Math.toRadians(-45),
-                                         0
-                                     );
-                        
-                        viewer.flyTo(trackEntities, {
-                            duration: 3.0,
-                            offset: offset
-                        });
-                    } else {
-                        // No flight track loaded, let default behavior proceed
-                        cesiumLog.info('Home button: using default view (no flight track)');
-                    }
                 }
             });
         }
@@ -494,65 +281,10 @@ function initializeCesium(config) {
 
 // === PHASE 1 FEATURES: 3D Terrain, Flight Track, Camera Controls ===
 
-// Feature 1: Terrain controls
-function setTerrainExaggeration(value) {
-    if (!viewer || !viewer.scene || !viewer.scene.globe) return;
-    
-    currentTerrainExaggeration = value;
-    viewer.scene.globe.terrainExaggeration = value;
-    viewer.scene.globe.terrainExaggerationRelativeHeight = 0.0;
-}
-
-function switchBaseMap(mapType) {
-    if (!viewer) return;
-    
-    const layers = viewer.imageryLayers;
-    layers.removeAll();
-    
-    switch(mapType) {
-        case 'satellite':
-            // Default Bing Maps aerial
-            layers.addImageryProvider(new Cesium.BingMapsImageryProvider({
-                url: 'https://dev.virtualearth.net',
-                mapStyle: Cesium.BingMapsStyle.AERIAL_WITH_LABELS
-            }));
-            break;
-        case 'terrain':
-            // OpenStreetMap
-            layers.addImageryProvider(new Cesium.OpenStreetMapImageryProvider({
-                url: 'https://a.tile.openstreetmap.org/'
-            }));
-            break;
-        case 'hybrid':
-            // Satellite with labels
-            layers.addImageryProvider(new Cesium.BingMapsImageryProvider({
-                url: 'https://dev.virtualearth.net',
-                mapStyle: Cesium.BingMapsStyle.AERIAL_WITH_LABELS_ON_DEMAND
-            }));
-            break;
-        default:
-            // Ion default imagery
-            layers.addImageryProvider(new Cesium.IonImageryProvider({ assetId: 2 }));
-    }
-    
-    cesiumLog.info('Base map switched to: ' + mapType);
-}
-
-// Helper functions for managing track visibility
+// Show or hide all track segments
 function showAllTrackSegments(show) {
-    // Handle primitive-based static track
     if (cesiumState.flyThroughMode.staticTrackPrimitive) {
         cesiumState.flyThroughMode.staticTrackPrimitive.show = show;
-    }
-    // Backwards compatibility for entity-based tracks
-    else if (cesiumState.flyThroughMode.fullTrackEntities) {
-        cesiumState.flyThroughMode.fullTrackEntities.forEach(entity => {
-            if (entity && entity.polyline) {
-                entity.polyline.show = show;
-            }
-        });
-    } else if (cesiumState.flyThroughMode.fullTrackEntity && cesiumState.flyThroughMode.fullTrackEntity.polyline) {
-        cesiumState.flyThroughMode.fullTrackEntity.polyline.show = show;
     }
 }
 
@@ -563,17 +295,12 @@ function createColoredFlightTrack(points) {
     
     igcPoints = points;
     
-    // Extract and store timezone from the first point if available
-    let trackTimezone = '+00:00'; // Default to UTC
-    let timezoneOffsetSeconds = 0; // Offset in seconds for time calculations
+    // Extract timezone from first point
+    let trackTimezone = '+00:00';
+    let timezoneOffsetSeconds = 0;
     
-    // Debug: Check what's in the first point
-    if (points.length > 0) {
-    }
-    
-    if (points.length > 0 && points[0].timezone) {
+    if (points[0]?.timezone) {
         trackTimezone = points[0].timezone;
-        cesiumLog.info('Track timezone detected: ' + trackTimezone);
         
         // Parse timezone offset for display adjustments
         const tzMatch = trackTimezone.match(/^([+-])(\d{2}):(\d{2})$/);
@@ -582,7 +309,6 @@ function createColoredFlightTrack(points) {
             const hours = parseInt(tzMatch[2], 10);
             const minutes = parseInt(tzMatch[3], 10);
             timezoneOffsetSeconds = sign * ((hours * 3600) + (minutes * 60));
-            cesiumLog.info('Timezone offset in seconds: ' + timezoneOffsetSeconds);
         }
         
         // Store timezone globally for display formatting
@@ -591,90 +317,38 @@ function createColoredFlightTrack(points) {
         
         // Configure Animation widget to show local time
         if (viewer.animation && timezoneOffsetSeconds !== 0) {
-            cesiumLog.info('Configuring Animation widget for timezone: ' + trackTimezone);
-            
-            // Store original formatters
-            const originalDateFormatter = viewer.animation.viewModel.dateFormatter;
-            const originalTimeFormatter = viewer.animation.viewModel.timeFormatter;
-            
-            // Override date formatter to show local date
-            viewer.animation.viewModel.dateFormatter = function(julianDate, viewModel) {
-                // Add timezone offset to show local time
-                const localJulianDate = Cesium.JulianDate.addSeconds(
-                    julianDate, 
-                    timezoneOffsetSeconds, 
-                    new Cesium.JulianDate()
-                );
+            viewer.animation.viewModel.dateFormatter = function(julianDate) {
+                const localJulianDate = Cesium.JulianDate.addSeconds(julianDate, timezoneOffsetSeconds, new Cesium.JulianDate());
                 const gregorian = Cesium.JulianDate.toGregorianDate(localJulianDate);
-                
-                // Format the date
-                const year = gregorian.year;
-                const month = (gregorian.month).toString().padStart(2, '0');
-                const day = gregorian.day.toString().padStart(2, '0');
-                
-                return year + '-' + month + '-' + day;
+                return `${gregorian.year}-${gregorian.month.toString().padStart(2, '0')}-${gregorian.day.toString().padStart(2, '0')}`;
             };
             
-            // Override time formatter to show local time with timezone
-            viewer.animation.viewModel.timeFormatter = function(julianDate, viewModel) {
-                // Add timezone offset to show local time
-                const localJulianDate = Cesium.JulianDate.addSeconds(
-                    julianDate,
-                    timezoneOffsetSeconds,
-                    new Cesium.JulianDate()
-                );
+            viewer.animation.viewModel.timeFormatter = function(julianDate) {
+                const localJulianDate = Cesium.JulianDate.addSeconds(julianDate, timezoneOffsetSeconds, new Cesium.JulianDate());
                 const gregorian = Cesium.JulianDate.toGregorianDate(localJulianDate);
-                
                 const hours = gregorian.hour.toString().padStart(2, '0');
                 const minutes = gregorian.minute.toString().padStart(2, '0');
                 const seconds = Math.floor(gregorian.second).toString().padStart(2, '0');
-                
-                // Include timezone indicator
-                return hours + ':' + minutes + ':' + seconds + ' ' + trackTimezone;
+                return `${hours}:${minutes}:${seconds} ${trackTimezone}`;
             };
-            
-            cesiumLog.info('Animation widget configured for local time display');
         }
         
         // Configure Timeline to show local time
         if (viewer.timeline && timezoneOffsetSeconds !== 0) {
-            cesiumLog.info('Configuring Timeline for timezone: ' + trackTimezone);
-            
-            // Override the timeline's date formatter to show local time
             viewer.timeline.makeLabel = function(date) {
-                // Add timezone offset to the Julian date to get local time
                 const localJulianDate = Cesium.JulianDate.addSeconds(date, timezoneOffsetSeconds, new Cesium.JulianDate());
                 const gregorian = Cesium.JulianDate.toGregorianDate(localJulianDate);
-                
-                // Format as HH:MM:SS with timezone indicator
                 const hours = gregorian.hour.toString().padStart(2, '0');
                 const minutes = gregorian.minute.toString().padStart(2, '0');
                 const seconds = Math.floor(gregorian.second).toString().padStart(2, '0');
-                
-                return hours + ':' + minutes + ':' + seconds + ' ' + trackTimezone;
+                return `${hours}:${minutes}:${seconds} ${trackTimezone}`;
             };
-            
-            cesiumLog.info('Timeline configured for local time display');
         }
-    } else {
-        cesiumLog.info('No timezone information found in track data, using UTC');
     }
     
     // Clear existing entities
     viewer.entities.removeAll();
     playbackState.showPilot = null;
-    
-    // Helper function to get color based on 15s climb rate
-    function getClimbRateColorForPoint(climbRate15s) {
-        if (climbRate15s >= 0) {
-            return Cesium.Color.GREEN; // Green: Any climb (rate >= 0 m/s)
-        } else if (climbRate15s > -1.5) {
-            return Cesium.Color.DODGERBLUE; // Blue: Weak sink (-1.5 < rate < 0 m/s)
-        } else {
-            return Cesium.Color.RED; // Red: Strong sink (rate <= -1.5 m/s)
-        }
-    }
-    
     // Build positions and colors arrays for per-vertex colored primitive
     const positions = [];
     const colors = [];
@@ -716,13 +390,6 @@ function createColoredFlightTrack(points) {
     
     // Add primitive to scene
     cesiumState.flyThroughMode.staticTrackPrimitive = viewer.scene.primitives.add(staticTrackPrimitive);
-    
-    // Store references for compatibility
-    cesiumState.flyThroughMode.fullTrackEntities = null; // No longer using entities
-    cesiumState.flyThroughMode.fullTrackEntity = null; // No longer using entities
-    
-    cesiumLog.info(`Created colored track with per-vertex coloring (${points.length} points)`);
-    
     // Create curtain wall that hangs from track to ground
     // Build positions array for the wall (all track points)
     const wallPositions = points.map(point => 
@@ -750,7 +417,6 @@ function createColoredFlightTrack(points) {
     
     // Store curtain wall entity
     cesiumState.flyThroughMode.curtainWallEntity = curtainWallEntity;
-    cesiumLog.info('Created curtain wall with ' + wallHeights.length + ' segments');
     
     // Store the igcPoints for global access
     cesiumState.flyThroughMode.igcPoints = igcPoints;
@@ -789,7 +455,6 @@ function createColoredFlightTrack(points) {
                     return [];  // Return empty array when disabled
                 }
                 
-                // Get altitudes for current trail positions
                 return calculateTrailAltitudes(time);
             }, false),
             // minimumHeights not specified = extends to ground automatically
@@ -799,29 +464,23 @@ function createColoredFlightTrack(points) {
     });
     
     cesiumState.flyThroughMode.dynamicCurtainEntity = dynamicCurtainEntity;
-    cesiumLog.info('Created dynamic curtain wall for progressive mode');
     
     // Set up time-based animation if timestamps are available
     if (points[0].timestamp) {
         setupTimeBasedAnimation(points);
     } else {
-        // Fallback to index-based animation
-        playbackState.currentIndex = 0;
-        updatePilotPosition(0);
+        // Fallback to index-based animation (simplified)
     }
     
     // Zoom to track with padding for UI
     zoomToEntitiesWithPadding(0.9); // 90% screen coverage
     
-    cesiumLog.info('Single blue track created with ' + points.length + ' points');
 }
 
 
 // Setup Cesium-native time-based animation
 function setupTimeBasedAnimation(points) {
     if (!viewer || !points || points.length === 0) return;
-    
-    cesiumLog.info('Setting up time-based animation with ' + points.length + ' points');
     
     // Parse timestamps and create time intervals
     const startTime = Cesium.JulianDate.fromIso8601(points[0].timestamp);
@@ -847,11 +506,8 @@ function setupTimeBasedAnimation(points) {
         positionProperty.addSample(time, position);
         sampleCount++;
         
-        if (index % 100 === 0) {
-        }
     });
     
-    cesiumLog.info('Added ' + sampleCount + ' position samples');
     
     // Get first position for pilot initialization
     const firstPos = Cesium.Cartesian3.fromDegrees(
@@ -882,7 +538,6 @@ function setupTimeBasedAnimation(points) {
         }
     });
     
-    cesiumLog.info('Created pilot entity with id: ' + pilotEntity.id);
     
     // Store pilot entity reference
     playbackState.showPilot = pilotEntity;
@@ -896,8 +551,6 @@ function setupTimeBasedAnimation(points) {
     viewer.clock.multiplier = 60;
     viewer.clock.shouldAnimate = false; // Start paused
     
-    cesiumLog.info('Clock configured - start: ' + viewer.clock.startTime.toString() + 
-                 ', current: ' + viewer.clock.currentTime.toString());
     
     // Set timeline bounds
     if (viewer.timeline) {
@@ -906,9 +559,7 @@ function setupTimeBasedAnimation(points) {
     
     // Force initial position evaluation
     const initialPosition = positionProperty.getValue(startTime);
-    if (initialPosition) {
-        cesiumLog.info('Initial pilot position is valid');
-    } else {
+    if (!initialPosition) {
         cesiumLog.error('Initial pilot position is null!');
     }
     
@@ -964,9 +615,6 @@ function setupTimeBasedAnimation(points) {
         if (shouldShowRibbon !== previousRibbonState) {
             if (shouldShowRibbon) {
                 // Enable ribbon mode
-                cesiumLog.info('Auto-enabling ribbon trail (playing or mid-flight)');
-                
-                // Hide full track, show dynamic track
                 showAllTrackSegments(false);
                 showDynamicTrackSegments(true);
                 
@@ -981,9 +629,6 @@ function setupTimeBasedAnimation(points) {
                 cesiumState.flyThroughMode.enabled = true;
             } else {
                 // Disable ribbon mode, show full track
-                cesiumLog.info('Auto-disabling ribbon trail (stopped at start/end)');
-                
-                // Show full track, hide dynamic track
                 showAllTrackSegments(true);
                 showDynamicTrackSegments(false);
                 
@@ -1007,7 +652,6 @@ function setupTimeBasedAnimation(points) {
         if (atEnd && justStartedPlaying) {
             // Reset to start when play is clicked at end
             clock.currentTime = clock.startTime.clone();
-            cesiumLog.info('Animation reset to start - play clicked at end');
         }
         
         // Manage rendering mode based on animation state and ribbon mode
@@ -1118,122 +762,11 @@ function setupTimeBasedAnimation(points) {
                     statsContainer.innerHTML = labelHTML;
                 }
                 
-                // Removed debug logging - not needed for production
             }
     });
-    
-    cesiumLog.info('Time-based animation configured with Cesium native features and clock listener');
-}
-
-function getClimbRateColor(climbRate) {
-    // Kept for compatibility but no longer used for track visualization
-    if (climbRate >= 0) {
-        return '#4CAF50';  // Green: Any climb (rate >= 0 m/s)
-    } else if (climbRate > -1.5) {
-        return '#1976D2';  // Royal Blue: Weak sink (-1.5 < rate < 0 m/s)
-    } else {
-        return '#FF0000';  // Red: Strong sink (rate <= -1.5 m/s)
-    }
-}
-
-// Set track transparency
-function setTrackOpacity(opacity) {
-    if (!viewer) return;
-    
-    viewer.entities.values.forEach(entity => {
-        if (entity.polyline) {
-            const material = entity.polyline.material;
-            if (material && material.color) {
-                entity.polyline.material.color = material.color.getValue().withAlpha(opacity);
-            }
-        }
-    });
-    
 }
 
 // Feature 3: Camera Controls
-function setCameraPreset(preset) {
-    if (!viewer || igcPoints.length === 0) return;
-    
-    // Calculate center of flight
-    let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
-    let sumAlt = 0;
-    
-    igcPoints.forEach(point => {
-        minLat = Math.min(minLat, point.latitude);
-        maxLat = Math.max(maxLat, point.latitude);
-        minLon = Math.min(minLon, point.longitude);
-        maxLon = Math.max(maxLon, point.longitude);
-        sumAlt += point.altitude;
-    });
-    
-    const centerLat = (minLat + maxLat) / 2;
-    const centerLon = (minLon + maxLon) / 2;
-    const avgAlt = sumAlt / igcPoints.length;
-    
-    switch(preset) {
-        case 'topDown':
-            viewer.camera.setView({
-                destination: Cesium.Cartesian3.fromDegrees(centerLon, centerLat, avgAlt + 5000),
-                orientation: {
-                    heading: 0,
-                    pitch: Cesium.Math.toRadians(-90),
-                    roll: 0
-                }
-            });
-            break;
-            
-        case 'sideProfile':
-            viewer.camera.setView({
-                destination: Cesium.Cartesian3.fromDegrees(centerLon - 0.05, centerLat, avgAlt + 2000),
-                orientation: {
-                    heading: Cesium.Math.toRadians(90),
-                    pitch: 0,
-                    roll: 0
-                }
-            });
-            break;
-            
-        case 'pilotView':
-            if (igcPoints.length > 0) {
-                const point = igcPoints[Math.floor(igcPoints.length / 2)];
-                viewer.camera.setView({
-                    destination: Cesium.Cartesian3.fromDegrees(
-                        point.longitude,
-                        point.latitude,
-                        point.altitude
-                    ),
-                    orientation: {
-                        heading: Cesium.Math.toRadians(0),
-                        pitch: Cesium.Math.toRadians(-10),
-                        roll: 0
-                    }
-                });
-            }
-            break;
-            
-        case 'threeFourView':
-            viewer.camera.setView({
-                destination: Cesium.Cartesian3.fromDegrees(
-                    centerLon - 0.03, 
-                    centerLat - 0.03, 
-                    avgAlt + 3000
-                ),
-                orientation: {
-                    heading: Cesium.Math.toRadians(45),
-                    pitch: Cesium.Math.toRadians(-30),
-                    roll: 0
-                }
-            });
-            break;
-            
-        default:
-            // Reset to default view with padding
-            zoomToEntitiesWithPadding(0.9); // 90% screen coverage
-    }
-    
-    cesiumLog.info('Camera preset: ' + preset);
-}
 
 // Zoom to entities with padding for UI elements
 function zoomToEntitiesWithPadding(padding) {
@@ -1294,65 +827,13 @@ function zoomToEntitiesWithPadding(padding) {
                 boundingSphere.radius * 2.75
             )
         };
-        cesiumLog.info('Flight track multi-step animation started');
-    }
-    // Fallback for entity-based tracks
-    else {
-        const entitiesToFrame = cesiumState.flyThroughMode.fullTrackEntities || 
-                               (flightTrackEntity ? [flightTrackEntity] : []);
-        
-        if (entitiesToFrame.length === 0) return;
-        
-        viewer.flyTo(entitiesToFrame, {
-            duration: 3.0,
-            offset: new Cesium.HeadingPitchRange(
-                Cesium.Math.toRadians(0),
-                Cesium.Math.toRadians(-45),
-                0
-            )
-        }).then(function() {
-            cesiumState.flightTrackHomeView = {
-                entities: entitiesToFrame,
-                offset: new Cesium.HeadingPitchRange(
-                    Cesium.Math.toRadians(0),
-                    Cesium.Math.toRadians(-45),
-                    0
-                )
-            };
-            cesiumLog.info('Flight track framed in view (entity-based)');
-        });
     }
 }
 
-// Smooth camera fly to location
-function flyToLocation(lon, lat, alt, duration) {
-    if (!viewer) return;
-    
-    viewer.camera.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(lon, lat, alt),
-        duration: duration || 3.0,
-        complete: function() {
-        }
-    });
-}
 
-// Enable/disable camera controls
-function setCameraControlsEnabled(enabled) {
-    if (!viewer) return;
-    
-    const controller = viewer.scene.screenSpaceCameraController;
-    controller.enableRotate = enabled;
-    controller.enableTranslate = enabled;
-    controller.enableZoom = enabled;
-    controller.enableTilt = enabled;
-    controller.enableLook = enabled;
-    
-}
-
-// Cleanup function to be called from Flutter before disposal
+// Cleanup function
 function cleanupCesium() {
-    
-    // Hide stats container and restore cesium container size
+    // Hide stats container
     const statsContainer = document.getElementById('statsContainer');
     const cesiumContainer = document.getElementById('cesiumContainer');
     if (statsContainer) {
@@ -1363,53 +844,29 @@ function cleanupCesium() {
         cesiumContainer.classList.remove('with-stats');
     }
     
-    // Clear the cleanup timer first
-    // Cleanup timer removed - using simpler approach
-    
-    // Remove event listeners
-    if (window.viewer && viewer.scene && viewer.scene.globe) {
-        viewer.scene.globe.tileLoadProgressEvent.removeAllListeners();
-    }
-    
     if (window.viewer) {
         try {
-            // Stop rendering immediately
+            // Stop rendering and clear data
             viewer.scene.requestRenderMode = true;
-            viewer.scene.maximumRenderTimeChange = 0;
+            viewer.scene.primitives.removeAll();
+            viewer.entities.removeAll();
+            viewer.dataSources.removeAll();
             
-            // Clear all data
-            if (viewer.scene && viewer.scene.primitives) {
-                viewer.scene.primitives.removeAll();
-            }
-            if (viewer.entities) {
-                viewer.entities.removeAll();
-            }
-            if (viewer.dataSources) {
-                viewer.dataSources.removeAll();
-            }
-            
-            // Clear tile cache
-            if (viewer.scene && viewer.scene.globe && viewer.scene.globe.tileCache) {
+            // Clear tile cache and destroy viewer
+            if (viewer.scene.globe?.tileCache) {
                 viewer.scene.globe.tileCache.reset();
             }
             
-            // Destroy the viewer safely
-            try {
-                viewer.destroy();
-            } catch (destroyError) {
-                // Expected during cleanup - ignore
-            }
-            
-            window.viewer = null;
+            viewer.destroy();
         } catch (e) {
-            cesiumLog.error('Error during cleanup: ' + e.message);
-            // Force clear the viewer reference even if cleanup fails
+            cesiumLog.error('Cleanup error: ' + e.message);
+        } finally {
             window.viewer = null;
         }
     }
 }
 
-// Simple memory check for debugging
+// Memory check for debugging
 function checkMemory() {
     if (window.performance && window.performance.memory) {
         const memory = window.performance.memory;
@@ -1441,87 +898,12 @@ document.addEventListener('visibilitychange', function() {
 
 // === PHASE 2 FEATURES: Flight Playback and Animation ===
 
-// Playback state
+// Minimal playback state - only for pilot entity tracking
 let playbackState = {
-    isPlaying: false,
-    currentIndex: 0,
-    playbackSpeed: 60.0,  // Default to 60x speed
-    followMode: false,
     showPilot: null,
-    animationFrame: null,
-    lastUpdateTime: null,
-    accumulatedTime: 0,
-    positionProperty: null,  // For Cesium native time-based animation
-    lastLoggedSecond: -1  // For debug logging
+    positionProperty: null  // For Cesium native time-based animation
 };
 
-// Feature 3: Follow mode for flight playback
-function setFollowMode(enabled) {
-    if (!viewer) return;
-    
-    playbackState.followMode = enabled;
-    
-    if (enabled && playbackState.showPilot) {
-        // Use Cesium's native entity tracking
-        viewer.trackedEntity = playbackState.showPilot;
-        
-        // Set camera offset for better view
-        const offset = new Cesium.Cartesian3(-500, -500, 300);
-        viewer.scene.screenSpaceCameraController.enableRotate = true;
-        viewer.scene.screenSpaceCameraController.enableTranslate = true;
-        
-        cesiumLog.info('Follow mode enabled with Cesium entity tracking');
-    } else {
-        // Disable tracking
-        viewer.trackedEntity = undefined;
-        cesiumLog.info('Follow mode disabled');
-    }
-}
-
-function followFlightPoint(index) {
-    if (!viewer || !igcPoints || index < 0 || index >= igcPoints.length) return;
-    
-    const point = igcPoints[index];
-    
-    // Calculate heading to next point for realistic orientation
-    let heading = 0;
-    if (index < igcPoints.length - 1) {
-        const nextPoint = igcPoints[index + 1];
-        heading = Cesium.Math.toRadians(
-            Math.atan2(
-                nextPoint.longitude - point.longitude,
-                nextPoint.latitude - point.latitude
-            ) * 180 / Math.PI
-        );
-    }
-    
-    // Position camera behind and above the pilot
-    const offsetDistance = 100; // meters behind
-    const offsetHeight = 50; // meters above
-    
-    viewer.camera.setView({
-        destination: Cesium.Cartesian3.fromDegrees(
-            point.longitude,
-            point.latitude,
-            point.altitude + offsetHeight
-        ),
-        orientation: {
-            heading: heading,
-            pitch: Cesium.Math.toRadians(-10), // Look slightly down
-            roll: 0
-        }
-    });
-    
-    // Update pilot position
-    updatePilotPosition(index);
-}
-
-// Update pilot marker position - DEPRECATED: Now handled by time-based animation
-function updatePilotPosition(index) {
-    // This function is kept for backward compatibility but does nothing
-    // The pilot position is now controlled by Cesium's clock and SampledPositionProperty
-    return;
-}
 
 // ============================================================================
 // Fly-through Mode Functions
@@ -1685,647 +1067,135 @@ function showDynamicTrackSegments(show) {
     }
 }
 
-// Note: Dynamic segment creation/update functions removed - segments are now pre-created at initialization
 
-// Calculate trail positions for ribbon mode (animation-time based)
-// Shows a ribbon trail of X seconds of animation time behind the pilot
-// This creates a consistent visual trail regardless of playback speed
+// Helper function to get trail data for ribbon mode
+function getTrailData(currentTime, extractData) {
+    if (!viewer || !igcPoints || igcPoints.length === 0) {
+        return [];
+    }
+    
+    const trailData = [];
+    
+    for (let i = 0; i < igcPoints.length; i++) {
+        const point = igcPoints[i];
+        
+        if (!point.timestamp) continue;
+        
+        let pointTime;
+        try {
+            pointTime = Cesium.JulianDate.fromIso8601(point.timestamp);
+        } catch (e) {
+            continue;
+        }
+        
+        const secondsFromCurrent = Cesium.JulianDate.secondsDifference(pointTime, currentTime);
+        
+        if (secondsFromCurrent <= 0) {
+            trailData.push(extractData(point));
+        } else {
+            break;
+        }
+    }
+    
+    // Apply ribbon window
+    if (trailData.length > 0) {
+        const ribbonAnimationSeconds = cesiumState.flyThroughMode.ribbonAnimationSeconds;
+        const speedMultiplier = viewer.clock.multiplier || 1;
+        const flightSecondsInRibbon = ribbonAnimationSeconds * speedMultiplier;
+        
+        const totalFlightDuration = Cesium.JulianDate.secondsDifference(
+            Cesium.JulianDate.fromIso8601(igcPoints[igcPoints.length - 1].timestamp),
+            Cesium.JulianDate.fromIso8601(igcPoints[0].timestamp)
+        );
+        const pointsPerSecond = igcPoints.length / totalFlightDuration;
+        const maxPointsInRibbon = Math.ceil(flightSecondsInRibbon * pointsPerSecond);
+        
+        if (trailData.length > maxPointsInRibbon) {
+            return trailData.slice(trailData.length - maxPointsInRibbon);
+        }
+    }
+    
+    return trailData;
+}
+
+// Calculate trail positions for ribbon mode
 function calculateTrailPositions(currentTime) {
-    if (!viewer || !igcPoints || igcPoints.length === 0) {
-        return [];
-    }
-    
-    // Build positions array - show all points up to current time
-    const trailPositions = [];
-    let pointsInTrail = 0;
-    
-    for (let i = 0; i < igcPoints.length; i++) {
-        const point = igcPoints[i];
-        
-        // Skip points without timestamps
-        if (!point.timestamp) {
-            continue;
-        }
-        
-        // Parse the point's timestamp
-        let pointTime;
-        try {
-            pointTime = Cesium.JulianDate.fromIso8601(point.timestamp);
-        } catch (e) {
-            continue;
-        }
-        
-        // Check if point is before or at current time
-        const secondsFromCurrent = Cesium.JulianDate.secondsDifference(pointTime, currentTime);
-        
-        // Include all points up to current time for progressive track
-        if (secondsFromCurrent <= 0) {
-            trailPositions.push(
-                Cesium.Cartesian3.fromDegrees(
-                    point.longitude,
-                    point.latitude,
-                    point.altitude
-                )
-            );
-            pointsInTrail++;
-        } else {
-            // We've passed the current time, stop checking
-            break;
-        }
-    }
-    
-    // For ribbon mode, we only want the last N seconds worth of points
-    if (cesiumState.flyThroughMode.ribbonMode === 'animation-time' && trailPositions.length > 0) {
-        const ribbonAnimationSeconds = cesiumState.flyThroughMode.ribbonAnimationSeconds;
-        
-        // Calculate how many points to keep based on animation time
-        // At 60x speed, 3 seconds of animation = 180 seconds of flight time
-        const speedMultiplier = viewer.clock.multiplier || 1;
-        const flightSecondsInRibbon = ribbonAnimationSeconds * speedMultiplier;
-        
-        // Estimate points per second (assuming roughly uniform sampling)
-        const totalFlightDuration = Cesium.JulianDate.secondsDifference(
-            Cesium.JulianDate.fromIso8601(igcPoints[igcPoints.length - 1].timestamp),
-            Cesium.JulianDate.fromIso8601(igcPoints[0].timestamp)
-        );
-        const pointsPerSecond = igcPoints.length / totalFlightDuration;
-        const maxPointsInRibbon = Math.ceil(flightSecondsInRibbon * pointsPerSecond);
-        
-        // Keep only the last N points for the ribbon
-        if (trailPositions.length > maxPointsInRibbon) {
-            const startIndex = trailPositions.length - maxPointsInRibbon;
-            return trailPositions.slice(startIndex);
-        }
-    }
-    
-    // Very rare debug logging to avoid spam when paused
-    if (Math.random() < 0.001) { // Log 0.1% of the time
-    }
-    
-    return trailPositions;
+    return getTrailData(currentTime, point => 
+        Cesium.Cartesian3.fromDegrees(point.longitude, point.latitude, point.altitude)
+    );
 }
 
-// Calculate trail altitudes for the curtain wall in ribbon mode
+// Calculate trail altitudes for ribbon mode
 function calculateTrailAltitudes(currentTime) {
-    if (!viewer || !igcPoints || igcPoints.length === 0) {
-        return [];
-    }
-    
-    // Build altitudes array - match the positions array
-    const trailAltitudes = [];
-    let pointCount = 0;
-    
-    for (let i = 0; i < igcPoints.length; i++) {
-        const point = igcPoints[i];
-        
-        // Skip points without timestamps
-        if (!point.timestamp) {
-            continue;
-        }
-        
-        // Parse the point's timestamp
-        let pointTime;
-        try {
-            pointTime = Cesium.JulianDate.fromIso8601(point.timestamp);
-        } catch (e) {
-            continue;
-        }
-        
-        // Check if point is before or at current time
-        const secondsFromCurrent = Cesium.JulianDate.secondsDifference(pointTime, currentTime);
-        
-        // Include all points up to current time
-        if (secondsFromCurrent <= 0) {
-            trailAltitudes.push(point.altitude);
-            pointCount++;
-        } else {
-            // We've passed the current time, stop checking
-            break;
-        }
-    }
-    
-    // For ribbon mode, match the positions array length
-    if (cesiumState.flyThroughMode.ribbonMode === 'animation-time' && trailAltitudes.length > 0) {
-        const ribbonAnimationSeconds = cesiumState.flyThroughMode.ribbonAnimationSeconds;
-        const speedMultiplier = viewer.clock.multiplier || 1;
-        const flightSecondsInRibbon = ribbonAnimationSeconds * speedMultiplier;
-        
-        const totalFlightDuration = Cesium.JulianDate.secondsDifference(
-            Cesium.JulianDate.fromIso8601(igcPoints[igcPoints.length - 1].timestamp),
-            Cesium.JulianDate.fromIso8601(igcPoints[0].timestamp)
-        );
-        const pointsPerSecond = igcPoints.length / totalFlightDuration;
-        const maxPointsInRibbon = Math.ceil(flightSecondsInRibbon * pointsPerSecond);
-        
-        if (trailAltitudes.length > maxPointsInRibbon) {
-            const startIndex = trailAltitudes.length - maxPointsInRibbon;
-            return trailAltitudes.slice(startIndex);
-        }
-    }
-    
-    return trailAltitudes;
+    return getTrailData(currentTime, point => point.altitude);
 }
-
-// Set fly-through mode (now internally managed based on playback state)
-// This function is kept for potential manual override but is primarily controlled automatically
-function setFlyThroughMode(enabled) {
-    if (!viewer) {
-        cesiumLog.error('Cannot set fly-through mode: viewer not initialized');
-        return;
-    }
-    
-    cesiumState.flyThroughMode.enabled = enabled;
-    
-    if (enabled) {
-        // Enable fly-through mode
-        
-        // Ensure we have track entities
-        if (!cesiumState.flyThroughMode.fullTrackEntity || !cesiumState.flyThroughMode.dynamicTrackEntity) {
-            cesiumLog.error('Track entities not initialized - cannot enable fly-through mode');
-            cesiumState.flyThroughMode.enabled = false;
-            return;
-        }
-        
-        // Hide full track (polylines only, not affecting pilot)
-        showAllTrackSegments(false);
-        
-        // Show dynamic track
-        showDynamicTrackSegments(true);
-        
-        // Hide static curtain wall
-        if (cesiumState.flyThroughMode.curtainWallEntity) {
-            cesiumState.flyThroughMode.curtainWallEntity.show = false;
-        }
-        
-        // Show dynamic curtain wall
-        if (cesiumState.flyThroughMode.dynamicCurtainEntity) {
-            cesiumState.flyThroughMode.dynamicCurtainEntity.show = true;
-        }
-        
-        // Only enable continuous rendering if animation is playing
-        // This will be managed by clock event listeners
-        if (viewer.clock.shouldAnimate) {
-            viewer.scene.requestRenderMode = false; // Continuous rendering
-        } else {
-            viewer.scene.requestRenderMode = true; // On-demand rendering
-        }
-        
-        // Ensure animation is running for ribbon to work
-        if (!viewer.clock.shouldAnimate) {
-            cesiumLog.info('Starting animation for ribbon trail');
-            viewer.clock.shouldAnimate = true;
-            // Enable continuous rendering when we start animation
-            viewer.scene.requestRenderMode = false;
-        }
-        
-        // If clock multiplier is 0, set to default speed
-        if (viewer.clock.multiplier === 0) {
-            viewer.clock.multiplier = 60; // Default 60x speed
-            cesiumLog.info('Set clock multiplier to 60x for ribbon trail');
-        }
-        
-        // Force initial render to update the dynamic track
-        viewer.scene.requestRender();
-        
-        // Debug: Check if we have points
-        
-        // Debug: Check clock state
-        if (viewer.clock) {
-        }
-        
-        // Debug: Test calculate trail positions with current time
-        if (viewer.clock && viewer.clock.currentTime) {
-            const testPositions = calculateTrailPositions(viewer.clock.currentTime);
-            
-            // If we have positions, log details about first and last
-            if (testPositions.length > 0) {
-            }
-        }
-    } else {
-        // Disable fly-through mode
-        
-        // Switch back to on-demand rendering when ribbon mode is disabled
-        viewer.scene.requestRenderMode = true;
-        
-        // Show full track (polylines only, not affecting pilot)
-        showAllTrackSegments(true);
-        
-        // Hide dynamic track segments
-        showDynamicTrackSegments(false);
-        
-        // Show static curtain wall
-        if (cesiumState.flyThroughMode.curtainWallEntity) {
-            cesiumState.flyThroughMode.curtainWallEntity.show = true;
-        }
-        
-        // Hide dynamic curtain wall
-        if (cesiumState.flyThroughMode.dynamicCurtainEntity) {
-            cesiumState.flyThroughMode.dynamicCurtainEntity.show = false;
-        }
-    }
-    
-    // No longer sending to Flutter since this is automatic
-}
-
-// Set the trail duration for fly-through mode
-function setTrailDuration(seconds) {
-    if (seconds < 1 || seconds > 60) {
-        cesiumLog.error('Invalid trail duration: ' + seconds + ' seconds (must be 1-60)');
-        return;
-    }
-    
-    cesiumState.flyThroughMode.trailDuration = seconds * 1000; // Convert to milliseconds
-    
-    // Force update if fly-through mode is active
-    if (cesiumState.flyThroughMode.enabled && viewer) {
-        viewer.scene.requestRender();
-    }
-    
-    // Send state change to Flutter
-    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-        window.flutter_inappwebview.callHandler('onTrailDurationChanged', seconds);
-    }
-}
-
-// Get current fly-through mode state
-function getFlyThroughMode() {
-    return cesiumState.flyThroughMode.enabled;
-}
-
-// Get current trail duration in seconds (deprecated - kept for compatibility)
-function getTrailDuration() {
-    return cesiumState.flyThroughMode.trailDuration / 1000;
-}
-
-// Set ribbon duration in animation seconds
-function setRibbonDuration(seconds) {
-    if (seconds < 0.5 || seconds > 10) {
-        cesiumLog.error('Invalid ribbon duration: ' + seconds + ' seconds (must be 0.5-10)');
-        return;
-    }
-    
-    cesiumState.flyThroughMode.ribbonAnimationSeconds = seconds;
-    
-    // Force update if fly-through mode is active
-    if (cesiumState.flyThroughMode.enabled && viewer) {
-        viewer.scene.requestRender();
-    }
-    
-    // Send state change to Flutter (optional)
-    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-        window.flutter_inappwebview.callHandler('onRibbonDurationChanged', seconds);
-    }
-}
-
-// Get current ribbon duration in animation seconds
-function getRibbonDuration() {
-    return cesiumState.flyThroughMode.ribbonAnimationSeconds;
-}
-
 
 // ============================================================================
 // Scene Mode Management Functions
 // ============================================================================
 
-// Capture the current camera view for preservation during mode changes
-function captureCurrentView() {
-    if (!viewer || !viewer.camera) {
-        return null;
-    }
-    
-    const camera = viewer.camera;
-    const scene = viewer.scene;
-    
-    // Get the current view rectangle (works in all modes)
-    const rectangle = camera.computeViewRectangle(scene.globe.ellipsoid);
-    
-    // Also capture camera height/altitude for better restoration
-    let altitude = 0;
-    if (scene.mode === Cesium.SceneMode.SCENE3D || scene.mode === Cesium.SceneMode.COLUMBUS_VIEW) {
-        // In 3D or Columbus mode, get the camera height
-        const cartographic = camera.positionCartographic;
-        if (cartographic) {
-            altitude = cartographic.height;
-        }
-    } else if (scene.mode === Cesium.SceneMode.SCENE2D) {
-        // In 2D mode, estimate altitude from the view size
-        if (rectangle) {
-            const width = Cesium.Math.toDegrees(rectangle.east - rectangle.west);
-            const height = Cesium.Math.toDegrees(rectangle.north - rectangle.south);
-            // Rough estimation: larger view = higher altitude
-            altitude = Math.max(width, height) * 111000; // Convert degrees to meters approximately
-        }
-    }
-    
-    const savedView = {
-        rectangle: rectangle,
-        altitude: altitude,
-        heading: camera.heading,
-        pitch: camera.pitch,
-        roll: camera.roll
-    };
-    
-    return savedView;
-}
-
-// Restore the camera view after a mode change
-function restoreCameraView(savedView, targetMode) {
-    if (!viewer || !savedView || !viewer.camera) {
-        return;
-    }
-    
-    const camera = viewer.camera;
-    
-    try {
-        if (savedView.rectangle) {
-            // Calculate the center of the view rectangle
-            const west = savedView.rectangle.west;
-            const east = savedView.rectangle.east;
-            const north = savedView.rectangle.north;
-            const south = savedView.rectangle.south;
-            
-            const centerLon = (west + east) / 2;
-            const centerLat = (north + south) / 2;
-            
-            // Calculate an appropriate altitude based on the view extent
-            let altitude = savedView.altitude || 10000; // Default to 10km if not available
-            
-            if (targetMode === Cesium.SceneMode.SCENE2D) {
-                // In 2D mode, set the view rectangle directly
-                camera.setView({
-                    destination: savedView.rectangle
-                });
-            } else if (targetMode === Cesium.SceneMode.SCENE3D) {
-                // In 3D mode, position camera at the center with appropriate altitude
-                const position = Cesium.Cartesian3.fromRadians(centerLon, centerLat, altitude);
-                
-                camera.setView({
-                    destination: position,
-                    orientation: {
-                        heading: savedView.heading || 0,
-                        pitch: savedView.pitch || -Cesium.Math.PI_OVER_TWO, // Look down
-                        roll: savedView.roll || 0
-                    }
-                });
-            } else if (targetMode === Cesium.SceneMode.COLUMBUS_VIEW) {
-                // Columbus view - similar to 3D but with different projection
-                const position = Cesium.Cartesian3.fromRadians(centerLon, centerLat, altitude);
-                
-                camera.setView({
-                    destination: position,
-                    orientation: {
-                        heading: savedView.heading || 0,
-                        pitch: savedView.pitch || -Cesium.Math.PI_OVER_TWO,
-                        roll: savedView.roll || 0
-                    }
-                });
-            }
-        }
-    } catch (e) {
-        cesiumLog.error('Failed to restore camera view: ' + e.message);
-    }
-}
-
-// Toggle navigation help dialog open/closed
-function setNavigationHelpDialogOpen(open) {
-    if (!viewer || !viewer.navigationHelpButton || !viewer.navigationHelpButton.viewModel) {
-        cesiumLog.error('Cannot toggle navigation help dialog: not available');
-        return;
-    }
-    
-    const navHelpVM = viewer.navigationHelpButton.viewModel;
-    if (navHelpVM.showInstructions !== undefined) {
-        navHelpVM.showInstructions = open;
-        cesiumLog.info('Navigation help dialog set to: ' + (open ? 'open' : 'closed'));
-    }
-}
-
-// Set the scene mode (2D, 3D, or Columbus View)
-function setSceneMode(mode) {
-    if (!viewer) {
-        cesiumLog.error('Cannot set scene mode: viewer not initialized');
-        return;
-    }
-    
-    // Convert string mode to Cesium.SceneMode enum
-    let sceneMode;
-    switch(mode) {
-        case '2D':
-        case 2:
-        case Cesium.SceneMode.SCENE2D:
-            sceneMode = Cesium.SceneMode.SCENE2D;
-            break;
-        case '3D':
-        case 3:
-        case Cesium.SceneMode.SCENE3D:
-            sceneMode = Cesium.SceneMode.SCENE3D;
-            break;
-        case 'COLUMBUS':
-        case 2.5:
-        case Cesium.SceneMode.COLUMBUS_VIEW:
-            sceneMode = Cesium.SceneMode.COLUMBUS_VIEW;
-            break;
-        default:
-            cesiumLog.error('Invalid scene mode: ' + mode);
-            return;
-    }
-    
-    // Only change if different from current mode
-    if (viewer.scene.mode !== sceneMode) {
-        cesiumLog.info('Changing scene mode to: ' + getSceneModeString(sceneMode));
-        
-        // Capture current view before morphing
-        const savedView = captureCurrentView();
-        
-        // Use morphing for smooth transition
-        const duration = 2.0; // 2 second transition
-        switch(sceneMode) {
-            case Cesium.SceneMode.SCENE2D:
-                viewer.scene.morphTo2D(duration);
-                break;
-            case Cesium.SceneMode.SCENE3D:
-                viewer.scene.morphTo3D(duration);
-                break;
-            case Cesium.SceneMode.COLUMBUS_VIEW:
-                viewer.scene.morphToColumbusView(duration);
-                break;
-        }
-        
-        // Restore view after morph completes
-        viewer.scene.morphComplete.addEventListener(function restoreView() {
-            // Remove this one-time listener
-            viewer.scene.morphComplete.removeEventListener(restoreView);
-            
-            // Restore the saved view with a small delay to ensure morph is fully complete
-            setTimeout(() => {
-                if (savedView) {
-                    restoreCameraView(savedView, sceneMode);
-                }
-            }, 100);
-        });
-        
-        // Save preference
-        saveSceneModePreference(sceneMode);
-    }
-}
-
-// Get the current scene mode
-function getSceneMode() {
-    if (!viewer) {
-        return null;
-    }
-    return getSceneModeString(viewer.scene.mode);
-}
-
-// Toggle between 2D and 3D modes
-function toggleSceneMode() {
-    if (!viewer) {
-        cesiumLog.error('Cannot toggle scene mode: viewer not initialized');
-        return;
-    }
-    
-    const currentMode = viewer.scene.mode;
-    const newMode = (currentMode === Cesium.SceneMode.SCENE3D) 
-        ? Cesium.SceneMode.SCENE2D 
-        : Cesium.SceneMode.SCENE3D;
-    
-    setSceneMode(newMode);
-}
-
-// Convert Cesium.SceneMode enum to string
-function getSceneModeString(mode) {
-    switch(mode) {
+// Get scene mode as string
+function getSceneModeString(sceneMode) {
+    switch(sceneMode) {
         case Cesium.SceneMode.SCENE2D:
             return '2D';
+        case Cesium.SceneMode.COLUMBUS_VIEW:
+            return 'Columbus';
         case Cesium.SceneMode.SCENE3D:
             return '3D';
-        case Cesium.SceneMode.COLUMBUS_VIEW:
-            return 'COLUMBUS';
         default:
-            return 'UNKNOWN';
+            return '3D';
     }
-}
-
-// Save scene mode preference to localStorage
-function saveSceneModePreference(mode) {
-    try {
-        // Check if localStorage is available (may not be in WebView)
-        if (typeof(Storage) !== "undefined" && window.localStorage) {
-            localStorage.setItem('cesium_scene_mode', mode.toString());
-        } else {
-        }
-    } catch (e) {
-    }
-}
-
-// Load scene mode preference from localStorage
-function loadSceneModePreference() {
-    try {
-        // Check if localStorage is available (may not be in WebView)
-        if (typeof(Storage) !== "undefined" && window.localStorage) {
-            const saved = localStorage.getItem('cesium_scene_mode');
-            if (saved !== null) {
-                const mode = parseInt(saved);
-                return mode;
-            }
-        }
-    } catch (e) {
-        // Expected in WebView context - preferences handled by Flutter
-    }
-    return Cesium.SceneMode.SCENE3D; // Default to 3D
 }
 
 // Event handler for scene mode changes
 function onSceneModeChanged() {
-    cesiumState.sceneMode = viewer.scene.mode;
-    cesiumState.sceneModeChanging = false;
-    
     const modeString = getSceneModeString(viewer.scene.mode);
     cesiumLog.info('Scene mode changed to: ' + modeString);
     
     // Notify Flutter of the change
-    if (window.flutter_inappwebview) {
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
         window.flutter_inappwebview.callHandler('onSceneModeChanged', modeString);
     }
     
-    // Adjust terrain settings based on mode
+    // Apply appropriate camera controls based on scene mode
+    const controller = viewer.scene.screenSpaceCameraController;
+    
     if (viewer.scene.mode === Cesium.SceneMode.SCENE2D) {
-        // In 2D mode, terrain doesn't make sense
-        // Store current terrain state if needed
-        if (viewer.terrainProvider && !(viewer.terrainProvider instanceof Cesium.EllipsoidTerrainProvider)) {
-            cesiumState.previousTerrainProvider = viewer.terrainProvider;
-        }
-        // viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
-        
-        // Adjust camera constraints for 2D
-        viewer.scene.screenSpaceCameraController.enableRotate = false;
-        viewer.scene.screenSpaceCameraController.enableTilt = false;
+        // 2D mode: disable collision detection and rotation
+        controller.enableCollisionDetection = false;  // Not needed in 2D
+        controller.enableRotate = false;
+        controller.enableTilt = false;
     } else {
-        // In 3D or Columbus mode, restore terrain if it was previously enabled
-        if (cesiumState.previousTerrainProvider) {
-            // viewer.terrainProvider = cesiumState.previousTerrainProvider;
-        }
+        // 3D and Columbus mode: enable collision detection and full controls
+        controller.enableCollisionDetection = true;  // Prevent going under terrain
+        controller.enableRotate = true;
+        controller.enableTilt = true;
         
-        // Enable full camera controls
-        viewer.scene.screenSpaceCameraController.enableRotate = true;
-        viewer.scene.screenSpaceCameraController.enableTilt = true;
+        // Reapply collision settings for 3D modes
+        controller.minimumZoomDistance = 10.0;  // Minimum 10 meters from surface
+        controller.minimumCollisionTerrainHeight = 5000.0;  // Start collision detection at 5km
+        controller.collisionDetectionHeightBuffer = 10.0;  // Buffer for smooth collision
     }
     
-    // Ensure flight track is visible in new mode
-    if (flightTrackEntity && viewer.scene.mode === Cesium.SceneMode.SCENE2D) {
-        // Adjust entity properties for 2D if needed
-        flightTrackEntity.polyline.clampToGround = false;
-    }
-    
-    // Restore camera view if it was saved before morphing (for scene mode picker usage)
-    if (cesiumState.savedViewBeforeMorph) {
+    // Restore camera to flight track view if available
+    if (cesiumState.flightTrackHomeView && cesiumState.flightTrackHomeView.boundingSphere) {
+        // Small delay to ensure scene mode transition is complete
         setTimeout(() => {
-            restoreCameraView(cesiumState.savedViewBeforeMorph, viewer.scene.mode);
-            cesiumState.savedViewBeforeMorph = null; // Clear after use
-        }, 100);
+            viewer.camera.flyToBoundingSphere(cesiumState.flightTrackHomeView.boundingSphere, {
+                duration: 2.0,
+                offset: cesiumState.flightTrackHomeView.offset
+            });
+            cesiumLog.info('Camera restored to flight track view after scene mode change');
+        }, 500);
     }
 }
-
-// Event handler for when scene mode is changing
-function onSceneModeChanging() {
-    cesiumState.sceneModeChanging = true;
-    
-    // Capture the current view before the morph starts
-    // This handles cases where the user uses the scene mode picker directly
-    cesiumState.savedViewBeforeMorph = captureCurrentView();
-}
-
-
-// Playback functions removed - using native Cesium Animation and Timeline widgets
 
 // Export functions for Flutter access
 window.cleanupCesium = cleanupCesium;
 window.checkMemory = checkMemory;
 window.initializeCesium = initializeCesium;
 
-// Phase 1 Feature exports
-window.setTerrainExaggeration = setTerrainExaggeration;
-window.switchBaseMap = switchBaseMap;
 window.createColoredFlightTrack = createColoredFlightTrack;
-window.setTrackOpacity = setTrackOpacity;
-window.setCameraPreset = setCameraPreset;
-window.flyToLocation = flyToLocation;
-window.setCameraControlsEnabled = setCameraControlsEnabled;
-window.getClimbRateColor = getClimbRateColor;
 
-// Phase 2 Feature exports (Playback)
-window.setFollowMode = setFollowMode;
-
-// Scene mode management exports
-window.setSceneMode = setSceneMode;
-window.setNavigationHelpDialogOpen = setNavigationHelpDialogOpen;
-window.getSceneMode = getSceneMode;
-window.toggleSceneMode = toggleSceneMode;
-
-// Fly-through mode exports
-window.setFlyThroughMode = setFlyThroughMode;
-window.getFlyThroughMode = getFlyThroughMode;
-window.setTrailDuration = setTrailDuration;
-window.getTrailDuration = getTrailDuration;
-window.setRibbonDuration = setRibbonDuration;
-window.getRibbonDuration = getRibbonDuration;
+// End of file

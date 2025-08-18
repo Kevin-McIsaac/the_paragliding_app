@@ -81,12 +81,26 @@
             text-align: center;
             z-index: 100;
         }
+        /* Custom credit container - minimally visible for legal compliance */
+        #customCreditContainer {
+            position: fixed;
+            bottom: -100px; /* Positioned off-screen */
+            left: 0;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            opacity: 0.01; /* Nearly transparent */
+            font-size: 1px;
+            z-index: -1000; /* Behind everything */
+            pointer-events: none; /* Non-interactive */
+        }
     </style>
 </head>
 <body>
     <div id="cesiumContainer"></div>
     <div id="loadingOverlay">Loading Cesium Globe...</div>
     <div id="statsContainer"></div>
+    <div id="customCreditContainer"></div>
     
     <script>{{JS_CONTENT}}</script>
     <script>
