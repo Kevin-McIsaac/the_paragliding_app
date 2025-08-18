@@ -45,6 +45,42 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            
+            <!-- Intent filter for opening IGC files -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                
+                <!-- Handle IGC files by extension -->
+                <data android:scheme="file" />
+                <data android:scheme="content" />
+                <data android:host="*" />
+                <data android:pathPattern=".*\\.igc" />
+                <data android:pathPattern=".*\\..*\\.igc" />
+                <data android:pathPattern=".*\\..*\\..*\\.igc" />
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.igc" />
+                <data android:pathPattern=".*\\.IGC" />
+                <data android:pathPattern=".*\\..*\\.IGC" />
+                <data android:pathPattern=".*\\..*\\..*\\.IGC" />
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.IGC" />
+            </intent-filter>
+            
+            <!-- Intent filter for IGC MIME type -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                
+                <!-- Custom MIME type for IGC files -->
+                <data android:scheme="file" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/x-igc" />
+                <data android:mimeType="application/igc" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
         <!-- Google Maps API Key -->
         <meta-data android:name="com.google.android.geo.API_KEY"
