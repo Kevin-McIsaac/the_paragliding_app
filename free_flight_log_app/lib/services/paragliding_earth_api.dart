@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -15,6 +16,24 @@ class ParaglidingEarthApi {
   static const String _baseUrl = 'https://www.paraglidingearth.com/api/geojson';
   static const Duration _timeout = Duration(seconds: 10);
   static const int _defaultLimit = 10;
+  
+  // Persistent HTTP client for connection pooling
+  static http.Client? _httpClient;
+  static int _requestCount = 0;
+  static const int _maxRequestsPerClient = 20; // Recreate after 20 requests
+  
+  static http.Client get httpClient {
+    if (_httpClient == null || _requestCount >= _maxRequestsPerClient) {
+      // Close old client if exists
+      if (_httpClient != null) {
+        LoggingService.info('ParaglidingEarthApi: Recreating HTTP client after $_requestCount requests');
+        _httpClient!.close();
+      }
+      _httpClient = http.Client();
+      _requestCount = 0;
+    }
+    return _httpClient!;
+  }
   
   // In-memory cache for API responses (could be enhanced with persistent storage)
   final Map<String, _CachedResponse> _cache = {};
@@ -38,37 +57,85 @@ class ParaglidingEarthApi {
       return cached;
     }
 
-    try {
-      final url = Uri.parse('$_baseUrl/getAroundLatLngSites.php').replace(
-        queryParameters: {
-          'lat': latitude.toString(),
-          'lng': longitude.toString(),
-          'distance': radiusKm.toString(),
-          'limit': limit.toString(),
-          if (detailed) 'style': 'detailled',
-        },
-      );
-
-      LoggingService.info('ParaglidingEarthApi: Fetching sites around $latitude, $longitude (${radiusKm}km)');
-
-      final response = await http.get(url).timeout(_timeout);
-      
-      if (response.statusCode == 200) {
-        final sites = _parseGeoJsonResponse(response.body);
+    // Retry logic with exponential backoff
+    int retries = 0;
+    Duration delay = Duration(seconds: 1);
+    
+    while (retries < 3) {
+      try {
+        if (retries > 0) {
+          LoggingService.info('ParaglidingEarthApi: Retry attempt ${retries + 1} after ${delay.inSeconds}s');
+          await Future.delayed(delay);
+        }
         
-        // Cache the response
-        _cacheResponse(cacheKey, sites);
+        final url = Uri.parse('$_baseUrl/getAroundLatLngSites.php').replace(
+          queryParameters: {
+            'lat': latitude.toString(),
+            'lng': longitude.toString(),
+            'distance': radiusKm.toString(),
+            'limit': limit.toString(),
+            if (detailed) 'style': 'detailled',
+          },
+        );
+
+        LoggingService.info('ParaglidingEarthApi: Fetching sites around $latitude, $longitude (${radiusKm}km)');
+
+        final response = await httpClient.get(url).timeout(_timeout);
+        _requestCount++; // Increment request counter
         
-        LoggingService.info('ParaglidingEarthApi: Found ${sites.length} sites');
-        return sites;
-      } else {
-        LoggingService.warning('ParaglidingEarthApi: HTTP ${response.statusCode} - ${response.reasonPhrase}');
+        if (response.statusCode == 200) {
+          final sites = _parseGeoJsonResponse(response.body);
+          
+          // Cache the response
+          _cacheResponse(cacheKey, sites);
+          
+          LoggingService.info('ParaglidingEarthApi: Found ${sites.length} sites');
+          return sites;
+        } else {
+          LoggingService.warning('ParaglidingEarthApi: HTTP ${response.statusCode} - ${response.reasonPhrase}');
+          return [];
+        }
+      } on SocketException catch (e) {
+        retries++;
+        
+        // Enhanced error logging
+        if (e.message?.contains('Failed host lookup') ?? false) {
+          LoggingService.error('ParaglidingEarthApi: DNS lookup failed for paraglidingearth.com', e);
+          LoggingService.info('ParaglidingEarthApi: This may indicate rate limiting or network issues');
+        } else {
+          LoggingService.error('ParaglidingEarthApi: Network error', e);
+        }
+        
+        if (retries >= 3) {
+          LoggingService.error('ParaglidingEarthApi: Failed after 3 attempts', e);
+          
+          // Check for cached data fallback
+          final staleCache = _cache[cacheKey];
+          if (staleCache != null) {
+            LoggingService.info('ParaglidingEarthApi: Using stale cache due to network error');
+            return staleCache.sites;
+          }
+          
+          return [];
+        }
+        
+        delay = Duration(seconds: delay.inSeconds * 2); // Exponential backoff
+      } on TimeoutException catch (e) {
+        retries++;
+        LoggingService.error('ParaglidingEarthApi: Request timeout after ${_timeout.inSeconds}s', e);
+        
+        if (retries >= 3) {
+          return [];
+        }
+        
+        delay = Duration(seconds: delay.inSeconds * 2);
+      } catch (e) {
+        LoggingService.error('ParaglidingEarthApi: Unexpected error', e);
         return [];
       }
-    } catch (e) {
-      LoggingService.error('ParaglidingEarthApi: API error', e);
-      return [];
     }
+    
+    return [];
   }
 
   /// Find the nearest site to given coordinates
@@ -133,7 +200,8 @@ class ParaglidingEarthApi {
 
       LoggingService.info('ParaglidingEarthApi: Fetching sites in bounds');
 
-      final response = await http.get(url).timeout(_timeout);
+      final response = await httpClient.get(url).timeout(_timeout);
+      _requestCount++; // Increment request counter
       
       if (response.statusCode == 200) {
         final sites = _parseGeoJsonResponse(response.body);
@@ -380,6 +448,14 @@ class ParaglidingEarthApi {
       'valid_entries': validEntries,
       'expired_entries': _cache.length - validEntries,
     };
+  }
+  
+  /// Clean up resources - call this after batch operations or when app suspends
+  static void cleanup() {
+    _httpClient?.close();
+    _httpClient = null;
+    _requestCount = 0;
+    LoggingService.info('ParaglidingEarthApi: HTTP client cleaned up');
   }
 }
 

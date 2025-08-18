@@ -9,6 +9,7 @@ import '../../services/igc_parser.dart';
 import '../../services/database_service.dart';
 import '../../services/logging_service.dart';
 import '../../services/igc_import_service.dart';
+import '../../services/paragliding_earth_api.dart';
 
 class IgcImportScreen extends StatefulWidget {
   final List<String>? initialFiles;
@@ -165,6 +166,8 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
     
     final databaseService = DatabaseService.instance;
     final importService = IgcImportService.instance;
+    
+    int processedCount = 0;
 
     for (final filePath in _selectedFilePaths) {
       setState(() {
@@ -266,12 +269,24 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
           _importResults.add(result);
         });
       }
+      
+      // Increment processed count and cleanup periodically
+      processedCount++;
+      if ((processedCount % 20) == 0) {
+        LoggingService.info('IgcImportScreen: Cleaning up API resources after $processedCount files');
+        ParaglidingEarthApi.cleanup();
+        // Small delay to ensure cleanup completes
+        await Future.delayed(Duration(milliseconds: 100));
+      }
     }
 
     setState(() {
       _currentlyProcessingFile = null;
       _isLoading = false;
     });
+    
+    // Clean up API resources after batch import
+    ParaglidingEarthApi.cleanup();
 
     // Show results dialog
     if (mounted) {

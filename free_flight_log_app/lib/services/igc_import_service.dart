@@ -414,54 +414,58 @@ class IgcImportService {
     required String gliderID,
   }) async {
     
-    // If no glider information, return null
+    // If no glider information at all, return null
     if (gliderType.isEmpty && gliderID.isEmpty) {
       return null;
     }
 
+    // Create unique identifier by combining both fields
+    String uniqueIdentifier;
+    if (gliderType.isNotEmpty && gliderID.isNotEmpty) {
+      uniqueIdentifier = '$gliderType $gliderID';
+    } else if (gliderType.isNotEmpty) {
+      uniqueIdentifier = gliderType;
+    } else {
+      uniqueIdentifier = gliderID;
+    }
+    
     // Get all existing wings
     final existingWings = await _databaseService.getAllWings();
     
-    // Try to find existing wing by matching glider type or ID
+    // Look for exact match on the unique identifier
     for (final wing in existingWings) {
-      // Check if wing name, manufacturer, or model matches glider info
-      final wingInfo = '${wing.manufacturer ?? ''} ${wing.model ?? ''}'.trim();
-      final wingName = wing.name.toLowerCase();
-      final gliderTypeLower = gliderType.toLowerCase();
-      final gliderIDLower = gliderID.toLowerCase();
-      
-      if (wingName.contains(gliderTypeLower) ||
-          wingInfo.toLowerCase().contains(gliderTypeLower) ||
-          (gliderID.isNotEmpty && wingName.contains(gliderIDLower))) {
+      if (wing.name.toLowerCase() == uniqueIdentifier.toLowerCase()) {
+        LoggingService.debug('IgcImportService: Found existing wing: "${wing.name}"');
         return wing;
       }
     }
 
     // No existing wing found, create new one
-    String wingName = gliderType.isNotEmpty ? gliderType : gliderID;
+    String wingName = uniqueIdentifier;
     String? manufacturer;
     String? model;
     
-    // Try to parse manufacturer and model from glider type
+    // Parse manufacturer and model from glider type (not from ID)
     if (gliderType.isNotEmpty) {
       final parts = gliderType.trim().split(' ');
       if (parts.length >= 2) {
-        manufacturer = parts[0];
-        model = parts.sublist(1).join(' ');
-      } else {
+        manufacturer = parts[0];  // First word is manufacturer
+        model = parts.sublist(1).join(' ');  // Rest is model
+      } else if (parts.length == 1) {
+        // Single word gliderType - could be manufacturer or model
         manufacturer = parts[0];
       }
     }
 
     final newWing = Wing(
-      name: wingName,
+      name: wingName,  // This is the unique identifier
       manufacturer: manufacturer,
       model: model,
       active: true,
-      notes: 'Automatically created from IGC import',
+      notes: 'Created from IGC: Type="$gliderType", ID="$gliderID"',
     );
 
-    LoggingService.debug('IgcImportService: Creating wing with name="$wingName", manufacturer="$manufacturer", model="$model"');
+    LoggingService.info('IgcImportService: Creating wing "${wingName}" (manufacturer="$manufacturer", model="$model")');
 
     final wingId = await _databaseService.insertWing(newWing);
     
