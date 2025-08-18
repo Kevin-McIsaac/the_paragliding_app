@@ -105,6 +105,9 @@ function initializeCesium(config) {
             vrButton: false,
             shadows: false,
             shouldAnimate: false,  // Start paused
+            
+            // Custom credit container to minimize Ion branding
+            creditContainer: document.getElementById('customCreditContainer'),
         });
         
         
