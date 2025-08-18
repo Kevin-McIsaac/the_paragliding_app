@@ -115,7 +115,13 @@ function initializeCesium(config) {
         viewer.scene.fog.density = 0.0001;  // Reduce fog density for clearer distant views
         viewer.scene.fog.screenSpaceErrorFactor = 2.0;  // Adjust fog based on terrain detail
         viewer.scene.globe.depthTestAgainstTerrain = true;  // Enable terrain occlusion
-        viewer.scene.screenSpaceCameraController.enableCollisionDetection = false;
+        
+        // Configure camera collision detection to prevent going under terrain
+        const controller = viewer.scene.screenSpaceCameraController;
+        controller.enableCollisionDetection = true;  // Prevent camera from going through terrain
+        controller.minimumZoomDistance = 10.0;  // Minimum 10 meters from surface
+        controller.minimumCollisionTerrainHeight = 5000.0;  // Start collision detection at 5km altitude
+        controller.collisionDetectionHeightBuffer = 10.0;  // Buffer for smoother collision behavior
         
         // Enable HDR rendering for better dynamic range
         viewer.scene.highDynamicRange = true;
@@ -1147,6 +1153,26 @@ function onSceneModeChanged() {
     // Notify Flutter of the change
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
         window.flutter_inappwebview.callHandler('onSceneModeChanged', modeString);
+    }
+    
+    // Apply appropriate camera controls based on scene mode
+    const controller = viewer.scene.screenSpaceCameraController;
+    
+    if (viewer.scene.mode === Cesium.SceneMode.SCENE2D) {
+        // 2D mode: disable collision detection and rotation
+        controller.enableCollisionDetection = false;  // Not needed in 2D
+        controller.enableRotate = false;
+        controller.enableTilt = false;
+    } else {
+        // 3D and Columbus mode: enable collision detection and full controls
+        controller.enableCollisionDetection = true;  // Prevent going under terrain
+        controller.enableRotate = true;
+        controller.enableTilt = true;
+        
+        // Reapply collision settings for 3D modes
+        controller.minimumZoomDistance = 10.0;  // Minimum 10 meters from surface
+        controller.minimumCollisionTerrainHeight = 5000.0;  // Start collision detection at 5km
+        controller.collisionDetectionHeightBuffer = 10.0;  // Buffer for smooth collision
     }
     
     // Restore camera to flight track view if available
