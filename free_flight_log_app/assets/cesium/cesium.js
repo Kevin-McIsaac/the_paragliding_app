@@ -1148,6 +1148,18 @@ function onSceneModeChanged() {
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
         window.flutter_inappwebview.callHandler('onSceneModeChanged', modeString);
     }
+    
+    // Restore camera to flight track view if available
+    if (cesiumState.flightTrackHomeView && cesiumState.flightTrackHomeView.boundingSphere) {
+        // Small delay to ensure scene mode transition is complete
+        setTimeout(() => {
+            viewer.camera.flyToBoundingSphere(cesiumState.flightTrackHomeView.boundingSphere, {
+                duration: 2.0,
+                offset: cesiumState.flightTrackHomeView.offset
+            });
+            cesiumLog.info('Camera restored to flight track view after scene mode change');
+        }, 500);
+    }
 }
 
 // Export functions for Flutter access
