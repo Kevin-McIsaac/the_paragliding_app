@@ -27,6 +27,12 @@ let igcPoints = [];
 
 // Simplified logging
 const cesiumLog = {
+    debug: (message) => {
+        if (window.cesiumConfig && window.cesiumConfig.debug) {
+            console.log('[Cesium Debug] ' + message);
+        }
+    },
+    info: (message) => console.log('[Cesium] ' + message),
     error: (message) => console.error('[Cesium Error] ' + message)
 };
 
@@ -47,6 +53,18 @@ function initializeCesium(config) {
                 iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerialLabels.png'),
                 tooltip: 'Bing Maps aerial imagery with labels',
                 creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3)
+            }),
+            new Cesium.ProviderViewModel({
+                name: 'Bing Maps Aerial',
+                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerial.png'),
+                tooltip: 'Bing Maps aerial imagery without labels',
+                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(2)
+            }),
+            new Cesium.ProviderViewModel({
+                name: 'Bing Maps Roads',
+                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingRoads.png'),
+                tooltip: 'Bing Maps road imagery',
+                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(4)
             }),
             new Cesium.ProviderViewModel({
                 name: 'OpenStreetMap',
@@ -79,6 +97,8 @@ function initializeCesium(config) {
             geocoder: true,
             homeButton: true,
             sceneModePicker: true,
+            navigationHelpButton: true,
+            navigationInstructionsInitiallyVisible: config.savedNavigationHelpDialogOpen || false,
             animation: true,
             timeline: true,
             fullscreenButton: true,
@@ -126,8 +146,8 @@ function initializeCesium(config) {
         viewer.scene.fxaa = true;
         viewer.scene.msaaSamples = 8;  // Increased MSAA for smoother edges
         
-        // Set terrain exaggeration for better visibility
-        viewer.scene.globe.terrainExaggeration = 1.2;  // 20% exaggeration for clearer elevation changes
+        // Set terrain exaggeration to 1.0 for accurate GPS altitude representation
+        viewer.scene.globe.terrainExaggeration = 1.0;  // No exaggeration - true GPS altitudes
         viewer.scene.globe.terrainExaggerationRelativeHeight = 0.0;
         
         // Configure imagery provider for better performance
@@ -136,6 +156,14 @@ function initializeCesium(config) {
             imageryProvider.brightness = 1.0;
             imageryProvider.contrast = 1.0;
             imageryProvider.saturation = 1.0;
+        }
+        
+        // Apply saved scene mode preference
+        if (config.savedSceneMode && config.savedSceneMode !== '3D') {
+            const sceneMode = config.savedSceneMode === '2D' ? Cesium.SceneMode.SCENE2D :
+                             config.savedSceneMode === 'Columbus' ? Cesium.SceneMode.COLUMBUS_VIEW :
+                             Cesium.SceneMode.SCENE3D;
+            viewer.scene.mode = sceneMode;
         }
         
         // Set initial camera view if no track points provided
@@ -184,6 +212,41 @@ function initializeCesium(config) {
         
         // Store viewer globally for cleanup
         window.viewer = viewer;
+        
+        // Add scene mode change listener
+        viewer.scene.morphComplete.addEventListener(onSceneModeChanged);
+        
+        // Track navigation help dialog state changes for saving preferences
+        if (viewer.navigationHelpButton && viewer.navigationHelpButton.viewModel) {
+            const navHelpVM = viewer.navigationHelpButton.viewModel;
+            
+            // Check if showInstructions observable exists (indicates dialog state)
+            if (navHelpVM.showInstructions !== undefined) {
+                const instructionsObservable = Cesium.knockout.getObservable(navHelpVM, 'showInstructions');
+                if (instructionsObservable) {
+                    // The dialog is already in the correct initial state thanks to navigationInstructionsInitiallyVisible
+                    // Now we just need to track future changes for saving preferences
+                    
+                    // Use a flag to prevent saving the initial state
+                    let isInitialState = true;
+                    setTimeout(function() {
+                        isInitialState = false;
+                        cesiumLog.info('Navigation help dialog initialized with saved preference: ' + 
+                                      (config.savedNavigationHelpDialogOpen ? 'open' : 'closed'));
+                    }, 1000);
+                    
+                    // Subscribe to future changes
+                    instructionsObservable.subscribe(function(isShowing) {
+                        cesiumLog.info('Navigation help dialog ' + (isShowing ? 'opened' : 'closed') + 
+                                     (isInitialState ? ' (initial)' : ' (user action)'));
+                        // Only save if this is a user action, not the initial state
+                        if (!isInitialState && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+                            window.flutter_inappwebview.callHandler('onNavigationHelpDialogStateChanged', isShowing);
+                        }
+                    });
+                }
+            }
+        }
         
         // Basic home button behavior - custom flight track view if available
         if (viewer.homeButton && viewer.homeButton.viewModel) {
@@ -1062,7 +1125,30 @@ function calculateTrailAltitudes(currentTime) {
 // Scene Mode Management Functions
 // ============================================================================
 
+// Get scene mode as string
+function getSceneModeString(sceneMode) {
+    switch(sceneMode) {
+        case Cesium.SceneMode.SCENE2D:
+            return '2D';
+        case Cesium.SceneMode.COLUMBUS_VIEW:
+            return 'Columbus';
+        case Cesium.SceneMode.SCENE3D:
+            return '3D';
+        default:
+            return '3D';
+    }
+}
 
+// Event handler for scene mode changes
+function onSceneModeChanged() {
+    const modeString = getSceneModeString(viewer.scene.mode);
+    cesiumLog.info('Scene mode changed to: ' + modeString);
+    
+    // Notify Flutter of the change
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+        window.flutter_inappwebview.callHandler('onSceneModeChanged', modeString);
+    }
+}
 
 // Export functions for Flutter access
 window.cleanupCesium = cleanupCesium;
