@@ -4,6 +4,8 @@ import '../../data/models/flight.dart';
 import '../../data/models/site.dart';
 import '../../data/models/wing.dart';
 import '../../services/database_service.dart';
+import '../../services/logging_service.dart';
+import '../../utils/date_time_utils.dart';
 import '../widgets/flight_track_3d_widget.dart';
 import '../widgets/flight_statistics_widget.dart';
 import '../widgets/edit_site_dialog.dart';
@@ -579,6 +581,76 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
     });
   }
 
+  Future<void> _showDeleteConfirmation() async {
+    final launchSiteName = _launchSite?.name ?? 'Unknown';
+    final flightDate = _formatDate(_flight.date);
+    
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Delete Flight?'),
+          content: Text(
+            'Are you sure you want to delete the flight from $launchSiteName on $flightDate?\n\n'
+            'This action cannot be undone.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red,
+              ),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+    
+    if (confirmed == true) {
+      _deleteFlight();
+    }
+  }
+
+  Future<void> _deleteFlight() async {
+    try {
+      LoggingService.debug('FlightDetailScreen: Deleting flight ${_flight.id}');
+      
+      // Delete the flight
+      await _databaseService.deleteFlight(_flight.id!);
+      
+      LoggingService.info('FlightDetailScreen: Flight ${_flight.id} deleted successfully');
+      
+      if (mounted) {
+        // Show success toast
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Flight deleted successfully'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+        
+        // Navigate back and signal that the list should be refreshed
+        Navigator.of(context).pop(true);
+      }
+    } catch (e) {
+      LoggingService.error('FlightDetailScreen: Failed to delete flight', e);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete flight: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -594,6 +666,13 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
         appBar: AppBar(
           title: Text('Flight Details'),
           backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.delete),
+              onPressed: _showDeleteConfirmation,
+              tooltip: 'Delete Flight',
+            ),
+          ],
         ),
         body: _isLoading
             ? const Center(child: CircularProgressIndicator())
