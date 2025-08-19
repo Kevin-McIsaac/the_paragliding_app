@@ -7,6 +7,7 @@ import '../../services/database_service.dart';
 import '../widgets/flight_track_3d_widget.dart';
 import '../widgets/flight_statistics_widget.dart';
 import '../widgets/edit_site_dialog.dart';
+import '../widgets/edit_wing_dialog.dart';
 import '../widgets/site_selection_dialog.dart';
 import '../widgets/wing_selection_dialog.dart';
 
@@ -90,6 +91,24 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
       return '$timeStr $timezone';
     }
     return timeStr;
+  }
+
+  String _getWingDisplayName(Wing wing) {
+    List<String> parts = [];
+    if (wing.manufacturer != null && wing.manufacturer!.isNotEmpty) {
+      parts.add(wing.manufacturer!);
+    }
+    if (wing.model != null && wing.model!.isNotEmpty) {
+      parts.add(wing.model!);
+    }
+    
+    // If we have manufacturer/model, use them
+    if (parts.isNotEmpty) {
+      return parts.join(' ');
+    }
+    
+    // Otherwise fall back to name
+    return wing.name;
   }
 
   // Inline editing methods
@@ -186,6 +205,39 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error updating site: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _editCurrentWing() async {
+    if (_wing == null) return;
+    
+    try {
+      final editedWing = await showDialog<Wing>(
+        context: context,
+        builder: (context) => EditWingDialog(wing: _wing!),
+      );
+      
+      if (editedWing != null && mounted) {
+        await _databaseService.updateWing(editedWing);
+        
+        // Update the current flight's wing
+        setState(() {
+          _wing = editedWing;
+          _flightModified = true;
+        });
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Wing "${editedWing.name}" updated')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error updating wing: $e')),
         );
       }
     }
@@ -840,87 +892,36 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Line 1: Date, Duration, and Equipment
+        // Line 1: Date
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(Icons.calendar_today, size: 18, color: Theme.of(context).colorScheme.primary),
             const SizedBox(width: 8),
             Expanded(
-              child: RichText(
-                text: TextSpan(
-                  style: Theme.of(context).textTheme.bodyMedium,
-                  children: [
-                    WidgetSpan(
-                      child: GestureDetector(
-                        onTap: _isSaving ? null : _editDate,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            border: Border(
-                              bottom: BorderSide(
-                                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
-                                width: 1,
-                              ),
-                            ),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: _isSaving ? null : _editDate,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(
+                            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+                            width: 1,
                           ),
-                          child: Text(
-                            _formatDate(_flight.date),
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                          ),
+                        ),
+                      ),
+                      child: Text(
+                        _formatDate(_flight.date),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.primary,
                         ),
                       ),
                     ),
-                    if (_wing != null) ...[
-                      const TextSpan(text: ' using '),
-                      WidgetSpan(
-                        child: GestureDetector(
-                          onTap: _isSaving ? null : _editWing,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              border: Border(
-                                bottom: BorderSide(
-                                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
-                                  width: 1,
-                                ),
-                              ),
-                            ),
-                            child: Text(
-                              '${_wing!.manufacturer ?? 'Unknown'} ${_wing!.model ?? 'Unknown'}',
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ] else ...[
-                      WidgetSpan(
-                        child: GestureDetector(
-                          onTap: _isSaving ? null : _editWing,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              border: Border(
-                                bottom: BorderSide(
-                                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
-                                  width: 1,
-                                ),
-                              ),
-                            ),
-                            child: Text(
-                              ' (tap to set equipment)',
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: Theme.of(context).colorScheme.primary,
-                                fontStyle: FontStyle.italic,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
+                  ),
+                  const Spacer(),
+                ],
               ),
             ),
           ],
@@ -1146,6 +1147,84 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                             ),
                             child: Text(
                               ' (tap to set location)',
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        
+        // Line 4: Wing/Equipment
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.paragliding, size: 18, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: RichText(
+                text: TextSpan(
+                  style: Theme.of(context).textTheme.bodyMedium,
+                  children: [
+                    if (_wing != null) ...[
+                      WidgetSpan(
+                        child: GestureDetector(
+                          onTap: _isSaving ? null : _editWing,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                            child: Text(
+                              _getWingDisplayName(_wing!),
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      WidgetSpan(
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 4),
+                          child: GestureDetector(
+                            onTap: _isSaving ? null : _editCurrentWing,
+                            child: Icon(
+                              Icons.edit,
+                              size: 16,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ] else ...[
+                      WidgetSpan(
+                        child: GestureDetector(
+                          onTap: _isSaving ? null : _editWing,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                            child: Text(
+                              '(tap to set equipment)',
                               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                 color: Theme.of(context).colorScheme.primary,
                                 fontStyle: FontStyle.italic,
