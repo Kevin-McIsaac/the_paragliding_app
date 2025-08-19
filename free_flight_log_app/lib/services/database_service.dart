@@ -399,7 +399,7 @@ class DatabaseService {
     return hoursByYear;
   }
 
-  /// Get statistics for wings
+  /// Get statistics for wings grouped by manufacturer, model, and size
   Future<List<Map<String, dynamic>>> getWingStatistics() async {
     LoggingService.debug('DatabaseService: Getting wing statistics');
     
@@ -407,9 +407,18 @@ class DatabaseService {
     
     List<Map<String, dynamic>> results = await db.rawQuery('''
       SELECT 
-        w.id,
-        w.name,
+        CASE 
+          WHEN w.manufacturer IS NOT NULL OR w.model IS NOT NULL THEN
+            TRIM(
+              COALESCE(w.manufacturer, '') || 
+              CASE WHEN w.model IS NOT NULL THEN ' ' || w.model ELSE '' END
+            )
+          ELSE MIN(w.name)
+        END as name,
         w.manufacturer,
+        w.model,
+        w.size,
+        COUNT(DISTINCT w.id) as wing_count,
         COUNT(f.id) as flight_count,
         SUM(f.duration) as total_duration,
         MAX(f.max_altitude) as max_altitude,
@@ -417,7 +426,7 @@ class DatabaseService {
       FROM wings w
       LEFT JOIN flights f ON f.wing_id = w.id
       WHERE w.active = 1
-      GROUP BY w.id
+      GROUP BY w.manufacturer, w.model, w.size
       ORDER BY flight_count DESC
     ''');
     

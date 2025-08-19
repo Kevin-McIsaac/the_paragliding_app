@@ -26,6 +26,7 @@ class WingSelectionDialog extends StatefulWidget {
 class _WingSelectionDialogState extends State<WingSelectionDialog> {
   late List<Wing> _filteredWings;
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   Wing? _selectedWing;
   String _searchQuery = '';
 
@@ -46,12 +47,49 @@ class _WingSelectionDialogState extends State<WingSelectionDialog> {
       final bModel = b.model ?? '';
       return aModel.compareTo(bModel);
     });
+    
+    // Scroll to selected item after the widget is built
+    if (_selectedWing != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToSelectedWing();
+      });
+    }
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+  
+  void _scrollToSelectedWing() {
+    if (_selectedWing == null || !_scrollController.hasClients) return;
+    
+    // Find the index of the selected wing
+    final index = _filteredWings.indexOf(_selectedWing!);
+    if (index == -1) return;
+    
+    // Account for "No wing" option (56px) and divider (1px)
+    // Estimate item height: ListTile with dense:true is approximately 56 pixels
+    // For wings with subtitle (size), it's slightly taller, around 72 pixels
+    final hasSubtitle = _selectedWing!.size != null && _selectedWing!.size!.isNotEmpty;
+    final itemHeight = hasSubtitle ? 72.0 : 56.0;
+    
+    // Calculate scroll position
+    double scrollPosition = 57 + (index * itemHeight);
+    
+    // Ensure we don't scroll beyond the maximum extent
+    if (_scrollController.position.maxScrollExtent > 0) {
+      scrollPosition = scrollPosition.clamp(0, _scrollController.position.maxScrollExtent);
+    }
+    
+    // Animate to the position
+    _scrollController.animateTo(
+      scrollPosition,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
   }
 
   void _filterWings(String query) {
@@ -173,6 +211,7 @@ class _WingSelectionDialogState extends State<WingSelectionDialog> {
                       ),
                     )
                   : ListView.builder(
+                      controller: _scrollController,
                       itemCount: _filteredWings.length,
                       itemBuilder: (context, index) {
                         final wing = _filteredWings[index];

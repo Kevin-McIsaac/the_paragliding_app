@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../utils/date_time_utils.dart';
 import '../../services/database_service.dart';
 import '../../services/logging_service.dart';
+import '../widgets/edit_site_dialog.dart';
+import '../../data/models/site.dart';
 
 class StatisticsScreen extends StatefulWidget {
   const StatisticsScreen({super.key});
@@ -68,6 +70,55 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     setState(() {
       _errorMessage = null;
     });
+  }
+  
+  Future<void> _editSite(int siteId) async {
+    try {
+      LoggingService.debug('StatisticsScreen: Fetching site $siteId for editing');
+      
+      // Fetch the complete Site object
+      final site = await _databaseService.getSite(siteId);
+      if (site == null) {
+        LoggingService.warning('StatisticsScreen: Site $siteId not found');
+        return;
+      }
+      
+      if (!mounted) return;
+      
+      // Open the edit dialog
+      final updatedSite = await showDialog<Site>(
+        context: context,
+        builder: (context) => EditSiteDialog(site: site),
+      );
+      
+      // If site was updated, save changes and refresh statistics
+      if (updatedSite != null && mounted) {
+        LoggingService.debug('StatisticsScreen: Updating site ${updatedSite.id}');
+        await _databaseService.updateSite(updatedSite);
+        
+        // Refresh statistics to show any changes
+        await _loadAllStatistics();
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Site "${updatedSite.name}" updated'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      LoggingService.error('StatisticsScreen: Failed to edit site', e);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to edit site: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
   
   
@@ -434,31 +485,20 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                (stat['name'] as String?) ?? 'Unknown Wing',
-                                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                            if (stat['wing_count'] != null && stat['wing_count'] > 1)
-                              Container(
-                                margin: const EdgeInsets.only(left: 8),
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context).colorScheme.primaryContainer,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Text(
-                                  '${stat['wing_count']} wings',
-                                  style: Theme.of(context).textTheme.labelSmall,
-                                ),
-                              ),
-                          ],
+                        Text(
+                          (stat['name'] as String?) ?? 'Unknown Wing',
+                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
+                        if (stat['size'] != null && (stat['size'] as String).isNotEmpty)
+                          Text(
+                            'Size: ${stat['size']}',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.grey[600],
+                              fontSize: 12,
+                            ),
+                          ),
                         if (stat['max_altitude'] != null && stat['max_altitude'] > 0)
                           Text(
                             'Max alt: ${(stat['max_altitude'] as num).toInt()}m',
@@ -666,49 +706,69 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                     ),
                   ),
                 // Sites in this country
-                ...sites.map((stat) => Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(
-                        color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
+                ...sites.map((stat) => Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: stat['id'] != null 
+                      ? () => _editSite(stat['id'] as int)
+                      : null,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(
+                            color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        flex: 4,
-                        child: Padding(
-                          padding: EdgeInsets.only(left: groupedSites.keys.length > 1 ? 24.0 : 0.0),
-                          child: Text(
-                            (stat['name'] as String?) ?? 'Unknown Site',
-                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                              fontWeight: FontWeight.w500,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 4,
+                            child: Padding(
+                              padding: EdgeInsets.only(left: groupedSites.keys.length > 1 ? 24.0 : 0.0),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.location_on,
+                                    size: 16,
+                                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      (stat['name'] as String?) ?? 'Unknown Site',
+                                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                      ),
-                      Expanded(
-                        flex: 2,
-                        child: Text(
-                          stat['flight_count'].toString(),
-                          style: Theme.of(context).textTheme.bodyLarge,
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                      Expanded(
-                        flex: 3,
-                        child: Text(
-                          DateTimeUtils.formatHours((stat['total_hours'] as num?)?.toDouble() ?? 0.0),
-                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontWeight: FontWeight.w500,
+                          Expanded(
+                            flex: 2,
+                            child: Text(
+                              stat['flight_count'].toString(),
+                              style: Theme.of(context).textTheme.bodyLarge,
+                              textAlign: TextAlign.center,
+                            ),
                           ),
-                          textAlign: TextAlign.right,
-                        ),
+                          Expanded(
+                            flex: 3,
+                            child: Text(
+                              DateTimeUtils.formatHours((stat['total_hours'] as num?)?.toDouble() ?? 0.0),
+                              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              textAlign: TextAlign.right,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 )),
               ];

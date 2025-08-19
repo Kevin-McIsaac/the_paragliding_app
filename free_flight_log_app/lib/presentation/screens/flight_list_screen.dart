@@ -393,11 +393,15 @@ class _FlightListScreenState extends State<FlightListScreen> {
                       ),
                     );
                   } else if (value == 'database') {
-                    Navigator.of(context).push(
+                    final result = await Navigator.of(context).push<bool>(
                       MaterialPageRoute(
                         builder: (context) => const DatabaseSettingsScreen(),
                       ),
                     );
+                    
+                    if (result == true) {
+                      _loadFlights(); // Reload flights if database was modified
+                    }
                   } else if (value == 'about') {
                     Navigator.of(context).push(
                       MaterialPageRoute(
