@@ -28,6 +28,7 @@ class SiteSelectionDialog extends StatefulWidget {
 class _SiteSelectionDialogState extends State<SiteSelectionDialog> {
   late List<Site> _filteredSites;
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   Site? _selectedSite;
   String _searchQuery = '';
 
@@ -39,12 +40,86 @@ class _SiteSelectionDialogState extends State<SiteSelectionDialog> {
     
     // Sort sites alphabetically for easier browsing
     _filteredSites.sort((a, b) => a.name.compareTo(b.name));
+    
+    // Scroll to selected item after the widget is built
+    if (_selectedSite != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToSelectedSite();
+      });
+    }
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+  
+  void _scrollToSelectedSite() {
+    if (_selectedSite == null || !_scrollController.hasClients) return;
+    
+    // Find the index of the selected site
+    final index = _filteredSites.indexOf(_selectedSite!);
+    if (index == -1) return;
+    
+    // Account for "No site" option and divider (2 items before the list)
+    // Estimate item height: ListTile with dense:true is approximately 56 pixels
+    // Plus we need to account for country headers when not searching
+    double scrollPosition = 0;
+    
+    if (_searchQuery.isEmpty) {
+      // When showing grouped view, calculate position including headers
+      final Map<String, List<Site>> countryGroupedSites = {};
+      for (final site in _filteredSites) {
+        final country = site.country ?? 'Unknown Country';
+        countryGroupedSites.putIfAbsent(country, () => []).add(site);
+      }
+      
+      final sortedCountries = countryGroupedSites.keys.toList()..sort((a, b) {
+        if (a == 'Unknown Country' && b != 'Unknown Country') return 1;
+        if (a != 'Unknown Country' && b == 'Unknown Country') return -1;
+        return a.compareTo(b);
+      });
+      
+      for (final country in sortedCountries) {
+        countryGroupedSites[country]!.sort((a, b) => a.name.compareTo(b.name));
+      }
+      
+      // Calculate position
+      int itemsBeforeSelected = 0;
+      bool found = false;
+      for (final country in sortedCountries) {
+        itemsBeforeSelected++; // Country header
+        for (final site in countryGroupedSites[country]!) {
+          if (site == _selectedSite) {
+            found = true;
+            break;
+          }
+          itemsBeforeSelected++;
+        }
+        if (found) break;
+      }
+      
+      // Account for "No site" option (56px) and divider (1px)
+      scrollPosition = 57 + (itemsBeforeSelected * 56.0);
+    } else {
+      // Flat list when searching
+      // Account for "No site" option (56px) and divider (1px)
+      scrollPosition = 57 + (index * 56.0);
+    }
+    
+    // Ensure we don't scroll beyond the maximum extent
+    if (_scrollController.position.maxScrollExtent > 0) {
+      scrollPosition = scrollPosition.clamp(0, _scrollController.position.maxScrollExtent);
+    }
+    
+    // Animate to the position
+    _scrollController.animateTo(
+      scrollPosition,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
   }
 
   void _filterSites(String query) {
@@ -174,6 +249,7 @@ class _SiteSelectionDialogState extends State<SiteSelectionDialog> {
                       ),
                     )
                   : ListView.builder(
+                      controller: _scrollController,
                       itemCount: _searchQuery.isEmpty 
                           ? sortedCountries.fold<int>(0, (count, country) => 
                               count + 1 + countryGroupedSites[country]!.length) // Country header + sites
