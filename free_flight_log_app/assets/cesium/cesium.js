@@ -1,27 +1,45 @@
 // Cesium 3D Map JavaScript Module
 // Handles initialization, memory management, and lifecycle
 
-// Simplified state management
+// ============================================================================
+// State Management
+// ============================================================================
+
+// Unified state management
 const cesiumState = {
-    flyThroughMode: {
-        enabled: false,
-        staticTrackPrimitive: null,
-        dynamicTrackPrimitive: null,
-        showDynamicTrack: false,
-        igcPoints: null,
-        lastWindowStart: -1,
-        lastWindowEnd: -1,
+    // Viewer and data
+    viewer: null,
+    igcPoints: [],
+    
+    // Flight visualization
+    flightTrack: {
+        staticPrimitive: null,
+        dynamicPrimitive: null,
         curtainWallEntity: null,
         dynamicCurtainEntity: null,
+        homeView: null
+    },
+    
+    // Playback
+    playback: {
+        pilotEntity: null,
+        positionProperty: null
+    },
+    
+    // Ribbon mode (fly-through)
+    ribbonMode: {
+        enabled: false,
+        showDynamicTrack: false,
+        lastWindowStart: -1,
+        lastWindowEnd: -1,
         lastUpdateTime: null,
         updateInterval: 100,
-        ribbonAnimationSeconds: 3.0,
+        animationSeconds: 3.0,
         onTickCallback: null
-    },
-    flightTrackHomeView: null
+    }
 };
 
-// Global variables
+// Backward compatibility aliases
 let viewer = null;
 let igcPoints = [];
 
@@ -221,6 +239,7 @@ function initializeCesium(config) {
         
         // Store viewer globally for cleanup
         window.viewer = viewer;
+        cesiumState.viewer = viewer;
         
         // Add scene mode change listener
         viewer.scene.morphComplete.addEventListener(onSceneModeChanged);
@@ -260,11 +279,11 @@ function initializeCesium(config) {
         // Basic home button behavior - custom flight track view if available
         if (viewer.homeButton && viewer.homeButton.viewModel) {
             viewer.homeButton.viewModel.command.beforeExecute.addEventListener(function(commandInfo) {
-                if (cesiumState.flyThroughMode.staticTrackPrimitive && cesiumState.flightTrackHomeView?.boundingSphere) {
+                if (cesiumState.flightTrack.staticPrimitive && cesiumState.flightTrack.homeView?.boundingSphere) {
                     commandInfo.cancel = true;
-                    viewer.camera.flyToBoundingSphere(cesiumState.flightTrackHomeView.boundingSphere, {
+                    viewer.camera.flyToBoundingSphere(cesiumState.flightTrack.homeView.boundingSphere, {
                         duration: 3.0,
-                        offset: cesiumState.flightTrackHomeView.offset
+                        offset: cesiumState.flightTrack.homeView.offset
                     });
                 }
             });
@@ -279,12 +298,14 @@ function initializeCesium(config) {
     }
 }
 
-// === PHASE 1 FEATURES: 3D Terrain, Flight Track, Camera Controls ===
+// ============================================================================
+// Flight Track Rendering
+// ============================================================================
 
 // Show or hide all track segments
 function showAllTrackSegments(show) {
-    if (cesiumState.flyThroughMode.staticTrackPrimitive) {
-        cesiumState.flyThroughMode.staticTrackPrimitive.show = show;
+    if (cesiumState.flightTrack.staticPrimitive) {
+        cesiumState.flightTrack.staticPrimitive.show = show;
     }
 }
 
@@ -294,6 +315,7 @@ function createColoredFlightTrack(points) {
     if (!viewer || !points || points.length === 0) return;
     
     igcPoints = points;
+    cesiumState.igcPoints = points;
     
     // Extract timezone from first point
     let trackTimezone = '+00:00';
@@ -348,7 +370,7 @@ function createColoredFlightTrack(points) {
     
     // Clear existing entities
     viewer.entities.removeAll();
-    playbackState.showPilot = null;
+    cesiumState.playback.pilotEntity = null;
     // Build positions and colors arrays for per-vertex colored primitive
     const positions = [];
     const colors = [];
@@ -389,7 +411,7 @@ function createColoredFlightTrack(points) {
     });
     
     // Add primitive to scene
-    cesiumState.flyThroughMode.staticTrackPrimitive = viewer.scene.primitives.add(staticTrackPrimitive);
+    cesiumState.flightTrack.staticPrimitive = viewer.scene.primitives.add(staticTrackPrimitive);
     // Create curtain wall that hangs from track to ground
     // Build positions array for the wall (all track points)
     const wallPositions = points.map(point => 
@@ -416,24 +438,24 @@ function createColoredFlightTrack(points) {
     });
     
     // Store curtain wall entity
-    cesiumState.flyThroughMode.curtainWallEntity = curtainWallEntity;
+    cesiumState.flightTrack.curtainWallEntity = curtainWallEntity;
     
     // Store the igcPoints for global access
-    cesiumState.flyThroughMode.igcPoints = igcPoints;
+    cesiumState.igcPoints = igcPoints;
     
     // Set up onTick callback for dynamic updates
-    cesiumState.flyThroughMode.onTickCallback = function() {
+    cesiumState.ribbonMode.onTickCallback = function() {
         // Throttle updates to every 100ms
         const now = Date.now();
-        if (!cesiumState.flyThroughMode.lastUpdateTime || 
-            now - cesiumState.flyThroughMode.lastUpdateTime > cesiumState.flyThroughMode.updateInterval) {
-            cesiumState.flyThroughMode.lastUpdateTime = now;
+        if (!cesiumState.ribbonMode.lastUpdateTime || 
+            now - cesiumState.ribbonMode.lastUpdateTime > cesiumState.ribbonMode.updateInterval) {
+            cesiumState.ribbonMode.lastUpdateTime = now;
             updateDynamicTrackPrimitive();
         }
     };
     
     // Add the onTick listener
-    viewer.clock.onTick.addEventListener(cesiumState.flyThroughMode.onTickCallback);
+    viewer.clock.onTick.addEventListener(cesiumState.ribbonMode.onTickCallback);
     
     // Create dynamic curtain wall for fly-through mode (initially hidden)
     const dynamicCurtainEntity = viewer.entities.add({
@@ -442,7 +464,7 @@ function createColoredFlightTrack(points) {
         wall: {
             positions: new Cesium.CallbackProperty(function(time, result) {
                 // This function will be called every frame to update positions
-                if (!cesiumState.flyThroughMode.enabled) {
+                if (!cesiumState.ribbonMode.enabled) {
                     return [];  // Return empty array when disabled
                 }
                 
@@ -451,7 +473,7 @@ function createColoredFlightTrack(points) {
             }, false),
             maximumHeights: new Cesium.CallbackProperty(function(time, result) {
                 // This function will be called every frame to update heights
-                if (!cesiumState.flyThroughMode.enabled) {
+                if (!cesiumState.ribbonMode.enabled) {
                     return [];  // Return empty array when disabled
                 }
                 
@@ -463,7 +485,7 @@ function createColoredFlightTrack(points) {
         }
     });
     
-    cesiumState.flyThroughMode.dynamicCurtainEntity = dynamicCurtainEntity;
+    cesiumState.flightTrack.dynamicCurtainEntity = dynamicCurtainEntity;
     
     // Set up time-based animation if timestamps are available
     if (points[0].timestamp) {
@@ -540,8 +562,8 @@ function setupTimeBasedAnimation(points) {
     
     
     // Store pilot entity reference
-    playbackState.showPilot = pilotEntity;
-    playbackState.positionProperty = positionProperty;
+    cesiumState.playback.pilotEntity = pilotEntity;
+    cesiumState.playback.positionProperty = positionProperty;
     
     // Configure viewer clock for playback
     viewer.clock.startTime = startTime.clone();
@@ -564,8 +586,8 @@ function setupTimeBasedAnimation(points) {
     }
     
     // Use the existing pilot entity with time-dynamic position
-    playbackState.showPilot = pilotEntity;
-    playbackState.positionProperty = positionProperty;
+    cesiumState.playback.pilotEntity = pilotEntity;
+    cesiumState.playback.positionProperty = positionProperty;
     
     // Show the stats container and playback controls when track is loaded
     const statsContainer = document.getElementById('statsContainer');
@@ -597,11 +619,11 @@ function setupTimeBasedAnimation(points) {
     
     // Automatic ribbon mode will be managed by clock.onTick listener
     // Start with full track visible (at beginning)
-    cesiumState.flyThroughMode.enabled = false;
+    cesiumState.ribbonMode.enabled = false;
     
     // Only force continuous rendering if ribbon trail is enabled and playing
     // Otherwise use on-demand rendering for better performance
-    if (cesiumState.flyThroughMode.enabled && viewer.clock.shouldAnimate) {
+    if (cesiumState.ribbonMode.enabled && viewer.clock.shouldAnimate) {
         viewer.scene.requestRenderMode = false;  // Continuous rendering for smooth ribbon
     } else {
         viewer.scene.requestRenderMode = true;  // On-demand rendering when paused or ribbon disabled
@@ -629,28 +651,28 @@ function setupTimeBasedAnimation(points) {
                 showDynamicTrackSegments(true);
                 
                 // Hide static curtain, show dynamic curtain
-                if (cesiumState.flyThroughMode.curtainWallEntity) {
-                    cesiumState.flyThroughMode.curtainWallEntity.show = false;
+                if (cesiumState.flightTrack.curtainWallEntity) {
+                    cesiumState.flightTrack.curtainWallEntity.show = false;
                 }
-                if (cesiumState.flyThroughMode.dynamicCurtainEntity) {
-                    cesiumState.flyThroughMode.dynamicCurtainEntity.show = true;
+                if (cesiumState.flightTrack.dynamicCurtainEntity) {
+                    cesiumState.flightTrack.dynamicCurtainEntity.show = true;
                 }
                 
-                cesiumState.flyThroughMode.enabled = true;
+                cesiumState.ribbonMode.enabled = true;
             } else {
                 // Disable ribbon mode, show full track
                 showAllTrackSegments(true);
                 showDynamicTrackSegments(false);
                 
                 // Show static curtain, hide dynamic curtain
-                if (cesiumState.flyThroughMode.curtainWallEntity) {
-                    cesiumState.flyThroughMode.curtainWallEntity.show = true;
+                if (cesiumState.flightTrack.curtainWallEntity) {
+                    cesiumState.flightTrack.curtainWallEntity.show = true;
                 }
-                if (cesiumState.flyThroughMode.dynamicCurtainEntity) {
-                    cesiumState.flyThroughMode.dynamicCurtainEntity.show = false;
+                if (cesiumState.flightTrack.dynamicCurtainEntity) {
+                    cesiumState.flightTrack.dynamicCurtainEntity.show = false;
                 }
                 
-                cesiumState.flyThroughMode.enabled = false;
+                cesiumState.ribbonMode.enabled = false;
             }
             previousRibbonState = shouldShowRibbon;
         }
@@ -673,7 +695,7 @@ function setupTimeBasedAnimation(points) {
         }
         
         // Manage rendering mode based on animation state and ribbon mode
-        if (cesiumState.flyThroughMode.enabled) {
+        if (cesiumState.ribbonMode.enabled) {
             if (justStartedPlaying) {
                 // Just started playing - enable continuous rendering
                 viewer.scene.requestRenderMode = false;
@@ -794,7 +816,7 @@ function zoomToEntitiesWithPadding(padding) {
     if (!viewer) return;
     
     // If we have a primitive-based track, zoom to its bounds
-    if (cesiumState.flyThroughMode.staticTrackPrimitive && igcPoints && igcPoints.length > 0) {
+    if (cesiumState.flightTrack.staticPrimitive && igcPoints && igcPoints.length > 0) {
         // Calculate bounding sphere from track points
         const positions = igcPoints.map(point => 
             Cesium.Cartesian3.fromDegrees(point.longitude, point.latitude, point.altitude)
@@ -840,7 +862,7 @@ function zoomToEntitiesWithPadding(padding) {
         }, 5000);
         
         // Store this view as the home view for the flight track
-        cesiumState.flightTrackHomeView = {
+        cesiumState.flightTrack.homeView = {
             boundingSphere: boundingSphere,
             offset: new Cesium.HeadingPitchRange(
                 Cesium.Math.toRadians(0),
@@ -852,9 +874,29 @@ function zoomToEntitiesWithPadding(padding) {
 }
 
 
-// Cleanup function
-function cleanupCesium() {
-    // Hide stats container and playback controls
+// ============================================================================
+// Cleanup and Memory Management
+// ============================================================================
+
+// Clear all visualization data
+function clearAllVisualization() {
+    if (!viewer) return;
+    
+    viewer.scene.primitives.removeAll();
+    viewer.entities.removeAll();
+    viewer.dataSources.removeAll();
+    
+    // Reset state references
+    cesiumState.flightTrack.staticPrimitive = null;
+    cesiumState.flightTrack.dynamicPrimitive = null;
+    cesiumState.flightTrack.curtainWallEntity = null;
+    cesiumState.flightTrack.dynamicCurtainEntity = null;
+    cesiumState.playback.pilotEntity = null;
+    cesiumState.playback.positionProperty = null;
+}
+
+// Hide UI elements
+function hideUIElements() {
     const statsContainer = document.getElementById('statsContainer');
     const cesiumContainer = document.getElementById('cesiumContainer');
     const playbackControls = document.getElementById('playbackControls');
@@ -869,14 +911,17 @@ function cleanupCesium() {
     if (playbackControls) {
         playbackControls.classList.remove('visible', 'with-stats');
     }
+}
+
+// Main cleanup function
+function cleanupCesium() {
+    hideUIElements();
     
     if (window.viewer) {
         try {
             // Stop rendering and clear data
             viewer.scene.requestRenderMode = true;
-            viewer.scene.primitives.removeAll();
-            viewer.entities.removeAll();
-            viewer.dataSources.removeAll();
+            clearAllVisualization();
             
             // Clear tile cache and destroy viewer
             if (viewer.scene.globe?.tileCache) {
@@ -888,6 +933,7 @@ function cleanupCesium() {
             cesiumLog.error('Cleanup error: ' + e.message);
         } finally {
             window.viewer = null;
+            cesiumState.viewer = null;
         }
     }
 }
@@ -954,15 +1000,15 @@ function handleMemoryPressure() {
 
 // Restore flight visualization if it was accidentally cleared
 function restoreFlightVisualization() {
-    if (!viewer || !cesiumState.flyThroughMode.igcPoints) {
+    if (!viewer || !cesiumState.igcPoints) {
         return false;  // No data to restore
     }
     
     // Check if visualization is missing
-    const visualizationMissing = !cesiumState.flyThroughMode.staticTrackPrimitive || 
-                                 !cesiumState.flyThroughMode.curtainWallEntity;
+    const visualizationMissing = !cesiumState.flightTrack.staticPrimitive || 
+                                 !cesiumState.flightTrack.curtainWallEntity;
     
-    if (visualizationMissing && cesiumState.flyThroughMode.igcPoints.length > 0) {
+    if (visualizationMissing && cesiumState.igcPoints.length > 0) {
         cesiumLog.info('Restoring flight visualization from cached data');
         
         try {
@@ -972,7 +1018,7 @@ function restoreFlightVisualization() {
             const cameraUp = viewer.camera.up.clone();
             
             // Recreate the flight track using the existing function
-            createColoredFlightTrack(cesiumState.flyThroughMode.igcPoints);
+            createColoredFlightTrack(cesiumState.igcPoints);
             
             // Restore camera position
             viewer.camera.position = cameraPosition;
@@ -1007,17 +1053,14 @@ document.addEventListener('visibilitychange', function() {
     }
 });
 
-// === PHASE 2 FEATURES: Flight Playback and Animation ===
+// ============================================================================
+// Playback Controls
+// ============================================================================
 
-// Minimal playback state - only for pilot entity tracking
-let playbackState = {
-    showPilot: null,
-    positionProperty: null  // For Cesium native time-based animation
-};
 
 
 // ============================================================================
-// Fly-through Mode Functions
+// Ribbon Mode (Fly-through) Functions
 // ============================================================================
 
 // Helper function to get color based on 15s climb rate (for dynamic track)
@@ -1033,23 +1076,22 @@ function getClimbRateColorForPoint(climbRate15s) {
 
 // Function to update the dynamic track primitive with per-vertex colors
 function updateDynamicTrackPrimitive() {
-    if (!viewer || !cesiumState.flyThroughMode.igcPoints || cesiumState.flyThroughMode.igcPoints.length === 0) {
+    if (!viewer || !cesiumState.igcPoints || cesiumState.igcPoints.length === 0) {
         return;
     }
     
     // Only create new primitive if fly-through mode is enabled and track should be shown
-    if (!cesiumState.flyThroughMode.enabled || !cesiumState.flyThroughMode.showDynamicTrack) {
+    if (!cesiumState.ribbonMode.enabled || !cesiumState.ribbonMode.showDynamicTrack) {
         // If we should hide, remove existing primitive
-        if (cesiumState.flyThroughMode.dynamicTrackPrimitive) {
-            viewer.scene.primitives.remove(cesiumState.flyThroughMode.dynamicTrackPrimitive);
-            cesiumState.flyThroughMode.dynamicTrackPrimitive = null;
-            cesiumState.flyThroughMode.lastWindowStart = -1;
-            cesiumState.flyThroughMode.lastWindowEnd = -1;
+        if (cesiumState.flightTrack.dynamicPrimitive) {
+            viewer.scene.primitives.remove(cesiumState.flightTrack.dynamicPrimitive);
+            cesiumState.flightTrack.dynamicPrimitive = null;
+            resetRibbonWindowTracking();
         }
         return;
     }
     
-    const igcPoints = cesiumState.flyThroughMode.igcPoints;
+    const igcPoints = cesiumState.igcPoints;
     
     // Find current point index based on time
     const currentTime = viewer.clock.currentTime;
@@ -1075,7 +1117,7 @@ function updateDynamicTrackPrimitive() {
     }
     
     // Calculate window size based on ribbon settings (matching wall logic exactly)
-    const ribbonSeconds = cesiumState.flyThroughMode.ribbonAnimationSeconds || 3.0;
+    const ribbonSeconds = cesiumState.ribbonMode.animationSeconds || 3.0;
     const playbackSpeed = viewer.clock.multiplier || 1;  // Use 1 as default like the wall
     const flightSecondsInWindow = ribbonSeconds * playbackSpeed;
     
@@ -1094,8 +1136,8 @@ function updateDynamicTrackPrimitive() {
     const windowEnd = currentIndex; // Never go past current position
     
     // Check if window has changed - skip update if unchanged
-    if (windowStart === cesiumState.flyThroughMode.lastWindowStart && 
-        windowEnd === cesiumState.flyThroughMode.lastWindowEnd) {
+    if (windowStart === cesiumState.ribbonMode.lastWindowStart && 
+        windowEnd === cesiumState.ribbonMode.lastWindowEnd) {
         return; // No change needed, avoid flickering
     }
     
@@ -1144,8 +1186,8 @@ function updateDynamicTrackPrimitive() {
     });
     
     // Double buffering: Add new primitive before removing old one
-    const oldPrimitive = cesiumState.flyThroughMode.dynamicTrackPrimitive;
-    cesiumState.flyThroughMode.dynamicTrackPrimitive = viewer.scene.primitives.add(primitive);
+    const oldPrimitive = cesiumState.flightTrack.dynamicPrimitive;
+    cesiumState.flightTrack.dynamicPrimitive = viewer.scene.primitives.add(primitive);
     
     // Remove old primitive after new one is added
     if (oldPrimitive) {
@@ -1153,26 +1195,29 @@ function updateDynamicTrackPrimitive() {
     }
     
     // Update tracking for next comparison
-    cesiumState.flyThroughMode.lastWindowStart = windowStart;
-    cesiumState.flyThroughMode.lastWindowEnd = windowEnd;
+    cesiumState.ribbonMode.lastWindowStart = windowStart;
+    cesiumState.ribbonMode.lastWindowEnd = windowEnd;
+}
+
+// Reset window tracking for ribbon mode
+function resetRibbonWindowTracking() {
+    cesiumState.ribbonMode.lastWindowStart = -1;
+    cesiumState.ribbonMode.lastWindowEnd = -1;
 }
 
 // Show or hide the dynamic track
 function showDynamicTrackSegments(show) {
     // Handle primitive visibility through updates
-    cesiumState.flyThroughMode.showDynamicTrack = show;
+    cesiumState.ribbonMode.showDynamicTrack = show;
     
-    if (!show && cesiumState.flyThroughMode.dynamicTrackPrimitive) {
+    if (!show && cesiumState.flightTrack.dynamicPrimitive) {
         // Remove the primitive when hiding
-        viewer.scene.primitives.remove(cesiumState.flyThroughMode.dynamicTrackPrimitive);
-        cesiumState.flyThroughMode.dynamicTrackPrimitive = null;
-        // Reset window tracking
-        cesiumState.flyThroughMode.lastWindowStart = -1;
-        cesiumState.flyThroughMode.lastWindowEnd = -1;
+        viewer.scene.primitives.remove(cesiumState.flightTrack.dynamicPrimitive);
+        cesiumState.flightTrack.dynamicPrimitive = null;
+        resetRibbonWindowTracking();
     } else if (show) {
         // Reset window tracking to force update when showing
-        cesiumState.flyThroughMode.lastWindowStart = -1;
-        cesiumState.flyThroughMode.lastWindowEnd = -1;
+        resetRibbonWindowTracking();
         // Force an update to create the primitive when showing
         updateDynamicTrackPrimitive();
     }
@@ -1210,7 +1255,7 @@ function getTrailData(currentTime, extractData) {
     
     // Apply ribbon window
     if (trailData.length > 0) {
-        const ribbonAnimationSeconds = cesiumState.flyThroughMode.ribbonAnimationSeconds;
+        const ribbonAnimationSeconds = cesiumState.ribbonMode.animationSeconds;
         const speedMultiplier = viewer.clock.multiplier || 1;
         const flightSecondsInRibbon = ribbonAnimationSeconds * speedMultiplier;
         
@@ -1242,7 +1287,7 @@ function calculateTrailAltitudes(currentTime) {
 }
 
 // ============================================================================
-// Scene Mode Management Functions
+// Scene Mode Management
 // ============================================================================
 
 // Get scene mode as string
@@ -1290,19 +1335,23 @@ function onSceneModeChanged() {
     }
     
     // Restore camera to flight track view if available
-    if (cesiumState.flightTrackHomeView && cesiumState.flightTrackHomeView.boundingSphere) {
+    if (cesiumState.flightTrack.homeView && cesiumState.flightTrack.homeView.boundingSphere) {
         // Small delay to ensure scene mode transition is complete
         setTimeout(() => {
-            viewer.camera.flyToBoundingSphere(cesiumState.flightTrackHomeView.boundingSphere, {
+            viewer.camera.flyToBoundingSphere(cesiumState.flightTrack.homeView.boundingSphere, {
                 duration: 2.0,
-                offset: cesiumState.flightTrackHomeView.offset
+                offset: cesiumState.flightTrack.homeView.offset
             });
             cesiumLog.info('Camera restored to flight track view after scene mode change');
         }, 500);
     }
 }
 
-// Mobile play button control
+// ============================================================================
+// Mobile Playback Controls
+// ============================================================================
+
+// Toggle play/pause
 function togglePlayback() {
     if (!viewer) return;
     
@@ -1360,7 +1409,10 @@ function changePlaybackSpeed(speed) {
     }
 }
 
-// Export functions for Flutter access
+// ============================================================================
+// Public API - Functions exposed to Flutter
+// ============================================================================
+
 window.cleanupCesium = cleanupCesium;
 window.checkMemory = checkMemory;
 window.initializeCesium = initializeCesium;
@@ -1368,7 +1420,4 @@ window.handleMemoryPressure = handleMemoryPressure;
 window.restoreFlightVisualization = restoreFlightVisualization;
 window.togglePlayback = togglePlayback;
 window.changePlaybackSpeed = changePlaybackSpeed;
-
 window.createColoredFlightTrack = createColoredFlightTrack;
-
-// End of file
