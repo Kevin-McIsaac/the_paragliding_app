@@ -95,48 +95,89 @@
             pointer-events: none; /* Non-interactive */
         }
         
-        /* Mobile-friendly play button (Material Design FAB) */
-        #playButton {
+        /* Playback controls container - minimal design */
+        #playbackControls {
             position: fixed;
             bottom: 100px;  /* Above stats container when visible */
-            right: 24px;
-            width: 56px;
-            height: 56px;
-            border-radius: 50%;
-            background-color: #4FC3F7;  /* Light Blue 300 - matches theme */
-            border: none;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.3), 0 6px 20px rgba(0,0,0,0.15);
-            cursor: pointer;
-            z-index: 100;
+            left: 10px;
             display: none;  /* Hidden until flight track is loaded */
+            flex-direction: row;
             align-items: center;
-            justify-content: center;
-            transition: all 0.3s ease;
-            -webkit-tap-highlight-color: transparent;  /* Remove tap highlight on mobile */
+            gap: 4px;
+            z-index: 100;
         }
         
-        #playButton:active {
-            transform: scale(0.95);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3), 0 3px 10px rgba(0,0,0,0.15);
-        }
-        
-        #playButton:hover {
-            background-color: #29B6F6;  /* Light Blue 400 on hover */
-        }
-        
-        #playButton.visible {
+        #playbackControls.visible {
             display: flex;
         }
         
+        #playbackControls.with-stats {
+            bottom: 100px;  /* Move up when stats container is shown */
+        }
+        
+        /* Minimal play button - Material dark theme matching Cesium */
+        #playButton {
+            width: 32px;
+            height: 32px;
+            border-radius: 4px;
+            background-color: rgba(42, 42, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        #playButton:hover {
+            background-color: rgba(60, 60, 60, 0.9);
+        }
+        
+        #playButton:active {
+            background-color: rgba(70, 70, 70, 0.9);
+        }
+        
         #playButton .material-icons {
-            font-size: 32px;
-            color: #FFFFFF;
+            font-size: 18px;
+            color: rgba(255, 255, 255, 0.9);
             user-select: none;
         }
         
-        /* Adjust button position when stats are visible */
-        #playButton.with-stats {
-            bottom: 100px;  /* Move up when stats container is shown */
+        /* Minimal speed picker - Material dark theme */
+        #speedPicker {
+            height: 32px;
+            padding: 0 6px;
+            padding-right: 24px;
+            border-radius: 4px;
+            background-color: rgba(42, 42, 42, 0.8);
+            color: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            font-size: 12px;
+            font-weight: 400;
+            cursor: pointer;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='rgba(255,255,255,0.6)'%3e%3cpath d='M7 10l5 5 5-5z'/%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 4px center;
+            background-size: 16px;
+            transition: background-color 0.2s;
+        }
+        
+        #speedPicker:hover {
+            background-color: rgba(60, 60, 60, 0.9);
+        }
+        
+        #speedPicker:focus {
+            outline: none;
+            background-color: rgba(60, 60, 60, 0.9);
+        }
+        
+        #speedPicker option {
+            background-color: #303030;
+            color: rgba(255, 255, 255, 0.9);
         }
     </style>
 </head>
@@ -144,9 +185,20 @@
     <div id="cesiumContainer"></div>
     <div id="loadingOverlay">Loading Cesium Globe...</div>
     <div id="statsContainer"></div>
-    <button id="playButton" onclick="if(typeof togglePlayback === 'function') togglePlayback()">
-        <span class="material-icons">play_arrow</span>
-    </button>
+    <div id="playbackControls">
+        <button id="playButton" onclick="if(typeof togglePlayback === 'function') togglePlayback()">
+            <span class="material-icons">play_arrow</span>
+        </button>
+        <select id="speedPicker" onchange="if(typeof changePlaybackSpeed === 'function') changePlaybackSpeed(this.value)">
+            <option value="1">1x</option>
+            <option value="10">10x</option>
+            <option value="30">30x</option>
+            <option value="60" selected>60x</option>
+            <option value="120">120x</option>
+            <option value="300">300x</option>
+            <option value="600">600x</option>
+        </select>
+    </div>
     <div id="customCreditContainer"></div>
     
     <script>{{JS_CONTENT}}</script>

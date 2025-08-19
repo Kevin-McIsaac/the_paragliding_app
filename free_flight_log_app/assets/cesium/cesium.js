@@ -567,10 +567,10 @@ function setupTimeBasedAnimation(points) {
     playbackState.showPilot = pilotEntity;
     playbackState.positionProperty = positionProperty;
     
-    // Show the stats container and play button when track is loaded
+    // Show the stats container and playback controls when track is loaded
     const statsContainer = document.getElementById('statsContainer');
     const cesiumContainer = document.getElementById('cesiumContainer');
-    const playButton = document.getElementById('playButton');
+    const playbackControls = document.getElementById('playbackControls');
     
     if (statsContainer) {
         statsContainer.classList.add('visible');
@@ -587,11 +587,11 @@ function setupTimeBasedAnimation(points) {
         }
     }
     
-    // Show the play button
-    if (playButton) {
-        playButton.classList.add('visible');
+    // Show the playback controls
+    if (playbackControls) {
+        playbackControls.classList.add('visible');
         if (statsContainer && statsContainer.classList.contains('visible')) {
-            playButton.classList.add('with-stats');
+            playbackControls.classList.add('with-stats');
         }
     }
     
@@ -846,10 +846,10 @@ function zoomToEntitiesWithPadding(padding) {
 
 // Cleanup function
 function cleanupCesium() {
-    // Hide stats container and play button
+    // Hide stats container and playback controls
     const statsContainer = document.getElementById('statsContainer');
     const cesiumContainer = document.getElementById('cesiumContainer');
-    const playButton = document.getElementById('playButton');
+    const playbackControls = document.getElementById('playbackControls');
     
     if (statsContainer) {
         statsContainer.classList.remove('visible');
@@ -858,8 +858,8 @@ function cleanupCesium() {
     if (cesiumContainer) {
         cesiumContainer.classList.remove('with-stats');
     }
-    if (playButton) {
-        playButton.classList.remove('visible', 'with-stats');
+    if (playbackControls) {
+        playbackControls.classList.remove('visible', 'with-stats');
     }
     
     if (window.viewer) {
@@ -1324,6 +1324,23 @@ function updatePlayButtonIcon() {
     }
 }
 
+// Change playback speed
+function changePlaybackSpeed(speed) {
+    if (!viewer) return;
+    
+    const speedValue = parseFloat(speed);
+    if (isNaN(speedValue)) return;
+    
+    viewer.clock.multiplier = speedValue;
+    cesiumLog.debug('Playback speed changed to ' + speedValue + 'x');
+    
+    // Update speed picker to reflect current speed
+    const speedPicker = document.getElementById('speedPicker');
+    if (speedPicker) {
+        speedPicker.value = speed;
+    }
+}
+
 // Export functions for Flutter access
 window.cleanupCesium = cleanupCesium;
 window.checkMemory = checkMemory;
@@ -1331,6 +1348,7 @@ window.initializeCesium = initializeCesium;
 window.handleMemoryPressure = handleMemoryPressure;
 window.restoreFlightVisualization = restoreFlightVisualization;
 window.togglePlayback = togglePlayback;
+window.changePlaybackSpeed = changePlaybackSpeed;
 
 window.createColoredFlightTrack = createColoredFlightTrack;
 
