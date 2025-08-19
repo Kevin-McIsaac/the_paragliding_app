@@ -99,8 +99,8 @@ function initializeCesium(config) {
             sceneModePicker: true,
             navigationHelpButton: true,
             navigationInstructionsInitiallyVisible: config.savedNavigationHelpDialogOpen || false,
-            animation: true,
-            timeline: true,
+            animation: false,  // Disabled - using custom mobile play button
+            timeline: true,   // Disabled - using custom mobile play button
             fullscreenButton: true,
             vrButton: false,
             shadows: false,
@@ -567,9 +567,11 @@ function setupTimeBasedAnimation(points) {
     playbackState.showPilot = pilotEntity;
     playbackState.positionProperty = positionProperty;
     
-    // Show the stats container when track is loaded
+    // Show the stats container and play button when track is loaded
     const statsContainer = document.getElementById('statsContainer');
     const cesiumContainer = document.getElementById('cesiumContainer');
+    const playButton = document.getElementById('playButton');
+    
     if (statsContainer) {
         statsContainer.classList.add('visible');
         statsContainer.innerHTML = '<span>Initializing...</span>';
@@ -582,6 +584,14 @@ function setupTimeBasedAnimation(points) {
             setTimeout(() => {
                 viewer.resize();
             }, 350); // Wait for CSS transition
+        }
+    }
+    
+    // Show the play button
+    if (playButton) {
+        playButton.classList.add('visible');
+        if (statsContainer && statsContainer.classList.contains('visible')) {
+            playButton.classList.add('with-stats');
         }
     }
     
@@ -672,6 +682,9 @@ function setupTimeBasedAnimation(points) {
         }
         
         wasAnimating = clock.shouldAnimate;
+        
+        // Update play button icon to match animation state
+        updatePlayButtonIcon();
         
         // Force scene update
         viewer.scene.requestRender();
@@ -833,15 +846,20 @@ function zoomToEntitiesWithPadding(padding) {
 
 // Cleanup function
 function cleanupCesium() {
-    // Hide stats container
+    // Hide stats container and play button
     const statsContainer = document.getElementById('statsContainer');
     const cesiumContainer = document.getElementById('cesiumContainer');
+    const playButton = document.getElementById('playButton');
+    
     if (statsContainer) {
         statsContainer.classList.remove('visible');
         statsContainer.innerHTML = '';
     }
     if (cesiumContainer) {
         cesiumContainer.classList.remove('with-stats');
+    }
+    if (playButton) {
+        playButton.classList.remove('visible', 'with-stats');
     }
     
     if (window.viewer) {
@@ -1276,12 +1294,43 @@ function onSceneModeChanged() {
     }
 }
 
+// Mobile play button control
+function togglePlayback() {
+    if (!viewer) return;
+    
+    // Toggle play/pause
+    viewer.clock.shouldAnimate = !viewer.clock.shouldAnimate;
+    
+    // Update button icon
+    updatePlayButtonIcon();
+    
+    // Log for debugging
+    cesiumLog.debug('Playback ' + (viewer.clock.shouldAnimate ? 'started' : 'paused'));
+}
+
+// Update play button icon based on clock state
+function updatePlayButtonIcon() {
+    const playButton = document.getElementById('playButton');
+    if (!playButton) return;
+    
+    const iconElement = playButton.querySelector('.material-icons');
+    if (!iconElement) return;
+    
+    // Update icon based on animation state
+    if (viewer && viewer.clock.shouldAnimate) {
+        iconElement.textContent = 'pause';
+    } else {
+        iconElement.textContent = 'play_arrow';
+    }
+}
+
 // Export functions for Flutter access
 window.cleanupCesium = cleanupCesium;
 window.checkMemory = checkMemory;
 window.initializeCesium = initializeCesium;
 window.handleMemoryPressure = handleMemoryPressure;
 window.restoreFlightVisualization = restoreFlightVisualization;
+window.togglePlayback = togglePlayback;
 
 window.createColoredFlightTrack = createColoredFlightTrack;
 

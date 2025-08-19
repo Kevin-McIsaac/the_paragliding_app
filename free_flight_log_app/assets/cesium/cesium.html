@@ -94,12 +94,59 @@
             z-index: -1000; /* Behind everything */
             pointer-events: none; /* Non-interactive */
         }
+        
+        /* Mobile-friendly play button (Material Design FAB) */
+        #playButton {
+            position: fixed;
+            bottom: 100px;  /* Above stats container when visible */
+            right: 24px;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background-color: #4FC3F7;  /* Light Blue 300 - matches theme */
+            border: none;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3), 0 6px 20px rgba(0,0,0,0.15);
+            cursor: pointer;
+            z-index: 100;
+            display: none;  /* Hidden until flight track is loaded */
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            -webkit-tap-highlight-color: transparent;  /* Remove tap highlight on mobile */
+        }
+        
+        #playButton:active {
+            transform: scale(0.95);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3), 0 3px 10px rgba(0,0,0,0.15);
+        }
+        
+        #playButton:hover {
+            background-color: #29B6F6;  /* Light Blue 400 on hover */
+        }
+        
+        #playButton.visible {
+            display: flex;
+        }
+        
+        #playButton .material-icons {
+            font-size: 32px;
+            color: #FFFFFF;
+            user-select: none;
+        }
+        
+        /* Adjust button position when stats are visible */
+        #playButton.with-stats {
+            bottom: 100px;  /* Move up when stats container is shown */
+        }
     </style>
 </head>
 <body>
     <div id="cesiumContainer"></div>
     <div id="loadingOverlay">Loading Cesium Globe...</div>
     <div id="statsContainer"></div>
+    <button id="playButton" onclick="if(typeof togglePlayback === 'function') togglePlayback()">
+        <span class="material-icons">play_arrow</span>
+    </button>
     <div id="customCreditContainer"></div>
     
     <script>{{JS_CONTENT}}</script>
