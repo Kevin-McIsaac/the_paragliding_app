@@ -1409,6 +1409,33 @@ function changePlaybackSpeed(speed) {
     }
 }
 
+// Toggle camera following - simplest possible implementation
+function toggleCameraFollow() {
+    if (!viewer || !cesiumState.playback.pilotEntity) return;
+    
+    if (viewer.trackedEntity === cesiumState.playback.pilotEntity) {
+        // Stop following
+        viewer.trackedEntity = undefined;
+        cesiumLog.debug('Camera following disabled');
+        
+        // Update button appearance
+        const button = document.getElementById('followButton');
+        if (button) {
+            button.style.backgroundColor = 'rgba(42, 42, 42, 0.8)';
+        }
+    } else {
+        // Start following
+        viewer.trackedEntity = cesiumState.playback.pilotEntity;
+        cesiumLog.debug('Camera following enabled');
+        
+        // Update button appearance
+        const button = document.getElementById('followButton');
+        if (button) {
+            button.style.backgroundColor = 'rgba(76, 175, 80, 0.8)';
+        }
+    }
+}
+
 // ============================================================================
 // Public API - Functions exposed to Flutter
 // ============================================================================
@@ -1421,3 +1448,4 @@ window.restoreFlightVisualization = restoreFlightVisualization;
 window.togglePlayback = togglePlayback;
 window.changePlaybackSpeed = changePlaybackSpeed;
 window.createColoredFlightTrack = createColoredFlightTrack;
+window.toggleCameraFollow = toggleCameraFollow;
