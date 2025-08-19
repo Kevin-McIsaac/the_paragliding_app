@@ -664,6 +664,14 @@ function setupTimeBasedAnimation(points) {
             clock.currentTime = clock.startTime.clone();
         }
         
+        // Auto-stop and reset to start when reaching the end
+        if (atEnd && clock.shouldAnimate && !justStartedPlaying) {
+            // We've reached the end while playing - stop and reset to start
+            clock.shouldAnimate = false;
+            clock.currentTime = clock.startTime.clone();
+            cesiumLog.debug('Animation reached end - stopped and reset to start');
+        }
+        
         // Manage rendering mode based on animation state and ribbon mode
         if (cesiumState.flyThroughMode.enabled) {
             if (justStartedPlaying) {
@@ -1316,11 +1324,22 @@ function updatePlayButtonIcon() {
     const iconElement = playButton.querySelector('.material-icons');
     if (!iconElement) return;
     
-    // Update icon based on animation state
-    if (viewer && viewer.clock.shouldAnimate) {
-        iconElement.textContent = 'pause';
-    } else {
+    if (!viewer || !viewer.clock) {
         iconElement.textContent = 'play_arrow';
+        return;
+    }
+    
+    // Check if at start or end of timeline
+    const clock = viewer.clock;
+    const atStart = Cesium.JulianDate.secondsDifference(clock.currentTime, clock.startTime) < 0.5;
+    const atEnd = Cesium.JulianDate.compare(clock.currentTime, clock.stopTime) >= 0;
+    
+    // Show play icon if: not animating OR at start/end positions
+    // This ensures button shows play when stopped at endpoints
+    if (!clock.shouldAnimate || atStart || atEnd) {
+        iconElement.textContent = 'play_arrow';
+    } else {
+        iconElement.textContent = 'pause';
     }
 }
 
