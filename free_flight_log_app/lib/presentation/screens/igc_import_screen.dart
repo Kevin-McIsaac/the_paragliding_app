@@ -22,6 +22,8 @@ class IgcImportScreen extends StatefulWidget {
 
 class _IgcImportScreenState extends State<IgcImportScreen> {
   bool _isLoading = false;
+  bool _isSelectingFiles = false; // New state for file selection
+  String? _selectionStatus; // Status message during selection
   List<String> _selectedFilePaths = [];
   String? _errorMessage;
   final List<ImportResult> _importResults = [];
@@ -79,18 +81,36 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
   }
 
   Future<void> _pickIgcFiles() async {
+    // Prevent double-clicks while already selecting
+    if (_isSelectingFiles) return;
+    
+    setState(() {
+      _isSelectingFiles = true;
+      _selectionStatus = "Loading list of selected files...";
+      _errorMessage = null; // Clear any previous errors
+    });
+    
     try {
       // For Android 14+ (API 34+), use a more compatible approach
       FilePickerResult? result;
       
       try {
         // For Android, use withData to ensure file content is accessible
+        // Add timeout to prevent permanent UI lock
         result = await FilePicker.platform.pickFiles(
           type: FileType.custom,
           allowedExtensions: ['igc', 'IGC'],
           allowMultiple: true,
           withData: false,
           withReadStream: false,
+        ).timeout(
+          const Duration(seconds: 30),
+          onTimeout: () {
+            setState(() {
+              _errorMessage = 'File selection timed out. Please try again with fewer files.';
+            });
+            return null;
+          },
         );
       } catch (e) {
         // Fallback: try with any file type and filter manually
@@ -99,6 +119,14 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
           allowMultiple: true,
           withData: false,
           withReadStream: false,
+        ).timeout(
+          const Duration(seconds: 30),
+          onTimeout: () {
+            setState(() {
+              _errorMessage = 'File selection timed out. Please try again with fewer files.';
+            });
+            return null;
+          },
         );
         
         // Filter for .igc files manually
@@ -119,7 +147,13 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
         }
       }
 
+      // Update status when picker returns
       if (result != null && result.files.isNotEmpty) {
+        final fileCount = result.files.length;
+        setState(() {
+          _selectionStatus = "Processing $fileCount files...";
+        });
+        
         final validPaths = result.files
             .where((file) => file.path != null)
             .map((file) => file.path!)
@@ -148,6 +182,12 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
     } catch (e) {
       setState(() {
         _errorMessage = 'Error selecting files: $e';
+      });
+    } finally {
+      // Always clear selection state when done
+      setState(() {
+        _isSelectingFiles = false;
+        _selectionStatus = null;
       });
     }
   }
@@ -511,13 +551,35 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
                     ],
                     const SizedBox(height: 16),
                     ElevatedButton.icon(
-                      onPressed: _isLoading ? null : _pickIgcFiles,
-                      icon: const Icon(Icons.folder_open),
-                      label: const Text('Select IGC Files'),
+                      onPressed: (_isLoading || _isSelectingFiles) ? null : _pickIgcFiles,
+                      icon: _isSelectingFiles
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+                            ),
+                          )
+                        : const Icon(Icons.folder_open),
+                      label: Text(_isSelectingFiles 
+                        ? 'Selecting Files...' 
+                        : 'Select IGC Files'),
                       style: ElevatedButton.styleFrom(
                         minimumSize: const Size(double.infinity, 48),
                       ),
                     ),
+                    if (_selectionStatus != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        _selectionStatus!,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.7),
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ],
                 ),
               ),
