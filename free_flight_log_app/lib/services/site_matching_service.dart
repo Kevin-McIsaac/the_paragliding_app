@@ -53,30 +53,13 @@ class SiteMatchingService {
     // Try local flight log first (much faster for known sites)
     final localSite = _findNearestSiteLocal(latitude, longitude, maxDistance: maxDistance, preferredType: preferredType);
     
-    // If we found a local site but it's missing country info, also check API for enhanced data
-    if (localSite != null && localSite.country == null && _useApi) {
-      try {
-        final apiSite = await ParaglidingEarthApi.instance.findNearestSite(
-          latitude,
-          longitude,
-          maxDistanceKm: maxDistance / 1000.0, // Convert meters to km
-          preferredType: preferredType,
-        );
-        
-        if (apiSite != null && apiSite.country != null) {
-          LoggingService.info('SiteMatchingService: Found site in flight log, enhanced with API country data: "${apiSite.name}" → ${apiSite.country}');
-          return apiSite; // Use API result with country info
-        }
-      } catch (e) {
-        LoggingService.warning('SiteMatchingService: API enhancement failed, using flight log data: $e');
+    if (localSite != null) {
+      // Found in local database - use it regardless of country info
+      if (localSite.country == null || localSite.country!.isEmpty) {
+        LoggingService.info('SiteMatchingService: Found site in flight log: "${localSite.name}" (no country info, skipping API enhancement)');
+      } else {
+        LoggingService.info('SiteMatchingService: Found site in flight log: "${localSite.name}" with country: ${localSite.country}');
       }
-      
-      // Use local site even without country info
-      LoggingService.info('SiteMatchingService: Found site in flight log: "${localSite.name}" (no country info available)');
-      return localSite;
-    } else if (localSite != null) {
-      // Local site found with complete info
-      LoggingService.info('SiteMatchingService: Found site in flight log: "${localSite.name}" at ${localSite.latitude.toStringAsFixed(4)}, ${localSite.longitude.toStringAsFixed(4)}');
       return localSite;
     }
 

@@ -1,0 +1,103 @@
+Resolving dependencies...
+Downloading packages...
+  characters 1.4.0 (1.4.1 available)
+  material_color_utilities 0.11.1 (0.13.0 available)
+  meta 1.16.0 (1.17.0 available)
+  path_provider_foundation 2.4.1 (2.4.2 available)
+  petitparser 6.1.0 (7.0.1 available)
+  test_api 0.7.6 (0.7.7 available)
+  unicode 0.3.1 (1.1.8 available)
+  url_launcher_ios 6.3.3 (6.3.4 available)
+  url_launcher_macos 3.2.2 (3.2.3 available)
+  xml 6.5.0 (6.6.1 available)
+Got dependencies!
+10 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+Launching lib/main.dart on Pixel 9 (wireless) in debug mode...
+Running Gradle task 'assembleDebug'...                             28.1s
+✓ Built build/app/outputs/flutter-apk/app-debug.apk
+Installing build/app/outputs/flutter-apk/app-debug.apk...           8.9s
+D/FlutterJNI(22560): Beginning load of flutter...
+D/FlutterJNI(22560): flutter (null) was loaded normally!
+I/flutter (22560): [IMPORTANT:flutter/shell/platform/android/android_context_vk_impeller.cc(62)] Using the Impeller rendering backend (Vulkan).
+Syncing files to device Pixel 9 (wireless)...                      233ms
+
+Flutter run key commands.
+r Hot reload. 🔥🔥🔥
+R Hot restart.
+h List all available interactive commands.
+d Detach (terminate "flutter run" but leave application running).
+c Clear the screen
+q Quit (terminate the application on the device).
+
+A Dart VM Service on Pixel 9 (wireless) is available at: http://127.0.0.1:32947/dh-rrPgsPAs=/
+The Flutter DevTools debugger and profiler on Pixel 9 (wireless) is available at: http://127.0.0.1:9100?uri=http://127.0.0.1:32947/dh-rrPgsPAs=/
+I/flutter (22560): ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+I/flutter (22560): │ #0   LoggingService.database (package:free_flight_log_app/services/logging_service.dart:52:15)
+I/flutter (22560): │ #1   DatabaseHelper._initDatabase (package:free_flight_log_app/data/datasources/database_helper.dart:25:20)
+I/flutter (22560): ├┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+I/flutter (22560): │ 07:26:29.077 (+0:00:00.016352)
+I/flutter (22560): ├┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+I/flutter (22560): │ 🐛 DB[INIT]: Opening database at: /data/user/0/com.freeflightlog.free_flight_log_app/databases/FlightLog.db
+I/flutter (22560): └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+I/Choreographer(22560): Skipped 522 frames!  The application may be doing too much work on its main thread.
+I/WindowExtensionsImpl(22560): Initializing Window Extensions, vendor API level=9, activity embedding enabled=true
+I/_flight_log_app(22560): Compiler allocated 5111KB to compile void android.view.ViewRootImpl.performTraversals()
+I/flutter (22560): [38;5;12m┌───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+I/flutter (22560): [38;5;12m│ #0   LoggingService.info (package:free_flight_log_app/services/logging_service.dart:29:13)[0m
+I/flutter (22560): [38;5;12m│ #1   _SplashScreenState._navigateToMain (package:free_flight_log_app/presentation/screens/splash_screen.dart:41:22)[0m
+I/flutter (22560): [38;5;12m├┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄[0m
+I/flutter (22560): [38;5;12m│ 07:26:30.155 (+0:00:01.093907)[0m
+I/flutter (22560): [38;5;12m├┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄[0m
+I/flutter (22560): [38;5;12m│ 💡 [0m
+I/flutter (22560): [38;5;12m│ 💡 ════════════════════════════════════════════════════════════════[0m
+I/flutter (22560): [38;5;12m│ 💡                     STARTUP PERFORMANCE REPORT                   [0m
+I/flutter (22560): [38;5;12m│ 💡 ════════════════════════════════════════════════════════════════[0m
+I/flutter (22560): [38;5;12m│ 💡 App Start Time: 2025-08-19T07:26:25.117543[0m
+I/flutter (22560): [38;5;12m│ 💡 Total Startup Time: 5.015s[0m
+I/flutter (22560): [38;5;12m│ 💡 [0m
+I/flutter (22560): [38;5;12m│ 💡 Detailed Measurements:[0m
+I/flutter (22560): [38;5;12m│ 💡 ─────────────────────────────────────────────────────────────────[0m
+I/flutter (22560): [38;5;12m│ 💡 Database Init                      3.579s  [██████████████░░░░░░] 71.4%[0m
+I/flutter (22560): [38;5;12m│ 💡 Get Database Path                  3.098s  [████████████░░░░░░░░] 61.8%[0m
+I/flutter (22560): [38;5;12m│ 💡 Flutter Binding Init                401ms  [██░░░░░░░░░░░░░░░░░░] 8.0%[0m
+I/flutter (22560): [38;5;12m│ 💡 Open Database                       355ms  [█░░░░░░░░░░░░░░░░░░░] 7.1%[0m
+I/flutter (22560): [38;5;12m│ 💡 [0m
+I/flutter (22560): [38;5;12m│ 💡 Event Timeline:[0m
+I/flutter (22560): [38;5;12m│ 💡 ─────────────────────────────────────────────────────────────────[0m
+I/flutter (22560): [38;5;12m│ 💡        0μs  App Start[0m
+I/flutter (22560): [38;5;12m│ 💡      405ms  Flutter Binding Init Complete[0m
+I/flutter (22560): [38;5;12m│ 💡      405ms  Starting App Widget[0m
+I/flutter (22560): [38;5;12m│ 💡     3.932s  Get Database Path Complete[0m
+I/flutter (22560): [38;5;12m│ 💡     4.408s  Open Database Complete[0m
+I/flutter (22560): [38;5;12m│ 💡     4.408s  Database Init Complete[0m
+I/flutter (22560): [38;5;12m│ 💡     4.408s  App Initialized[0m
+I/flutter (22560): [38;5;12m│ 💡     4.643s  Navigating to Main Screen (No Delay)[0m
+I/flutter (22560): [38;5;12m│ 💡 ════════════════════════════════════════════════════════════════[0m
+I/flutter (22560): [38;5;12m│ 💡 [0m
+I/flutter (22560): [38;5;12m│ 💡 Performance Summary:[0m
+I/flutter (22560): [38;5;12m│ 💡 ❌ SLOW: App took over 1 second to start[0m
+I/flutter (22560): [38;5;12m│ 💡 [0m
+I/flutter (22560): [38;5;12m│ 💡 Top Bottlenecks:[0m
+I/flutter (22560): [38;5;12m│ 💡   1. Database Init: 3.579s[0m
+I/flutter (22560): [38;5;12m│ 💡   2. Get Database Path: 3.098s[0m
+I/flutter (22560): [38;5;12m│ 💡   3. Flutter Binding Init: 401ms[0m
+I/flutter (22560): [38;5;12m│ 💡 ════════════════════════════════════════════════════════════════[0m
+I/flutter (22560): [38;5;12m│ 💡 [0m
+I/flutter (22560): [38;5;12m└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+I/flutter (22560): ════════════════════════════════════════════════════════════════
+I/flutter (22560):                     STARTUP PERFORMANCE REPORT                   
+I/flutter (22560): ════════════════════════════════════════════════════════════════
+I/flutter (22560): App Start Time: 2025-08-19T07:26:25.117543
+I/flutter (22560): Total Startup Time: 5.015s
+I/flutter (22560): 
+I/flutter (22560): Detailed Measurements:
+I/flutter (22560): ─────────────────────────────────────────────────────────────────
+I/flutter (22560): Database Init                      3.579s  [██████████████░░░░░░] 71.4%
+I/flutter (22560): Get Database Path                  3.098s  [████████████░░░░░░░░] 61.8%
+I/flutter (22560): Flutter Binding Init                401ms  [██░░
+D/ProfileInstaller(22560): Installing profile for com.freeflightlog.free_flight_log_app
+I/Choreographer(22560): Skipped 111 frames!  The application may be doing too much work on its main thread.
+D/WindowLayoutComponentImpl(22560): Register WindowLayoutInfoListener on Context=com.freeflightlog.free_flight_log_app.MainActivity@144d9ac, of which baseContext=android.app.ContextImpl@1ee1240
+I/_flight_log_app(22560): Background concurrent mark compact GC freed 31MB AllocSpace bytes, 5(100KB) LOS objects, 88% free, 3288KB/27MB, paused 396us,8.353ms total 100.115ms
+Lost connection to device.

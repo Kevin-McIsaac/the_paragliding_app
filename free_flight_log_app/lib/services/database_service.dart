@@ -566,11 +566,24 @@ class DatabaseService {
       return existingSite;
     }
     
+    // If name is "Unknown", make it unique
+    String finalName = name ?? 'Site at ${latitude.toStringAsFixed(4)}, ${longitude.toStringAsFixed(4)}';
+    if (finalName == 'Unknown') {
+      // Count existing Unknown sites
+      Database db = await _databaseHelper.database;
+      final result = await db.rawQuery(
+        "SELECT COUNT(*) as count FROM sites WHERE name LIKE 'Unknown%'"
+      );
+      final count = result.first['count'] as int;
+      finalName = 'Unknown ${count + 1}';
+      LoggingService.info('DatabaseService: Creating unique site name: "$finalName"');
+    }
+    
     // Create new site
     final newSite = Site(
       latitude: latitude,
       longitude: longitude,
-      name: name ?? 'Site at ${latitude.toStringAsFixed(4)}, ${longitude.toStringAsFixed(4)}',
+      name: finalName,
       altitude: altitude,
       country: country,
     );
