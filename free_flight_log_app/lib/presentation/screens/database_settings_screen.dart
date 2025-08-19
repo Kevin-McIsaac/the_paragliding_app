@@ -12,6 +12,7 @@ class DatabaseSettingsScreen extends StatefulWidget {
 class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
   Map<String, dynamic>? _dbStats;
   bool _isLoading = true;
+  bool _dataModified = false; // Track if any data was modified
 
   @override
   void initState() {
@@ -53,6 +54,9 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
       if (mounted) Navigator.of(context).pop();
 
       if (result['success']) {
+        setState(() {
+          _dataModified = true; // Mark data as modified
+        });
         _showSuccessDialog('Database Reset Complete', result['message']);
         await _loadDatabaseStats(); // Refresh stats
       } else {
@@ -84,6 +88,9 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
       if (mounted) Navigator.of(context).pop();
 
       if (result['success']) {
+        setState(() {
+          _dataModified = true; // Mark data as modified
+        });
         _showSuccessDialog('Flights Cleared', result['message']);
         await _loadDatabaseStats(); // Refresh stats
       } else {
@@ -208,11 +215,23 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Database Settings'),
-      ),
-      body: _isLoading
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (bool didPop, dynamic result) {
+        if (didPop && _dataModified) {
+          // Data was modified, return true to trigger reload
+          Navigator.of(context).pop(true);
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Database Settings'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => Navigator.of(context).pop(_dataModified),
+          ),
+        ),
+        body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
               padding: const EdgeInsets.only(top: 16, bottom: 16),
@@ -377,6 +396,7 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
                 ],
               ),
             ),
+      ),
     );
   }
 
