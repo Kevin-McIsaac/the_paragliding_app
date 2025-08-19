@@ -14,6 +14,7 @@ class WingManagementScreen extends StatefulWidget {
 class _WingManagementScreenState extends State<WingManagementScreen> {
   final DatabaseService _databaseService = DatabaseService.instance;
   List<Wing> _wings = [];
+  Map<int, int> _flightCounts = {}; // Store flight counts per wing
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -33,12 +34,22 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
       LoggingService.debug('WingManagementScreen: Loading wings');
       final wings = await _databaseService.getAllWings();
       
+      // Load flight counts for each wing
+      Map<int, int> flightCounts = {};
+      for (final wing in wings) {
+        if (wing.id != null) {
+          final stats = await _databaseService.getWingStatisticsById(wing.id!);
+          flightCounts[wing.id!] = stats['totalFlights'] as int;
+        }
+      }
+      
       if (mounted) {
         setState(() {
           _wings = wings;
+          _flightCounts = flightCounts;
           _isLoading = false;
         });
-        LoggingService.info('WingManagementScreen: Loaded ${wings.length} wings');
+        LoggingService.info('WingManagementScreen: Loaded ${wings.length} wings with flight counts');
       }
     } catch (e) {
       LoggingService.error('WingManagementScreen: Failed to load wings', e);
@@ -49,6 +60,27 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
         });
       }
     }
+  }
+  
+  String _getWingDisplayName(Wing wing) {
+    List<String> parts = [];
+    if (wing.manufacturer != null && wing.manufacturer!.isNotEmpty) {
+      parts.add(wing.manufacturer!);
+    }
+    if (wing.model != null && wing.model!.isNotEmpty) {
+      parts.add(wing.model!);
+    }
+    if (wing.size != null && wing.size!.isNotEmpty) {
+      parts.add(wing.size!);
+    }
+    
+    // If we have manufacturer/model/size, use them
+    if (parts.isNotEmpty) {
+      return parts.join(' ');
+    }
+    
+    // Otherwise fall back to name
+    return wing.name;
   }
 
   Future<void> _addNewWing() async {
@@ -347,22 +379,39 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
           ),
         ),
         title: Text(
-          wing.name,
+          _getWingDisplayName(wing),
           style: TextStyle(
             fontWeight: FontWeight.bold,
             decoration: wing.active ? null : TextDecoration.lineThrough,
           ),
         ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        subtitle: wing.notes != null && wing.notes!.isNotEmpty
+          ? Text(
+              wing.notes!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            )
+          : null,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            if (wing.manufacturer != null || wing.model != null)
-              Text('${wing.manufacturer ?? ''} ${wing.model ?? ''}'.trim()),
-            if (wing.size != null)
-              Text('Size: ${wing.size}'),
-          ],
-        ),
-        trailing: PopupMenuButton<String>(
+            if (wing.id != null && _flightCounts[wing.id!] != null && _flightCounts[wing.id!]! > 0)
+              Container(
+                margin: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${_flightCounts[wing.id!]} flight${_flightCounts[wing.id!] == 1 ? '' : 's'}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
+            PopupMenuButton<String>(
           onSelected: (value) {
             switch (value) {
               case 'edit':
@@ -407,6 +456,8 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
                 ],
               ),
             ),
+          ],
+        ),
           ],
         ),
         onTap: () => _editWing(wing),
