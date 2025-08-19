@@ -408,11 +408,10 @@ class DatabaseService {
     List<Map<String, dynamic>> results = await db.rawQuery('''
       SELECT 
         CASE 
-          WHEN w.manufacturer IS NOT NULL OR w.model IS NOT NULL OR w.size IS NOT NULL THEN
+          WHEN w.manufacturer IS NOT NULL OR w.model IS NOT NULL THEN
             TRIM(
               COALESCE(w.manufacturer, '') || 
-              CASE WHEN w.model IS NOT NULL THEN ' ' || w.model ELSE '' END ||
-              CASE WHEN w.size IS NOT NULL THEN ' ' || w.size ELSE '' END
+              CASE WHEN w.model IS NOT NULL THEN ' ' || w.model ELSE '' END
             )
           ELSE MIN(w.name)
         END as name,

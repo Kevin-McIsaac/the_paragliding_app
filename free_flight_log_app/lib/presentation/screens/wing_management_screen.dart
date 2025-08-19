@@ -70,11 +70,8 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
     if (wing.model != null && wing.model!.isNotEmpty) {
       parts.add(wing.model!);
     }
-    if (wing.size != null && wing.size!.isNotEmpty) {
-      parts.add(wing.size!);
-    }
     
-    // If we have manufacturer/model/size, use them
+    // If we have manufacturer/model, use them
     if (parts.isNotEmpty) {
       return parts.join(' ');
     }
@@ -385,11 +382,27 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
             decoration: wing.active ? null : TextDecoration.lineThrough,
           ),
         ),
-        subtitle: wing.notes != null && wing.notes!.isNotEmpty
-          ? Text(
-              wing.notes!,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+        subtitle: (wing.size != null && wing.size!.isNotEmpty) || 
+                  (wing.notes != null && wing.notes!.isNotEmpty)
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (wing.size != null && wing.size!.isNotEmpty)
+                  Text(
+                    'Size: ${wing.size}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                if (wing.notes != null && wing.notes!.isNotEmpty)
+                  Text(
+                    wing.notes!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+              ],
             )
           : null,
         trailing: Row(

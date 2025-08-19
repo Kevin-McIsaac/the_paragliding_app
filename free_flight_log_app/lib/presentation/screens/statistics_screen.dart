@@ -459,6 +459,14 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                               ),
                           ],
                         ),
+                        if (stat['size'] != null && (stat['size'] as String).isNotEmpty)
+                          Text(
+                            'Size: ${stat['size']}',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.grey[600],
+                              fontSize: 12,
+                            ),
+                          ),
                         if (stat['max_altitude'] != null && stat['max_altitude'] > 0)
                           Text(
                             'Max alt: ${(stat['max_altitude'] as num).toInt()}m',
