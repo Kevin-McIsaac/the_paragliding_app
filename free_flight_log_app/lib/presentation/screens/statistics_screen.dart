@@ -434,30 +434,11 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                (stat['name'] as String?) ?? 'Unknown Wing',
-                                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                            if (stat['wing_count'] != null && stat['wing_count'] > 1)
-                              Container(
-                                margin: const EdgeInsets.only(left: 8),
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context).colorScheme.primaryContainer,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Text(
-                                  '${stat['wing_count']} wings',
-                                  style: Theme.of(context).textTheme.labelSmall,
-                                ),
-                              ),
-                          ],
+                        Text(
+                          (stat['name'] as String?) ?? 'Unknown Wing',
+                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                         if (stat['size'] != null && (stat['size'] as String).isNotEmpty)
                           Text(
