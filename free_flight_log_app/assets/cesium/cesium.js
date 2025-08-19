@@ -99,8 +99,8 @@ function initializeCesium(config) {
             sceneModePicker: true,
             navigationHelpButton: true,
             navigationInstructionsInitiallyVisible: config.savedNavigationHelpDialogOpen || false,
-            animation: true,
-            timeline: true,
+            animation: false,  // Disabled - using custom mobile play button
+            timeline: true,   // Disabled - using custom mobile play button
             fullscreenButton: true,
             vrButton: false,
             shadows: false,
@@ -567,9 +567,11 @@ function setupTimeBasedAnimation(points) {
     playbackState.showPilot = pilotEntity;
     playbackState.positionProperty = positionProperty;
     
-    // Show the stats container when track is loaded
+    // Show the stats container and playback controls when track is loaded
     const statsContainer = document.getElementById('statsContainer');
     const cesiumContainer = document.getElementById('cesiumContainer');
+    const playbackControls = document.getElementById('playbackControls');
+    
     if (statsContainer) {
         statsContainer.classList.add('visible');
         statsContainer.innerHTML = '<span>Initializing...</span>';
@@ -582,6 +584,14 @@ function setupTimeBasedAnimation(points) {
             setTimeout(() => {
                 viewer.resize();
             }, 350); // Wait for CSS transition
+        }
+    }
+    
+    // Show the playback controls
+    if (playbackControls) {
+        playbackControls.classList.add('visible');
+        if (statsContainer && statsContainer.classList.contains('visible')) {
+            playbackControls.classList.add('with-stats');
         }
     }
     
@@ -654,6 +664,14 @@ function setupTimeBasedAnimation(points) {
             clock.currentTime = clock.startTime.clone();
         }
         
+        // Auto-stop and reset to start when reaching the end
+        if (atEnd && clock.shouldAnimate && !justStartedPlaying) {
+            // We've reached the end while playing - stop and reset to start
+            clock.shouldAnimate = false;
+            clock.currentTime = clock.startTime.clone();
+            cesiumLog.debug('Animation reached end - stopped and reset to start');
+        }
+        
         // Manage rendering mode based on animation state and ribbon mode
         if (cesiumState.flyThroughMode.enabled) {
             if (justStartedPlaying) {
@@ -672,6 +690,9 @@ function setupTimeBasedAnimation(points) {
         }
         
         wasAnimating = clock.shouldAnimate;
+        
+        // Update play button icon to match animation state
+        updatePlayButtonIcon();
         
         // Force scene update
         viewer.scene.requestRender();
@@ -833,15 +854,20 @@ function zoomToEntitiesWithPadding(padding) {
 
 // Cleanup function
 function cleanupCesium() {
-    // Hide stats container
+    // Hide stats container and playback controls
     const statsContainer = document.getElementById('statsContainer');
     const cesiumContainer = document.getElementById('cesiumContainer');
+    const playbackControls = document.getElementById('playbackControls');
+    
     if (statsContainer) {
         statsContainer.classList.remove('visible');
         statsContainer.innerHTML = '';
     }
     if (cesiumContainer) {
         cesiumContainer.classList.remove('with-stats');
+    }
+    if (playbackControls) {
+        playbackControls.classList.remove('visible', 'with-stats');
     }
     
     if (window.viewer) {
@@ -1276,12 +1302,72 @@ function onSceneModeChanged() {
     }
 }
 
+// Mobile play button control
+function togglePlayback() {
+    if (!viewer) return;
+    
+    // Toggle play/pause
+    viewer.clock.shouldAnimate = !viewer.clock.shouldAnimate;
+    
+    // Update button icon
+    updatePlayButtonIcon();
+    
+    // Log for debugging
+    cesiumLog.debug('Playback ' + (viewer.clock.shouldAnimate ? 'started' : 'paused'));
+}
+
+// Update play button icon based on clock state
+function updatePlayButtonIcon() {
+    const playButton = document.getElementById('playButton');
+    if (!playButton) return;
+    
+    const iconElement = playButton.querySelector('.material-icons');
+    if (!iconElement) return;
+    
+    if (!viewer || !viewer.clock) {
+        iconElement.textContent = 'play_arrow';
+        return;
+    }
+    
+    // Check if at start or end of timeline
+    const clock = viewer.clock;
+    const atStart = Cesium.JulianDate.secondsDifference(clock.currentTime, clock.startTime) < 0.5;
+    const atEnd = Cesium.JulianDate.compare(clock.currentTime, clock.stopTime) >= 0;
+    
+    // Show play icon if: not animating OR at start/end positions
+    // This ensures button shows play when stopped at endpoints
+    if (!clock.shouldAnimate || atStart || atEnd) {
+        iconElement.textContent = 'play_arrow';
+    } else {
+        iconElement.textContent = 'pause';
+    }
+}
+
+// Change playback speed
+function changePlaybackSpeed(speed) {
+    if (!viewer) return;
+    
+    const speedValue = parseFloat(speed);
+    if (isNaN(speedValue)) return;
+    
+    viewer.clock.multiplier = speedValue;
+    cesiumLog.debug('Playback speed changed to ' + speedValue + 'x');
+    
+    // Update speed picker to reflect current speed
+    const speedPicker = document.getElementById('speedPicker');
+    if (speedPicker) {
+        speedPicker.value = speed;
+    }
+}
+
 // Export functions for Flutter access
 window.cleanupCesium = cleanupCesium;
 window.checkMemory = checkMemory;
 window.initializeCesium = initializeCesium;
 window.handleMemoryPressure = handleMemoryPressure;
 window.restoreFlightVisualization = restoreFlightVisualization;
+window.togglePlayback = togglePlayback;
+window.changePlaybackSpeed = changePlaybackSpeed;
 
 window.createColoredFlightTrack = createColoredFlightTrack;
 
