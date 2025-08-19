@@ -879,6 +879,91 @@ function checkMemory() {
     return null;
 }
 
+// Selective memory pressure handling - preserves flight visualization
+function handleMemoryPressure() {
+    if (!viewer) return;
+    
+    cesiumLog.info('Memory pressure: Starting selective cleanup');
+    
+    try {
+        // 1. Clear tile cache (biggest memory consumer)
+        if (viewer.scene.globe?.tileCache) {
+            viewer.scene.globe.tileCache.reset();
+            cesiumLog.debug('Cleared tile cache');
+        }
+        
+        // 2. Reduce quality settings to minimize memory usage
+        if (viewer.scene.globe) {
+            viewer.scene.globe.tileCacheSize = 5;  // Minimal cache
+            viewer.scene.globe.maximumMemoryUsage = 64;  // 64MB limit
+            viewer.scene.globe.maximumScreenSpaceError = 16;  // Lower quality
+        }
+        
+        // 3. Reduce texture sizes
+        if (viewer.scene) {
+            viewer.scene.maximumTextureSize = 512;  // Smaller textures
+            viewer.scene.maximumRenderTimeChange = 0.1;  // Aggressive frame limiting
+        }
+        
+        // 4. Switch to on-demand rendering to reduce GPU usage
+        viewer.scene.requestRenderMode = true;
+        viewer.scene.requestRender();  // Render once with new settings
+        
+        // 5. Remove non-essential data sources (but NOT entities or primitives)
+        // This preserves flight track visualization
+        const dataSourcesToKeep = [];
+        viewer.dataSources.removeAll();  // Remove any extra data sources
+        
+        // 6. Force JavaScript garbage collection if available
+        if (window.gc) {
+            window.gc();
+        }
+        
+        cesiumLog.info('Memory pressure: Selective cleanup completed (flight track preserved)');
+        
+    } catch (error) {
+        cesiumLog.error('Memory pressure cleanup error: ' + error.message);
+    }
+}
+
+// Restore flight visualization if it was accidentally cleared
+function restoreFlightVisualization() {
+    if (!viewer || !cesiumState.flyThroughMode.igcPoints) {
+        return false;  // No data to restore
+    }
+    
+    // Check if visualization is missing
+    const visualizationMissing = !cesiumState.flyThroughMode.staticTrackPrimitive || 
+                                 !cesiumState.flyThroughMode.curtainWallEntity;
+    
+    if (visualizationMissing && cesiumState.flyThroughMode.igcPoints.length > 0) {
+        cesiumLog.info('Restoring flight visualization from cached data');
+        
+        try {
+            // Store current camera position
+            const cameraPosition = viewer.camera.position.clone();
+            const cameraDirection = viewer.camera.direction.clone();
+            const cameraUp = viewer.camera.up.clone();
+            
+            // Recreate the flight track using the existing function
+            createColoredFlightTrack(cesiumState.flyThroughMode.igcPoints);
+            
+            // Restore camera position
+            viewer.camera.position = cameraPosition;
+            viewer.camera.direction = cameraDirection;
+            viewer.camera.up = cameraUp;
+            
+            cesiumLog.info('Flight visualization restored successfully');
+            return true;
+        } catch (error) {
+            cesiumLog.error('Failed to restore flight visualization: ' + error.message);
+            return false;
+        }
+    }
+    
+    return false;  // Nothing to restore
+}
+
 // Also cleanup on page unload
 window.addEventListener('beforeunload', function() {
     cleanupCesium();
@@ -1195,6 +1280,8 @@ function onSceneModeChanged() {
 window.cleanupCesium = cleanupCesium;
 window.checkMemory = checkMemory;
 window.initializeCesium = initializeCesium;
+window.handleMemoryPressure = handleMemoryPressure;
+window.restoreFlightVisualization = restoreFlightVisualization;
 
 window.createColoredFlightTrack = createColoredFlightTrack;
 

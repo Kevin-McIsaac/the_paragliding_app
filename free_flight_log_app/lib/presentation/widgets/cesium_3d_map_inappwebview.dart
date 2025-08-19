@@ -44,6 +44,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   bool _isWebViewReady = false;
   int _surfaceErrorCount = 0;
   Timer? _surfaceRecoveryTimer;
+  DateTime? _lastMemoryPressureTime;
   
   // Cancellation tokens for async operations
   CancelableOperation<void>? _htmlLoadOperation;
@@ -1122,43 +1123,60 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
     
     if (_isDisposed || webViewController == null) return;
     
-    LoggingService.warning('Cesium3D: Memory pressure detected - aggressive cleanup');
+    // Rate limit memory pressure handling - max once per 30 seconds
+    final now = DateTime.now();
+    if (_lastMemoryPressureTime != null) {
+      final timeSinceLastPressure = now.difference(_lastMemoryPressureTime!);
+      if (timeSinceLastPressure.inSeconds < 30) {
+        LoggingService.debug('Cesium3D: Ignoring memory pressure (too soon after last cleanup)');
+        return;
+      }
+    }
+    _lastMemoryPressureTime = now;
+    
+    LoggingService.warning('Cesium3D: Memory pressure detected - selective cleanup');
     
     // Clear WebView cache on memory pressure
     webViewController?.clearCache();
     
-    // Force aggressive garbage collection in JavaScript
+    // Use selective memory pressure handling that preserves flight visualization
     webViewController?.evaluateJavascript(source: '''
-      if (window.viewer) {
-        // Clear all resources
-        viewer.scene.primitives.removeAll();
-        viewer.entities.removeAll();
-        viewer.dataSources.removeAll();
+      // Use the new selective memory pressure handler
+      if (typeof handleMemoryPressure === 'function') {
+        handleMemoryPressure();
         
-        // Reset tile cache completely (with null check)
-        if (viewer.scene.globe.tileCache) {
-          viewer.scene.globe.tileCache.reset();
+        // After cleanup, check if flight visualization needs restoration
+        // This handles rare cases where visualization was cleared before this fix
+        setTimeout(() => {
+          if (typeof restoreFlightVisualization === 'function') {
+            if (restoreFlightVisualization()) {
+              cesiumLog.info('Flight visualization restored after memory pressure');
+            }
+          }
+        }, 100);
+      } else {
+        // Fallback to old behavior if new function not available
+        cesiumLog.warn('handleMemoryPressure not found, using fallback cleanup');
+        if (window.viewer) {
+          // Only clear tile cache and reduce quality, preserve entities/primitives
+          if (viewer.scene.globe?.tileCache) {
+            viewer.scene.globe.tileCache.reset();
+          }
+          
+          if (viewer.scene.globe) {
+            viewer.scene.globe.tileCacheSize = 5;
+            viewer.scene.globe.maximumMemoryUsage = 64;
+            viewer.scene.globe.maximumScreenSpaceError = 16;
+          }
+          
+          if (viewer.scene) {
+            viewer.scene.maximumTextureSize = 512;
+            viewer.scene.requestRenderMode = true;
+            viewer.scene.requestRender();
+          }
+          
+          cesiumLog.info('Memory pressure: Fallback cleanup completed');
         }
-        
-        // Reduce cache size and memory limits drastically (with safety checks)
-        if (viewer.scene.globe) {
-          viewer.scene.globe.tileCacheSize = 5;
-          viewer.scene.globe.maximumMemoryUsage = 64;  // Reduce to 64MB
-          viewer.scene.globe.maximumScreenSpaceError = 8;  // Lower quality to save memory
-        }
-        if (viewer.scene) {
-          viewer.scene.maximumTextureSize = 512;  // Smaller textures
-        }
-        
-        // Request render to apply new limits
-        viewer.scene.requestRender();
-        
-        // Force JavaScript garbage collection if available
-        if (window.gc) {
-          window.gc();
-        }
-        
-        cesiumLog.info('Memory pressure: Aggressive cleanup completed');
       }
     ''');
   }
