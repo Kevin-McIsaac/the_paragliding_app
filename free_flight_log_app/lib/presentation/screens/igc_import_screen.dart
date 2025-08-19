@@ -465,10 +465,8 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.of(context).pop();
-              if (summary.successCount > 0) {
-                Navigator.of(context).pop(true); // Return to flight list
-              }
+              Navigator.of(context).pop();  // Close dialog
+              Navigator.of(context).pop(true); // Always return to flight list
             },
             child: const Text('OK'),
           ),
