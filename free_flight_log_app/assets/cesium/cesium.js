@@ -371,27 +371,16 @@ function createColoredFlightTrack(points) {
     // Clear existing entities
     viewer.entities.removeAll();
     cesiumState.playback.pilotEntity = null;
-    // Build positions and colors arrays for per-vertex colored primitive
-    const positions = [];
-    const colors = [];
+    // Build positions array (reuse if available from setupTimeBasedAnimation)
+    const positions = cesiumState.positions || points.map(point => 
+        Cesium.Cartesian3.fromDegrees(point.longitude, point.latitude, point.altitude)
+    );
     
-    for (let i = 0; i < points.length; i++) {
-        const point = points[i];
-        
-        // Add position
-        positions.push(
-            Cesium.Cartesian3.fromDegrees(
-                point.longitude,
-                point.latitude,
-                point.altitude
-            )
-        );
-        
-        // Add color based on 15s climb rate
+    // Build colors array based on climb rate
+    const colors = points.map(point => {
         const climbRate15s = point.climbRate15s || point.climbRate || 0;
-        const color = getClimbRateColorForPoint(climbRate15s);
-        colors.push(color.withAlpha(0.9)); // Slightly transparent
-    }
+        return getClimbRateColorForPoint(climbRate15s).withAlpha(0.9); // Slightly transparent
+    });
     
     // Create a single primitive with per-vertex colors for smooth gradients
     const staticTrackPrimitive = new Cesium.Primitive({
@@ -413,14 +402,8 @@ function createColoredFlightTrack(points) {
     // Add primitive to scene
     cesiumState.flightTrack.staticPrimitive = viewer.scene.primitives.add(staticTrackPrimitive);
     // Create curtain wall that hangs from track to ground
-    // Build positions array for the wall (all track points)
-    const wallPositions = points.map(point => 
-        Cesium.Cartesian3.fromDegrees(
-            point.longitude,
-            point.latitude,
-            point.altitude
-        )
-    );
+    // Reuse positions array for the wall
+    const wallPositions = positions;
     
     // Extract altitudes for the wall
     const wallHeights = points.map(point => point.altitude);
@@ -504,10 +487,24 @@ function createColoredFlightTrack(points) {
 function setupTimeBasedAnimation(points) {
     if (!viewer || !points || points.length === 0) return;
     
-    // Parse timestamps and create time intervals
-    const startTime = Cesium.JulianDate.fromIso8601(points[0].timestamp);
-    const stopTime = Cesium.JulianDate.fromIso8601(points[points.length - 1].timestamp);
+    // Build reusable arrays of times and positions
+    const times = points.map(point => 
+        Cesium.JulianDate.fromIso8601(point.timestamp)
+    );
+    const positions = points.map(point => 
+        Cesium.Cartesian3.fromDegrees(point.longitude, point.latitude, point.altitude)
+    );
     
+    // Store for global reuse
+    cesiumState.times = times;
+    cesiumState.positions = positions;
+    
+    // Get start and stop times from array
+    const startTime = times[0];
+    const stopTime = times[times.length - 1];
+    
+    // Calculate and store total duration
+    cesiumState.totalDuration = Cesium.JulianDate.secondsDifference(stopTime, startTime);
     
     // Create sampled position property for smooth interpolation
     const positionProperty = new Cesium.SampledPositionProperty();
@@ -515,28 +512,13 @@ function setupTimeBasedAnimation(points) {
         interpolationDegree: 2,
         interpolationAlgorithm: Cesium.LagrangePolynomialApproximation
     });
+    // Set extrapolation to hold values at boundaries
+    positionProperty.forwardExtrapolationType = Cesium.ExtrapolationType.HOLD;
+    positionProperty.backwardExtrapolationType = Cesium.ExtrapolationType.HOLD;
     
-    // Add samples for each point
-    let sampleCount = 0;
-    points.forEach((point, index) => {
-        const time = Cesium.JulianDate.fromIso8601(point.timestamp);
-        const position = Cesium.Cartesian3.fromDegrees(
-            point.longitude,
-            point.latitude,
-            point.altitude
-        );
-        positionProperty.addSample(time, position);
-        sampleCount++;
-        
-    });
-    
-    
-    // Get first position for pilot initialization
-    const firstPos = Cesium.Cartesian3.fromDegrees(
-        points[0].longitude,
-        points[0].latitude,
-        points[0].altitude
-    );
+    // Add all samples at once using pre-built arrays
+    positionProperty.addSamples(times, positions);
+    cesiumLog.info(`Added ${positions.length} position samples for velocity calculation`);
     
     // Create pilot entity with Cesium native time-dynamic position
     const pilotEntity = viewer.entities.add({
@@ -548,7 +530,7 @@ function setupTimeBasedAnimation(points) {
             })
         ]),
         position: positionProperty,  // Native Cesium SampledPositionProperty
-        orientation: new Cesium.VelocityOrientationProperty(positionProperty),  // Orient based on velocity
+        orientation: new Cesium.VelocityOrientationProperty(positionProperty, Cesium.Ellipsoid.WGS84),  // Orient based on velocity with explicit ellipsoid
         // Pilot marker
         point: {
             pixelSize: 16,
@@ -559,7 +541,7 @@ function setupTimeBasedAnimation(points) {
             disableDepthTestDistance: Number.POSITIVE_INFINITY,  // Always visible
             scaleByDistance: new Cesium.NearFarScalar(1000, 1.5, 100000, 0.5)  // Scale with distance
         },
-        viewFrom: new Cesium.Cartesian3(0.0, -1000.0, 800.0) // Paragliding chase cam
+        viewFrom: new Cesium.Cartesian3(0.0, -1000.0, 500.0) // 100m behind, 50m above
     });
     
     
@@ -819,8 +801,8 @@ function zoomToEntitiesWithPadding(padding) {
     
     // If we have a primitive-based track, zoom to its bounds
     if (cesiumState.flightTrack.staticPrimitive && igcPoints && igcPoints.length > 0) {
-        // Calculate bounding sphere from track points
-        const positions = igcPoints.map(point => 
+        // Calculate bounding sphere from track points (reuse positions if available)
+        const positions = cesiumState.positions || igcPoints.map(point => 
             Cesium.Cartesian3.fromDegrees(point.longitude, point.latitude, point.altitude)
         );
         const boundingSphere = Cesium.BoundingSphere.fromPoints(positions);
@@ -1065,6 +1047,30 @@ document.addEventListener('visibilitychange', function() {
 // Ribbon Mode (Fly-through) Functions
 // ============================================================================
 
+// Binary search helper to find current index in times array
+function findCurrentTimeIndex(currentTime) {
+    if (!cesiumState.times || cesiumState.times.length === 0) return -1;
+    
+    let left = 0;
+    let right = cesiumState.times.length - 1;
+    
+    while (left <= right) {
+        const mid = Math.floor((left + right) / 2);
+        const comparison = Cesium.JulianDate.compare(cesiumState.times[mid], currentTime);
+        
+        if (comparison < 0) {
+            left = mid + 1;
+        } else if (comparison > 0) {
+            right = mid - 1;
+        } else {
+            return mid;
+        }
+    }
+    
+    // Return the index of the last time before currentTime
+    return Math.max(0, left - 1);
+}
+
 // Helper function to get color based on 15s climb rate (for dynamic track)
 function getClimbRateColorForPoint(climbRate15s) {
     if (climbRate15s >= 0) {
@@ -1095,23 +1101,9 @@ function updateDynamicTrackPrimitive() {
     
     const igcPoints = cesiumState.igcPoints;
     
-    // Find current point index based on time
+    // Find current point index using binary search (much faster)
     const currentTime = viewer.clock.currentTime;
-    let currentIndex = -1;
-    for (let i = 0; i < igcPoints.length; i++) {
-        const point = igcPoints[i];
-        if (!point.timestamp) continue;
-        
-        try {
-            const pointTime = Cesium.JulianDate.fromIso8601(point.timestamp);
-            if (Cesium.JulianDate.secondsDifference(pointTime, currentTime) > 0) {
-                break; // Found first point after current time
-            }
-            currentIndex = i;
-        } catch (e) {
-            continue;
-        }
-    }
+    const currentIndex = findCurrentTimeIndex(currentTime);
     
     // If we haven't started yet, return
     if (currentIndex < 0) {
@@ -1124,7 +1116,7 @@ function updateDynamicTrackPrimitive() {
     const flightSecondsInWindow = ribbonSeconds * playbackSpeed;
     
     // Estimate how many points to show based on flight duration
-    const totalDuration = Cesium.JulianDate.secondsDifference(
+    const totalDuration = cesiumState.totalDuration || Cesium.JulianDate.secondsDifference(
         Cesium.JulianDate.fromIso8601(igcPoints[igcPoints.length - 1].timestamp),
         Cesium.JulianDate.fromIso8601(igcPoints[0].timestamp)
     );
@@ -1261,7 +1253,7 @@ function getTrailData(currentTime, extractData) {
         const speedMultiplier = viewer.clock.multiplier || 1;
         const flightSecondsInRibbon = ribbonAnimationSeconds * speedMultiplier;
         
-        const totalFlightDuration = Cesium.JulianDate.secondsDifference(
+        const totalFlightDuration = cesiumState.totalDuration || Cesium.JulianDate.secondsDifference(
             Cesium.JulianDate.fromIso8601(igcPoints[igcPoints.length - 1].timestamp),
             Cesium.JulianDate.fromIso8601(igcPoints[0].timestamp)
         );
@@ -1278,6 +1270,23 @@ function getTrailData(currentTime, extractData) {
 
 // Calculate trail positions for ribbon mode
 function calculateTrailPositions(currentTime) {
+    // If we have pre-built positions, use them with index-based slicing
+    if (cesiumState.positions && cesiumState.times) {
+        const currentIndex = findCurrentTimeIndex(currentTime);
+        if (currentIndex < 0) return [];
+        
+        // Calculate ribbon window
+        const ribbonSeconds = cesiumState.ribbonMode.animationSeconds || 3.0;
+        const speedMultiplier = viewer.clock.multiplier || 1;
+        const flightSecondsInRibbon = ribbonSeconds * speedMultiplier;
+        const pointsPerSecond = cesiumState.igcPoints.length / cesiumState.totalDuration;
+        const maxPointsInRibbon = Math.ceil(flightSecondsInRibbon * pointsPerSecond);
+        
+        const startIndex = Math.max(0, currentIndex - maxPointsInRibbon + 1);
+        return cesiumState.positions.slice(startIndex, currentIndex + 1);
+    }
+    
+    // Fallback to original implementation
     return getTrailData(currentTime, point => 
         Cesium.Cartesian3.fromDegrees(point.longitude, point.latitude, point.altitude)
     );
