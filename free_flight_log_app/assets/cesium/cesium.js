@@ -302,6 +302,49 @@ function initializeCesium(config) {
 // Flight Track Rendering
 // ============================================================================
 
+// Unified function to create track primitive for any range of points
+function createTrackPrimitive(startIndex, endIndex) {
+    // Validate inputs
+    if (!cesiumState.positions || !cesiumState.igcPoints || 
+        startIndex < 0 || endIndex >= cesiumState.positions.length || 
+        startIndex > endIndex) {
+        return null;
+    }
+    
+    // Slice positions for the requested range
+    const positions = cesiumState.positions.slice(startIndex, endIndex + 1);
+    
+    // Build colors array for the range
+    const colors = [];
+    for (let i = startIndex; i <= endIndex; i++) {
+        const point = cesiumState.igcPoints[i];
+        const climbRate15s = point.climbRate15s || point.climbRate || 0;
+        colors.push(getClimbRateColorForPoint(climbRate15s).withAlpha(0.9));
+    }
+    
+    // Only create primitive if we have at least 2 positions
+    if (positions.length < 2) {
+        return null;
+    }
+    
+    // Create and return the primitive
+    return new Cesium.Primitive({
+        geometryInstances: new Cesium.GeometryInstance({
+            geometry: new Cesium.PolylineGeometry({
+                positions: positions,
+                width: 3.0,
+                vertexFormat: Cesium.PolylineColorAppearance.VERTEX_FORMAT,
+                colors: colors,
+                colorsPerVertex: true
+            })
+        }),
+        appearance: new Cesium.PolylineColorAppearance({
+            translucent: true
+        }),
+        asynchronous: false  // Synchronous rendering for consistency
+    });
+}
+
 // Show or hide all track segments
 function showAllTrackSegments(show) {
     if (cesiumState.flightTrack.staticPrimitive) {
@@ -371,36 +414,23 @@ function createColoredFlightTrack(points) {
     // Clear existing entities
     viewer.entities.removeAll();
     cesiumState.playback.pilotEntity = null;
+    
     // Build positions array (reuse if available from setupTimeBasedAnimation)
     const positions = cesiumState.positions || points.map(point => 
         Cesium.Cartesian3.fromDegrees(point.longitude, point.latitude, point.altitude)
     );
     
-    // Build colors array based on climb rate
-    const colors = points.map(point => {
-        const climbRate15s = point.climbRate15s || point.climbRate || 0;
-        return getClimbRateColorForPoint(climbRate15s).withAlpha(0.9); // Slightly transparent
-    });
+    // Store positions and points if not already stored
+    if (!cesiumState.positions) {
+        cesiumState.positions = positions;
+        cesiumState.igcPoints = points;
+    }
     
-    // Create a single primitive with per-vertex colors for smooth gradients
-    const staticTrackPrimitive = new Cesium.Primitive({
-        geometryInstances: new Cesium.GeometryInstance({
-            geometry: new Cesium.PolylineGeometry({
-                positions: positions,
-                width: 3.0,
-                vertexFormat: Cesium.PolylineColorAppearance.VERTEX_FORMAT,
-                colors: colors,
-                colorsPerVertex: true
-            })
-        }),
-        appearance: new Cesium.PolylineColorAppearance({
-            translucent: true
-        }),
-        asynchronous: false  // Synchronous rendering for consistency
-    });
-    
-    // Add primitive to scene
-    cesiumState.flightTrack.staticPrimitive = viewer.scene.primitives.add(staticTrackPrimitive);
+    // Create static track primitive using full range
+    const staticTrackPrimitive = createTrackPrimitive(0, points.length - 1);
+    if (staticTrackPrimitive) {
+        cesiumState.flightTrack.staticPrimitive = viewer.scene.primitives.add(staticTrackPrimitive);
+    }
     // Create curtain wall that hangs from track to ground
     // Reuse positions array for the wall
     const wallPositions = positions;
@@ -1135,57 +1165,18 @@ function updateDynamicTrackPrimitive() {
         return; // No change needed, avoid flickering
     }
     
-    // Build positions and colors arrays for the window
-    const positions = [];
-    const colors = [];
+    // Create dynamic track primitive for the window
+    const primitive = createTrackPrimitive(windowStart, windowEnd);
     
-    for (let i = windowStart; i <= windowEnd && i < igcPoints.length; i++) {
-        const point = igcPoints[i];
+    if (primitive) {
+        // Double buffering: Add new primitive before removing old one
+        const oldPrimitive = cesiumState.flightTrack.dynamicPrimitive;
+        cesiumState.flightTrack.dynamicPrimitive = viewer.scene.primitives.add(primitive);
         
-        // Add position
-        positions.push(
-            Cesium.Cartesian3.fromDegrees(
-                point.longitude,
-                point.latitude,
-                point.altitude
-            )
-        );
-        
-        // Add color based on climb rate
-        const climbRate15s = point.climbRate15s || point.climbRate || 0;
-        const color = getClimbRateColorForPoint(climbRate15s);
-        colors.push(color.withAlpha(0.9)); // Slightly transparent
-    }
-    
-    // Only create primitive if we have at least 2 positions
-    if (positions.length < 2) {
-        return;
-    }
-    
-    // Create the polyline primitive with per-vertex colors (synchronous to prevent flickering)
-    const primitive = new Cesium.Primitive({
-        geometryInstances: new Cesium.GeometryInstance({
-            geometry: new Cesium.PolylineGeometry({
-                positions: positions,
-                width: 3.0,
-                vertexFormat: Cesium.PolylineColorAppearance.VERTEX_FORMAT,
-                colors: colors,
-                colorsPerVertex: true
-            })
-        }),
-        appearance: new Cesium.PolylineColorAppearance({
-            translucent: true
-        }),
-        asynchronous: false  // Synchronous rendering to prevent flickering
-    });
-    
-    // Double buffering: Add new primitive before removing old one
-    const oldPrimitive = cesiumState.flightTrack.dynamicPrimitive;
-    cesiumState.flightTrack.dynamicPrimitive = viewer.scene.primitives.add(primitive);
-    
-    // Remove old primitive after new one is added
-    if (oldPrimitive) {
-        viewer.scene.primitives.remove(oldPrimitive);
+        // Remove old primitive after new one is added
+        if (oldPrimitive) {
+            viewer.scene.primitives.remove(oldPrimitive);
+        }
     }
     
     // Update tracking for next comparison
