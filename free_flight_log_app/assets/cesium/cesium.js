@@ -548,6 +548,7 @@ function setupTimeBasedAnimation(points) {
             })
         ]),
         position: positionProperty,  // Native Cesium SampledPositionProperty
+        orientation: new Cesium.VelocityOrientationProperty(positionProperty),  // Orient based on velocity
         // Pilot marker
         point: {
             pixelSize: 16,
@@ -557,7 +558,8 @@ function setupTimeBasedAnimation(points) {
             heightReference: Cesium.HeightReference.NONE,
             disableDepthTestDistance: Number.POSITIVE_INFINITY,  // Always visible
             scaleByDistance: new Cesium.NearFarScalar(1000, 1.5, 100000, 0.5)  // Scale with distance
-        }
+        },
+        viewFrom: new Cesium.Cartesian3(0.0, -1000.0, 800.0) // Paragliding chase cam
     });
     
     
