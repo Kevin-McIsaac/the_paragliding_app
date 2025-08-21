@@ -522,6 +522,10 @@ class CesiumFlightApp {
             imageryProviders.find(vm => vm.name === config.savedBaseMap) || imageryProviders[0] :
             imageryProviders[0];
         
+        // Detect high DPI displays and apply resolution scaling
+        const devicePixelRatio = window.devicePixelRatio || 1.0;
+        const resolutionScale = devicePixelRatio > 1 ? Math.min(devicePixelRatio, 2.0) : 1.0;
+        
         // Create viewer with optimized settings
         this.viewer = new Cesium.Viewer("cesiumContainer", {
             terrain: Cesium.Terrain.fromWorldTerrain({
@@ -530,6 +534,7 @@ class CesiumFlightApp {
             }),
             requestRenderMode: true,
             maximumRenderTimeChange: Infinity,
+            resolutionScale: resolutionScale,  // Apply high DPI scaling
             
             // UI controls
             baseLayerPicker: true,
@@ -555,6 +560,19 @@ class CesiumFlightApp {
     
     _createImageryProviders() {
         return [
+            // High-resolution satellite imagery
+            new Cesium.ProviderViewModel({
+                name: 'Sentinel-2 Cloudless',
+                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerial.png'),
+                tooltip: 'High-resolution Sentinel-2 cloudless imagery (10m resolution)',
+                creationFunction: () => {
+                    // Try Sentinel-2 with fallback to Bing if it fails
+                    return Cesium.IonImageryProvider.fromAssetId(3954).catch((error) => {
+                        console.warn('Sentinel-2 failed to load, using Bing Aerial:', error);
+                        return Cesium.IonImageryProvider.fromAssetId(2);
+                    });
+                }
+            }),
             new Cesium.ProviderViewModel({
                 name: 'Bing Maps Aerial with Labels',
                 iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerialLabels.png'),
@@ -588,26 +606,31 @@ class CesiumFlightApp {
         const scene = this.viewer.scene;
         const globe = scene.globe;
         
-        // Quality settings
-        globe.enableLighting = false;
+        // Enhanced terrain lighting for better depth perception
+        globe.enableLighting = true;
+        globe.lightingFadeOutDistance = 6500000;
+        globe.lightingFadeInDistance = 9000000;
+        globe.nightFadeOutDistance = 10000000;
+        globe.nightFadeInDistance = 50000000;
         globe.showGroundAtmosphere = true;
         globe.depthTestAgainstTerrain = true;
         globe.terrainExaggeration = 1.0;
         
+        // Adjust fog for clearer terrain
         scene.fog.enabled = true;
-        scene.fog.density = 0.0001;
+        scene.fog.density = 0.00005;  // Reduced density for clearer distant terrain
         scene.fog.screenSpaceErrorFactor = 2.0;
         
         scene.highDynamicRange = true;
         scene.fxaa = true;
         scene.msaaSamples = 8;
         
-        // Performance settings
-        globe.tileCacheSize = 300;
+        // High-quality terrain settings
+        globe.tileCacheSize = 500;  // Increased cache for smoother terrain
         globe.preloadSiblings = true;
         globe.preloadAncestors = true;
         globe.maximumMemoryUsage = 512;
-        globe.maximumScreenSpaceError = 2;
+        globe.maximumScreenSpaceError = 1.0;  // Reduced for higher quality terrain
         
         // Camera controls
         const controller = scene.screenSpaceCameraController;
