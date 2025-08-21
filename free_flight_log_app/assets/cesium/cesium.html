@@ -3,8 +3,8 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no">
-    <script src="https://cesium.com/downloads/cesiumjs/releases/1.127/Build/Cesium/Cesium.js"></script>
-    <link href="https://cesium.com/downloads/cesiumjs/releases/1.127/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.132/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.132/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <style>
         html, body {
@@ -188,6 +188,21 @@
     <div id="playbackControls">
         <button id="playButton" onclick="if(typeof togglePlayback === 'function') togglePlayback()">
             <span class="material-icons">play_arrow</span>
+        </button>
+        <button id="followButton" onclick="if(typeof toggleCameraFollow === 'function') toggleCameraFollow()" style="
+            width: 32px;
+            height: 32px;
+            border-radius: 4px;
+            background-color: rgba(42, 42, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s;
+            margin-left: 4px;
+        " title="Toggle camera following">
+            <span class="material-icons" style="font-size: 18px; color: rgba(255, 255, 255, 0.9);">videocam</span>
         </button>
         <select id="speedPicker" onchange="if(typeof changePlaybackSpeed === 'function') changePlaybackSpeed(this.value)">
             <option value="1">1x</option>

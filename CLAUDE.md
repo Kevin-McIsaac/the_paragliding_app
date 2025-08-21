@@ -101,3 +101,5 @@ For complete project history and detailed changelog, see [CHANGELOG.md](CHANGELO
 - All ways test app on emulator
 - Store documentation in the document directory
 - Do not try to modularise cesium JS as ES6 Modules Don't Work in WebView
+
+- When implementing functionality in Cesium look for the simplest, idomatic Cesium native approach
