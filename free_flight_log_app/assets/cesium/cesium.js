@@ -603,6 +603,10 @@ class CesiumFlightApp {
         globe.depthTestAgainstTerrain = true;
         globe.terrainExaggeration = 1.0;
         
+        // Set base color to black to avoid jarring blue during imagery transitions
+        globe.baseColor = Cesium.Color.BLACK;
+        scene.backgroundColor = Cesium.Color.BLACK;
+        
         // Adjust fog for clearer terrain
         scene.fog.enabled = true;
         scene.fog.density = 0.00005;  // Reduced density for clearer distant terrain
