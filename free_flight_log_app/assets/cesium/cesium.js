@@ -261,7 +261,8 @@ class FlightDataSource extends Cesium.CustomDataSource {
             climbRate: point.climbRate || 0,
             speed: speed,
             time: this.times[index],
-            localTime: this._toLocalTime(this.times[index])
+            localTime: this._toLocalTime(this.times[index]),
+            elapsedSeconds: Cesium.JulianDate.secondsDifference(this.times[index], this.startTime)
         };
     }
     
@@ -452,10 +453,12 @@ class StatisticsDisplay {
         const stats = this.flightData.getStatisticsAt(time);
         if (!stats) return;
         
-        // Format time
-        const gregorian = Cesium.JulianDate.toGregorianDate(stats.localTime);
-        const timeStr = `${gregorian.hour.toString().padStart(2, '0')}:${gregorian.minute.toString().padStart(2, '0')}`;
-        const tzLabel = this.flightData.timezone ? ` (${this.flightData.timezone})` : '';
+        // Format duration
+        const elapsedSeconds = Math.floor(stats.elapsedSeconds);
+        const hours = Math.floor(elapsedSeconds / 3600);
+        const minutes = Math.floor((elapsedSeconds % 3600) / 60);
+        const seconds = elapsedSeconds % 60;
+        const durationStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
         
         // Choose climb icon
         const climbIcon = stats.climbRate > 0.1 ? 'trending_up' : 
@@ -480,9 +483,9 @@ class StatisticsDisplay {
                 <div class="stat-label">Speed</div>
             </div>
             <div class="stat-item">
-                <i class="material-icons">access_time</i>
-                <div class="stat-value">${timeStr}</div>
-                <div class="stat-label">Time${tzLabel}</div>
+                <i class="material-icons">timer</i>
+                <div class="stat-value">${durationStr}</div>
+                <div class="stat-label">Duration</div>
             </div>
         `;
     }
@@ -558,6 +561,35 @@ class CesiumFlightApp {
         
         this._configureScene();
         this._setupInitialView(config);
+        
+        // Hide terrain options from baseLayerPicker - show only imagery choices
+        if (this.viewer.baseLayerPicker && this.viewer.baseLayerPicker.viewModel) {
+            this.viewer.baseLayerPicker.viewModel.terrainProviderViewModels = [];
+            
+            // Hide the "Imagery" category label whenever the picker is opened
+            const hideImageryLabel = () => {
+                const pickerContainer = document.querySelector('.cesium-baseLayerPicker-dropDown');
+                if (pickerContainer) {
+                    const categoryLabels = pickerContainer.querySelectorAll('.cesium-baseLayerPicker-sectionTitle');
+                    categoryLabels.forEach(label => {
+                        if (label.textContent === 'Imagery') {
+                            label.style.display = 'none';
+                        }
+                    });
+                }
+            };
+            
+            // Watch for dropdown visibility changes
+            const pickerButton = document.querySelector('.cesium-baseLayerPicker-selected');
+            if (pickerButton) {
+                pickerButton.addEventListener('click', () => {
+                    setTimeout(hideImageryLabel, 10);
+                });
+            }
+            
+            // Also hide on initial load
+            setTimeout(hideImageryLabel, 100);
+        }
     }
     
     _createImageryProviders() {
@@ -605,9 +637,9 @@ class CesiumFlightApp {
         globe.depthTestAgainstTerrain = true;
         globe.terrainExaggeration = 1.0;
         
-        // Set base color to black to avoid jarring blue during imagery transitions
-        globe.baseColor = Cesium.Color.BLACK;
-        scene.backgroundColor = Cesium.Color.BLACK;
+        // Set base color to dark gray for less jarring transitions when switching maps
+        globe.baseColor = Cesium.Color.fromCssColorString('#2b2b2b');
+        scene.backgroundColor = Cesium.Color.fromCssColorString('#2b2b2b');
         
         // Adjust fog for clearer terrain
         scene.fog.enabled = true;
@@ -677,6 +709,24 @@ class CesiumFlightApp {
                 document.getElementById('loadingOverlay').style.display = 'none';
             }
         });
+        
+        // Listen for base layer picker changes
+        if (this.viewer.baseLayerPicker && this.viewer.baseLayerPicker.viewModel) {
+            // Subscribe to imagery provider changes
+            Cesium.knockout.getObservable(
+                this.viewer.baseLayerPicker.viewModel, 
+                'selectedImagery'
+            ).subscribe((providerViewModel) => {
+                if (providerViewModel && window.flutter_inappwebview?.callHandler) {
+                    // Notify Flutter of the map change
+                    window.flutter_inappwebview.callHandler(
+                        'onImageryProviderChanged', 
+                        providerViewModel.name
+                    );
+                    console.log('[Cesium] Imagery provider changed to:', providerViewModel.name);
+                }
+            });
+        }
     }
     
     loadFlightTrack(igcPoints) {
@@ -732,7 +782,7 @@ class CesiumFlightApp {
         const offsetSeconds = data.timezoneOffsetSeconds;
         const timezone = data.timezone;
         
-        if (this.viewer.timeline && offsetSeconds !== 0) {
+        if (this.viewer.timeline) {
             this.viewer.timeline.makeLabel = (date) => {
                 const localDate = Cesium.JulianDate.addSeconds(date, offsetSeconds, new Cesium.JulianDate());
                 const gregorian = Cesium.JulianDate.toGregorianDate(localDate);
@@ -741,6 +791,13 @@ class CesiumFlightApp {
                 const seconds = Math.floor(gregorian.second).toString().padStart(2, '0');
                 return `${hours}:${minutes}:${seconds} ${timezone}`;
             };
+            
+            // Force timeline to redraw with new labels (idiomatic Cesium way)
+            this.viewer.timeline.updateFromClock();
+            this.viewer.timeline.zoomTo(
+                this.viewer.clock.startTime,
+                this.viewer.clock.stopTime
+            );
         }
     }
     
