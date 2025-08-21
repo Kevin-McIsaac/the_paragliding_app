@@ -501,6 +501,8 @@ class CesiumFlightApp {
         this.cameraFollowing = false;
         this._ribbonModeAuto = true;
         this._updateThrottle = { lastUpdate: 0, interval: 100 };
+        this._originalQualitySettings = null;
+        this._qualityRestoreTimer = null;
     }
     
     initialize(config) {
@@ -602,6 +604,10 @@ class CesiumFlightApp {
         globe.showGroundAtmosphere = true;
         globe.depthTestAgainstTerrain = true;
         globe.terrainExaggeration = 1.0;
+        
+        // Set base color to black to avoid jarring blue during imagery transitions
+        globe.baseColor = Cesium.Color.BLACK;
+        scene.backgroundColor = Cesium.Color.BLACK;
         
         // Adjust fog for clearer terrain
         scene.fog.enabled = true;
@@ -977,20 +983,87 @@ class CesiumFlightApp {
         PerformanceReporter.report('memoryPressureHandled', true);
         
         const globe = this.viewer.scene.globe;
+        const scene = this.viewer.scene;
+        
+        // Store original settings on first memory pressure
+        if (!this._originalQualitySettings) {
+            this._originalQualitySettings = {
+                tileCacheSize: globe.tileCacheSize,
+                maximumMemoryUsage: globe.maximumMemoryUsage,
+                maximumScreenSpaceError: globe.maximumScreenSpaceError,
+                maximumTextureSize: scene.maximumTextureSize || 8192
+            };
+            console.log('[Cesium] Storing original quality settings:', this._originalQualitySettings);
+        }
+        
+        // Clear tile cache
         if (globe?.tileCache) {
             globe.tileCache.reset();
         }
         
-        // Reduce quality settings
-        globe.tileCacheSize = 5;
-        globe.maximumMemoryUsage = 64;
-        globe.maximumScreenSpaceError = 16;
+        // Apply gradual quality reduction (70% memory, 2x quality degradation)
+        globe.tileCacheSize = Math.floor(this._originalQualitySettings.tileCacheSize * 0.7);
+        globe.maximumMemoryUsage = Math.floor(this._originalQualitySettings.maximumMemoryUsage * 0.7);
+        globe.maximumScreenSpaceError = Math.min(this._originalQualitySettings.maximumScreenSpaceError * 2, 4.0);
+        scene.maximumTextureSize = 2048;
         
-        this.viewer.scene.maximumTextureSize = 512;
-        this.viewer.scene.requestRenderMode = true;
-        this.viewer.scene.requestRender();
+        console.log('[Cesium] Applied gradual quality reduction:', {
+            tileCacheSize: globe.tileCacheSize,
+            maximumMemoryUsage: globe.maximumMemoryUsage,
+            maximumScreenSpaceError: globe.maximumScreenSpaceError
+        });
         
+        // Request render with reduced quality
+        scene.requestRenderMode = true;
+        scene.requestRender();
+        
+        // Clear any existing restore timer
+        if (this._qualityRestoreTimer) {
+            clearTimeout(this._qualityRestoreTimer);
+        }
+        
+        // Schedule quality restoration after 30 seconds
+        this._qualityRestoreTimer = setTimeout(() => {
+            this.restoreQualitySettings();
+        }, 30000);
+        
+        console.log('[Cesium] Quality will be restored in 30 seconds');
+        
+        // Trigger garbage collection if available
         if (window.gc) window.gc();
+    }
+    
+    restoreQualitySettings() {
+        if (!this.viewer || !this._originalQualitySettings) return;
+        
+        const globe = this.viewer.scene.globe;
+        const scene = this.viewer.scene;
+        
+        console.log('[Cesium] Restoring original quality settings');
+        
+        // Restore original settings
+        globe.tileCacheSize = this._originalQualitySettings.tileCacheSize;
+        globe.maximumMemoryUsage = this._originalQualitySettings.maximumMemoryUsage;
+        globe.maximumScreenSpaceError = this._originalQualitySettings.maximumScreenSpaceError;
+        scene.maximumTextureSize = this._originalQualitySettings.maximumTextureSize;
+        
+        // Clear the restore timer
+        if (this._qualityRestoreTimer) {
+            clearTimeout(this._qualityRestoreTimer);
+            this._qualityRestoreTimer = null;
+        }
+        
+        // Request render with restored quality
+        scene.requestRenderMode = false;
+        scene.requestRender();
+        
+        console.log('[Cesium] Quality settings restored:', {
+            tileCacheSize: globe.tileCacheSize,
+            maximumMemoryUsage: globe.maximumMemoryUsage,
+            maximumScreenSpaceError: globe.maximumScreenSpaceError
+        });
+        
+        PerformanceReporter.report('qualityRestored', true);
     }
 }
 
@@ -1040,6 +1113,10 @@ function handleMemoryPressure() {
     cesiumApp?.handleMemoryPressure();
 }
 
+function restoreQualitySettings() {
+    cesiumApp?.restoreQualitySettings();
+}
+
 function checkMemory() {
     if (window.performance?.memory) {
         const memory = window.performance.memory;
@@ -1075,4 +1152,5 @@ window.changePlaybackSpeed = changePlaybackSpeed;
 window.toggleCameraFollow = toggleCameraFollow;
 window.cleanupCesium = cleanupCesium;
 window.handleMemoryPressure = handleMemoryPressure;
+window.restoreQualitySettings = restoreQualitySettings;
 window.checkMemory = checkMemory;
