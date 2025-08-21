@@ -114,8 +114,8 @@
             bottom: 110px;  /* Keep same height when stats shown */
         }
         
-        /* Minimal play button - Material dark theme matching Cesium */
-        #playButton {
+        /* Minimal control buttons - Material dark theme matching Cesium */
+        #playButton, #followButton {
             width: 32px;
             height: 32px;
             border-radius: 4px;
@@ -129,18 +129,22 @@
             -webkit-tap-highlight-color: transparent;
         }
         
-        #playButton:hover {
+        #playButton:hover, #followButton:hover {
             background-color: rgba(60, 60, 60, 0.9);
         }
         
-        #playButton:active {
+        #playButton:active, #followButton:active {
             background-color: rgba(70, 70, 70, 0.9);
         }
         
-        #playButton .material-icons {
+        #playButton .material-icons, #followButton .material-icons {
             font-size: 18px;
             color: rgba(255, 255, 255, 0.9);
             user-select: none;
+        }
+        
+        #followButton {
+            margin-left: 4px;
         }
         
         /* Minimal speed picker - Material dark theme */
@@ -189,20 +193,8 @@
         <button id="playButton" onclick="if(typeof togglePlayback === 'function') togglePlayback()">
             <span class="material-icons">play_arrow</span>
         </button>
-        <button id="followButton" onclick="if(typeof toggleCameraFollow === 'function') toggleCameraFollow()" style="
-            width: 32px;
-            height: 32px;
-            border-radius: 4px;
-            background-color: rgba(42, 42, 42, 0.8);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: background-color 0.2s;
-            margin-left: 4px;
-        " title="Toggle camera following">
-            <span class="material-icons" style="font-size: 18px; color: rgba(255, 255, 255, 0.9);">videocam</span>
+        <button id="followButton" onclick="if(typeof toggleCameraFollow === 'function') toggleCameraFollow()" title="Toggle camera following">
+            <span class="material-icons">videocam</span>
         </button>
         <select id="speedPicker" onchange="if(typeof changePlaybackSpeed === 'function') changePlaybackSpeed(this.value)">
             <option value="1">1x</option>

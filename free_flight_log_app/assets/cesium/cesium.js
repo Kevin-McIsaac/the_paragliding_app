@@ -2,20 +2,157 @@
 // Uses CustomDataSource, native time-dynamic properties, and efficient data management
 
 // ============================================================================
-// Backward Compatibility - cesiumLog shim
+// Constants and Configuration
 // ============================================================================
 
-// Define cesiumLog for backward compatibility with Flutter-injected code
-window.cesiumLog = {
-    debug: (message) => {
-        if (window.cesiumConfig?.debug) {
-            console.log('[Cesium Debug] ' + message);
-        }
-    },
-    info: (message) => console.log('[Cesium] ' + message),
-    error: (message) => console.error('[Cesium Error] ' + message),
-    warn: (message) => console.warn('[Cesium Warning] ' + message)
+const CONSTANTS = {
+    // Memory and Quality Settings
+    QUALITY_REDUCTION_FACTOR: 0.7,
+    QUALITY_ERROR_MULTIPLIER: 2.0,
+    QUALITY_RESTORE_DELAY_MS: 30000,
+    REDUCED_TEXTURE_SIZE: 2048,
+    MAX_SCREEN_SPACE_ERROR: 4.0,
+    
+    // Performance
+    BYTES_TO_MB: 1048576,
+    THROTTLE_INTERVAL_MS: 100,
+    
+    // Visualization
+    PILOT_POINT_SIZE: 16,
+    TRACK_LINE_WIDTH: 3.0,
+    CURTAIN_WALL_ALPHA: 0.1,
+    PLAYBACK_END_THRESHOLD: 0.5,
+    
+    // Default Values
+    DEFAULT_RIBBON_SECONDS: 5,
+    DEFAULT_RIBBON_WINDOW: 100,
+    DEFAULT_SPEED_MULTIPLIER: 60
 };
+
+// ============================================================================
+// Unified Logging System
+// ============================================================================
+
+class Logger {
+    static debug(message, data = null) {
+        if (window.cesiumConfig?.debug) {
+            this._log('debug', message, data);
+        }
+    }
+    
+    static info(message, data = null) {
+        this._log('info', message, data);
+    }
+    
+    static warn(message, data = null) {
+        this._log('warn', message, data);
+    }
+    
+    static error(message, data = null) {
+        this._log('error', message, data);
+    }
+    
+    static _log(level, message, data) {
+        const prefix = '[Cesium]';
+        const formattedMessage = `${prefix} ${message}`;
+        const logData = data ? (typeof data === 'object' ? JSON.stringify(data) : data) : '';
+        
+        switch(level) {
+            case 'debug':
+                console.log(formattedMessage, logData);
+                break;
+            case 'info':
+                console.log(formattedMessage, logData);
+                break;
+            case 'warn':
+                console.warn(formattedMessage, logData);
+                break;
+            case 'error':
+                console.error(formattedMessage, logData);
+                break;
+        }
+    }
+}
+
+// Backward compatibility shim
+window.cesiumLog = {
+    debug: (msg) => Logger.debug(msg),
+    info: (msg) => Logger.info(msg),
+    error: (msg) => Logger.error(msg),
+    warn: (msg) => Logger.warn(msg)
+};
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Calls a Flutter handler if available
+ * @param {string} handlerName - The handler name to call
+ * @param {*} data - Data to pass to the handler
+ */
+function callFlutterHandler(handlerName, data) {
+    if (window.flutter_inappwebview?.callHandler) {
+        window.flutter_inappwebview.callHandler(handlerName, data);
+    }
+}
+
+/**
+ * Creates a polyline primitive with the given configuration
+ * @param {Cesium.Viewer} viewer - The Cesium viewer
+ * @param {Array} positions - Array of Cartesian3 positions
+ * @param {Array} colors - Array of Color objects
+ * @param {number} width - Line width
+ * @returns {Cesium.Primitive} The created primitive
+ */
+function createPolylinePrimitive(viewer, positions, colors, width = CONSTANTS.TRACK_LINE_WIDTH) {
+    return viewer.scene.primitives.add(
+        new Cesium.Primitive({
+            geometryInstances: new Cesium.GeometryInstance({
+                geometry: new Cesium.PolylineGeometry({
+                    positions: positions,
+                    width: width,
+                    vertexFormat: Cesium.PolylineColorAppearance.VERTEX_FORMAT,
+                    colors: colors,
+                    colorsPerVertex: true
+                })
+            }),
+            appearance: new Cesium.PolylineColorAppearance({
+                translucent: true
+            }),
+            asynchronous: false
+        })
+    );
+}
+
+/**
+ * Gets the climb rate color based on the rate value
+ * @param {number} rate - The climb rate in m/s
+ * @returns {Cesium.Color} The appropriate color
+ */
+function getClimbRateColor(rate) {
+    if (rate >= 0) return Cesium.Color.GREEN;
+    if (rate > -1.5) return Cesium.Color.DODGERBLUE;
+    return Cesium.Color.RED;
+}
+
+/**
+ * Generates colors array for a track segment based on climb rates
+ * @param {Array} points - Array of IGC points with climbRate data
+ * @param {number} startIdx - Start index
+ * @param {number} endIdx - End index
+ * @returns {Array} Array of Cesium.Color objects
+ */
+function generateTrackColors(points, startIdx, endIdx) {
+    const colors = new Array(endIdx - startIdx + 1);
+    
+    for (let i = startIdx; i <= endIdx; i++) {
+        const climbRate = points[i].climbRate15s || points[i].climbRate || 0;
+        colors[i - startIdx] = getClimbRateColor(climbRate).withAlpha(0.9);
+    }
+    
+    return colors;
+}
 
 // ============================================================================
 // Performance Reporting to Flutter
@@ -23,13 +160,8 @@ window.cesiumLog = {
 
 class PerformanceReporter {
     static report(metric, value) {
-        // Log to console for visibility
-        console.log(`[Performance] ${metric}: ${typeof value === 'number' ? value.toFixed(2) + 'ms' : value}`);
-        
-        // Also send to Flutter
-        if (window.flutter_inappwebview?.callHandler) {
-            window.flutter_inappwebview.callHandler('performanceMetric', { metric, value });
-        }
+        Logger.info(`Performance: ${metric}`, typeof value === 'number' ? `${value.toFixed(2)}ms` : value);
+        callFlutterHandler('performanceMetric', { metric, value });
     }
     
     static measureTime(operation, fn) {
@@ -133,7 +265,7 @@ class FlightDataSource extends Cesium.CustomDataSource {
             position: positionProperty,
             orientation: new Cesium.VelocityOrientationProperty(positionProperty),
             point: {
-                pixelSize: 16,
+                pixelSize: CONSTANTS.PILOT_POINT_SIZE,
                 color: Cesium.Color.YELLOW,
                 outlineColor: Cesium.Color.BLACK,
                 outlineWidth: 3,
@@ -154,7 +286,7 @@ class FlightDataSource extends Cesium.CustomDataSource {
             wall: {
                 positions: this.positions,
                 maximumHeights: this.igcPoints.map(p => p.altitude),
-                material: Cesium.Color.DODGERBLUE.withAlpha(0.1),
+                material: Cesium.Color.DODGERBLUE.withAlpha(CONSTANTS.CURTAIN_WALL_ALPHA),
                 outline: false
             }
         });
@@ -173,13 +305,13 @@ class FlightDataSource extends Cesium.CustomDataSource {
                     if (!this._ribbonEnabled) return [];
                     return this._getTrailAltitudes(time);
                 }, false),
-                material: Cesium.Color.DODGERBLUE.withAlpha(0.1),
+                material: Cesium.Color.DODGERBLUE.withAlpha(CONSTANTS.CURTAIN_WALL_ALPHA),
                 outline: false
             }
         });
         
         this._ribbonEnabled = false;
-        this._ribbonSeconds = 3.0;
+        this._ribbonSeconds = CONSTANTS.DEFAULT_RIBBON_SECONDS;
     }
     
     enableRibbonMode(enabled) {
@@ -208,7 +340,7 @@ class FlightDataSource extends Cesium.CustomDataSource {
     
     _calculateRibbonWindow() {
         const viewer = cesiumApp?.viewer;
-        if (!viewer) return 100;
+        if (!viewer) return CONSTANTS.DEFAULT_RIBBON_WINDOW;
         
         const speedMultiplier = viewer.clock.multiplier || 1;
         const flightSeconds = this._ribbonSeconds * speedMultiplier;
@@ -297,48 +429,15 @@ class TrackPrimitiveCollection {
         const start = performance.now();
         
         const positions = this.flightData.positions;
-        const colors = this._generateColors(0, positions.length - 1);
-        
         if (positions.length < 2) return;
         
-        this.staticPrimitive = this.viewer.scene.primitives.add(
-            new Cesium.Primitive({
-                geometryInstances: new Cesium.GeometryInstance({
-                    geometry: new Cesium.PolylineGeometry({
-                        positions: positions,
-                        width: 3.0,
-                        vertexFormat: Cesium.PolylineColorAppearance.VERTEX_FORMAT,
-                        colors: colors,
-                        colorsPerVertex: true
-                    })
-                }),
-                appearance: new Cesium.PolylineColorAppearance({
-                    translucent: true
-                }),
-                asynchronous: false
-            })
-        );
+        const colors = generateTrackColors(this.flightData.igcPoints, 0, positions.length - 1);
+        this.staticPrimitive = createPolylinePrimitive(this.viewer, positions, colors);
         
         PerformanceReporter.report('staticTrackCreation', performance.now() - start);
     }
     
-    _generateColors(startIdx, endIdx) {
-        const colors = new Array(endIdx - startIdx + 1);
-        const points = this.flightData.igcPoints;
-        
-        for (let i = startIdx; i <= endIdx; i++) {
-            const climbRate = points[i].climbRate15s || points[i].climbRate || 0;
-            colors[i - startIdx] = this._getClimbRateColor(climbRate).withAlpha(0.9);
-        }
-        
-        return colors;
-    }
-    
-    _getClimbRateColor(rate) {
-        if (rate >= 0) return Cesium.Color.GREEN;
-        if (rate > -1.5) return Cesium.Color.DODGERBLUE;
-        return Cesium.Color.RED;
-    }
+    // Color generation now uses shared helper functions
     
     enableRibbonMode(enabled) {
         this._ribbonEnabled = enabled;
@@ -368,27 +467,11 @@ class TrackPrimitiveCollection {
         
         // Create new primitive
         const positions = this.flightData.positions.slice(startIdx, currentIdx + 1);
-        const colors = this._generateColors(startIdx, currentIdx);
+        const colors = generateTrackColors(this.flightData.igcPoints, startIdx, currentIdx);
         
         if (positions.length < 2) return;
         
-        const newPrimitive = this.viewer.scene.primitives.add(
-            new Cesium.Primitive({
-                geometryInstances: new Cesium.GeometryInstance({
-                    geometry: new Cesium.PolylineGeometry({
-                        positions: positions,
-                        width: 3.0,
-                        vertexFormat: Cesium.PolylineColorAppearance.VERTEX_FORMAT,
-                        colors: colors,
-                        colorsPerVertex: true
-                    })
-                }),
-                appearance: new Cesium.PolylineColorAppearance({
-                    translucent: true
-                }),
-                asynchronous: false
-            })
-        );
+        const newPrimitive = createPolylinePrimitive(this.viewer, positions, colors);
         
         // Remove old primitive after adding new one (double buffering)
         if (this.dynamicPrimitive) {
@@ -498,12 +581,16 @@ class StatisticsDisplay {
 class CesiumFlightApp {
     constructor() {
         this.viewer = null;
+        this.scene = null;  // Cached reference
+        this.camera = null; // Cached reference
+        this.clock = null;  // Cached reference
+        this.globe = null;  // Cached reference
         this.flightDataSource = null;
         this.trackPrimitives = null;
         this.statisticsDisplay = null;
         this.cameraFollowing = false;
         this._ribbonModeAuto = true;
-        this._updateThrottle = { lastUpdate: 0, interval: 100 };
+        this._updateThrottle = { lastUpdate: 0, interval: CONSTANTS.THROTTLE_INTERVAL_MS };
         this._originalQualitySettings = null;
         this._qualityRestoreTimer = null;
     }
@@ -515,7 +602,7 @@ class CesiumFlightApp {
             
             // Load initial track if provided
             if (config.trackPoints?.length > 0) {
-                setTimeout(() => this.loadFlightTrack(config.trackPoints), 100);
+                setTimeout(() => this.loadFlightTrack(config.trackPoints), CONSTANTS.THROTTLE_INTERVAL_MS);
             }
         });
     }
@@ -559,6 +646,12 @@ class CesiumFlightApp {
             creditContainer: document.getElementById('customCreditContainer')
         });
         
+        // Cache frequently accessed references for performance
+        this.scene = this.viewer.scene;
+        this.camera = this.viewer.camera;
+        this.clock = this.viewer.clock;
+        this.globe = this.scene.globe;
+        
         this._configureScene();
         this._setupInitialView(config);
         
@@ -588,7 +681,7 @@ class CesiumFlightApp {
             }
             
             // Also hide on initial load
-            setTimeout(hideImageryLabel, 100);
+            setTimeout(hideImageryLabel, CONSTANTS.THROTTLE_INTERVAL_MS);
         }
     }
     
@@ -624,8 +717,8 @@ class CesiumFlightApp {
     }
     
     _configureScene() {
-        const scene = this.viewer.scene;
-        const globe = scene.globe;
+        const scene = this.scene;
+        const globe = this.globe;
         
         // Enhanced terrain lighting for better depth perception
         globe.enableLighting = true;
@@ -667,7 +760,7 @@ class CesiumFlightApp {
     
     _setupInitialView(config) {
         if (!config.trackPoints?.length) {
-            this.viewer.camera.setView({
+            this.camera.setView({
                 destination: Cesium.Cartesian3.fromDegrees(config.lon, config.lat, config.altitude),
                 orientation: {
                     heading: 0,
@@ -682,16 +775,16 @@ class CesiumFlightApp {
             const sceneMode = config.savedSceneMode === '2D' ? Cesium.SceneMode.SCENE2D :
                              config.savedSceneMode === 'Columbus' ? Cesium.SceneMode.COLUMBUS_VIEW :
                              Cesium.SceneMode.SCENE3D;
-            this.viewer.scene.mode = sceneMode;
+            this.scene.mode = sceneMode;
         }
     }
     
     _setupEventHandlers() {
         // Clock tick handler
-        this.viewer.clock.onTick.addEventListener((clock) => this._onClockTick(clock));
+        this.clock.onTick.addEventListener((clock) => this._onClockTick(clock));
         
         // Scene mode change handler
-        this.viewer.scene.morphComplete.addEventListener(() => this._onSceneModeChange());
+        this.scene.morphComplete.addEventListener(() => this._onSceneModeChange());
         
         // Home button override
         if (this.viewer.homeButton?.viewModel) {
@@ -704,7 +797,7 @@ class CesiumFlightApp {
         }
         
         // Loading overlay
-        this.viewer.scene.globe.tileLoadProgressEvent.addEventListener((queuedTileCount) => {
+        this.globe.tileLoadProgressEvent.addEventListener((queuedTileCount) => {
             if (queuedTileCount === 0) {
                 document.getElementById('loadingOverlay').style.display = 'none';
             }
@@ -717,13 +810,10 @@ class CesiumFlightApp {
                 this.viewer.baseLayerPicker.viewModel, 
                 'selectedImagery'
             ).subscribe((providerViewModel) => {
-                if (providerViewModel && window.flutter_inappwebview?.callHandler) {
+                if (providerViewModel) {
                     // Notify Flutter of the map change
-                    window.flutter_inappwebview.callHandler(
-                        'onImageryProviderChanged', 
-                        providerViewModel.name
-                    );
-                    console.log('[Cesium] Imagery provider changed to:', providerViewModel.name);
+                    callFlutterHandler('onImageryProviderChanged', providerViewModel.name);
+                    Logger.info('Imagery provider changed to:', providerViewModel.name);
                 }
             });
         }
@@ -762,14 +852,14 @@ class CesiumFlightApp {
     }
     
     _configureClock() {
-        const clock = this.viewer.clock;
+        const clock = this.clock;
         const data = this.flightDataSource;
         
         clock.startTime = data.startTime.clone();
         clock.stopTime = data.stopTime.clone();
         clock.currentTime = data.startTime.clone();
         clock.clockRange = Cesium.ClockRange.CLAMPED;
-        clock.multiplier = 60;
+        clock.multiplier = CONSTANTS.DEFAULT_SPEED_MULTIPLIER;
         clock.shouldAnimate = false;
         
         if (this.viewer.timeline) {
@@ -795,8 +885,8 @@ class CesiumFlightApp {
             // Force timeline to redraw with new labels (idiomatic Cesium way)
             this.viewer.timeline.updateFromClock();
             this.viewer.timeline.zoomTo(
-                this.viewer.clock.startTime,
-                this.viewer.clock.stopTime
+                this.clock.startTime,
+                this.clock.stopTime
             );
         }
     }
@@ -807,7 +897,7 @@ class CesiumFlightApp {
         const boundingSphere = data.boundingSphere;
         
         // Step 1: High altitude view
-        this.viewer.camera.setView({
+        this.camera.setView({
             destination: Cesium.Cartesian3.fromDegrees(launch.longitude, launch.latitude, 30000000),
             orientation: {
                 heading: 0,
@@ -818,7 +908,7 @@ class CesiumFlightApp {
         
         // Step 2: Fly to bounding sphere
         setTimeout(() => {
-            this.viewer.camera.flyToBoundingSphere(boundingSphere, {
+            this.camera.flyToBoundingSphere(boundingSphere, {
                 duration: 5.0,
                 offset: new Cesium.HeadingPitchRange(
                     Cesium.Math.toRadians(0),
@@ -827,7 +917,7 @@ class CesiumFlightApp {
                 ),
                 complete: () => {
                     // Step 3: Final view angle
-                    this.viewer.camera.flyToBoundingSphere(boundingSphere, {
+                    this.camera.flyToBoundingSphere(boundingSphere, {
                         duration: 3.0,
                         offset: new Cesium.HeadingPitchRange(
                             Cesium.Math.toRadians(0),
@@ -844,7 +934,7 @@ class CesiumFlightApp {
         if (!this.flightDataSource) return;
         
         const boundingSphere = this.flightDataSource.boundingSphere;
-        this.viewer.camera.flyToBoundingSphere(boundingSphere, {
+        this.camera.flyToBoundingSphere(boundingSphere, {
             duration: 3.0,
             offset: new Cesium.HeadingPitchRange(
                 Cesium.Math.toRadians(0),
@@ -903,7 +993,7 @@ class CesiumFlightApp {
         const icon = button.querySelector('.material-icons');
         if (!icon) return;
         
-        const clock = this.viewer.clock;
+        const clock = this.clock;
         const atStart = Cesium.JulianDate.secondsDifference(clock.currentTime, clock.startTime) < 0.5;
         const atEnd = Cesium.JulianDate.compare(clock.currentTime, clock.stopTime) >= 0;
         
@@ -946,7 +1036,7 @@ class CesiumFlightApp {
         const modeString = this._getSceneModeString();
         
         if (window.flutter_inappwebview?.callHandler) {
-            window.flutter_inappwebview.callHandler('onSceneModeChanged', modeString);
+            callFlutterHandler('onSceneModeChanged', modeString);
         }
         
         // Update camera controls
@@ -1050,7 +1140,7 @@ class CesiumFlightApp {
                 maximumScreenSpaceError: globe.maximumScreenSpaceError,
                 maximumTextureSize: scene.maximumTextureSize || 8192
             };
-            console.log('[Cesium] Storing original quality settings:', this._originalQualitySettings);
+            Logger.debug('Storing original quality settings:', this._originalQualitySettings);
         }
         
         // Clear tile cache
@@ -1062,9 +1152,9 @@ class CesiumFlightApp {
         globe.tileCacheSize = Math.floor(this._originalQualitySettings.tileCacheSize * 0.7);
         globe.maximumMemoryUsage = Math.floor(this._originalQualitySettings.maximumMemoryUsage * 0.7);
         globe.maximumScreenSpaceError = Math.min(this._originalQualitySettings.maximumScreenSpaceError * 2, 4.0);
-        scene.maximumTextureSize = 2048;
+        scene.maximumTextureSize = CONSTANTS.REDUCED_TEXTURE_SIZE;
         
-        console.log('[Cesium] Applied gradual quality reduction:', {
+        Logger.info('Applied gradual quality reduction:', {
             tileCacheSize: globe.tileCacheSize,
             maximumMemoryUsage: globe.maximumMemoryUsage,
             maximumScreenSpaceError: globe.maximumScreenSpaceError
@@ -1084,7 +1174,7 @@ class CesiumFlightApp {
             this.restoreQualitySettings();
         }, 30000);
         
-        console.log('[Cesium] Quality will be restored in 30 seconds');
+        Logger.info('Quality will be restored in 30 seconds');
         
         // Trigger garbage collection if available
         if (window.gc) window.gc();
@@ -1096,7 +1186,7 @@ class CesiumFlightApp {
         const globe = this.viewer.scene.globe;
         const scene = this.viewer.scene;
         
-        console.log('[Cesium] Restoring original quality settings');
+        Logger.info('Restoring original quality settings');
         
         // Restore original settings
         globe.tileCacheSize = this._originalQualitySettings.tileCacheSize;
@@ -1114,7 +1204,7 @@ class CesiumFlightApp {
         scene.requestRenderMode = false;
         scene.requestRender();
         
-        console.log('[Cesium] Quality settings restored:', {
+        Logger.info('Quality settings restored:', {
             tileCacheSize: globe.tileCacheSize,
             maximumMemoryUsage: globe.maximumMemoryUsage,
             maximumScreenSpaceError: globe.maximumScreenSpaceError
@@ -1178,9 +1268,9 @@ function checkMemory() {
     if (window.performance?.memory) {
         const memory = window.performance.memory;
         return {
-            used: Math.round(memory.usedJSHeapSize / 1048576),
-            total: Math.round(memory.totalJSHeapSize / 1048576),
-            limit: Math.round(memory.jsHeapSizeLimit / 1048576)
+            used: Math.round(memory.usedJSHeapSize / CONSTANTS.BYTES_TO_MB),
+            total: Math.round(memory.totalJSHeapSize / CONSTANTS.BYTES_TO_MB),
+            limit: Math.round(memory.jsHeapSizeLimit / CONSTANTS.BYTES_TO_MB)
         };
     }
     return null;
