@@ -560,19 +560,6 @@ class CesiumFlightApp {
     
     _createImageryProviders() {
         return [
-            // High-resolution satellite imagery
-            new Cesium.ProviderViewModel({
-                name: 'Sentinel-2 Cloudless',
-                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerial.png'),
-                tooltip: 'High-resolution Sentinel-2 cloudless imagery (10m resolution)',
-                creationFunction: () => {
-                    // Try Sentinel-2 with fallback to Bing if it fails
-                    return Cesium.IonImageryProvider.fromAssetId(3954).catch((error) => {
-                        console.warn('Sentinel-2 failed to load, using Bing Aerial:', error);
-                        return Cesium.IonImageryProvider.fromAssetId(2);
-                    });
-                }
-            }),
             new Cesium.ProviderViewModel({
                 name: 'Bing Maps Aerial with Labels',
                 iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerialLabels.png'),
