@@ -709,6 +709,24 @@ class CesiumFlightApp {
                 document.getElementById('loadingOverlay').style.display = 'none';
             }
         });
+        
+        // Listen for base layer picker changes
+        if (this.viewer.baseLayerPicker && this.viewer.baseLayerPicker.viewModel) {
+            // Subscribe to imagery provider changes
+            Cesium.knockout.getObservable(
+                this.viewer.baseLayerPicker.viewModel, 
+                'selectedImagery'
+            ).subscribe((providerViewModel) => {
+                if (providerViewModel && window.flutter_inappwebview?.callHandler) {
+                    // Notify Flutter of the map change
+                    window.flutter_inappwebview.callHandler(
+                        'onImageryProviderChanged', 
+                        providerViewModel.name
+                    );
+                    console.log('[Cesium] Imagery provider changed to:', providerViewModel.name);
+                }
+            });
+        }
     }
     
     loadFlightTrack(igcPoints) {
