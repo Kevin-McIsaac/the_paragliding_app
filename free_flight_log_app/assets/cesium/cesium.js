@@ -764,7 +764,7 @@ class CesiumFlightApp {
         const offsetSeconds = data.timezoneOffsetSeconds;
         const timezone = data.timezone;
         
-        if (this.viewer.timeline && offsetSeconds !== 0) {
+        if (this.viewer.timeline) {
             this.viewer.timeline.makeLabel = (date) => {
                 const localDate = Cesium.JulianDate.addSeconds(date, offsetSeconds, new Cesium.JulianDate());
                 const gregorian = Cesium.JulianDate.toGregorianDate(localDate);
@@ -773,6 +773,13 @@ class CesiumFlightApp {
                 const seconds = Math.floor(gregorian.second).toString().padStart(2, '0');
                 return `${hours}:${minutes}:${seconds} ${timezone}`;
             };
+            
+            // Force timeline to redraw with new labels (idiomatic Cesium way)
+            this.viewer.timeline.updateFromClock();
+            this.viewer.timeline.zoomTo(
+                this.viewer.clock.startTime,
+                this.viewer.clock.stopTime
+            );
         }
     }
     
