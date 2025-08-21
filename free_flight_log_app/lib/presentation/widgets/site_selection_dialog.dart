@@ -353,7 +353,7 @@ class _SiteSelectionDialogState extends State<SiteSelectionDialog> {
           // Site item
           return Padding(
             padding: const EdgeInsets.only(left: 16),
-            child: ListTile(
+            child: RadioListTile<Site>(
               title: Text(
                 site.name,
                 style: site.name == 'Unknown'
@@ -364,18 +364,11 @@ class _SiteSelectionDialogState extends State<SiteSelectionDialog> {
               subtitle: site.altitude != null
                   ? Text('${site.altitude!.toInt()} m')
                   : null,
-              leading: Radio<Site>(
-                value: site,
-                groupValue: _selectedSite,
-                onChanged: (Site? value) {
-                  setState(() {
-                    _selectedSite = value;
-                  });
-                },
-              ),
-              onTap: () {
+              value: site,
+              groupValue: _selectedSite,
+              onChanged: (Site? value) {
                 setState(() {
-                  _selectedSite = site;
+                  _selectedSite = value;
                 });
               },
               dense: true,

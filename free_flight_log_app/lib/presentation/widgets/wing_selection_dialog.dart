@@ -215,23 +215,16 @@ class _WingSelectionDialogState extends State<WingSelectionDialog> {
                       itemCount: _filteredWings.length,
                       itemBuilder: (context, index) {
                         final wing = _filteredWings[index];
-                        return ListTile(
+                        return RadioListTile<Wing?>(
                           title: Text('${wing.manufacturer ?? 'Unknown'} ${wing.model ?? 'Unknown'}'),
                           subtitle: wing.size != null
                               ? Text('Size: ${wing.size}')
                               : null,
-                          leading: Radio<Wing>(
-                            value: wing,
-                            groupValue: _selectedWing,
-                            onChanged: (Wing? value) {
-                              setState(() {
-                                _selectedWing = value;
-                              });
-                            },
-                          ),
-                          onTap: () {
+                          value: wing,
+                          groupValue: _selectedWing,
+                          onChanged: (Wing? value) {
                             setState(() {
-                              _selectedWing = wing;
+                              _selectedWing = value;
                             });
                           },
                           dense: true,

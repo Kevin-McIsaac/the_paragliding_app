@@ -465,7 +465,7 @@ class IgcImportService {
       notes: 'Created from IGC: Type="$gliderType", ID="$gliderID"',
     );
 
-    LoggingService.info('IgcImportService: Creating wing "${wingName}" (manufacturer="$manufacturer", model="$model")');
+    LoggingService.info('IgcImportService: Creating wing "$wingName" (manufacturer="$manufacturer", model="$model")');
 
     final wingId = await _databaseService.insertWing(newWing);
     
