@@ -1,71 +1,544 @@
-// Cesium 3D Map JavaScript Module
-// Handles initialization, memory management, and lifecycle
+// Cesium 3D Map Module - Refactored with idiomatic patterns
+// Uses CustomDataSource, native time-dynamic properties, and efficient data management
 
 // ============================================================================
-// State Management
+// Performance Reporting to Flutter
 // ============================================================================
 
-// Unified state management
-const cesiumState = {
-    // Viewer and data
-    viewer: null,
-    igcPoints: [],
-    
-    // Flight visualization
-    flightTrack: {
-        staticPrimitive: null,
-        dynamicPrimitive: null,
-        curtainWallEntity: null,
-        dynamicCurtainEntity: null,
-        homeView: null
-    },
-    
-    // Playback
-    playback: {
-        pilotEntity: null,
-        positionProperty: null
-    },
-    
-    // Ribbon mode (fly-through)
-    ribbonMode: {
-        enabled: false,
-        showDynamicTrack: false,
-        lastWindowStart: -1,
-        lastWindowEnd: -1,
-        lastUpdateTime: null,
-        updateInterval: 100,
-        animationSeconds: 3.0,
-        onTickCallback: null
-    }
-};
-
-// Backward compatibility aliases
-let viewer = null;
-let igcPoints = [];
-
-// Simplified logging
-const cesiumLog = {
-    debug: (message) => {
-        if (window.cesiumConfig && window.cesiumConfig.debug) {
-            console.log('[Cesium Debug] ' + message);
+class PerformanceReporter {
+    static report(metric, value) {
+        // Log to console for visibility
+        console.log(`[Performance] ${metric}: ${typeof value === 'number' ? value.toFixed(2) + 'ms' : value}`);
+        
+        // Also send to Flutter
+        if (window.flutter_inappwebview?.callHandler) {
+            window.flutter_inappwebview.callHandler('performanceMetric', { metric, value });
         }
-    },
-    info: (message) => console.log('[Cesium] ' + message),
-    error: (message) => console.error('[Cesium Error] ' + message)
-};
+    }
+    
+    static measureTime(operation, fn) {
+        const start = performance.now();
+        const result = fn();
+        const duration = performance.now() - start;
+        this.report(operation, duration);
+        return result;
+    }
+}
 
-// Main initialization function
-function initializeCesium(config) {
-    // Set Cesium Ion token
-    Cesium.Ion.defaultAccessToken = config.token;
+// ============================================================================
+// Flight Data Source - Idiomatic Cesium CustomDataSource
+// ============================================================================
+
+class FlightDataSource extends Cesium.CustomDataSource {
+    constructor(name, igcPoints) {
+        super(name);
+        
+        // Store raw data
+        this.igcPoints = igcPoints;
+        this.positions = [];
+        this.times = [];
+        this.timezone = igcPoints[0]?.timezone || '+00:00';
+        this.timezoneOffsetSeconds = this._parseTimezoneOffset(this.timezone);
+        
+        // Process data once
+        this._processFlightData();
+        
+        // Create entities
+        this._createPilotEntity();
+        this._createCurtainWall();
+    }
     
+    _parseTimezoneOffset(timezone) {
+        const match = timezone.match(/^([+-])(\d{2}):(\d{2})$/);
+        if (!match) return 0;
+        
+        const sign = match[1] === '+' ? 1 : -1;
+        const hours = parseInt(match[2], 10);
+        const minutes = parseInt(match[3], 10);
+        return sign * ((hours * 3600) + (minutes * 60));
+    }
     
-    // Store track points if provided during initialization
-    const hasInitialTrack = config.trackPoints && config.trackPoints.length > 0;
+    _processFlightData() {
+        const processStart = performance.now();
+        
+        // Build arrays once
+        this.times = new Array(this.igcPoints.length);
+        this.positions = new Array(this.igcPoints.length);
+        
+        for (let i = 0; i < this.igcPoints.length; i++) {
+            const point = this.igcPoints[i];
+            this.times[i] = Cesium.JulianDate.fromIso8601(point.timestamp);
+            this.positions[i] = Cesium.Cartesian3.fromDegrees(
+                point.longitude, 
+                point.latitude, 
+                point.altitude
+            );
+        }
+        
+        // Calculate time bounds
+        this.startTime = this.times[0];
+        this.stopTime = this.times[this.times.length - 1];
+        this.totalDuration = Cesium.JulianDate.secondsDifference(this.stopTime, this.startTime);
+        
+        // Calculate bounding sphere for camera operations
+        this.boundingSphere = Cesium.BoundingSphere.fromPoints(this.positions);
+        
+        PerformanceReporter.report('dataProcessing', performance.now() - processStart);
+    }
     
-    try {
+    _createPilotEntity() {
+        // Create position property with bulk add
+        const positionProperty = new Cesium.SampledPositionProperty();
+        positionProperty.setInterpolationOptions({
+            interpolationDegree: 1,  // Linear for velocity calculation
+            interpolationAlgorithm: Cesium.LinearApproximation
+        });
+        positionProperty.forwardExtrapolationType = Cesium.ExtrapolationType.HOLD;
+        positionProperty.backwardExtrapolationType = Cesium.ExtrapolationType.HOLD;
+        
+        // Add all samples at once
+        const bulkAddStart = performance.now();
+        positionProperty.addSamples(this.times, this.positions);
+        PerformanceReporter.report('bulkPositionAdd', performance.now() - bulkAddStart);
+        
+        // Store position property for reuse
+        this.positionProperty = positionProperty;
+        
+        // Create pilot entity
+        this.pilotEntity = this.entities.add({
+            id: 'pilot',
+            name: 'Pilot',
+            availability: new Cesium.TimeIntervalCollection([
+                new Cesium.TimeInterval({
+                    start: this.startTime,
+                    stop: this.stopTime
+                })
+            ]),
+            position: positionProperty,
+            orientation: new Cesium.VelocityOrientationProperty(positionProperty),
+            point: {
+                pixelSize: 16,
+                color: Cesium.Color.YELLOW,
+                outlineColor: Cesium.Color.BLACK,
+                outlineWidth: 3,
+                heightReference: Cesium.HeightReference.NONE,
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                scaleByDistance: new Cesium.NearFarScalar(1000, 1.5, 100000, 0.5)
+            },
+            viewFrom: new Cesium.Cartesian3(0.0, -1000.0, 500.0)
+        });
+    }
+    
+    _createCurtainWall() {
+        // Static curtain wall
+        this.staticCurtainEntity = this.entities.add({
+            id: 'static-curtain',
+            name: 'Flight Track Curtain',
+            show: true,
+            wall: {
+                positions: this.positions,
+                maximumHeights: this.igcPoints.map(p => p.altitude),
+                material: Cesium.Color.DODGERBLUE.withAlpha(0.1),
+                outline: false
+            }
+        });
+        
+        // Dynamic curtain wall for ribbon mode
+        this.dynamicCurtainEntity = this.entities.add({
+            id: 'dynamic-curtain',
+            name: 'Dynamic Flight Curtain',
+            show: false,
+            wall: {
+                positions: new Cesium.CallbackProperty((time) => {
+                    if (!this._ribbonEnabled) return [];
+                    return this._getTrailPositions(time);
+                }, false),
+                maximumHeights: new Cesium.CallbackProperty((time) => {
+                    if (!this._ribbonEnabled) return [];
+                    return this._getTrailAltitudes(time);
+                }, false),
+                material: Cesium.Color.DODGERBLUE.withAlpha(0.1),
+                outline: false
+            }
+        });
+        
+        this._ribbonEnabled = false;
+        this._ribbonSeconds = 3.0;
+    }
+    
+    enableRibbonMode(enabled) {
+        this._ribbonEnabled = enabled;
+        this.staticCurtainEntity.show = !enabled;
+        this.dynamicCurtainEntity.show = enabled;
+    }
+    
+    _getTrailPositions(currentTime) {
+        const index = this._findTimeIndex(currentTime);
+        if (index < 0) return [];
+        
+        const windowSize = this._calculateRibbonWindow();
+        const startIdx = Math.max(0, index - windowSize + 1);
+        return this.positions.slice(startIdx, index + 1);
+    }
+    
+    _getTrailAltitudes(currentTime) {
+        const index = this._findTimeIndex(currentTime);
+        if (index < 0) return [];
+        
+        const windowSize = this._calculateRibbonWindow();
+        const startIdx = Math.max(0, index - windowSize + 1);
+        return this.igcPoints.slice(startIdx, index + 1).map(p => p.altitude);
+    }
+    
+    _calculateRibbonWindow() {
+        const viewer = cesiumApp?.viewer;
+        if (!viewer) return 100;
+        
+        const speedMultiplier = viewer.clock.multiplier || 1;
+        const flightSeconds = this._ribbonSeconds * speedMultiplier;
+        const pointsPerSecond = this.igcPoints.length / this.totalDuration;
+        return Math.ceil(flightSeconds * pointsPerSecond);
+    }
+    
+    _findTimeIndex(time) {
+        // Binary search for efficiency
+        let left = 0;
+        let right = this.times.length - 1;
+        
+        while (left <= right) {
+            const mid = Math.floor((left + right) / 2);
+            const cmp = Cesium.JulianDate.compare(this.times[mid], time);
+            
+            if (cmp < 0) left = mid + 1;
+            else if (cmp > 0) right = mid - 1;
+            else return mid;
+        }
+        
+        return Math.max(0, left - 1);
+    }
+    
+    getStatisticsAt(time) {
+        const index = this._findTimeIndex(time);
+        if (index < 0 || index >= this.igcPoints.length) return null;
+        
+        const point = this.igcPoints[index];
+        
+        // Calculate speed if not provided
+        let speed = point.groundSpeed || 0;
+        if (!speed && index > 0) {
+            const prevPoint = this.igcPoints[index - 1];
+            const distance = Cesium.Cartesian3.distance(
+                this.positions[index - 1],
+                this.positions[index]
+            );
+            const timeDiff = Cesium.JulianDate.secondsDifference(
+                this.times[index],
+                this.times[index - 1]
+            );
+            if (timeDiff > 0) {
+                speed = (distance / timeDiff) * 3.6; // m/s to km/h
+            }
+        }
+        
+        return {
+            altitude: point.gpsAltitude || point.altitude || 0,
+            climbRate: point.climbRate || 0,
+            speed: speed,
+            time: this.times[index],
+            localTime: this._toLocalTime(this.times[index])
+        };
+    }
+    
+    _toLocalTime(julianDate) {
+        if (this.timezoneOffsetSeconds === 0) return julianDate;
+        return Cesium.JulianDate.addSeconds(
+            julianDate, 
+            this.timezoneOffsetSeconds, 
+            new Cesium.JulianDate()
+        );
+    }
+}
+
+// ============================================================================
+// Track Primitive Collection - Manages colored track primitives
+// ============================================================================
+
+class TrackPrimitiveCollection {
+    constructor(viewer, flightData) {
+        this.viewer = viewer;
+        this.flightData = flightData;
+        this.staticPrimitive = null;
+        this.dynamicPrimitive = null;
+        this._ribbonEnabled = false;
+        this._lastDynamicWindow = { start: -1, end: -1 };
+        
+        // Create static track immediately
+        this._createStaticTrack();
+    }
+    
+    _createStaticTrack() {
+        const start = performance.now();
+        
+        const positions = this.flightData.positions;
+        const colors = this._generateColors(0, positions.length - 1);
+        
+        if (positions.length < 2) return;
+        
+        this.staticPrimitive = this.viewer.scene.primitives.add(
+            new Cesium.Primitive({
+                geometryInstances: new Cesium.GeometryInstance({
+                    geometry: new Cesium.PolylineGeometry({
+                        positions: positions,
+                        width: 3.0,
+                        vertexFormat: Cesium.PolylineColorAppearance.VERTEX_FORMAT,
+                        colors: colors,
+                        colorsPerVertex: true
+                    })
+                }),
+                appearance: new Cesium.PolylineColorAppearance({
+                    translucent: true
+                }),
+                asynchronous: false
+            })
+        );
+        
+        PerformanceReporter.report('staticTrackCreation', performance.now() - start);
+    }
+    
+    _generateColors(startIdx, endIdx) {
+        const colors = new Array(endIdx - startIdx + 1);
+        const points = this.flightData.igcPoints;
+        
+        for (let i = startIdx; i <= endIdx; i++) {
+            const climbRate = points[i].climbRate15s || points[i].climbRate || 0;
+            colors[i - startIdx] = this._getClimbRateColor(climbRate).withAlpha(0.9);
+        }
+        
+        return colors;
+    }
+    
+    _getClimbRateColor(rate) {
+        if (rate >= 0) return Cesium.Color.GREEN;
+        if (rate > -1.5) return Cesium.Color.DODGERBLUE;
+        return Cesium.Color.RED;
+    }
+    
+    enableRibbonMode(enabled) {
+        this._ribbonEnabled = enabled;
+        this.staticPrimitive.show = !enabled;
+        
+        if (!enabled && this.dynamicPrimitive) {
+            this.viewer.scene.primitives.remove(this.dynamicPrimitive);
+            this.dynamicPrimitive = null;
+            this._lastDynamicWindow = { start: -1, end: -1 };
+        }
+    }
+    
+    updateDynamicTrack(currentTime) {
+        if (!this._ribbonEnabled) return;
+        
+        const currentIdx = this.flightData._findTimeIndex(currentTime);
+        if (currentIdx < 0) return;
+        
+        const windowSize = this.flightData._calculateRibbonWindow();
+        const startIdx = Math.max(0, currentIdx - windowSize + 1);
+        
+        // Skip if window hasn't changed
+        if (startIdx === this._lastDynamicWindow.start && 
+            currentIdx === this._lastDynamicWindow.end) {
+            return;
+        }
+        
+        // Create new primitive
+        const positions = this.flightData.positions.slice(startIdx, currentIdx + 1);
+        const colors = this._generateColors(startIdx, currentIdx);
+        
+        if (positions.length < 2) return;
+        
+        const newPrimitive = this.viewer.scene.primitives.add(
+            new Cesium.Primitive({
+                geometryInstances: new Cesium.GeometryInstance({
+                    geometry: new Cesium.PolylineGeometry({
+                        positions: positions,
+                        width: 3.0,
+                        vertexFormat: Cesium.PolylineColorAppearance.VERTEX_FORMAT,
+                        colors: colors,
+                        colorsPerVertex: true
+                    })
+                }),
+                appearance: new Cesium.PolylineColorAppearance({
+                    translucent: true
+                }),
+                asynchronous: false
+            })
+        );
+        
+        // Remove old primitive after adding new one (double buffering)
+        if (this.dynamicPrimitive) {
+            this.viewer.scene.primitives.remove(this.dynamicPrimitive);
+        }
+        
+        this.dynamicPrimitive = newPrimitive;
+        this._lastDynamicWindow = { start: startIdx, end: currentIdx };
+    }
+    
+    destroy() {
+        if (this.staticPrimitive) {
+            this.viewer.scene.primitives.remove(this.staticPrimitive);
+        }
+        if (this.dynamicPrimitive) {
+            this.viewer.scene.primitives.remove(this.dynamicPrimitive);
+        }
+    }
+}
+
+// ============================================================================
+// Statistics Display Manager
+// ============================================================================
+
+class StatisticsDisplay {
+    constructor(flightData) {
+        this.flightData = flightData;
+        this.container = document.getElementById('statsContainer');
+        this.cesiumContainer = document.getElementById('cesiumContainer');
+        this.playbackControls = document.getElementById('playbackControls');
+    }
+    
+    show() {
+        if (this.container) {
+            this.container.classList.add('visible');
+            this.container.innerHTML = '<span>Initializing...</span>';
+        }
+        if (this.cesiumContainer) {
+            this.cesiumContainer.classList.add('with-stats');
+        }
+        if (this.playbackControls) {
+            this.playbackControls.classList.add('visible', 'with-stats');
+        }
+    }
+    
+    hide() {
+        if (this.container) {
+            this.container.classList.remove('visible');
+            this.container.innerHTML = '';
+        }
+        if (this.cesiumContainer) {
+            this.cesiumContainer.classList.remove('with-stats');
+        }
+        if (this.playbackControls) {
+            this.playbackControls.classList.remove('visible', 'with-stats');
+        }
+    }
+    
+    update(time) {
+        if (!this.container || !this.container.classList.contains('visible')) return;
+        
+        const stats = this.flightData.getStatisticsAt(time);
+        if (!stats) return;
+        
+        // Format time
+        const gregorian = Cesium.JulianDate.toGregorianDate(stats.localTime);
+        const timeStr = `${gregorian.hour.toString().padStart(2, '0')}:${gregorian.minute.toString().padStart(2, '0')}`;
+        const tzLabel = this.flightData.timezone ? ` (${this.flightData.timezone})` : '';
+        
+        // Choose climb icon
+        const climbIcon = stats.climbRate > 0.1 ? 'trending_up' : 
+                         stats.climbRate < -0.1 ? 'trending_down' : 'trending_flat';
+        const climbSign = stats.climbRate >= 0 ? '+' : '';
+        
+        // Update HTML
+        this.container.innerHTML = `
+            <div class="stat-item">
+                <i class="material-icons">height</i>
+                <div class="stat-value">${stats.altitude.toFixed(0)}m</div>
+                <div class="stat-label">Altitude</div>
+            </div>
+            <div class="stat-item">
+                <i class="material-icons">${climbIcon}</i>
+                <div class="stat-value">${climbSign}${stats.climbRate.toFixed(1)}m/s</div>
+                <div class="stat-label">Climb</div>
+            </div>
+            <div class="stat-item">
+                <i class="material-icons">speed</i>
+                <div class="stat-value">${stats.speed.toFixed(1)}km/h</div>
+                <div class="stat-label">Speed</div>
+            </div>
+            <div class="stat-item">
+                <i class="material-icons">access_time</i>
+                <div class="stat-value">${timeStr}</div>
+                <div class="stat-label">Time${tzLabel}</div>
+            </div>
+        `;
+    }
+}
+
+// ============================================================================
+// Main Cesium Flight Application
+// ============================================================================
+
+class CesiumFlightApp {
+    constructor() {
+        this.viewer = null;
+        this.flightDataSource = null;
+        this.trackPrimitives = null;
+        this.statisticsDisplay = null;
+        this.cameraFollowing = false;
+        this._ribbonModeAuto = true;
+        this._updateThrottle = { lastUpdate: 0, interval: 100 };
+    }
+    
+    initialize(config) {
+        PerformanceReporter.measureTime('initialization', () => {
+            this._createViewer(config);
+            this._setupEventHandlers();
+            
+            // Load initial track if provided
+            if (config.trackPoints?.length > 0) {
+                setTimeout(() => this.loadFlightTrack(config.trackPoints), 100);
+            }
+        });
+    }
+    
+    _createViewer(config) {
         // Essential imagery providers
-        const imageryViewModels = [
+        const imageryProviders = this._createImageryProviders();
+        const selectedProvider = config.savedBaseMap ? 
+            imageryProviders.find(vm => vm.name === config.savedBaseMap) || imageryProviders[0] :
+            imageryProviders[0];
+        
+        // Create viewer with optimized settings
+        this.viewer = new Cesium.Viewer("cesiumContainer", {
+            terrain: Cesium.Terrain.fromWorldTerrain({
+                requestWaterMask: false,
+                requestVertexNormals: true
+            }),
+            requestRenderMode: true,
+            maximumRenderTimeChange: Infinity,
+            
+            // UI controls
+            baseLayerPicker: true,
+            imageryProviderViewModels: imageryProviders,
+            selectedImageryProviderViewModel: selectedProvider,
+            geocoder: true,
+            homeButton: true,
+            sceneModePicker: true,
+            navigationHelpButton: true,
+            navigationInstructionsInitiallyVisible: config.savedNavigationHelpDialogOpen || false,
+            animation: false,
+            timeline: true,
+            fullscreenButton: true,
+            vrButton: false,
+            shadows: false,
+            shouldAnimate: false,
+            creditContainer: document.getElementById('customCreditContainer')
+        });
+        
+        this._configureScene();
+        this._setupInitialView(config);
+    }
+    
+    _createImageryProviders() {
+        return [
             new Cesium.ProviderViewModel({
                 name: 'Bing Maps Aerial with Labels',
                 iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerialLabels.png'),
@@ -93,109 +566,44 @@ function initializeCesium(config) {
                 })
             })
         ];
+    }
+    
+    _configureScene() {
+        const scene = this.viewer.scene;
+        const globe = scene.globe;
         
-        // Apply saved base map preference or use default
-        const selectedImageryProvider = config.savedBaseMap ? 
-            imageryViewModels.find(vm => vm.name === config.savedBaseMap) || imageryViewModels[0] :
-            imageryViewModels[0];
+        // Quality settings
+        globe.enableLighting = false;
+        globe.showGroundAtmosphere = true;
+        globe.depthTestAgainstTerrain = true;
+        globe.terrainExaggeration = 1.0;
         
-        // Simplified Cesium viewer settings
-        viewer = new Cesium.Viewer("cesiumContainer", {
-            terrain: Cesium.Terrain.fromWorldTerrain({
-                requestWaterMask: false,
-                requestVertexNormals: true
-            }),
-            requestRenderMode: true,  // Only render on demand
-            maximumRenderTimeChange: Infinity,
-            
-            // Essential UI controls
-            baseLayerPicker: true,
-            imageryProviderViewModels: imageryViewModels,
-            selectedImageryProviderViewModel: selectedImageryProvider,
-            geocoder: true,
-            homeButton: true,
-            sceneModePicker: true,
-            navigationHelpButton: true,
-            navigationInstructionsInitiallyVisible: config.savedNavigationHelpDialogOpen || false,
-            animation: false,  // Disabled - using custom mobile play button
-            timeline: true,   // Disabled - using custom mobile play button
-            fullscreenButton: true,
-            vrButton: false,
-            shadows: false,
-            shouldAnimate: false,  // Start paused
-            
-            // Custom credit container to minimize Ion branding
-            creditContainer: document.getElementById('customCreditContainer'),
-        });
+        scene.fog.enabled = true;
+        scene.fog.density = 0.0001;
+        scene.fog.screenSpaceErrorFactor = 2.0;
         
+        scene.highDynamicRange = true;
+        scene.fxaa = true;
+        scene.msaaSamples = 8;
         
-        // Configure scene for better quality
-        viewer.scene.globe.enableLighting = false;
-        viewer.scene.globe.showGroundAtmosphere = true;  // Enable atmosphere for better visuals
-        viewer.scene.fog.enabled = true;  // Enable fog for depth perception
-        viewer.scene.fog.density = 0.0001;  // Reduce fog density for clearer distant views
-        viewer.scene.fog.screenSpaceErrorFactor = 2.0;  // Adjust fog based on terrain detail
-        viewer.scene.globe.depthTestAgainstTerrain = true;  // Enable terrain occlusion
+        // Performance settings
+        globe.tileCacheSize = 300;
+        globe.preloadSiblings = true;
+        globe.preloadAncestors = true;
+        globe.maximumMemoryUsage = 512;
+        globe.maximumScreenSpaceError = 2;
         
-        // Configure camera collision detection to prevent going under terrain
-        const controller = viewer.scene.screenSpaceCameraController;
-        controller.enableCollisionDetection = true;  // Prevent camera from going through terrain
-        controller.minimumZoomDistance = 10.0;  // Minimum 10 meters from surface
-        controller.minimumCollisionTerrainHeight = 5000.0;  // Start collision detection at 5km altitude
-        controller.collisionDetectionHeightBuffer = 10.0;  // Buffer for smoother collision behavior
-        
-        // Enable HDR rendering for better dynamic range
-        viewer.scene.highDynamicRange = true;
-        
-        // Enhanced tile cache management for quality
-        viewer.scene.globe.tileCacheSize = 300;  // Increased cache for smoother panning
-        viewer.scene.globe.preloadSiblings = true;  // Preload adjacent tiles for smoother panning
-        viewer.scene.globe.preloadAncestors = true;  // Preload parent tiles for better loading
-        
-        // Tile memory budget - increase for better quality
-        viewer.scene.globe.maximumMemoryUsage = 512;  // Higher memory limit for better quality
-        
-        // Better quality with reasonable performance
-        viewer.scene.globe.maximumScreenSpaceError = 2;  // Higher terrain detail for better clarity
-        
-        // Higher texture resolution
-        viewer.scene.maximumTextureSize = 2048;  // Higher resolution textures
-        
-        // Optimize texture atlas for better memory efficiency
-        viewer.scene.globe.textureCache = viewer.scene.globe.textureCache || {};
-        viewer.scene.globe.maximumTextureAtlasMemory = 256 * 1024 * 1024;  // 256MB texture atlas limit
-        
-        // Set explicit tile load limits
-        viewer.scene.globe.loadingDescendantLimit = 15;  // Balanced concurrent tile loads
-        viewer.scene.globe.immediatelyLoadDesiredLevelOfDetail = false;  // Progressive loading for better performance
-        
-        // Enable FXAA for better edge quality
-        viewer.scene.fxaa = true;
-        viewer.scene.msaaSamples = 8;  // Increased MSAA for smoother edges
-        
-        // Set terrain exaggeration to 1.0 for accurate GPS altitude representation
-        viewer.scene.globe.terrainExaggeration = 1.0;  // No exaggeration - true GPS altitudes
-        viewer.scene.globe.terrainExaggerationRelativeHeight = 0.0;
-        
-        // Configure imagery provider for better performance
-        const imageryProvider = viewer.imageryLayers.get(0);
-        if (imageryProvider) {
-            imageryProvider.brightness = 1.0;
-            imageryProvider.contrast = 1.0;
-            imageryProvider.saturation = 1.0;
-        }
-        
-        // Apply saved scene mode preference
-        if (config.savedSceneMode && config.savedSceneMode !== '3D') {
-            const sceneMode = config.savedSceneMode === '2D' ? Cesium.SceneMode.SCENE2D :
-                             config.savedSceneMode === 'Columbus' ? Cesium.SceneMode.COLUMBUS_VIEW :
-                             Cesium.SceneMode.SCENE3D;
-            viewer.scene.mode = sceneMode;
-        }
-        
-        // Set initial camera view if no track points provided
-        if (!hasInitialTrack) {
-            viewer.camera.setView({
+        // Camera controls
+        const controller = scene.screenSpaceCameraController;
+        controller.enableCollisionDetection = true;
+        controller.minimumZoomDistance = 10.0;
+        controller.minimumCollisionTerrainHeight = 5000.0;
+        controller.collisionDetectionHeightBuffer = 10.0;
+    }
+    
+    _setupInitialView(config) {
+        if (!config.trackPoints?.length) {
+            this.viewer.camera.setView({
                 destination: Cesium.Cartesian3.fromDegrees(config.lon, config.lat, config.altitude),
                 orientation: {
                     heading: 0,
@@ -205,756 +613,409 @@ function initializeCesium(config) {
             });
         }
         
-        // Basic layer picker event handling
-        if (viewer.baseLayerPicker) {
-            const imageryObservable = Cesium.knockout.getObservable(
-                viewer.baseLayerPicker.viewModel, 
-                'selectedImagery'
-            );
-            imageryObservable.subscribe(function(newImagery) {
-                if (newImagery && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-                    window.flutter_inappwebview.callHandler('onImageryProviderChanged', newImagery.name);
+        // Apply saved scene mode
+        if (config.savedSceneMode && config.savedSceneMode !== '3D') {
+            const sceneMode = config.savedSceneMode === '2D' ? Cesium.SceneMode.SCENE2D :
+                             config.savedSceneMode === 'Columbus' ? Cesium.SceneMode.COLUMBUS_VIEW :
+                             Cesium.SceneMode.SCENE3D;
+            this.viewer.scene.mode = sceneMode;
+        }
+    }
+    
+    _setupEventHandlers() {
+        // Clock tick handler
+        this.viewer.clock.onTick.addEventListener((clock) => this._onClockTick(clock));
+        
+        // Scene mode change handler
+        this.viewer.scene.morphComplete.addEventListener(() => this._onSceneModeChange());
+        
+        // Home button override
+        if (this.viewer.homeButton?.viewModel) {
+            this.viewer.homeButton.viewModel.command.beforeExecute.addEventListener((commandInfo) => {
+                if (this.flightDataSource?.boundingSphere) {
+                    commandInfo.cancel = true;
+                    this._flyToFlightTrack();
                 }
             });
         }
         
-        // Simple loading overlay handler
-        const tileLoadHandler = function(queuedTileCount) {
+        // Loading overlay
+        this.viewer.scene.globe.tileLoadProgressEvent.addEventListener((queuedTileCount) => {
             if (queuedTileCount === 0) {
                 document.getElementById('loadingOverlay').style.display = 'none';
-                viewer.scene.globe.tileLoadProgressEvent.removeEventListener(tileLoadHandler);
             }
-        };
-        viewer.scene.globe.tileLoadProgressEvent.addEventListener(tileLoadHandler);
+        });
+    }
+    
+    loadFlightTrack(igcPoints) {
+        if (!igcPoints?.length) return;
         
-        // Fly-through mode is automatic based on playback state
-        
-        // If track points were provided, create the track immediately
-        if (hasInitialTrack) {
-            // Use a small delay to ensure viewer is fully ready
-            setTimeout(() => {
-                createColoredFlightTrack(config.trackPoints);
-            }, 100);
-        }
-        
-        // Store viewer globally for cleanup
-        window.viewer = viewer;
-        cesiumState.viewer = viewer;
-        
-        // Add scene mode change listener
-        viewer.scene.morphComplete.addEventListener(onSceneModeChanged);
-        
-        // Track navigation help dialog state changes for saving preferences
-        if (viewer.navigationHelpButton && viewer.navigationHelpButton.viewModel) {
-            const navHelpVM = viewer.navigationHelpButton.viewModel;
+        PerformanceReporter.measureTime('totalTrackLoad', () => {
+            // Clear existing data
+            this._clearAll();
             
-            // Check if showInstructions observable exists (indicates dialog state)
-            if (navHelpVM.showInstructions !== undefined) {
-                const instructionsObservable = Cesium.knockout.getObservable(navHelpVM, 'showInstructions');
-                if (instructionsObservable) {
-                    // The dialog is already in the correct initial state thanks to navigationInstructionsInitiallyVisible
-                    // Now we just need to track future changes for saving preferences
-                    
-                    // Use a flag to prevent saving the initial state
-                    let isInitialState = true;
-                    setTimeout(function() {
-                        isInitialState = false;
-                        cesiumLog.info('Navigation help dialog initialized with saved preference: ' + 
-                                      (config.savedNavigationHelpDialogOpen ? 'open' : 'closed'));
-                    }, 1000);
-                    
-                    // Subscribe to future changes
-                    instructionsObservable.subscribe(function(isShowing) {
-                        cesiumLog.info('Navigation help dialog ' + (isShowing ? 'opened' : 'closed') + 
-                                     (isInitialState ? ' (initial)' : ' (user action)'));
-                        // Only save if this is a user action, not the initial state
-                        if (!isInitialState && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-                            window.flutter_inappwebview.callHandler('onNavigationHelpDialogStateChanged', isShowing);
-                        }
-                    });
-                }
-            }
-        }
-        
-        // Basic home button behavior - custom flight track view if available
-        if (viewer.homeButton && viewer.homeButton.viewModel) {
-            viewer.homeButton.viewModel.command.beforeExecute.addEventListener(function(commandInfo) {
-                if (cesiumState.flightTrack.staticPrimitive && cesiumState.flightTrack.homeView?.boundingSphere) {
-                    commandInfo.cancel = true;
-                    viewer.camera.flyToBoundingSphere(cesiumState.flightTrack.homeView.boundingSphere, {
-                        duration: 3.0,
-                        offset: cesiumState.flightTrack.homeView.offset
-                    });
-                }
-            });
-        }
-        
-    } catch (error) {
-        cesiumLog.error('Initialization error: ' + error.message);
-        if (config.debug) {
-            cesiumLog.error('Stack: ' + error.stack);
-        }
-        document.getElementById('loadingOverlay').innerHTML = 'Error loading Cesium: ' + error.message;
-    }
-}
-
-// ============================================================================
-// Flight Track Rendering
-// ============================================================================
-
-// Unified function to create track primitive for any range of points
-function createTrackPrimitive(startIndex, endIndex) {
-    // Validate inputs
-    if (!cesiumState.positions || !cesiumState.igcPoints || 
-        startIndex < 0 || endIndex >= cesiumState.positions.length || 
-        startIndex > endIndex) {
-        return null;
-    }
-    
-    // Slice positions for the requested range
-    const positions = cesiumState.positions.slice(startIndex, endIndex + 1);
-    
-    // Build colors array for the range
-    const colors = [];
-    for (let i = startIndex; i <= endIndex; i++) {
-        const point = cesiumState.igcPoints[i];
-        const climbRate15s = point.climbRate15s || point.climbRate || 0;
-        colors.push(getClimbRateColorForPoint(climbRate15s).withAlpha(0.9));
-    }
-    
-    // Only create primitive if we have at least 2 positions
-    if (positions.length < 2) {
-        return null;
-    }
-    
-    // Create and return the primitive
-    return new Cesium.Primitive({
-        geometryInstances: new Cesium.GeometryInstance({
-            geometry: new Cesium.PolylineGeometry({
-                positions: positions,
-                width: 3.0,
-                vertexFormat: Cesium.PolylineColorAppearance.VERTEX_FORMAT,
-                colors: colors,
-                colorsPerVertex: true
-            })
-        }),
-        appearance: new Cesium.PolylineColorAppearance({
-            translucent: true
-        }),
-        asynchronous: false  // Synchronous rendering for consistency
-    });
-}
-
-// Show or hide all track segments
-function showAllTrackSegments(show) {
-    if (cesiumState.flightTrack.staticPrimitive) {
-        cesiumState.flightTrack.staticPrimitive.show = show;
-    }
-}
-
-// Feature 2: 3D Flight Track Rendering
-// Create flight track with Cesium-native features
-function createColoredFlightTrack(points) {
-    if (!viewer || !points || points.length === 0) return;
-    
-    igcPoints = points;
-    cesiumState.igcPoints = points;
-    
-    // Extract timezone from first point
-    let trackTimezone = '+00:00';
-    let timezoneOffsetSeconds = 0;
-    
-    if (points[0]?.timezone) {
-        trackTimezone = points[0].timezone;
-        
-        // Parse timezone offset for display adjustments
-        const tzMatch = trackTimezone.match(/^([+-])(\d{2}):(\d{2})$/);
-        if (tzMatch) {
-            const sign = tzMatch[1] === '+' ? 1 : -1;
-            const hours = parseInt(tzMatch[2], 10);
-            const minutes = parseInt(tzMatch[3], 10);
-            timezoneOffsetSeconds = sign * ((hours * 3600) + (minutes * 60));
-        }
-        
-        // Store timezone globally for display formatting
-        window.flightTimezone = trackTimezone;
-        window.flightTimezoneOffsetSeconds = timezoneOffsetSeconds;
-        
-        // Configure Animation widget to show local time
-        if (viewer.animation && timezoneOffsetSeconds !== 0) {
-            viewer.animation.viewModel.dateFormatter = function(julianDate) {
-                const localJulianDate = Cesium.JulianDate.addSeconds(julianDate, timezoneOffsetSeconds, new Cesium.JulianDate());
-                const gregorian = Cesium.JulianDate.toGregorianDate(localJulianDate);
-                return `${gregorian.year}-${gregorian.month.toString().padStart(2, '0')}-${gregorian.day.toString().padStart(2, '0')}`;
-            };
+            // Create new flight data source
+            this.flightDataSource = new FlightDataSource('Flight Track', igcPoints);
+            this.viewer.dataSources.add(this.flightDataSource);
             
-            viewer.animation.viewModel.timeFormatter = function(julianDate) {
-                const localJulianDate = Cesium.JulianDate.addSeconds(julianDate, timezoneOffsetSeconds, new Cesium.JulianDate());
-                const gregorian = Cesium.JulianDate.toGregorianDate(localJulianDate);
+            // Create track primitives
+            this.trackPrimitives = new TrackPrimitiveCollection(this.viewer, this.flightDataSource);
+            
+            // Create statistics display
+            this.statisticsDisplay = new StatisticsDisplay(this.flightDataSource);
+            this.statisticsDisplay.show();
+            
+            // Configure clock
+            this._configureClock();
+            
+            // Configure timeline for local time
+            this._configureTimeline();
+            
+            // Zoom to track
+            this._performInitialZoom();
+            
+            // Force resize after UI changes
+            setTimeout(() => this.viewer.resize(), 350);
+        });
+    }
+    
+    _configureClock() {
+        const clock = this.viewer.clock;
+        const data = this.flightDataSource;
+        
+        clock.startTime = data.startTime.clone();
+        clock.stopTime = data.stopTime.clone();
+        clock.currentTime = data.startTime.clone();
+        clock.clockRange = Cesium.ClockRange.CLAMPED;
+        clock.multiplier = 60;
+        clock.shouldAnimate = false;
+        
+        if (this.viewer.timeline) {
+            this.viewer.timeline.zoomTo(data.startTime, data.stopTime);
+        }
+    }
+    
+    _configureTimeline() {
+        const data = this.flightDataSource;
+        const offsetSeconds = data.timezoneOffsetSeconds;
+        const timezone = data.timezone;
+        
+        if (this.viewer.timeline && offsetSeconds !== 0) {
+            this.viewer.timeline.makeLabel = (date) => {
+                const localDate = Cesium.JulianDate.addSeconds(date, offsetSeconds, new Cesium.JulianDate());
+                const gregorian = Cesium.JulianDate.toGregorianDate(localDate);
                 const hours = gregorian.hour.toString().padStart(2, '0');
                 const minutes = gregorian.minute.toString().padStart(2, '0');
                 const seconds = Math.floor(gregorian.second).toString().padStart(2, '0');
-                return `${hours}:${minutes}:${seconds} ${trackTimezone}`;
-            };
-        }
-        
-        // Configure Timeline to show local time
-        if (viewer.timeline && timezoneOffsetSeconds !== 0) {
-            viewer.timeline.makeLabel = function(date) {
-                const localJulianDate = Cesium.JulianDate.addSeconds(date, timezoneOffsetSeconds, new Cesium.JulianDate());
-                const gregorian = Cesium.JulianDate.toGregorianDate(localJulianDate);
-                const hours = gregorian.hour.toString().padStart(2, '0');
-                const minutes = gregorian.minute.toString().padStart(2, '0');
-                const seconds = Math.floor(gregorian.second).toString().padStart(2, '0');
-                return `${hours}:${minutes}:${seconds} ${trackTimezone}`;
+                return `${hours}:${minutes}:${seconds} ${timezone}`;
             };
         }
     }
     
-    // Clear existing entities
-    viewer.entities.removeAll();
-    cesiumState.playback.pilotEntity = null;
-    
-    // Build positions array (reuse if available from setupTimeBasedAnimation)
-    const positions = cesiumState.positions || points.map(point => 
-        Cesium.Cartesian3.fromDegrees(point.longitude, point.latitude, point.altitude)
-    );
-    
-    // Store positions and points if not already stored
-    if (!cesiumState.positions) {
-        cesiumState.positions = positions;
-        cesiumState.igcPoints = points;
-    }
-    
-    // Create static track primitive using full range
-    const staticTrackPrimitive = createTrackPrimitive(0, points.length - 1);
-    if (staticTrackPrimitive) {
-        cesiumState.flightTrack.staticPrimitive = viewer.scene.primitives.add(staticTrackPrimitive);
-    }
-    // Create curtain wall that hangs from track to ground
-    // Reuse positions array for the wall
-    const wallPositions = positions;
-    
-    // Extract altitudes for the wall
-    const wallHeights = points.map(point => point.altitude);
-    
-    const curtainWallEntity = viewer.entities.add({
-        name: 'Flight Track Curtain',
-        show: true,  // Visible by default
-        wall: {
-            positions: wallPositions,  // All track positions
-            maximumHeights: wallHeights,  // Flight altitudes
-            // minimumHeights not specified = extends to ground automatically
-            material: Cesium.Color.DODGERBLUE.withAlpha(0.1),  // 10% opaque
-            outline: false
-        }
-    });
-    
-    // Store curtain wall entity
-    cesiumState.flightTrack.curtainWallEntity = curtainWallEntity;
-    
-    // Store the igcPoints for global access
-    cesiumState.igcPoints = igcPoints;
-    
-    // Set up onTick callback for dynamic updates
-    cesiumState.ribbonMode.onTickCallback = function() {
-        // Throttle updates to every 100ms
-        const now = Date.now();
-        if (!cesiumState.ribbonMode.lastUpdateTime || 
-            now - cesiumState.ribbonMode.lastUpdateTime > cesiumState.ribbonMode.updateInterval) {
-            cesiumState.ribbonMode.lastUpdateTime = now;
-            updateDynamicTrackPrimitive();
-        }
-    };
-    
-    // Add the onTick listener
-    viewer.clock.onTick.addEventListener(cesiumState.ribbonMode.onTickCallback);
-    
-    // Create dynamic curtain wall for fly-through mode (initially hidden)
-    const dynamicCurtainEntity = viewer.entities.add({
-        name: 'Dynamic Flight Curtain',
-        show: false,  // Initially hidden
-        wall: {
-            positions: new Cesium.CallbackProperty(function(time, result) {
-                // This function will be called every frame to update positions
-                if (!cesiumState.ribbonMode.enabled) {
-                    return [];  // Return empty array when disabled
-                }
-                
-                // Use the same trail positions as the dynamic track
-                return calculateTrailPositions(time);
-            }, false),
-            maximumHeights: new Cesium.CallbackProperty(function(time, result) {
-                // This function will be called every frame to update heights
-                if (!cesiumState.ribbonMode.enabled) {
-                    return [];  // Return empty array when disabled
-                }
-                
-                return calculateTrailAltitudes(time);
-            }, false),
-            // minimumHeights not specified = extends to ground automatically
-            material: Cesium.Color.DODGERBLUE.withAlpha(0.1),  // 10% opaque
-            outline: false
-        }
-    });
-    
-    cesiumState.flightTrack.dynamicCurtainEntity = dynamicCurtainEntity;
-    
-    // Set up time-based animation if timestamps are available
-    if (points[0].timestamp) {
-        setupTimeBasedAnimation(points);
-    } else {
-        // Fallback to index-based animation (simplified)
-    }
-    
-    // Zoom to track with padding for UI
-    zoomToEntitiesWithPadding(0.9); // 90% screen coverage
-    
-}
-
-
-// Setup Cesium-native time-based animation
-function setupTimeBasedAnimation(points) {
-    if (!viewer || !points || points.length === 0) return;
-    
-    // Build reusable arrays of times and positions
-    const times = points.map(point => 
-        Cesium.JulianDate.fromIso8601(point.timestamp)
-    );
-    const positions = points.map(point => 
-        Cesium.Cartesian3.fromDegrees(point.longitude, point.latitude, point.altitude)
-    );
-    
-    // Store for global reuse
-    cesiumState.times = times;
-    cesiumState.positions = positions;
-    
-    // Get start and stop times from array
-    const startTime = times[0];
-    const stopTime = times[times.length - 1];
-    
-    // Calculate and store total duration
-    cesiumState.totalDuration = Cesium.JulianDate.secondsDifference(stopTime, startTime);
-    
-    // Create sampled position property for smooth interpolation
-    const positionProperty = new Cesium.SampledPositionProperty();
-    positionProperty.setInterpolationOptions({
-        interpolationDegree: 2,
-        interpolationAlgorithm: Cesium.LagrangePolynomialApproximation
-    });
-    // Set extrapolation to hold values at boundaries
-    positionProperty.forwardExtrapolationType = Cesium.ExtrapolationType.HOLD;
-    positionProperty.backwardExtrapolationType = Cesium.ExtrapolationType.HOLD;
-    
-    // Add all samples at once using pre-built arrays
-    positionProperty.addSamples(times, positions);
-    cesiumLog.info(`Added ${positions.length} position samples for velocity calculation`);
-    
-    // Create pilot entity with Cesium native time-dynamic position
-    const pilotEntity = viewer.entities.add({
-        name: 'Pilot',
-        availability: new Cesium.TimeIntervalCollection([
-            new Cesium.TimeInterval({
-                start: startTime,
-                stop: stopTime
-            })
-        ]),
-        position: positionProperty,  // Native Cesium SampledPositionProperty
-        orientation: new Cesium.VelocityOrientationProperty(positionProperty, Cesium.Ellipsoid.WGS84),  // Orient based on velocity with explicit ellipsoid
-        // Pilot marker
-        point: {
-            pixelSize: 16,
-            color: Cesium.Color.YELLOW,
-            outlineColor: Cesium.Color.BLACK,
-            outlineWidth: 3,
-            heightReference: Cesium.HeightReference.NONE,
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,  // Always visible
-            scaleByDistance: new Cesium.NearFarScalar(1000, 1.5, 100000, 0.5)  // Scale with distance
-        },
-        viewFrom: new Cesium.Cartesian3(0.0, -1000.0, 500.0) // 100m behind, 50m above
-    });
-    
-    
-    // Store pilot entity reference
-    cesiumState.playback.pilotEntity = pilotEntity;
-    cesiumState.playback.positionProperty = positionProperty;
-    
-    // Configure viewer clock for playback
-    viewer.clock.startTime = startTime.clone();
-    viewer.clock.stopTime = stopTime.clone();
-    viewer.clock.currentTime = startTime.clone();
-    viewer.clock.clockRange = Cesium.ClockRange.CLAMPED; // Stop at end instead of looping
-    viewer.clock.multiplier = 60;
-    viewer.clock.shouldAnimate = false; // Start paused
-    
-    
-    // Set timeline bounds
-    if (viewer.timeline) {
-        viewer.timeline.zoomTo(startTime, stopTime);
-    }
-    
-    // Force initial position evaluation
-    const initialPosition = positionProperty.getValue(startTime);
-    if (!initialPosition) {
-        cesiumLog.error('Initial pilot position is null!');
-    }
-    
-    // Use the existing pilot entity with time-dynamic position
-    cesiumState.playback.pilotEntity = pilotEntity;
-    cesiumState.playback.positionProperty = positionProperty;
-    
-    // Show the stats container and playback controls when track is loaded
-    const statsContainer = document.getElementById('statsContainer');
-    const cesiumContainer = document.getElementById('cesiumContainer');
-    const playbackControls = document.getElementById('playbackControls');
-    
-    if (statsContainer) {
-        statsContainer.classList.add('visible');
-        statsContainer.innerHTML = '<span>Initializing...</span>';
-        // Resize cesium container to make room for stats
-        if (cesiumContainer) {
-            cesiumContainer.classList.add('with-stats');
-        }
-        // Force Cesium to resize after container change
-        if (viewer) {
-            setTimeout(() => {
-                viewer.resize();
-            }, 350); // Wait for CSS transition
-        }
-    }
-    
-    // Show the playback controls
-    if (playbackControls) {
-        playbackControls.classList.add('visible');
-        if (statsContainer && statsContainer.classList.contains('visible')) {
-            playbackControls.classList.add('with-stats');
-        }
-    }
-    
-    // Automatic ribbon mode will be managed by clock.onTick listener
-    // Start with full track visible (at beginning)
-    cesiumState.ribbonMode.enabled = false;
-    
-    // Only force continuous rendering if ribbon trail is enabled and playing
-    // Otherwise use on-demand rendering for better performance
-    if (cesiumState.ribbonMode.enabled && viewer.clock.shouldAnimate) {
-        viewer.scene.requestRenderMode = false;  // Continuous rendering for smooth ribbon
-    } else {
-        viewer.scene.requestRenderMode = true;  // On-demand rendering when paused or ribbon disabled
-    }
-    
-    // Track animation state for play-at-end detection and automatic ribbon mode
-    let wasAnimating = false;
-    let previousRibbonState = false;
-    
-    // Add clock tick listener to update statistics label and manage rendering mode
-    viewer.clock.onTick.addEventListener(function(clock) {
-        // Check position in timeline
-        const atStart = Cesium.JulianDate.secondsDifference(clock.currentTime, clock.startTime) < 0.5;
-        const atEnd = Cesium.JulianDate.compare(clock.currentTime, clock.stopTime) >= 0;
-        const isStopped = !clock.shouldAnimate;
+    _performInitialZoom() {
+        const data = this.flightDataSource;
+        const launch = data.igcPoints[0];
+        const boundingSphere = data.boundingSphere;
         
-        // Automatic ribbon mode: show full track when stopped at start/end, ribbon otherwise
-        const shouldShowRibbon = !(isStopped && (atStart || atEnd));
-        
-        // Update ribbon mode if changed
-        if (shouldShowRibbon !== previousRibbonState) {
-            if (shouldShowRibbon) {
-                // Enable ribbon mode
-                showAllTrackSegments(false);
-                showDynamicTrackSegments(true);
-                
-                // Hide static curtain, show dynamic curtain
-                if (cesiumState.flightTrack.curtainWallEntity) {
-                    cesiumState.flightTrack.curtainWallEntity.show = false;
-                }
-                if (cesiumState.flightTrack.dynamicCurtainEntity) {
-                    cesiumState.flightTrack.dynamicCurtainEntity.show = true;
-                }
-                
-                cesiumState.ribbonMode.enabled = true;
-            } else {
-                // Disable ribbon mode, show full track
-                showAllTrackSegments(true);
-                showDynamicTrackSegments(false);
-                
-                // Show static curtain, hide dynamic curtain
-                if (cesiumState.flightTrack.curtainWallEntity) {
-                    cesiumState.flightTrack.curtainWallEntity.show = true;
-                }
-                if (cesiumState.flightTrack.dynamicCurtainEntity) {
-                    cesiumState.flightTrack.dynamicCurtainEntity.show = false;
-                }
-                
-                cesiumState.ribbonMode.enabled = false;
-            }
-            previousRibbonState = shouldShowRibbon;
-        }
-        
-        // Check if we just started playing from the end
-        const justStartedPlaying = clock.shouldAnimate && !wasAnimating;
-        const justStoppedPlaying = !clock.shouldAnimate && wasAnimating;
-        
-        if (atEnd && justStartedPlaying) {
-            // Reset to start when play is clicked at end
-            clock.currentTime = clock.startTime.clone();
-        }
-        
-        // Auto-stop and reset to start when reaching the end
-        if (atEnd && clock.shouldAnimate && !justStartedPlaying) {
-            // We've reached the end while playing - stop and reset to start
-            clock.shouldAnimate = false;
-            clock.currentTime = clock.startTime.clone();
-            cesiumLog.debug('Animation reached end - stopped and reset to start');
-        }
-        
-        // Manage rendering mode based on animation state and ribbon mode
-        if (cesiumState.ribbonMode.enabled) {
-            if (justStartedPlaying) {
-                // Just started playing - enable continuous rendering
-                viewer.scene.requestRenderMode = false;
-            } else if (justStoppedPlaying) {
-                // Just paused/stopped - switch to on-demand rendering
-                viewer.scene.requestRenderMode = true;
-                viewer.scene.requestRender(); // Render once to show current state
-            }
-        } else {
-            // Full track mode - always use on-demand rendering
-            if (viewer.scene.requestRenderMode === false) {
-                viewer.scene.requestRenderMode = true;
-            }
-        }
-        
-        wasAnimating = clock.shouldAnimate;
-        
-        // Update play button icon to match animation state
-        updatePlayButtonIcon();
-        
-        // Force scene update
-        viewer.scene.requestRender();
-        
-        const statsContainer = document.getElementById('statsContainer');
-        if (statsContainer) {
-                
-                // Find current point index based on time
-                const totalSeconds = Cesium.JulianDate.secondsDifference(clock.currentTime, clock.startTime);
-                const totalDuration = Cesium.JulianDate.secondsDifference(clock.stopTime, clock.startTime);
-                const progress = totalSeconds / totalDuration;
-                const currentIndex = Math.min(Math.floor(progress * points.length), points.length - 1);
-                
-                if (currentIndex >= 0 && currentIndex < points.length) {
-                    const currentPoint = points[currentIndex];
-                    
-                    // Use pre-calculated ground speed if available, otherwise calculate
-                    let speed = currentPoint.groundSpeed || 0;
-                    if (!speed && currentIndex > 0) {
-                        const prevPoint = points[currentIndex - 1];
-                        const distance = Cesium.Cartesian3.distance(
-                            Cesium.Cartesian3.fromDegrees(prevPoint.longitude, prevPoint.latitude, prevPoint.altitude),
-                            Cesium.Cartesian3.fromDegrees(currentPoint.longitude, currentPoint.latitude, currentPoint.altitude)
-                        );
-                        const timeDiff = Cesium.JulianDate.secondsDifference(
-                            Cesium.JulianDate.fromIso8601(currentPoint.timestamp),
-                            Cesium.JulianDate.fromIso8601(prevPoint.timestamp)
-                        );
-                        if (timeDiff > 0) {
-                            speed = (distance / timeDiff) * 3.6; // Convert m/s to km/h
-                        }
-                    }
-                    
-                    // Get altitude and climb rate (now pre-calculated in IgcPoint)
-                    const altitude = currentPoint.gpsAltitude || currentPoint.altitude || 0;
-                    const climbRate = currentPoint.climbRate || 0;
-                    
-                    // Format time (HH:MM format for compact display) in local timezone
-                    let timeStr;
-                    let tzLabel = '';
-                    
-                    if (window.flightTimezoneOffsetSeconds && window.flightTimezoneOffsetSeconds !== 0) {
-                        // Convert to local time
-                        const localJulianDate = Cesium.JulianDate.addSeconds(
-                            clock.currentTime,
-                            window.flightTimezoneOffsetSeconds,
-                            new Cesium.JulianDate()
-                        );
-                        const gregorian = Cesium.JulianDate.toGregorianDate(localJulianDate);
-                        timeStr = gregorian.hour.toString().padStart(2, '0') + ':' + 
-                                gregorian.minute.toString().padStart(2, '0');
-                        tzLabel = window.flightTimezone ? ' (' + window.flightTimezone + ')' : '';
-                    } else {
-                        // Fallback to UTC
-                        const date = Cesium.JulianDate.toDate(clock.currentTime);
-                        timeStr = date.getHours().toString().padStart(2, '0') + ':' + 
-                                date.getMinutes().toString().padStart(2, '0');
-                        tzLabel = ' (UTC)';
-                    }
-                    
-                    // Choose climb icon based on rate
-                    const climbIcon = climbRate > 0.1 ? 'trending_up' : climbRate < -0.1 ? 'trending_down' : 'trending_flat';
-                    const climbSign = climbRate >= 0 ? '+' : '';
-                    
-                    // Create HTML with Material Icons in vertical layout
-                    const labelHTML = 
-                        '<div class="stat-item">' +
-                            '<i class="material-icons">height</i>' +
-                            '<div class="stat-value">' + altitude.toFixed(0) + 'm</div>' +
-                            '<div class="stat-label">Altitude</div>' +
-                        '</div>' +
-                        '<div class="stat-item">' +
-                            '<i class="material-icons">' + climbIcon + '</i>' +
-                            '<div class="stat-value">' + climbSign + climbRate.toFixed(1) + 'm/s</div>' +
-                            '<div class="stat-label">Climb</div>' +
-                        '</div>' +
-                        '<div class="stat-item">' +
-                            '<i class="material-icons">speed</i>' +
-                            '<div class="stat-value">' + speed.toFixed(1) + 'km/h</div>' +
-                            '<div class="stat-label">Speed</div>' +
-                        '</div>' +
-                        '<div class="stat-item">' +
-                            '<i class="material-icons">access_time</i>' +
-                            '<div class="stat-value">' + timeStr + '</div>' +
-                            '<div class="stat-label">Time' + tzLabel + '</div>' +
-                        '</div>';
-                    
-                    statsContainer.innerHTML = labelHTML;
-                }
-                
-            }
-    });
-}
-
-// Feature 3: Camera Controls
-
-// Zoom to entities with padding for UI elements
-function zoomToEntitiesWithPadding(padding) {
-    if (!viewer) return;
-    
-    // If we have a primitive-based track, zoom to its bounds
-    if (cesiumState.flightTrack.staticPrimitive && igcPoints && igcPoints.length > 0) {
-        // Calculate bounding sphere from track points (reuse positions if available)
-        const positions = cesiumState.positions || igcPoints.map(point => 
-            Cesium.Cartesian3.fromDegrees(point.longitude, point.latitude, point.altitude)
-        );
-        const boundingSphere = Cesium.BoundingSphere.fromPoints(positions);
-        
-        // Get launch coordinates from first point
-        const launchPoint = igcPoints[0];
-        const launchLon = launchPoint.longitude;
-        const launchLat = launchPoint.latitude;
-        
-        // Step 1: Set initial view at 30,000 km above launch
-        viewer.camera.setView({
-            destination: Cesium.Cartesian3.fromDegrees(launchLon, launchLat, 30000000), // 30,000 km
+        // Step 1: High altitude view
+        this.viewer.camera.setView({
+            destination: Cesium.Cartesian3.fromDegrees(launch.longitude, launch.latitude, 30000000),
             orientation: {
                 heading: 0,
-                pitch: Cesium.Math.toRadians(-90), // Looking straight down
+                pitch: Cesium.Math.toRadians(-90),
                 roll: 0
             }
         });
         
-        // Step 2: Wait 5 seconds, then fly to bounding sphere view
-        setTimeout(function() {
-            viewer.camera.flyToBoundingSphere(boundingSphere, {
+        // Step 2: Fly to bounding sphere
+        setTimeout(() => {
+            this.viewer.camera.flyToBoundingSphere(boundingSphere, {
                 duration: 5.0,
                 offset: new Cesium.HeadingPitchRange(
-                    Cesium.Math.toRadians(0),   // Heading: 0 = North
-                    Cesium.Math.toRadians(-90), // Pitch: -90 = looking straight down
-                    boundingSphere.radius * 2.5  // Range: 2.5x the radius for good framing
+                    Cesium.Math.toRadians(0),
+                    Cesium.Math.toRadians(-90),
+                    boundingSphere.radius * 2.5
                 ),
-                complete: function() {
-                    // Step 3: Fly to home view with -30 degree angle
-                    viewer.camera.flyToBoundingSphere(boundingSphere, {
+                complete: () => {
+                    // Step 3: Final view angle
+                    this.viewer.camera.flyToBoundingSphere(boundingSphere, {
                         duration: 3.0,
                         offset: new Cesium.HeadingPitchRange(
-                            Cesium.Math.toRadians(0),   // Heading: 0 = North
-                            Cesium.Math.toRadians(-30), // Pitch: -30 = looking down at 30 degree angle
-                            boundingSphere.radius * 2.75  // Range: 2.75x the radius for better framing
+                            Cesium.Math.toRadians(0),
+                            Cesium.Math.toRadians(-30),
+                            boundingSphere.radius * 2.75
                         )
                     });
                 }
             });
         }, 5000);
+    }
+    
+    _flyToFlightTrack() {
+        if (!this.flightDataSource) return;
         
-        // Store this view as the home view for the flight track
-        cesiumState.flightTrack.homeView = {
-            boundingSphere: boundingSphere,
+        const boundingSphere = this.flightDataSource.boundingSphere;
+        this.viewer.camera.flyToBoundingSphere(boundingSphere, {
+            duration: 3.0,
             offset: new Cesium.HeadingPitchRange(
                 Cesium.Math.toRadians(0),
                 Cesium.Math.toRadians(-30),
                 boundingSphere.radius * 2.75
             )
-        };
+        });
     }
-}
-
-
-// ============================================================================
-// Cleanup and Memory Management
-// ============================================================================
-
-// Clear all visualization data
-function clearAllVisualization() {
-    if (!viewer) return;
     
-    viewer.scene.primitives.removeAll();
-    viewer.entities.removeAll();
-    viewer.dataSources.removeAll();
-    
-    // Reset state references
-    cesiumState.flightTrack.staticPrimitive = null;
-    cesiumState.flightTrack.dynamicPrimitive = null;
-    cesiumState.flightTrack.curtainWallEntity = null;
-    cesiumState.flightTrack.dynamicCurtainEntity = null;
-    cesiumState.playback.pilotEntity = null;
-    cesiumState.playback.positionProperty = null;
-}
-
-// Hide UI elements
-function hideUIElements() {
-    const statsContainer = document.getElementById('statsContainer');
-    const cesiumContainer = document.getElementById('cesiumContainer');
-    const playbackControls = document.getElementById('playbackControls');
-    
-    if (statsContainer) {
-        statsContainer.classList.remove('visible');
-        statsContainer.innerHTML = '';
+    _onClockTick(clock) {
+        if (!this.flightDataSource) return;
+        
+        // Handle automatic ribbon mode
+        this._updateRibbonMode(clock);
+        
+        // Update statistics
+        this.statisticsDisplay?.update(clock.currentTime);
+        
+        // Update dynamic track (throttled)
+        const now = Date.now();
+        if (now - this._updateThrottle.lastUpdate > this._updateThrottle.interval) {
+            this._updateThrottle.lastUpdate = now;
+            this.trackPrimitives?.updateDynamicTrack(clock.currentTime);
+        }
+        
+        // Handle play button state
+        this._updatePlayButton();
+        
+        // Handle end of playback
+        this._handlePlaybackEnd(clock);
+        
+        // Update render mode
+        this._updateRenderMode(clock);
     }
-    if (cesiumContainer) {
-        cesiumContainer.classList.remove('with-stats');
-    }
-    if (playbackControls) {
-        playbackControls.classList.remove('visible', 'with-stats');
-    }
-}
-
-// Main cleanup function
-function cleanupCesium() {
-    hideUIElements();
     
-    if (window.viewer) {
-        try {
-            // Stop rendering and clear data
-            viewer.scene.requestRenderMode = true;
-            clearAllVisualization();
-            
-            // Clear tile cache and destroy viewer
-            if (viewer.scene.globe?.tileCache) {
-                viewer.scene.globe.tileCache.reset();
-            }
-            
-            viewer.destroy();
-        } catch (e) {
-            cesiumLog.error('Cleanup error: ' + e.message);
-        } finally {
-            window.viewer = null;
-            cesiumState.viewer = null;
+    _updateRibbonMode(clock) {
+        if (!this._ribbonModeAuto) return;
+        
+        const atStart = Cesium.JulianDate.secondsDifference(clock.currentTime, clock.startTime) < 0.5;
+        const atEnd = Cesium.JulianDate.compare(clock.currentTime, clock.stopTime) >= 0;
+        const isStopped = !clock.shouldAnimate;
+        
+        const shouldShowRibbon = !(isStopped && (atStart || atEnd));
+        
+        if (shouldShowRibbon !== this._currentRibbonState) {
+            this.flightDataSource?.enableRibbonMode(shouldShowRibbon);
+            this.trackPrimitives?.enableRibbonMode(shouldShowRibbon);
+            this._currentRibbonState = shouldShowRibbon;
         }
     }
+    
+    _updatePlayButton() {
+        const button = document.getElementById('playButton');
+        if (!button) return;
+        
+        const icon = button.querySelector('.material-icons');
+        if (!icon) return;
+        
+        const clock = this.viewer.clock;
+        const atStart = Cesium.JulianDate.secondsDifference(clock.currentTime, clock.startTime) < 0.5;
+        const atEnd = Cesium.JulianDate.compare(clock.currentTime, clock.stopTime) >= 0;
+        
+        icon.textContent = (!clock.shouldAnimate || atStart || atEnd) ? 'play_arrow' : 'pause';
+    }
+    
+    _handlePlaybackEnd(clock) {
+        // Track animation state
+        if (!this._wasAnimating) {
+            this._wasAnimating = false;
+        }
+        
+        const atEnd = Cesium.JulianDate.compare(clock.currentTime, clock.stopTime) >= 0;
+        const justStarted = clock.shouldAnimate && !this._wasAnimating;
+        
+        if (atEnd && justStarted) {
+            clock.currentTime = clock.startTime.clone();
+        }
+        
+        if (atEnd && clock.shouldAnimate && !justStarted) {
+            clock.shouldAnimate = false;
+            clock.currentTime = clock.startTime.clone();
+        }
+        
+        this._wasAnimating = clock.shouldAnimate;
+    }
+    
+    _updateRenderMode(clock) {
+        const shouldContinuousRender = this._currentRibbonState && clock.shouldAnimate;
+        
+        if (shouldContinuousRender && this.viewer.scene.requestRenderMode) {
+            this.viewer.scene.requestRenderMode = false;
+        } else if (!shouldContinuousRender && !this.viewer.scene.requestRenderMode) {
+            this.viewer.scene.requestRenderMode = true;
+            this.viewer.scene.requestRender();
+        }
+    }
+    
+    _onSceneModeChange() {
+        const modeString = this._getSceneModeString();
+        
+        if (window.flutter_inappwebview?.callHandler) {
+            window.flutter_inappwebview.callHandler('onSceneModeChanged', modeString);
+        }
+        
+        // Update camera controls
+        const controller = this.viewer.scene.screenSpaceCameraController;
+        if (this.viewer.scene.mode === Cesium.SceneMode.SCENE2D) {
+            controller.enableCollisionDetection = false;
+            controller.enableRotate = false;
+            controller.enableTilt = false;
+        } else {
+            controller.enableCollisionDetection = true;
+            controller.enableRotate = true;
+            controller.enableTilt = true;
+        }
+        
+        // Restore view
+        if (this.flightDataSource) {
+            setTimeout(() => this._flyToFlightTrack(), 500);
+        }
+    }
+    
+    _getSceneModeString() {
+        switch(this.viewer.scene.mode) {
+            case Cesium.SceneMode.SCENE2D: return '2D';
+            case Cesium.SceneMode.COLUMBUS_VIEW: return 'Columbus';
+            default: return '3D';
+        }
+    }
+    
+    togglePlayback() {
+        if (!this.viewer) return;
+        this.viewer.clock.shouldAnimate = !this.viewer.clock.shouldAnimate;
+    }
+    
+    changePlaybackSpeed(speed) {
+        if (!this.viewer) return;
+        const speedValue = parseFloat(speed);
+        if (!isNaN(speedValue)) {
+            this.viewer.clock.multiplier = speedValue;
+            document.getElementById('speedPicker').value = speed;
+        }
+    }
+    
+    toggleCameraFollow() {
+        if (!this.viewer || !this.flightDataSource) return;
+        
+        const pilot = this.flightDataSource.pilotEntity;
+        const button = document.getElementById('followButton');
+        
+        if (this.viewer.trackedEntity === pilot) {
+            this.viewer.trackedEntity = undefined;
+            this.cameraFollowing = false;
+            if (button) button.style.backgroundColor = 'rgba(42, 42, 42, 0.8)';
+        } else {
+            this.viewer.trackedEntity = pilot;
+            this.cameraFollowing = true;
+            if (button) button.style.backgroundColor = 'rgba(76, 175, 80, 0.8)';
+        }
+    }
+    
+    _clearAll() {
+        if (this.trackPrimitives) {
+            this.trackPrimitives.destroy();
+            this.trackPrimitives = null;
+        }
+        
+        if (this.flightDataSource) {
+            this.viewer.dataSources.remove(this.flightDataSource);
+            this.flightDataSource = null;
+        }
+        
+        this.viewer.entities.removeAll();
+        this.viewer.scene.primitives.removeAll();
+        
+        this.statisticsDisplay?.hide();
+    }
+    
+    cleanup() {
+        this._clearAll();
+        this.statisticsDisplay = null;
+        
+        if (this.viewer) {
+            this.viewer.scene.requestRenderMode = true;
+            this.viewer.destroy();
+            this.viewer = null;
+        }
+    }
+    
+    handleMemoryPressure() {
+        if (!this.viewer) return;
+        
+        PerformanceReporter.report('memoryPressureHandled', true);
+        
+        const globe = this.viewer.scene.globe;
+        if (globe?.tileCache) {
+            globe.tileCache.reset();
+        }
+        
+        // Reduce quality settings
+        globe.tileCacheSize = 5;
+        globe.maximumMemoryUsage = 64;
+        globe.maximumScreenSpaceError = 16;
+        
+        this.viewer.scene.maximumTextureSize = 512;
+        this.viewer.scene.requestRenderMode = true;
+        this.viewer.scene.requestRender();
+        
+        if (window.gc) window.gc();
+    }
 }
 
-// Memory check for debugging
+// ============================================================================
+// Global Instance and API
+// ============================================================================
+
+let cesiumApp = null;
+
+// Initialize function called from HTML
+function initializeCesium(config) {
+    // Set Ion token
+    Cesium.Ion.defaultAccessToken = config.token;
+    
+    // Create and initialize app
+    cesiumApp = new CesiumFlightApp();
+    cesiumApp.initialize(config);
+    
+    // Store globally for compatibility
+    window.viewer = cesiumApp.viewer;
+}
+
+// Public API functions
+function createColoredFlightTrack(points) {
+    cesiumApp?.loadFlightTrack(points);
+}
+
+function togglePlayback() {
+    cesiumApp?.togglePlayback();
+}
+
+function changePlaybackSpeed(speed) {
+    cesiumApp?.changePlaybackSpeed(speed);
+}
+
+function toggleCameraFollow() {
+    cesiumApp?.toggleCameraFollow();
+}
+
+function cleanupCesium() {
+    cesiumApp?.cleanup();
+    cesiumApp = null;
+    window.viewer = null;
+}
+
+function handleMemoryPressure() {
+    cesiumApp?.handleMemoryPressure();
+}
+
 function checkMemory() {
-    if (window.performance && window.performance.memory) {
+    if (window.performance?.memory) {
         const memory = window.performance.memory;
         return {
             used: Math.round(memory.usedJSHeapSize / 1048576),
@@ -965,489 +1026,27 @@ function checkMemory() {
     return null;
 }
 
-// Selective memory pressure handling - preserves flight visualization
-function handleMemoryPressure() {
-    if (!viewer) return;
-    
-    cesiumLog.info('Memory pressure: Starting selective cleanup');
-    
-    try {
-        // 1. Clear tile cache (biggest memory consumer)
-        if (viewer.scene.globe?.tileCache) {
-            viewer.scene.globe.tileCache.reset();
-            cesiumLog.debug('Cleared tile cache');
-        }
-        
-        // 2. Reduce quality settings to minimize memory usage
-        if (viewer.scene.globe) {
-            viewer.scene.globe.tileCacheSize = 5;  // Minimal cache
-            viewer.scene.globe.maximumMemoryUsage = 64;  // 64MB limit
-            viewer.scene.globe.maximumScreenSpaceError = 16;  // Lower quality
-        }
-        
-        // 3. Reduce texture sizes
-        if (viewer.scene) {
-            viewer.scene.maximumTextureSize = 512;  // Smaller textures
-            viewer.scene.maximumRenderTimeChange = 0.1;  // Aggressive frame limiting
-        }
-        
-        // 4. Switch to on-demand rendering to reduce GPU usage
-        viewer.scene.requestRenderMode = true;
-        viewer.scene.requestRender();  // Render once with new settings
-        
-        // 5. Remove non-essential data sources (but NOT entities or primitives)
-        // This preserves flight track visualization
-        const dataSourcesToKeep = [];
-        viewer.dataSources.removeAll();  // Remove any extra data sources
-        
-        // 6. Force JavaScript garbage collection if available
-        if (window.gc) {
-            window.gc();
-        }
-        
-        cesiumLog.info('Memory pressure: Selective cleanup completed (flight track preserved)');
-        
-    } catch (error) {
-        cesiumLog.error('Memory pressure cleanup error: ' + error.message);
-    }
-}
+// Cleanup on page unload
+window.addEventListener('beforeunload', cleanupCesium);
 
-// Restore flight visualization if it was accidentally cleared
-function restoreFlightVisualization() {
-    if (!viewer || !cesiumState.igcPoints) {
-        return false;  // No data to restore
-    }
-    
-    // Check if visualization is missing
-    const visualizationMissing = !cesiumState.flightTrack.staticPrimitive || 
-                                 !cesiumState.flightTrack.curtainWallEntity;
-    
-    if (visualizationMissing && cesiumState.igcPoints.length > 0) {
-        cesiumLog.info('Restoring flight visualization from cached data');
-        
-        try {
-            // Store current camera position
-            const cameraPosition = viewer.camera.position.clone();
-            const cameraDirection = viewer.camera.direction.clone();
-            const cameraUp = viewer.camera.up.clone();
-            
-            // Recreate the flight track using the existing function
-            createColoredFlightTrack(cesiumState.igcPoints);
-            
-            // Restore camera position
-            viewer.camera.position = cameraPosition;
-            viewer.camera.direction = cameraDirection;
-            viewer.camera.up = cameraUp;
-            
-            cesiumLog.info('Flight visualization restored successfully');
-            return true;
-        } catch (error) {
-            cesiumLog.error('Failed to restore flight visualization: ' + error.message);
-            return false;
-        }
-    }
-    
-    return false;  // Nothing to restore
-}
-
-// Also cleanup on page unload
-window.addEventListener('beforeunload', function() {
-    cleanupCesium();
-});
-
-// Handle visibility changes to pause/resume rendering
-document.addEventListener('visibilitychange', function() {
-    if (window.viewer) {
+// Handle visibility changes
+document.addEventListener('visibilitychange', () => {
+    if (cesiumApp?.viewer) {
         if (document.hidden) {
-            viewer.scene.requestRenderMode = true;
-            viewer.scene.maximumRenderTimeChange = Infinity;
+            cesiumApp.viewer.scene.requestRenderMode = true;
+            cesiumApp.viewer.scene.maximumRenderTimeChange = Infinity;
         } else {
-            viewer.scene.requestRenderMode = false;
+            cesiumApp.viewer.scene.requestRenderMode = false;
         }
     }
 });
 
-// ============================================================================
-// Playback Controls
-// ============================================================================
-
-
-
-// ============================================================================
-// Ribbon Mode (Fly-through) Functions
-// ============================================================================
-
-// Binary search helper to find current index in times array
-function findCurrentTimeIndex(currentTime) {
-    if (!cesiumState.times || cesiumState.times.length === 0) return -1;
-    
-    let left = 0;
-    let right = cesiumState.times.length - 1;
-    
-    while (left <= right) {
-        const mid = Math.floor((left + right) / 2);
-        const comparison = Cesium.JulianDate.compare(cesiumState.times[mid], currentTime);
-        
-        if (comparison < 0) {
-            left = mid + 1;
-        } else if (comparison > 0) {
-            right = mid - 1;
-        } else {
-            return mid;
-        }
-    }
-    
-    // Return the index of the last time before currentTime
-    return Math.max(0, left - 1);
-}
-
-// Helper function to get color based on 15s climb rate (for dynamic track)
-function getClimbRateColorForPoint(climbRate15s) {
-    if (climbRate15s >= 0) {
-        return Cesium.Color.GREEN; // Green: Any climb (rate >= 0 m/s)
-    } else if (climbRate15s > -1.5) {
-        return Cesium.Color.DODGERBLUE; // Blue: Weak sink (-1.5 < rate < 0 m/s)
-    } else {
-        return Cesium.Color.RED; // Red: Strong sink (rate <= -1.5 m/s)
-    }
-}
-
-// Function to update the dynamic track primitive with per-vertex colors
-function updateDynamicTrackPrimitive() {
-    if (!viewer || !cesiumState.igcPoints || cesiumState.igcPoints.length === 0) {
-        return;
-    }
-    
-    // Only create new primitive if fly-through mode is enabled and track should be shown
-    if (!cesiumState.ribbonMode.enabled || !cesiumState.ribbonMode.showDynamicTrack) {
-        // If we should hide, remove existing primitive
-        if (cesiumState.flightTrack.dynamicPrimitive) {
-            viewer.scene.primitives.remove(cesiumState.flightTrack.dynamicPrimitive);
-            cesiumState.flightTrack.dynamicPrimitive = null;
-            resetRibbonWindowTracking();
-        }
-        return;
-    }
-    
-    const igcPoints = cesiumState.igcPoints;
-    
-    // Find current point index using binary search (much faster)
-    const currentTime = viewer.clock.currentTime;
-    const currentIndex = findCurrentTimeIndex(currentTime);
-    
-    // If we haven't started yet, return
-    if (currentIndex < 0) {
-        return;
-    }
-    
-    // Calculate window size based on ribbon settings (matching wall logic exactly)
-    const ribbonSeconds = cesiumState.ribbonMode.animationSeconds || 3.0;
-    const playbackSpeed = viewer.clock.multiplier || 1;  // Use 1 as default like the wall
-    const flightSecondsInWindow = ribbonSeconds * playbackSpeed;
-    
-    // Estimate how many points to show based on flight duration
-    const totalDuration = cesiumState.totalDuration || Cesium.JulianDate.secondsDifference(
-        Cesium.JulianDate.fromIso8601(igcPoints[igcPoints.length - 1].timestamp),
-        Cesium.JulianDate.fromIso8601(igcPoints[0].timestamp)
-    );
-    const pointsPerSecond = igcPoints.length / totalDuration;
-    const maxPointsInRibbon = Math.ceil(flightSecondsInWindow * pointsPerSecond);
-    
-    // Calculate window bounds - matching wall's slice logic exactly
-    // The wall keeps the last maxPointsInRibbon points from 0 to currentIndex
-    const pointsUpToCurrent = currentIndex + 1;  // Number of points from 0 to currentIndex inclusive
-    const windowStart = Math.max(0, pointsUpToCurrent - maxPointsInRibbon);
-    const windowEnd = currentIndex; // Never go past current position
-    
-    // Check if window has changed - skip update if unchanged
-    if (windowStart === cesiumState.ribbonMode.lastWindowStart && 
-        windowEnd === cesiumState.ribbonMode.lastWindowEnd) {
-        return; // No change needed, avoid flickering
-    }
-    
-    // Create dynamic track primitive for the window
-    const primitive = createTrackPrimitive(windowStart, windowEnd);
-    
-    if (primitive) {
-        // Double buffering: Add new primitive before removing old one
-        const oldPrimitive = cesiumState.flightTrack.dynamicPrimitive;
-        cesiumState.flightTrack.dynamicPrimitive = viewer.scene.primitives.add(primitive);
-        
-        // Remove old primitive after new one is added
-        if (oldPrimitive) {
-            viewer.scene.primitives.remove(oldPrimitive);
-        }
-    }
-    
-    // Update tracking for next comparison
-    cesiumState.ribbonMode.lastWindowStart = windowStart;
-    cesiumState.ribbonMode.lastWindowEnd = windowEnd;
-}
-
-// Reset window tracking for ribbon mode
-function resetRibbonWindowTracking() {
-    cesiumState.ribbonMode.lastWindowStart = -1;
-    cesiumState.ribbonMode.lastWindowEnd = -1;
-}
-
-// Show or hide the dynamic track
-function showDynamicTrackSegments(show) {
-    // Handle primitive visibility through updates
-    cesiumState.ribbonMode.showDynamicTrack = show;
-    
-    if (!show && cesiumState.flightTrack.dynamicPrimitive) {
-        // Remove the primitive when hiding
-        viewer.scene.primitives.remove(cesiumState.flightTrack.dynamicPrimitive);
-        cesiumState.flightTrack.dynamicPrimitive = null;
-        resetRibbonWindowTracking();
-    } else if (show) {
-        // Reset window tracking to force update when showing
-        resetRibbonWindowTracking();
-        // Force an update to create the primitive when showing
-        updateDynamicTrackPrimitive();
-    }
-}
-
-
-// Helper function to get trail data for ribbon mode
-function getTrailData(currentTime, extractData) {
-    if (!viewer || !igcPoints || igcPoints.length === 0) {
-        return [];
-    }
-    
-    const trailData = [];
-    
-    for (let i = 0; i < igcPoints.length; i++) {
-        const point = igcPoints[i];
-        
-        if (!point.timestamp) continue;
-        
-        let pointTime;
-        try {
-            pointTime = Cesium.JulianDate.fromIso8601(point.timestamp);
-        } catch (e) {
-            continue;
-        }
-        
-        const secondsFromCurrent = Cesium.JulianDate.secondsDifference(pointTime, currentTime);
-        
-        if (secondsFromCurrent <= 0) {
-            trailData.push(extractData(point));
-        } else {
-            break;
-        }
-    }
-    
-    // Apply ribbon window
-    if (trailData.length > 0) {
-        const ribbonAnimationSeconds = cesiumState.ribbonMode.animationSeconds;
-        const speedMultiplier = viewer.clock.multiplier || 1;
-        const flightSecondsInRibbon = ribbonAnimationSeconds * speedMultiplier;
-        
-        const totalFlightDuration = cesiumState.totalDuration || Cesium.JulianDate.secondsDifference(
-            Cesium.JulianDate.fromIso8601(igcPoints[igcPoints.length - 1].timestamp),
-            Cesium.JulianDate.fromIso8601(igcPoints[0].timestamp)
-        );
-        const pointsPerSecond = igcPoints.length / totalFlightDuration;
-        const maxPointsInRibbon = Math.ceil(flightSecondsInRibbon * pointsPerSecond);
-        
-        if (trailData.length > maxPointsInRibbon) {
-            return trailData.slice(trailData.length - maxPointsInRibbon);
-        }
-    }
-    
-    return trailData;
-}
-
-// Calculate trail positions for ribbon mode
-function calculateTrailPositions(currentTime) {
-    // If we have pre-built positions, use them with index-based slicing
-    if (cesiumState.positions && cesiumState.times) {
-        const currentIndex = findCurrentTimeIndex(currentTime);
-        if (currentIndex < 0) return [];
-        
-        // Calculate ribbon window
-        const ribbonSeconds = cesiumState.ribbonMode.animationSeconds || 3.0;
-        const speedMultiplier = viewer.clock.multiplier || 1;
-        const flightSecondsInRibbon = ribbonSeconds * speedMultiplier;
-        const pointsPerSecond = cesiumState.igcPoints.length / cesiumState.totalDuration;
-        const maxPointsInRibbon = Math.ceil(flightSecondsInRibbon * pointsPerSecond);
-        
-        const startIndex = Math.max(0, currentIndex - maxPointsInRibbon + 1);
-        return cesiumState.positions.slice(startIndex, currentIndex + 1);
-    }
-    
-    // Fallback to original implementation
-    return getTrailData(currentTime, point => 
-        Cesium.Cartesian3.fromDegrees(point.longitude, point.latitude, point.altitude)
-    );
-}
-
-// Calculate trail altitudes for ribbon mode
-function calculateTrailAltitudes(currentTime) {
-    return getTrailData(currentTime, point => point.altitude);
-}
-
-// ============================================================================
-// Scene Mode Management
-// ============================================================================
-
-// Get scene mode as string
-function getSceneModeString(sceneMode) {
-    switch(sceneMode) {
-        case Cesium.SceneMode.SCENE2D:
-            return '2D';
-        case Cesium.SceneMode.COLUMBUS_VIEW:
-            return 'Columbus';
-        case Cesium.SceneMode.SCENE3D:
-            return '3D';
-        default:
-            return '3D';
-    }
-}
-
-// Event handler for scene mode changes
-function onSceneModeChanged() {
-    const modeString = getSceneModeString(viewer.scene.mode);
-    cesiumLog.info('Scene mode changed to: ' + modeString);
-    
-    // Notify Flutter of the change
-    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-        window.flutter_inappwebview.callHandler('onSceneModeChanged', modeString);
-    }
-    
-    // Apply appropriate camera controls based on scene mode
-    const controller = viewer.scene.screenSpaceCameraController;
-    
-    if (viewer.scene.mode === Cesium.SceneMode.SCENE2D) {
-        // 2D mode: disable collision detection and rotation
-        controller.enableCollisionDetection = false;  // Not needed in 2D
-        controller.enableRotate = false;
-        controller.enableTilt = false;
-    } else {
-        // 3D and Columbus mode: enable collision detection and full controls
-        controller.enableCollisionDetection = true;  // Prevent going under terrain
-        controller.enableRotate = true;
-        controller.enableTilt = true;
-        
-        // Reapply collision settings for 3D modes
-        controller.minimumZoomDistance = 10.0;  // Minimum 10 meters from surface
-        controller.minimumCollisionTerrainHeight = 5000.0;  // Start collision detection at 5km
-        controller.collisionDetectionHeightBuffer = 10.0;  // Buffer for smooth collision
-    }
-    
-    // Restore camera to flight track view if available
-    if (cesiumState.flightTrack.homeView && cesiumState.flightTrack.homeView.boundingSphere) {
-        // Small delay to ensure scene mode transition is complete
-        setTimeout(() => {
-            viewer.camera.flyToBoundingSphere(cesiumState.flightTrack.homeView.boundingSphere, {
-                duration: 2.0,
-                offset: cesiumState.flightTrack.homeView.offset
-            });
-            cesiumLog.info('Camera restored to flight track view after scene mode change');
-        }, 500);
-    }
-}
-
-// ============================================================================
-// Mobile Playback Controls
-// ============================================================================
-
-// Toggle play/pause
-function togglePlayback() {
-    if (!viewer) return;
-    
-    // Toggle play/pause
-    viewer.clock.shouldAnimate = !viewer.clock.shouldAnimate;
-    
-    // Update button icon
-    updatePlayButtonIcon();
-    
-    // Log for debugging
-    cesiumLog.debug('Playback ' + (viewer.clock.shouldAnimate ? 'started' : 'paused'));
-}
-
-// Update play button icon based on clock state
-function updatePlayButtonIcon() {
-    const playButton = document.getElementById('playButton');
-    if (!playButton) return;
-    
-    const iconElement = playButton.querySelector('.material-icons');
-    if (!iconElement) return;
-    
-    if (!viewer || !viewer.clock) {
-        iconElement.textContent = 'play_arrow';
-        return;
-    }
-    
-    // Check if at start or end of timeline
-    const clock = viewer.clock;
-    const atStart = Cesium.JulianDate.secondsDifference(clock.currentTime, clock.startTime) < 0.5;
-    const atEnd = Cesium.JulianDate.compare(clock.currentTime, clock.stopTime) >= 0;
-    
-    // Show play icon if: not animating OR at start/end positions
-    // This ensures button shows play when stopped at endpoints
-    if (!clock.shouldAnimate || atStart || atEnd) {
-        iconElement.textContent = 'play_arrow';
-    } else {
-        iconElement.textContent = 'pause';
-    }
-}
-
-// Change playback speed
-function changePlaybackSpeed(speed) {
-    if (!viewer) return;
-    
-    const speedValue = parseFloat(speed);
-    if (isNaN(speedValue)) return;
-    
-    viewer.clock.multiplier = speedValue;
-    cesiumLog.debug('Playback speed changed to ' + speedValue + 'x');
-    
-    // Update speed picker to reflect current speed
-    const speedPicker = document.getElementById('speedPicker');
-    if (speedPicker) {
-        speedPicker.value = speed;
-    }
-}
-
-// Toggle camera following - simplest possible implementation
-function toggleCameraFollow() {
-    if (!viewer || !cesiumState.playback.pilotEntity) return;
-    
-    if (viewer.trackedEntity === cesiumState.playback.pilotEntity) {
-        // Stop following
-        viewer.trackedEntity = undefined;
-        cesiumLog.debug('Camera following disabled');
-        
-        // Update button appearance
-        const button = document.getElementById('followButton');
-        if (button) {
-            button.style.backgroundColor = 'rgba(42, 42, 42, 0.8)';
-        }
-    } else {
-        // Start following
-        viewer.trackedEntity = cesiumState.playback.pilotEntity;
-        cesiumLog.debug('Camera following enabled');
-        
-        // Update button appearance
-        const button = document.getElementById('followButton');
-        if (button) {
-            button.style.backgroundColor = 'rgba(76, 175, 80, 0.8)';
-        }
-    }
-}
-
-// ============================================================================
-// Public API - Functions exposed to Flutter
-// ============================================================================
-
-window.cleanupCesium = cleanupCesium;
-window.checkMemory = checkMemory;
+// Export public API
 window.initializeCesium = initializeCesium;
-window.handleMemoryPressure = handleMemoryPressure;
-window.restoreFlightVisualization = restoreFlightVisualization;
+window.createColoredFlightTrack = createColoredFlightTrack;
 window.togglePlayback = togglePlayback;
 window.changePlaybackSpeed = changePlaybackSpeed;
-window.createColoredFlightTrack = createColoredFlightTrack;
 window.toggleCameraFollow = toggleCameraFollow;
+window.cleanupCesium = cleanupCesium;
+window.handleMemoryPressure = handleMemoryPressure;
+window.checkMemory = checkMemory;
