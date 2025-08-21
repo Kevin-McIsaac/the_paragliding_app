@@ -261,7 +261,8 @@ class FlightDataSource extends Cesium.CustomDataSource {
             climbRate: point.climbRate || 0,
             speed: speed,
             time: this.times[index],
-            localTime: this._toLocalTime(this.times[index])
+            localTime: this._toLocalTime(this.times[index]),
+            elapsedSeconds: Cesium.JulianDate.secondsDifference(this.times[index], this.startTime)
         };
     }
     
@@ -452,10 +453,12 @@ class StatisticsDisplay {
         const stats = this.flightData.getStatisticsAt(time);
         if (!stats) return;
         
-        // Format time
-        const gregorian = Cesium.JulianDate.toGregorianDate(stats.localTime);
-        const timeStr = `${gregorian.hour.toString().padStart(2, '0')}:${gregorian.minute.toString().padStart(2, '0')}`;
-        const tzLabel = this.flightData.timezone ? ` (${this.flightData.timezone})` : '';
+        // Format duration
+        const elapsedSeconds = Math.floor(stats.elapsedSeconds);
+        const hours = Math.floor(elapsedSeconds / 3600);
+        const minutes = Math.floor((elapsedSeconds % 3600) / 60);
+        const seconds = elapsedSeconds % 60;
+        const durationStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
         
         // Choose climb icon
         const climbIcon = stats.climbRate > 0.1 ? 'trending_up' : 
@@ -480,9 +483,9 @@ class StatisticsDisplay {
                 <div class="stat-label">Speed</div>
             </div>
             <div class="stat-item">
-                <i class="material-icons">access_time</i>
-                <div class="stat-value">${timeStr}</div>
-                <div class="stat-label">Time${tzLabel}</div>
+                <i class="material-icons">timer</i>
+                <div class="stat-value">${durationStr}</div>
+                <div class="stat-label">Duration</div>
             </div>
         `;
     }
