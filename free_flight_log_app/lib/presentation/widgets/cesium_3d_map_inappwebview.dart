@@ -1020,31 +1020,10 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
         final controller = webViewController;
         webViewController = null;
         
-        // Try JavaScript cleanup with timeout
-        try {
-          await controller!.evaluateJavascript(source: '''
-            if (typeof cleanupCesium === 'function') {
-              cleanupCesium();
-            }
-            // Stop any running timers
-            if (typeof cleanupTimer !== 'undefined') {
-              clearInterval(cleanupTimer);
-            }
-            // Clear viewer reference
-            if (window.viewer) {
-              window.viewer = null;
-            }
-          ''').timeout(
-            const Duration(milliseconds: 500),
-            onTimeout: () {
-              LoggingService.debug('Cesium3D: JavaScript cleanup timed out');
-              return null;
-            },
-          );
-        } catch (e) {
-          // JavaScript cleanup failed, continue with disposal
-          LoggingService.debug('Cesium3D: JavaScript cleanup skipped: $e');
-        }
+        // Skip JavaScript cleanup during disposal to prevent renderer crashes
+        // The WebView will be destroyed anyway, so JavaScript cleanup is not needed
+        // and can cause crashes if the renderer is already shutting down
+        LoggingService.debug('Cesium3D: Skipping JavaScript cleanup to prevent renderer crash');
         
         // Try to stop loading with error handling
         try {
@@ -1109,8 +1088,9 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
         }
         break;
       case AppLifecycleState.detached:
-        // Clean up resources when app is detached
-        _disposeWebView();
+        // Don't dispose WebView here - let Flutter's dispose() handle it
+        // Disposing here can cause renderer crashes when navigating away
+        LoggingService.debug('Cesium3D Surface: App detached - cleanup handled by dispose()');
         break;
       default:
         break;
