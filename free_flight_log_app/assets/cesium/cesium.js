@@ -2,6 +2,22 @@
 // Uses CustomDataSource, native time-dynamic properties, and efficient data management
 
 // ============================================================================
+// Backward Compatibility - cesiumLog shim
+// ============================================================================
+
+// Define cesiumLog for backward compatibility with Flutter-injected code
+window.cesiumLog = {
+    debug: (message) => {
+        if (window.cesiumConfig?.debug) {
+            console.log('[Cesium Debug] ' + message);
+        }
+    },
+    info: (message) => console.log('[Cesium] ' + message),
+    error: (message) => console.error('[Cesium Error] ' + message),
+    warn: (message) => console.warn('[Cesium Warning] ' + message)
+};
+
+// ============================================================================
 // Performance Reporting to Flutter
 // ============================================================================
 
