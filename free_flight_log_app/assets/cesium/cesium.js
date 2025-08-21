@@ -558,6 +558,35 @@ class CesiumFlightApp {
         
         this._configureScene();
         this._setupInitialView(config);
+        
+        // Hide terrain options from baseLayerPicker - show only imagery choices
+        if (this.viewer.baseLayerPicker && this.viewer.baseLayerPicker.viewModel) {
+            this.viewer.baseLayerPicker.viewModel.terrainProviderViewModels = [];
+            
+            // Hide the "Imagery" category label whenever the picker is opened
+            const hideImageryLabel = () => {
+                const pickerContainer = document.querySelector('.cesium-baseLayerPicker-dropDown');
+                if (pickerContainer) {
+                    const categoryLabels = pickerContainer.querySelectorAll('.cesium-baseLayerPicker-sectionTitle');
+                    categoryLabels.forEach(label => {
+                        if (label.textContent === 'Imagery') {
+                            label.style.display = 'none';
+                        }
+                    });
+                }
+            };
+            
+            // Watch for dropdown visibility changes
+            const pickerButton = document.querySelector('.cesium-baseLayerPicker-selected');
+            if (pickerButton) {
+                pickerButton.addEventListener('click', () => {
+                    setTimeout(hideImageryLabel, 10);
+                });
+            }
+            
+            // Also hide on initial load
+            setTimeout(hideImageryLabel, 100);
+        }
     }
     
     _createImageryProviders() {
@@ -605,9 +634,9 @@ class CesiumFlightApp {
         globe.depthTestAgainstTerrain = true;
         globe.terrainExaggeration = 1.0;
         
-        // Set base color to black to avoid jarring blue during imagery transitions
-        globe.baseColor = Cesium.Color.BLACK;
-        scene.backgroundColor = Cesium.Color.BLACK;
+        // Set base color to dark gray for less jarring transitions when switching maps
+        globe.baseColor = Cesium.Color.fromCssColorString('#2b2b2b');
+        scene.backgroundColor = Cesium.Color.fromCssColorString('#2b2b2b');
         
         // Adjust fog for clearer terrain
         scene.fog.enabled = true;
