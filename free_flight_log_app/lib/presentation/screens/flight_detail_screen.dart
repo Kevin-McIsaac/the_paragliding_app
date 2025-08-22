@@ -8,6 +8,7 @@ import '../../services/logging_service.dart';
 import '../../utils/date_time_utils.dart';
 import '../widgets/flight_track_3d_widget.dart';
 import '../widgets/flight_statistics_widget.dart';
+import '../../services/igc_import_service.dart';
 import 'edit_site_screen.dart';
 import '../widgets/edit_wing_dialog.dart';
 import '../widgets/site_selection_dialog.dart';
@@ -182,11 +183,32 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
   Future<void> _editCurrentSite() async {
     if (_launchSite == null) return;
     
+    // Try to get actual launch coordinates from IGC file if available
+    ({double latitude, double longitude})? actualLaunchCoords;
+    if (_flight.trackLogPath != null && _flight.source == 'igc') {
+      try {
+        final igcService = IgcImportService.instance;
+        final igcData = await igcService.getIgcFile(_flight.trackLogPath!);
+        if (igcData.launchSite != null) {
+          actualLaunchCoords = (
+            latitude: igcData.launchSite!.latitude,
+            longitude: igcData.launchSite!.longitude,
+          );
+          LoggingService.info('FlightDetailScreen: Found actual launch at ${actualLaunchCoords.latitude.toStringAsFixed(6)}, ${actualLaunchCoords.longitude.toStringAsFixed(6)}');
+        }
+      } catch (e) {
+        LoggingService.error('FlightDetailScreen: Failed to get actual launch coordinates', e);
+      }
+    }
+    
     try {
       final editedSite = await Navigator.push<Site>(
         context,
         MaterialPageRoute(
-          builder: (context) => EditSiteScreen(site: _launchSite!),
+          builder: (context) => EditSiteScreen(
+            site: _launchSite!,
+            actualLaunchCoordinates: actualLaunchCoords,
+          ),
         ),
       );
       

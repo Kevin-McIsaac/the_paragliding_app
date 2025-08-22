@@ -11,8 +11,13 @@ import '../../services/logging_service.dart';
 
 class EditSiteScreen extends StatefulWidget {
   final Site site;
+  final ({double latitude, double longitude})? actualLaunchCoordinates;
 
-  const EditSiteScreen({super.key, required this.site});
+  const EditSiteScreen({
+    super.key, 
+    required this.site,
+    this.actualLaunchCoordinates,
+  });
 
   @override
   State<EditSiteScreen> createState() => _EditSiteScreenState();
@@ -607,6 +612,28 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                   ))
               .toList(),
         ),
+        // Actual launch point from GPS track (yellow marker)
+        if (widget.actualLaunchCoordinates != null)
+          MarkerLayer(
+            markers: [
+              Marker(
+                point: LatLng(
+                  widget.actualLaunchCoordinates!.latitude,
+                  widget.actualLaunchCoordinates!.longitude,
+                ),
+                width: 30,
+                height: 30,
+                child: Tooltip(
+                  message: 'Actual Launch\n${widget.actualLaunchCoordinates!.latitude.toStringAsFixed(6)}, ${widget.actualLaunchCoordinates!.longitude.toStringAsFixed(6)}',
+                  child: const Icon(
+                    Icons.location_on,
+                    color: Colors.amber,
+                    size: 30,
+                  ),
+                ),
+              ),
+            ],
+          ),
         // Current site (red marker, on top)
         MarkerLayer(
           markers: [
@@ -765,6 +792,17 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                   const Text('Local Sites', style: TextStyle(fontSize: 12)),
                 ],
               ),
+              if (widget.actualLaunchCoordinates != null) ...[
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.location_on, color: Colors.amber, size: 20),
+                    const SizedBox(width: 8),
+                    const Text('Actual Launch', style: TextStyle(fontSize: 12)),
+                  ],
+                ),
+              ],
               if (_showApiSites) ...[
                 const SizedBox(height: 4),
                 Row(
