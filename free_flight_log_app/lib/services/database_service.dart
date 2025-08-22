@@ -497,6 +497,41 @@ class DatabaseService {
     );
     return List.generate(maps.length, (i) => Site.fromMap(maps[i]));
   }
+  
+  /// Get all sites within a bounding box
+  Future<List<Site>> getSitesInBounds({
+    required double north,
+    required double south,
+    required double east,
+    required double west,
+  }) async {
+    Database db = await _databaseHelper.database;
+    
+    // Handle date line crossing
+    String longitudeCondition;
+    List<dynamic> whereArgs;
+    
+    if (west > east) {
+      // Crosses date line
+      longitudeCondition = '(longitude >= ? OR longitude <= ?)';
+      whereArgs = [south, north, west, east];
+    } else {
+      // Normal case
+      longitudeCondition = '(longitude >= ? AND longitude <= ?)';
+      whereArgs = [south, north, west, east];
+    }
+    
+    List<Map<String, dynamic>> maps = await db.query(
+      'sites',
+      where: 'latitude >= ? AND latitude <= ? AND $longitudeCondition',
+      whereArgs: whereArgs,
+      orderBy: 'name ASC',
+    );
+    
+    final sites = List.generate(maps.length, (i) => Site.fromMap(maps[i]));
+    LoggingService.debug('DatabaseService: Found ${sites.length} sites in bounds');
+    return sites;
+  }
 
   Future<Site?> getSite(int id) async {
     Database db = await _databaseHelper.database;

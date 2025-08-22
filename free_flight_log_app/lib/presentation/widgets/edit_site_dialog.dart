@@ -1,8 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../data/models/site.dart';
+import '../../data/models/paragliding_site.dart';
+import '../../services/database_service.dart';
+import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
 
 class EditSiteDialog extends StatefulWidget {
@@ -24,6 +28,18 @@ class _EditSiteDialogState extends State<EditSiteDialog> with SingleTickerProvid
   MapController? _mapController;
   bool _showSatelliteView = false;
   final _formKey = GlobalKey<FormState>();
+  
+  // Site markers state
+  List<Site> _localSites = [];
+  List<ParaglidingSite> _apiSites = [];
+  Timer? _debounceTimer;
+  LatLngBounds? _currentBounds;
+  bool _isLoadingSites = false;
+  bool _showApiSites = true;
+  
+  // Services
+  final DatabaseService _databaseService = DatabaseService.instance;
+  final ParaglidingEarthApi _apiService = ParaglidingEarthApi.instance;
 
   @override
   void initState() {
@@ -42,6 +58,7 @@ class _EditSiteDialogState extends State<EditSiteDialog> with SingleTickerProvid
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _tabController.dispose();
     _nameController.dispose();
     _latitudeController.dispose();
@@ -288,6 +305,103 @@ class _EditSiteDialogState extends State<EditSiteDialog> with SingleTickerProvid
       _showSatelliteView = !_showSatelliteView;
     });
   }
+  
+  void _onMapEvent(MapEvent event) {
+    // Only react to movement end events to avoid excessive API calls
+    if (event is MapEventMoveEnd || event is MapEventFlingAnimationEnd) {
+      _debounceTimer?.cancel();
+      _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+        _updateMapBounds();
+      });
+    }
+  }
+  
+  void _updateMapBounds() {
+    if (_mapController == null) return;
+    
+    final bounds = _mapController!.camera.visibleBounds;
+    
+    // Check if bounds changed significantly (>10%)
+    if (_currentBounds != null) {
+      final latChange = (bounds.north - _currentBounds!.north).abs() / 
+                        (_currentBounds!.north - _currentBounds!.south).abs();
+      final lngChange = (bounds.east - _currentBounds!.east).abs() / 
+                        (_currentBounds!.east - _currentBounds!.west).abs();
+      
+      if (latChange < 0.1 && lngChange < 0.1) {
+        return; // Bounds haven't changed significantly
+      }
+    }
+    
+    _currentBounds = bounds;
+    _loadSitesForBounds(bounds);
+  }
+  
+  Future<void> _loadSitesForBounds(LatLngBounds bounds) async {
+    if (_isLoadingSites) return;
+    
+    setState(() {
+      _isLoadingSites = true;
+    });
+    
+    try {
+      // Load local sites
+      final localSitesFuture = _databaseService.getSitesInBounds(
+        north: bounds.north,
+        south: bounds.south,
+        east: bounds.east,
+        west: bounds.west,
+      );
+      
+      // Load API sites if enabled
+      Future<List<ParaglidingSite>> apiSitesFuture;
+      if (_showApiSites) {
+        apiSitesFuture = _apiService.getSitesInBounds(
+          bounds.north,
+          bounds.south,
+          bounds.east,
+          bounds.west,
+          limit: 50,
+        );
+      } else {
+        apiSitesFuture = Future.value([]);
+      }
+      
+      // Wait for both to complete
+      final results = await Future.wait([
+        localSitesFuture,
+        apiSitesFuture,
+      ]);
+      
+      if (mounted) {
+        setState(() {
+          _localSites = results[0] as List<Site>;
+          _apiSites = results[1] as List<ParaglidingSite>;
+          _isLoadingSites = false;
+        });
+        
+        LoggingService.info('EditSiteDialog: Loaded ${_localSites.length} local sites and ${_apiSites.length} API sites');
+      }
+    } catch (e) {
+      LoggingService.error('EditSiteDialog: Error loading sites', e);
+      if (mounted) {
+        setState(() {
+          _isLoadingSites = false;
+        });
+      }
+    }
+  }
+  
+  void _toggleApiSites() {
+    setState(() {
+      _showApiSites = !_showApiSites;
+      if (_showApiSites && _currentBounds != null) {
+        _loadSitesForBounds(_currentBounds!);
+      } else {
+        _apiSites = [];
+      }
+    });
+  }
 
   Widget _buildLocationMap() {
     _mapController ??= MapController();
@@ -308,6 +422,13 @@ class _EditSiteDialogState extends State<EditSiteDialog> with SingleTickerProvid
             initialZoom: 14.0,
             minZoom: 5.0,
             maxZoom: 18.0,
+            onMapReady: () {
+              // Load sites for initial bounds
+              Future.delayed(const Duration(milliseconds: 100), () {
+                _updateMapBounds();
+              });
+            },
+            onMapEvent: _onMapEvent,
           ),
           children: [
             TileLayer(
@@ -316,6 +437,49 @@ class _EditSiteDialogState extends State<EditSiteDialog> with SingleTickerProvid
                 : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
               userAgentPackageName: 'com.freeflightlog.free_flight_log_app',
             ),
+            // Local database sites (blue markers)
+            MarkerLayer(
+              markers: _localSites
+                  .where((site) => 
+                      site.latitude != widget.site.latitude || 
+                      site.longitude != widget.site.longitude) // Exclude current site
+                  .map((site) => Marker(
+                        point: LatLng(site.latitude, site.longitude),
+                        width: 30,
+                        height: 30,
+                        child: Tooltip(
+                          message: '${site.name}${site.country != null ? '\n${site.country}' : ''}',
+                          child: const Icon(
+                            Icons.location_on,
+                            color: Colors.blue,
+                            size: 30,
+                          ),
+                        ),
+                      ))
+                  .toList(),
+            ),
+            // API sites (green markers)
+            MarkerLayer(
+              markers: _apiSites
+                  .where((site) => 
+                      site.latitude != widget.site.latitude || 
+                      site.longitude != widget.site.longitude) // Exclude current site
+                  .map((site) => Marker(
+                        point: LatLng(site.latitude, site.longitude),
+                        width: 30,
+                        height: 30,
+                        child: Tooltip(
+                          message: '${site.name}${site.country != null ? '\n${site.country}' : ''}',
+                          child: const Icon(
+                            Icons.location_on,
+                            color: Colors.green,
+                            size: 30,
+                          ),
+                        ),
+                      ))
+                  .toList(),
+            ),
+            // Current site (red marker, on top)
             MarkerLayer(
               markers: [
                 Marker(
@@ -378,13 +542,69 @@ class _EditSiteDialogState extends State<EditSiteDialog> with SingleTickerProvid
           ],
             ),
           ),
-          // Satellite toggle button
+          // Map controls
           Positioned(
             top: 8,
             right: 8,
+            child: Column(
+              children: [
+                // Satellite toggle button
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(4),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 4,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: IconButton(
+                    onPressed: _toggleSatelliteView,
+                    icon: Icon(
+                      _showSatelliteView ? Icons.map : Icons.satellite_alt,
+                      size: 20,
+                    ),
+                    tooltip: _showSatelliteView ? 'Street View' : 'Satellite View',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // API sites toggle
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(4),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 4,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: IconButton(
+                    onPressed: _toggleApiSites,
+                    icon: Icon(
+                      Icons.public,
+                      size: 20,
+                      color: _showApiSites ? Colors.green : Colors.grey,
+                    ),
+                    tooltip: _showApiSites ? 'Hide ParaglidingEarth Sites' : 'Show ParaglidingEarth Sites',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Legend
+          Positioned(
+            top: 8,
+            left: 8,
             child: Container(
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: Colors.white.withValues(alpha: 0.95),
                 borderRadius: BorderRadius.circular(4),
                 boxShadow: [
                   BoxShadow(
@@ -394,16 +614,77 @@ class _EditSiteDialogState extends State<EditSiteDialog> with SingleTickerProvid
                   ),
                 ],
               ),
-              child: IconButton(
-                onPressed: _toggleSatelliteView,
-                icon: Icon(
-                  _showSatelliteView ? Icons.map : Icons.satellite_alt,
-                  size: 20,
-                ),
-                tooltip: _showSatelliteView ? 'Street View' : 'Satellite View',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.location_pin, color: Colors.red, size: 16),
+                      const SizedBox(width: 4),
+                      Text('Current Site', style: TextStyle(fontSize: 11)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.location_on, color: Colors.blue, size: 16),
+                      const SizedBox(width: 4),
+                      Text('Local Sites', style: TextStyle(fontSize: 11)),
+                    ],
+                  ),
+                  if (_showApiSites) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.location_on, color: Colors.green, size: 16),
+                        const SizedBox(width: 4),
+                        Text('ParaglidingEarth', style: TextStyle(fontSize: 11)),
+                      ],
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
+          // Loading indicator
+          if (_isLoadingSites)
+            Positioned(
+              bottom: 60,
+              left: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(4),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 4,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text('Loading sites...', style: TextStyle(fontSize: 11)),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );
