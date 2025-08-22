@@ -216,11 +216,12 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: true,
+      canPop: false, // Prevent automatic pop so we can handle it ourselves
       onPopInvokedWithResult: (bool didPop, dynamic result) {
-        if (didPop && _dataModified) {
-          // Data was modified, return true to trigger reload
-          Navigator.of(context).pop(true);
+        // Only handle the pop if it was prevented (didPop = false)
+        if (!didPop) {
+          // Now we can safely pop with our data
+          Navigator.of(context).pop(_dataModified);
         }
       },
       child: Scaffold(

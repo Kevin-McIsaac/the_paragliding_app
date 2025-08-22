@@ -558,8 +558,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         TileLayer(
           urlTemplate: _showSatelliteView
               ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-              : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-          subdomains: _showSatelliteView ? [] : const ['a', 'b', 'c'],
+              : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.freeflightlog.free_flight_log_app',
         ),
         // Local sites (blue markers)
