@@ -6,7 +6,7 @@ import '../../utils/startup_performance_tracker.dart';
 
 class DatabaseHelper {
   static const _databaseName = "FlightLog.db";
-  static const _databaseVersion = 9; // Simplified schema with minimal indexes
+  static const _databaseVersion = 10; // Added wing aliases support
 
   // Singleton pattern
   DatabaseHelper._privateConstructor();
@@ -105,6 +105,17 @@ class DatabaseHelper {
       )
     ''');
 
+    await db.execute('''
+      CREATE TABLE wing_aliases (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        wing_id INTEGER NOT NULL,
+        alias_name TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (wing_id) REFERENCES wings (id) ON DELETE CASCADE,
+        UNIQUE(alias_name)
+      )
+    ''');
+
     // Create optimized indexes for query performance
     await _createIndexes(db);
   }
@@ -128,7 +139,11 @@ class DatabaseHelper {
       // 3. Composite index for most common query pattern: ORDER BY date DESC, launch_time DESC
       await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_date_time ON flights(date DESC, launch_time DESC)');
       
-      LoggingService.database('INDEX', 'Successfully created 3 essential indexes');
+      // 4. Index for wing aliases lookup
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_wing_aliases_wing_id ON wing_aliases(wing_id)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_wing_aliases_alias_name ON wing_aliases(alias_name)');
+      
+      LoggingService.database('INDEX', 'Successfully created essential indexes');
       perfTracker.completeMeasurement('Create Essential Indexes', indexWatch);
     } catch (e) {
       LoggingService.error('DatabaseHelper: Failed to create indexes', e);
@@ -179,6 +194,34 @@ class DatabaseHelper {
       } catch (e) {
         LoggingService.error('DatabaseHelper: Index optimization failed', e);
         // Non-critical - app can continue with existing indexes
+      }
+    }
+    
+    // Migration for v10: Add wing aliases support
+    if (oldVersion < 10) {
+      try {
+        LoggingService.database('MIGRATION', 'Adding wing aliases support');
+        
+        // Create wing_aliases table
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS wing_aliases (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            wing_id INTEGER NOT NULL,
+            alias_name TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (wing_id) REFERENCES wings (id) ON DELETE CASCADE,
+            UNIQUE(alias_name)
+          )
+        ''');
+        
+        // Create indexes for wing aliases
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_wing_aliases_wing_id ON wing_aliases(wing_id)');
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_wing_aliases_alias_name ON wing_aliases(alias_name)');
+        
+        LoggingService.database('MIGRATION', 'Successfully added wing aliases support');
+      } catch (e) {
+        LoggingService.error('DatabaseHelper: Failed to add wing aliases', e);
+        rethrow; // This is important for data integrity
       }
     }
     

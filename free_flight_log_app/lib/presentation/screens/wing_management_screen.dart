@@ -17,6 +17,8 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
   Map<int, int> _flightCounts = {}; // Store flight counts per wing
   bool _isLoading = false;
   String? _errorMessage;
+  bool _isSelectionMode = false;
+  Set<int> _selectedWingIds = {};
 
   @override
   void initState() {
@@ -196,6 +198,143 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
     }
   }
 
+  void _toggleSelectionMode() {
+    setState(() {
+      _isSelectionMode = !_isSelectionMode;
+      if (!_isSelectionMode) {
+        _selectedWingIds.clear();
+      }
+    });
+  }
+  
+  void _toggleWingSelection(int wingId) {
+    setState(() {
+      if (_selectedWingIds.contains(wingId)) {
+        _selectedWingIds.remove(wingId);
+      } else {
+        _selectedWingIds.add(wingId);
+      }
+    });
+  }
+  
+  Future<void> _mergeSelectedWings() async {
+    if (_selectedWingIds.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select at least 2 wings to merge'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    
+    // Get selected wings
+    final selectedWings = _wings.where((w) => _selectedWingIds.contains(w.id)).toList();
+    
+    // Show dialog to select primary wing
+    final primaryWing = await showDialog<Wing>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Select Primary Wing'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Choose which wing to keep. The other wings will be merged into this one:'),
+            const SizedBox(height: 16),
+            ...selectedWings.map((wing) => ListTile(
+              title: Text(_getWingDisplayName(wing)),
+              subtitle: Text('${_flightCounts[wing.id!] ?? 0} flights'),
+              onTap: () => Navigator.of(context).pop(wing),
+            )),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    
+    if (primaryWing == null) return;
+    
+    // Confirm merge
+    final totalFlights = selectedWings
+        .where((w) => w.id != primaryWing.id)
+        .fold(0, (sum, w) => sum + (_flightCounts[w.id!] ?? 0));
+    
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Wing Merge'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Primary wing: ${_getWingDisplayName(primaryWing)}'),
+            const SizedBox(height: 8),
+            const Text('Wings to merge:'),
+            ...selectedWings
+                .where((w) => w.id != primaryWing.id)
+                .map((w) => Text('  • ${_getWingDisplayName(w)} (${_flightCounts[w.id!] ?? 0} flights)')),
+            const SizedBox(height: 16),
+            Text('This will reassign $totalFlights flights to the primary wing.'),
+            const SizedBox(height: 8),
+            const Text('The merged wing names will be saved as aliases.'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Merge', style: TextStyle(color: Colors.orange)),
+          ),
+        ],
+      ),
+    );
+    
+    if (confirmed != true) return;
+    
+    // Perform merge
+    setState(() => _isLoading = true);
+    
+    try {
+      final wingIdsToMerge = selectedWings
+          .where((w) => w.id != primaryWing.id)
+          .map((w) => w.id!)
+          .toList();
+      
+      await _databaseService.mergeWings(primaryWing.id!, wingIdsToMerge);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Successfully merged ${wingIdsToMerge.length} wings into ${_getWingDisplayName(primaryWing)}'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+      
+      _toggleSelectionMode();
+      _loadWings();
+    } catch (e) {
+      LoggingService.error('WingManagementScreen: Failed to merge wings', e);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error merging wings: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      setState(() => _isLoading = false);
+    }
+  }
+
   Future<void> _toggleWingStatus(Wing wing) async {
     final updatedWing = Wing(
       id: wing.id,
@@ -237,14 +376,36 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Wing Management'),
+        title: Text(_isSelectionMode 
+            ? '${_selectedWingIds.length} selected' 
+            : 'Wing Management'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        leading: _isSelectionMode
+            ? IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: _toggleSelectionMode,
+              )
+            : null,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.add),
-            tooltip: 'Add Wing',
-            onPressed: _addNewWing,
-          ),
+          if (_isSelectionMode) ...[
+            if (_selectedWingIds.length >= 2)
+              IconButton(
+                icon: const Icon(Icons.merge),
+                tooltip: 'Merge Wings',
+                onPressed: _mergeSelectedWings,
+              ),
+          ] else ...[
+            IconButton(
+              icon: const Icon(Icons.merge_type),
+              tooltip: 'Select Wings to Merge',
+              onPressed: _wings.length >= 2 ? _toggleSelectionMode : null,
+            ),
+            IconButton(
+              icon: const Icon(Icons.add),
+              tooltip: 'Add Wing',
+              onPressed: _addNewWing,
+            ),
+          ],
         ],
       ),
       body: _isLoading
@@ -280,7 +441,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
               : _wings.isEmpty
                   ? _buildEmptyState()
                   : _buildWingList(_wings),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: _isSelectionMode ? null : FloatingActionButton(
         onPressed: _addNewWing,
         tooltip: 'Add Wing',
         child: const Icon(Icons.add),
@@ -358,14 +519,27 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
   }
 
   Widget _buildWingCard(Wing wing) {
+    final isSelected = _selectedWingIds.contains(wing.id);
+    
     return Opacity(
       opacity: wing.active ? 1.0 : 0.6,
       child: Card(
         margin: const EdgeInsets.only(bottom: 8),
+        color: isSelected ? Theme.of(context).colorScheme.primaryContainer : null,
         child: GestureDetector(
-          onDoubleTap: () => _editWing(wing),
+          onDoubleTap: () => _isSelectionMode ? null : _editWing(wing),
+          onTap: _isSelectionMode && wing.id != null 
+              ? () => _toggleWingSelection(wing.id!) 
+              : null,
           child: ListTile(
-        leading: CircleAvatar(
+        leading: _isSelectionMode
+            ? Checkbox(
+                value: isSelected,
+                onChanged: wing.id != null 
+                    ? (value) => _toggleWingSelection(wing.id!)
+                    : null,
+              )
+            : CircleAvatar(
           backgroundColor: wing.active 
             ? Theme.of(context).colorScheme.primary
             : Colors.grey[400],
@@ -424,7 +598,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
                   ),
                 ),
               ),
-            PopupMenuButton<String>(
+            if (!_isSelectionMode) PopupMenuButton<String>(
           onSelected: (value) {
             switch (value) {
               case 'edit':

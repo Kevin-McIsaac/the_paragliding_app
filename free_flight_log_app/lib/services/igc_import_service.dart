@@ -429,15 +429,11 @@ class IgcImportService {
       uniqueIdentifier = gliderID;
     }
     
-    // Get all existing wings
-    final existingWings = await _databaseService.getAllWings();
-    
-    // Look for exact match on the unique identifier
-    for (final wing in existingWings) {
-      if (wing.name.toLowerCase() == uniqueIdentifier.toLowerCase()) {
-        LoggingService.debug('IgcImportService: Found existing wing: "${wing.name}"');
-        return wing;
-      }
+    // Check for existing wing by name or alias using the new method
+    final existingWing = await _databaseService.findWingByNameOrAlias(uniqueIdentifier);
+    if (existingWing != null) {
+      LoggingService.debug('IgcImportService: Found existing wing (name or alias): "${existingWing.name}"');
+      return existingWing;
     }
 
     // No existing wing found, create new one
