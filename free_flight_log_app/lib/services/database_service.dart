@@ -459,8 +459,9 @@ class DatabaseService {
         MAX(f.max_altitude) as max_altitude,
         AVG(f.duration) as avg_duration
       FROM sites s
-      LEFT JOIN flights f ON f.launch_site_id = s.id
+      INNER JOIN flights f ON f.launch_site_id = s.id
       GROUP BY s.id
+      HAVING COUNT(f.id) > 0
       ORDER BY flight_count DESC
     ''');
     
@@ -473,7 +474,7 @@ class DatabaseService {
       };
     }).toList();
     
-    LoggingService.debug('DatabaseService: Generated statistics for ${siteStats.length} sites');
+    LoggingService.debug('DatabaseService: Generated statistics for ${siteStats.length} sites with flights');
     return siteStats;
   }
 
