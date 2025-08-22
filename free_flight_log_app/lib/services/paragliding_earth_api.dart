@@ -44,7 +44,7 @@ class ParaglidingEarthApi {
   Future<List<ParaglidingSite>> getSitesAroundCoordinates(
     double latitude,
     double longitude, {
-    double radiusKm = 10.0,
+    double radiusKm = 0.5, // 500m default - typical launch site search radius
     int limit = _defaultLimit,
     bool detailed = true,
   }) async {
@@ -143,8 +143,8 @@ class ParaglidingEarthApi {
   Future<ParaglidingSite?> findNearestSite(
     double latitude,
     double longitude, {
-    double maxDistanceKm = 10.0,
-    String? preferredType, // 'launch', 'landing', or null for any
+    double maxDistanceKm = 0.5, // 500m default - typical launch site search radius
+    String? preferredType, // 'launch' or null for any (landing sites not typically used)
   }) async {
     final sites = await getSitesAroundCoordinates(
       latitude,
@@ -300,10 +300,12 @@ class ParaglidingEarthApi {
     }
     
     // Determine site type based on API data
-    String siteType = 'launch'; // Default
+    // Note: We primarily use launch sites since paragliders typically
+    // land in random fields rather than designated landing sites
+    String siteType = 'launch'; // Default to launch
     
     // ParaglidingEarth doesn't explicitly separate launch/landing, 
-    // so we'll classify based on altitude and name patterns
+    // but we can detect landing sites from name patterns (rarely used)
     if (name.toLowerCase().contains('landing') || 
         name.toLowerCase().contains('atterrissage') ||
         name.toLowerCase().contains('landeplatz')) {

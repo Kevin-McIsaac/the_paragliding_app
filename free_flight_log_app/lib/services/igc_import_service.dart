@@ -194,25 +194,36 @@ class IgcImportService {
       
       String siteName;
       String? country;
+      double siteLatitude;
+      double siteLongitude;
+      double siteAltitude;
       
       if (matchedSite != null) {
+        // Use ParaglidingEarth coordinates for the site
         siteName = matchedSite.name;
         country = matchedSite.country;
+        siteLatitude = matchedSite.latitude;
+        siteLongitude = matchedSite.longitude;
+        siteAltitude = matchedSite.altitude?.toDouble() ?? launchPoint.gpsAltitude.toDouble();
         
         // Debug output to see what the API returned
-        LoggingService.info('IgcImportService: API found site "$siteName" for coordinates ${launchPoint.latitude.toStringAsFixed(4)}, ${launchPoint.longitude.toStringAsFixed(4)}');
-        LoggingService.debug('IgcImportService: Site details - Country: "${country ?? 'null'}"');
-        LoggingService.debug('IgcImportService: Full site object: $matchedSite');
+        LoggingService.info('IgcImportService: API found site "$siteName" at ${siteLatitude.toStringAsFixed(4)}, ${siteLongitude.toStringAsFixed(4)}');
+        LoggingService.info('IgcImportService: GPS launch was at ${launchPoint.latitude.toStringAsFixed(4)}, ${launchPoint.longitude.toStringAsFixed(4)}');
+        LoggingService.debug('IgcImportService: Site details - Country: "${country ?? 'null'}", Altitude: $siteAltitude');
       } else {
+        // No ParaglidingEarth match - use GPS coordinates
         siteName = 'Unknown';
         country = null;
-        LoggingService.info('IgcImportService: No API site found for coordinates ${launchPoint.latitude.toStringAsFixed(4)}, ${launchPoint.longitude.toStringAsFixed(4)}');
+        siteLatitude = launchPoint.latitude;
+        siteLongitude = launchPoint.longitude;
+        siteAltitude = launchPoint.gpsAltitude.toDouble();
+        LoggingService.info('IgcImportService: No API site found for GPS launch at ${launchPoint.latitude.toStringAsFixed(4)}, ${launchPoint.longitude.toStringAsFixed(4)}');
       }
       
       launchSite = await _databaseService.findOrCreateSite(
-        latitude: launchPoint.latitude,
-        longitude: launchPoint.longitude,
-        altitude: launchPoint.gpsAltitude.toDouble(),
+        latitude: siteLatitude,
+        longitude: siteLongitude,
+        altitude: siteAltitude,
         name: siteName,
         country: country,
       );
@@ -429,15 +440,11 @@ class IgcImportService {
       uniqueIdentifier = gliderID;
     }
     
-    // Get all existing wings
-    final existingWings = await _databaseService.getAllWings();
-    
-    // Look for exact match on the unique identifier
-    for (final wing in existingWings) {
-      if (wing.name.toLowerCase() == uniqueIdentifier.toLowerCase()) {
-        LoggingService.debug('IgcImportService: Found existing wing: "${wing.name}"');
-        return wing;
-      }
+    // Check for existing wing by name or alias using the new method
+    final existingWing = await _databaseService.findWingByNameOrAlias(uniqueIdentifier);
+    if (existingWing != null) {
+      LoggingService.debug('IgcImportService: Found existing wing (name or alias): "${existingWing.name}"');
+      return existingWing;
     }
 
     // No existing wing found, create new one

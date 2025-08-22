@@ -41,14 +41,14 @@ class SiteMatchingService {
     }
   }
 
-  /// Find the nearest paragliding site to given coordinates
+  /// Find the nearest paragliding launch site to given coordinates
   /// Uses hybrid approach: flight log first for speed, API for enhanced data
   /// Returns null if no site found within maxDistance (meters)
   Future<ParaglidingSite?> findNearestSite(
     double latitude, 
     double longitude, {
-    double maxDistance = 1000, // 1km default
-    String? preferredType, // 'launch', 'landing', or null for any
+    double maxDistance = 500, // 500m default - typical launch site search radius
+    String? preferredType, // 'launch' or null for any
   }) async {
     // Try local flight log first (much faster for known sites)
     final localSite = _findNearestSiteLocal(latitude, longitude, maxDistance: maxDistance, preferredType: preferredType);
@@ -93,8 +93,8 @@ class SiteMatchingService {
   ParaglidingSite? _findNearestSiteLocal(
     double latitude, 
     double longitude, {
-    double maxDistance = 1000, // 1km default
-    String? preferredType, // 'launch', 'landing', or null for any
+    double maxDistance = 500, // 500m default - typical launch site search radius
+    String? preferredType, // 'launch' or null for any
   }) {
     if (!_isInitialized || _sites == null || _sites!.isEmpty) {
       return null;
@@ -136,19 +136,6 @@ class SiteMatchingService {
     );
   }
 
-  /// Find the nearest landing site
-  Future<ParaglidingSite?> findNearestLandingSite(
-    double latitude, 
-    double longitude, {
-    double maxDistance = 1000, // 1km for landings (more flexible)
-  }) async {
-    return await findNearestSite(
-      latitude, 
-      longitude, 
-      maxDistance: maxDistance,
-      preferredType: 'landing',
-    );
-  }
 
   /// Find all sites within a given radius
   List<ParaglidingSite> findSitesInRadius(
@@ -244,7 +231,6 @@ class SiteMatchingService {
     final stats = <String, dynamic>{
       'total': _sites!.length,
       'launch_sites': _sites!.where((s) => s.siteType == 'launch' || s.siteType == 'both').length,
-      'landing_sites': _sites!.where((s) => s.siteType == 'landing' || s.siteType == 'both').length,
       'countries': _sites!.map((s) => s.country).where((c) => c != null).toSet().length,
       'rated_sites': _sites!.where((s) => s.rating > 0).length,
     };

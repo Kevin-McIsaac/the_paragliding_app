@@ -21,11 +21,7 @@
             top: 0;
             left: 0;
             width: 100%;
-            height: 100%; /* Full height by default */
-            transition: height 0.3s ease;
-        }
-        #cesiumContainer.with-stats {
-            height: calc(100% - 80px); /* Reduce height when stats are shown */
+            height: calc(100% - 80px); /* Always leave room for stats */
         }
         #statsContainer {
             position: absolute;
@@ -38,16 +34,13 @@
             box-shadow: 0 -2px 4px rgba(0,0,0,0.3);  /* Darker shadow for dark theme */
             padding: 12px 24px;
             box-sizing: border-box;
-            display: none; /* Hidden by default, shown when track data is loaded */
+            display: flex; /* Always visible */
             font-family: 'Roboto', sans-serif;
             color: #FFFFFF;  /* White text on dark background */
             z-index: 10;
             /* Flexbox for horizontal layout */
             align-items: center;
             justify-content: space-evenly;
-        }
-        #statsContainer.visible {
-            display: flex;
         }
         #statsContainer .stat-item {
             display: flex;
@@ -99,19 +92,11 @@
             position: fixed;
             bottom: 110px;  /* Raised 5px above timeline scrubber */
             left: 10px;
-            display: none;  /* Hidden until flight track is loaded */
+            display: flex;  /* Always visible */
             flex-direction: row;
             align-items: center;
             gap: 4px;
             z-index: 100;
-        }
-        
-        #playbackControls.visible {
-            display: flex;
-        }
-        
-        #playbackControls.with-stats {
-            bottom: 110px;  /* Keep same height when stats shown */
         }
         
         /* Minimal play button - Material dark theme matching Cesium */

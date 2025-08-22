@@ -459,8 +459,9 @@ class DatabaseService {
         MAX(f.max_altitude) as max_altitude,
         AVG(f.duration) as avg_duration
       FROM sites s
-      LEFT JOIN flights f ON f.launch_site_id = s.id
+      INNER JOIN flights f ON f.launch_site_id = s.id
       GROUP BY s.id
+      HAVING COUNT(f.id) > 0
       ORDER BY flight_count DESC
     ''');
     
@@ -473,7 +474,7 @@ class DatabaseService {
       };
     }).toList();
     
-    LoggingService.debug('DatabaseService: Generated statistics for ${siteStats.length} sites');
+    LoggingService.debug('DatabaseService: Generated statistics for ${siteStats.length} sites with flights');
     return siteStats;
   }
 
@@ -495,6 +496,41 @@ class DatabaseService {
       orderBy: 'name ASC',
     );
     return List.generate(maps.length, (i) => Site.fromMap(maps[i]));
+  }
+  
+  /// Get all sites within a bounding box
+  Future<List<Site>> getSitesInBounds({
+    required double north,
+    required double south,
+    required double east,
+    required double west,
+  }) async {
+    Database db = await _databaseHelper.database;
+    
+    // Handle date line crossing
+    String longitudeCondition;
+    List<dynamic> whereArgs;
+    
+    if (west > east) {
+      // Crosses date line
+      longitudeCondition = '(longitude >= ? OR longitude <= ?)';
+      whereArgs = [south, north, west, east];
+    } else {
+      // Normal case
+      longitudeCondition = '(longitude >= ? AND longitude <= ?)';
+      whereArgs = [south, north, west, east];
+    }
+    
+    List<Map<String, dynamic>> maps = await db.query(
+      'sites',
+      where: 'latitude >= ? AND latitude <= ? AND $longitudeCondition',
+      whereArgs: whereArgs,
+      orderBy: 'name ASC',
+    );
+    
+    final sites = List.generate(maps.length, (i) => Site.fromMap(maps[i]));
+    LoggingService.debug('DatabaseService: Found ${sites.length} sites in bounds');
+    return sites;
   }
 
   Future<Site?> getSite(int id) async {
@@ -527,6 +563,36 @@ class DatabaseService {
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  /// Reassign all flights from one site to another
+  /// Returns the number of flights updated
+  Future<int> reassignFlights(int fromSiteId, int toSiteId) async {
+    Database db = await _databaseHelper.database;
+    LoggingService.info('DatabaseService: Reassigning flights from site $fromSiteId to site $toSiteId');
+    
+    // Update all flights that reference the old site
+    final result = await db.update(
+      'flights',
+      {'launch_site_id': toSiteId},
+      where: 'launch_site_id = ?',
+      whereArgs: [fromSiteId],
+    );
+    
+    LoggingService.info('DatabaseService: Reassigned $result flights');
+    return result;
+  }
+
+  /// Count flights for a specific site
+  Future<int> getFlightCountForSite(int siteId) async {
+    Database db = await _databaseHelper.database;
+    final result = await db.rawQuery('''
+      SELECT COUNT(*) as count
+      FROM flights
+      WHERE launch_site_id = ?
+    ''', [siteId]);
+    
+    return result.first['count'] as int? ?? 0;
   }
 
   Future<Site?> findSiteByCoordinates(double latitude, double longitude, {double tolerance = 0.01}) async {
@@ -714,6 +780,186 @@ class DatabaseService {
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  // ========================================================================
+  // WING ALIAS OPERATIONS
+  // ========================================================================
+  
+  /// Add an alias for a wing
+  Future<void> addWingAlias(int wingId, String aliasName) async {
+    Database db = await _databaseHelper.database;
+    await db.insert('wing_aliases', {
+      'wing_id': wingId,
+      'alias_name': aliasName.trim(),
+    });
+    LoggingService.debug('DatabaseService: Added alias "$aliasName" for wing $wingId');
+  }
+  
+  /// Get all aliases for a wing
+  Future<List<String>> getWingAliases(int wingId) async {
+    Database db = await _databaseHelper.database;
+    final results = await db.query(
+      'wing_aliases',
+      where: 'wing_id = ?',
+      whereArgs: [wingId],
+      orderBy: 'alias_name ASC',
+    );
+    return results.map((row) => row['alias_name'] as String).toList();
+  }
+  
+  /// Remove an alias
+  Future<void> removeWingAlias(int wingId, String aliasName) async {
+    Database db = await _databaseHelper.database;
+    await db.delete(
+      'wing_aliases',
+      where: 'wing_id = ? AND alias_name = ?',
+      whereArgs: [wingId, aliasName],
+    );
+    LoggingService.debug('DatabaseService: Removed alias "$aliasName" from wing $wingId');
+  }
+  
+  /// Find wing by name or alias
+  Future<Wing?> findWingByNameOrAlias(String name) async {
+    Database db = await _databaseHelper.database;
+    final trimmedName = name.trim();
+    
+    // First check primary wing names
+    var results = await db.query(
+      'wings',
+      where: 'LOWER(name) = LOWER(?)',
+      whereArgs: [trimmedName],
+      limit: 1,
+    );
+    
+    if (results.isNotEmpty) {
+      return Wing.fromMap(results.first);
+    }
+    
+    // Then check aliases
+    results = await db.rawQuery('''
+      SELECT w.* FROM wings w
+      JOIN wing_aliases wa ON w.id = wa.wing_id
+      WHERE LOWER(wa.alias_name) = LOWER(?)
+      LIMIT 1
+    ''', [trimmedName]);
+    
+    if (results.isNotEmpty) {
+      return Wing.fromMap(results.first);
+    }
+    
+    return null;
+  }
+  
+  /// Merge multiple wings into one primary wing
+  Future<void> mergeWings(int primaryWingId, List<int> wingIdsToMerge) async {
+    Database db = await _databaseHelper.database;
+    
+    // Start a transaction for data integrity
+    await db.transaction((txn) async {
+      // Get the wings being merged for alias creation
+      final wingsToMerge = await txn.query(
+        'wings',
+        where: 'id IN (${wingIdsToMerge.map((_) => '?').join(',')})',
+        whereArgs: wingIdsToMerge,
+      );
+      
+      // Update all flights to use the primary wing
+      for (int wingId in wingIdsToMerge) {
+        await txn.update(
+          'flights',
+          {'wing_id': primaryWingId},
+          where: 'wing_id = ?',
+          whereArgs: [wingId],
+        );
+        
+        // Copy any aliases from merged wing to primary wing
+        final aliases = await txn.query(
+          'wing_aliases',
+          where: 'wing_id = ?',
+          whereArgs: [wingId],
+        );
+        
+        for (var alias in aliases) {
+          try {
+            await txn.insert('wing_aliases', {
+              'wing_id': primaryWingId,
+              'alias_name': alias['alias_name'],
+            });
+          } catch (e) {
+            // Ignore duplicate alias errors
+            LoggingService.debug('Skipping duplicate alias: ${alias['alias_name']}');
+          }
+        }
+      }
+      
+      // Add the merged wing names as aliases for the primary wing
+      for (var wing in wingsToMerge) {
+        final wingName = wing['name'] as String;
+        try {
+          await txn.insert('wing_aliases', {
+            'wing_id': primaryWingId,
+            'alias_name': wingName,
+          });
+        } catch (e) {
+          // Ignore if this name is already an alias
+          LoggingService.debug('Skipping duplicate alias: $wingName');
+        }
+      }
+      
+      // Delete the merged wings
+      for (int wingId in wingIdsToMerge) {
+        await txn.delete(
+          'wings',
+          where: 'id = ?',
+          whereArgs: [wingId],
+        );
+      }
+    });
+    
+    LoggingService.info('DatabaseService: Merged ${wingIdsToMerge.length} wings into wing $primaryWingId');
+  }
+  
+  /// Get statistics about wings that could be merged
+  Future<Map<String, List<Wing>>> findPotentialDuplicateWings() async {
+    Database db = await _databaseHelper.database;
+    final wings = await getAllWings();
+    
+    Map<String, List<Wing>> potentialDuplicates = {};
+    
+    for (var wing in wings) {
+      // Extract potential base name (remove common variations)
+      String baseName = wing.name
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9\s]'), '') // Remove special chars
+          .replaceAll(RegExp(r'\s+'), ' ') // Normalize spaces
+          .trim();
+      
+      // Also try with manufacturer + model if available
+      if (wing.manufacturer != null && wing.model != null) {
+        String fullName = '${wing.manufacturer} ${wing.model}'
+            .toLowerCase()
+            .replaceAll(RegExp(r'[^a-z0-9\s]'), '')
+            .replaceAll(RegExp(r'\s+'), ' ')
+            .trim();
+        
+        if (!potentialDuplicates.containsKey(fullName)) {
+          potentialDuplicates[fullName] = [];
+        }
+        potentialDuplicates[fullName]!.add(wing);
+      }
+      
+      // Group by base name
+      if (!potentialDuplicates.containsKey(baseName)) {
+        potentialDuplicates[baseName] = [];
+      }
+      potentialDuplicates[baseName]!.add(wing);
+    }
+    
+    // Filter out groups with only one wing
+    potentialDuplicates.removeWhere((key, value) => value.length <= 1);
+    
+    return potentialDuplicates;
   }
 
   Future<bool> canDeleteWing(int wingId) async {

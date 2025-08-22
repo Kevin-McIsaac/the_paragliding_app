@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../data/models/site.dart';
 import '../../utils/ui_utils.dart';
-import '../widgets/edit_site_dialog.dart';
+import 'edit_site_screen.dart';
 import '../../services/database_service.dart';
 import '../../services/logging_service.dart';
 
@@ -206,9 +206,10 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
   }
 
   Future<void> _editSite(Site site) async {
-    final result = await showDialog<Site>(
-      context: context,
-      builder: (context) => EditSiteDialog(site: site),
+    final result = await Navigator.of(context).push<Site>(
+      MaterialPageRoute(
+        builder: (context) => EditSiteScreen(site: site),
+      ),
     );
 
     if (result != null && mounted) {
@@ -535,9 +536,8 @@ class _SiteListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: GestureDetector(
-        onDoubleTap: onEdit,
-        child: ListTile(
+      child: ListTile(
+        onTap: onEdit,
         leading: const Icon(Icons.location_on),
         title: Text(
           site.name,
@@ -637,7 +637,6 @@ class _SiteListTile extends StatelessWidget {
               ),
             ),
           ],
-        ),
         ),
       ),
     );

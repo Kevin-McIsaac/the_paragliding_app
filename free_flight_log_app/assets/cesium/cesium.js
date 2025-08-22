@@ -60,8 +60,8 @@ class FlightDataSource extends Cesium.CustomDataSource {
         this._processFlightData();
         
         // Create entities
-        this._createPilotEntity();
         this._createCurtainWall();
+        this._createPilotEntity();
     }
     
     _parseTimezoneOffset(timezone) {
@@ -417,38 +417,16 @@ class StatisticsDisplay {
     constructor(flightData) {
         this.flightData = flightData;
         this.container = document.getElementById('statsContainer');
-        this.cesiumContainer = document.getElementById('cesiumContainer');
-        this.playbackControls = document.getElementById('playbackControls');
     }
     
-    show() {
+    initialize() {
         if (this.container) {
-            this.container.classList.add('visible');
             this.container.innerHTML = '<span>Initializing...</span>';
-        }
-        if (this.cesiumContainer) {
-            this.cesiumContainer.classList.add('with-stats');
-        }
-        if (this.playbackControls) {
-            this.playbackControls.classList.add('visible', 'with-stats');
-        }
-    }
-    
-    hide() {
-        if (this.container) {
-            this.container.classList.remove('visible');
-            this.container.innerHTML = '';
-        }
-        if (this.cesiumContainer) {
-            this.cesiumContainer.classList.remove('with-stats');
-        }
-        if (this.playbackControls) {
-            this.playbackControls.classList.remove('visible', 'with-stats');
         }
     }
     
     update(time) {
-        if (!this.container || !this.container.classList.contains('visible')) return;
+        if (!this.container) return;
         
         const stats = this.flightData.getStatisticsAt(time);
         if (!stats) return;
@@ -627,28 +605,33 @@ class CesiumFlightApp {
         const scene = this.viewer.scene;
         const globe = scene.globe;
         
-        // Enhanced terrain lighting for better depth perception
-        globe.enableLighting = true;
-        globe.lightingFadeOutDistance = 6500000;
-        globe.lightingFadeInDistance = 9000000;
-        globe.nightFadeOutDistance = 10000000;
-        globe.nightFadeInDistance = 50000000;
+        // Disable dynamic lighting for brighter, more consistent appearance
+        globe.enableLighting = false;
         globe.showGroundAtmosphere = true;
         globe.depthTestAgainstTerrain = true;
         globe.terrainExaggeration = 1.0;
         
-        // Set base color to dark gray for less jarring transitions when switching maps
-        globe.baseColor = Cesium.Color.fromCssColorString('#2b2b2b');
-        scene.backgroundColor = Cesium.Color.fromCssColorString('#2b2b2b');
+        // Use lighter base color for better visibility
+        globe.baseColor = Cesium.Color.fromCssColorString('#505050');
+        scene.backgroundColor = Cesium.Color.fromCssColorString('#505050');
         
-        // Adjust fog for clearer terrain
+        // Adjust fog for clearer terrain with less haze
         scene.fog.enabled = true;
-        scene.fog.density = 0.00005;  // Reduced density for clearer distant terrain
-        scene.fog.screenSpaceErrorFactor = 2.0;
+        scene.fog.density = 0.00002;  // Further reduced for better visibility
+        scene.fog.screenSpaceErrorFactor = 4.0;  // Increased for better distant terrain
         
+        // Brightness and gamma adjustments
         scene.highDynamicRange = true;
         scene.fxaa = true;
         scene.msaaSamples = 8;
+        
+        // Increase overall scene brightness
+        scene.gamma = 1.8;  // Brighten the overall scene
+        
+        // Adjust atmosphere brightness
+        scene.skyAtmosphere.brightnessShift = 0.3;  // Brighten the atmosphere
+        scene.skyAtmosphere.hueShift = 0.0;
+        scene.skyAtmosphere.saturationShift = -0.1;  // Slightly desaturate for clarity
         
         // High-quality terrain settings
         globe.tileCacheSize = 500;  // Increased cache for smoother terrain
@@ -745,7 +728,7 @@ class CesiumFlightApp {
             
             // Create statistics display
             this.statisticsDisplay = new StatisticsDisplay(this.flightDataSource);
-            this.statisticsDisplay.show();
+            this.statisticsDisplay.initialize();
             
             // Configure clock
             this._configureClock();
@@ -949,6 +932,14 @@ class CesiumFlightApp {
             window.flutter_inappwebview.callHandler('onSceneModeChanged', modeString);
         }
         
+        // Always disable follow mode on scene change (Cesium loses tracked entity anyway)
+        if (this.cameraFollowing) {
+            this.viewer.trackedEntity = undefined;
+            this.cameraFollowing = false;
+            const button = document.getElementById('followButton');
+            if (button) button.style.backgroundColor = 'rgba(42, 42, 42, 0.8)';
+        }
+        
         // Update camera controls
         const controller = this.viewer.scene.screenSpaceCameraController;
         if (this.viewer.scene.mode === Cesium.SceneMode.SCENE2D) {
@@ -991,6 +982,12 @@ class CesiumFlightApp {
     
     toggleCameraFollow() {
         if (!this.viewer || !this.flightDataSource) return;
+        
+        // Don't allow follow mode in 2D
+        if (this.viewer.scene.mode === Cesium.SceneMode.SCENE2D) {
+            console.log('Follow mode not available in 2D view');
+            return;
+        }
         
         const pilot = this.flightDataSource.pilotEntity;
         const button = document.getElementById('followButton');
