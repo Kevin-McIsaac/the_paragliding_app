@@ -60,8 +60,8 @@ class FlightDataSource extends Cesium.CustomDataSource {
         this._processFlightData();
         
         // Create entities
-        this._createPilotEntity();
         this._createCurtainWall();
+        this._createPilotEntity();
     }
     
     _parseTimezoneOffset(timezone) {
@@ -932,6 +932,14 @@ class CesiumFlightApp {
             window.flutter_inappwebview.callHandler('onSceneModeChanged', modeString);
         }
         
+        // Always disable follow mode on scene change (Cesium loses tracked entity anyway)
+        if (this.cameraFollowing) {
+            this.viewer.trackedEntity = undefined;
+            this.cameraFollowing = false;
+            const button = document.getElementById('followButton');
+            if (button) button.style.backgroundColor = 'rgba(42, 42, 42, 0.8)';
+        }
+        
         // Update camera controls
         const controller = this.viewer.scene.screenSpaceCameraController;
         if (this.viewer.scene.mode === Cesium.SceneMode.SCENE2D) {
@@ -974,6 +982,12 @@ class CesiumFlightApp {
     
     toggleCameraFollow() {
         if (!this.viewer || !this.flightDataSource) return;
+        
+        // Don't allow follow mode in 2D
+        if (this.viewer.scene.mode === Cesium.SceneMode.SCENE2D) {
+            console.log('Follow mode not available in 2D view');
+            return;
+        }
         
         const pilot = this.flightDataSource.pilotEntity;
         const button = document.getElementById('followButton');
