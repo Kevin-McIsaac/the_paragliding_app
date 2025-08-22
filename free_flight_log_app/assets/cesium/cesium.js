@@ -417,38 +417,16 @@ class StatisticsDisplay {
     constructor(flightData) {
         this.flightData = flightData;
         this.container = document.getElementById('statsContainer');
-        this.cesiumContainer = document.getElementById('cesiumContainer');
-        this.playbackControls = document.getElementById('playbackControls');
     }
     
-    show() {
+    initialize() {
         if (this.container) {
-            this.container.classList.add('visible');
             this.container.innerHTML = '<span>Initializing...</span>';
-        }
-        if (this.cesiumContainer) {
-            this.cesiumContainer.classList.add('with-stats');
-        }
-        if (this.playbackControls) {
-            this.playbackControls.classList.add('visible', 'with-stats');
-        }
-    }
-    
-    hide() {
-        if (this.container) {
-            this.container.classList.remove('visible');
-            this.container.innerHTML = '';
-        }
-        if (this.cesiumContainer) {
-            this.cesiumContainer.classList.remove('with-stats');
-        }
-        if (this.playbackControls) {
-            this.playbackControls.classList.remove('visible', 'with-stats');
         }
     }
     
     update(time) {
-        if (!this.container || !this.container.classList.contains('visible')) return;
+        if (!this.container) return;
         
         const stats = this.flightData.getStatisticsAt(time);
         if (!stats) return;
@@ -750,7 +728,7 @@ class CesiumFlightApp {
             
             // Create statistics display
             this.statisticsDisplay = new StatisticsDisplay(this.flightDataSource);
-            this.statisticsDisplay.show();
+            this.statisticsDisplay.initialize();
             
             // Configure clock
             this._configureClock();
