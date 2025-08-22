@@ -565,6 +565,36 @@ class DatabaseService {
     );
   }
 
+  /// Reassign all flights from one site to another
+  /// Returns the number of flights updated
+  Future<int> reassignFlights(int fromSiteId, int toSiteId) async {
+    Database db = await _databaseHelper.database;
+    LoggingService.info('DatabaseService: Reassigning flights from site $fromSiteId to site $toSiteId');
+    
+    // Update all flights that reference the old site
+    final result = await db.update(
+      'flights',
+      {'launch_site_id': toSiteId},
+      where: 'launch_site_id = ?',
+      whereArgs: [fromSiteId],
+    );
+    
+    LoggingService.info('DatabaseService: Reassigned $result flights');
+    return result;
+  }
+
+  /// Count flights for a specific site
+  Future<int> getFlightCountForSite(int siteId) async {
+    Database db = await _databaseHelper.database;
+    final result = await db.rawQuery('''
+      SELECT COUNT(*) as count
+      FROM flights
+      WHERE launch_site_id = ?
+    ''', [siteId]);
+    
+    return result.first['count'] as int? ?? 0;
+  }
+
   Future<Site?> findSiteByCoordinates(double latitude, double longitude, {double tolerance = 0.01}) async {
     Database db = await _databaseHelper.database;
     List<Map<String, dynamic>> maps = await db.query(

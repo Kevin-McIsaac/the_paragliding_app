@@ -307,8 +307,15 @@ class _EditSiteDialogState extends State<EditSiteDialog> with SingleTickerProvid
   }
   
   void _onMapEvent(MapEvent event) {
-    // Only react to movement end events to avoid excessive API calls
-    if (event is MapEventMoveEnd || event is MapEventFlingAnimationEnd) {
+    // React to all movement and zoom end events to reload sites
+    if (event is MapEventMoveEnd || 
+        event is MapEventFlingAnimationEnd ||
+        event is MapEventDoubleTapZoomEnd ||
+        event is MapEventScrollWheelZoom) {
+      
+      // Debug logging to verify events are captured
+      LoggingService.debug('EditSiteDialog: Map event triggered: ${event.runtimeType}');
+      
       _debounceTimer?.cancel();
       _debounceTimer = Timer(const Duration(milliseconds: 500), () {
         _updateMapBounds();
@@ -321,18 +328,22 @@ class _EditSiteDialogState extends State<EditSiteDialog> with SingleTickerProvid
     
     final bounds = _mapController!.camera.visibleBounds;
     
-    // Check if bounds changed significantly (>10%)
+    // Check if bounds have changed significantly
     if (_currentBounds != null) {
-      final latChange = (bounds.north - _currentBounds!.north).abs() / 
-                        (_currentBounds!.north - _currentBounds!.south).abs();
-      final lngChange = (bounds.east - _currentBounds!.east).abs() / 
-                        (_currentBounds!.east - _currentBounds!.west).abs();
+      // Use a simple threshold: ~100m in degrees (approximately 0.001 degrees)
+      const threshold = 0.001;
       
-      if (latChange < 0.1 && lngChange < 0.1) {
+      // Check if any corner of the bounds has moved more than the threshold
+      if ((bounds.north - _currentBounds!.north).abs() < threshold &&
+          (bounds.south - _currentBounds!.south).abs() < threshold &&
+          (bounds.east - _currentBounds!.east).abs() < threshold &&
+          (bounds.west - _currentBounds!.west).abs() < threshold) {
+        LoggingService.debug('EditSiteDialog: Bounds change too small, skipping reload');
         return; // Bounds haven't changed significantly
       }
     }
     
+    LoggingService.debug('EditSiteDialog: Bounds changed significantly, reloading sites');
     _currentBounds = bounds;
     _loadSitesForBounds(bounds);
   }
@@ -381,6 +392,13 @@ class _EditSiteDialogState extends State<EditSiteDialog> with SingleTickerProvid
         });
         
         LoggingService.info('EditSiteDialog: Loaded ${_localSites.length} local sites and ${_apiSites.length} API sites');
+        
+        // Debug problematic site names
+        for (var site in _apiSites) {
+          if (site.name.trim().isEmpty) {
+            LoggingService.warning('EditSiteDialog: API site with empty name at ${site.latitude}, ${site.longitude}');
+          }
+        }
       }
     } catch (e) {
       LoggingService.error('EditSiteDialog: Error loading sites', e);
@@ -401,6 +419,165 @@ class _EditSiteDialogState extends State<EditSiteDialog> with SingleTickerProvid
         _apiSites = [];
       }
     });
+  }
+
+  /// Handle tap on a local site marker
+  Future<void> _onLocalSiteMarkerTap(Site localSite) async {
+    // Count how many flights will be affected
+    final flightCount = await _databaseService.getFlightCountForSite(widget.site.id!);
+    
+    if (!mounted) return;
+    
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Merge with Existing Site?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Do you want to reassign all flights from "${widget.site.name}" to "${localSite.name}"?'),
+            const SizedBox(height: 16),
+            Text(
+              'This will update $flightCount flight${flightCount == 1 ? '' : 's'}.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Note: The current site will be deleted after merging.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Merge Sites'),
+          ),
+        ],
+      ),
+    );
+    
+    if (confirmed == true && mounted) {
+      try {
+        // Reassign all flights to the selected site
+        await _databaseService.reassignFlights(widget.site.id!, localSite.id!);
+        
+        // Delete the current site (it's no longer needed)
+        await _databaseService.deleteSite(widget.site.id!);
+        
+        if (mounted) {
+          // Return the local site as the result (site was merged)
+          Navigator.of(context).pop(localSite);
+        }
+      } catch (e) {
+        LoggingService.error('EditSiteDialog: Error merging sites', e);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error merging sites: $e'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  /// Handle tap on a ParaglidingEarth API site marker
+  Future<void> _onApiSiteMarkerTap(ParaglidingSite apiSite) async {
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Use ParaglidingEarth Data?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Replace current site data with:'),
+            const SizedBox(height: 16),
+            _buildInfoRow('Name:', apiSite.name),
+            _buildInfoRow('Location:', '${apiSite.latitude.toStringAsFixed(6)}, ${apiSite.longitude.toStringAsFixed(6)}'),
+            if (apiSite.altitude != null)
+              _buildInfoRow('Altitude:', '${apiSite.altitude}m'),
+            if (apiSite.country != null)
+              _buildInfoRow('Country:', apiSite.country!),
+            const SizedBox(height: 16),
+            Text(
+              'This will update the current site with data from ParaglidingEarth.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Use This Data'),
+          ),
+        ],
+      ),
+    );
+    
+    if (confirmed == true && mounted) {
+      // Update the form fields with API data
+      setState(() {
+        _nameController.text = apiSite.name;
+        _latitudeController.text = apiSite.latitude.toString();
+        _longitudeController.text = apiSite.longitude.toString();
+        if (apiSite.altitude != null) {
+          _altitudeController.text = apiSite.altitude.toString();
+        }
+        if (apiSite.country != null) {
+          _countryController.text = apiSite.country!;
+        }
+      });
+      
+      // Switch to the Details tab to show the updated data
+      _tabController.animateTo(0);
+      
+      // Show a snackbar to confirm the update
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Site data updated. Remember to save your changes.'),
+        ),
+      );
+    }
+  }
+
+  /// Build an info row for the dialog
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          Expanded(
+            child: Text(value),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildLocationMap() {
@@ -447,12 +624,17 @@ class _EditSiteDialogState extends State<EditSiteDialog> with SingleTickerProvid
                         point: LatLng(site.latitude, site.longitude),
                         width: 30,
                         height: 30,
-                        child: Tooltip(
-                          message: '${site.name}${site.country != null ? '\n${site.country}' : ''}',
-                          child: const Icon(
-                            Icons.location_on,
-                            color: Colors.blue,
-                            size: 30,
+                        child: GestureDetector(
+                          onTap: () => _onLocalSiteMarkerTap(site),
+                          child: Tooltip(
+                            message: site.name.trim().isEmpty 
+                                ? 'Unknown Site${site.country != null ? '\n${site.country}' : ''}'
+                                : '${site.name}${site.country != null ? '\n${site.country}' : ''}',
+                            child: const Icon(
+                              Icons.location_on,
+                              color: Colors.blue,
+                              size: 30,
+                            ),
                           ),
                         ),
                       ))
@@ -468,12 +650,17 @@ class _EditSiteDialogState extends State<EditSiteDialog> with SingleTickerProvid
                         point: LatLng(site.latitude, site.longitude),
                         width: 30,
                         height: 30,
-                        child: Tooltip(
-                          message: '${site.name}${site.country != null ? '\n${site.country}' : ''}',
-                          child: const Icon(
-                            Icons.location_on,
-                            color: Colors.green,
-                            size: 30,
+                        child: GestureDetector(
+                          onTap: () => _onApiSiteMarkerTap(site),
+                          child: Tooltip(
+                            message: site.name.trim().isEmpty 
+                                ? 'Unknown Site${site.country != null ? '\n${site.country}' : ''}'
+                                : '${site.name}${site.country != null ? '\n${site.country}' : ''}',
+                            child: const Icon(
+                              Icons.location_on,
+                              color: Colors.green,
+                              size: 30,
+                            ),
                           ),
                         ),
                       ))
@@ -486,10 +673,13 @@ class _EditSiteDialogState extends State<EditSiteDialog> with SingleTickerProvid
                   point: LatLng(widget.site.latitude, widget.site.longitude),
                   width: 40,
                   height: 40,
-                  child: const Icon(
-                    Icons.location_pin,
-                    color: Colors.red,
-                    size: 40,
+                  child: Tooltip(
+                    message: '${widget.site.name} (Current Site)${widget.site.country != null ? '\n${widget.site.country}' : ''}',
+                    child: const Icon(
+                      Icons.location_pin,
+                      color: Colors.red,
+                      size: 40,
+                    ),
                   ),
                 ),
               ],
