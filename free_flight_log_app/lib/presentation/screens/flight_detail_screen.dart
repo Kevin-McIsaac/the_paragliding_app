@@ -8,7 +8,7 @@ import '../../services/logging_service.dart';
 import '../../utils/date_time_utils.dart';
 import '../widgets/flight_track_3d_widget.dart';
 import '../widgets/flight_statistics_widget.dart';
-import '../widgets/edit_site_dialog.dart';
+import 'edit_site_screen.dart';
 import '../widgets/edit_wing_dialog.dart';
 import '../widgets/site_selection_dialog.dart';
 import '../widgets/wing_selection_dialog.dart';
@@ -183,9 +183,11 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
     if (_launchSite == null) return;
     
     try {
-      final editedSite = await showDialog<Site>(
-        context: context,
-        builder: (context) => EditSiteDialog(site: _launchSite!),
+      final editedSite = await Navigator.push<Site>(
+        context,
+        MaterialPageRoute(
+          builder: (context) => EditSiteScreen(site: _launchSite!),
+        ),
       );
       
       if (editedSite != null && mounted) {
