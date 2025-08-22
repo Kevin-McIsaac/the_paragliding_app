@@ -10,12 +10,12 @@ import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
 
 class EditSiteScreen extends StatefulWidget {
-  final Site site;
+  final Site? site;
   final ({double latitude, double longitude})? actualLaunchCoordinates;
 
   const EditSiteScreen({
     super.key, 
-    required this.site,
+    this.site,
     this.actualLaunchCoordinates,
   });
 
@@ -48,11 +48,11 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.site.name);
-    _latitudeController = TextEditingController(text: widget.site.latitude.toString());
-    _longitudeController = TextEditingController(text: widget.site.longitude.toString());
-    _altitudeController = TextEditingController(text: widget.site.altitude?.toString() ?? '');
-    _countryController = TextEditingController(text: widget.site.country ?? '');
+    _nameController = TextEditingController(text: widget.site?.name ?? '');
+    _latitudeController = TextEditingController(text: widget.site?.latitude.toString() ?? '');
+    _longitudeController = TextEditingController(text: widget.site?.longitude.toString() ?? '');
+    _altitudeController = TextEditingController(text: widget.site?.altitude?.toString() ?? '');
+    _countryController = TextEditingController(text: widget.site?.country ?? '');
   }
 
   @override
@@ -70,7 +70,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Edit Site'),
+        title: Text(widget.site == null ? 'Add Site' : 'Edit Site'),
       ),
       body: Form(
         key: _formKey,
@@ -237,20 +237,38 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
   void _saveChanges() {
     if (_formKey.currentState!.validate()) {
-      final updatedSite = widget.site.copyWith(
-        name: _nameController.text,
-        latitude: double.parse(_latitudeController.text),
-        longitude: double.parse(_longitudeController.text),
-        altitude: _altitudeController.text.isNotEmpty 
-            ? double.parse(_altitudeController.text) 
-            : null,
-        country: _countryController.text.isNotEmpty 
-            ? _countryController.text 
-            : null,
-        customName: true, // Mark as custom since user edited it
-      );
+      final Site resultSite;
+      if (widget.site != null) {
+        // Edit mode: update existing site
+        resultSite = widget.site!.copyWith(
+          name: _nameController.text,
+          latitude: double.parse(_latitudeController.text),
+          longitude: double.parse(_longitudeController.text),
+          altitude: _altitudeController.text.isNotEmpty 
+              ? double.parse(_altitudeController.text) 
+              : null,
+          country: _countryController.text.isNotEmpty 
+              ? _countryController.text 
+              : null,
+          customName: true, // Mark as custom since user edited it
+        );
+      } else {
+        // Create mode: create new site
+        resultSite = Site(
+          name: _nameController.text,
+          latitude: double.parse(_latitudeController.text),
+          longitude: double.parse(_longitudeController.text),
+          altitude: _altitudeController.text.isNotEmpty 
+              ? double.parse(_altitudeController.text) 
+              : null,
+          country: _countryController.text.isNotEmpty 
+              ? _countryController.text 
+              : null,
+          customName: true, // Mark as custom since user created it
+        );
+      }
 
-      Navigator.of(context).pop(updatedSite);
+      Navigator.of(context).pop(resultSite);
     }
   }
 
@@ -386,8 +404,11 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
   /// Handle tap on a local site marker
   Future<void> _onLocalSiteMarkerTap(Site localSite) async {
+    // Only allow merging when editing an existing site
+    if (widget.site == null || widget.site!.id == null) return;
+    
     // Count how many flights will be affected
-    final flightCount = await _databaseService.getFlightCountForSite(widget.site.id!);
+    final flightCount = await _databaseService.getFlightCountForSite(widget.site!.id!);
     
     if (!mounted) return;
     
@@ -400,7 +421,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Do you want to reassign all flights from "${widget.site.name}" to "${localSite.name}"?'),
+            Text('Do you want to reassign all flights from "${widget.site!.name}" to "${localSite.name}"?'),
             const SizedBox(height: 16),
             Text(
               'This will update $flightCount flight${flightCount == 1 ? '' : 's'}.',
@@ -433,10 +454,10 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     if (confirmed == true && mounted) {
       try {
         // Reassign all flights to the selected site
-        await _databaseService.reassignFlights(widget.site.id!, localSite.id!);
+        await _databaseService.reassignFlights(widget.site!.id!, localSite.id!);
         
         // Delete the current site (it's no longer needed)
-        await _databaseService.deleteSite(widget.site.id!);
+        await _databaseService.deleteSite(widget.site!.id!);
         
         if (mounted) {
           // Return the local site as the result (site was merged)
@@ -543,12 +564,16 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   Widget _buildLocationMap() {
     _mapController ??= MapController();
     
+    // Use site coordinates if editing, otherwise use a default location
+    final initialLat = widget.site?.latitude ?? 46.9480; // Default: Swiss Alps
+    final initialLon = widget.site?.longitude ?? 7.4474;
+    
     return Stack(
       children: [
         FlutterMap(
       mapController: _mapController,
       options: MapOptions(
-        initialCenter: LatLng(widget.site.latitude, widget.site.longitude),
+        initialCenter: LatLng(initialLat, initialLon),
         initialZoom: 13.0,
         onMapReady: _onMapReady,
         onMapEvent: _onMapEvent,
@@ -564,7 +589,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         // Local sites (blue markers)
         MarkerLayer(
           markers: _localSites
-              .where((site) => site.id != widget.site.id) // Exclude current site
+              .where((site) => widget.site == null || site.id != widget.site!.id) // Exclude current site when editing
               .map((site) => Marker(
                     point: LatLng(site.latitude, site.longitude),
                     width: 30,
@@ -589,8 +614,9 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         MarkerLayer(
           markers: _apiSites
               .where((site) => 
-                  site.latitude != widget.site.latitude || 
-                  site.longitude != widget.site.longitude) // Exclude current site
+                  widget.site == null || 
+                  site.latitude != widget.site!.latitude || 
+                  site.longitude != widget.site!.longitude) // Exclude current site when editing
               .map((site) => Marker(
                     point: LatLng(site.latitude, site.longitude),
                     width: 30,
@@ -633,24 +659,25 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
               ),
             ],
           ),
-        // Current site (red marker, on top)
-        MarkerLayer(
-          markers: [
-            Marker(
-              point: LatLng(widget.site.latitude, widget.site.longitude),
-              width: 40,
-              height: 40,
-              child: Tooltip(
-                message: '${widget.site.name} (Current Site)${widget.site.country != null ? '\n${widget.site.country}' : ''}',
-                child: const Icon(
-                  Icons.location_pin,
-                  color: Colors.red,
-                  size: 40,
+        // Current site (red marker, on top) - only show when editing
+        if (widget.site != null)
+          MarkerLayer(
+            markers: [
+              Marker(
+                point: LatLng(widget.site!.latitude, widget.site!.longitude),
+                width: 40,
+                height: 40,
+                child: Tooltip(
+                  message: '${widget.site!.name} (Current Site)${widget.site!.country != null ? '\n${widget.site!.country}' : ''}',
+                  child: const Icon(
+                    Icons.location_pin,
+                    color: Colors.red,
+                    size: 40,
+                  ),
                 ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
         // Attribution overlay - required for OSM and satellite tiles
         Align(
           alignment: Alignment.bottomRight,
@@ -774,12 +801,46 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
+              const Text(
+                'Legend',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 6),
+              if (widget.actualLaunchCoordinates != null) ...[
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.location_on, color: Colors.amber, size: 20),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Actual Launch',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.normal,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+              ],
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Icon(Icons.location_pin, color: Colors.red, size: 20),
                   const SizedBox(width: 8),
-                  const Text('Current Site', style: TextStyle(fontSize: 12)),
+                  const Text(
+                    'Current Site',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.normal,
+                      color: Colors.black87,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 4),
@@ -788,20 +849,16 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                 children: [
                   const Icon(Icons.location_on, color: Colors.blue, size: 20),
                   const SizedBox(width: 8),
-                  const Text('Local Sites', style: TextStyle(fontSize: 12)),
+                  const Text(
+                    'Local Sites',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.normal,
+                      color: Colors.black87,
+                    ),
+                  ),
                 ],
               ),
-              if (widget.actualLaunchCoordinates != null) ...[
-                const SizedBox(height: 4),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.location_on, color: Colors.amber, size: 20),
-                    const SizedBox(width: 8),
-                    const Text('Actual Launch', style: TextStyle(fontSize: 12)),
-                  ],
-                ),
-              ],
               if (_showApiSites) ...[
                 const SizedBox(height: 4),
                 Row(
@@ -809,7 +866,14 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                   children: [
                     const Icon(Icons.location_on, color: Colors.green, size: 20),
                     const SizedBox(width: 8),
-                    const Text('ParaglidingEarth', style: TextStyle(fontSize: 12)),
+                    const Text(
+                      'ParaglidingEarth',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.normal,
+                        color: Colors.black87,
+                      ),
+                    ),
                   ],
                 ),
               ],

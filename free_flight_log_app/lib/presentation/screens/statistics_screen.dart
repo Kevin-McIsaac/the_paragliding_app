@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../utils/date_time_utils.dart';
 import '../../services/database_service.dart';
 import '../../services/logging_service.dart';
-import '../widgets/edit_site_dialog.dart';
+import 'edit_site_screen.dart';
 import '../../data/models/site.dart';
 
 class StatisticsScreen extends StatefulWidget {
@@ -85,10 +85,11 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       
       if (!mounted) return;
       
-      // Open the edit dialog
-      final updatedSite = await showDialog<Site>(
-        context: context,
-        builder: (context) => EditSiteDialog(site: site),
+      // Navigate to edit screen
+      final updatedSite = await Navigator.of(context).push<Site>(
+        MaterialPageRoute(
+          builder: (context) => EditSiteScreen(site: site),
+        ),
       );
       
       // If site was updated, save changes and refresh statistics
