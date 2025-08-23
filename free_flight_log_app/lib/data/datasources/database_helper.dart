@@ -55,6 +55,7 @@ class DatabaseHelper {
         launch_site_id INTEGER,
         launch_latitude REAL,
         launch_longitude REAL,
+        launch_altitude REAL,
         landing_latitude REAL,
         landing_longitude REAL,
         landing_altitude REAL,

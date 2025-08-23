@@ -266,7 +266,9 @@ class ParaglidingEarthApi {
       LoggingService.error('ParaglidingEarthApi: Error parsing GeoJSON', e);
     }
     
-    return sites;
+    // Filter to only show launch sites (exclude landing sites)
+    final launchSites = sites.where((site) => site.siteType == 'launch').toList();
+    return launchSites;
   }
 
   /// Parse a single GeoJSON feature into a ParaglidingSite

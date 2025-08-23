@@ -8,6 +8,7 @@ class Flight {
   final String? launchSiteName;  // From JOIN with sites table
   final double? launchLatitude;
   final double? launchLongitude;
+  final double? launchAltitude;
   final double? landingLatitude;
   final double? landingLongitude;
   final double? landingAltitude;
@@ -38,6 +39,7 @@ class Flight {
     this.launchSiteName,
     this.launchLatitude,
     this.launchLongitude,
+    this.launchAltitude,
     this.landingLatitude,
     this.landingLongitude,
     this.landingAltitude,
@@ -69,6 +71,7 @@ class Flight {
       'launch_site_id': launchSiteId,
       'launch_latitude': launchLatitude,
       'launch_longitude': launchLongitude,
+      'launch_altitude': launchAltitude,
       'landing_latitude': landingLatitude,
       'landing_longitude': landingLongitude,
       'landing_altitude': landingAltitude,
@@ -103,6 +106,7 @@ class Flight {
       launchSiteName: map['launch_site_name'], // From JOIN query
       launchLatitude: map['launch_latitude']?.toDouble(),
       launchLongitude: map['launch_longitude']?.toDouble(),
+      launchAltitude: map['launch_altitude']?.toDouble(),
       landingLatitude: map['landing_latitude']?.toDouble(),
       landingLongitude: map['landing_longitude']?.toDouble(),
       landingAltitude: map['landing_altitude']?.toDouble(),
@@ -135,6 +139,7 @@ class Flight {
     String? launchSiteName,
     double? launchLatitude,
     double? launchLongitude,
+    double? launchAltitude,
     double? landingLatitude,
     double? landingLongitude,
     double? landingAltitude,
@@ -164,6 +169,7 @@ class Flight {
       launchSiteName: launchSiteName ?? this.launchSiteName,
       launchLatitude: launchLatitude ?? this.launchLatitude,
       launchLongitude: launchLongitude ?? this.launchLongitude,
+      launchAltitude: launchAltitude ?? this.launchAltitude,
       landingLatitude: landingLatitude ?? this.landingLatitude,
       landingLongitude: landingLongitude ?? this.landingLongitude,
       landingAltitude: landingAltitude ?? this.landingAltitude,
