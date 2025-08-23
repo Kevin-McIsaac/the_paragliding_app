@@ -982,6 +982,9 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
               ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
               : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.freeflightlog.free_flight_log_app',
+          // Limit satellite zoom to prevent "Map data not yet available" tiles in Australia
+          maxNativeZoom: _showSatelliteView ? 19 : 18,
+          maxZoom: 22, // Allow digital zoom beyond native tiles
         ),
         // Launches from flights (yellow for current site, blue for others) - BOTTOM LAYER
         MarkerLayer(
