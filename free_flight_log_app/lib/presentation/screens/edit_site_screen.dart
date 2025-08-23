@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/site.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/flight.dart';
@@ -35,6 +36,9 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   bool _showSatelliteView = false;
   final _formKey = GlobalKey<FormState>();
   
+  // SharedPreferences key for satellite view preference
+  static const String _satelliteViewKey = 'edit_site_satellite_view';
+  
   // Site markers state
   List<Site> _localSites = [];
   List<ParaglidingSite> _apiSites = [];
@@ -55,6 +59,24 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     _longitudeController = TextEditingController(text: widget.site?.longitude.toString() ?? '');
     _altitudeController = TextEditingController(text: widget.site?.altitude?.toString() ?? '');
     _countryController = TextEditingController(text: widget.site?.country ?? '');
+    _loadSatelliteViewPreference();
+  }
+  
+  /// Load the saved satellite view preference
+  Future<void> _loadSatelliteViewPreference() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedPreference = prefs.getBool(_satelliteViewKey) ?? false;
+      
+      if (mounted) {
+        setState(() {
+          _showSatelliteView = savedPreference;
+        });
+        LoggingService.debug('EditSiteScreen: Loaded satellite view preference: $savedPreference');
+      }
+    } catch (e) {
+      LoggingService.error('EditSiteScreen: Error loading satellite view preference', e);
+    }
   }
 
   @override
@@ -281,6 +303,19 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     setState(() {
       _showSatelliteView = !_showSatelliteView;
     });
+    
+    _saveSatelliteViewPreference();
+  }
+  
+  /// Save the satellite view preference
+  Future<void> _saveSatelliteViewPreference() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_satelliteViewKey, _showSatelliteView);
+      LoggingService.debug('EditSiteScreen: Saved satellite view preference: $_showSatelliteView');
+    } catch (e) {
+      LoggingService.error('EditSiteScreen: Error saving satellite view preference', e);
+    }
   }
   
   void _onMapReady() {
