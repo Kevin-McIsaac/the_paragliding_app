@@ -6,6 +6,9 @@ class Flight {
   final int duration;
   final int? launchSiteId;
   final String? launchSiteName;  // From JOIN with sites table
+  final double? launchLatitude;
+  final double? launchLongitude;
+  final double? launchAltitude;
   final double? landingLatitude;
   final double? landingLongitude;
   final double? landingAltitude;
@@ -34,6 +37,9 @@ class Flight {
     required this.duration,
     this.launchSiteId,
     this.launchSiteName,
+    this.launchLatitude,
+    this.launchLongitude,
+    this.launchAltitude,
     this.landingLatitude,
     this.landingLongitude,
     this.landingAltitude,
@@ -63,6 +69,9 @@ class Flight {
       'landing_time': landingTime,
       'duration': duration,
       'launch_site_id': launchSiteId,
+      'launch_latitude': launchLatitude,
+      'launch_longitude': launchLongitude,
+      'launch_altitude': launchAltitude,
       'landing_latitude': landingLatitude,
       'landing_longitude': landingLongitude,
       'landing_altitude': landingAltitude,
@@ -95,6 +104,9 @@ class Flight {
       duration: map['duration'],
       launchSiteId: map['launch_site_id'],
       launchSiteName: map['launch_site_name'], // From JOIN query
+      launchLatitude: map['launch_latitude']?.toDouble(),
+      launchLongitude: map['launch_longitude']?.toDouble(),
+      launchAltitude: map['launch_altitude']?.toDouble(),
       landingLatitude: map['landing_latitude']?.toDouble(),
       landingLongitude: map['landing_longitude']?.toDouble(),
       landingAltitude: map['landing_altitude']?.toDouble(),
@@ -125,6 +137,9 @@ class Flight {
     int? duration,
     int? launchSiteId,
     String? launchSiteName,
+    double? launchLatitude,
+    double? launchLongitude,
+    double? launchAltitude,
     double? landingLatitude,
     double? landingLongitude,
     double? landingAltitude,
@@ -152,6 +167,9 @@ class Flight {
       duration: duration ?? this.duration,
       launchSiteId: launchSiteId ?? this.launchSiteId,
       launchSiteName: launchSiteName ?? this.launchSiteName,
+      launchLatitude: launchLatitude ?? this.launchLatitude,
+      launchLongitude: launchLongitude ?? this.launchLongitude,
+      launchAltitude: launchAltitude ?? this.launchAltitude,
       landingLatitude: landingLatitude ?? this.landingLatitude,
       landingLongitude: landingLongitude ?? this.landingLongitude,
       landingAltitude: landingAltitude ?? this.landingAltitude,

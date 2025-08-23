@@ -196,6 +196,56 @@ class DatabaseService {
     return flights;
   }
 
+  /// Get flights for a site that have launch coordinates (for map display)
+  Future<List<Flight>> getFlightsWithLaunchCoordinatesForSite(int siteId) async {
+    LoggingService.debug('DatabaseService: Getting flights with launch coordinates for site $siteId');
+    
+    Database db = await _databaseHelper.database;
+    List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT f.*, 
+             ls.name as launch_site_name
+      FROM flights f
+      LEFT JOIN sites ls ON f.launch_site_id = ls.id
+      WHERE f.launch_site_id = ? 
+        AND f.launch_latitude IS NOT NULL 
+        AND f.launch_longitude IS NOT NULL
+      ORDER BY f.date DESC, f.launch_time DESC
+    ''', [siteId]);
+    
+    final flights = maps.map((map) => Flight.fromMap(map)).toList();
+    LoggingService.debug('DatabaseService: Found ${flights.length} flights with launch coordinates for site');
+    
+    return flights;
+  }
+
+  /// Get all flights with launch coordinates within given bounds (for map display)
+  Future<List<Flight>> getAllLaunchesInBounds({
+    required double north,
+    required double south,
+    required double east,
+    required double west,
+  }) async {
+    LoggingService.debug('DatabaseService: Getting all launches in bounds N:$north S:$south E:$east W:$west');
+    
+    Database db = await _databaseHelper.database;
+    List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT f.*, 
+             ls.name as launch_site_name
+      FROM flights f
+      LEFT JOIN sites ls ON f.launch_site_id = ls.id
+      WHERE f.launch_latitude IS NOT NULL 
+        AND f.launch_longitude IS NOT NULL
+        AND f.launch_latitude BETWEEN ? AND ?
+        AND f.launch_longitude BETWEEN ? AND ?
+      ORDER BY f.date DESC, f.launch_time DESC
+    ''', [south, north, west, east]);
+    
+    final flights = maps.map((map) => Flight.fromMap(map)).toList();
+    LoggingService.debug('DatabaseService: Found ${flights.length} launches in bounds');
+    
+    return flights;
+  }
+
   /// Get all flights with a specific wing
   Future<List<Flight>> getFlightsByWing(int wingId) async {
     LoggingService.debug('DatabaseService: Getting flights by wing $wingId');
@@ -563,6 +613,27 @@ class DatabaseService {
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  /// Bulk update multiple flights to assign them to a new site
+  Future<void> bulkUpdateFlightSites(List<int> flightIds, int newSiteId) async {
+    if (flightIds.isEmpty) return;
+    
+    Database db = await _databaseHelper.database;
+    
+    // Use a batch for efficiency
+    final batch = db.batch();
+    for (final flightId in flightIds) {
+      batch.update(
+        'flights',
+        {'launch_site_id': newSiteId},
+        where: 'id = ?',
+        whereArgs: [flightId],
+      );
+    }
+    
+    await batch.commit();
+    LoggingService.debug('DatabaseService: Bulk updated ${flightIds.length} flights to site $newSiteId');
   }
 
   /// Reassign all flights from one site to another

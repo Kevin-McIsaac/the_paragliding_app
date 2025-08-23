@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:sqflite/sqflite.dart';
 import '../data/datasources/database_helper.dart';
 import '../services/logging_service.dart';
 
@@ -207,7 +208,7 @@ class DatabaseResetHelper {
       
       return {
         'path': db.path,
-        'version': 3, // Current database version
+        'version': await _getDatabaseVersion(db),
         'flights': flightCount,
         'sites': siteCount,
         'wings': wingCount,
@@ -241,13 +242,24 @@ class DatabaseResetHelper {
       
       // This will ensure the database is created with the latest schema
       final db = await _databaseHelper.database;
-      const version = 3; // Current database version
+      final version = await _getDatabaseVersion(db);
       
       LoggingService.info('DatabaseResetHelper: Database initialized with version $version');
       
     } catch (e) {
       LoggingService.error('DatabaseResetHelper: Error initializing database', e);
       rethrow;
+    }
+  }
+
+  /// Get the actual database version from the database
+  static Future<int> _getDatabaseVersion(Database db) async {
+    try {
+      final result = await db.rawQuery('PRAGMA user_version');
+      return result.first['user_version'] as int;
+    } catch (e) {
+      LoggingService.error('DatabaseResetHelper: Error getting database version', e);
+      return 0;
     }
   }
 }

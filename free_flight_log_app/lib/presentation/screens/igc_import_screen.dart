@@ -66,11 +66,21 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
   }
 
   Future<void> _saveLastFolder(String filePath) async {
-    final directory = File(filePath).parent.path;
-    await PreferencesHelper.setIgcLastFolder(directory);
-    setState(() {
-      _lastFolder = directory;
-    });
+    try {
+      final directory = File(filePath).parent.path;
+      
+      // Validate the directory path before saving
+      if (directory.isNotEmpty && directory != '/') {
+        await PreferencesHelper.setIgcLastFolder(directory);
+        setState(() {
+          _lastFolder = directory;
+        });
+        LoggingService.debug('IgcImportScreen: Saved last folder: $directory');
+      }
+    } catch (e) {
+      LoggingService.debug('IgcImportScreen: Failed to save last folder: $e');
+      // Don't update _lastFolder if save fails
+    }
   }
   
   Future<void> _clearLastFolder() async {
@@ -103,6 +113,7 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
           allowMultiple: true,
           withData: false,
           withReadStream: false,
+          initialDirectory: _lastFolder,
         ).timeout(
           const Duration(seconds: 30),
           onTimeout: () {
@@ -119,6 +130,7 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
           allowMultiple: true,
           withData: false,
           withReadStream: false,
+          initialDirectory: _lastFolder,
         ).timeout(
           const Duration(seconds: 30),
           onTimeout: () {
@@ -163,9 +175,11 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
         if (validPaths.isNotEmpty) {
           try {
             await _saveLastFolder(validPaths.first);
+            LoggingService.debug('IgcImportScreen: Successfully saved last folder');
           } catch (e) {
             // Ignore folder saving errors on newer Android versions
             // due to scoped storage restrictions
+            LoggingService.debug('IgcImportScreen: Could not save folder path due to platform restrictions: $e');
           }
         }
         
