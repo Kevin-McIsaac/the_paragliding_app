@@ -196,6 +196,28 @@ class DatabaseService {
     return flights;
   }
 
+  /// Get flights for a site that have launch coordinates (for map display)
+  Future<List<Flight>> getFlightsWithLaunchCoordinatesForSite(int siteId) async {
+    LoggingService.debug('DatabaseService: Getting flights with launch coordinates for site $siteId');
+    
+    Database db = await _databaseHelper.database;
+    List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT f.*, 
+             ls.name as launch_site_name
+      FROM flights f
+      LEFT JOIN sites ls ON f.launch_site_id = ls.id
+      WHERE f.launch_site_id = ? 
+        AND f.launch_latitude IS NOT NULL 
+        AND f.launch_longitude IS NOT NULL
+      ORDER BY f.date DESC, f.launch_time DESC
+    ''', [siteId]);
+    
+    final flights = maps.map((map) => Flight.fromMap(map)).toList();
+    LoggingService.debug('DatabaseService: Found ${flights.length} flights with launch coordinates for site');
+    
+    return flights;
+  }
+
   /// Get all flights with a specific wing
   Future<List<Flight>> getFlightsByWing(int wingId) async {
     LoggingService.debug('DatabaseService: Getting flights by wing $wingId');

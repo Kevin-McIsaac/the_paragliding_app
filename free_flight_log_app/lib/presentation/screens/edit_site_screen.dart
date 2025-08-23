@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../data/models/site.dart';
 import '../../data/models/paragliding_site.dart';
+import '../../data/models/flight.dart';
 import '../../services/database_service.dart';
 import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
@@ -36,6 +38,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   // Site markers state
   List<Site> _localSites = [];
   List<ParaglidingSite> _apiSites = [];
+  List<Flight> _launches = [];
   Timer? _debounceTimer;
   LatLngBounds? _currentBounds;
   bool _isLoadingSites = false;
@@ -279,11 +282,12 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   }
   
   void _onMapReady() {
-    // Initial load of sites
+    // Initial load of sites and launches
     if (_mapController != null) {
       final bounds = _mapController!.camera.visibleBounds;
       _currentBounds = bounds;
       _loadSitesForBounds(bounds);
+      _loadLaunchesForSite();
     }
   }
   
@@ -400,6 +404,58 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         _apiSites = [];
       }
     });
+  }
+
+  /// Load launches for the current site being edited
+  Future<void> _loadLaunchesForSite() async {
+    if (widget.site?.id == null) return;
+    
+    try {
+      final launches = await _databaseService.getFlightsWithLaunchCoordinatesForSite(widget.site!.id!);
+      
+      if (mounted) {
+        setState(() {
+          _launches = launches;
+        });
+        
+        LoggingService.info('EditSiteScreen: Loaded ${launches.length} launches for site');
+        
+        // Adjust map bounds to include all launches if we have them
+        if (launches.isNotEmpty && _mapController != null) {
+          _adjustMapBoundsToIncludeLaunches();
+        }
+      }
+    } catch (e) {
+      LoggingService.error('EditSiteScreen: Error loading launches', e);
+    }
+  }
+
+  /// Adjust map bounds to include all launches
+  void _adjustMapBoundsToIncludeLaunches() {
+    if (_launches.isEmpty || _mapController == null) return;
+    
+    double minLat = widget.site!.latitude;
+    double maxLat = widget.site!.latitude;
+    double minLng = widget.site!.longitude;
+    double maxLng = widget.site!.longitude;
+    
+    for (final launch in _launches) {
+      if (launch.launchLatitude != null && launch.launchLongitude != null) {
+        minLat = math.min(minLat, launch.launchLatitude!);
+        maxLat = math.max(maxLat, launch.launchLatitude!);
+        minLng = math.min(minLng, launch.launchLongitude!);
+        maxLng = math.max(maxLng, launch.launchLongitude!);
+      }
+    }
+    
+    // Add some padding
+    const padding = 0.005; // ~500m
+    final bounds = LatLngBounds(
+      LatLng(minLat - padding, minLng - padding),
+      LatLng(maxLat + padding, maxLng + padding),
+    );
+    
+    _mapController!.fitCamera(CameraFit.bounds(bounds: bounds));
   }
 
   /// Handle tap on a local site marker
@@ -539,6 +595,84 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     }
   }
 
+  /// Handle tap on a launch marker
+  Future<void> _onLaunchMarkerTap(Flight launch) async {
+    // Show confirmation dialog to create a new site from this launch
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Create New Site from Launch?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Create a new launch site based on this flight launch point:'),
+            const SizedBox(height: 16),
+            _buildInfoRow('Date:', launch.date.toLocal().toString().split(' ')[0]),
+            _buildInfoRow('Time:', launch.launchTime),
+            _buildInfoRow('Location:', '${launch.launchLatitude!.toStringAsFixed(6)}, ${launch.launchLongitude!.toStringAsFixed(6)}'),
+            if (launch.notes != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Flight notes:',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text(
+                launch.notes!,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+            const SizedBox(height: 16),
+            Text(
+              'This will also show which flights are closer to this new site than to existing sites and offer to reassign them.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Create Site'),
+          ),
+        ],
+      ),
+    );
+    
+    if (confirmed == true && mounted) {
+      // Navigate to create new site with launch coordinates
+      final newSite = await Navigator.of(context).push<Site>(
+        MaterialPageRoute(
+          builder: (context) => EditSiteScreen(
+            actualLaunchCoordinates: (
+              latitude: launch.launchLatitude!,
+              longitude: launch.launchLongitude!,
+            ),
+          ),
+        ),
+      );
+      
+      if (newSite != null && mounted) {
+        // TODO: Implement flight reassignment logic
+        LoggingService.info('EditSiteScreen: New site created from launch: ${newSite.name}');
+        
+        // Show a snackbar
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('New site "${newSite.name}" created successfully.'),
+          ),
+        );
+      }
+    }
+  }
+
   /// Build an info row for the dialog
   Widget _buildInfoRow(String label, String value) {
     return Padding(
@@ -631,6 +765,38 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                           Icons.location_on,
                           color: Colors.green,
                           size: 30,
+                        ),
+                      ),
+                    ),
+                  ))
+              .toList(),
+        ),
+        // Launches from flights (small orange circles)
+        MarkerLayer(
+          markers: _launches
+              .where((launch) => launch.launchLatitude != null && launch.launchLongitude != null)
+              .map((launch) => Marker(
+                    point: LatLng(launch.launchLatitude!, launch.launchLongitude!),
+                    width: 20,
+                    height: 20,
+                    child: GestureDetector(
+                      onTap: () => _onLaunchMarkerTap(launch),
+                      child: Tooltip(
+                        message: '${launch.date.toLocal().toString().split(' ')[0]}\n${launch.launchTime}',
+                        child: Container(
+                          width: 20,
+                          height: 20,
+                          decoration: const BoxDecoration(
+                            color: Colors.orange,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black26,
+                                blurRadius: 3,
+                                offset: Offset(1, 1),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -844,6 +1010,31 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                 ],
               ),
               const SizedBox(height: 4),
+              if (_launches.isNotEmpty) ...[
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 20,
+                      height: 20,
+                      decoration: const BoxDecoration(
+                        color: Colors.orange,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Launches (${_launches.length})',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.normal,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+              ],
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [

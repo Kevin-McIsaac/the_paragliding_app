@@ -53,6 +53,8 @@ class DatabaseHelper {
         landing_time TEXT NOT NULL,
         duration INTEGER NOT NULL,
         launch_site_id INTEGER,
+        launch_latitude REAL,
+        launch_longitude REAL,
         landing_latitude REAL,
         landing_longitude REAL,
         landing_altitude REAL,
