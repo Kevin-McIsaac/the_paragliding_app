@@ -1064,19 +1064,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                           ),
                         ),
                       ),
-                      WidgetSpan(
-                        child: Padding(
-                          padding: const EdgeInsets.only(left: 4),
-                          child: GestureDetector(
-                            onTap: _isSaving ? null : _editCurrentSite,
-                            child: Icon(
-                              Icons.edit,
-                              size: 16,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                          ),
-                        ),
-                      ),
                       const TextSpan(
                         text: ' @ ',
                         style: TextStyle(fontWeight: FontWeight.bold),
@@ -1296,19 +1283,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                 color: Theme.of(context).colorScheme.primary,
                               ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      WidgetSpan(
-                        child: Padding(
-                          padding: const EdgeInsets.only(left: 4),
-                          child: GestureDetector(
-                            onTap: _isSaving ? null : _editCurrentWing,
-                            child: Icon(
-                              Icons.edit,
-                              size: 16,
-                              color: Theme.of(context).colorScheme.primary,
                             ),
                           ),
                         ),

@@ -275,6 +275,9 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   }
 
   void _toggleSatelliteView() {
+    final currentZoom = _mapController?.camera.zoom ?? 0.0;
+    print('SWITCHING TO ${_showSatelliteView ? 'STREET' : 'SATELLITE'} VIEW at zoom: ${currentZoom.toStringAsFixed(2)}');
+    
     setState(() {
       _showSatelliteView = !_showSatelliteView;
     });
@@ -291,14 +294,23 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   }
   
   void _onMapEvent(MapEvent event) {
+    // Check zoom level and clamp if necessary
+    final currentZoom = _mapController?.camera.zoom ?? 0.0;
+    if (_showSatelliteView && currentZoom > 22.0) {
+      print('ZOOM EXCEEDED 22 - CLAMPING TO 22');
+      _mapController?.move(_mapController!.camera.center, 22.0);
+      return;
+    }
+    
     // React to all movement and zoom end events to reload sites
     if (event is MapEventMoveEnd || 
         event is MapEventFlingAnimationEnd ||
         event is MapEventDoubleTapZoomEnd ||
         event is MapEventScrollWheelZoom) {
       
-      // Debug logging to verify events are captured
-      LoggingService.debug('EditSiteScreen: Map event triggered: ${event.runtimeType}');
+      // Debug logging to verify events are captured and log zoom level
+      LoggingService.debug('EditSiteScreen: Map event triggered: ${event.runtimeType}, zoom: ${currentZoom.toStringAsFixed(2)}');
+      print('ZOOM LEVEL: ${currentZoom.toStringAsFixed(2)} (satellite: $_showSatelliteView)');
       
       _debounceTimer?.cancel();
       _debounceTimer = Timer(const Duration(milliseconds: 500), () {
@@ -974,17 +986,20 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         onMapReady: _onMapReady,
         onMapEvent: _onMapEvent,
         onTap: _onMapTap,
+        // Strict zoom limits to prevent grey tiles - always 22 max
+        minZoom: 1.0,
+        maxZoom: 22.0,
       ),
       children: [
         // Base tile layer (OpenStreetMap or satellite)
         TileLayer(
           urlTemplate: _showSatelliteView
-              ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+              ? 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}'
               : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.freeflightlog.free_flight_log_app',
-          // Limit satellite zoom to prevent "Map data not yet available" tiles in Australia
-          maxNativeZoom: _showSatelliteView ? 19 : 18,
-          maxZoom: 22, // Allow digital zoom beyond native tiles
+          // Prevent grey tiles: Google satellite tiles fail around 22.5+
+          maxNativeZoom: _showSatelliteView ? 22 : 18,
+          maxZoom: _showSatelliteView ? 22 : 18,
         ),
         // Launches from flights (yellow for current site, blue for others) - BOTTOM LAYER
         MarkerLayer(
@@ -1184,7 +1199,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
               children: [
                 if (_showSatelliteView) ...[
                   Text(
-                    'Powered by Esri',
+                    '© Google',
                     style: TextStyle(
                       fontSize: 10,
                       color: Colors.black87,
