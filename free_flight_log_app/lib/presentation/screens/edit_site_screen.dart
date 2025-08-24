@@ -50,8 +50,19 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   MapProvider _selectedMapProvider = MapProvider.openStreetMap;
   final _formKey = GlobalKey<FormState>();
   
-  // SharedPreferences key for map provider preference
+  // Constants
   static const String _mapProviderKey = 'edit_site_map_provider';
+  static const double _defaultLatitude = 46.9480; // Swiss Alps
+  static const double _defaultLongitude = 7.4474;
+  static const double _initialZoom = 13.0;
+  static const double _minZoom = 1.0;
+  static const double _launchMarkerSize = 16.0;
+  static const double _siteMarkerSize = 36.0;
+  static const double _siteMarkerIconSize = 32.0;
+  static const double _currentSiteMarkerSize = 40.0;
+  static const double _boundsThreshold = 0.001;
+  static const int _debounceDurationMs = 500;
+  static const double _launchRadiusMeters = 100.0;
   
   // Site markers state
   List<Site> _localSites = [];
@@ -342,21 +353,13 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
   void _selectMapProvider(MapProvider provider) {
     final currentZoom = _mapController?.camera.zoom ?? 0.0;
-    LoggingService.debug('EditSiteScreen: Switching to ${provider.displayName} at zoom: ${currentZoom.toStringAsFixed(2)}');
     
     setState(() {
       _selectedMapProvider = provider;
     });
     
-    // Check if current zoom exceeds the new provider's max zoom
-    if (currentZoom > provider.maxZoom.toDouble()) {
-      final newZoom = provider.maxZoom.toDouble();
-      LoggingService.debug('EditSiteScreen: Zoom level ${currentZoom.toStringAsFixed(2)} exceeds max ${newZoom.toStringAsFixed(1)} for ${provider.displayName}, adjusting');
-      _mapController?.move(
-        _mapController!.camera.center,
-        newZoom,
-      );
-    }
+    // Enforce zoom limits for the new provider
+    _enforceZoomLimits();
     
     _saveMapProviderPreference();
   }
@@ -372,13 +375,452 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         return Icons.terrain;
     }
   }
+
+  /// Create a launch marker with consistent styling
+  Marker _buildLaunchMarker(Flight launch) {
+    final isFromCurrentSite = widget.site != null && launch.launchSiteId == widget.site!.id;
+    final markerColor = isFromCurrentSite ? Colors.red : Colors.blue;
+    
+    return Marker(
+      point: LatLng(launch.launchLatitude!, launch.launchLongitude!),
+      width: _launchMarkerSize,
+      height: _launchMarkerSize,
+      child: GestureDetector(
+        onTap: () => _onLaunchMarkerTap(launch),
+        child: Tooltip(
+          message: '${launch.date.toLocal().toString().split(' ')[0]}\n${launch.launchTime}',
+          child: Container(
+            width: _launchMarkerSize,
+            height: _launchMarkerSize,
+            decoration: BoxDecoration(
+              color: markerColor,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 2,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Create a site marker with consistent styling
+  Marker _buildSiteMarker({
+    required double latitude,
+    required double longitude,
+    required String name,
+    String? country,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    final tooltipMessage = name.trim().isEmpty 
+        ? 'Unknown Site${country != null ? '\n$country' : ''}'
+        : '$name${country != null ? '\n$country' : ''}';
+    
+    return Marker(
+      point: LatLng(latitude, longitude),
+      width: _siteMarkerSize,
+      height: _siteMarkerSize,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Tooltip(
+          message: tooltipMessage,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // White outline
+              const Icon(
+                Icons.location_on,
+                color: Colors.white,
+                size: _siteMarkerSize,
+              ),
+              // Colored marker
+              Icon(
+                Icons.location_on,
+                color: color,
+                size: _siteMarkerIconSize,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Build the tile layer for the selected map provider
+  TileLayer _buildTileLayer() {
+    return TileLayer(
+      urlTemplate: _selectedMapProvider.urlTemplate,
+      userAgentPackageName: 'com.freeflightlog.free_flight_log_app',
+      maxNativeZoom: _selectedMapProvider.maxZoom,
+      maxZoom: _selectedMapProvider.maxZoom.toDouble(),
+    );
+  }
+
+  /// Build the launch markers layer
+  MarkerLayer _buildLaunchesLayer() {
+    return MarkerLayer(
+      markers: _launches
+          .where((launch) => launch.launchLatitude != null && launch.launchLongitude != null)
+          .map(_buildLaunchMarker)
+          .toList(),
+    );
+  }
+
+  /// Build the local sites markers layer  
+  MarkerLayer _buildLocalSitesLayer() {
+    return MarkerLayer(
+      markers: _localSites
+          .where((site) => widget.site == null || site.id != widget.site!.id) // Exclude current site when editing
+          .map((site) => _buildSiteMarker(
+                latitude: site.latitude,
+                longitude: site.longitude,
+                name: site.name,
+                country: site.country,
+                color: Colors.blue,
+                onTap: () => _onLocalSiteMarkerTap(site),
+              ))
+          .toList(),
+    );
+  }
+
+  /// Build the API sites markers layer
+  MarkerLayer _buildApiSitesLayer() {
+    return MarkerLayer(
+      markers: _apiSites
+          .where((site) => 
+              !_isDuplicateApiSite(site) && // Exclude duplicates with local sites
+              (widget.site == null || 
+               site.latitude != widget.site!.latitude || 
+               site.longitude != widget.site!.longitude)) // Exclude current site when editing
+          .map((site) => _buildSiteMarker(
+                latitude: site.latitude,
+                longitude: site.longitude,
+                name: site.name,
+                country: site.country,
+                color: Colors.green,
+                onTap: () => _onApiSiteMarkerTap(site),
+              ))
+          .toList(),
+    );
+  }
+
+  /// Build the actual launch coordinates layer (if available)
+  MarkerLayer? _buildActualLaunchLayer() {
+    if (widget.actualLaunchCoordinates == null) return null;
+    
+    return MarkerLayer(
+      markers: [
+        Marker(
+          point: LatLng(
+            widget.actualLaunchCoordinates!.latitude,
+            widget.actualLaunchCoordinates!.longitude,
+          ),
+          width: _siteMarkerSize,
+          height: _siteMarkerSize,
+          child: Tooltip(
+            message: 'Actual Launch\n${widget.actualLaunchCoordinates!.latitude.toStringAsFixed(6)}, ${widget.actualLaunchCoordinates!.longitude.toStringAsFixed(6)}',
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // White outline
+                const Icon(
+                  Icons.location_on,
+                  color: Colors.white,
+                  size: _siteMarkerSize,
+                ),
+                // Amber marker
+                const Icon(
+                  Icons.location_on,
+                  color: Colors.amber,
+                  size: _siteMarkerIconSize,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Build the current site marker layer (if editing)
+  MarkerLayer? _buildCurrentSiteLayer() {
+    if (widget.site == null) return null;
+    
+    return MarkerLayer(
+      markers: [
+        Marker(
+          point: LatLng(widget.site!.latitude, widget.site!.longitude),
+          width: _currentSiteMarkerSize,
+          height: _currentSiteMarkerSize,
+          child: Tooltip(
+            message: '${widget.site!.name} (Current Site)${widget.site!.country != null ? '\n${widget.site!.country}' : ''}',
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // White outline
+                const Icon(
+                  Icons.location_on,
+                  color: Colors.white,
+                  size: _currentSiteMarkerSize,
+                ),
+                // Red marker
+                const Icon(
+                  Icons.location_on,
+                  color: Colors.red,
+                  size: _siteMarkerSize,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Build the map controls (legend and provider selector)
+  Widget _buildMapControls() {
+    return Column(
+      children: [
+        // Map provider selector
+        Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(4),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 4,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+          child: PopupMenuButton<MapProvider>(
+            onSelected: _selectMapProvider,
+            initialValue: _selectedMapProvider,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _getProviderIcon(_selectedMapProvider),
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                  Icon(
+                    Icons.arrow_drop_down, 
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ],
+              ),
+            ),
+            itemBuilder: (context) => MapProvider.values.map((provider) => 
+              PopupMenuItem<MapProvider>(
+                value: provider,
+                child: Row(
+                  children: [
+                    Icon(
+                      _getProviderIcon(provider),
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(provider.displayName),
+                    ),
+                  ],
+                ),
+              )
+            ).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Build the attribution widget
+  Widget _buildAttribution() {
+    return Align(
+      alignment: Alignment.bottomRight,
+      child: Container(
+        margin: const EdgeInsets.all(4),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.9),
+          borderRadius: BorderRadius.circular(2),
+        ),
+        child: GestureDetector(
+          onTap: () async {
+            // Open appropriate copyright page based on provider
+            String url;
+            switch (_selectedMapProvider) {
+              case MapProvider.openStreetMap:
+                url = 'https://www.openstreetmap.org/copyright';
+                break;
+              case MapProvider.googleSatellite:
+                url = 'https://www.google.com/permissions/geoguidelines/';
+                break;
+              case MapProvider.esriWorldImagery:
+                url = 'https://www.esri.com/en-us/legal/terms/full-master-agreement';
+                break;
+            }
+            final uri = Uri.parse(url);
+            try {
+              await launchUrl(uri, mode: LaunchMode.platformDefault);
+            } catch (e) {
+              LoggingService.error('EditSiteScreen: Could not launch URL', e);
+            }
+          },
+          child: Text(
+            _selectedMapProvider.attribution,
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.blue[800],
+              decoration: TextDecoration.underline,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Build the legend widget
+  Widget _buildLegend() {
+    return Positioned(
+      top: 8,
+      left: 8,
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.95),
+          borderRadius: BorderRadius.circular(4),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black26,
+              blurRadius: 4,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (widget.site != null) ...[
+              _buildLegendItem(Icons.location_pin, Colors.red, 'Current Site'),
+              const SizedBox(height: 4),
+            ],
+            if (_launches.isNotEmpty) ...[
+              _buildLegendItem(null, Colors.red, 'Launches (current)', isCircle: true),
+              const SizedBox(height: 4),
+              _buildLegendItem(null, Colors.blue, 'Launches (others)', isCircle: true),
+              const SizedBox(height: 4),
+            ],
+            if (widget.actualLaunchCoordinates != null) ...[
+              _buildLegendItem(Icons.location_on, Colors.amber, 'Actual Launch'),
+              const SizedBox(height: 4),
+            ],
+            _buildLegendItem(Icons.location_on, Colors.blue, 'Flown Sites'),
+            const SizedBox(height: 4),
+            _buildLegendItem(Icons.location_on, Colors.green, 'New Sites'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build a single legend item
+  Widget _buildLegendItem(IconData? icon, Color color, String label, {bool isCircle = false}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (isCircle)
+          Container(
+            width: _launchMarkerSize,
+            height: _launchMarkerSize,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+            ),
+          )
+        else
+          Icon(icon!, color: color, size: 20),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.normal,
+            color: Colors.black87,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Build the loading indicator
+  Widget? _buildLoadingIndicator() {
+    if (!_isLoadingSites) return null;
+    
+    return Positioned(
+      bottom: 16,
+      left: 0,
+      right: 0,
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.black87,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Loading sites...',
+                style: TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Enforce zoom limits for the current map provider
+  void _enforceZoomLimits() {
+    if (_mapController == null) return;
+    
+    final currentZoom = _mapController!.camera.zoom;
+    final maxZoom = _selectedMapProvider.maxZoom.toDouble();
+    
+    if (currentZoom > maxZoom) {
+      _mapController!.move(_mapController!.camera.center, maxZoom);
+    }
+  }
   
   /// Save the map provider preference
   Future<void> _saveMapProviderPreference() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_mapProviderKey, _selectedMapProvider.name);
-      LoggingService.debug('EditSiteScreen: Saved map provider preference: ${_selectedMapProvider.displayName}');
     } catch (e) {
       LoggingService.error('EditSiteScreen: Error saving map provider preference', e);
     }
@@ -395,14 +837,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   }
   
   void _onMapEvent(MapEvent event) {
-    // Check zoom level and clamp if necessary
-    final currentZoom = _mapController?.camera.zoom ?? 0.0;
-    final maxZoom = _selectedMapProvider.maxZoom.toDouble();
-    if (currentZoom > maxZoom) {
-      LoggingService.debug('EditSiteScreen: Zoom exceeded ${maxZoom} for ${_selectedMapProvider.displayName} - clamping');
-      _mapController?.move(_mapController!.camera.center, maxZoom);
-      return;
-    }
+    // Enforce zoom limits
+    _enforceZoomLimits();
     
     // React to all movement and zoom end events to reload sites
     if (event is MapEventMoveEnd || 
@@ -410,18 +846,14 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         event is MapEventDoubleTapZoomEnd ||
         event is MapEventScrollWheelZoom) {
       
-      // Debug logging to verify events are captured and log zoom level
-      LoggingService.debug('EditSiteScreen: Map event triggered: ${event.runtimeType}, zoom: ${currentZoom.toStringAsFixed(2)}, provider: ${_selectedMapProvider.displayName}');
-      
       _debounceTimer?.cancel();
-      _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+      _debounceTimer = Timer(const Duration(milliseconds: _debounceDurationMs), () {
         _updateMapBounds();
       });
     }
   }
   
   void _onMapTap(TapPosition tapPosition, LatLng point) {
-    LoggingService.debug('EditSiteScreen: Map tapped at ${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}');
     _handleSiteCreationAtPoint(point, null);
   }
   
@@ -432,20 +864,15 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     
     // Check if bounds have changed significantly
     if (_currentBounds != null) {
-      // Use a simple threshold: ~100m in degrees (approximately 0.001 degrees)
-      const threshold = 0.001;
       
       // Check if any corner of the bounds has moved more than the threshold
-      if ((bounds.north - _currentBounds!.north).abs() < threshold &&
-          (bounds.south - _currentBounds!.south).abs() < threshold &&
-          (bounds.east - _currentBounds!.east).abs() < threshold &&
-          (bounds.west - _currentBounds!.west).abs() < threshold) {
-        LoggingService.debug('EditSiteScreen: Bounds change too small, skipping reload');
+      if ((bounds.north - _currentBounds!.north).abs() < _boundsThreshold &&
+          (bounds.south - _currentBounds!.south).abs() < _boundsThreshold &&
+          (bounds.east - _currentBounds!.east).abs() < _boundsThreshold &&
+          (bounds.west - _currentBounds!.west).abs() < _boundsThreshold) {
         return; // Bounds haven't changed significantly
       }
     }
-    
-    LoggingService.debug('EditSiteScreen: Bounds changed significantly, reloading sites and launches');
     _currentBounds = bounds;
     _loadSitesForBounds(bounds);
     _loadAllLaunchesInBounds(bounds);
@@ -489,14 +916,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           _isLoadingSites = false;
         });
         
-        LoggingService.info('EditSiteScreen: Loaded ${_localSites.length} local sites and ${_apiSites.length} API sites');
-        
-        // Debug problematic site names
-        for (var site in _apiSites) {
-          if (site.name.trim().isEmpty) {
-            LoggingService.warning('EditSiteScreen: API site with empty name at ${site.latitude}, ${site.longitude}');
-          }
-        }
       }
     } catch (e) {
       LoggingService.error('EditSiteScreen: Error loading sites', e);
@@ -829,7 +1248,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     // Filter to only those closer to this point than to existing sites
     final eligibleLaunches = _filterLaunchesCloserToPoint(launchesNearby, point);
     
-    LoggingService.info('EditSiteScreen: Found ${launchesNearby.length} launches within 500m, ${eligibleLaunches.length} eligible for reassignment');
     
     await _showSiteCreationDialog(point, eligibleLaunches, sourceLaunch);
   }
@@ -1073,9 +1491,9 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   Widget _buildLocationMap() {
     _mapController ??= MapController();
     
-    // Use site coordinates if editing, otherwise use a default location
-    final initialLat = widget.site?.latitude ?? 46.9480; // Default: Swiss Alps
-    final initialLon = widget.site?.longitude ?? 7.4474;
+    // Use site coordinates if editing, otherwise use default location
+    final initialLat = widget.site?.latitude ?? _defaultLatitude;
+    final initialLon = widget.site?.longitude ?? _defaultLongitude;
     
     return Stack(
       children: [
@@ -1083,206 +1501,22 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       mapController: _mapController,
       options: MapOptions(
         initialCenter: LatLng(initialLat, initialLon),
-        initialZoom: 13.0,
+        initialZoom: _initialZoom,
         onMapReady: _onMapReady,
         onMapEvent: _onMapEvent,
         onTap: _onMapTap,
         // Dynamic zoom limits based on selected provider
-        minZoom: 1.0,
+        minZoom: _minZoom,
         maxZoom: _selectedMapProvider.maxZoom.toDouble(),
       ),
       children: [
-        // Base tile layer using selected provider
-        TileLayer(
-          urlTemplate: _selectedMapProvider.urlTemplate,
-          userAgentPackageName: 'com.freeflightlog.free_flight_log_app',
-          // Use provider-specific zoom limits
-          maxNativeZoom: _selectedMapProvider.maxZoom,
-          maxZoom: _selectedMapProvider.maxZoom.toDouble(),
-        ),
-        // Launches from flights (yellow for current site, blue for others) - BOTTOM LAYER
-        MarkerLayer(
-          markers: _launches
-              .where((launch) => launch.launchLatitude != null && launch.launchLongitude != null)
-              .map((launch) {
-                // Determine color based on whether launch is from current site
-                final isFromCurrentSite = widget.site != null && launch.launchSiteId == widget.site!.id;
-                final markerColor = isFromCurrentSite ? Colors.red : Colors.blue;
-                
-                return Marker(
-                  point: LatLng(launch.launchLatitude!, launch.launchLongitude!),
-                  width: 16,
-                  height: 16,
-                  child: GestureDetector(
-                    onTap: () => _onLaunchMarkerTap(launch),
-                    child: Tooltip(
-                      message: '${launch.date.toLocal().toString().split(' ')[0]}\n${launch.launchTime}',
-                      child: Container(
-                        width: 16,
-                        height: 16,
-                        decoration: BoxDecoration(
-                          color: markerColor,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.white,
-                            width: 2,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.3),
-                              blurRadius: 2,
-                              offset: const Offset(0, 1),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              })
-              .toList(),
-        ),
-        // Local sites (blue markers)
-        MarkerLayer(
-          markers: _localSites
-              .where((site) => widget.site == null || site.id != widget.site!.id) // Exclude current site when editing
-              .map((site) => Marker(
-                    point: LatLng(site.latitude, site.longitude),
-                    width: 36,
-                    height: 36,
-                    child: GestureDetector(
-                      onTap: () => _onLocalSiteMarkerTap(site),
-                      child: Tooltip(
-                        message: site.name.trim().isEmpty 
-                            ? 'Unknown Site${site.country != null ? '\n${site.country}' : ''}'
-                            : '${site.name}${site.country != null ? '\n${site.country}' : ''}',
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            // White outline
-                            const Icon(
-                              Icons.location_on,
-                              color: Colors.white,
-                              size: 36,
-                            ),
-                            // Blue marker
-                            const Icon(
-                              Icons.location_on,
-                              color: Colors.blue,
-                              size: 32,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ))
-              .toList(),
-        ),
-        // API sites (green markers) - exclude duplicates with local sites
-        MarkerLayer(
-          markers: _apiSites
-              .where((site) => 
-                  !_isDuplicateApiSite(site) && // Exclude duplicates with local sites
-                  (widget.site == null || 
-                   site.latitude != widget.site!.latitude || 
-                   site.longitude != widget.site!.longitude)) // Exclude current site when editing
-              .map((site) => Marker(
-                    point: LatLng(site.latitude, site.longitude),
-                    width: 36,
-                    height: 36,
-                    child: GestureDetector(
-                      onTap: () => _onApiSiteMarkerTap(site),
-                      child: Tooltip(
-                        message: site.name.trim().isEmpty 
-                            ? 'Unknown Site${site.country != null ? '\n${site.country}' : ''}'
-                            : '${site.name}${site.country != null ? '\n${site.country}' : ''}',
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            // White outline
-                            const Icon(
-                              Icons.location_on,
-                              color: Colors.white,
-                              size: 36,
-                            ),
-                            // Green marker
-                            const Icon(
-                              Icons.location_on,
-                              color: Colors.green,
-                              size: 32,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ))
-              .toList(),
-        ),
-        // Actual launch point from GPS track (yellow marker)
-        if (widget.actualLaunchCoordinates != null)
-          MarkerLayer(
-            markers: [
-              Marker(
-                point: LatLng(
-                  widget.actualLaunchCoordinates!.latitude,
-                  widget.actualLaunchCoordinates!.longitude,
-                ),
-                width: 36,
-                height: 36,
-                child: Tooltip(
-                  message: 'Actual Launch\n${widget.actualLaunchCoordinates!.latitude.toStringAsFixed(6)}, ${widget.actualLaunchCoordinates!.longitude.toStringAsFixed(6)}',
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // White outline
-                      const Icon(
-                        Icons.location_on,
-                        color: Colors.white,
-                        size: 36,
-                      ),
-                      // Amber marker
-                      const Icon(
-                        Icons.location_on,
-                        color: Colors.amber,
-                        size: 32,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        // Current site (yellow marker, on top) - only show when editing
-        if (widget.site != null)
-          MarkerLayer(
-            markers: [
-              Marker(
-                point: LatLng(widget.site!.latitude, widget.site!.longitude),
-                width: 40,
-                height: 40,
-                child: Tooltip(
-                  message: '${widget.site!.name} (Current Site)${widget.site!.country != null ? '\n${widget.site!.country}' : ''}',
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // White outline
-                      const Icon(
-                        Icons.location_on,
-                        color: Colors.white,
-                        size: 40,
-                      ),
-                      // Red marker
-                      const Icon(
-                        Icons.location_on,
-                        color: Colors.red,
-                        size: 36,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
+        // Map layers in order (bottom to top)
+        _buildTileLayer(),
+        _buildLaunchesLayer(),
+        _buildLocalSitesLayer(),
+        _buildApiSitesLayer(),
+        if (widget.actualLaunchCoordinates != null) _buildActualLaunchLayer()!,
+        if (widget.site != null) _buildCurrentSiteLayer()!,
         // Attribution overlay - required for OSM and satellite tiles
         Align(
           alignment: Alignment.bottomRight,
@@ -1328,262 +1562,15 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         ),
       ],
     ),
-        // Map controls
+        // Map overlays
+        _buildAttribution(),
         Positioned(
-        top: 8,
-        right: 8,
-        child: Column(
-          children: [
-            // Map provider selector
-            Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(4),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black26,
-                    blurRadius: 4,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: PopupMenuButton<MapProvider>(
-                onSelected: _selectMapProvider,
-                initialValue: _selectedMapProvider,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        _getProviderIcon(_selectedMapProvider),
-                        size: 16,
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
-                      Icon(
-                        Icons.arrow_drop_down, 
-                        size: 16,
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
-                    ],
-                  ),
-                ),
-                itemBuilder: (context) => MapProvider.values.map((provider) => 
-                  PopupMenuItem<MapProvider>(
-                    value: provider,
-                    child: Row(
-                      children: [
-                        Icon(
-                          _getProviderIcon(provider),
-                          size: 16,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(provider.displayName),
-                        ),
-                      ],
-                    ),
-                  )
-                ).toList(),
-              ),
-            ),
-          ],
+          top: 8,
+          right: 8,
+          child: _buildMapControls(),
         ),
-      ),
-      // Legend
-      Positioned(
-        top: 8,
-        left: 8,
-        child: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.95),
-            borderRadius: BorderRadius.circular(4),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black26,
-                blurRadius: 4,
-                offset: Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Current site entry (always show when editing)
-              if (widget.site != null) ...[
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.location_pin, color: Colors.red, size: 20),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Current Site',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.normal,
-                        color: Colors.black87,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-              ],
-              
-              // Launches with color coding
-              if (_launches.isNotEmpty) ...[
-                // Current site launches (yellow)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 16,
-                      height: 16,
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Colors.white,
-                          width: 2,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Launches (current)',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.normal,
-                        color: Colors.black87,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                
-                // Other site launches (blue)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 16,
-                      height: 16,
-                      decoration: BoxDecoration(
-                        color: Colors.blue,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Colors.white,
-                          width: 2,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Launches (others)',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.normal,
-                        color: Colors.black87,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-              ],
-              
-              // Actual launch point (when creating from launch)
-              if (widget.actualLaunchCoordinates != null) ...[
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.location_on, color: Colors.amber, size: 20),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Actual Launch',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.normal,
-                        color: Colors.black87,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-              ],
-              
-              // Flown sites (renamed from Local Sites)
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.location_on, color: Colors.blue, size: 20),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Flown Sites',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.normal,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              
-              // New sites (renamed from ParaglidingEarth)
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.location_on, color: Colors.green, size: 20),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'New Sites',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.normal,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-      // Loading indicator
-      if (_isLoadingSites)
-        Positioned(
-          bottom: 16,
-          left: 0,
-          right: 0,
-          child: Center(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.black87,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                    ),
-                  ),
-                  SizedBox(width: 8),
-                  Text(
-                    'Loading sites...',
-                    style: TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
+        _buildLegend(),
+        if (_buildLoadingIndicator() != null) _buildLoadingIndicator()!,
       ],
     );
   }
