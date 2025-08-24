@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -11,6 +12,7 @@ import '../../data/models/flight.dart';
 import '../../services/database_service.dart';
 import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
+import '../../utils/cache_utils.dart';
 
 enum MapProvider {
   openStreetMap('Street Map', 'OSM', 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', 18, '© OpenStreetMap contributors'),
@@ -62,7 +64,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   static const double _currentSiteMarkerSize = 40.0;
   static const double _boundsThreshold = 0.001;
   static const int _debounceDurationMs = 500;
-  static const double _launchRadiusMeters = 100.0;
+  static const double _launchRadiusMeters = 500.0;
   
   // Site markers state
   List<Site> _localSites = [];
@@ -352,8 +354,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   }
 
   void _selectMapProvider(MapProvider provider) {
-    final currentZoom = _mapController?.camera.zoom ?? 0.0;
-    
     setState(() {
       _selectedMapProvider = provider;
     });
@@ -381,6 +381,11 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     final isFromCurrentSite = widget.site != null && launch.launchSiteId == widget.site!.id;
     final markerColor = isFromCurrentSite ? Colors.red : Colors.blue;
     
+    // Build tooltip message with site name and date
+    final siteName = launch.launchSiteName ?? 'Unknown Site';
+    final date = launch.date.toLocal().toString().split(' ')[0];
+    final tooltipMessage = '$siteName\n$date';
+    
     return Marker(
       point: LatLng(launch.launchLatitude!, launch.launchLongitude!),
       width: _launchMarkerSize,
@@ -388,7 +393,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       child: GestureDetector(
         onTap: () => _onLaunchMarkerTap(launch),
         child: Tooltip(
-          message: '${launch.date.toLocal().toString().split(' ')[0]}\n${launch.launchTime}',
+          message: tooltipMessage,
           child: Container(
             width: _launchMarkerSize,
             height: _launchMarkerSize,
@@ -460,6 +465,23 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       userAgentPackageName: 'com.freeflightlog.free_flight_log_app',
       maxNativeZoom: _selectedMapProvider.maxZoom,
       maxZoom: _selectedMapProvider.maxZoom.toDouble(),
+      tileProvider: kDebugMode 
+        ? _DebugNetworkTileProvider(
+            headers: {
+              'User-Agent': 'FreeFlightLog/1.0',
+              'Cache-Control': 'max-age=31536000', // 12 months cache
+            },
+          )
+        : NetworkTileProvider(
+            headers: {
+              'User-Agent': 'FreeFlightLog/1.0',
+              'Cache-Control': 'max-age=31536000', // 12 months cache
+            },
+          ),
+      // Add debug logging in debug mode only
+      errorTileCallback: kDebugMode ? (tile, error, stackTrace) {
+        LoggingService.debug('Tile error: ${tile.coordinates} - $error');
+      } : null,
     );
   }
 
@@ -1242,8 +1264,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
   /// Handle site creation at a specific point (from map tap or launch click)
   Future<void> _handleSiteCreationAtPoint(LatLng point, Flight? sourceLaunch) async {
-    // Find launches within 500m
-    final launchesNearby = _findLaunchesWithinRadius(point, 500.0);
+    // Find launches within specified radius
+    final launchesNearby = _findLaunchesWithinRadius(point, _launchRadiusMeters);
     
     // Filter to only those closer to this point than to existing sites
     final eligibleLaunches = _filterLaunchesCloserToPoint(launchesNearby, point);
@@ -1337,7 +1359,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '${eligibleLaunches.length} flight${eligibleLaunches.length == 1 ? '' : 's'} within 500m will be reassigned to this new site:',
+                  '${eligibleLaunches.length} flight${eligibleLaunches.length == 1 ? '' : 's'} within ${_launchRadiusMeters.toInt()}m will be reassigned to this new site:',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 8),
@@ -1355,7 +1377,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                       return ListTile(
                         dense: true,
                         title: Text(
-                          '${launch.date.toLocal().toString().split(' ')[0]} at ${launch.launchTime}',
+                          '${launch.launchSiteName ?? 'Unknown Site'}: ${launch.date.toLocal().toString().split(' ')[0]} at ${launch.launchTime}',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                         trailing: Text(
@@ -1369,7 +1391,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
               ] else ...[
                 const SizedBox(height: 16),
                 Text(
-                  'No flights within 500m need reassignment.',
+                  'No flights within ${_launchRadiusMeters.toInt()}m need reassignment.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
               ],
@@ -1569,9 +1591,99 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           right: 8,
           child: _buildMapControls(),
         ),
+        // Debug cache test button (development only)
+        if (kDebugMode)
+          Positioned(
+            top: 60,
+            right: 8,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.purple,
+                borderRadius: BorderRadius.circular(4),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 4,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: IconButton(
+                onPressed: _testCacheFunction,
+                icon: const Icon(Icons.bug_report, color: Colors.white, size: 16),
+                tooltip: 'Test Cache',
+              ),
+            ),
+          ),
         _buildLegend(),
         if (_buildLoadingIndicator() != null) _buildLoadingIndicator()!,
+        // Debug cache overlay (development only)
+        if (kDebugMode)
+          Positioned(
+            bottom: 60,
+            right: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                'Cache: ${CacheUtils.getCacheInfo()}',
+                style: const TextStyle(color: Colors.white, fontSize: 10),
+              ),
+            ),
+          ),
       ],
     );
+  }
+
+  /// Test cache functionality (debug mode only)
+  void _testCacheFunction() {
+    if (!kDebugMode) return;
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Test Map Cache'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Current cache: ${CacheUtils.getCacheInfo()}'),
+            const SizedBox(height: 16),
+            const Text('To test cache functionality:\n'
+                '1. Note current cache size\n'
+                '2. Pan to new area and zoom\n'
+                '3. Check cache size increased\n'
+                '4. Pan back to original area\n'
+                '5. Tiles should load instantly\n'
+                '6. Turn on airplane mode\n'
+                '7. Previously viewed areas should still load'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => CacheUtils.clearMapCache(),
+            child: const Text('Clear Cache'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Debug tile provider that logs actual network requests (not cached tiles)
+class _DebugNetworkTileProvider extends NetworkTileProvider {
+  _DebugNetworkTileProvider({super.headers});
+
+  @override
+  ImageProvider getImage(TileCoordinates coordinates, TileLayer options) {
+    LoggingService.debug('Network tile request: z${coordinates.z}/${coordinates.x}/${coordinates.y}');
+    return super.getImage(coordinates, options);
   }
 }
