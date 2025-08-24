@@ -12,6 +12,20 @@ import '../../services/database_service.dart';
 import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
 
+enum MapProvider {
+  openStreetMap('Street Map', 'OSM', 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', 18, '© OpenStreetMap contributors'),
+  googleSatellite('Google Satellite', 'Google', 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', 18, '© Google'),
+  esriWorldImagery('Esri Satellite', 'Esri', 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', 18, '© Esri');
+
+  const MapProvider(this.displayName, this.shortName, this.urlTemplate, this.maxZoom, this.attribution);
+  
+  final String displayName;
+  final String shortName;
+  final String urlTemplate;
+  final int maxZoom;
+  final String attribution;
+}
+
 class EditSiteScreen extends StatefulWidget {
   final Site? site;
   final ({double latitude, double longitude})? actualLaunchCoordinates;
@@ -33,11 +47,11 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   late TextEditingController _altitudeController;
   late TextEditingController _countryController;
   MapController? _mapController;
-  bool _showSatelliteView = false;
+  MapProvider _selectedMapProvider = MapProvider.openStreetMap;
   final _formKey = GlobalKey<FormState>();
   
-  // SharedPreferences key for satellite view preference
-  static const String _satelliteViewKey = 'edit_site_satellite_view';
+  // SharedPreferences key for map provider preference
+  static const String _mapProviderKey = 'edit_site_map_provider';
   
   // Site markers state
   List<Site> _localSites = [];
@@ -59,23 +73,53 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     _longitudeController = TextEditingController(text: widget.site?.longitude.toString() ?? '');
     _altitudeController = TextEditingController(text: widget.site?.altitude?.toString() ?? '');
     _countryController = TextEditingController(text: widget.site?.country ?? '');
-    _loadSatelliteViewPreference();
+    _loadMapProviderPreference();
   }
   
-  /// Load the saved satellite view preference
-  Future<void> _loadSatelliteViewPreference() async {
+  /// Load the saved map provider preference
+  Future<void> _loadMapProviderPreference() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final savedPreference = prefs.getBool(_satelliteViewKey) ?? false;
+      
+      // Check for legacy satellite view preference first
+      final legacySatelliteView = prefs.getBool('edit_site_satellite_view');
+      String? savedProviderName;
+      
+      if (legacySatelliteView == true) {
+        // Migrate legacy preference: satellite view = Google Satellite
+        savedProviderName = MapProvider.googleSatellite.name;
+        await prefs.setString(_mapProviderKey, savedProviderName);
+        await prefs.remove('edit_site_satellite_view'); // Clean up legacy key
+      } else if (legacySatelliteView == false) {
+        // Migrate legacy preference: street view = OpenStreetMap
+        savedProviderName = MapProvider.openStreetMap.name;
+        await prefs.setString(_mapProviderKey, savedProviderName);
+        await prefs.remove('edit_site_satellite_view'); // Clean up legacy key
+      } else {
+        // Load current preference
+        savedProviderName = prefs.getString(_mapProviderKey);
+      }
+      
+      MapProvider selectedProvider = MapProvider.openStreetMap; // Default
+      if (savedProviderName != null) {
+        try {
+          selectedProvider = MapProvider.values.firstWhere(
+            (provider) => provider.name == savedProviderName,
+            orElse: () => MapProvider.openStreetMap,
+          );
+        } catch (e) {
+          LoggingService.warning('EditSiteScreen: Unknown map provider: $savedProviderName, using default');
+        }
+      }
       
       if (mounted) {
         setState(() {
-          _showSatelliteView = savedPreference;
+          _selectedMapProvider = selectedProvider;
         });
-        LoggingService.debug('EditSiteScreen: Loaded satellite view preference: $savedPreference');
+        LoggingService.debug('EditSiteScreen: Loaded map provider preference: ${selectedProvider.displayName}');
       }
     } catch (e) {
-      LoggingService.error('EditSiteScreen: Error loading satellite view preference', e);
+      LoggingService.error('EditSiteScreen: Error loading map provider preference', e);
     }
   }
 
@@ -296,25 +340,47 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     }
   }
 
-  void _toggleSatelliteView() {
+  void _selectMapProvider(MapProvider provider) {
     final currentZoom = _mapController?.camera.zoom ?? 0.0;
-    print('SWITCHING TO ${_showSatelliteView ? 'STREET' : 'SATELLITE'} VIEW at zoom: ${currentZoom.toStringAsFixed(2)}');
+    LoggingService.debug('EditSiteScreen: Switching to ${provider.displayName} at zoom: ${currentZoom.toStringAsFixed(2)}');
     
     setState(() {
-      _showSatelliteView = !_showSatelliteView;
+      _selectedMapProvider = provider;
     });
     
-    _saveSatelliteViewPreference();
+    // Check if current zoom exceeds the new provider's max zoom
+    if (currentZoom > provider.maxZoom.toDouble()) {
+      final newZoom = provider.maxZoom.toDouble();
+      LoggingService.debug('EditSiteScreen: Zoom level ${currentZoom.toStringAsFixed(2)} exceeds max ${newZoom.toStringAsFixed(1)} for ${provider.displayName}, adjusting');
+      _mapController?.move(
+        _mapController!.camera.center,
+        newZoom,
+      );
+    }
+    
+    _saveMapProviderPreference();
+  }
+
+  /// Get the appropriate icon for a map provider
+  IconData _getProviderIcon(MapProvider provider) {
+    switch (provider) {
+      case MapProvider.openStreetMap:
+        return Icons.map;
+      case MapProvider.googleSatellite:
+        return Icons.satellite;
+      case MapProvider.esriWorldImagery:
+        return Icons.terrain;
+    }
   }
   
-  /// Save the satellite view preference
-  Future<void> _saveSatelliteViewPreference() async {
+  /// Save the map provider preference
+  Future<void> _saveMapProviderPreference() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_satelliteViewKey, _showSatelliteView);
-      LoggingService.debug('EditSiteScreen: Saved satellite view preference: $_showSatelliteView');
+      await prefs.setString(_mapProviderKey, _selectedMapProvider.name);
+      LoggingService.debug('EditSiteScreen: Saved map provider preference: ${_selectedMapProvider.displayName}');
     } catch (e) {
-      LoggingService.error('EditSiteScreen: Error saving satellite view preference', e);
+      LoggingService.error('EditSiteScreen: Error saving map provider preference', e);
     }
   }
   
@@ -331,9 +397,10 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   void _onMapEvent(MapEvent event) {
     // Check zoom level and clamp if necessary
     final currentZoom = _mapController?.camera.zoom ?? 0.0;
-    if (_showSatelliteView && currentZoom > 22.0) {
-      print('ZOOM EXCEEDED 22 - CLAMPING TO 22');
-      _mapController?.move(_mapController!.camera.center, 22.0);
+    final maxZoom = _selectedMapProvider.maxZoom.toDouble();
+    if (currentZoom > maxZoom) {
+      LoggingService.debug('EditSiteScreen: Zoom exceeded ${maxZoom} for ${_selectedMapProvider.displayName} - clamping');
+      _mapController?.move(_mapController!.camera.center, maxZoom);
       return;
     }
     
@@ -344,8 +411,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         event is MapEventScrollWheelZoom) {
       
       // Debug logging to verify events are captured and log zoom level
-      LoggingService.debug('EditSiteScreen: Map event triggered: ${event.runtimeType}, zoom: ${currentZoom.toStringAsFixed(2)}');
-      print('ZOOM LEVEL: ${currentZoom.toStringAsFixed(2)} (satellite: $_showSatelliteView)');
+      LoggingService.debug('EditSiteScreen: Map event triggered: ${event.runtimeType}, zoom: ${currentZoom.toStringAsFixed(2)}, provider: ${_selectedMapProvider.displayName}');
       
       _debounceTimer?.cancel();
       _debounceTimer = Timer(const Duration(milliseconds: 500), () {
@@ -1021,20 +1087,18 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         onMapReady: _onMapReady,
         onMapEvent: _onMapEvent,
         onTap: _onMapTap,
-        // Strict zoom limits to prevent grey tiles - always 22 max
+        // Dynamic zoom limits based on selected provider
         minZoom: 1.0,
-        maxZoom: 22.0,
+        maxZoom: _selectedMapProvider.maxZoom.toDouble(),
       ),
       children: [
-        // Base tile layer (OpenStreetMap or satellite)
+        // Base tile layer using selected provider
         TileLayer(
-          urlTemplate: _showSatelliteView
-              ? 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}'
-              : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          urlTemplate: _selectedMapProvider.urlTemplate,
           userAgentPackageName: 'com.freeflightlog.free_flight_log_app',
-          // Prevent grey tiles: Google satellite tiles fail around 22.5+
-          maxNativeZoom: _showSatelliteView ? 22 : 18,
-          maxZoom: _showSatelliteView ? 22 : 18,
+          // Use provider-specific zoom limits
+          maxNativeZoom: _selectedMapProvider.maxZoom,
+          maxZoom: _selectedMapProvider.maxZoom.toDouble(),
         ),
         // Launches from flights (yellow for current site, blue for others) - BOTTOM LAYER
         MarkerLayer(
@@ -1229,38 +1293,36 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
               color: Colors.white.withValues(alpha: 0.9),
               borderRadius: BorderRadius.circular(2),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_showSatelliteView) ...[
-                  Text(
-                    '© Google',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const Text(' | ', style: TextStyle(fontSize: 10, color: Colors.black54)),
-                ],
-                GestureDetector(
-                  onTap: () async {
-                    final uri = Uri.parse('https://www.openstreetmap.org/copyright');
-                    try {
-                      await launchUrl(uri, mode: LaunchMode.platformDefault);
-                    } catch (e) {
-                      LoggingService.error('EditSiteScreen: Could not launch URL', e);
-                    }
-                  },
-                  child: Text(
-                    '© OpenStreetMap contributors',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.blue[800],
-                      decoration: TextDecoration.underline,
-                    ),
-                  ),
+            child: GestureDetector(
+              onTap: () async {
+                // Open appropriate copyright page based on provider
+                String url;
+                switch (_selectedMapProvider) {
+                  case MapProvider.openStreetMap:
+                    url = 'https://www.openstreetmap.org/copyright';
+                    break;
+                  case MapProvider.googleSatellite:
+                    url = 'https://www.google.com/permissions/geoguidelines/';
+                    break;
+                  case MapProvider.esriWorldImagery:
+                    url = 'https://www.esri.com/en-us/legal/terms/full-master-agreement';
+                    break;
+                }
+                final uri = Uri.parse(url);
+                try {
+                  await launchUrl(uri, mode: LaunchMode.platformDefault);
+                } catch (e) {
+                  LoggingService.error('EditSiteScreen: Could not launch URL', e);
+                }
+              },
+              child: Text(
+                _selectedMapProvider.attribution,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.blue[800],
+                  decoration: TextDecoration.underline,
                 ),
-              ],
+              ),
             ),
           ),
         ),
@@ -1272,10 +1334,10 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         right: 8,
         child: Column(
           children: [
-            // Satellite toggle button
+            // Map provider selector
             Container(
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(4),
                 boxShadow: [
                   BoxShadow(
@@ -1285,13 +1347,44 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                   ),
                 ],
               ),
-              child: IconButton(
-                onPressed: _toggleSatelliteView,
-                icon: Icon(
-                  _showSatelliteView ? Icons.map : Icons.satellite_alt,
-                  size: 20,
+              child: PopupMenuButton<MapProvider>(
+                onSelected: _selectMapProvider,
+                initialValue: _selectedMapProvider,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _getProviderIcon(_selectedMapProvider),
+                        size: 16,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                      Icon(
+                        Icons.arrow_drop_down, 
+                        size: 16,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                    ],
+                  ),
                 ),
-                tooltip: _showSatelliteView ? 'Street View' : 'Satellite View',
+                itemBuilder: (context) => MapProvider.values.map((provider) => 
+                  PopupMenuItem<MapProvider>(
+                    value: provider,
+                    child: Row(
+                      children: [
+                        Icon(
+                          _getProviderIcon(provider),
+                          size: 16,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(provider.displayName),
+                        ),
+                      ],
+                    ),
+                  )
+                ).toList(),
               ),
             ),
           ],
