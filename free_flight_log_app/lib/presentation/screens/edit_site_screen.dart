@@ -903,6 +903,12 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   Future<void> _loadSitesForBounds(LatLngBounds bounds) async {
     if (_isLoadingSites) return;
     
+    // Create a unique key for these bounds to prevent duplicate requests
+    final boundsKey = '${bounds.north.toStringAsFixed(6)}_${bounds.south.toStringAsFixed(6)}_${bounds.east.toStringAsFixed(6)}_${bounds.west.toStringAsFixed(6)}';
+    if (_lastLoadedBoundsKey == boundsKey) {
+      return; // Same bounds already loaded
+    }
+    
     setState(() {
       _isLoadingSites = true;
     });
