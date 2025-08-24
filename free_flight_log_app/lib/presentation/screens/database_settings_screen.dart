@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../utils/database_reset_helper.dart';
 import '../../services/site_matching_service.dart';
+import '../../utils/cache_utils.dart';
 
 class DatabaseSettingsScreen extends StatefulWidget {
   const DatabaseSettingsScreen({super.key});
@@ -100,6 +101,29 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
       // Close loading dialog
       if (mounted) Navigator.of(context).pop();
       _showErrorDialog('Error', 'Failed to clear flights: $e');
+    }
+  }
+
+  Future<void> _clearMapCache() async {
+    final confirmed = await _showConfirmationDialog(
+      'Clear Map Cache',
+      'This will clear all cached map tiles.\n\n'
+      'Maps will need to re-download tiles when viewed.',
+    );
+
+    if (!confirmed) return;
+
+    CacheUtils.clearMapCache();
+
+    setState(() {}); // Refresh display
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Map cache cleared successfully'),
+          duration: Duration(seconds: 2),
+        ),
+      );
     }
   }
 
@@ -264,6 +288,39 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
                           ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 24),
+
+                  // Map Cache Statistics
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Map Tile Cache',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 16),
+                          _buildStatRow('Cached Tiles', CacheUtils.getCurrentCacheCount().toString()),
+                          _buildStatRow('Cache Size', CacheUtils.formatBytes(CacheUtils.getCurrentCacheSize())),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: CacheUtils.getCurrentCacheCount() > 0 ? _clearMapCache : null,
+                              icon: const Icon(Icons.cleaning_services),
+                              label: const Text('Clear Map Cache'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.blue,
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
