@@ -364,6 +364,83 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                 },
               );
               
+              // Add handler for detailed Cesium performance metrics
+              controller.addJavaScriptHandler(
+                handlerName: 'cesiumPerformanceMetrics',
+                callback: (args) async {
+                  if (args.isNotEmpty) {
+                    final data = args[0] as Map<dynamic, dynamic>;
+                    final event = data['event'] as String?;
+                    
+                    if (event == 'providerSwitchStart') {
+                      final provider = data['provider'] as String?;
+                      final memoryMB = data['memoryMB'] as num?;
+                      final cachedTiles = data['cachedTiles'] as num?;
+                      
+                      LoggingService.info('🚀 CESIUM PERF: Provider switch started - $provider');
+                      LoggingService.info('📊 CESIUM PERF: Pre-switch state - Memory: ${memoryMB?.toInt() ?? 0}MB, Cached tiles: ${cachedTiles?.toInt() ?? 0}');
+                      
+                    } else if (event == 'providerSwitchComplete') {
+                      final provider = data['provider'] as String?;
+                      final durationMs = data['durationMs'] as num?;
+                      final tilesLoaded = data['tilesLoaded'] as num?;
+                      final tilesFailed = data['tilesFailed'] as num?;
+                      final frameDrops = data['frameDrops'] as num?;
+                      final avgFrameRate = data['avgFrameRate'] as num?;
+                      final memoryDeltaMB = data['memoryDeltaMB'] as num?;
+                      final finalCachedTiles = data['finalCachedTiles'] as num?;
+                      final networkRequests = data['networkRequests'] as num?;
+                      
+                      // Use the proper performance logging with duration
+                      final duration = Duration(milliseconds: durationMs?.toInt() ?? 0);
+                      LoggingService.performance('CESIUM Provider Switch', duration, '$provider completed');
+                      
+                      LoggingService.info('⏱️  CESIUM PERF: Duration: ${durationMs?.toInt() ?? 0}ms');
+                      LoggingService.info('🔢 CESIUM PERF: Tiles - Loaded: ${tilesLoaded?.toInt() ?? 0}, Failed: ${tilesFailed?.toInt() ?? 0}');
+                      LoggingService.info('🎬 CESIUM PERF: Frame drops: ${frameDrops?.toInt() ?? 0}, Avg FPS: ${avgFrameRate?.toStringAsFixed(1) ?? '0.0'}');
+                      LoggingService.info('💾 CESIUM PERF: Memory delta: ${memoryDeltaMB != null ? (memoryDeltaMB > 0 ? '+' : '') + memoryDeltaMB.toStringAsFixed(1) : '0.0'}MB');
+                      LoggingService.info('🌐 CESIUM PERF: Network requests: ${networkRequests?.toInt() ?? 0}, Final cached: ${finalCachedTiles?.toInt() ?? 0}');
+                      
+                      // Performance analysis
+                      if (durationMs != null && durationMs > 3000) {
+                        LoggingService.error('Cesium3D Performance', '🐌 SLOW provider switch: ${durationMs.toInt()}ms (expected <3000ms)');
+                      }
+                      
+                      if (frameDrops != null && frameDrops > 100) {
+                        LoggingService.error('Cesium3D Performance', '📉 High frame drops: ${frameDrops.toInt()} (UI freezing likely)');
+                      }
+                      
+                      if (avgFrameRate != null && avgFrameRate < 20) {
+                        LoggingService.error('Cesium3D Performance', '🎬 Low frame rate: ${avgFrameRate.toStringAsFixed(1)} FPS (choppy experience)');
+                      }
+                      
+                      if (memoryDeltaMB != null && memoryDeltaMB > 50) {
+                        LoggingService.error('Cesium3D Performance', '💾 High memory usage: +${memoryDeltaMB.toStringAsFixed(1)}MB (potential leak)');
+                      }
+                    }
+                  }
+                },
+              );
+              
+              // Add general performance metric handler (existing one)
+              controller.addJavaScriptHandler(
+                handlerName: 'performanceMetric',
+                callback: (args) async {
+                  if (args.isNotEmpty) {
+                    final data = args[0] as Map<dynamic, dynamic>;
+                    final metric = data['metric'] as String?;
+                    final value = data['value'];
+                    
+                    if (value is num && metric != null) {
+                      final duration = Duration(milliseconds: value.toInt());
+                      LoggingService.performance('CESIUM $metric', duration);
+                    } else {
+                      LoggingService.info('📈 CESIUM GENERAL: $metric = $value');
+                    }
+                  }
+                },
+              );
+              
               // Notify parent widget of controller creation
               if (widget.onControllerCreated != null) {
                 widget.onControllerCreated!(controller);

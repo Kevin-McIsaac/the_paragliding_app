@@ -42,6 +42,313 @@ class PerformanceReporter {
 }
 
 // ============================================================================
+// Cesium Performance Monitor - Detailed tracking for imagery provider switches
+// ============================================================================
+
+class CesiumPerformanceMonitor {
+    constructor(viewer) {
+        this.viewer = viewer;
+        this.metrics = {
+            providerSwitchStart: null,
+            providerSwitchName: null,
+            tilesRequested: 0,
+            tilesLoaded: 0,
+            tilesFailed: 0,
+            frameDrops: 0,
+            lastFrameTime: performance.now(),
+            networkRequests: 0,
+            memoryStart: 0,
+            frameRateMonitor: null
+        };
+        
+        this.isMonitoring = false;
+        this.frameRateHistory = [];
+        this.tileLoadListeners = [];
+    }
+    
+    startProviderSwitch(providerName) {
+        cesiumLog.info(`[PERF] Provider Switch Started: ${this.currentProvider || 'Unknown'} -> ${providerName}`);
+        
+        this.metrics.providerSwitchStart = performance.now();
+        this.metrics.providerSwitchName = providerName;
+        this.metrics.tilesRequested = 0;
+        this.metrics.tilesLoaded = 0;
+        this.metrics.tilesFailed = 0;
+        this.metrics.frameDrops = 0;
+        this.metrics.networkRequests = 0;
+        this.frameRateHistory = [];
+        
+        // Capture pre-switch state
+        this.metrics.memoryStart = this._getMemoryUsage();
+        const cacheStats = this._getCacheStats();
+        
+        cesiumLog.info(`[PERF] Pre-switch: Memory: ${this.metrics.memoryStart}MB, Tiles cached: ${cacheStats.tileCount}`);
+        
+        // Start monitoring
+        this.isMonitoring = true;
+        this._startFrameRateMonitoring();
+        this._startTileMonitoring();
+        
+        // Report to Flutter
+        this._reportMetrics({
+            event: 'providerSwitchStart',
+            provider: providerName,
+            memoryMB: this.metrics.memoryStart,
+            cachedTiles: cacheStats.tileCount
+        });
+    }
+    
+    startTileFailureMonitoring(onTooManyFailures) {
+        // Monitor tile load failures and trigger fallback if needed
+        const checkFailureThreshold = () => {
+            const failureRate = this.metrics.tilesRequested > 0 ? 
+                (this.metrics.tilesFailed / this.metrics.tilesRequested) : 0;
+            
+            // If more than 50% of tiles fail and we've tried at least 10 tiles
+            if (failureRate > 0.5 && this.metrics.tilesRequested >= 10) {
+                cesiumLog.error(`[PERF] High tile failure rate detected: ${(failureRate * 100).toFixed(1)}% (${this.metrics.tilesFailed}/${this.metrics.tilesRequested})`);
+                
+                if (onTooManyFailures) {
+                    onTooManyFailures(this.metrics.providerSwitchName, failureRate);
+                }
+                return true; // Stop monitoring
+            }
+            
+            // Continue monitoring for up to 30 seconds
+            const elapsed = performance.now() - this.metrics.providerSwitchStart;
+            if (elapsed < 30000) {
+                setTimeout(checkFailureThreshold, 2000); // Check every 2 seconds
+            }
+            
+            return false;
+        };
+        
+        // Start monitoring after a brief delay to allow initial tiles to load
+        setTimeout(checkFailureThreshold, 3000);
+    }
+    
+    endProviderSwitch() {
+        if (!this.isMonitoring || !this.metrics.providerSwitchStart) return;
+        
+        const duration = performance.now() - this.metrics.providerSwitchStart;
+        const memoryEnd = this._getMemoryUsage();
+        const memoryDelta = memoryEnd - this.metrics.memoryStart;
+        const cacheStats = this._getCacheStats();
+        const avgFrameRate = this._calculateAverageFrameRate();
+        
+        cesiumLog.info(`[PERF] Provider Switch Complete: ${this.metrics.providerSwitchName}`);
+        cesiumLog.info(`[PERF] Total Time: ${duration.toFixed(0)}ms`);
+        cesiumLog.info(`[PERF] Tiles: ${this.metrics.tilesLoaded} loaded, ${this.metrics.tilesFailed} failed`);
+        cesiumLog.info(`[PERF] Frame Drops: ${this.metrics.frameDrops}, Avg FPS: ${avgFrameRate.toFixed(1)}`);
+        cesiumLog.info(`[PERF] Memory Delta: ${memoryDelta > 0 ? '+' : ''}${memoryDelta.toFixed(1)}MB`);
+        cesiumLog.info(`[PERF] Post-switch: Tiles cached: ${cacheStats.tileCount}`);
+        
+        // Stop monitoring
+        this.isMonitoring = false;
+        this._stopFrameRateMonitoring();
+        this._stopTileMonitoring();
+        
+        // Report comprehensive metrics to Flutter
+        this._reportMetrics({
+            event: 'providerSwitchComplete',
+            provider: this.metrics.providerSwitchName,
+            durationMs: duration,
+            tilesLoaded: this.metrics.tilesLoaded,
+            tilesFailed: this.metrics.tilesFailed,
+            frameDrops: this.metrics.frameDrops,
+            avgFrameRate: avgFrameRate,
+            memoryDeltaMB: memoryDelta,
+            finalCachedTiles: cacheStats.tileCount,
+            networkRequests: this.metrics.networkRequests
+        });
+        
+        // Reset for next measurement
+        this.metrics.providerSwitchStart = null;
+        this.currentProvider = this.metrics.providerSwitchName;
+    }
+    
+    _startFrameRateMonitoring() {
+        let frameCount = 0;
+        let lastTime = performance.now();
+        
+        const monitorFrame = (currentTime) => {
+            if (!this.isMonitoring) return;
+            
+            frameCount++;
+            const deltaTime = currentTime - lastTime;
+            
+            // Calculate FPS every 100ms
+            if (deltaTime >= 100) {
+                const fps = (frameCount * 1000) / deltaTime;
+                this.frameRateHistory.push(fps);
+                
+                // Detect frame drops (< 30 FPS is considered a drop)
+                if (fps < 30) {
+                    this.metrics.frameDrops++;
+                }
+                
+                // Log severe drops
+                if (fps < 10) {
+                    cesiumLog.warn(`[PERF] Severe frame drop detected: ${fps.toFixed(1)} FPS`);
+                }
+                
+                frameCount = 0;
+                lastTime = currentTime;
+                
+                // Report periodic updates
+                if (this.frameRateHistory.length % 10 === 0) {
+                    const elapsed = performance.now() - this.metrics.providerSwitchStart;
+                    cesiumLog.info(`[PERF] T+${elapsed.toFixed(0)}ms: FPS: ${fps.toFixed(1)}, Tiles: ${this.metrics.tilesLoaded}/${this.metrics.tilesRequested}`);
+                }
+            }
+            
+            requestAnimationFrame(monitorFrame);
+        };
+        
+        requestAnimationFrame(monitorFrame);
+    }
+    
+    _stopFrameRateMonitoring() {
+        // Frame rate monitoring stops automatically when isMonitoring = false
+    }
+    
+    _startTileMonitoring() {
+        if (!this.viewer?.scene?.globe?.imageryLayers) return;
+        
+        // Hook into globe tile loading events
+        const globe = this.viewer.scene.globe;
+        
+        // Monitor tile load progress
+        this.tileLoadProgressListener = (queuedTileCount) => {
+            if (!this.isMonitoring) return;
+            
+            const elapsed = performance.now() - this.metrics.providerSwitchStart;
+            
+            if (queuedTileCount > 0) {
+                cesiumLog.debug(`[PERF] T+${elapsed.toFixed(0)}ms: ${queuedTileCount} tiles queued`);
+            }
+        };
+        
+        globe.tileLoadProgressEvent.addEventListener(this.tileLoadProgressListener);
+        
+        // Try to hook into imagery layer events if available
+        try {
+            if (globe.imageryLayers.length > 0) {
+                const layer = globe.imageryLayers.get(0);
+                if (layer.imageryProvider) {
+                    this._hookImageryProviderEvents(layer.imageryProvider);
+                }
+            }
+        } catch (e) {
+            cesiumLog.debug(`[PERF] Could not hook imagery provider events: ${e.message}`);
+        }
+    }
+    
+    _stopTileMonitoring() {
+        if (this.tileLoadProgressListener && this.viewer?.scene?.globe) {
+            this.viewer.scene.globe.tileLoadProgressEvent.removeEventListener(this.tileLoadProgressListener);
+        }
+        
+        // Clean up any hooked events
+        this.tileLoadListeners.forEach(cleanup => {
+            try { cleanup(); } catch (e) { /* ignore */ }
+        });
+        this.tileLoadListeners = [];
+    }
+    
+    _hookImageryProviderEvents(provider) {
+        // This is provider-specific and may not always be available
+        // We'll do our best to monitor what we can
+        
+        if (provider.requestImage) {
+            const originalRequestImage = provider.requestImage.bind(provider);
+            provider.requestImage = (...args) => {
+                if (this.isMonitoring) {
+                    this.metrics.tilesRequested++;
+                    this.metrics.networkRequests++;
+                }
+                
+                const result = originalRequestImage(...args);
+                
+                if (result && typeof result.then === 'function') {
+                    result.then(() => {
+                        if (this.isMonitoring) {
+                            this.metrics.tilesLoaded++;
+                        }
+                    }).catch(() => {
+                        if (this.isMonitoring) {
+                            this.metrics.tilesFailed++;
+                        }
+                    });
+                }
+                
+                return result;
+            };
+            
+            // Store cleanup function
+            this.tileLoadListeners.push(() => {
+                provider.requestImage = originalRequestImage;
+            });
+        }
+    }
+    
+    _calculateAverageFrameRate() {
+        if (this.frameRateHistory.length === 0) return 0;
+        const sum = this.frameRateHistory.reduce((a, b) => a + b, 0);
+        return sum / this.frameRateHistory.length;
+    }
+    
+    _getMemoryUsage() {
+        if (window.performance?.memory) {
+            return Math.round(window.performance.memory.usedJSHeapSize / (1024 * 1024));
+        }
+        return 0;
+    }
+    
+    _getCacheStats() {
+        const globe = this.viewer?.scene?.globe;
+        if (!globe) return { tileCount: 0 };
+        
+        return {
+            tileCount: globe.tileCacheSize || 0
+        };
+    }
+    
+    _reportMetrics(data) {
+        // Send to Flutter with detailed metrics
+        if (window.flutter_inappwebview?.callHandler) {
+            window.flutter_inappwebview.callHandler('cesiumPerformanceMetrics', data);
+        }
+        
+        // Also use the general performance reporter
+        if (data.event === 'providerSwitchComplete') {
+            PerformanceReporter.report('providerSwitch', data.durationMs);
+        }
+    }
+    
+    // Public method to manually report current state
+    reportCurrentState() {
+        if (!this.isMonitoring) return;
+        
+        const elapsed = performance.now() - this.metrics.providerSwitchStart;
+        const currentMemory = this._getMemoryUsage();
+        const cacheStats = this._getCacheStats();
+        
+        cesiumLog.info(`[PERF] Current State - T+${elapsed.toFixed(0)}ms`);
+        cesiumLog.info(`[PERF] Memory: ${currentMemory}MB, Tiles: ${this.metrics.tilesLoaded}/${this.metrics.tilesRequested}, Drops: ${this.metrics.frameDrops}`);
+        
+        return {
+            elapsed: elapsed,
+            memory: currentMemory,
+            tilesLoaded: this.metrics.tilesLoaded,
+            tilesRequested: this.metrics.tilesRequested,
+            frameDrops: this.metrics.frameDrops,
+            cachedTiles: cacheStats.tileCount
+        };
+    }
+}
+
+// ============================================================================
 // Flight Data Source - Idiomatic Cesium CustomDataSource
 // ============================================================================
 
@@ -479,6 +786,7 @@ class CesiumFlightApp {
         this.flightDataSource = null;
         this.trackPrimitives = null;
         this.statisticsDisplay = null;
+        this.performanceMonitor = null;
         this.cameraFollowing = false;
         this._ribbonModeAuto = true;
         this._updateThrottle = { lastUpdate: 0, interval: 100 };
@@ -489,6 +797,11 @@ class CesiumFlightApp {
     initialize(config) {
         PerformanceReporter.measureTime('initialization', () => {
             this._createViewer(config);
+            
+            // Initialize performance monitor after viewer is created
+            this.performanceMonitor = new CesiumPerformanceMonitor(this.viewer);
+            cesiumLog.info('Performance monitor initialized');
+            
             this._setupEventHandlers();
             
             // Load initial track if provided
@@ -499,16 +812,31 @@ class CesiumFlightApp {
     }
     
     _createViewer(config) {
+        // Determine if we're in development mode (check debug flag or hostname)
+        const isDevelopment = config.debug || window.location.hostname === 'localhost';
+        
         // Essential imagery providers
-        const imageryProviders = this._createImageryProviders();
-        const selectedProvider = config.savedBaseMap ? 
-            imageryProviders.find(vm => vm.name === config.savedBaseMap) || imageryProviders[0] :
-            imageryProviders[0];
+        const imageryProviders = this._createImageryProviders(isDevelopment);
+        // In development mode, override premium providers with free alternatives
+        let selectedProvider;
+        
+        if (config.savedBaseMap) {
+            selectedProvider = imageryProviders.find(vm => vm.name === config.savedBaseMap);
+            
+            // If saved provider not found and we're in development mode, warn and use default
+            if (!selectedProvider && isDevelopment) {
+                cesiumLog.warn(`Saved provider "${config.savedBaseMap}" not available in development mode (quota-protected). Using free alternative.`);
+                selectedProvider = imageryProviders[0];
+            } else if (!selectedProvider) {
+                selectedProvider = imageryProviders[0];
+            }
+        } else {
+            selectedProvider = imageryProviders[0];
+        }
         
         // Adaptive resolution scaling based on device capability, mode, and user preference
         const devicePixelRatio = window.devicePixelRatio || 1.0;
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-        const isDevelopment = config.debug || window.location.hostname === 'localhost';
         
         // Default resolution: Performance mode for mobile or development, Quality for desktop production
         let defaultResolution = 1.0;
@@ -595,33 +923,56 @@ class CesiumFlightApp {
         }
     }
     
-    _createImageryProviders() {
-        // Determine if we're in development mode (check debug flag or hostname)
-        const isDevelopment = window.cesiumConfig?.debug || window.location.hostname === 'localhost';
+    _createImageryProviders(isDevelopment) {
+        // Use passed isDevelopment parameter
         
         const freeProviders = [
             new Cesium.ProviderViewModel({
                 name: 'OpenStreetMap',
                 iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/openStreetMap.png'),
                 tooltip: 'OpenStreetMap - Free, no quota usage',
-                creationFunction: () => new Cesium.OpenStreetMapImageryProvider({
-                    url: 'https://a.tile.openstreetmap.org/',
-                    maximumLevel: 18,
-                    credit: new Cesium.Credit('© OpenStreetMap contributors', false),
-                    // Enable aggressive caching
-                    tilingScheme: new Cesium.WebMercatorTilingScheme(),
-                    rectangle: Cesium.Rectangle.MAX_VALUE
-                })
+                creationFunction: () => {
+                    try {
+                        return new Cesium.OpenStreetMapImageryProvider({
+                            url: 'https://{s}.tile.openstreetmap.org/',
+                            subdomains: ['a', 'b', 'c'],
+                            maximumLevel: 18,
+                            credit: new Cesium.Credit('© OpenStreetMap contributors', false)
+                        });
+                    } catch (error) {
+                        cesiumLog.error('Failed to create OpenStreetMap provider:', error.message);
+                        throw new Error('OpenStreetMap provider creation failed');
+                    }
+                }
             }),
+            // Stamen Terrain - New free alternative for better variety
             new Cesium.ProviderViewModel({
-                name: 'Sentinel-2',
-                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/sentinel-2.png'),
-                tooltip: 'Sentinel-2 satellite imagery - Free, 10m resolution',
-                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3954)
+                name: 'Stamen Terrain',
+                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/naturalEarthII.png'),
+                tooltip: 'Stamen Terrain - Free terrain base map, no quota usage',
+                creationFunction: () => {
+                    try {
+                        return new Cesium.UrlTemplateImageryProvider({
+                            url: 'https://stamen-tiles-{s}.a.ssl.fastly.net/terrain/{z}/{x}/{y}.png',
+                            subdomains: ['a', 'b', 'c', 'd'],
+                            maximumLevel: 12,
+                            credit: new Cesium.Credit('© Stamen Design, © OpenStreetMap contributors')
+                        });
+                    } catch (error) {
+                        cesiumLog.error('Failed to create Stamen Terrain provider:', error.message);
+                        throw new Error('Stamen Terrain provider creation failed');
+                    }
+                }
             })
         ];
         
         const premiumProviders = [
+            new Cesium.ProviderViewModel({
+                name: 'Sentinel-2',
+                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/sentinel-2.png'),
+                tooltip: 'Sentinel-2 satellite imagery - 10m resolution (uses Cesium Ion quota)',
+                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3954)
+            }),
             new Cesium.ProviderViewModel({
                 name: 'Bing Maps Aerial with Labels',
                 iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerialLabels.png'),
@@ -642,12 +993,14 @@ class CesiumFlightApp {
             })
         ];
         
-        // In development mode, prioritize free providers and add notice. In production, show all options
+        // In development mode, ONLY show free providers to prevent quota usage
         if (isDevelopment) {
             cesiumLog.info('Development mode: Using free imagery providers to reduce quota usage');
-            return [...freeProviders, ...premiumProviders];
+            cesiumLog.info(`Available providers in development: ${freeProviders.map(p => p.name).join(', ')}`);
+            return freeProviders;
         } else {
             cesiumLog.info('Production mode: All imagery providers available');
+            cesiumLog.info(`Available providers: ${[...freeProviders, ...premiumProviders].map(p => p.name).join(', ')}`);
             return [...freeProviders, ...premiumProviders];
         }
     }
@@ -751,13 +1104,92 @@ class CesiumFlightApp {
                 this.viewer.baseLayerPicker.viewModel, 
                 'selectedImagery'
             ).subscribe((providerViewModel) => {
-                if (providerViewModel && window.flutter_inappwebview?.callHandler) {
-                    // Notify Flutter of the map change
-                    window.flutter_inappwebview.callHandler(
-                        'onImageryProviderChanged', 
-                        providerViewModel.name
-                    );
-                    console.log('[Cesium] Imagery provider changed to:', providerViewModel.name);
+                if (providerViewModel) {
+                    try {
+                        // Start performance monitoring for provider switch
+                        if (this.performanceMonitor) {
+                            this.performanceMonitor.startProviderSwitch(providerViewModel.name);
+                            
+                            // Set up monitoring end conditions
+                            let monitoringEnded = false;
+                            const endMonitoring = () => {
+                                if (!monitoringEnded) {
+                                    monitoringEnded = true;
+                                    this.performanceMonitor.endProviderSwitch();
+                                }
+                            };
+                            
+                            // End monitoring when tiles are loaded OR timeout
+                            let tileCheckCount = 0;
+                            const maxTileChecks = 100; // 10 seconds max (100 * 100ms)
+                            
+                            const checkTileCompletion = () => {
+                                tileCheckCount++;
+                                
+                                // Get current tile queue count
+                                const queuedTiles = this.viewer?.scene?.globe?.tilesWaitingForChildren?.length || 0;
+                                const hasActiveRequests = queuedTiles > 0;
+                                
+                                // End monitoring if no active requests or timeout
+                                if (!hasActiveRequests || tileCheckCount >= maxTileChecks) {
+                                    endMonitoring();
+                                } else {
+                                    setTimeout(checkTileCompletion, 100); // Check every 100ms
+                                }
+                            };
+                            
+                            // Start checking after a brief delay
+                            setTimeout(checkTileCompletion, 500);
+                            
+                            // Absolute timeout as fallback
+                            setTimeout(endMonitoring, 10000); // 10 second absolute maximum
+                            
+                            // Start monitoring for tile load failures
+                            this.performanceMonitor.startTileFailureMonitoring((failedProvider, failureRate) => {
+                                cesiumLog.error(`Provider "${failedProvider}" has high failure rate: ${(failureRate * 100).toFixed(1)}%`);
+                                
+                                // Try fallback to OpenStreetMap
+                                const fallbackProvider = this.viewer.baseLayerPicker.viewModel.imageryProviderViewModels
+                                    .find(vm => vm.name === 'OpenStreetMap' && vm.name !== failedProvider);
+                                
+                                if (fallbackProvider) {
+                                    cesiumLog.info(`Automatic fallback to ${fallbackProvider.name} due to tile failures`);
+                                    setTimeout(() => {
+                                        this.viewer.baseLayerPicker.viewModel.selectedImagery = fallbackProvider;
+                                    }, 100);
+                                }
+                            });
+                        }
+                        
+                        // Force refresh of globe to ensure tiles reload
+                        if (this.viewer.scene?.globe) {
+                            this.viewer.scene.requestRender();
+                        }
+                        
+                        // Notify Flutter of the map change
+                        if (window.flutter_inappwebview?.callHandler) {
+                            window.flutter_inappwebview.callHandler(
+                                'onImageryProviderChanged', 
+                                providerViewModel.name
+                            );
+                        }
+                        console.log('[Cesium] Imagery provider changed to:', providerViewModel.name);
+                        
+                    } catch (error) {
+                        cesiumLog.error(`Failed to switch to provider "${providerViewModel.name}": ${error.message}`);
+                        console.error('[Cesium] Provider switch error:', error);
+                        
+                        // Fallback to OpenStreetMap if provider switch fails
+                        const fallbackProvider = this.viewer.baseLayerPicker.viewModel.imageryProviderViewModels
+                            .find(vm => vm.name === 'OpenStreetMap');
+                        
+                        if (fallbackProvider && fallbackProvider !== providerViewModel) {
+                            cesiumLog.info('Falling back to OpenStreetMap provider');
+                            setTimeout(() => {
+                                this.viewer.baseLayerPicker.viewModel.selectedImagery = fallbackProvider;
+                            }, 100);
+                        }
+                    }
                 }
             });
         }
@@ -1264,6 +1696,13 @@ function toggleCameraFollow() {
 
 function changeRenderQuality(scale) {
     cesiumApp?.changeRenderQuality(scale);
+}
+
+function reportPerformanceState() {
+    if (cesiumApp?.performanceMonitor) {
+        return cesiumApp.performanceMonitor.reportCurrentState();
+    }
+    return null;
 }
 
 function cleanupCesium() {

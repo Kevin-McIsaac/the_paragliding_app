@@ -33,6 +33,7 @@ When asked to run Flutter app ALLWAYS use background execution:
 ```bash
 
 # Run in background (won't timeout)
+# Prefer emulator 
 flutter run -d [device]
 
 # Get logs from currently running Flutter app
@@ -96,10 +97,38 @@ For complete project history and detailed changelog, see [CHANGELOG.md](CHANGELO
 - Midnight crossing is handled by incrementing the date when time goes backwards
 - All timestamps are validated to ensure chronological order
   
+## Core Principles
+
+- **Simplicity First**: This is a straightforward flight logging app. Choose simple, proven solutions over complex architectures
+- **Incremental Testing**: Always test changes on emulator before proposing major refactors
+- **Performance Measurement**: Measure before optimizing. Add monitoring first, then make informed decisions
+- **Platform Constraints**: WebView has limitations (no ES6 modules, single JS context). Work within them, don't fight them
+
+## External Dependencies
+
+- **Map Services**: Assume quotas exist. Default to free providers (OpenStreetMap) during development
+- **GPS/Sensors**: Primary data source. All calculations derive from GPS timestamps and coordinates
+- **File Storage**: IGC files are immutable once imported. Parse once, store results
+
+## Code Modification Guidelines
+
+- **KISS**: Keep it simple. This is a small mobile app, don't over complicate or optimse.
+- **Readability**: Keep the code simple and readable.
+- **Error Recovery**: Add fallbacks for external services (maps, network)
+- **State Management**: Keep state simple - this app has <10 screens
+- **Idomatic**: Look for solutions that are idomatic to the language/tool, e.g., Flutter, Cesium and Java script, especially efficient data handling.
+
+## Common Pitfalls
+
+- JavaScript in WebView runs in a single global scope
+- Flutter background execution prevents timeouts
+- Emulator GPU limitations affect 3D rendering
+- Cache durations affect offline functionality
+
 ## Development Reminders
 
 - All ways test app on emulator
 - Store documentation in the document directory
 - Do not try to modularise cesium JS as ES6 Modules Don't Work in WebView
-
-- When implementing functionality in Cesium look for the simplest, idomatic Cesium native approach
+- When implementing functionality in Cesium look for the simplest, idomatic Cesium native and JavaScript approach
+- 
