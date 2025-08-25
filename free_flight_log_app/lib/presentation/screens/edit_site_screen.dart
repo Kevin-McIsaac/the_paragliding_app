@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -11,6 +12,21 @@ import '../../data/models/flight.dart';
 import '../../services/database_service.dart';
 import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
+import '../../utils/cache_utils.dart';
+
+enum MapProvider {
+  openStreetMap('Street Map', 'OSM', 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', 18, '© OpenStreetMap contributors'),
+  googleSatellite('Google Satellite', 'Google', 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', 18, '© Google'),
+  esriWorldImagery('Esri Satellite', 'Esri', 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', 18, '© Esri');
+
+  const MapProvider(this.displayName, this.shortName, this.urlTemplate, this.maxZoom, this.attribution);
+  
+  final String displayName;
+  final String shortName;
+  final String urlTemplate;
+  final int maxZoom;
+  final String attribution;
+}
 
 class EditSiteScreen extends StatefulWidget {
   final Site? site;
@@ -33,11 +49,22 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   late TextEditingController _altitudeController;
   late TextEditingController _countryController;
   MapController? _mapController;
-  bool _showSatelliteView = false;
+  MapProvider _selectedMapProvider = MapProvider.openStreetMap;
   final _formKey = GlobalKey<FormState>();
   
-  // SharedPreferences key for satellite view preference
-  static const String _satelliteViewKey = 'edit_site_satellite_view';
+  // Constants
+  static const String _mapProviderKey = 'edit_site_map_provider';
+  static const double _defaultLatitude = 46.9480; // Swiss Alps
+  static const double _defaultLongitude = 7.4474;
+  static const double _initialZoom = 13.0;
+  static const double _minZoom = 1.0;
+  static const double _launchMarkerSize = 16.0;
+  static const double _siteMarkerSize = 36.0;
+  static const double _siteMarkerIconSize = 32.0;
+  static const double _currentSiteMarkerSize = 40.0;
+  static const double _boundsThreshold = 0.001;
+  static const int _debounceDurationMs = 500;
+  static const double _launchRadiusMeters = 500.0;
   
   // Site markers state
   List<Site> _localSites = [];
@@ -46,6 +73,9 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   Timer? _debounceTimer;
   LatLngBounds? _currentBounds;
   bool _isLoadingSites = false;
+  String? _lastLoadedBoundsKey;
+  String? _lastLoadedLaunchesBoundsKey;
+  Timer? _cacheRefreshTimer;
   
   // Services
   final DatabaseService _databaseService = DatabaseService.instance;
@@ -59,29 +89,67 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     _longitudeController = TextEditingController(text: widget.site?.longitude.toString() ?? '');
     _altitudeController = TextEditingController(text: widget.site?.altitude?.toString() ?? '');
     _countryController = TextEditingController(text: widget.site?.country ?? '');
-    _loadSatelliteViewPreference();
+    _loadMapProviderPreference();
+    
+    // Start cache refresh timer for debug overlay (debug mode only)
+    if (kDebugMode) {
+      _cacheRefreshTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+        if (mounted) setState(() {});
+      });
+    }
   }
   
-  /// Load the saved satellite view preference
-  Future<void> _loadSatelliteViewPreference() async {
+  /// Load the saved map provider preference
+  Future<void> _loadMapProviderPreference() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final savedPreference = prefs.getBool(_satelliteViewKey) ?? false;
+      
+      // Check for legacy satellite view preference first
+      final legacySatelliteView = prefs.getBool('edit_site_satellite_view');
+      String? savedProviderName;
+      
+      if (legacySatelliteView == true) {
+        // Migrate legacy preference: satellite view = Google Satellite
+        savedProviderName = MapProvider.googleSatellite.name;
+        await prefs.setString(_mapProviderKey, savedProviderName);
+        await prefs.remove('edit_site_satellite_view'); // Clean up legacy key
+      } else if (legacySatelliteView == false) {
+        // Migrate legacy preference: street view = OpenStreetMap
+        savedProviderName = MapProvider.openStreetMap.name;
+        await prefs.setString(_mapProviderKey, savedProviderName);
+        await prefs.remove('edit_site_satellite_view'); // Clean up legacy key
+      } else {
+        // Load current preference
+        savedProviderName = prefs.getString(_mapProviderKey);
+      }
+      
+      MapProvider selectedProvider = MapProvider.openStreetMap; // Default
+      if (savedProviderName != null) {
+        try {
+          selectedProvider = MapProvider.values.firstWhere(
+            (provider) => provider.name == savedProviderName,
+            orElse: () => MapProvider.openStreetMap,
+          );
+        } catch (e) {
+          LoggingService.warning('EditSiteScreen: Unknown map provider: $savedProviderName, using default');
+        }
+      }
       
       if (mounted) {
         setState(() {
-          _showSatelliteView = savedPreference;
+          _selectedMapProvider = selectedProvider;
         });
-        LoggingService.debug('EditSiteScreen: Loaded satellite view preference: $savedPreference');
+        LoggingService.debug('EditSiteScreen: Loaded map provider preference: ${selectedProvider.displayName}');
       }
     } catch (e) {
-      LoggingService.error('EditSiteScreen: Error loading satellite view preference', e);
+      LoggingService.error('EditSiteScreen: Error loading map provider preference', e);
     }
   }
 
   @override
   void dispose() {
     _debounceTimer?.cancel();
+    _cacheRefreshTimer?.cancel();
     _nameController.dispose();
     _latitudeController.dispose();
     _longitudeController.dispose();
@@ -296,25 +364,498 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     }
   }
 
-  void _toggleSatelliteView() {
-    final currentZoom = _mapController?.camera.zoom ?? 0.0;
-    print('SWITCHING TO ${_showSatelliteView ? 'STREET' : 'SATELLITE'} VIEW at zoom: ${currentZoom.toStringAsFixed(2)}');
-    
+  void _selectMapProvider(MapProvider provider) {
     setState(() {
-      _showSatelliteView = !_showSatelliteView;
+      _selectedMapProvider = provider;
     });
     
-    _saveSatelliteViewPreference();
+    // Enforce zoom limits for the new provider
+    _enforceZoomLimits();
+    
+    _saveMapProviderPreference();
+  }
+
+  /// Get the appropriate icon for a map provider
+  IconData _getProviderIcon(MapProvider provider) {
+    switch (provider) {
+      case MapProvider.openStreetMap:
+        return Icons.map;
+      case MapProvider.googleSatellite:
+        return Icons.satellite;
+      case MapProvider.esriWorldImagery:
+        return Icons.terrain;
+    }
+  }
+
+  /// Create a launch marker with consistent styling
+  Marker _buildLaunchMarker(Flight launch) {
+    final isFromCurrentSite = widget.site != null && launch.launchSiteId == widget.site!.id;
+    final markerColor = isFromCurrentSite ? Colors.red : Colors.blue;
+    
+    // Build tooltip message with site name and date
+    final siteName = launch.launchSiteName ?? 'Unknown Site';
+    final date = launch.date.toLocal().toString().split(' ')[0];
+    final tooltipMessage = '$siteName\n$date';
+    
+    return Marker(
+      point: LatLng(launch.launchLatitude!, launch.launchLongitude!),
+      width: _launchMarkerSize,
+      height: _launchMarkerSize,
+      child: GestureDetector(
+        onTap: () => _onLaunchMarkerTap(launch),
+        child: Tooltip(
+          message: tooltipMessage,
+          child: Container(
+            width: _launchMarkerSize,
+            height: _launchMarkerSize,
+            decoration: BoxDecoration(
+              color: markerColor,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 2,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Create a site marker with consistent styling
+  Marker _buildSiteMarker({
+    required double latitude,
+    required double longitude,
+    required String name,
+    String? country,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    final tooltipMessage = name.trim().isEmpty 
+        ? 'Unknown Site${country != null ? '\n$country' : ''}'
+        : '$name${country != null ? '\n$country' : ''}';
+    
+    return Marker(
+      point: LatLng(latitude, longitude),
+      width: _siteMarkerSize,
+      height: _siteMarkerSize,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Tooltip(
+          message: tooltipMessage,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // White outline
+              const Icon(
+                Icons.location_on,
+                color: Colors.white,
+                size: _siteMarkerSize,
+              ),
+              // Colored marker
+              Icon(
+                Icons.location_on,
+                color: color,
+                size: _siteMarkerIconSize,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Build the tile layer for the selected map provider
+  TileLayer _buildTileLayer() {
+    return TileLayer(
+      urlTemplate: _selectedMapProvider.urlTemplate,
+      userAgentPackageName: 'com.freeflightlog.free_flight_log_app',
+      maxNativeZoom: _selectedMapProvider.maxZoom,
+      maxZoom: _selectedMapProvider.maxZoom.toDouble(),
+      tileProvider: kDebugMode 
+        ? _DebugNetworkTileProvider(
+            headers: {
+              'User-Agent': 'FreeFlightLog/1.0',
+              'Cache-Control': 'max-age=31536000', // 12 months cache
+            },
+          )
+        : NetworkTileProvider(
+            headers: {
+              'User-Agent': 'FreeFlightLog/1.0',
+              'Cache-Control': 'max-age=31536000', // 12 months cache
+            },
+          ),
+      // Add debug logging in debug mode only
+      errorTileCallback: kDebugMode ? (tile, error, stackTrace) {
+        LoggingService.debug('Tile error: ${tile.coordinates} - $error');
+      } : null,
+    );
+  }
+
+  /// Build the launch markers layer
+  MarkerLayer _buildLaunchesLayer() {
+    return MarkerLayer(
+      markers: _launches
+          .where((launch) => launch.launchLatitude != null && launch.launchLongitude != null)
+          .map(_buildLaunchMarker)
+          .toList(),
+    );
+  }
+
+  /// Build the local sites markers layer  
+  MarkerLayer _buildLocalSitesLayer() {
+    return MarkerLayer(
+      markers: _localSites
+          .where((site) => widget.site == null || site.id != widget.site!.id) // Exclude current site when editing
+          .map((site) => _buildSiteMarker(
+                latitude: site.latitude,
+                longitude: site.longitude,
+                name: site.name,
+                country: site.country,
+                color: Colors.blue,
+                onTap: () => _onLocalSiteMarkerTap(site),
+              ))
+          .toList(),
+    );
+  }
+
+  /// Build the API sites markers layer
+  MarkerLayer _buildApiSitesLayer() {
+    return MarkerLayer(
+      markers: _apiSites
+          .where((site) => 
+              !_isDuplicateApiSite(site) && // Exclude duplicates with local sites
+              (widget.site == null || 
+               site.latitude != widget.site!.latitude || 
+               site.longitude != widget.site!.longitude)) // Exclude current site when editing
+          .map((site) => _buildSiteMarker(
+                latitude: site.latitude,
+                longitude: site.longitude,
+                name: site.name,
+                country: site.country,
+                color: Colors.green,
+                onTap: () => _onApiSiteMarkerTap(site),
+              ))
+          .toList(),
+    );
+  }
+
+  /// Build the actual launch coordinates layer (if available)
+  MarkerLayer? _buildActualLaunchLayer() {
+    if (widget.actualLaunchCoordinates == null) return null;
+    
+    return MarkerLayer(
+      markers: [
+        Marker(
+          point: LatLng(
+            widget.actualLaunchCoordinates!.latitude,
+            widget.actualLaunchCoordinates!.longitude,
+          ),
+          width: _siteMarkerSize,
+          height: _siteMarkerSize,
+          child: Tooltip(
+            message: 'Actual Launch\n${widget.actualLaunchCoordinates!.latitude.toStringAsFixed(6)}, ${widget.actualLaunchCoordinates!.longitude.toStringAsFixed(6)}',
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // White outline
+                const Icon(
+                  Icons.location_on,
+                  color: Colors.white,
+                  size: _siteMarkerSize,
+                ),
+                // Amber marker
+                const Icon(
+                  Icons.location_on,
+                  color: Colors.amber,
+                  size: _siteMarkerIconSize,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Build the current site marker layer (if editing)
+  MarkerLayer? _buildCurrentSiteLayer() {
+    if (widget.site == null) return null;
+    
+    return MarkerLayer(
+      markers: [
+        Marker(
+          point: LatLng(widget.site!.latitude, widget.site!.longitude),
+          width: _currentSiteMarkerSize,
+          height: _currentSiteMarkerSize,
+          child: Tooltip(
+            message: '${widget.site!.name} (Current Site)${widget.site!.country != null ? '\n${widget.site!.country}' : ''}',
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // White outline
+                const Icon(
+                  Icons.location_on,
+                  color: Colors.white,
+                  size: _currentSiteMarkerSize,
+                ),
+                // Red marker
+                const Icon(
+                  Icons.location_on,
+                  color: Colors.red,
+                  size: _siteMarkerSize,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Build the map controls (legend and provider selector)
+  Widget _buildMapControls() {
+    return Column(
+      children: [
+        // Map provider selector
+        Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(4),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 4,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+          child: PopupMenuButton<MapProvider>(
+            onSelected: _selectMapProvider,
+            initialValue: _selectedMapProvider,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _getProviderIcon(_selectedMapProvider),
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                  Icon(
+                    Icons.arrow_drop_down, 
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ],
+              ),
+            ),
+            itemBuilder: (context) => MapProvider.values.map((provider) => 
+              PopupMenuItem<MapProvider>(
+                value: provider,
+                child: Row(
+                  children: [
+                    Icon(
+                      _getProviderIcon(provider),
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(provider.displayName),
+                    ),
+                  ],
+                ),
+              )
+            ).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Build the attribution widget
+  Widget _buildAttribution() {
+    return Align(
+      alignment: Alignment.bottomRight,
+      child: Container(
+        margin: const EdgeInsets.all(4),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.9),
+          borderRadius: BorderRadius.circular(2),
+        ),
+        child: GestureDetector(
+          onTap: () async {
+            // Open appropriate copyright page based on provider
+            String url;
+            switch (_selectedMapProvider) {
+              case MapProvider.openStreetMap:
+                url = 'https://www.openstreetmap.org/copyright';
+                break;
+              case MapProvider.googleSatellite:
+                url = 'https://www.google.com/permissions/geoguidelines/';
+                break;
+              case MapProvider.esriWorldImagery:
+                url = 'https://www.esri.com/en-us/legal/terms/full-master-agreement';
+                break;
+            }
+            final uri = Uri.parse(url);
+            try {
+              await launchUrl(uri, mode: LaunchMode.platformDefault);
+            } catch (e) {
+              LoggingService.error('EditSiteScreen: Could not launch URL', e);
+            }
+          },
+          child: Text(
+            _selectedMapProvider.attribution,
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.blue[800],
+              decoration: TextDecoration.underline,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Build the legend widget
+  Widget _buildLegend() {
+    return Positioned(
+      top: 8,
+      left: 8,
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.95),
+          borderRadius: BorderRadius.circular(4),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black26,
+              blurRadius: 4,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (widget.site != null) ...[
+              _buildLegendItem(Icons.location_pin, Colors.red, 'Current Site'),
+              const SizedBox(height: 4),
+            ],
+            if (_launches.isNotEmpty) ...[
+              _buildLegendItem(null, Colors.red, 'Launches (current)', isCircle: true),
+              const SizedBox(height: 4),
+              _buildLegendItem(null, Colors.blue, 'Launches (others)', isCircle: true),
+              const SizedBox(height: 4),
+            ],
+            if (widget.actualLaunchCoordinates != null) ...[
+              _buildLegendItem(Icons.location_on, Colors.amber, 'Actual Launch'),
+              const SizedBox(height: 4),
+            ],
+            _buildLegendItem(Icons.location_on, Colors.blue, 'Flown Sites'),
+            const SizedBox(height: 4),
+            _buildLegendItem(Icons.location_on, Colors.green, 'New Sites'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build a single legend item
+  Widget _buildLegendItem(IconData? icon, Color color, String label, {bool isCircle = false}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (isCircle)
+          Container(
+            width: _launchMarkerSize,
+            height: _launchMarkerSize,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+            ),
+          )
+        else
+          Icon(icon!, color: color, size: 20),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.normal,
+            color: Colors.black87,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Build the loading indicator
+  Widget? _buildLoadingIndicator() {
+    if (!_isLoadingSites) return null;
+    
+    return Positioned(
+      bottom: 16,
+      left: 0,
+      right: 0,
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.black87,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Loading sites...',
+                style: TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Enforce zoom limits for the current map provider
+  void _enforceZoomLimits() {
+    if (_mapController == null) return;
+    
+    final currentZoom = _mapController!.camera.zoom;
+    final maxZoom = _selectedMapProvider.maxZoom.toDouble();
+    
+    if (currentZoom > maxZoom) {
+      _mapController!.move(_mapController!.camera.center, maxZoom);
+    }
   }
   
-  /// Save the satellite view preference
-  Future<void> _saveSatelliteViewPreference() async {
+  /// Save the map provider preference
+  Future<void> _saveMapProviderPreference() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_satelliteViewKey, _showSatelliteView);
-      LoggingService.debug('EditSiteScreen: Saved satellite view preference: $_showSatelliteView');
+      await prefs.setString(_mapProviderKey, _selectedMapProvider.name);
     } catch (e) {
-      LoggingService.error('EditSiteScreen: Error saving satellite view preference', e);
+      LoggingService.error('EditSiteScreen: Error saving map provider preference', e);
     }
   }
   
@@ -329,13 +870,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   }
   
   void _onMapEvent(MapEvent event) {
-    // Check zoom level and clamp if necessary
-    final currentZoom = _mapController?.camera.zoom ?? 0.0;
-    if (_showSatelliteView && currentZoom > 22.0) {
-      print('ZOOM EXCEEDED 22 - CLAMPING TO 22');
-      _mapController?.move(_mapController!.camera.center, 22.0);
-      return;
-    }
+    // Enforce zoom limits
+    _enforceZoomLimits();
     
     // React to all movement and zoom end events to reload sites
     if (event is MapEventMoveEnd || 
@@ -343,19 +879,14 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         event is MapEventDoubleTapZoomEnd ||
         event is MapEventScrollWheelZoom) {
       
-      // Debug logging to verify events are captured and log zoom level
-      LoggingService.debug('EditSiteScreen: Map event triggered: ${event.runtimeType}, zoom: ${currentZoom.toStringAsFixed(2)}');
-      print('ZOOM LEVEL: ${currentZoom.toStringAsFixed(2)} (satellite: $_showSatelliteView)');
-      
       _debounceTimer?.cancel();
-      _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+      _debounceTimer = Timer(const Duration(milliseconds: _debounceDurationMs), () {
         _updateMapBounds();
       });
     }
   }
   
   void _onMapTap(TapPosition tapPosition, LatLng point) {
-    LoggingService.debug('EditSiteScreen: Map tapped at ${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}');
     _handleSiteCreationAtPoint(point, null);
   }
   
@@ -366,20 +897,15 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     
     // Check if bounds have changed significantly
     if (_currentBounds != null) {
-      // Use a simple threshold: ~100m in degrees (approximately 0.001 degrees)
-      const threshold = 0.001;
       
       // Check if any corner of the bounds has moved more than the threshold
-      if ((bounds.north - _currentBounds!.north).abs() < threshold &&
-          (bounds.south - _currentBounds!.south).abs() < threshold &&
-          (bounds.east - _currentBounds!.east).abs() < threshold &&
-          (bounds.west - _currentBounds!.west).abs() < threshold) {
-        LoggingService.debug('EditSiteScreen: Bounds change too small, skipping reload');
+      if ((bounds.north - _currentBounds!.north).abs() < _boundsThreshold &&
+          (bounds.south - _currentBounds!.south).abs() < _boundsThreshold &&
+          (bounds.east - _currentBounds!.east).abs() < _boundsThreshold &&
+          (bounds.west - _currentBounds!.west).abs() < _boundsThreshold) {
         return; // Bounds haven't changed significantly
       }
     }
-    
-    LoggingService.debug('EditSiteScreen: Bounds changed significantly, reloading sites and launches');
     _currentBounds = bounds;
     _loadSitesForBounds(bounds);
     _loadAllLaunchesInBounds(bounds);
@@ -387,6 +913,12 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   
   Future<void> _loadSitesForBounds(LatLngBounds bounds) async {
     if (_isLoadingSites) return;
+    
+    // Create a unique key for these bounds to prevent duplicate requests
+    final boundsKey = '${bounds.north.toStringAsFixed(6)}_${bounds.south.toStringAsFixed(6)}_${bounds.east.toStringAsFixed(6)}_${bounds.west.toStringAsFixed(6)}';
+    if (_lastLoadedBoundsKey == boundsKey) {
+      return; // Same bounds already loaded
+    }
     
     setState(() {
       _isLoadingSites = true;
@@ -423,14 +955,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           _isLoadingSites = false;
         });
         
-        LoggingService.info('EditSiteScreen: Loaded ${_localSites.length} local sites and ${_apiSites.length} API sites');
-        
-        // Debug problematic site names
-        for (var site in _apiSites) {
-          if (site.name.trim().isEmpty) {
-            LoggingService.warning('EditSiteScreen: API site with empty name at ${site.latitude}, ${site.longitude}');
-          }
-        }
+        // Mark these bounds as loaded to prevent duplicate requests
+        _lastLoadedBoundsKey = boundsKey;
       }
     } catch (e) {
       LoggingService.error('EditSiteScreen: Error loading sites', e);
@@ -454,6 +980,12 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
   /// Load all launches in the current viewport bounds
   Future<void> _loadAllLaunchesInBounds(LatLngBounds bounds) async {
+    // Create a unique key for these bounds to prevent duplicate requests
+    final boundsKey = '${bounds.north.toStringAsFixed(6)}_${bounds.south.toStringAsFixed(6)}_${bounds.east.toStringAsFixed(6)}_${bounds.west.toStringAsFixed(6)}';
+    if (_lastLoadedLaunchesBoundsKey == boundsKey) {
+      return; // Same bounds already loaded
+    }
+    
     try {
       final launches = await _databaseService.getAllLaunchesInBounds(
         north: bounds.north,
@@ -467,6 +999,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           _launches = launches;
         });
         
+        // Mark these bounds as loaded to prevent duplicate requests
+        _lastLoadedLaunchesBoundsKey = boundsKey;
         LoggingService.info('EditSiteScreen: Loaded ${launches.length} launches in viewport');
       }
     } catch (e) {
@@ -757,13 +1291,12 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
   /// Handle site creation at a specific point (from map tap or launch click)
   Future<void> _handleSiteCreationAtPoint(LatLng point, Flight? sourceLaunch) async {
-    // Find launches within 500m
-    final launchesNearby = _findLaunchesWithinRadius(point, 500.0);
+    // Find launches within specified radius
+    final launchesNearby = _findLaunchesWithinRadius(point, _launchRadiusMeters);
     
     // Filter to only those closer to this point than to existing sites
     final eligibleLaunches = _filterLaunchesCloserToPoint(launchesNearby, point);
     
-    LoggingService.info('EditSiteScreen: Found ${launchesNearby.length} launches within 500m, ${eligibleLaunches.length} eligible for reassignment');
     
     await _showSiteCreationDialog(point, eligibleLaunches, sourceLaunch);
   }
@@ -853,7 +1386,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '${eligibleLaunches.length} flight${eligibleLaunches.length == 1 ? '' : 's'} within 500m will be reassigned to this new site:',
+                  '${eligibleLaunches.length} flight${eligibleLaunches.length == 1 ? '' : 's'} within ${_launchRadiusMeters.toInt()}m will be reassigned to this new site:',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 8),
@@ -871,7 +1404,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                       return ListTile(
                         dense: true,
                         title: Text(
-                          '${launch.date.toLocal().toString().split(' ')[0]} at ${launch.launchTime}',
+                          '${launch.launchSiteName ?? 'Unknown Site'}: ${launch.date.toLocal().toString().split(' ')[0]} at ${launch.launchTime}',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                         trailing: Text(
@@ -885,7 +1418,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
               ] else ...[
                 const SizedBox(height: 16),
                 Text(
-                  'No flights within 500m need reassignment.',
+                  'No flights within ${_launchRadiusMeters.toInt()}m need reassignment.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
               ],
@@ -1007,9 +1540,9 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   Widget _buildLocationMap() {
     _mapController ??= MapController();
     
-    // Use site coordinates if editing, otherwise use a default location
-    final initialLat = widget.site?.latitude ?? 46.9480; // Default: Swiss Alps
-    final initialLon = widget.site?.longitude ?? 7.4474;
+    // Use site coordinates if editing, otherwise use default location
+    final initialLat = widget.site?.latitude ?? _defaultLatitude;
+    final initialLon = widget.site?.longitude ?? _defaultLongitude;
     
     return Stack(
       children: [
@@ -1017,208 +1550,22 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       mapController: _mapController,
       options: MapOptions(
         initialCenter: LatLng(initialLat, initialLon),
-        initialZoom: 13.0,
+        initialZoom: _initialZoom,
         onMapReady: _onMapReady,
         onMapEvent: _onMapEvent,
         onTap: _onMapTap,
-        // Strict zoom limits to prevent grey tiles - always 22 max
-        minZoom: 1.0,
-        maxZoom: 22.0,
+        // Dynamic zoom limits based on selected provider
+        minZoom: _minZoom,
+        maxZoom: _selectedMapProvider.maxZoom.toDouble(),
       ),
       children: [
-        // Base tile layer (OpenStreetMap or satellite)
-        TileLayer(
-          urlTemplate: _showSatelliteView
-              ? 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}'
-              : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.freeflightlog.free_flight_log_app',
-          // Prevent grey tiles: Google satellite tiles fail around 22.5+
-          maxNativeZoom: _showSatelliteView ? 22 : 18,
-          maxZoom: _showSatelliteView ? 22 : 18,
-        ),
-        // Launches from flights (yellow for current site, blue for others) - BOTTOM LAYER
-        MarkerLayer(
-          markers: _launches
-              .where((launch) => launch.launchLatitude != null && launch.launchLongitude != null)
-              .map((launch) {
-                // Determine color based on whether launch is from current site
-                final isFromCurrentSite = widget.site != null && launch.launchSiteId == widget.site!.id;
-                final markerColor = isFromCurrentSite ? Colors.red : Colors.blue;
-                
-                return Marker(
-                  point: LatLng(launch.launchLatitude!, launch.launchLongitude!),
-                  width: 16,
-                  height: 16,
-                  child: GestureDetector(
-                    onTap: () => _onLaunchMarkerTap(launch),
-                    child: Tooltip(
-                      message: '${launch.date.toLocal().toString().split(' ')[0]}\n${launch.launchTime}',
-                      child: Container(
-                        width: 16,
-                        height: 16,
-                        decoration: BoxDecoration(
-                          color: markerColor,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.white,
-                            width: 2,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.3),
-                              blurRadius: 2,
-                              offset: const Offset(0, 1),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              })
-              .toList(),
-        ),
-        // Local sites (blue markers)
-        MarkerLayer(
-          markers: _localSites
-              .where((site) => widget.site == null || site.id != widget.site!.id) // Exclude current site when editing
-              .map((site) => Marker(
-                    point: LatLng(site.latitude, site.longitude),
-                    width: 36,
-                    height: 36,
-                    child: GestureDetector(
-                      onTap: () => _onLocalSiteMarkerTap(site),
-                      child: Tooltip(
-                        message: site.name.trim().isEmpty 
-                            ? 'Unknown Site${site.country != null ? '\n${site.country}' : ''}'
-                            : '${site.name}${site.country != null ? '\n${site.country}' : ''}',
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            // White outline
-                            const Icon(
-                              Icons.location_on,
-                              color: Colors.white,
-                              size: 36,
-                            ),
-                            // Blue marker
-                            const Icon(
-                              Icons.location_on,
-                              color: Colors.blue,
-                              size: 32,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ))
-              .toList(),
-        ),
-        // API sites (green markers) - exclude duplicates with local sites
-        MarkerLayer(
-          markers: _apiSites
-              .where((site) => 
-                  !_isDuplicateApiSite(site) && // Exclude duplicates with local sites
-                  (widget.site == null || 
-                   site.latitude != widget.site!.latitude || 
-                   site.longitude != widget.site!.longitude)) // Exclude current site when editing
-              .map((site) => Marker(
-                    point: LatLng(site.latitude, site.longitude),
-                    width: 36,
-                    height: 36,
-                    child: GestureDetector(
-                      onTap: () => _onApiSiteMarkerTap(site),
-                      child: Tooltip(
-                        message: site.name.trim().isEmpty 
-                            ? 'Unknown Site${site.country != null ? '\n${site.country}' : ''}'
-                            : '${site.name}${site.country != null ? '\n${site.country}' : ''}',
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            // White outline
-                            const Icon(
-                              Icons.location_on,
-                              color: Colors.white,
-                              size: 36,
-                            ),
-                            // Green marker
-                            const Icon(
-                              Icons.location_on,
-                              color: Colors.green,
-                              size: 32,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ))
-              .toList(),
-        ),
-        // Actual launch point from GPS track (yellow marker)
-        if (widget.actualLaunchCoordinates != null)
-          MarkerLayer(
-            markers: [
-              Marker(
-                point: LatLng(
-                  widget.actualLaunchCoordinates!.latitude,
-                  widget.actualLaunchCoordinates!.longitude,
-                ),
-                width: 36,
-                height: 36,
-                child: Tooltip(
-                  message: 'Actual Launch\n${widget.actualLaunchCoordinates!.latitude.toStringAsFixed(6)}, ${widget.actualLaunchCoordinates!.longitude.toStringAsFixed(6)}',
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // White outline
-                      const Icon(
-                        Icons.location_on,
-                        color: Colors.white,
-                        size: 36,
-                      ),
-                      // Amber marker
-                      const Icon(
-                        Icons.location_on,
-                        color: Colors.amber,
-                        size: 32,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        // Current site (yellow marker, on top) - only show when editing
-        if (widget.site != null)
-          MarkerLayer(
-            markers: [
-              Marker(
-                point: LatLng(widget.site!.latitude, widget.site!.longitude),
-                width: 40,
-                height: 40,
-                child: Tooltip(
-                  message: '${widget.site!.name} (Current Site)${widget.site!.country != null ? '\n${widget.site!.country}' : ''}',
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // White outline
-                      const Icon(
-                        Icons.location_on,
-                        color: Colors.white,
-                        size: 40,
-                      ),
-                      // Red marker
-                      const Icon(
-                        Icons.location_on,
-                        color: Colors.red,
-                        size: 36,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
+        // Map layers in order (bottom to top)
+        _buildTileLayer(),
+        _buildLaunchesLayer(),
+        _buildLocalSitesLayer(),
+        _buildApiSitesLayer(),
+        if (widget.actualLaunchCoordinates != null) _buildActualLaunchLayer()!,
+        if (widget.site != null) _buildCurrentSiteLayer()!,
         // Attribution overlay - required for OSM and satellite tiles
         Align(
           alignment: Alignment.bottomRight,
@@ -1229,53 +1576,56 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
               color: Colors.white.withValues(alpha: 0.9),
               borderRadius: BorderRadius.circular(2),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_showSatelliteView) ...[
-                  Text(
-                    '© Google',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const Text(' | ', style: TextStyle(fontSize: 10, color: Colors.black54)),
-                ],
-                GestureDetector(
-                  onTap: () async {
-                    final uri = Uri.parse('https://www.openstreetmap.org/copyright');
-                    try {
-                      await launchUrl(uri, mode: LaunchMode.platformDefault);
-                    } catch (e) {
-                      LoggingService.error('EditSiteScreen: Could not launch URL', e);
-                    }
-                  },
-                  child: Text(
-                    '© OpenStreetMap contributors',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.blue[800],
-                      decoration: TextDecoration.underline,
-                    ),
-                  ),
+            child: GestureDetector(
+              onTap: () async {
+                // Open appropriate copyright page based on provider
+                String url;
+                switch (_selectedMapProvider) {
+                  case MapProvider.openStreetMap:
+                    url = 'https://www.openstreetmap.org/copyright';
+                    break;
+                  case MapProvider.googleSatellite:
+                    url = 'https://www.google.com/permissions/geoguidelines/';
+                    break;
+                  case MapProvider.esriWorldImagery:
+                    url = 'https://www.esri.com/en-us/legal/terms/full-master-agreement';
+                    break;
+                }
+                final uri = Uri.parse(url);
+                try {
+                  await launchUrl(uri, mode: LaunchMode.platformDefault);
+                } catch (e) {
+                  LoggingService.error('EditSiteScreen: Could not launch URL', e);
+                }
+              },
+              child: Text(
+                _selectedMapProvider.attribution,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.blue[800],
+                  decoration: TextDecoration.underline,
                 ),
-              ],
+              ),
             ),
           ),
         ),
       ],
     ),
-        // Map controls
+        // Map overlays
+        _buildAttribution(),
         Positioned(
-        top: 8,
-        right: 8,
-        child: Column(
-          children: [
-            // Satellite toggle button
-            Container(
+          top: 8,
+          right: 8,
+          child: _buildMapControls(),
+        ),
+        // Debug cache test button (development only)
+        if (kDebugMode)
+          Positioned(
+            top: 60,
+            right: 8,
+            child: Container(
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: Colors.purple,
                 borderRadius: BorderRadius.circular(4),
                 boxShadow: [
                   BoxShadow(
@@ -1286,212 +1636,88 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                 ],
               ),
               child: IconButton(
-                onPressed: _toggleSatelliteView,
-                icon: Icon(
-                  _showSatelliteView ? Icons.map : Icons.satellite_alt,
-                  size: 20,
-                ),
-                tooltip: _showSatelliteView ? 'Street View' : 'Satellite View',
+                onPressed: _testCacheFunction,
+                icon: const Icon(Icons.bug_report, color: Colors.white, size: 16),
+                tooltip: 'Test Cache',
               ),
+            ),
+          ),
+        _buildLegend(),
+        if (_buildLoadingIndicator() != null) _buildLoadingIndicator()!,
+        // Debug cache overlay (development only)
+        if (kDebugMode)
+          Positioned(
+            bottom: 60,
+            right: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                'Cache: ${CacheUtils.getCacheInfo()}',
+                style: const TextStyle(color: Colors.white, fontSize: 10),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// Test cache functionality (debug mode only)
+  void _testCacheFunction() {
+    if (!kDebugMode) return;
+    
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Test Map Cache'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Current cache: ${CacheUtils.getCacheInfo()}'),
+              const SizedBox(height: 16),
+              const Text('To test cache functionality:\n'
+                  '1. Note current cache size\n'
+                  '2. Pan to new area and zoom\n'
+                  '3. Check cache size increased\n'
+                  '4. Pan back to original area\n'
+                  '5. Tiles should load instantly\n'
+                  '6. Turn on airplane mode\n'
+                  '7. Previously viewed areas should still load'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                CacheUtils.clearMapCache();
+                // Small delay to let cache stats update
+                await Future.delayed(const Duration(milliseconds: 100));
+                setState(() {}); // Refresh dialog
+              },
+              child: const Text('Clear Cache'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
             ),
           ],
         ),
       ),
-      // Legend
-      Positioned(
-        top: 8,
-        left: 8,
-        child: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.95),
-            borderRadius: BorderRadius.circular(4),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black26,
-                blurRadius: 4,
-                offset: Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Current site entry (always show when editing)
-              if (widget.site != null) ...[
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.location_pin, color: Colors.red, size: 20),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Current Site',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.normal,
-                        color: Colors.black87,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-              ],
-              
-              // Launches with color coding
-              if (_launches.isNotEmpty) ...[
-                // Current site launches (yellow)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 16,
-                      height: 16,
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Colors.white,
-                          width: 2,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Launches (current)',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.normal,
-                        color: Colors.black87,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                
-                // Other site launches (blue)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 16,
-                      height: 16,
-                      decoration: BoxDecoration(
-                        color: Colors.blue,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Colors.white,
-                          width: 2,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Launches (others)',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.normal,
-                        color: Colors.black87,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-              ],
-              
-              // Actual launch point (when creating from launch)
-              if (widget.actualLaunchCoordinates != null) ...[
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.location_on, color: Colors.amber, size: 20),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Actual Launch',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.normal,
-                        color: Colors.black87,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-              ],
-              
-              // Flown sites (renamed from Local Sites)
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.location_on, color: Colors.blue, size: 20),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Flown Sites',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.normal,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              
-              // New sites (renamed from ParaglidingEarth)
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.location_on, color: Colors.green, size: 20),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'New Sites',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.normal,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-      // Loading indicator
-      if (_isLoadingSites)
-        Positioned(
-          bottom: 16,
-          left: 0,
-          right: 0,
-          child: Center(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.black87,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                    ),
-                  ),
-                  SizedBox(width: 8),
-                  Text(
-                    'Loading sites...',
-                    style: TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
     );
+  }
+}
+
+/// Debug tile provider that logs actual network requests (not cached tiles)
+class _DebugNetworkTileProvider extends NetworkTileProvider {
+  _DebugNetworkTileProvider({super.headers});
+
+  @override
+  ImageProvider getImage(TileCoordinates coordinates, TileLayer options) {
+    LoggingService.debug('Network tile request: z${coordinates.z}/${coordinates.x}/${coordinates.y}');
+    return super.getImage(coordinates, options);
   }
 }
