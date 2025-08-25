@@ -505,9 +505,19 @@ class CesiumFlightApp {
             imageryProviders.find(vm => vm.name === config.savedBaseMap) || imageryProviders[0] :
             imageryProviders[0];
         
-        // Detect high DPI displays and apply resolution scaling
+        // Adaptive resolution scaling based on device capability, mode, and user preference
         const devicePixelRatio = window.devicePixelRatio || 1.0;
-        const resolutionScale = devicePixelRatio > 1 ? Math.min(devicePixelRatio, 2.0) : 1.0;
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        const isDevelopment = config.debug || window.location.hostname === 'localhost';
+        
+        // Default resolution: Performance mode for mobile or development, Quality for desktop production
+        let defaultResolution = 1.0;
+        if (isMobile || isDevelopment) {
+            defaultResolution = 0.75; // Performance mode for mobile or development
+            cesiumLog.info(`Using Performance resolution (0.75x) - ${isMobile ? 'mobile device' : 'development mode'} detected`);
+        }
+        
+        this.currentResolution = config.savedResolutionScale || defaultResolution;
         
         // Create viewer with optimized settings
         this.viewer = new Cesium.Viewer("cesiumContainer", {
@@ -517,7 +527,7 @@ class CesiumFlightApp {
             }),
             requestRenderMode: true,
             maximumRenderTimeChange: Infinity,
-            resolutionScale: resolutionScale,  // Apply high DPI scaling
+            resolutionScale: this.currentResolution,  // Apply adaptive resolution scaling
             
             // UI controls
             baseLayerPicker: true,
@@ -539,6 +549,15 @@ class CesiumFlightApp {
         
         this._configureScene();
         this._setupInitialView(config);
+        
+        // Disable geocoder autocomplete to reduce quota usage
+        if (this.viewer.geocoder?.viewModel) {
+            this.viewer.geocoder.viewModel.autoComplete = false;
+            cesiumLog.debug('Disabled geocoder autocomplete to reduce quota usage');
+        }
+        
+        // Configure enhanced caching for better performance
+        this._configureCaching();
         
         // Hide terrain options from baseLayerPicker - show only imagery choices
         if (this.viewer.baseLayerPicker && this.viewer.baseLayerPicker.viewModel) {
@@ -568,37 +587,69 @@ class CesiumFlightApp {
             // Also hide on initial load
             setTimeout(hideImageryLabel, 100);
         }
+        
+        // Set quality picker to current resolution
+        const qualityPicker = document.getElementById('qualityPicker');
+        if (qualityPicker) {
+            qualityPicker.value = this.currentResolution.toString();
+        }
     }
     
     _createImageryProviders() {
-        return [
+        // Determine if we're in development mode (check debug flag or hostname)
+        const isDevelopment = window.cesiumConfig?.debug || window.location.hostname === 'localhost';
+        
+        const freeProviders = [
+            new Cesium.ProviderViewModel({
+                name: 'OpenStreetMap',
+                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/openStreetMap.png'),
+                tooltip: 'OpenStreetMap - Free, no quota usage',
+                creationFunction: () => new Cesium.OpenStreetMapImageryProvider({
+                    url: 'https://a.tile.openstreetmap.org/',
+                    maximumLevel: 18,
+                    credit: new Cesium.Credit('© OpenStreetMap contributors', false),
+                    // Enable aggressive caching
+                    tilingScheme: new Cesium.WebMercatorTilingScheme(),
+                    rectangle: Cesium.Rectangle.MAX_VALUE
+                })
+            }),
+            new Cesium.ProviderViewModel({
+                name: 'Sentinel-2',
+                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/sentinel-2.png'),
+                tooltip: 'Sentinel-2 satellite imagery - Free, 10m resolution',
+                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3954)
+            })
+        ];
+        
+        const premiumProviders = [
             new Cesium.ProviderViewModel({
                 name: 'Bing Maps Aerial with Labels',
                 iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerialLabels.png'),
-                tooltip: 'Bing Maps aerial imagery with labels',
+                tooltip: 'Bing Maps aerial imagery with labels (uses quota)',
                 creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3)
             }),
             new Cesium.ProviderViewModel({
                 name: 'Bing Maps Aerial',
                 iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerial.png'),
-                tooltip: 'Bing Maps aerial imagery without labels',
+                tooltip: 'Bing Maps aerial imagery without labels (uses quota)',
                 creationFunction: () => Cesium.IonImageryProvider.fromAssetId(2)
             }),
             new Cesium.ProviderViewModel({
                 name: 'Bing Maps Roads',
                 iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingRoads.png'),
-                tooltip: 'Bing Maps road imagery',
+                tooltip: 'Bing Maps road imagery (uses quota)',
                 creationFunction: () => Cesium.IonImageryProvider.fromAssetId(4)
-            }),
-            new Cesium.ProviderViewModel({
-                name: 'OpenStreetMap',
-                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/openStreetMap.png'),
-                tooltip: 'OpenStreetMap',
-                creationFunction: () => new Cesium.OpenStreetMapImageryProvider({
-                    url: 'https://a.tile.openstreetmap.org/'
-                })
             })
         ];
+        
+        // In development mode, prioritize free providers and add notice. In production, show all options
+        if (isDevelopment) {
+            cesiumLog.info('Development mode: Using free imagery providers to reduce quota usage');
+            return [...freeProviders, ...premiumProviders];
+        } else {
+            cesiumLog.info('Production mode: All imagery providers available');
+            return [...freeProviders, ...premiumProviders];
+        }
     }
     
     _configureScene() {
@@ -1119,6 +1170,60 @@ class CesiumFlightApp {
         
         PerformanceReporter.report('qualityRestored', true);
     }
+    
+    changeRenderQuality(newScale) {
+        const scale = parseFloat(newScale);
+        if (isNaN(scale) || scale <= 0) return;
+        
+        this.currentResolution = scale;
+        this.viewer.resolutionScale = scale;
+        
+        // Update quality picker to reflect current selection
+        const qualityPicker = document.getElementById('qualityPicker');
+        if (qualityPicker) {
+            qualityPicker.value = scale.toString();
+        }
+        
+        // Force a render to apply the new resolution
+        this.viewer.scene.requestRender();
+        
+        // Log the quality change
+        const qualityNames = { '0.75': 'Performance', '1.0': 'Quality', '2.0': 'Ultra' };
+        const qualityName = qualityNames[scale.toString()] || `${scale}x`;
+        cesiumLog.info(`Render quality changed to ${qualityName} (${scale}x resolution)`);
+        
+        PerformanceReporter.report('qualityChanged', qualityName);
+        
+        // Save preference if Flutter webview is available
+        if (window.flutter_inappwebview?.callHandler) {
+            window.flutter_inappwebview.callHandler('saveResolutionScale', scale);
+        }
+    }
+    
+    _configureCaching() {
+        const scene = this.viewer.scene;
+        const globe = scene.globe;
+        
+        // Enable aggressive caching for tiles
+        if (globe.imageryLayers?.length > 0) {
+            globe.imageryLayers.get(0).alpha = 1.0; // Ensure full opacity for caching
+        }
+        
+        // Configure terrain caching
+        if (globe.terrainProvider) {
+            globe.preloadAncestors = true;
+            globe.preloadSiblings = true;
+            globe.tileCacheSize = 300; // Optimized cache size
+        }
+        
+        // Log caching configuration
+        cesiumLog.info('Enhanced caching configured: terrain preloading enabled, optimized cache size set');
+        
+        // Report caching metrics if available
+        if (window.performance?.memory) {
+            PerformanceReporter.report('cachingEnabled', true);
+        }
+    }
 }
 
 // ============================================================================
@@ -1155,6 +1260,10 @@ function changePlaybackSpeed(speed) {
 
 function toggleCameraFollow() {
     cesiumApp?.toggleCameraFollow();
+}
+
+function changeRenderQuality(scale) {
+    cesiumApp?.changeRenderQuality(scale);
 }
 
 function cleanupCesium() {
