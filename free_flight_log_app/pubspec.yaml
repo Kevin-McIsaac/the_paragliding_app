@@ -87,7 +87,6 @@ flutter:
 
   # To add assets to your application, add an assets section, like this:
   assets:
-    - assets/popular_paragliding_sites.json
     - assets/cesium/
 
   # An image asset can refer to one or more resolution-specific "variants", see
