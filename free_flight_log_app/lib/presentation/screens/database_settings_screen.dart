@@ -115,7 +115,12 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
 
     CacheUtils.clearMapCache();
 
-    setState(() {}); // Refresh display
+    // Give the system a moment to update cache stats
+    await Future.delayed(const Duration(milliseconds: 100));
+    
+    if (mounted) {
+      setState(() {}); // Refresh display
+    }
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

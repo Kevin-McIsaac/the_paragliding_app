@@ -73,6 +73,9 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   Timer? _debounceTimer;
   LatLngBounds? _currentBounds;
   bool _isLoadingSites = false;
+  String? _lastLoadedBoundsKey;
+  String? _lastLoadedLaunchesBoundsKey;
+  Timer? _cacheRefreshTimer;
   
   // Services
   final DatabaseService _databaseService = DatabaseService.instance;
@@ -87,6 +90,13 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     _altitudeController = TextEditingController(text: widget.site?.altitude?.toString() ?? '');
     _countryController = TextEditingController(text: widget.site?.country ?? '');
     _loadMapProviderPreference();
+    
+    // Start cache refresh timer for debug overlay (debug mode only)
+    if (kDebugMode) {
+      _cacheRefreshTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+        if (mounted) setState(() {});
+      });
+    }
   }
   
   /// Load the saved map provider preference
@@ -139,6 +149,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   @override
   void dispose() {
     _debounceTimer?.cancel();
+    _cacheRefreshTimer?.cancel();
     _nameController.dispose();
     _latitudeController.dispose();
     _longitudeController.dispose();
@@ -944,6 +955,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           _isLoadingSites = false;
         });
         
+        // Mark these bounds as loaded to prevent duplicate requests
+        _lastLoadedBoundsKey = boundsKey;
       }
     } catch (e) {
       LoggingService.error('EditSiteScreen: Error loading sites', e);
@@ -967,6 +980,12 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
   /// Load all launches in the current viewport bounds
   Future<void> _loadAllLaunchesInBounds(LatLngBounds bounds) async {
+    // Create a unique key for these bounds to prevent duplicate requests
+    final boundsKey = '${bounds.north.toStringAsFixed(6)}_${bounds.south.toStringAsFixed(6)}_${bounds.east.toStringAsFixed(6)}_${bounds.west.toStringAsFixed(6)}';
+    if (_lastLoadedLaunchesBoundsKey == boundsKey) {
+      return; // Same bounds already loaded
+    }
+    
     try {
       final launches = await _databaseService.getAllLaunchesInBounds(
         north: bounds.north,
@@ -980,6 +999,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           _launches = launches;
         });
         
+        // Mark these bounds as loaded to prevent duplicate requests
+        _lastLoadedLaunchesBoundsKey = boundsKey;
         LoggingService.info('EditSiteScreen: Loaded ${launches.length} launches in viewport');
       }
     } catch (e) {
@@ -1650,34 +1671,41 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Test Map Cache'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Current cache: ${CacheUtils.getCacheInfo()}'),
-            const SizedBox(height: 16),
-            const Text('To test cache functionality:\n'
-                '1. Note current cache size\n'
-                '2. Pan to new area and zoom\n'
-                '3. Check cache size increased\n'
-                '4. Pan back to original area\n'
-                '5. Tiles should load instantly\n'
-                '6. Turn on airplane mode\n'
-                '7. Previously viewed areas should still load'),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Test Map Cache'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Current cache: ${CacheUtils.getCacheInfo()}'),
+              const SizedBox(height: 16),
+              const Text('To test cache functionality:\n'
+                  '1. Note current cache size\n'
+                  '2. Pan to new area and zoom\n'
+                  '3. Check cache size increased\n'
+                  '4. Pan back to original area\n'
+                  '5. Tiles should load instantly\n'
+                  '6. Turn on airplane mode\n'
+                  '7. Previously viewed areas should still load'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                CacheUtils.clearMapCache();
+                // Small delay to let cache stats update
+                await Future.delayed(const Duration(milliseconds: 100));
+                setState(() {}); // Refresh dialog
+              },
+              child: const Text('Clear Cache'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => CacheUtils.clearMapCache(),
-            child: const Text('Clear Cache'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
       ),
     );
   }
