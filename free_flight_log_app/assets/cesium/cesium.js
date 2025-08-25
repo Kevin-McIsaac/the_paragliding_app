@@ -945,6 +945,12 @@ class CesiumFlightApp {
                     }
                 }
             }),
+            new Cesium.ProviderViewModel({
+                name: 'Sentinel-2',
+                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/sentinel-2.png'),
+                tooltip: 'Sentinel-2 satellite imagery - 10m resolution',
+                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3954)
+            }),
             // Stamen Terrain - New free alternative for better variety
             new Cesium.ProviderViewModel({
                 name: 'Stamen Terrain',
@@ -953,10 +959,10 @@ class CesiumFlightApp {
                 creationFunction: () => {
                     try {
                         return new Cesium.UrlTemplateImageryProvider({
-                            url: 'https://stamen-tiles-{s}.a.ssl.fastly.net/terrain/{z}/{x}/{y}.png',
+                            url: 'https://tiles.stadiamaps.com/tiles/stamen_terrain/{z}/{x}/{y}.png',
                             subdomains: ['a', 'b', 'c', 'd'],
-                            maximumLevel: 12,
-                            credit: new Cesium.Credit('© Stamen Design, © OpenStreetMap contributors')
+                            maximumLevel: 15,
+                            credit: new Cesium.Credit('© Stadia Maps © Stamen Design © OpenStreetMap contributors')
                         });
                     } catch (error) {
                         cesiumLog.error('Failed to create Stamen Terrain provider:', error.message);
@@ -967,12 +973,6 @@ class CesiumFlightApp {
         ];
         
         const premiumProviders = [
-            new Cesium.ProviderViewModel({
-                name: 'Sentinel-2',
-                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/sentinel-2.png'),
-                tooltip: 'Sentinel-2 satellite imagery - 10m resolution (uses Cesium Ion quota)',
-                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3954)
-            }),
             new Cesium.ProviderViewModel({
                 name: 'Bing Maps Aerial with Labels',
                 iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerialLabels.png'),
