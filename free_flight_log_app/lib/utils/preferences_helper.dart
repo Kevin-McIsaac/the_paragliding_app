@@ -10,6 +10,7 @@ class PreferencesHelper {
   static const String cesiumNavigationHelpDialogKey = 'cesium_navigation_help_dialog_open';
   static const String cesiumFlyThroughModeKey = 'cesium_fly_through_mode';
   static const String cesiumTrailDurationKey = 'cesium_trail_duration';
+  static const String cesiumQualityKey = 'cesium_quality';
   
   // IGC Import preferences
   static const String igcLastFolderKey = 'igc_last_folder';
@@ -73,6 +74,16 @@ class PreferencesHelper {
   static Future<void> setCesiumTrailDuration(int value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(cesiumTrailDurationKey, value);
+  }
+  
+  static Future<double?> getCesiumQuality() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getDouble(cesiumQualityKey);
+  }
+
+  static Future<void> setCesiumQuality(double value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(cesiumQualityKey, value);
   }
   
   // IGC Import methods
