@@ -793,6 +793,15 @@ class CesiumFlightApp {
         this._originalQualitySettings = null;
         this._qualityRestoreTimer = null;
         
+        // Optimized Sentinel-2 color parameters
+        this.colorTuningParams = {
+            saturation: 0.55,
+            hue: -0.09,
+            contrast: 1.15,
+            brightness: 0.95,
+            gamma: 1.25
+        };
+        
     }
     
     initialize(config) {
@@ -1202,13 +1211,13 @@ class CesiumFlightApp {
         layer.gamma = 1.0;
         
         if (providerName === 'Sentinel-2') {
-            // Apply hueShifted color adjustments for Sentinel-2
-            layer.saturation = 0.6;
-            layer.hue = -0.15;
-            layer.contrast = 1.05;
-            layer.brightness = 0.95;
-            layer.gamma = 1.25;
-            cesiumLog.info('Applied color adjustments to Sentinel-2: reduced green tint');
+            // Apply current tuning parameters for Sentinel-2
+            layer.saturation = this.colorTuningParams.saturation;
+            layer.hue = this.colorTuningParams.hue;
+            layer.contrast = this.colorTuningParams.contrast;
+            layer.brightness = this.colorTuningParams.brightness;
+            layer.gamma = this.colorTuningParams.gamma;
+            cesiumLog.info(`Applied Sentinel-2 color tuning: sat=${this.colorTuningParams.saturation}, hue=${this.colorTuningParams.hue}, cont=${this.colorTuningParams.contrast}, bright=${this.colorTuningParams.brightness}, gamma=${this.colorTuningParams.gamma}`);
         }
     }
     
@@ -1778,3 +1787,4 @@ window.cleanupCesium = cleanupCesium;
 window.handleMemoryPressure = handleMemoryPressure;
 window.restoreQualitySettings = restoreQualitySettings;
 window.checkMemory = checkMemory;
+
