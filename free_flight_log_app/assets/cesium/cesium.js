@@ -793,15 +793,6 @@ class CesiumFlightApp {
         this._originalQualitySettings = null;
         this._qualityRestoreTimer = null;
         
-        // Color profiles for satellite imagery
-        this.colorProfiles = {
-            'default': { saturation: 0.7, hue: -0.05, contrast: 1.1, brightness: 0.95, gamma: 1.2 },
-            'aggressive': { saturation: 0.5, hue: -0.10, contrast: 1.15, brightness: 0.90, gamma: 1.3 },
-            'desaturated': { saturation: 0.4, hue: -0.08, contrast: 1.2, brightness: 1.0, gamma: 1.1 },
-            'hueShifted': { saturation: 0.6, hue: -0.15, contrast: 1.05, brightness: 0.95, gamma: 1.25 },
-            'balanced': { saturation: 0.6, hue: -0.07, contrast: 1.12, brightness: 0.92, gamma: 1.25 }
-        };
-        this.currentColorProfile = 'default';
     }
     
     initialize(config) {
@@ -822,37 +813,28 @@ class CesiumFlightApp {
     }
     
     _createViewer(config) {
-        // Determine if we're in development mode (check debug flag or hostname)
-        const isDevelopment = config.debug || window.location.hostname === 'localhost';
-        
         // Essential imagery providers
-        const imageryProviders = this._createImageryProviders(isDevelopment);
-        // In development mode, override premium providers with free alternatives
+        const imageryProviders = this._createImageryProviders();
         let selectedProvider;
         
         if (config.savedBaseMap) {
             selectedProvider = imageryProviders.find(vm => vm.name === config.savedBaseMap);
             
-            // If saved provider not found and we're in development mode, warn and use default
-            if (!selectedProvider && isDevelopment) {
-                cesiumLog.warn(`Saved provider "${config.savedBaseMap}" not available in development mode (quota-protected). Using free alternative.`);
-                selectedProvider = imageryProviders[0];
-            } else if (!selectedProvider) {
+            // If saved provider not found, use default
+            if (!selectedProvider) {
                 selectedProvider = imageryProviders[0];
             }
         } else {
             selectedProvider = imageryProviders[0];
         }
         
-        // Adaptive resolution scaling based on device capability, mode, and user preference
-        const devicePixelRatio = window.devicePixelRatio || 1.0;
+        // Adaptive resolution scaling based on device capability and user preference
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         
-        // Default resolution: Performance mode for mobile or development, Quality for desktop production
-        let defaultResolution = 1.0;
-        if (isMobile || isDevelopment) {
-            defaultResolution = 0.75; // Performance mode for mobile or development
-            cesiumLog.info(`Using Performance resolution (0.75x) - ${isMobile ? 'mobile device' : 'development mode'} detected`);
+        // Default resolution: Performance mode for mobile, Quality for desktop
+        const defaultResolution = isMobile ? 0.75 : 1.0;
+        if (isMobile) {
+            cesiumLog.info('Using Performance resolution (0.75x) - mobile device detected');
         }
         
         this.currentResolution = config.savedResolutionScale || defaultResolution;
@@ -904,7 +886,6 @@ class CesiumFlightApp {
         
         // Apply initial color adjustments for the selected provider
         setTimeout(() => {
-            this._initializeColorPicker(selectedProvider.name);
             this._adjustImageryLayerColors(selectedProvider.name);
         }, 200); // Slightly longer delay to ensure viewer is fully initialized
         
@@ -944,8 +925,7 @@ class CesiumFlightApp {
         }
     }
     
-    _createImageryProviders(isDevelopment) {
-        // Use passed isDevelopment parameter
+    _createImageryProviders() {
         
         const freeProviders = [
             new Cesium.ProviderViewModel({
@@ -977,55 +957,10 @@ class CesiumFlightApp {
                 iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerialLabels.png'),
                 tooltip: 'Bing Maps aerial imagery with labels',
                 creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3)
-            }),
-            // Stamen Terrain - New free alternative for better variety
-            /*
-            new Cesium.ProviderViewModel({
-                name: 'Stamen Terrain',
-                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/naturalEarthII.png'),
-                tooltip: 'Stamen Terrain - Free terrain base map, no quota usage',
-                creationFunction: () => {
-                    try {
-                        return new Cesium.UrlTemplateImageryProvider({
-                            url: 'https://tiles.stadiamaps.com/tiles/stamen_terrain/{z}/{x}/{y}.png',
-                            subdomains: ['a', 'b', 'c', 'd'],
-                            maximumLevel: 15,
-                            credit: new Cesium.Credit('© Stadia Maps © Stamen Design © OpenStreetMap contributors')
-                        });
-                    } catch (error) {
-                        cesiumLog.error('Failed to create Stamen Terrain provider:', error.message);
-                        throw new Error('Stamen Terrain provider creation failed');
-                    }
-                }
-            })
-            */
-        ];
-        
-        // Premium providers commented out - only use free providers in production to avoid quota costs
-        /*
-        const premiumProviders = [
-            new Cesium.ProviderViewModel({
-                name: 'Bing Maps Aerial with Labels',
-                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerialLabels.png'),
-                tooltip: 'Bing Maps aerial imagery with labels (uses quota)',
-                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3)
-            }),
-            new Cesium.ProviderViewModel({
-                name: 'Bing Maps Aerial',
-                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerial.png'),
-                tooltip: 'Bing Maps aerial imagery without labels (uses quota)',
-                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(2)
-            }),
-            new Cesium.ProviderViewModel({
-                name: 'Bing Maps Roads',
-                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingRoads.png'),
-                tooltip: 'Bing Maps road imagery (uses quota)',
-                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(4)
             })
         ];
-        */
         
-        // Always use only free providers to prevent quota usage in both development and production
+        // Always use only free providers to prevent quota usage
         cesiumLog.info('Using free imagery providers only to eliminate quota usage');
         cesiumLog.info(`Available providers: ${freeProviders.map(p => p.name).join(', ')}`);
         return freeProviders;
@@ -1224,7 +1159,6 @@ class CesiumFlightApp {
                         
                         // Apply color adjustments and lighting for specific providers
                         setTimeout(() => {
-                            this._updateColorPickerVisibility(providerViewModel.name);
                             this._adjustImageryLayerColors(providerViewModel.name);
                             this._updateLightingForProvider(providerViewModel.name);
                         }, 100); // Small delay to ensure provider is fully loaded
@@ -1243,7 +1177,6 @@ class CesiumFlightApp {
                                 this.viewer.baseLayerPicker.viewModel.selectedImagery = fallbackProvider;
                                 // Apply color adjustments and lighting to fallback provider as well
                                 setTimeout(() => {
-                                    this._updateColorPickerVisibility(fallbackProvider.name);
                                     this._adjustImageryLayerColors(fallbackProvider.name);
                                     this._updateLightingForProvider(fallbackProvider.name);
                                 }, 100);
@@ -1256,7 +1189,7 @@ class CesiumFlightApp {
     }
     
     _adjustImageryLayerColors(providerName) {
-        // Apply color corrections to reduce oversaturation in satellite imagery
+        // Apply color corrections only to Sentinel-2 to reduce green tint
         if (!this.viewer?.imageryLayers || this.viewer.imageryLayers.length === 0) return;
         
         const layer = this.viewer.imageryLayers.get(0);
@@ -1268,34 +1201,14 @@ class CesiumFlightApp {
         layer.hue = 0.0;
         layer.gamma = 1.0;
         
-        switch (providerName) {
-            case 'Sentinel-2':
-                // Apply current color profile settings
-                const profile = this.colorProfiles[this.currentColorProfile];
-                layer.saturation = profile.saturation;
-                layer.hue = profile.hue;
-                layer.contrast = profile.contrast;
-                layer.brightness = profile.brightness;
-                layer.gamma = profile.gamma;
-                cesiumLog.info(`Applied color profile '${this.currentColorProfile}' to Sentinel-2: saturation=${profile.saturation}, hue=${profile.hue}`);
-                break;
-                
-            case 'Bing Maps Aerial':
-            case 'Bing Maps Aerial with Labels':
-                // Apply current color profile with minor base adjustments for Bing imagery
-                const bingProfile = this.colorProfiles[this.currentColorProfile];
-                layer.saturation = Math.min(bingProfile.saturation * 1.1, 1.0); // Slightly more saturated than Sentinel
-                layer.hue = bingProfile.hue * 0.5; // Less hue adjustment needed for Bing
-                layer.contrast = Math.max(bingProfile.contrast, 1.05); // Ensure minimum contrast boost
-                layer.brightness = bingProfile.brightness;
-                layer.gamma = Math.max(bingProfile.gamma, 1.1); // Ensure minimum gamma adjustment
-                cesiumLog.info(`Applied color profile '${this.currentColorProfile}' to ${providerName}`);
-                break;
-                
-            default:
-                // No adjustments for other providers (OpenStreetMap, Stamen Terrain)
-                cesiumLog.debug(`No color adjustments applied for provider: ${providerName}`);
-                break;
+        if (providerName === 'Sentinel-2') {
+            // Apply hueShifted color adjustments for Sentinel-2
+            layer.saturation = 0.6;
+            layer.hue = -0.15;
+            layer.contrast = 1.05;
+            layer.brightness = 0.95;
+            layer.gamma = 1.25;
+            cesiumLog.info('Applied color adjustments to Sentinel-2: reduced green tint');
         }
     }
     
@@ -1736,82 +1649,9 @@ class CesiumFlightApp {
         }
     }
     
-    changeColorProfile(profileName) {
-        if (!this.colorProfiles[profileName]) {
-            cesiumLog.warning(`Unknown color profile: ${profileName}`);
-            return;
-        }
-        
-        this.currentColorProfile = profileName;
-        cesiumLog.info(`Changed color profile to: ${profileName}`);
-        
-        // Update color picker to reflect current selection
-        const colorPicker = document.getElementById('colorPicker');
-        if (colorPicker) {
-            colorPicker.value = profileName;
-        }
-        
-        // Re-apply color adjustments to current imagery layer
-        if (this.viewer?.imageryLayers?.length > 0) {
-            const currentProvider = this._getCurrentProviderName();
-            this._adjustImageryLayerColors(currentProvider);
-            this.viewer.scene.requestRender();
-        }
-        
-        // Save preference to localStorage
-        try {
-            localStorage.setItem('cesium_color_profile', profileName);
-        } catch (e) {
-            cesiumLog.debug('Could not save color profile preference to localStorage');
-        }
-    }
     
-    _getCurrentProviderName() {
-        try {
-            if (this.viewer?.baseLayerPicker?.viewModel?.selectedImagery) {
-                return this.viewer.baseLayerPicker.viewModel.selectedImagery.name;
-            }
-        } catch (e) {
-            cesiumLog.debug('Could not get current provider name:', e.message);
-        }
-        return 'Unknown';
-    }
     
-    _initializeColorPicker(providerName) {
-        // Load saved color profile preference
-        try {
-            const savedProfile = localStorage.getItem('cesium_color_profile');
-            if (savedProfile && this.colorProfiles[savedProfile]) {
-                this.currentColorProfile = savedProfile;
-            }
-        } catch (e) {
-            cesiumLog.debug('Could not load saved color profile preference');
-        }
-        
-        // Update color picker UI and visibility
-        this._updateColorPickerVisibility(providerName);
-        
-        const colorPicker = document.getElementById('colorPicker');
-        if (colorPicker) {
-            colorPicker.value = this.currentColorProfile;
-        }
-        
-        cesiumLog.info(`Color picker initialized: profile="${this.currentColorProfile}", visible=${providerName === 'Sentinel-2'}`);
-    }
     
-    _updateColorPickerVisibility(providerName) {
-        const colorControls = document.getElementById('colorControls');
-        if (colorControls) {
-            // Show color picker for satellite imagery providers that benefit from color adjustments
-            if (providerName === 'Sentinel-2' || 
-                providerName === 'Bing Maps Aerial' || 
-                providerName === 'Bing Maps Aerial with Labels') {
-                colorControls.style.display = 'block';
-            } else {
-                colorControls.style.display = 'none';
-            }
-        }
-    }
     
     _configureCaching() {
         const scene = this.viewer.scene;
@@ -1900,9 +1740,6 @@ function restoreQualitySettings() {
     cesiumApp?.restoreQualitySettings();
 }
 
-function changeColorProfile(profileName) {
-    cesiumApp?.changeColorProfile(profileName);
-}
 
 function checkMemory() {
     if (window.performance?.memory) {
@@ -1940,5 +1777,4 @@ window.toggleCameraFollow = toggleCameraFollow;
 window.cleanupCesium = cleanupCesium;
 window.handleMemoryPressure = handleMemoryPressure;
 window.restoreQualitySettings = restoreQualitySettings;
-window.changeColorProfile = changeColorProfile;
 window.checkMemory = checkMemory;

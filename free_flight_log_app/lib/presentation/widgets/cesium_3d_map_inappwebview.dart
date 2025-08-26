@@ -67,6 +67,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   bool _savedNavigationHelpDialogOpen = false;
   bool _savedFlyThroughMode = false;
   int _savedTrailDuration = 5;
+  double? _savedQuality;
   
   @override
   void initState() {
@@ -113,6 +114,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
       final navigationHelpDialogOpen = await PreferencesHelper.getCesiumNavigationHelpDialog() ?? false;
       final flyThroughMode = await PreferencesHelper.getCesiumFlyThroughMode() ?? false;
       final trailDuration = await PreferencesHelper.getCesiumTrailDuration() ?? 5;
+      final quality = await PreferencesHelper.getCesiumQuality();
       
       if (mounted && !_isDisposed) {
         setState(() {
@@ -122,9 +124,10 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
           _savedNavigationHelpDialogOpen = navigationHelpDialogOpen;
           _savedFlyThroughMode = flyThroughMode;
           _savedTrailDuration = trailDuration;
+          _savedQuality = quality;
         });
         
-        LoggingService.debug('Cesium3D: Loaded preferences - Scene: $sceneMode, BaseMap: $baseMap, Terrain: $terrainEnabled, NavDialog: $navigationHelpDialogOpen, FlyThrough: $flyThroughMode, Trail: ${trailDuration}s');
+        LoggingService.debug('Cesium3D: Loaded preferences - Scene: $sceneMode, BaseMap: $baseMap, Terrain: $terrainEnabled, NavDialog: $navigationHelpDialogOpen, FlyThrough: $flyThroughMode, Trail: ${trailDuration}s, Quality: ${quality ?? 'default'}');
       }
     } catch (e) {
       LoggingService.error('Cesium3D', 'Failed to load preferences: $e');
@@ -360,6 +363,20 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                     // Save the preference
                     await PreferencesHelper.setCesiumTrailDuration(seconds);
                     _savedTrailDuration = seconds;
+                  }
+                },
+              );
+              
+              // Add handler for resolution scale (quality) changes
+              controller.addJavaScriptHandler(
+                handlerName: 'saveResolutionScale',
+                callback: (args) async {
+                  if (args.isNotEmpty) {
+                    final resolutionScale = (args[0] as num).toDouble();
+                    LoggingService.info('Cesium3D: Quality changed to ${resolutionScale}x resolution');
+                    
+                    // Save the preference
+                    await PreferencesHelper.setCesiumQuality(resolutionScale);
                   }
                 },
               );
@@ -672,6 +689,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
             savedNavigationHelpDialogOpen: $_savedNavigationHelpDialogOpen,
             savedFlyThroughMode: $_savedFlyThroughMode,
             savedTrailDuration: $_savedTrailDuration,
+            savedResolutionScale: ${_savedQuality ?? 'null'},
             lat:''');
     }
     
