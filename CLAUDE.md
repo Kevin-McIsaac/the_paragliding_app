@@ -24,6 +24,7 @@ flutter pub get
 flutter analyze
 
 # Run in background (won't timeout). default to device = emulator 
+# DOn't try to hot reload, kill bash process and restart
 flutter run -d [device]
 
 # Take screenshot from running app
