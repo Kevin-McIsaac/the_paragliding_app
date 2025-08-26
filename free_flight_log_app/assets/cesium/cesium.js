@@ -878,6 +878,11 @@ class CesiumFlightApp {
         this._configureScene();
         this._setupInitialView(config);
         
+        // Apply dynamic lighting for initial provider (after viewer is fully initialized)
+        setTimeout(() => {
+            this._updateLightingForProvider(selectedProvider.name);
+        }, 300);
+        
         // Disable geocoder autocomplete to reduce quota usage
         if (this.viewer.geocoder?.viewModel) {
             this.viewer.geocoder.viewModel.autoComplete = false;
@@ -886,6 +891,11 @@ class CesiumFlightApp {
         
         // Configure enhanced caching for better performance
         this._configureCaching();
+        
+        // Apply initial color adjustments for the selected provider
+        setTimeout(() => {
+            this._adjustImageryLayerColors(selectedProvider.name);
+        }, 200); // Slightly longer delay to ensure viewer is fully initialized
         
         // Hide terrain options from baseLayerPicker - show only imagery choices
         if (this.viewer.baseLayerPicker && this.viewer.baseLayerPicker.viewModel) {
@@ -1009,8 +1019,7 @@ class CesiumFlightApp {
         const scene = this.viewer.scene;
         const globe = scene.globe;
         
-        // Disable dynamic lighting for brighter, more consistent appearance
-        globe.enableLighting = false;
+        // Dynamic lighting will be set separately after provider is fully loaded
         globe.showGroundAtmosphere = true;
         globe.depthTestAgainstTerrain = true;
         globe.terrainExaggeration = 1.0;
@@ -1019,10 +1028,11 @@ class CesiumFlightApp {
         globe.baseColor = Cesium.Color.fromCssColorString('#505050');
         scene.backgroundColor = Cesium.Color.fromCssColorString('#505050');
         
-        // Adjust fog for clearer terrain with less haze
+        // Adjust fog for better depth perception and terrain visibility
         scene.fog.enabled = true;
-        scene.fog.density = 0.00002;  // Further reduced for better visibility
-        scene.fog.screenSpaceErrorFactor = 4.0;  // Increased for better distant terrain
+        scene.fog.density = 0.000025;  // Slightly increased from 0.00002 for better depth cues
+        scene.fog.screenSpaceErrorFactor = 3.5;  // Reduced from 4.0 for better near/far balance
+        cesiumLog.info(`Fog configured - density: ${scene.fog.density}, errorFactor: ${scene.fog.screenSpaceErrorFactor}`);
         
         // Brightness and gamma adjustments
         scene.highDynamicRange = true;
@@ -1050,6 +1060,27 @@ class CesiumFlightApp {
         controller.minimumZoomDistance = 10.0;
         controller.minimumCollisionTerrainHeight = 5000.0;
         controller.collisionDetectionHeightBuffer = 10.0;
+    }
+    
+    _updateLightingForProvider(providerName) {
+        if (!this.viewer?.scene?.globe) return;
+        
+        const globe = this.viewer.scene.globe;
+        
+        // Determine if provider needs lighting based on provider name
+        // Flat/cartographic imagery benefits from terrain shadows to show relief
+        const flatProviders = ['OpenStreetMap', 'Stamen Terrain'];
+        const needsLighting = flatProviders.includes(providerName);
+        
+        globe.enableLighting = needsLighting;
+        
+        cesiumLog.info(`Dynamic lighting ${needsLighting ? 'enabled' : 'disabled'} for ${providerName}`);
+        
+        if (needsLighting) {
+            cesiumLog.info('Terrain shadows enabled for flat cartographic imagery');
+        } else {
+            cesiumLog.info('Terrain lighting disabled for satellite/aerial imagery (has natural shadows)');
+        }
     }
     
     _setupInitialView(config) {
@@ -1175,6 +1206,12 @@ class CesiumFlightApp {
                         }
                         console.log('[Cesium] Imagery provider changed to:', providerViewModel.name);
                         
+                        // Apply color adjustments and lighting for specific providers
+                        setTimeout(() => {
+                            this._adjustImageryLayerColors(providerViewModel.name);
+                            this._updateLightingForProvider(providerViewModel.name);
+                        }, 100); // Small delay to ensure provider is fully loaded
+                        
                     } catch (error) {
                         cesiumLog.error(`Failed to switch to provider "${providerViewModel.name}": ${error.message}`);
                         console.error('[Cesium] Provider switch error:', error);
@@ -1187,11 +1224,54 @@ class CesiumFlightApp {
                             cesiumLog.info('Falling back to OpenStreetMap provider');
                             setTimeout(() => {
                                 this.viewer.baseLayerPicker.viewModel.selectedImagery = fallbackProvider;
+                                // Apply color adjustments and lighting to fallback provider as well
+                                setTimeout(() => {
+                                    this._adjustImageryLayerColors(fallbackProvider.name);
+                                    this._updateLightingForProvider(fallbackProvider.name);
+                                }, 100);
                             }, 100);
                         }
                     }
                 }
             });
+        }
+    }
+    
+    _adjustImageryLayerColors(providerName) {
+        // Apply color corrections to reduce oversaturation in satellite imagery
+        if (!this.viewer?.imageryLayers || this.viewer.imageryLayers.length === 0) return;
+        
+        const layer = this.viewer.imageryLayers.get(0);
+        
+        // Reset to defaults first
+        layer.brightness = 1.0;
+        layer.contrast = 1.0;
+        layer.saturation = 1.0;
+        layer.hue = 0.0;
+        layer.gamma = 1.0;
+        
+        switch (providerName) {
+            case 'Sentinel-2':
+                // Reduce green tint and improve visual balance
+                layer.saturation = 0.7;    // Reduce color intensity by 30%
+                layer.hue = -0.05;         // Slight shift away from green spectrum
+                layer.contrast = 1.1;      // Enhance details and definition
+                layer.brightness = 0.95;   // Slightly reduce brightness
+                layer.gamma = 1.2;         // Lighten midtones for better visibility
+                cesiumLog.info('Applied color adjustments for Sentinel-2: reduced green tint, enhanced contrast');
+                break;
+                
+            case 'Bing Maps Aerial':
+            case 'Bing Maps Aerial with Labels':
+                // Minor adjustments for Bing imagery
+                layer.contrast = 1.05;     // Slight contrast boost
+                layer.gamma = 1.1;         // Slightly lighter midtones
+                break;
+                
+            default:
+                // No adjustments for other providers (OpenStreetMap, Stamen Terrain)
+                cesiumLog.debug(`No color adjustments applied for provider: ${providerName}`);
+                break;
         }
     }
     

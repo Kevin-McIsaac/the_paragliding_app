@@ -26,12 +26,6 @@ flutter analyze
 # Run in background (won't timeout). default to device = emulator 
 flutter run -d [device]
 
-# Get logs from currently running Flutter app
-flutter logs -d [device]
-
-# Clear logs before capturing new ones
-flutter logs -c -d [device]
-
 # Take screenshot from running app
 flutter screenshot -o screenshots/$(date +%Y%m%d_%H%M%S).png -d [device]
 ```
@@ -55,7 +49,7 @@ flutter screenshot -o screenshots/$(date +%Y%m%d_%H%M%S).png -d [device]
 - **App Testing**: Test app changes by:
   - Adding logging that helps with understanding app usage, performance and diagnoing errors.
   - Runing the app in the bash tool on the emulator and telling the user what to do.
-  - When requested by the user reviewing the shell output for:
+  - When requested by the user reviewing the logs in the bash shell output for:
     - errors,
     - ways to improve efficency and performance,
     - improve map image quality while reducing cost.
