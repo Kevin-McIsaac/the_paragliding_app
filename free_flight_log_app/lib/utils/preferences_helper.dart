@@ -12,6 +12,11 @@ class PreferencesHelper {
   static const String cesiumTrailDurationKey = 'cesium_trail_duration';
   static const String cesiumQualityKey = 'cesium_quality';
   
+  // Cesium Ion Token preferences (for premium maps)
+  static const String cesiumUserTokenKey = 'cesium_user_token';
+  static const String cesiumTokenValidatedKey = 'cesium_token_validated';
+  static const String cesiumTokenValidationDateKey = 'cesium_token_validation_date';
+  
   // IGC Import preferences
   static const String igcLastFolderKey = 'igc_last_folder';
   
@@ -84,6 +89,41 @@ class PreferencesHelper {
   static Future<void> setCesiumQuality(double value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(cesiumQualityKey, value);
+  }
+  
+  // Cesium Ion Token methods
+  static Future<String?> getCesiumUserToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(cesiumUserTokenKey);
+  }
+  
+  static Future<void> setCesiumUserToken(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(cesiumUserTokenKey, value);
+  }
+  
+  static Future<void> removeCesiumUserToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(cesiumUserTokenKey);
+    await prefs.remove(cesiumTokenValidatedKey);
+    await prefs.remove(cesiumTokenValidationDateKey);
+  }
+  
+  static Future<bool?> getCesiumTokenValidated() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(cesiumTokenValidatedKey);
+  }
+  
+  static Future<void> setCesiumTokenValidated(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(cesiumTokenValidatedKey, value);
+    await prefs.setString(cesiumTokenValidationDateKey, DateTime.now().toIso8601String());
+  }
+  
+  static Future<DateTime?> getCesiumTokenValidationDate() async {
+    final prefs = await SharedPreferences.getInstance();
+    final dateString = prefs.getString(cesiumTokenValidationDateKey);
+    return dateString != null ? DateTime.tryParse(dateString) : null;
   }
   
   // IGC Import methods
