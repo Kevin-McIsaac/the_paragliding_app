@@ -99,7 +99,7 @@ class ParaglidingEarthApi {
         retries++;
         
         // Enhanced error logging
-        if (e.message?.contains('Failed host lookup') ?? false) {
+        if (e.message.contains('Failed host lookup')) {
           LoggingService.error('ParaglidingEarthApi: DNS lookup failed for paraglidingearth.com', e);
           LoggingService.info('ParaglidingEarthApi: This may indicate rate limiting or network issues');
         } else {

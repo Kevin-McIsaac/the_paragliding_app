@@ -18,7 +18,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
   bool _isLoading = false;
   String? _errorMessage;
   bool _isSelectionMode = false;
-  Set<int> _selectedWingIds = {};
+  final Set<int> _selectedWingIds = {};
 
   @override
   void initState() {
@@ -107,6 +107,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
   }
 
   Future<void> _deleteWing(Wing wing) async {
+    if (!mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -160,43 +161,6 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
     }
   }
 
-  Future<void> _deactivateWing(Wing wing) async {
-    // Deactivate by updating the wing with active = false
-    final deactivatedWing = Wing(
-      id: wing.id,
-      name: wing.name,
-      manufacturer: wing.manufacturer,
-      model: wing.model,
-      size: wing.size,
-      color: wing.color,
-      purchaseDate: wing.purchaseDate,
-      active: false,
-      notes: wing.notes,
-      createdAt: wing.createdAt,
-    );
-    
-    bool success = false;
-    try {
-      LoggingService.debug('WingManagementScreen: Deactivating wing ${wing.id}');
-      await _databaseService.updateWing(deactivatedWing);
-      success = true;
-      LoggingService.info('WingManagementScreen: Deactivated wing ${wing.id}');
-      _loadWings(); // Reload the list
-    } catch (e) {
-      LoggingService.error('WingManagementScreen: Failed to deactivate wing', e);
-    }
-    
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(success 
-              ? 'Wing "${wing.name}" deactivated'
-              : 'Error deactivating wing'),
-          backgroundColor: success ? null : Colors.red,
-        ),
-      );
-    }
-  }
 
   void _toggleSelectionMode() {
     setState(() {
@@ -264,6 +228,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
         .where((w) => w.id != primaryWing.id)
         .fold(0, (sum, w) => sum + (_flightCounts[w.id!] ?? 0));
     
+    if (!mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(

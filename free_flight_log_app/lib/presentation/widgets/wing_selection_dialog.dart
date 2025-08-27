@@ -177,7 +177,9 @@ class _WingSelectionDialogState extends State<WingSelectionDialog> {
               title: const Text('No wing'),
               leading: Radio<Wing?>(
                 value: null,
+                // ignore: deprecated_member_use
                 groupValue: _selectedWing,
+                // ignore: deprecated_member_use
                 onChanged: (Wing? value) {
                   setState(() {
                     _selectedWing = value;
@@ -222,7 +224,9 @@ class _WingSelectionDialogState extends State<WingSelectionDialog> {
                               : null,
                           leading: Radio<Wing>(
                             value: wing,
+                            // ignore: deprecated_member_use
                             groupValue: _selectedWing,
+                            // ignore: deprecated_member_use
                             onChanged: (Wing? value) {
                               setState(() {
                                 _selectedWing = value;

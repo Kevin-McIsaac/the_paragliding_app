@@ -36,7 +36,7 @@ class DatabaseResetHelper {
       // Recreate the database (this will run the onCreate method)
       LoggingService.info('DatabaseResetHelper: Recreating database with fresh schema...');
       await _databaseHelper.recreateDatabase();
-      final newDb = await _databaseHelper.database;
+      await _databaseHelper.database;
       
       // Verify the new database is empty
       final newFlightCount = await _getTableCount('flights');

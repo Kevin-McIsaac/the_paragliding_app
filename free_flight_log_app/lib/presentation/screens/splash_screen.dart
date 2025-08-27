@@ -39,7 +39,7 @@ class _SplashScreenState extends State<SplashScreen> {
       // Print performance report after navigation
       final report = perfTracker.generateReport();
       LoggingService.info(report);
-      print(report); // Also print to console for visibility
+      // Report is already logged above via LoggingService
     }
   }
 

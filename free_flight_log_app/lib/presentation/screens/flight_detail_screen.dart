@@ -5,12 +5,8 @@ import '../../data/models/site.dart';
 import '../../data/models/wing.dart';
 import '../../services/database_service.dart';
 import '../../services/logging_service.dart';
-import '../../utils/date_time_utils.dart';
 import '../widgets/flight_track_3d_widget.dart';
 import '../widgets/flight_statistics_widget.dart';
-import '../../services/igc_import_service.dart';
-import 'edit_site_screen.dart';
-import '../widgets/edit_wing_dialog.dart';
 import '../widgets/site_selection_dialog.dart';
 import '../widgets/wing_selection_dialog.dart';
 
@@ -37,8 +33,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
   bool _isSaving = false;
   late TextEditingController _notesController;
   
-  // Map refresh management
-  int _mapRefreshKey = 0;
 
   @override
   void initState() {
@@ -79,7 +73,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
     if (state == AppLifecycleState.resumed) {
       // App returned to foreground, refresh map to pick up any config changes
       setState(() {
-        _mapRefreshKey++;
+        // Force rebuild to pick up any config changes
       });
     }
   }
@@ -180,94 +174,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
     }
   }
 
-  Future<void> _editCurrentSite() async {
-    if (_launchSite == null) return;
-    
-    // Try to get actual launch coordinates from IGC file if available
-    ({double latitude, double longitude})? actualLaunchCoords;
-    if (_flight.trackLogPath != null && _flight.source == 'igc') {
-      try {
-        final igcService = IgcImportService.instance;
-        final igcData = await igcService.getIgcFile(_flight.trackLogPath!);
-        if (igcData.launchSite != null) {
-          actualLaunchCoords = (
-            latitude: igcData.launchSite!.latitude,
-            longitude: igcData.launchSite!.longitude,
-          );
-          LoggingService.info('FlightDetailScreen: Found actual launch at ${actualLaunchCoords.latitude.toStringAsFixed(6)}, ${actualLaunchCoords.longitude.toStringAsFixed(6)}');
-        }
-      } catch (e) {
-        LoggingService.error('FlightDetailScreen: Failed to get actual launch coordinates', e);
-      }
-    }
-    
-    try {
-      final editedSite = await Navigator.push<Site>(
-        context,
-        MaterialPageRoute(
-          builder: (context) => EditSiteScreen(
-            site: _launchSite!,
-            actualLaunchCoordinates: actualLaunchCoords,
-          ),
-        ),
-      );
-      
-      if (editedSite != null && mounted) {
-        await _databaseService.updateSite(editedSite);
-        
-        // Update the current flight's site
-        setState(() {
-          _launchSite = editedSite;
-          _flightModified = true;
-        });
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Site "${editedSite.name}" updated')),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating site: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _editCurrentWing() async {
-    if (_wing == null) return;
-    
-    try {
-      final editedWing = await showDialog<Wing>(
-        context: context,
-        builder: (context) => EditWingDialog(wing: _wing!),
-      );
-      
-      if (editedWing != null && mounted) {
-        await _databaseService.updateWing(editedWing);
-        
-        // Update the current flight's wing
-        setState(() {
-          _wing = editedWing;
-          _flightModified = true;
-        });
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Wing "${editedWing.name}" updated')),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating wing: $e')),
-        );
-      }
-    }
-  }
 
   Future<void> _editWing() async {
     try {

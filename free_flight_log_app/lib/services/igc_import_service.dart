@@ -172,7 +172,6 @@ class IgcImportService {
     final straightDistance = igcData.calculateLaunchToLandingDistance();
     final climbRates = igcData.calculateClimbRates();
     final climbRates5Sec = igcData.calculate5SecondMaxClimbRates();
-    final climbRates15Sec = igcData.calculate15SecondMaxClimbRates();
     
     // Get or create launch site with paragliding site matching
     Site? launchSite;
@@ -273,7 +272,7 @@ class IgcImportService {
       launchSiteId: launchSite?.id,
       launchLatitude: igcData.launchSite?.latitude,
       launchLongitude: igcData.launchSite?.longitude,
-      launchAltitude: igcData.launchSite?.gpsAltitude?.toDouble(),
+      launchAltitude: igcData.launchSite?.gpsAltitude.toDouble(),
       landingLatitude: landingLatitude,
       landingLongitude: landingLongitude,
       landingAltitude: landingAltitude,
@@ -368,32 +367,6 @@ class IgcImportService {
   }
 
   /// Get site name using paragliding site matching or fallback to coordinates
-  Future<String> _getSiteName(
-    double latitude,
-    double longitude, {
-    String? siteType,
-  }) async {
-    // Ensure site matching service is initialized
-    final siteMatchingService = SiteMatchingService.instance;
-    if (!siteMatchingService.isReady) {
-      await siteMatchingService.initialize();
-    }
-
-    // Try to get a paragliding site name (without prefix to avoid redundant "Launch"/"Landing")
-    return await siteMatchingService.getSiteNameSuggestion(
-      latitude,
-      longitude,
-      prefix: '', // Remove prefix to avoid "Launch 47.123°N" - coordinates already indicate position
-      siteType: siteType,
-    );
-  }
-
-  /// Format coordinate for display (fallback method)
-  String _formatCoordinate(double lat, double lon) {
-    final latDir = lat >= 0 ? 'N' : 'S';
-    final lonDir = lon >= 0 ? 'E' : 'W';
-    return '${lat.abs().toStringAsFixed(3)}°$latDir ${lon.abs().toStringAsFixed(3)}°$lonDir';
-  }
 
   /// Get track points from saved IGC file
   Future<List<IgcPoint>> getTrackPoints(String trackLogPath) async {
@@ -478,7 +451,7 @@ class IgcImportService {
       notes: 'Created from IGC: Type="$gliderType", ID="$gliderID"',
     );
 
-    LoggingService.info('IgcImportService: Creating wing "${wingName}" (manufacturer="$manufacturer", model="$model")');
+    LoggingService.info('IgcImportService: Creating wing "$wingName" (manufacturer="$manufacturer", model="$model")');
 
     final wingId = await _databaseService.insertWing(newWing);
     

@@ -253,45 +253,6 @@ class IgcParser {
 
   /// Parse timezone offset from HFTZNUTCOFFSET or similar header
   /// Converts formats like "+10.00h", "-05.30h" to standard "+10:00", "-05:30"
-  String? _parseTimezone(String line) {
-    try {
-      String value = _extractHeaderValue(line, line.startsWith('HFTZNUTCOFFSET') ? 'HFTZNUTCOFFSET' : 'HFTZN');
-      
-      if (value.isEmpty) return null;
-      
-      // Remove trailing 'h' if present
-      value = value.replaceAll(RegExp(r'h$'), '').trim();
-      
-      // Handle formats like "+10.00", "-05.30", "10.00"
-      final regex = RegExp(r'^([+-]?)(\d{1,2})\.(\d{2})$');
-      final match = regex.firstMatch(value);
-      
-      if (match != null) {
-        String sign = match.group(1) ?? '';
-        if (sign.isEmpty) sign = '+'; // Explicitly add + if no sign
-        final hours = match.group(2)!.padLeft(2, '0');
-        final minutes = match.group(3)!;
-        
-        return '$sign$hours:$minutes';
-      }
-      
-      // Try simple integer format like "+10", "-5"
-      final simpleRegex = RegExp(r'^([+-]?)(\d{1,2})$');
-      final simpleMatch = simpleRegex.firstMatch(value);
-      
-      if (simpleMatch != null) {
-        String sign = simpleMatch.group(1) ?? '';
-        if (sign.isEmpty) sign = '+'; // Explicitly add + if no sign
-        final hours = simpleMatch.group(2)!.padLeft(2, '0');
-        return '$sign$hours:00';
-      }
-      
-      return null;
-    } catch (e) {
-      LoggingService.error('IgcParser: Error parsing timezone', e);
-      return null;
-    }
-  }
 
   /// Parse date from HFDTE record
   DateTime? _parseDate(String line) {

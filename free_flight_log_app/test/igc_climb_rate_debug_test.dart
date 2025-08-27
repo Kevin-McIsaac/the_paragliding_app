@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:free_flight_log_app/data/models/igc_file.dart';
 
@@ -45,34 +46,34 @@ void main() {
       final maxRates = igcFile.calculateClimbRates();
       final maxRates15Sec = igcFile.calculate15SecondMaxClimbRates();
 
-      print('=== IGC Climb Rate Debug ===');
-      print('Track points: ${trackPoints.length}');
-      print('Instantaneous rates: ${instantRates.length}');
-      print('15-second rates: ${fifteenSecRates.length}');
-      print('');
+      debugPrint('=== IGC Climb Rate Debug ===');
+      debugPrint('Track points: ${trackPoints.length}');
+      debugPrint('Instantaneous rates: ${instantRates.length}');
+      debugPrint('15-second rates: ${fifteenSecRates.length}');
+      debugPrint('');
       
-      print('Sample altitudes:');
+      debugPrint('Sample altitudes:');
       for (int i = 0; i < 10 && i < trackPoints.length; i++) {
-        print('Point $i: ${trackPoints[i].gpsAltitude}m at ${trackPoints[i].timestamp}');
+        debugPrint('Point $i: ${trackPoints[i].gpsAltitude}m at ${trackPoints[i].timestamp}');
       }
-      print('');
+      debugPrint('');
       
-      print('Sample instantaneous rates (first 10):');
+      debugPrint('Sample instantaneous rates (first 10):');
       for (int i = 0; i < 10 && i < instantRates.length; i++) {
-        print('Point $i: ${instantRates[i].toStringAsFixed(2)} m/s');
+        debugPrint('Point $i: ${instantRates[i].toStringAsFixed(2)} m/s');
       }
-      print('');
+      debugPrint('');
       
-      print('Sample 15-second rates (first 10):');
+      debugPrint('Sample 15-second rates (first 10):');
       for (int i = 0; i < 10 && i < fifteenSecRates.length; i++) {
-        print('Point $i: ${fifteenSecRates[i].toStringAsFixed(2)} m/s');
+        debugPrint('Point $i: ${fifteenSecRates[i].toStringAsFixed(2)} m/s');
       }
-      print('');
+      debugPrint('');
       
-      print('Max instantaneous climb: ${maxRates['maxClimb']?.toStringAsFixed(2)} m/s');
-      print('Max instantaneous sink: ${maxRates['maxSink']?.toStringAsFixed(2)} m/s');
-      print('Max 15-second climb: ${maxRates15Sec['maxClimb15Sec']?.toStringAsFixed(2)} m/s');
-      print('Max 15-second sink: ${maxRates15Sec['maxSink15Sec']?.toStringAsFixed(2)} m/s');
+      debugPrint('Max instantaneous climb: ${maxRates['maxClimb']?.toStringAsFixed(2)} m/s');
+      debugPrint('Max instantaneous sink: ${maxRates['maxSink']?.toStringAsFixed(2)} m/s');
+      debugPrint('Max 15-second climb: ${maxRates15Sec['maxClimb15Sec']?.toStringAsFixed(2)} m/s');
+      debugPrint('Max 15-second sink: ${maxRates15Sec['maxSink15Sec']?.toStringAsFixed(2)} m/s');
 
       // Verify that we have non-zero values
       expect(maxRates['maxClimb'], greaterThan(0));
