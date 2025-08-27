@@ -823,7 +823,7 @@ class CesiumFlightApp {
     
     _createViewer(config) {
         // Essential imagery providers
-        const imageryProviders = this._createImageryProviders();
+        const imageryProviders = this._createImageryProviders(config);
         let selectedProvider;
         
         if (config.savedBaseMap) {
@@ -934,9 +934,9 @@ class CesiumFlightApp {
         }
     }
     
-    _createImageryProviders() {
-        
-        const freeProviders = [
+    _createImageryProviders(config) {
+        // Base free providers (always available)
+        const baseProviders = [
             new Cesium.ProviderViewModel({
                 name: 'OpenStreetMap',
                 iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/openStreetMap.png'),
@@ -960,19 +960,47 @@ class CesiumFlightApp {
                 iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/sentinel-2.png'),
                 tooltip: 'Sentinel-2 satellite imagery - 10m resolution',
                 creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3954)
+            })
+        ];
+        
+        // Premium providers (requires user's own Cesium Ion token)
+        const premiumProviders = [
+            new Cesium.ProviderViewModel({
+                name: 'Bing Maps Aerial',
+                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerial.png'),
+                tooltip: 'Bing Maps aerial imagery - Premium (requires your Cesium Ion token)',
+                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(2)
             }),
             new Cesium.ProviderViewModel({
                 name: 'Bing Maps Aerial with Labels',
                 iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerialLabels.png'),
-                tooltip: 'Bing Maps aerial imagery with labels',
+                tooltip: 'Bing Maps aerial imagery with labels - Premium (requires your Cesium Ion token)',
                 creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3)
+            }),
+            new Cesium.ProviderViewModel({
+                name: 'Bing Maps Roads',
+                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingRoads.png'),
+                tooltip: 'Bing Maps road map - Premium (requires your Cesium Ion token)',
+                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(4)
             })
         ];
         
-        // Always use only free providers to prevent quota usage
-        cesiumLog.info('Using free imagery providers only to eliminate quota usage');
-        cesiumLog.info(`Available providers: ${freeProviders.map(p => p.name).join(', ')}`);
-        return freeProviders;
+        // Check if user has provided their own token
+        const hasUserToken = config?.hasUserToken === true;
+        
+        let availableProviders;
+        if (hasUserToken) {
+            // User has their own token - include premium providers
+            availableProviders = [...baseProviders, ...premiumProviders];
+            cesiumLog.info('Using user token - premium Bing Maps providers available');
+        } else {
+            // Using app token - only free providers to prevent quota usage
+            availableProviders = baseProviders;
+            cesiumLog.info('Using app token - free providers only to eliminate quota usage');
+        }
+        
+        cesiumLog.info(`Available providers: ${availableProviders.map(p => p.name).join(', ')}`);
+        return availableProviders;
     }
     
     _configureScene() {

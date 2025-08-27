@@ -12,6 +12,7 @@ import 'manage_sites_screen.dart';
 import 'statistics_screen.dart';
 import 'database_settings_screen.dart';
 import 'about_screen.dart';
+import 'cesium_settings_demo_screen.dart';
 
 class FlightListScreen extends StatefulWidget {
   const FlightListScreen({super.key});
@@ -408,6 +409,12 @@ class _FlightListScreenState extends State<FlightListScreen> {
                         builder: (context) => const AboutScreen(),
                       ),
                     );
+                  } else if (value == 'cesium_demo') {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const CesiumSettingsDemoScreen(),
+                      ),
+                    );
                   }
                 },
                 itemBuilder: (context) => [
@@ -481,6 +488,16 @@ class _FlightListScreenState extends State<FlightListScreen> {
                         Icon(Icons.info),
                         SizedBox(width: 8),
                         Text('About'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'cesium_demo',
+                    child: Row(
+                      children: [
+                        Icon(Icons.map, color: Colors.green),
+                        SizedBox(width: 8),
+                        Text('🧪 Cesium Token Demo'),
                       ],
                     ),
                   ),

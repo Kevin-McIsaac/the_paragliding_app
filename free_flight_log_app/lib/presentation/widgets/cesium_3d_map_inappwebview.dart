@@ -69,6 +69,10 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   int _savedTrailDuration = 5;
   double? _savedQuality;
   
+  // User token for premium maps
+  String? _userToken;
+  bool _hasValidUserToken = false;
+  
   @override
   void initState() {
     super.initState();
@@ -116,6 +120,19 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
       final trailDuration = await PreferencesHelper.getCesiumTrailDuration() ?? 5;
       final quality = await PreferencesHelper.getCesiumQuality();
       
+      // Load user token and validation status
+      final userToken = await PreferencesHelper.getCesiumUserToken();
+      final tokenValidated = await PreferencesHelper.getCesiumTokenValidated() ?? false;
+      final validationDate = await PreferencesHelper.getCesiumTokenValidationDate();
+      
+      // Check if token validation is still fresh (within 24 hours)
+      bool hasValidToken = false;
+      if (userToken != null && tokenValidated && validationDate != null) {
+        final now = DateTime.now();
+        final hoursSinceValidation = now.difference(validationDate).inHours;
+        hasValidToken = hoursSinceValidation < 24;
+      }
+      
       if (mounted && !_isDisposed) {
         setState(() {
           _savedSceneMode = sceneMode;
@@ -125,9 +142,11 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
           _savedFlyThroughMode = flyThroughMode;
           _savedTrailDuration = trailDuration;
           _savedQuality = quality;
+          _userToken = userToken;
+          _hasValidUserToken = hasValidToken;
         });
         
-        LoggingService.debug('Cesium3D: Loaded preferences - Scene: $sceneMode, BaseMap: $baseMap, Terrain: $terrainEnabled, NavDialog: $navigationHelpDialogOpen, FlyThrough: $flyThroughMode, Trail: ${trailDuration}s, Quality: ${quality ?? 'default'}');
+        LoggingService.debug('Cesium3D: Loaded preferences - Scene: $sceneMode, BaseMap: $baseMap, Terrain: $terrainEnabled, NavDialog: $navigationHelpDialogOpen, FlyThrough: $flyThroughMode, Trail: ${trailDuration}s, Quality: ${quality ?? 'default'}, UserToken: ${userToken != null ? 'present' : 'none'}, TokenValid: $hasValidToken');
       }
     } catch (e) {
       LoggingService.error('Cesium3D', 'Failed to load preferences: $e');
@@ -680,7 +699,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
         .replaceAll('{{LON}}', lon.toString())
         .replaceAll('{{ALTITUDE}}', altitude.toString())
         .replaceAll('{{DEBUG}}', isDebugMode.toString())
-        .replaceAll('{{TOKEN}}', CesiumConfig.ionAccessToken)
+        .replaceAll('{{TOKEN}}', _userToken ?? CesiumConfig.ionAccessToken)
         .replaceAll('window.cesiumConfig = {lat:', '''window.cesiumConfig = {
             trackPoints: $trackPointsJs,
             savedSceneMode: "$_savedSceneMode",
@@ -690,6 +709,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
             savedFlyThroughMode: $_savedFlyThroughMode,
             savedTrailDuration: $_savedTrailDuration,
             savedResolutionScale: ${_savedQuality ?? 'null'},
+            hasUserToken: $_hasValidUserToken,
             lat:''');
     }
     
