@@ -8,6 +8,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../services/logging_service.dart';
 import '../../utils/preferences_helper.dart';
 import '../../config/cesium_config.dart';
+import '../screens/cesium_settings_demo_screen.dart';
 
 class Cesium3DMapInAppWebView extends StatefulWidget {
   final double? initialLat;
@@ -624,6 +625,64 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                     ),
                   ),
                 ],
+              ),
+            ),
+          ),
+        // Premium Maps banner - shown when no user token
+        if (!_hasValidUserToken)
+          Positioned(
+            top: 12,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Material(
+                elevation: 1,
+                borderRadius: BorderRadius.circular(16),
+                color: Colors.grey[600]!.withOpacity(0.5),
+                child: InkWell(
+                  onTap: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const CesiumSettingsDemoScreen(),
+                      ),
+                    );
+                    // Refresh token status after returning from settings
+                    _loadPreferences();
+                  },
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          size: 14,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Premium Maps Available',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(width: 3),
+                        Icon(
+                          Icons.chevron_right,
+                          size: 14,
+                          color: Colors.white,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
           ),

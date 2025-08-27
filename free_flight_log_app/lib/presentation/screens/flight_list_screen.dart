@@ -477,7 +477,17 @@ class _FlightListScreenState extends State<FlightListScreen> {
                       children: [
                         Icon(Icons.storage),
                         SizedBox(width: 8),
-                        Text('Database Settings'),
+                        Text('Manage Database'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'cesium_demo',
+                    child: Row(
+                      children: [
+                        Icon(Icons.map),
+                        SizedBox(width: 8),
+                        Text('Premium Maps'),
                       ],
                     ),
                   ),
@@ -488,16 +498,6 @@ class _FlightListScreenState extends State<FlightListScreen> {
                         Icon(Icons.info),
                         SizedBox(width: 8),
                         Text('About'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'cesium_demo',
-                    child: Row(
-                      children: [
-                        Icon(Icons.map, color: Colors.green),
-                        SizedBox(width: 8),
-                        Text('🧪 Cesium Token Demo'),
                       ],
                     ),
                   ),

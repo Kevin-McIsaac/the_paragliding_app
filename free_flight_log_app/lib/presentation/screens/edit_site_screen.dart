@@ -1618,97 +1618,12 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           right: 8,
           child: _buildMapControls(),
         ),
-        // Debug cache test button (development only)
-        if (kDebugMode)
-          Positioned(
-            top: 60,
-            right: 8,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.purple,
-                borderRadius: BorderRadius.circular(4),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black26,
-                    blurRadius: 4,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: IconButton(
-                onPressed: _testCacheFunction,
-                icon: const Icon(Icons.bug_report, color: Colors.white, size: 16),
-                tooltip: 'Test Cache',
-              ),
-            ),
-          ),
         _buildLegend(),
         if (_buildLoadingIndicator() != null) _buildLoadingIndicator()!,
-        // Debug cache overlay (development only)
-        if (kDebugMode)
-          Positioned(
-            bottom: 60,
-            right: 8,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.black54,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                'Cache: ${CacheUtils.getCacheInfo()}',
-                style: const TextStyle(color: Colors.white, fontSize: 10),
-              ),
-            ),
-          ),
       ],
     );
   }
 
-  /// Test cache functionality (debug mode only)
-  void _testCacheFunction() {
-    if (!kDebugMode) return;
-    
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: const Text('Test Map Cache'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Current cache: ${CacheUtils.getCacheInfo()}'),
-              const SizedBox(height: 16),
-              const Text('To test cache functionality:\n'
-                  '1. Note current cache size\n'
-                  '2. Pan to new area and zoom\n'
-                  '3. Check cache size increased\n'
-                  '4. Pan back to original area\n'
-                  '5. Tiles should load instantly\n'
-                  '6. Turn on airplane mode\n'
-                  '7. Previously viewed areas should still load'),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                CacheUtils.clearMapCache();
-                // Small delay to let cache stats update
-                await Future.delayed(const Duration(milliseconds: 100));
-                setState(() {}); // Refresh dialog
-              },
-              child: const Text('Clear Cache'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Close'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 /// Debug tile provider that logs actual network requests (not cached tiles)

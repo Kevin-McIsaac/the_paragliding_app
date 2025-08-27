@@ -966,12 +966,6 @@ class CesiumFlightApp {
         // Premium providers (requires user's own Cesium Ion token)
         const premiumProviders = [
             new Cesium.ProviderViewModel({
-                name: 'Bing Maps Aerial',
-                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerial.png'),
-                tooltip: 'Bing Maps aerial imagery - Premium (requires your Cesium Ion token)',
-                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(2)
-            }),
-            new Cesium.ProviderViewModel({
                 name: 'Bing Maps Aerial with Labels',
                 iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerialLabels.png'),
                 tooltip: 'Bing Maps aerial imagery with labels - Premium (requires your Cesium Ion token)',
@@ -990,9 +984,9 @@ class CesiumFlightApp {
         
         let availableProviders;
         if (hasUserToken) {
-            // User has their own token - include premium providers
-            availableProviders = [...baseProviders, ...premiumProviders];
-            cesiumLog.info('Using user token - premium Bing Maps providers available');
+            // User has their own token - show ONLY premium providers
+            availableProviders = premiumProviders;
+            cesiumLog.info('Using user token - showing only premium Bing Maps providers');
         } else {
             // Using app token - only free providers to prevent quota usage
             availableProviders = baseProviders;

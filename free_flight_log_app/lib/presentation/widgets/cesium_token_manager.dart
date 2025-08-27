@@ -215,15 +215,31 @@ class _CesiumTokenManagerState extends State<CesiumTokenManager> {
     }
   }
 
-  Future<void> _launchCesiumIon() async {
-    const url = 'https://cesium.com/ion/signup';
+  Future<void> _launchCesiumSignup() async {
+    const url = 'https://ion.cesium.com/signup/';
     try {
       if (await canLaunchUrl(Uri.parse(url))) {
         await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
       }
     } catch (e) {
-      LoggingService.error('CesiumTokenManager', 'Failed to launch URL: $e');
+      LoggingService.error('CesiumTokenManager', 'Failed to launch signup URL: $e');
     }
+  }
+
+  Future<void> _launchCesiumTokens() async {
+    const url = 'https://ion.cesium.com/tokens';
+    try {
+      if (await canLaunchUrl(Uri.parse(url))) {
+        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      LoggingService.error('CesiumTokenManager', 'Failed to launch tokens URL: $e');
+    }
+  }
+
+  // Keep for backward compatibility in dialog
+  Future<void> _launchCesiumIon() async {
+    await _launchCesiumSignup();
   }
 
   void _showTokenInputDialog() {
@@ -260,12 +276,6 @@ class _CesiumTokenManagerState extends State<CesiumTokenManager> {
                   }
                   return null;
                 },
-              ),
-              const SizedBox(height: 12),
-              TextButton.icon(
-                onPressed: _launchCesiumIon,
-                icon: const Icon(Icons.help_outline),
-                label: const Text('How to get a token'),
               ),
             ],
           ),
@@ -365,23 +375,6 @@ class _CesiumTokenManagerState extends State<CesiumTokenManager> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Icon(
-                  _currentToken != null ? Icons.verified_user : Icons.lock,
-                  color: _statusColor,
-                ),
-                const SizedBox(width: 8),
-                const Text(
-                  'Premium Maps',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
             Text(
               'Status: $_tokenStatus',
               style: TextStyle(
@@ -403,29 +396,99 @@ class _CesiumTokenManagerState extends State<CesiumTokenManager> {
             ],
             
             const SizedBox(height: 12),
-            const Text(
-              'Premium maps (Bing Maps) require your own free Cesium Ion account. '
-              'Get up to 5GB of map data per month at no cost.',
-              style: TextStyle(fontSize: 14),
+            Text(
+              _currentToken != null && _isTokenValidated 
+                ? 'You now have access to the Premium maps.'
+                : 'To access premium Bing maps for free follow these 4 steps:',
+              style: TextStyle(
+                fontSize: 14, 
+                fontWeight: FontWeight.w500,
+                color: _currentToken != null && _isTokenValidated ? Colors.green : null,
+              ),
             ),
+            const SizedBox(height: 8),
             
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                if (_currentToken == null) ...[
-                  FilledButton.icon(
-                    onPressed: _showTokenInputDialog,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add Token'),
+            // Numbered steps list
+            if (_currentToken == null) ...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('1. ', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: _launchCesiumSignup,
+                      child: const Text(
+                        'Create a free account with Cesium ION.',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.blue,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
                   ),
-                  OutlinedButton.icon(
-                    onPressed: _launchCesiumIon,
-                    icon: const Icon(Icons.open_in_new),
-                    label: const Text('Get Free Account'),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('2. ', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: _launchCesiumTokens,
+                      child: const Text(
+                        'Navigate to Access Tokens',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.blue,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
                   ),
-                ] else ...[
+                ],
+              ),
+              const SizedBox(height: 4),
+              const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('3. ', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                  Expanded(
+                    child: Text(
+                      'Copy the Default Token',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('4. ', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: _showTokenInputDialog,
+                      child: const Text(
+                        'Add your token to this app',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.blue,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ] else ...[
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
                   OutlinedButton.icon(
                     onPressed: _isValidating ? null : _testToken,
                     icon: _isValidating 
@@ -443,8 +506,8 @@ class _CesiumTokenManagerState extends State<CesiumTokenManager> {
                     label: const Text('Remove Token'),
                   ),
                 ],
-              ],
-            ),
+              ),
+            ],
           ],
         ),
       ),
