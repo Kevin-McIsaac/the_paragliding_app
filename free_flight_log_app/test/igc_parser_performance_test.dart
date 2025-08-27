@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:free_flight_log_app/services/igc_parser.dart';
 
@@ -18,8 +19,8 @@ void main() {
     stopwatch.stop();
     
     final averageMs = stopwatch.elapsedMilliseconds / 10;
-    print('Average parse time: ${averageMs.toStringAsFixed(2)}ms');
-    print('Total time for 10 parses: ${stopwatch.elapsedMilliseconds}ms');
+    debugPrint('Average parse time: ${averageMs.toStringAsFixed(2)}ms');
+    debugPrint('Total time for 10 parses: ${stopwatch.elapsedMilliseconds}ms');
     
     // Should be under 50ms for small files (no isolate overhead)
     expect(averageMs, lessThan(50));

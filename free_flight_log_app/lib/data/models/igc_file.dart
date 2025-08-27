@@ -68,7 +68,7 @@ class IgcFile {
   }
 
   /// Legacy method - use calculateGroundTrackDistance() instead
-  @deprecated
+  @Deprecated('Use calculateGroundTrackDistance() instead')
   double calculateDistance() => calculateGroundTrackDistance();
 
   /// Calculate instantaneous climb rates (between consecutive points)
@@ -328,7 +328,7 @@ class IgcFile {
   }
   
   /// Deprecated: Use get15SecondClimbRateAt instead
-  @deprecated
+  @Deprecated('Use get15SecondClimbRateAt instead - method name was incorrect')
   double get5SecondClimbRateAt(int index) {
     return get15SecondClimbRateAt(index);
   }

@@ -2,9 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:free_flight_log_app/data/models/flight.dart';
 import 'package:free_flight_log_app/data/models/site.dart';
 import 'package:free_flight_log_app/data/models/wing.dart';
-import 'package:free_flight_log_app/data/repositories/flight_repository.dart';
-import 'package:free_flight_log_app/data/repositories/site_repository.dart';
-import 'package:free_flight_log_app/data/repositories/wing_repository.dart';
 
 /// Mock FlightProvider for testing
 class MockFlightProvider extends ChangeNotifier {
@@ -74,7 +71,7 @@ class MockSiteProvider extends ChangeNotifier {
   Site? getSiteById(int? id) {
     if (id == null) return null;
     return _sites.firstWhere((s) => s.id == id, 
-        orElse: () => Site(id: id, name: 'Unknown Site', country: 'Unknown'));
+        orElse: () => Site(id: id, name: 'Unknown Site', latitude: 0.0, longitude: 0.0, country: 'Unknown', customName: false, createdAt: DateTime.now()));
   }
 }
 
@@ -100,54 +97,6 @@ class MockWingProvider extends ChangeNotifier {
   Wing? getWingById(int? id) {
     if (id == null) return null;
     return _wings.firstWhere((w) => w.id == id,
-        orElse: () => Wing(id: id, manufacturer: 'Unknown', model: 'Unknown'));
-  }
-}
-
-/// Mock repositories for testing
-class MockFlightRepository extends FlightRepository {
-  MockFlightRepository(super.dataSource);
-
-  @override
-  Future<List<Flight>> getAllFlights() async {
-    return [];
-  }
-
-  @override
-  Future<Flight?> getFlightById(int id) async {
-    return null;
-  }
-
-  @override
-  Future<int> insertFlight(Flight flight) async {
-    return 1;
-  }
-
-  @override
-  Future<void> updateFlight(Flight flight) async {
-    // Mock implementation
-  }
-
-  @override
-  Future<void> deleteFlight(int id) async {
-    // Mock implementation
-  }
-}
-
-class MockSiteRepository extends SiteRepository {
-  MockSiteRepository(super.dataSource);
-
-  @override
-  Future<List<Site>> getAllSites() async {
-    return [];
-  }
-}
-
-class MockWingRepository extends WingRepository {
-  MockWingRepository(super.dataSource);
-
-  @override
-  Future<List<Wing>> getAllWings() async {
-    return [];
+        orElse: () => Wing(id: id, name: 'Unknown Wing', manufacturer: 'Unknown', model: 'Unknown'));
   }
 }

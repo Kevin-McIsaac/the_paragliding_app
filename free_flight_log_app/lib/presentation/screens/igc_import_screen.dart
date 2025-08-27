@@ -6,7 +6,6 @@ import '../../data/models/flight.dart';
 import '../../data/models/import_result.dart';
 import '../widgets/duplicate_flight_dialog.dart';
 import '../../services/igc_parser.dart';
-import '../../services/database_service.dart';
 import '../../services/logging_service.dart';
 import '../../services/igc_import_service.dart';
 import '../../services/paragliding_earth_api.dart';
@@ -218,7 +217,6 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
       _replaceAllDuplicates = false;
     });
     
-    final databaseService = DatabaseService.instance;
     final importService = IgcImportService.instance;
     
     int processedCount = 0;
@@ -587,7 +585,7 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
                         _selectionStatus!,
                         style: TextStyle(
                           fontSize: 12,
-                          color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.7),
+                          color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
                         ),
                         textAlign: TextAlign.center,
                       ),

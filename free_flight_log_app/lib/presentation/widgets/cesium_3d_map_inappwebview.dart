@@ -42,7 +42,6 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   String _errorMessage = '';
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   bool _hasInternet = true;
-  bool _isWebViewReady = false;
   int _surfaceErrorCount = 0;
   Timer? _surfaceRecoveryTimer;
   DateTime? _lastMemoryPressureTime;
@@ -99,7 +98,6 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
       .listen(_updateConnectionStatus);
     
     // Initialize WebView immediately for faster loading
-    _isWebViewReady = true;
     
     // Start memory monitoring in debug mode with delay
     if (kDebugMode) {
@@ -522,41 +520,23 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
               LoggingService.debug('Cesium3D JS [$level]: $msg');
             }
           },
-          onLoadError: (controller, url, code, message) {
+          onReceivedError: (controller, request, error) {
             // Categorize errors
-            if (message.contains('ERR_CONNECTION_REFUSED')) {
-              if (kDebugMode && url.toString().contains('localhost')) {
+            if (error.description.contains('ERR_CONNECTION_REFUSED')) {
+              if (kDebugMode && request.url.toString().contains('localhost')) {
                 // Development server not accessible from WebView (expected)
                 LoggingService.debug('WebView cannot access Flutter dev server (expected)');
               } else {
                 // Production connection issue
-                LoggingService.error('Cesium3D', 'Network connection failed: $message');
-                _handleLoadError(url.toString(), message);
+                LoggingService.error('Cesium3D', 'Network connection failed: ${error.description}');
+                _handleLoadError(request.url.toString(), error.description);
               }
-            } else if (message.contains('ERR_INTERNET_DISCONNECTED')) {
+            } else if (error.description.contains('ERR_INTERNET_DISCONNECTED')) {
               LoggingService.error('Cesium3D', 'No internet connection available');
               _handleNoInternet();
             } else {
-              LoggingService.error('Cesium3D', 'Load error: $message (code: $code)');
-              _handleLoadError(url.toString(), message);
-            }
-          },
-          onReceivedError: (controller, request, error) {
-            // Ignore development server connection errors
-            final errorDesc = error.description ?? '';
-            final urlString = request.url.toString() ?? '';
-            
-            if (errorDesc.contains('ERR_CONNECTION_REFUSED')) {
-              if (kDebugMode && (urlString.contains('localhost') || urlString.contains('127.0.0.1'))) {
-                // Skip logging for hot reload attempts - this is expected
-                return;
-              }
-              // Log actual connection issues
-              LoggingService.error('Cesium3D', 'Connection refused: $urlString');
-            } else if (!errorDesc.contains('ERR_INTERNET_DISCONNECTED')) {
-              // Log other errors except internet disconnection (handled elsewhere)
-              LoggingService.error('Cesium3D InAppWebView', 
-                'Received error: $errorDesc');
+              LoggingService.error('Cesium3D', 'Load error: ${error.description} (type: ${error.type})');
+              _handleLoadError(request.url.toString(), error.description);
             }
           },
           onReceivedHttpError: (controller, request, response) {
@@ -638,7 +618,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
               child: Material(
                 elevation: 1,
                 borderRadius: BorderRadius.circular(16),
-                color: Colors.grey[600]!.withOpacity(0.5),
+                color: Colors.grey[600]!.withValues(alpha: 0.5),
                 child: InkWell(
                   onTap: () async {
                     await Navigator.push(
@@ -1223,7 +1203,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
         
         // Try to clear cache
         try {
-          await controller?.clearCache().timeout(
+          await InAppWebViewController.clearAllCache().timeout(
             const Duration(milliseconds: 500),
             onTimeout: () {
               LoggingService.debug('Cesium3D: Clear cache timed out');
@@ -1300,7 +1280,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
     LoggingService.warning('Cesium3D: Memory pressure detected - selective cleanup');
     
     // Clear WebView cache on memory pressure
-    webViewController?.clearCache();
+    InAppWebViewController.clearAllCache();
     
     // Use selective memory pressure handling that preserves flight visualization
     webViewController?.evaluateJavascript(source: '''
@@ -1470,68 +1450,6 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
     }
   }
   
-  Future<void> _loadFlightTrack(InAppWebViewController controller) async {
-    try {
-      // Wait a bit for Cesium to fully initialize
-      await Future.delayed(const Duration(seconds: 3));
-      
-      LoggingService.debug('Cesium3D: Loading flight track with ${widget.trackPoints!.length} points');
-      
-      // Convert track points to JavaScript format
-      final jsPoints = widget.trackPoints!.map((point) {
-        // Handle Map objects (which is what we're getting from flight_track_widget)
-        double lat, lon, alt, climbRate, climbRate5s, climbRate15s;
-        String timezone, timestamp;
-        
-        if (point is Map) {
-          lat = (point['latitude'] ?? 0.0).toDouble();
-          lon = (point['longitude'] ?? 0.0).toDouble();
-          alt = (point['altitude'] ?? 0.0).toDouble();
-          climbRate = (point['climbRate'] ?? 0.0).toDouble();
-          climbRate5s = (point['climbRate5s'] ?? 0.0).toDouble();
-          climbRate15s = (point['climbRate15s'] ?? 0.0).toDouble();
-          timezone = point['timezone'] ?? '+00:00';
-          timestamp = point['timestamp'] ?? '';
-        } else {
-          // Handle object with properties
-          lat = (point.latitude ?? 0.0).toDouble();
-          lon = (point.longitude ?? 0.0).toDouble();
-          alt = (point.altitude ?? 0.0).toDouble();
-          climbRate = (point.climbRate ?? 0.0).toDouble();
-          climbRate5s = (point.climbRate5s ?? 0.0).toDouble();
-          climbRate15s = (point.climbRate15s ?? 0.0).toDouble();
-          timezone = point.timezone ?? '+00:00';
-          timestamp = point.timestamp ?? '';
-        }
-        
-        return '{latitude:$lat,longitude:$lon,altitude:$alt,climbRate:$climbRate,climbRate5s:$climbRate5s,climbRate15s:$climbRate15s,timestamp:"$timestamp",timezone:"$timezone"}';
-      }).join(',');
-      
-      // Log first and last points for debugging
-      if (widget.trackPoints!.isNotEmpty) {
-        final first = widget.trackPoints!.first;
-        final last = widget.trackPoints!.last;
-        LoggingService.debug('Cesium3D: First point: $first');
-        LoggingService.debug('Cesium3D: Last point: $last');
-      }
-      
-      // Call JavaScript function to create colored flight track
-      final jsCode = '''
-        if (typeof createColoredFlightTrack === 'function') {
-          createColoredFlightTrack([$jsPoints]);
-          console.log('[Cesium] Called createColoredFlightTrack with ${widget.trackPoints!.length} points');
-        } else {
-          console.error('[Cesium] createColoredFlightTrack function not found!');
-        }
-      ''';
-      
-      await controller.evaluateJavascript(source: jsCode);
-      
-      LoggingService.info('Cesium3D: Flight track JavaScript executed');
-    } catch (e) {
-      LoggingService.error('Cesium3D: Error loading flight track', e);
-    }
-  }
 
   void _handleSurfaceError() {
     _surfaceErrorCount++;
@@ -1546,7 +1464,6 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
       _surfaceRecoveryTimer = Timer(const Duration(seconds: 1), () {
         if (mounted && !_isDisposed) {
           setState(() {
-            _isWebViewReady = false;
           });
           
           // Dispose current WebView
@@ -1556,8 +1473,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
           Future.delayed(const Duration(milliseconds: 500), () {
             if (mounted && !_isDisposed) {
               setState(() {
-                _isWebViewReady = true;
-                _surfaceErrorCount = 0;
+                            _surfaceErrorCount = 0;
               });
             }
           });

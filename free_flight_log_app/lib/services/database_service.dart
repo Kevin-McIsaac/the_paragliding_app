@@ -993,7 +993,6 @@ class DatabaseService {
   
   /// Get statistics about wings that could be merged
   Future<Map<String, List<Wing>>> findPotentialDuplicateWings() async {
-    Database db = await _databaseHelper.database;
     final wings = await getAllWings();
     
     Map<String, List<Wing>> potentialDuplicates = {};

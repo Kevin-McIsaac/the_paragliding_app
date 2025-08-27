@@ -15,7 +15,7 @@ class LoggingService {
       lineLength: 120,
       colors: true,
       printEmojis: kDebugMode, // Disable emojis in production for performance
-      printTime: true,
+      dateTimeFormat: DateTimeFormat.onlyTimeAndSinceStart,
     ),
   );
 

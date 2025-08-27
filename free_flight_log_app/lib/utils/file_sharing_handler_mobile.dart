@@ -1,15 +1,16 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 
 /// Mobile implementation for handling shared files
 Future<List<String>?> getInitialSharedFiles() async {
   // Use the correct API method for the package
   final files = await ReceiveSharingIntent.instance.getInitialMedia();
-  if (files == null || files.isEmpty) return null;
+  if (files.isEmpty) return null;
   
   return files
-      .where((file) => file.path != null && file.path!.toLowerCase().endsWith('.igc'))
-      .map((file) => file.path!)
+      .where((file) => file.path.toLowerCase().endsWith('.igc'))
+      .map((file) => file.path)
       .toList();
 }
 
@@ -19,8 +20,8 @@ StreamSubscription? listenForSharedFiles(Function(List<String>) onFilesReceived)
     (List<SharedMediaFile> value) {
       if (value.isNotEmpty) {
         final igcFiles = value
-            .where((file) => file.path != null && file.path!.toLowerCase().endsWith('.igc'))
-            .map((file) => file.path!)
+            .where((file) => file.path.toLowerCase().endsWith('.igc'))
+            .map((file) => file.path)
             .toList();
         if (igcFiles.isNotEmpty) {
           onFilesReceived(igcFiles);
@@ -28,7 +29,10 @@ StreamSubscription? listenForSharedFiles(Function(List<String>) onFilesReceived)
       }
     },
     onError: (err) {
-      print("Error receiving shared files: $err");
+      // Use debug logging for receiving shared files errors
+      if (kDebugMode) {
+        print("Error receiving shared files: $err");
+      }
     },
   );
 }

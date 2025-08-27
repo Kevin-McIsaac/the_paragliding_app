@@ -8,7 +8,6 @@ import 'file_sharing_handler_stub.dart'
 /// Handles incoming file sharing intents in a platform-aware way
 class FileSharingHandler {
   static StreamSubscription? _subscription;
-  static List<String>? _sharedFiles;
   
   /// Initialize file sharing handler and return initial shared files
   static Future<List<String>?> initialize() async {

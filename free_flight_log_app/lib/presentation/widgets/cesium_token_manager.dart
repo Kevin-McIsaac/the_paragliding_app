@@ -237,10 +237,6 @@ class _CesiumTokenManagerState extends State<CesiumTokenManager> {
     }
   }
 
-  // Keep for backward compatibility in dialog
-  Future<void> _launchCesiumIon() async {
-    await _launchCesiumSignup();
-  }
 
   void _showTokenInputDialog() {
     _tokenController.clear();

@@ -215,7 +215,9 @@ class _SiteSelectionDialogState extends State<SiteSelectionDialog> {
               title: const Text('No site'),
               leading: Radio<Site?>(
                 value: null,
+                // ignore: deprecated_member_use
                 groupValue: _selectedSite,
+                // ignore: deprecated_member_use
                 onChanged: (Site? value) {
                   setState(() {
                     _selectedSite = value;
@@ -283,7 +285,9 @@ class _SiteSelectionDialogState extends State<SiteSelectionDialog> {
                             ),
                             leading: Radio<Site>(
                               value: site,
+                              // ignore: deprecated_member_use
                               groupValue: _selectedSite,
+                              // ignore: deprecated_member_use
                               onChanged: (Site? value) {
                                 setState(() {
                                   _selectedSite = value;
@@ -366,7 +370,9 @@ class _SiteSelectionDialogState extends State<SiteSelectionDialog> {
                   : null,
               leading: Radio<Site>(
                 value: site,
+                // ignore: deprecated_member_use
                 groupValue: _selectedSite,
+                // ignore: deprecated_member_use
                 onChanged: (Site? value) {
                   setState(() {
                     _selectedSite = value;
