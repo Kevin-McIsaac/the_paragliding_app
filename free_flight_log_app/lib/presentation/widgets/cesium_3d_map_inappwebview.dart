@@ -648,7 +648,16 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                       ),
                     );
                     // Refresh token status after returning from settings
-                    _loadPreferences();
+                    await _loadPreferences();
+                    // Load fresh HTML with updated token configuration
+                    if (webViewController != null && !_isDisposed) {
+                      await webViewController!.loadData(
+                        data: _buildCesiumHtml(),
+                        baseUrl: WebUri("https://localhost/"),
+                        mimeType: "text/html",
+                        encoding: "utf-8",
+                      );
+                    }
                   },
                   borderRadius: BorderRadius.circular(16),
                   child: Container(
