@@ -6,7 +6,7 @@ This document details the comprehensive technical implementation of the Free Fli
 
 **Current Production Implementation:**
 - **Pattern**: MVVM with Repository pattern ✅
-- **State Management**: Provider with ChangeNotifier ✅
+- **State Management**: Simple StatefulWidget with direct database access ✅
 - **Database**: SQLite via sqflite (mobile) + sqflite_common_ffi (desktop) ✅
 - **UI Framework**: Flutter with Material Design 3 ✅
 - **2D Mapping**: OpenStreetMap via flutter_map with advanced caching ✅
@@ -35,7 +35,7 @@ lib/
 │   │   ├── cesium_3d_map_inappwebview.dart  # Cesium WebView integration
 │   │   ├── flight_track_3d_widget.dart      # 3D flight data management
 │   │   └── common/                          # Shared UI components
-│   └── providers/           # ✅ State management with Provider pattern
+│   └── providers/           # (removed - using StatefulWidget instead)
 ├── services/                # ✅ Production services
 │   ├── database_service.dart    # Advanced database operations
 │   ├── logging_service.dart     # Structured logging system
