@@ -13,6 +13,7 @@ import 'statistics_screen.dart';
 import 'database_settings_screen.dart';
 import 'about_screen.dart';
 import 'cesium_settings_demo_screen.dart';
+import 'preferences_screen.dart';
 
 class FlightListScreen extends StatefulWidget {
   const FlightListScreen({super.key});
@@ -415,6 +416,12 @@ class _FlightListScreenState extends State<FlightListScreen> {
                         builder: (context) => const CesiumSettingsDemoScreen(),
                       ),
                     );
+                  } else if (value == 'preferences') {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const PreferencesScreen(),
+                      ),
+                    );
                   }
                 },
                 itemBuilder: (context) => [
@@ -488,6 +495,16 @@ class _FlightListScreenState extends State<FlightListScreen> {
                         Icon(Icons.map),
                         SizedBox(width: 8),
                         Text('Premium Maps'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'preferences',
+                    child: Row(
+                      children: [
+                        Icon(Icons.settings),
+                        SizedBox(width: 8),
+                        Text('Preferences'),
                       ],
                     ),
                   ),

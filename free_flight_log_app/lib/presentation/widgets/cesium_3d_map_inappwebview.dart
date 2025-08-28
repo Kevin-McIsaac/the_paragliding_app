@@ -116,8 +116,8 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
       final terrainEnabled = await PreferencesHelper.getCesiumTerrainEnabled() ?? true;
       final navigationHelpDialogOpen = await PreferencesHelper.getCesiumNavigationHelpDialog() ?? false;
       final flyThroughMode = await PreferencesHelper.getCesiumFlyThroughMode() ?? false;
-      final trailDuration = await PreferencesHelper.getCesiumTrailDuration() ?? 5;
-      final quality = await PreferencesHelper.getCesiumQuality();
+      final trailDuration = await PreferencesHelper.getCesiumTrailDuration() ?? 30;
+      final quality = await PreferencesHelper.getCesiumQuality() ?? 1.0;
       
       // Load user token and validation status
       final userToken = await PreferencesHelper.getCesiumUserToken();
@@ -909,16 +909,6 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                     viewer.scene.globe.loadingDescendantLimit = 10;
                     viewer.resolutionScale = 0.85;
                     
-                    // Add terrain if configured and not already added
-                    const terrainEnabled = window.cesiumConfig?.savedTerrainEnabled;
-                    if (terrainEnabled && (!viewer.terrainProvider || viewer.terrainProvider === viewer.scene.globe.ellipsoid)) {
-                        cesiumLog.debug('Adding terrain...');
-                        viewer.terrainProvider = Cesium.createWorldTerrain({
-                            requestWaterMask: false,
-                            requestVertexNormals: false,
-                            requestMetadata: false
-                        });
-                    }
                 }
                 viewer.scene.requestRender();
             };
