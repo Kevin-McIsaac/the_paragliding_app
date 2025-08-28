@@ -850,10 +850,10 @@ class CesiumFlightApp {
         
         // Create viewer with optimized settings
         this.viewer = new Cesium.Viewer("cesiumContainer", {
-            terrain: Cesium.Terrain.fromWorldTerrain({
+            terrain: config.savedTerrainEnabled ? Cesium.Terrain.fromWorldTerrain({
                 requestWaterMask: false,
                 requestVertexNormals: true
-            }),
+            }) : undefined,
             requestRenderMode: true,
             maximumRenderTimeChange: Infinity,
             resolutionScale: this.currentResolution,  // Apply adaptive resolution scaling
