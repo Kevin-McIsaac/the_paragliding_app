@@ -23,6 +23,12 @@ class PreferencesHelper {
   // Cesium 3D Map methods
   static Future<String?> getCesiumSceneMode() async {
     final prefs = await SharedPreferences.getInstance();
+    // Check if the preference has been set before
+    if (!prefs.containsKey(cesiumSceneModeKey)) {
+      // First time - set default to 3D
+      await prefs.setString(cesiumSceneModeKey, '3D');
+      return '3D';
+    }
     return prefs.getString(cesiumSceneModeKey);
   }
   
@@ -59,6 +65,12 @@ class PreferencesHelper {
   
   static Future<bool?> getCesiumNavigationHelpDialog() async {
     final prefs = await SharedPreferences.getInstance();
+    // Check if the preference has been set before
+    if (!prefs.containsKey(cesiumNavigationHelpDialogKey)) {
+      // First time - set default to false
+      await prefs.setBool(cesiumNavigationHelpDialogKey, false);
+      return false;
+    }
     return prefs.getBool(cesiumNavigationHelpDialogKey);
   }
   
@@ -79,6 +91,12 @@ class PreferencesHelper {
   
   static Future<int?> getCesiumTrailDuration() async {
     final prefs = await SharedPreferences.getInstance();
+    // Check if the preference has been set before
+    if (!prefs.containsKey(cesiumTrailDurationKey)) {
+      // First time - set default to 30 seconds
+      await prefs.setInt(cesiumTrailDurationKey, 30);
+      return 30;
+    }
     return prefs.getInt(cesiumTrailDurationKey);
   }
   
@@ -89,6 +107,12 @@ class PreferencesHelper {
   
   static Future<double?> getCesiumQuality() async {
     final prefs = await SharedPreferences.getInstance();
+    // Check if the preference has been set before
+    if (!prefs.containsKey(cesiumQualityKey)) {
+      // First time - set default to 1.0 (Medium)
+      await prefs.setDouble(cesiumQualityKey, 1.0);
+      return 1.0;
+    }
     return prefs.getDouble(cesiumQualityKey);
   }
 

@@ -62,10 +62,10 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           _cesiumSceneMode = sceneMode;
           _cesiumBaseMap = baseMap;
           _cesiumTerrainEnabled = terrainEnabled;
-          _cesiumNavigationHelpDialog = navHelpDialog ?? false;
+          _cesiumNavigationHelpDialog = navHelpDialog;
           _cesiumFlyThroughMode = flyThroughMode ?? false;
-          _cesiumTrailDuration = trailDuration ?? 30; // Default 30 seconds
-          _cesiumQuality = quality ?? 1.0; // Default high quality
+          _cesiumTrailDuration = trailDuration;
+          _cesiumQuality = quality;
           
           _cesiumUserToken = userToken;
           _cesiumTokenValidated = tokenValidated ?? false;
