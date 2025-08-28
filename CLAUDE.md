@@ -2,19 +2,19 @@
 
 ## Project Overview
 
-Free Flight Log is a free, android first, cross-platform application for logging
-and visualising paraglider, hang glider, and microlight flights.
+Free Flight Log is a free, android first, cross-platform application for 
+logging, reporting, and visualising paraglider, hang glider, and microlight flights.
 This repository contains:
 
-- **Complete Flutter Application**: Fully functional MVP with flight logging capabilities
+- **Complete Flutter Application**: Fully functional flight logbook capabilities
 - **Planning Documents** (for reference):
-  - Complete functional requirements (documentation/FUNCTIONAL_SPECIFICATION.md)
-  - Technical architecture using Flutter/Dart (documentation/TECHNICAL_DESIGN.md)
+  - [Functional requirements](documentation/FUNCTIONAL_SPECIFICATION.md)
+  - [Technical architecture](documentation/TECHNICAL_DESIGN.md)
 
-## Commands
+## Flutter development commands
 
 ```bash
-# Navigate to the Flutter app before running
+# Navigate to the Flutter app directory before running flutter
 cd ~/Projects/free_flight_log_app
 
 # Install dependencies
@@ -22,14 +22,28 @@ flutter pub get
 
 # check for errors after making a batch of changes
 flutter analyze
+```
 
-# Run in background (won't timeout). default to device = emulator 
-# DOn't try to hot reload, kill bash process and restart
-flutter run -d [device]
+## Flutter app testing commands
+
+```bash
+# Run the app on the device for testing/ Logging is captured in the shell output
+# Run in the backgrouind with default device = emulator 
+flutter_controller.sh run [device]
+
+# reload the app after code changes
+flutter_controller.sh r
+
+# restart the app 
+flutter_controller.sh R
+
+# quilt the app 
+flutter_controller.sh q
 
 # Take screenshot from running app
 flutter screenshot -o screenshots/$(date +%Y%m%d_%H%M%S).png -d [device]
 ```
+
 
 ## Key Files
 
