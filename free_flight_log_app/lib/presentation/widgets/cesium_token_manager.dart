@@ -333,28 +333,12 @@ class _CesiumTokenManagerState extends State<CesiumTokenManager> {
     
     if (!_isTokenValidated) return 'Token not validated';
     
-    if (_validationDate != null) {
-      final hoursAgo = DateTime.now().difference(_validationDate!).inHours;
-      if (hoursAgo < 1) {
-        return 'Active (validated ${DateTime.now().difference(_validationDate!).inMinutes}m ago)';
-      } else if (hoursAgo < 24) {
-        return 'Active (validated ${hoursAgo}h ago)';
-      } else {
-        return 'Validation expired (>24h old)';
-      }
-    }
-    
     return 'Active';
   }
 
   Color get _statusColor {
     if (_currentToken == null) return Colors.grey;
     if (!_isTokenValidated) return Colors.orange;
-    
-    if (_validationDate != null) {
-      final hoursAgo = DateTime.now().difference(_validationDate!).inHours;
-      if (hoursAgo >= 24) return Colors.orange;
-    }
     
     return Colors.green;
   }

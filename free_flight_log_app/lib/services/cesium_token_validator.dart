@@ -85,14 +85,9 @@ class CesiumTokenValidator {
     }
   }
   
-  /// Checks if token validation is still fresh (within 24 hours)
+  /// Checks if token validation is still fresh (always true once validated)
   static bool isValidationFresh(DateTime? validationDate) {
-    if (validationDate == null) return false;
-    
-    final now = DateTime.now();
-    final difference = now.difference(validationDate);
-    
-    return difference.inHours < 24;
+    return validationDate != null;
   }
   
   /// Formats a token for display (shows first 8 and last 4 characters)

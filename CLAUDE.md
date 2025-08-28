@@ -14,7 +14,7 @@ This repository contains:
 ## Flutter development commands
 
 ```bash
-# Navigate to the Flutter app directory before running flutter
+# Navigate to the app directory
 cd ~/Projects/free_flight_log_app
 
 # Install dependencies
@@ -28,7 +28,8 @@ flutter analyze
 
 ```bash
 # Run the app on the device for testing/ Logging is captured in the shell output
-# Run in the backgrouind with default device = emulator 
+# Run in the backgrouind with default device = emulator
+# can run from any directory 
 flutter_controller.sh run [device]
 
 # reload the app after code changes
