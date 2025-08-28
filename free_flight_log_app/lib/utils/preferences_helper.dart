@@ -43,6 +43,12 @@ class PreferencesHelper {
   
   static Future<bool?> getCesiumTerrainEnabled() async {
     final prefs = await SharedPreferences.getInstance();
+    // Check if the preference has been set before
+    if (!prefs.containsKey(cesiumTerrainEnabledKey)) {
+      // First time - set default to true for flight visualization
+      await prefs.setBool(cesiumTerrainEnabledKey, true);
+      return true;
+    }
     return prefs.getBool(cesiumTerrainEnabledKey);
   }
   
