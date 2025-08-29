@@ -383,11 +383,15 @@ class _FlightListScreenState extends State<FlightListScreen> {
                       ),
                     );
                   } else if (value == 'sites') {
-                    Navigator.of(context).push(
+                    final result = await Navigator.of(context).push<bool>(
                       MaterialPageRoute(
                         builder: (context) => const ManageSitesScreen(),
                       ),
                     );
+                    // Reload flights if sites were modified
+                    if (result == true && mounted) {
+                      await _loadFlights();
+                    }
                   } else if (value == 'statistics') {
                     Navigator.of(context).push(
                       MaterialPageRoute(
