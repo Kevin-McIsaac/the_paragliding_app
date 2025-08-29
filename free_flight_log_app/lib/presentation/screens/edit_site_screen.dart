@@ -591,24 +591,27 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           point: LatLng(widget.site!.latitude, widget.site!.longitude),
           width: _currentSiteMarkerSize,
           height: _currentSiteMarkerSize,
-          child: Tooltip(
-            message: '${widget.site!.name} (Current Site)${widget.site!.country != null ? '\n${widget.site!.country}' : ''}',
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // White outline
-                const Icon(
-                  Icons.location_on,
-                  color: Colors.white,
-                  size: _currentSiteMarkerSize,
-                ),
-                // Red marker
-                const Icon(
-                  Icons.location_on,
-                  color: Colors.red,
-                  size: _siteMarkerSize,
-                ),
-              ],
+          child: GestureDetector(
+            onTap: () {}, // Absorb taps to prevent pass-through to map
+            child: Tooltip(
+              message: '${widget.site!.name} (Current Site)${widget.site!.country != null ? '\n${widget.site!.country}' : ''}',
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // White outline
+                  const Icon(
+                    Icons.location_on,
+                    color: Colors.white,
+                    size: _currentSiteMarkerSize,
+                  ),
+                  // Red marker
+                  const Icon(
+                    Icons.location_on,
+                    color: Colors.red,
+                    size: _siteMarkerSize,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
