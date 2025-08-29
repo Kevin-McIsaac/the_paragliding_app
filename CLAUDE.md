@@ -14,9 +14,6 @@ This repository contains:
 ## Flutter development commands
 
 ```bash
-# Navigate to the app directory
-cd ~/Projects/free_flight_log_app
-
 # Install dependencies
 flutter pub get
 
@@ -26,10 +23,9 @@ flutter analyze
 
 ## Flutter app testing commands
 
-Test the using `flutter_controller.sh` and monitoring the
-logging captured in the shell output
-Run flutter_controller.sh in the background
-Do not change directory or use full path name
+Test the using `flutter_controller.sh` and monitor the
+logs captured in the shell output
+Run flutter_controller.sh in the background, do not change directory or use full path names
 
 ```bash
 flutter_controller.sh run [device]
