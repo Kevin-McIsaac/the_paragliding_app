@@ -230,6 +230,8 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
       if (mounted) {
         if (success) {
           UiUtils.showSuccessMessage(context, 'Site "${result.name}" updated');
+          // Return true to indicate sites were modified
+          Navigator.of(context).pop(true);
         } else {
           if (errorMessage != null) {
             UiUtils.showErrorDialog(context, 'Error', errorMessage);
