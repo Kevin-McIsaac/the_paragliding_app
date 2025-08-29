@@ -1067,8 +1067,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     // Only allow merging when editing an existing site
     if (widget.site == null || widget.site!.id == null) return;
     
-    // Count how many flights will be affected
-    final flightCount = await _databaseService.getFlightCountForSite(widget.site!.id!);
+    // Get the flights that will be affected
+    final affectedFlights = await _databaseService.getFlightsBySite(widget.site!.id!);
     
     if (!mounted) return;
     
@@ -1076,27 +1076,67 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Merge with Existing Site?'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Do you want to reassign all flights from "${widget.site!.name}" to "${localSite.name}"?'),
-            const SizedBox(height: 16),
-            Text(
-              'This will update $flightCount flight${flightCount == 1 ? '' : 's'}.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.bold,
+        title: Text('Move Current Launches to ${localSite.name}'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Do you want to reassign all flights from "${widget.site!.name}" to "${localSite.name}"?'),
+              const SizedBox(height: 16),
+              Text(
+                'This will update ${affectedFlights.length} flight${affectedFlights.length == 1 ? '' : 's'}.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Note: The current site will be deleted after merging.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.error,
+              const SizedBox(height: 8),
+              Text(
+                'Note: The current site will be deleted after merging.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.error,
+                ),
               ),
-            ),
-          ],
+              
+              if (affectedFlights.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 8),
+                Text(
+                  'Flights to be reassigned:',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  height: 120,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Theme.of(context).dividerColor),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: ListView.builder(
+                    itemCount: affectedFlights.length,
+                    itemBuilder: (context, index) {
+                      final flight = affectedFlights[index];
+                      return ListTile(
+                        dense: true,
+                        title: Text(
+                          '${flight.launchSiteName ?? 'Unknown Site'}: ${flight.date.toLocal().toString().split(' ')[0]} at ${flight.launchTime}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        trailing: Text(
+                          '${(flight.duration / 60.0).toStringAsFixed(1)}h',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -1105,7 +1145,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Merge Sites'),
+            child: const Text('Move Flights'),
           ),
         ],
       ),
@@ -1115,6 +1155,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       try {
         // Reassign all flights to the selected site
         await _databaseService.reassignFlights(widget.site!.id!, localSite.id!);
+        
+        LoggingService.info('EditSiteScreen: Moved ${affectedFlights.length} flights from "${widget.site!.name}" to "${localSite.name}"');
         
         // Delete the current site (it's no longer needed)
         await _databaseService.deleteSite(widget.site!.id!);
