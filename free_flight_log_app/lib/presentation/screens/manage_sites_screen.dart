@@ -206,9 +206,11 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
   }
 
   Future<void> _editSite(Site site) async {
-    final result = await Navigator.of(context).push<Site>(
+    await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => EditSiteScreen(site: site),
+        builder: (context) => EditSiteScreen(
+          initialCoordinates: (latitude: site.latitude, longitude: site.longitude),
+        ),
       ),
     );
 
@@ -216,34 +218,6 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
     // This ensures newly created sites (or merged/deleted sites) are reflected
     if (mounted) {
       await _loadSites();
-    }
-
-    if (result != null && mounted) {
-      bool success = false;
-      String? errorMessage;
-      
-      try {
-        LoggingService.debug('ManageSitesScreen: Updating site ${result.id}');
-        await _databaseService.updateSite(result);
-        success = true;
-        LoggingService.info('ManageSitesScreen: Updated site ${result.id}');
-        // Site list already refreshed above when returning from EditSiteScreen
-      } catch (e) {
-        LoggingService.error('ManageSitesScreen: Failed to update site', e);
-        errorMessage = 'Failed to update site: $e';
-      }
-      
-      if (mounted) {
-        if (success) {
-          UiUtils.showSuccessMessage(context, 'Site "${result.name}" updated');
-          // Return true to indicate sites were modified
-          Navigator.of(context).pop(true);
-        } else {
-          if (errorMessage != null) {
-            UiUtils.showErrorDialog(context, 'Error', errorMessage);
-          }
-        }
-      }
     }
   }
 

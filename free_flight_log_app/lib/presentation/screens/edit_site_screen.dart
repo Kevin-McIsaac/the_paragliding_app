@@ -29,13 +29,11 @@ enum MapProvider {
 }
 
 class EditSiteScreen extends StatefulWidget {
-  final Site? site;
-  final ({double latitude, double longitude})? actualLaunchCoordinates;
+  final ({double latitude, double longitude})? initialCoordinates;
 
   const EditSiteScreen({
     super.key, 
-    this.site,
-    this.actualLaunchCoordinates,
+    this.initialCoordinates,
   });
 
   @override
@@ -94,7 +92,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     _altitudeController = TextEditingController();
     _countryController = TextEditingController();
     _loadMapProviderPreference();
-    _loadFlightCounts(); // Load flight counts for current site
+    _loadFlightCounts(); // Load flight counts for sites
     
     // Start cache refresh timer for debug overlay (debug mode only)
     if (kDebugMode) {
@@ -167,7 +165,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.site == null ? 'Add Site' : 'Edit Site'),
+        title: const Text('Site Map'),
       ),
       body: _buildMapSection(),
       bottomNavigationBar: Container(
@@ -235,8 +233,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
   /// Create a launch marker with consistent styling
   Marker _buildLaunchMarker(Flight launch) {
-    final isFromCurrentSite = widget.site != null && launch.launchSiteId == widget.site!.id;
-    final markerColor = isFromCurrentSite ? Colors.red : Colors.blue;
+    final markerColor = Colors.blue;
     
     // Build tooltip message with site name and date
     final siteName = launch.launchSiteName ?? 'Unknown Site';
@@ -316,43 +313,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   }
 
 
-  /// Build the actual launch coordinates layer (if available)
-  MarkerLayer? _buildActualLaunchLayer() {
-    if (widget.actualLaunchCoordinates == null) return null;
-    
-    return MarkerLayer(
-      markers: [
-        Marker(
-          point: LatLng(
-            widget.actualLaunchCoordinates!.latitude,
-            widget.actualLaunchCoordinates!.longitude,
-          ),
-          width: _siteMarkerSize,
-          height: _siteMarkerSize,
-          child: Tooltip(
-            message: 'Actual Launch\n${widget.actualLaunchCoordinates!.latitude.toStringAsFixed(6)}, ${widget.actualLaunchCoordinates!.longitude.toStringAsFixed(6)}',
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // White outline
-                const Icon(
-                  Icons.location_on,
-                  color: Colors.white,
-                  size: _siteMarkerSize,
-                ),
-                // Amber marker
-                const Icon(
-                  Icons.location_on,
-                  color: Colors.amber,
-                  size: _siteMarkerIconSize,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
 
 
   /// Build the map controls (legend and provider selector)
@@ -484,18 +444,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (widget.site != null) ...[
-              _buildLegendItem(Icons.location_pin, Colors.red, 'Current Site'),
-              const SizedBox(height: 4),
-            ],
             if (_launches.isNotEmpty) ...[
-              _buildLegendItem(null, Colors.red, 'Launches (current)', isCircle: true),
-              const SizedBox(height: 4),
-              _buildLegendItem(null, Colors.blue, 'Launches (others)', isCircle: true),
-              const SizedBox(height: 4),
-            ],
-            if (widget.actualLaunchCoordinates != null) ...[
-              _buildLegendItem(Icons.location_on, Colors.amber, 'Actual Launch'),
+              _buildLegendItem(null, Colors.blue, 'Launches', isCircle: true),
               const SizedBox(height: 4),
             ],
             _buildLegendItem(Icons.location_on, Colors.blue, 'Flown Sites'),
@@ -735,13 +685,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     try {
       final Map<int, int> flightCounts = {};
       
-      // Load flight counts for all local sites (including current site)
-      final allSites = [..._localSites];
-      if (widget.site?.id != null) {
-        allSites.add(widget.site!);
-      }
-      
-      for (final site in allSites) {
+      // Load flight counts for all local sites
+      for (final site in _localSites) {
         if (site.id != null) {
           final count = await _databaseService.getFlightCountForSite(site.id!);
           flightCounts[site.id!] = count;
@@ -807,57 +752,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     }
   }
 
-  /// Load launches for the current site being edited (legacy method for initial bounds adjustment)
-  Future<void> _loadLaunchesForSite() async {
-    if (widget.site?.id == null) return;
-    
-    try {
-      final launches = await _databaseService.getFlightsWithLaunchCoordinatesForSite(widget.site!.id!);
-      
-      if (mounted) {
-        setState(() {
-          _launches = launches;
-        });
-        
-        LoggingService.info('EditSiteScreen: Loaded ${launches.length} launches for site');
-        
-        // Adjust map bounds to include all launches if we have them
-        if (launches.isNotEmpty && _mapController != null) {
-          _adjustMapBoundsToIncludeLaunches();
-        }
-      }
-    } catch (e) {
-      LoggingService.error('EditSiteScreen: Error loading launches', e);
-    }
-  }
 
-  /// Adjust map bounds to include all launches
-  void _adjustMapBoundsToIncludeLaunches() {
-    if (_launches.isEmpty || _mapController == null) return;
-    
-    double minLat = widget.site!.latitude;
-    double maxLat = widget.site!.latitude;
-    double minLng = widget.site!.longitude;
-    double maxLng = widget.site!.longitude;
-    
-    for (final launch in _launches) {
-      if (launch.launchLatitude != null && launch.launchLongitude != null) {
-        minLat = math.min(minLat, launch.launchLatitude!);
-        maxLat = math.max(maxLat, launch.launchLatitude!);
-        minLng = math.min(minLng, launch.launchLongitude!);
-        maxLng = math.max(maxLng, launch.launchLongitude!);
-      }
-    }
-    
-    // Add some padding
-    const padding = 0.005; // ~500m
-    final bounds = LatLngBounds(
-      LatLng(minLat - padding, minLng - padding),
-      LatLng(maxLat + padding, maxLng + padding),
-    );
-    
-    _mapController!.fitCamera(CameraFit.bounds(bounds: bounds));
-  }
 
 
   /// Handle tap on a ParaglidingEarth API site marker
@@ -906,16 +801,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         }
       }
       
-      // Check against API sites (excluding duplicates)
-      for (final site in _apiSites) {
-        if (!_isDuplicateApiSite(site)) {
-          final sitePoint = LatLng(site.latitude, site.longitude);
-          final distanceToExistingSite = _calculateDistance(sitePoint, launchPoint);
-          if (distanceToExistingSite <= distanceToNewPoint) {
-            return false; // Launch is closer to existing site
-          }
-        }
-      }
       
       return true; // Launch is closest to new point
     }).toList();
@@ -1294,6 +1179,18 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       
       LoggingService.info('EditSiteScreen: Created local site from API site: ${createdSite.name}');
       
+      // Find and reassign nearby launches, just like clicking on empty map area
+      final sitePoint = LatLng(apiSite.latitude, apiSite.longitude);
+      final launchesNearby = _findLaunchesWithinRadius(sitePoint, _launchRadiusMeters);
+      final eligibleLaunches = _filterLaunchesCloserToPoint(launchesNearby, sitePoint);
+      
+      // Reassign eligible flights if any
+      if (eligibleLaunches.isNotEmpty) {
+        final flightIds = eligibleLaunches.map((f) => f.id!).toList();
+        await _databaseService.bulkUpdateFlightSites(flightIds, newSiteId);
+        LoggingService.info('EditSiteScreen: Reassigned ${flightIds.length} flights from API site "${apiSite.name}" to new local site');
+      }
+      
       // Refresh the map to show the new local site
       if (mounted) {
         _clearMapDataCache();
@@ -1347,7 +1244,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       
       // Clear cache and refresh the map data
       _clearMapDataCache();
-      await _loadLaunchesForSite();
       if (_currentBounds != null) {
         await _loadSitesForBounds(_currentBounds!);
         await _loadAllLaunchesInBounds(_currentBounds!);
@@ -1382,61 +1278,17 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   DragMarkers _buildDragMarkersLayer() {
     List<DragMarker> dragMarkers = [];
     
-    // Add current site marker (if editing)
-    if (widget.site != null) {
-      dragMarkers.add(_buildCurrentSiteDragMarker());
-    }
+    // Add local sites markers
+    dragMarkers.addAll(_localSites.map(_buildLocalSiteDragMarker));
     
-    // Add local sites markers (excluding current site when editing)
-    dragMarkers.addAll(_localSites
-        .where((site) => widget.site == null || site.id != widget.site!.id)
-        .map(_buildLocalSiteDragMarker));
-    
-    // Add API sites markers (excluding duplicates and current site)
+    // Add API sites markers (excluding duplicates)
     dragMarkers.addAll(_apiSites
-        .where((site) => 
-            !_isDuplicateApiSite(site) && 
-            (widget.site == null || 
-             site.latitude != widget.site!.latitude || 
-             site.longitude != widget.site!.longitude))
+        .where((site) => !_isDuplicateApiSite(site))
         .map(_buildApiSiteDragMarker));
     
     return DragMarkers(markers: dragMarkers);
   }
 
-  /// Build current site drag marker (red, draggable)
-  DragMarker _buildCurrentSiteDragMarker() {
-    final launchCount = widget.site!.id != null ? _siteFlightCounts[widget.site!.id!] : null;
-    final tooltipMessage = _createSiteTooltip(widget.site!.name, widget.site!.country, launchCount);
-        
-    return DragMarker(
-      point: LatLng(widget.site!.latitude, widget.site!.longitude),
-      size: const Size.square(_currentSiteMarkerSize),
-      offset: const Offset(0, -_currentSiteMarkerSize / 2),
-      onTap: (point) => _showSiteEditDialog(widget.site!),
-      builder: (ctx, point, isDragging) => Tooltip(
-        message: tooltipMessage,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            // White outline
-            Icon(
-              Icons.location_on,
-              color: Colors.white,
-              size: _currentSiteMarkerSize,
-            ),
-            // Red marker with opacity during drag
-            Icon(
-              Icons.location_on,
-              color: isDragging ? Colors.red.withValues(alpha: 0.7) : Colors.red,
-              size: _siteMarkerSize,
-            ),
-          ],
-        ),
-      ),
-      onDragEnd: (details, point) => _handleCurrentSiteDrop(details, point),
-    );
-  }
 
   /// Build local site drag marker (blue, draggable)
   DragMarker _buildLocalSiteDragMarker(Site site) {
@@ -1528,32 +1380,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     );
   }
 
-  /// Handle current site drop - check for merge with flown or new sites
-  Future<void> _handleCurrentSiteDrop(DragEndDetails details, LatLng dropPoint) async {
-    if (widget.site == null) return;
-    
-    // Check if marker snapped back to original position (timeout/cancelled drag)
-    const double snapBackTolerance = 0.000001; // ~0.1 meters tolerance for GPS/rounding differences
-    final originalPosition = LatLng(widget.site!.latitude, widget.site!.longitude);
-    if ((dropPoint.latitude - originalPosition.latitude).abs() < snapBackTolerance &&
-        (dropPoint.longitude - originalPosition.longitude).abs() < snapBackTolerance) {
-      // Ignore snap-back events - marker returned to original position due to timeout
-      return;
-    }
-    
-    // Find if dropped on another site
-    final targetSite = _findSiteAtPoint(dropPoint);
-    if (targetSite == null) return;
-    
-    // Only allow dropping current site on flown (local) or new (API) sites
-    if (targetSite is Site) {
-      // Dropped on flown site - merge current into flown
-      await _mergeCurrentIntoFlownSite(targetSite);
-    } else if (targetSite is ParaglidingSite) {
-      // Dropped on new (API) site - merge current into API site
-      await _mergeCurrentIntoApiSite(targetSite);
-    }
-  }
 
   /// Handle flown site drop - check for merge with any site
   Future<void> _handleFlownSiteDrop(Site sourceSite, LatLng dropPoint) async {
@@ -1566,15 +1392,12 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       return;
     }
     
-    // Find if dropped on any site (including current site)
-    final targetSite = _findSiteAtPoint(dropPoint, includeCurrentSite: true);
+    // Find if dropped on any site
+    final targetSite = _findSiteAtPoint(dropPoint);
     if (targetSite == null) return;
     
     // Handle different target site types
-    if (targetSite == widget.site) {
-      // Dropped on current site - merge flown into current
-      await _mergeFlownIntoCurrent(sourceSite);
-    } else if (targetSite is Site) {
+    if (targetSite is Site) {
       // Dropped on another flown site - merge flown into flown
       await _mergeFlownIntoFlownSite(sourceSite, targetSite);
     } else if (targetSite is ParaglidingSite) {
@@ -1584,33 +1407,20 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   }
 
   /// Find site at the given point using screen-based pixel hit detection
-  dynamic _findSiteAtPoint(LatLng point, {bool includeCurrentSite = false}) {
+  dynamic _findSiteAtPoint(LatLng point) {
     if (_mapController == null) return null;
     
     final camera = _mapController!.camera;
     final dropPixel = camera.projectAtZoom(point, camera.zoom);
     
     // Use marker visual size for hit detection
-    // Current site: 40px, Other sites: 36px - use half as hit radius
-    const double normalHitRadius = 18.0; // Half of 36px marker size
-    const double currentSiteHitRadius = 20.0; // Half of 40px current site marker size
-    
-    // Check current site if requested and editing
-    if (includeCurrentSite && widget.site != null) {
-      final sitePixel = camera.projectAtZoom(LatLng(widget.site!.latitude, widget.site!.longitude), camera.zoom);
-      final distance = (dropPixel - sitePixel).distance;
-      if (distance <= currentSiteHitRadius) {
-        return widget.site;
-      }
-    }
+    const double hitRadius = 18.0; // Half of 36px marker size
     
     // Check local sites (flown sites)
     for (final site in _localSites) {
-      if (widget.site != null && site.id == widget.site!.id) continue; // Skip current site
-      
       final sitePixel = camera.projectAtZoom(LatLng(site.latitude, site.longitude), camera.zoom);
       final distance = (dropPixel - sitePixel).distance;
-      if (distance <= normalHitRadius) {
+      if (distance <= hitRadius) {
         return site;
       }
     }
@@ -1618,15 +1428,10 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     // Check API sites (new sites) 
     for (final site in _apiSites) {
       if (_isDuplicateApiSite(site)) continue; // Skip duplicates
-      if (widget.site != null && 
-          site.latitude == widget.site!.latitude && 
-          site.longitude == widget.site!.longitude) {
-        continue; // Skip current site
-      }
       
       final sitePixel = camera.projectAtZoom(LatLng(site.latitude, site.longitude), camera.zoom);
       final distance = (dropPixel - sitePixel).distance;
-      if (distance <= normalHitRadius) {
+      if (distance <= hitRadius) {
         return site;
       }
     }
@@ -1634,253 +1439,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     return null;
   }
 
-  /// Merge current site into a flown (local) site
-  Future<void> _mergeCurrentIntoFlownSite(Site targetSite) async {
-    if (widget.site == null || widget.site!.id == null) return;
-    
-    // Get the flights that will be affected
-    final affectedFlights = await _databaseService.getFlightsBySite(widget.site!.id!);
-    
-    if (!mounted) return;
-    
-    // Show confirmation dialog
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Merge sites?'),
-        content: SizedBox(
-          width: 400,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Merge "${widget.site!.name}" into "${targetSite.name}"?'),
-              const SizedBox(height: 16),
-              Text(
-                'This will move ${affectedFlights.length} flight${affectedFlights.length == 1 ? '' : 's'} from "${widget.site!.name}" to "${targetSite.name}".',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Merge Sites'),
-          ),
-        ],
-      ),
-    );
-    
-    if (confirmed == true && mounted) {
-      try {
-        // Move current site's flights to target site
-        await _databaseService.reassignFlights(widget.site!.id!, targetSite.id!);
-        
-        // Delete current site
-        await _databaseService.deleteSite(widget.site!.id!);
-        
-        LoggingService.info('EditSiteScreen: Merged "${widget.site!.name}" into "${targetSite.name}"');
-        
-        if (mounted) {
-          // Replace current EditSiteScreen with one editing the target site
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (context) => EditSiteScreen(site: targetSite),
-            ),
-          );
-        }
-      } catch (e) {
-        LoggingService.error('EditSiteScreen: Error merging sites', e);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error merging sites: $e'),
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-          );
-        }
-      }
-    }
-  }
 
-  /// Merge current site into an API site
-  Future<void> _mergeCurrentIntoApiSite(ParaglidingSite targetSite) async {
-    if (widget.site == null || widget.site!.id == null) return;
-    
-    // Get the flights that will be affected
-    final affectedFlights = await _databaseService.getFlightsBySite(widget.site!.id!);
-    
-    if (!mounted) return;
-    
-    // Show confirmation dialog
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Merge sites?'),
-        content: SizedBox(
-          width: 400,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Merge "${widget.site!.name}" into "${targetSite.name}"?'),
-              const SizedBox(height: 16),
-              Text(
-                'This will move ${affectedFlights.length} flight${affectedFlights.length == 1 ? '' : 's'} from "${widget.site!.name}" to a new site using "${targetSite.name}" data.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Merge Sites'),
-          ),
-        ],
-      ),
-    );
-    
-    if (confirmed == true && mounted) {
-      try {
-        // Create a new site from the API site data
-        final newSite = Site(
-          name: targetSite.name,
-          latitude: targetSite.latitude,
-          longitude: targetSite.longitude,
-          altitude: targetSite.altitude?.toDouble(),
-          country: targetSite.country,
-          customName: false, // Mark as not custom since from API
-        );
-        final newSiteId = await _databaseService.insertSite(newSite);
-        final createdSite = newSite.copyWith(id: newSiteId);
-        
-        // Move current site's flights to the new site
-        await _databaseService.reassignFlights(widget.site!.id!, newSiteId);
-        
-        // Delete current site
-        await _databaseService.deleteSite(widget.site!.id!);
-        
-        LoggingService.info('EditSiteScreen: Merged "${widget.site!.name}" into "${targetSite.name}"');
-        
-        if (mounted) {
-          // Replace current EditSiteScreen with one editing the new site
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (context) => EditSiteScreen(site: createdSite),
-            ),
-          );
-        }
-      } catch (e) {
-        LoggingService.error('EditSiteScreen: Error updating site with API data', e);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error updating site: $e'),
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-          );
-        }
-      }
-    }
-  }
 
-  /// Merge flown site into current site
-  Future<void> _mergeFlownIntoCurrent(Site sourceSite) async {
-    if (widget.site == null || widget.site!.id == null) return;
-    
-    // Get the flights that will be affected
-    final affectedFlights = await _databaseService.getFlightsBySite(sourceSite.id!);
-    
-    if (!mounted) return;
-    
-    // Show confirmation dialog
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Merge sites?'),
-        content: SizedBox(
-          width: 400,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Merge "${sourceSite.name}" into "${widget.site!.name}"?'),
-              const SizedBox(height: 16),
-              Text(
-                'This will move ${affectedFlights.length} flight${affectedFlights.length == 1 ? '' : 's'} from "${sourceSite.name}" to "${widget.site!.name}".',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Merge Sites'),
-          ),
-        ],
-      ),
-    );
-    
-    if (confirmed == true && mounted) {
-      try {
-        // Move source site's flights to current site
-        await _databaseService.reassignFlights(sourceSite.id!, widget.site!.id!);
-        
-        // Delete source site
-        await _databaseService.deleteSite(sourceSite.id!);
-        
-        LoggingService.info('EditSiteScreen: Moved ${affectedFlights.length} flights from "${sourceSite.name}" to "${widget.site!.name}"');
-        
-        // Clear cache and refresh the map data to show changes
-        _clearMapDataCache();
-        await _loadLaunchesForSite();
-        if (_currentBounds != null) {
-          await _loadSitesForBounds(_currentBounds!);
-          await _loadAllLaunchesInBounds(_currentBounds!);
-        }
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Merged "${sourceSite.name}" into "${widget.site!.name}" successfully'),
-              backgroundColor: Theme.of(context).colorScheme.primary,
-            ),
-          );
-        }
-      } catch (e) {
-        LoggingService.error('EditSiteScreen: Error merging sites', e);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error merging sites: $e'),
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-          );
-        }
-      }
-    }
-  }
 
   /// Merge flown site into another flown site
   Future<void> _mergeFlownIntoFlownSite(Site sourceSite, Site targetSite) async {
@@ -1906,13 +1466,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                 'This will move ${affectedFlights.length} flight${affectedFlights.length == 1 ? '' : 's'} from "${sourceSite.name}" to "${targetSite.name}".',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'The source site "${sourceSite.name}" will be deleted after merging.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.error,
                 ),
               ),
             ],
@@ -1943,7 +1496,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         
         // Clear cache and refresh the map data to show changes
         _clearMapDataCache();
-        await _loadLaunchesForSite();
         if (_currentBounds != null) {
           await _loadSitesForBounds(_currentBounds!);
           await _loadAllLaunchesInBounds(_currentBounds!);
@@ -2038,7 +1590,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         
         // Clear cache and refresh the map data to show changes
         _clearMapDataCache();
-        await _loadLaunchesForSite();
         if (_currentBounds != null) {
           await _loadSitesForBounds(_currentBounds!);
           await _loadAllLaunchesInBounds(_currentBounds!);
@@ -2069,9 +1620,9 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   Widget _buildLocationMap() {
     _mapController ??= MapController();
     
-    // Use site coordinates if editing, otherwise use default location
-    final initialLat = widget.site?.latitude ?? _defaultLatitude;
-    final initialLon = widget.site?.longitude ?? _defaultLongitude;
+    // Use provided coordinates or default location
+    final initialLat = widget.initialCoordinates?.latitude ?? _defaultLatitude;
+    final initialLon = widget.initialCoordinates?.longitude ?? _defaultLongitude;
     
     return Stack(
       children: [
@@ -2091,7 +1642,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         // Map layers in order (bottom to top)
         _buildTileLayer(),
         _buildLaunchesLayer(),
-        if (widget.actualLaunchCoordinates != null) _buildActualLaunchLayer()!,
         // DragMarkers layer must be last to handle gestures properly
         _buildDragMarkersLayer(),
         // Attribution overlay - required for OSM and satellite tiles

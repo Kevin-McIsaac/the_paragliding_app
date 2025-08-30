@@ -85,29 +85,16 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       
       if (!mounted) return;
       
-      // Navigate to edit screen
-      final updatedSite = await Navigator.of(context).push<Site>(
+      // Navigate to site map screen
+      await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (context) => EditSiteScreen(site: site),
+          builder: (context) => const EditSiteScreen(),
         ),
       );
       
-      // If site was updated, save changes and refresh statistics
-      if (updatedSite != null && mounted) {
-        LoggingService.debug('StatisticsScreen: Updating site ${updatedSite.id}');
-        await _databaseService.updateSite(updatedSite);
-        
-        // Refresh statistics to show any changes
+      // Refresh statistics after returning from site map
+      if (mounted) {
         await _loadAllStatistics();
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Site "${updatedSite.name}" updated'),
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        }
       }
     } catch (e) {
       LoggingService.error('StatisticsScreen: Failed to edit site', e);
