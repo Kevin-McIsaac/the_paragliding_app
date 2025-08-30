@@ -704,7 +704,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   }
   
   /// Create consistent tooltip format for all site types
-  String _createSiteTooltip(String name, String? country, int? launchCount) {
+  String _createSiteTooltip(String name, String? country, int? launchCount, {bool showLaunchCount = true}) {
     final parts = <String>[];
     
     // Name (or fallback)
@@ -715,9 +715,11 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       parts.add(country);
     }
     
-    // Launches count
-    final count = launchCount ?? 0;
-    parts.add('$count launch${count == 1 ? '' : 'es'}');
+    // Launches count (only if requested)
+    if (showLaunchCount) {
+      final count = launchCount ?? 0;
+      parts.add('$count launch${count == 1 ? '' : 'es'}');
+    }
     
     return parts.join('\n');
   }
@@ -831,6 +833,46 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     return (nearestLaunch, nearestDistance);
   }
 
+  /// Find the nearest site with country data for new site creation
+  String? _findNearestSiteCountry(LatLng point) {
+    String? nearestCountry;
+    double? nearestDistance;
+    
+    // Check local sites first
+    for (final site in _localSites) {
+      if (site.country == null || site.country!.isEmpty) {
+        continue;
+      }
+      
+      final sitePoint = LatLng(site.latitude, site.longitude);
+      final distance = _calculateDistance(point, sitePoint);
+      
+      if (nearestDistance == null || distance < nearestDistance) {
+        nearestCountry = site.country;
+        nearestDistance = distance;
+      }
+    }
+    
+    // Check API sites if no local site found
+    if (nearestCountry == null) {
+      for (final site in _apiSites) {
+        if (site.country == null || site.country!.isEmpty) {
+          continue;
+        }
+        
+        final sitePoint = LatLng(site.latitude, site.longitude);
+        final distance = _calculateDistance(point, sitePoint);
+        
+        if (nearestDistance == null || distance < nearestDistance) {
+          nearestCountry = site.country;
+          nearestDistance = distance;
+        }
+      }
+    }
+    
+    return nearestCountry;
+  }
+
 
   /// Handle site creation at a specific point (from map tap or launch click)
   Future<void> _handleSiteCreationAtPoint(LatLng point, {String? siteName, String? country, double? altitude}) async {
@@ -881,6 +923,14 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       final (nearestLaunch, distance) = _findNearestLaunchWithAltitude(point);
       if (nearestLaunch != null && nearestLaunch.launchAltitude != null) {
         altitudeController.text = nearestLaunch.launchAltitude!.toStringAsFixed(0);
+      }
+    }
+
+    // Auto-populate country from nearest site if not provided
+    if (country == null || country.isEmpty) {
+      final nearestCountry = _findNearestSiteCountry(point);
+      if (nearestCountry != null) {
+        countryController.text = nearestCountry;
       }
     }
     
@@ -1327,7 +1377,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   /// Build API site drag marker (green, not draggable - only drop target)
   DragMarker _buildApiSiteDragMarker(ParaglidingSite site) {
     // API sites have no local flight counts, always 0
-    final tooltipMessage = _createSiteTooltip(site.name, site.country, 0);
+    final tooltipMessage = _createSiteTooltip(site.name, site.country, 0, showLaunchCount: false);
     
     return DragMarker(
       point: LatLng(site.latitude, site.longitude),
