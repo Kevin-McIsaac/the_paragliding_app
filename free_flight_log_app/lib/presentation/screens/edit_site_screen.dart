@@ -404,7 +404,10 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       width: _launchMarkerSize,
       height: _launchMarkerSize,
       child: GestureDetector(
-        onTap: () {}, // Launch markers no longer create sites on tap
+        onTap: () => _handleSiteCreationAtPoint(
+          LatLng(launch.launchLatitude!, launch.launchLongitude!),
+          launch,
+        ),
         child: Tooltip(
           message: tooltipMessage,
           child: Container(
