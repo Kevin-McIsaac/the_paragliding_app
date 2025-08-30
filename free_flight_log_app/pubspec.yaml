@@ -41,6 +41,7 @@ dependencies:
   sqflite_common_ffi: ^2.3.6 # SQLite for desktop platforms - latest stable version
   shared_preferences: ^2.5.3 # Settings storage - new async APIs
   flutter_map: ^8.2.1         # Cross-platform map visualization with OpenStreetMap
+  flutter_map_dragmarker: ^8.0.3  # Draggable markers for flutter_map
   latlong2: ^0.9.1            # Coordinate handling for flutter_map
   file_picker: ^10.3.1      # IGC file import - minor improvements
   receive_sharing_intent: ^1.8.1  # Handle IGC files shared from other apps
