@@ -186,8 +186,6 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
     if (mounted) {
       if (success) {
         UiUtils.showSuccessMessage(context, 'Site "${site.name}" deleted');
-        // Return true to indicate sites were modified
-        Navigator.of(context).pop(true);
       } else {
         if (errorMessage != null) {
           if (errorMessage.contains('used in flight records')) {

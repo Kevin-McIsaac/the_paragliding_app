@@ -248,7 +248,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         onTap: () => _handleSiteCreationAtPoint(
           LatLng(launch.launchLatitude!, launch.launchLongitude!),
           siteName: 'Launch ${launch.date.toLocal().toString().split(' ')[0]}',
-          country: 'Unknown',
           altitude: launch.launchAltitude,
         ),
         child: Tooltip(
@@ -578,7 +577,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     _handleSiteCreationAtPoint(
       point,
       siteName: 'Map ${point.latitude.toStringAsFixed(4)}, ${point.longitude.toStringAsFixed(4)}',
-      country: 'Unknown',
     );
   }
   
