@@ -166,6 +166,13 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Site Map'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.help_outline),
+            onPressed: _showHelpDialog,
+            tooltip: 'Show map usage instructions',
+          ),
+        ],
       ),
       body: _buildMapSection(),
       bottomNavigationBar: Container(
@@ -577,6 +584,57 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     _handleSiteCreationAtPoint(
       point,
       siteName: 'Map ${point.latitude.toStringAsFixed(4)}, ${point.longitude.toStringAsFixed(4)}',
+    );
+  }
+
+  /// Show help dialog with map usage instructions
+  void _showHelpDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.help_outline),
+            SizedBox(width: 8),
+            Text('Using the Map'),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _HelpItem(
+              icon: Icons.visibility,
+              title: 'View Site',
+              description: 'Hover over a Site to see the details, e.g, name, country, latitude, longitude and altitude.',
+            ),
+            SizedBox(height: 12),
+            _HelpItem(
+              icon: Icons.edit,
+              title: 'Edit Site',
+              description: 'Click on a Site to edit the details.',
+            ),
+            SizedBox(height: 12),
+            _HelpItem(
+              icon: Icons.merge,
+              title: 'Merge Site',
+              description: 'Drag a Site onto another to merge into a single Site.',
+            ),
+            SizedBox(height: 12),
+            _HelpItem(
+              icon: Icons.add_location,
+              title: 'Create Site',
+              description: 'Click on the map or a Launch to create a new Site at that location.',
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
     );
   }
   
@@ -1750,6 +1808,56 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     );
   }
 
+}
+
+/// Help item widget for the instructions dialog
+class _HelpItem extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String description;
+
+  const _HelpItem({
+    required this.icon,
+    required this.title,
+    required this.description,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          icon,
+          size: 20,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                description,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 /// Debug tile provider that logs actual network requests (not cached tiles)
