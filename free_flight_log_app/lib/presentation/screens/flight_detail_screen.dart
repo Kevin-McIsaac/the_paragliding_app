@@ -181,7 +181,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
       
       if (!mounted) return;
       
-      final result = await showDialog<WingSelectionResult>(
+      final result = await showDialog<Wing?>(
         context: context,
         builder: (context) => WingSelectionDialog(
           wings: wings,
@@ -190,7 +190,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
       );
 
       if (result != null && mounted) {
-        await _updateWing(result.selectedWing);
+        await _updateWing(result);
       }
     } catch (e) {
       if (mounted) {

@@ -87,4 +87,20 @@ class Wing {
 
   @override
   int get hashCode => id.hashCode;
+
+  String get displayName {
+    List<String> parts = [];
+    if (manufacturer != null && manufacturer!.isNotEmpty) {
+      parts.add(manufacturer!);
+    }
+    if (model != null && model!.isNotEmpty) {
+      parts.add(model!);
+    }
+    
+    if (parts.isNotEmpty) {
+      return parts.join(' ');
+    }
+    
+    return name;
+  }
 }
