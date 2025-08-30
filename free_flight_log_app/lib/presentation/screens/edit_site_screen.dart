@@ -870,6 +870,12 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     );
   }
 
+  /// Clear cache keys to force refresh of map data
+  void _clearMapDataCache() {
+    _lastLoadedBoundsKey = null;
+    _lastLoadedLaunchesBoundsKey = null;
+  }
+
   /// Load all launches in the current viewport bounds
   Future<void> _loadAllLaunchesInBounds(LatLngBounds bounds) async {
     // Create a unique key for these bounds to prevent duplicate requests
@@ -1190,50 +1196,13 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
               
               if (eligibleLaunches.isNotEmpty) ...[
                 const SizedBox(height: 16),
-                const Divider(),
-                const SizedBox(height: 8),
                 Text(
-                  'Flight Reassignment',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '${eligibleLaunches.length} flight${eligibleLaunches.length == 1 ? '' : 's'} within ${_launchRadiusMeters.toInt()}m will be reassigned to this new site:',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  height: 120,
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Theme.of(context).dividerColor),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: ListView.builder(
-                    itemCount: eligibleLaunches.length,
-                    itemBuilder: (context, index) {
-                      final launch = eligibleLaunches[index];
-                      final distance = _calculateDistance(point, LatLng(launch.launchLatitude!, launch.launchLongitude!));
-                      return ListTile(
-                        dense: true,
-                        title: Text(
-                          '${launch.launchSiteName ?? 'Unknown Site'}: ${launch.date.toLocal().toString().split(' ')[0]} at ${launch.launchTime}',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                        trailing: Text(
-                          '${distance.toStringAsFixed(0)}m',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.primary),
-                        ),
-                      );
-                    },
+                  '${eligibleLaunches.length} flight${eligibleLaunches.length == 1 ? '' : 's'} within ${_launchRadiusMeters.toInt()}m will be reassigned to this new site.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                 ),
-              ] else ...[
-                const SizedBox(height: 16),
-                Text(
-                  'No flights within ${_launchRadiusMeters.toInt()}m need reassignment.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                ),
-              ],
+              ]
             ],
           ),
         ),
@@ -1296,10 +1265,12 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         LoggingService.info('EditSiteScreen: Reassigned ${flightIds.length} flights to new site');
       }
       
-      // Refresh the map data
+      // Clear cache and refresh the map data
+      _clearMapDataCache();
       await _loadLaunchesForSite();
       if (_currentBounds != null) {
         await _loadSitesForBounds(_currentBounds!);
+        await _loadAllLaunchesInBounds(_currentBounds!);
       }
       
       // Show success message
@@ -1784,10 +1755,12 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         
         LoggingService.info('EditSiteScreen: Moved ${affectedFlights.length} flights from "${sourceSite.name}" to "${widget.site!.name}"');
         
-        // Refresh the map data to show changes
+        // Clear cache and refresh the map data to show changes
+        _clearMapDataCache();
         await _loadLaunchesForSite();
         if (_currentBounds != null) {
           await _loadSitesForBounds(_currentBounds!);
+          await _loadAllLaunchesInBounds(_currentBounds!);
         }
         
         if (mounted) {
@@ -1871,10 +1844,12 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         
         LoggingService.info('EditSiteScreen: Moved ${affectedFlights.length} flights from "${sourceSite.name}" to "${targetSite.name}"');
         
-        // Refresh the map data to show changes
+        // Clear cache and refresh the map data to show changes
+        _clearMapDataCache();
         await _loadLaunchesForSite();
         if (_currentBounds != null) {
           await _loadSitesForBounds(_currentBounds!);
+          await _loadAllLaunchesInBounds(_currentBounds!);
         }
         
         if (mounted) {
@@ -1971,10 +1946,12 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         
         LoggingService.info('EditSiteScreen: Moved ${affectedFlights.length} flights from "${sourceSite.name}" to API site "${apiSite.name}"');
         
-        // Refresh the map data to show changes
+        // Clear cache and refresh the map data to show changes
+        _clearMapDataCache();
         await _loadLaunchesForSite();
         if (_currentBounds != null) {
           await _loadSitesForBounds(_currentBounds!);
+          await _loadAllLaunchesInBounds(_currentBounds!);
         }
         
         if (mounted) {
