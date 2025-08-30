@@ -1238,10 +1238,21 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         
         LoggingService.info('EditSiteScreen: Updated site ${updatedSite.id}: ${updatedSite.name}');
         
-        // Refresh the map to show updated site data
+        // Show success message
         if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Site "${updatedSite.name}" updated successfully'),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+          
+          // Refresh the map to show updated site data
           _clearMapDataCache();
-          _updateMapBounds();
+          if (_currentBounds != null) {
+            await _loadSitesForBounds(_currentBounds!);
+          }
           await _loadFlightCounts(); // Refresh flight counts
         }
       } catch (e) {
