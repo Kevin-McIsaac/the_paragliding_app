@@ -72,6 +72,10 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   bool _isLoadingSites = false;
   String? _lastLoadedBoundsKey;
   String? _lastLoadedLaunchesBoundsKey;
+  
+  // Merge mode state
+  Site? _selectedSourceSite;
+  bool _isMergeMode = false;
   Timer? _cacheRefreshTimer;
   
   // Drag and drop state - no longer needed as we use geographical distance
@@ -165,13 +169,21 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Site Map'),
+        title: Text(_isMergeMode ? 'Merge: Select Target Site' : 'Site Map'),
+        surfaceTintColor: _isMergeMode ? Colors.orange : null,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.help_outline),
-            onPressed: _showHelpDialog,
-            tooltip: 'Show map usage instructions',
-          ),
+          if (_isMergeMode)
+            IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: _exitMergeMode,
+              tooltip: 'Cancel merge',
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.help_outline),
+              onPressed: _showHelpDialog,
+              tooltip: 'Show map usage instructions',
+            ),
         ],
       ),
       body: _buildMapSection(),
@@ -1405,7 +1417,9 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       point: LatLng(site.latitude, site.longitude),
       size: const Size.square(_siteMarkerSize),
       offset: const Offset(0, -_siteMarkerSize / 2),
-      onTap: (point) => _showSiteEditDialog(site),
+      dragOffset: const Offset(0, -50), // Move marker above finger during drag
+      onTap: (point) => _isMergeMode ? _handleMergeTarget(site) : _showSiteEditDialog(site),
+      onLongPress: (point) => _enterMergeMode(site),
       builder: (ctx, point, isDragging) => Tooltip(
         message: tooltipMessage,
         child: Stack(
@@ -1417,12 +1431,32 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
               color: Colors.white,
               size: _siteMarkerSize,
             ),
-            // Blue marker with opacity during drag
+            // Blue marker with visual feedback for merge mode
             Icon(
               Icons.location_on,
-              color: isDragging ? Colors.blue.withValues(alpha: 0.7) : Colors.blue,
+              color: _getSiteMarkerColor(site, isDragging),
               size: _siteMarkerIconSize,
             ),
+            // Merge mode indicator
+            if (_isMergeMode && _selectedSourceSite?.id == site.id)
+              Container(
+                width: _siteMarkerSize + 8,
+                height: _siteMarkerSize + 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.orange, width: 3),
+                ),
+              ),
+            // Valid merge target indicator
+            if (_isMergeMode && _selectedSourceSite?.id != site.id)
+              Container(
+                width: _siteMarkerSize + 4,
+                height: _siteMarkerSize + 4,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.green, width: 2),
+                ),
+              ),
           ],
         ),
       ),
@@ -1484,6 +1518,58 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         ],
       ),
     );
+  }
+
+  /// Get marker color based on state
+  Color _getSiteMarkerColor(Site site, bool isDragging) {
+    if (_isMergeMode && _selectedSourceSite?.id == site.id) {
+      return Colors.orange; // Selected source site
+    } else if (_isMergeMode && _selectedSourceSite?.id != site.id) {
+      return Colors.green; // Valid merge target
+    } else if (isDragging) {
+      return Colors.blue.withValues(alpha: 0.7); // Being dragged
+    } else {
+      return Colors.blue; // Normal state
+    }
+  }
+
+  /// Enter merge mode
+  void _enterMergeMode(Site sourceSite) {
+    setState(() {
+      _selectedSourceSite = sourceSite;
+      _isMergeMode = true;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Select target site to merge "${sourceSite.name}" into'),
+        duration: const Duration(seconds: 5),
+        action: SnackBarAction(
+          label: 'Cancel',
+          onPressed: _exitMergeMode,
+        ),
+      ),
+    );
+  }
+
+  /// Exit merge mode
+  void _exitMergeMode() {
+    setState(() {
+      _selectedSourceSite = null;
+      _isMergeMode = false;
+    });
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+  }
+
+  /// Handle merge target selection
+  void _handleMergeTarget(Site targetSite) {
+    if (_selectedSourceSite == null || _selectedSourceSite!.id == targetSite.id) {
+      return;
+    }
+
+    // Perform the merge
+    _mergeFlownIntoFlownSite(_selectedSourceSite!, targetSite);
+    _exitMergeMode();
   }
 
 
