@@ -1444,9 +1444,20 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
   /// Handle current site drop - check for merge with flown or new sites
   Future<void> _handleCurrentSiteDrop(DragEndDetails details, LatLng dropPoint) async {
+    if (widget.site == null) return;
+    
+    // Check if marker snapped back to original position (timeout/cancelled drag)
+    const double snapBackTolerance = 0.000001; // ~0.1 meters tolerance for GPS/rounding differences
+    final originalPosition = LatLng(widget.site!.latitude, widget.site!.longitude);
+    if ((dropPoint.latitude - originalPosition.latitude).abs() < snapBackTolerance &&
+        (dropPoint.longitude - originalPosition.longitude).abs() < snapBackTolerance) {
+      // Ignore snap-back events - marker returned to original position due to timeout
+      return;
+    }
+    
     // Find if dropped on another site
     final targetSite = _findSiteAtPoint(dropPoint);
-    if (targetSite == null || widget.site == null) return;
+    if (targetSite == null) return;
     
     // Only allow dropping current site on flown (local) or new (API) sites
     if (targetSite is Site) {
@@ -1460,6 +1471,15 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
   /// Handle flown site drop - check for merge with any site
   Future<void> _handleFlownSiteDrop(Site sourceSite, LatLng dropPoint) async {
+    // Check if marker snapped back to original position (timeout/cancelled drag)
+    const double snapBackTolerance = 0.000001; // ~0.1 meters tolerance for GPS/rounding differences
+    final originalPosition = LatLng(sourceSite.latitude, sourceSite.longitude);
+    if ((dropPoint.latitude - originalPosition.latitude).abs() < snapBackTolerance &&
+        (dropPoint.longitude - originalPosition.longitude).abs() < snapBackTolerance) {
+      // Ignore snap-back events - marker returned to original position due to timeout
+      return;
+    }
+    
     // Find if dropped on any site (including current site)
     final targetSite = _findSiteAtPoint(dropPoint, includeCurrentSite: true);
     if (targetSite == null) return;
