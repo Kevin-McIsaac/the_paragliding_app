@@ -1484,27 +1484,39 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     }
   }
 
-  /// Handle flown site drop - check for merge with current site
+  /// Handle flown site drop - check for merge with any site
   Future<void> _handleFlownSiteDrop(Site sourceSite, LatLng dropPoint) async {
-    // Only allow merging when editing an existing site
-    if (widget.site == null || widget.site!.id == null) return;
+    // Find if dropped on any site (including current site)
+    final targetSite = _findSiteAtPoint(dropPoint, includeCurrentSite: true);
+    if (targetSite == null) return;
     
-    // Check if dropped on current site using geographical distance
-    const double geoDistanceThreshold = 0.0005; // ~50 meters in degrees
-    final latDiff = (dropPoint.latitude - widget.site!.latitude).abs();
-    final lngDiff = (dropPoint.longitude - widget.site!.longitude).abs();
-    
-    if (latDiff <= geoDistanceThreshold && lngDiff <= geoDistanceThreshold) {
+    // Handle different target site types
+    if (targetSite == widget.site) {
       // Dropped on current site - merge flown into current
       await _mergeFlownIntoCurrent(sourceSite);
+    } else if (targetSite is Site) {
+      // Dropped on another flown site - merge flown into flown
+      await _mergeFlownIntoFlownSite(sourceSite, targetSite);
+    } else if (targetSite is ParaglidingSite) {
+      // Dropped on API site - merge flown into API site
+      await _mergeFlownIntoApiSite(sourceSite, targetSite);
     }
   }
 
   /// Find site at the given point within drop detection radius
-  dynamic _findSiteAtPoint(LatLng point) {
+  dynamic _findSiteAtPoint(LatLng point, {bool includeCurrentSite = false}) {
     // For flutter_map_dragmarker, we need to use a small geographical distance
     // because the plugin handles screen coordinate conversion
     const double geoDistanceThreshold = 0.0005; // ~50 meters in degrees
+    
+    // Check current site if requested and editing
+    if (includeCurrentSite && widget.site != null) {
+      final latDiff = (point.latitude - widget.site!.latitude).abs();
+      final lngDiff = (point.longitude - widget.site!.longitude).abs();
+      if (latDiff <= geoDistanceThreshold && lngDiff <= geoDistanceThreshold) {
+        return widget.site;
+      }
+    }
     
     // Check local sites (flown sites)
     for (final site in _localSites) {
@@ -1785,6 +1797,193 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         }
       } catch (e) {
         LoggingService.error('EditSiteScreen: Error merging sites', e);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error merging sites: $e'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  /// Merge flown site into another flown site
+  Future<void> _mergeFlownIntoFlownSite(Site sourceSite, Site targetSite) async {
+    // Get the flights that will be affected
+    final affectedFlights = await _databaseService.getFlightsBySite(sourceSite.id!);
+    
+    if (!mounted) return;
+    
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Merge sites?'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Merge "${sourceSite.name}" into "${targetSite.name}"?'),
+              const SizedBox(height: 16),
+              Text(
+                'This will move ${affectedFlights.length} flight${affectedFlights.length == 1 ? '' : 's'} from "${sourceSite.name}" to "${targetSite.name}".',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'The source site "${sourceSite.name}" will be deleted after merging.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Merge Sites'),
+          ),
+        ],
+      ),
+    );
+    
+    if (confirmed == true && mounted) {
+      try {
+        // Move source site's flights to target site
+        await _databaseService.reassignFlights(sourceSite.id!, targetSite.id!);
+        
+        // Delete source site
+        await _databaseService.deleteSite(sourceSite.id!);
+        
+        LoggingService.info('EditSiteScreen: Moved ${affectedFlights.length} flights from "${sourceSite.name}" to "${targetSite.name}"');
+        
+        // Refresh the map data to show changes
+        await _loadLaunchesForSite();
+        if (_currentBounds != null) {
+          await _loadSitesForBounds(_currentBounds!);
+        }
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Merged "${sourceSite.name}" into "${targetSite.name}" successfully'),
+              backgroundColor: Theme.of(context).colorScheme.primary,
+            ),
+          );
+        }
+      } catch (e) {
+        LoggingService.error('EditSiteScreen: Error merging flown sites', e);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error merging sites: $e'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  /// Merge flown site into an API site
+  Future<void> _mergeFlownIntoApiSite(Site sourceSite, ParaglidingSite apiSite) async {
+    // Get the flights that will be affected
+    final affectedFlights = await _databaseService.getFlightsBySite(sourceSite.id!);
+    
+    if (!mounted) return;
+    
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Merge sites?'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Merge "${sourceSite.name}" into "${apiSite.name}"?'),
+              const SizedBox(height: 16),
+              Text(
+                'This will move ${affectedFlights.length} flight${affectedFlights.length == 1 ? '' : 's'} from "${sourceSite.name}" to the new site "${apiSite.name}".',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'A new site will be created with ParaglidingEarth data, and "${sourceSite.name}" will be deleted.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Merge Sites'),
+          ),
+        ],
+      ),
+    );
+    
+    if (confirmed == true && mounted) {
+      try {
+        // Create the API site in database
+        final newSite = Site(
+          name: apiSite.name,
+          latitude: apiSite.latitude,
+          longitude: apiSite.longitude,
+          altitude: apiSite.altitude?.toDouble(),
+          country: apiSite.country,
+          customName: false, // Mark as not custom since from API
+        );
+        
+        final newSiteId = await _databaseService.insertSite(newSite);
+        LoggingService.info('EditSiteScreen: Created new site "${apiSite.name}" with ID $newSiteId from API data');
+        
+        // Move source site's flights to new API site
+        await _databaseService.reassignFlights(sourceSite.id!, newSiteId);
+        
+        // Delete source site
+        await _databaseService.deleteSite(sourceSite.id!);
+        
+        LoggingService.info('EditSiteScreen: Moved ${affectedFlights.length} flights from "${sourceSite.name}" to API site "${apiSite.name}"');
+        
+        // Refresh the map data to show changes
+        await _loadLaunchesForSite();
+        if (_currentBounds != null) {
+          await _loadSitesForBounds(_currentBounds!);
+        }
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Merged "${sourceSite.name}" into new site "${apiSite.name}" successfully'),
+              backgroundColor: Theme.of(context).colorScheme.primary,
+            ),
+          );
+        }
+      } catch (e) {
+        LoggingService.error('EditSiteScreen: Error merging flown site into API site', e);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
