@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map_dragmarker/flutter_map_dragmarker.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -75,6 +76,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   String? _lastLoadedBoundsKey;
   String? _lastLoadedLaunchesBoundsKey;
   Timer? _cacheRefreshTimer;
+  
+  // Drag and drop state - no longer needed as we use geographical distance
   
   // Services
   final DatabaseService _databaseService = DatabaseService.instance;
@@ -401,7 +404,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       width: _launchMarkerSize,
       height: _launchMarkerSize,
       child: GestureDetector(
-        onTap: () => _onLaunchMarkerTap(launch),
+        onTap: () {}, // Launch markers no longer create sites on tap
         child: Tooltip(
           message: tooltipMessage,
           child: Container(
@@ -425,48 +428,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     );
   }
 
-  /// Create a site marker with consistent styling
-  Marker _buildSiteMarker({
-    required double latitude,
-    required double longitude,
-    required String name,
-    String? country,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    final tooltipMessage = name.trim().isEmpty 
-        ? 'Unknown Site${country != null ? '\n$country' : ''}'
-        : '$name${country != null ? '\n$country' : ''}';
-    
-    return Marker(
-      point: LatLng(latitude, longitude),
-      width: _siteMarkerSize,
-      height: _siteMarkerSize,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Tooltip(
-          message: tooltipMessage,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // White outline
-              const Icon(
-                Icons.location_on,
-                color: Colors.white,
-                size: _siteMarkerSize,
-              ),
-              // Colored marker
-              Icon(
-                Icons.location_on,
-                color: color,
-                size: _siteMarkerIconSize,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   /// Build the tile layer for the selected map provider
   TileLayer _buildTileLayer() {
@@ -505,43 +466,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     );
   }
 
-  /// Build the local sites markers layer  
-  MarkerLayer _buildLocalSitesLayer() {
-    return MarkerLayer(
-      markers: _localSites
-          .where((site) => widget.site == null || site.id != widget.site!.id) // Exclude current site when editing
-          .map((site) => _buildSiteMarker(
-                latitude: site.latitude,
-                longitude: site.longitude,
-                name: site.name,
-                country: site.country,
-                color: Colors.blue,
-                onTap: () => _onLocalSiteMarkerTap(site),
-              ))
-          .toList(),
-    );
-  }
-
-  /// Build the API sites markers layer
-  MarkerLayer _buildApiSitesLayer() {
-    return MarkerLayer(
-      markers: _apiSites
-          .where((site) => 
-              !_isDuplicateApiSite(site) && // Exclude duplicates with local sites
-              (widget.site == null || 
-               site.latitude != widget.site!.latitude || 
-               site.longitude != widget.site!.longitude)) // Exclude current site when editing
-          .map((site) => _buildSiteMarker(
-                latitude: site.latitude,
-                longitude: site.longitude,
-                name: site.name,
-                country: site.country,
-                color: Colors.green,
-                onTap: () => _onApiSiteMarkerTap(site),
-              ))
-          .toList(),
-    );
-  }
 
   /// Build the actual launch coordinates layer (if available)
   MarkerLayer? _buildActualLaunchLayer() {
@@ -581,43 +505,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     );
   }
 
-  /// Build the current site marker layer (if editing)
-  MarkerLayer? _buildCurrentSiteLayer() {
-    if (widget.site == null) return null;
-    
-    return MarkerLayer(
-      markers: [
-        Marker(
-          point: LatLng(widget.site!.latitude, widget.site!.longitude),
-          width: _currentSiteMarkerSize,
-          height: _currentSiteMarkerSize,
-          child: GestureDetector(
-            onTap: () {}, // Absorb taps to prevent pass-through to map
-            child: Tooltip(
-              message: '${widget.site!.name} (Current Site)${widget.site!.country != null ? '\n${widget.site!.country}' : ''}',
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  // White outline
-                  const Icon(
-                    Icons.location_on,
-                    color: Colors.white,
-                    size: _currentSiteMarkerSize,
-                  ),
-                  // Red marker
-                  const Icon(
-                    Icons.location_on,
-                    color: Colors.red,
-                    size: _siteMarkerSize,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
 
   /// Build the map controls (legend and provider selector)
   Widget _buildMapControls() {
@@ -1062,122 +949,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     _mapController!.fitCamera(CameraFit.bounds(bounds: bounds));
   }
 
-  /// Handle tap on a local site marker
-  Future<void> _onLocalSiteMarkerTap(Site localSite) async {
-    // Only allow merging when editing an existing site
-    if (widget.site == null || widget.site!.id == null) return;
-    
-    // Get the flights that will be affected
-    final affectedFlights = await _databaseService.getFlightsBySite(widget.site!.id!);
-    
-    if (!mounted) return;
-    
-    // Show confirmation dialog
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Move Current Launches to ${localSite.name}'),
-        content: SizedBox(
-          width: 400,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Do you want to reassign all flights from "${widget.site!.name}" to "${localSite.name}"?'),
-              const SizedBox(height: 16),
-              Text(
-                'This will update ${affectedFlights.length} flight${affectedFlights.length == 1 ? '' : 's'}.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Note: The current site will be deleted after merging.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.error,
-                ),
-              ),
-              
-              if (affectedFlights.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                const Divider(),
-                const SizedBox(height: 8),
-                Text(
-                  'Flights to be reassigned:',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  height: 120,
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Theme.of(context).dividerColor),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: ListView.builder(
-                    itemCount: affectedFlights.length,
-                    itemBuilder: (context, index) {
-                      final flight = affectedFlights[index];
-                      return ListTile(
-                        dense: true,
-                        title: Text(
-                          '${flight.launchSiteName ?? 'Unknown Site'}: ${flight.date.toLocal().toString().split(' ')[0]} at ${flight.launchTime}',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                        trailing: Text(
-                          '${(flight.duration / 60.0).toStringAsFixed(1)}h',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Move Flights'),
-          ),
-        ],
-      ),
-    );
-    
-    if (confirmed == true && mounted) {
-      try {
-        // Reassign all flights to the selected site
-        await _databaseService.reassignFlights(widget.site!.id!, localSite.id!);
-        
-        LoggingService.info('EditSiteScreen: Moved ${affectedFlights.length} flights from "${widget.site!.name}" to "${localSite.name}"');
-        
-        // Delete the current site (it's no longer needed)
-        await _databaseService.deleteSite(widget.site!.id!);
-        
-        if (mounted) {
-          // Return the local site as the result (site was merged)
-          Navigator.of(context).pop(localSite);
-        }
-      } catch (e) {
-        LoggingService.error('EditSiteScreen: Error merging sites', e);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error merging sites: $e'),
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-          );
-        }
-      }
-    }
-  }
 
   /// Handle tap on a ParaglidingEarth API site marker
   Future<void> _onApiSiteMarkerTap(ParaglidingSite apiSite) async {
@@ -1241,12 +1012,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     }
   }
 
-  /// Handle tap on a launch marker - delegates to unified site creation
-  void _onLaunchMarkerTap(Flight launch) {
-    final point = LatLng(launch.launchLatitude!, launch.launchLongitude!);
-    LoggingService.debug('EditSiteScreen: Launch marker tapped at ${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}');
-    _handleSiteCreationAtPoint(point, launch);
-  }
 
   /// Calculate distance between two points in meters using Haversine formula
   double _calculateDistance(LatLng point1, LatLng point2) {
@@ -1559,6 +1324,128 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     }
   }
 
+  /// Build the drag markers layer containing all draggable site markers
+  DragMarkers _buildDragMarkersLayer() {
+    List<DragMarker> dragMarkers = [];
+    
+    // Add current site marker (if editing)
+    if (widget.site != null) {
+      dragMarkers.add(_buildCurrentSiteDragMarker());
+    }
+    
+    // Add local sites markers (excluding current site when editing)
+    dragMarkers.addAll(_localSites
+        .where((site) => widget.site == null || site.id != widget.site!.id)
+        .map(_buildLocalSiteDragMarker));
+    
+    // Add API sites markers (excluding duplicates and current site)
+    dragMarkers.addAll(_apiSites
+        .where((site) => 
+            !_isDuplicateApiSite(site) && 
+            (widget.site == null || 
+             site.latitude != widget.site!.latitude || 
+             site.longitude != widget.site!.longitude))
+        .map(_buildApiSiteDragMarker));
+    
+    return DragMarkers(markers: dragMarkers);
+  }
+
+  /// Build current site drag marker (red, draggable)
+  DragMarker _buildCurrentSiteDragMarker() {
+    return DragMarker(
+      point: LatLng(widget.site!.latitude, widget.site!.longitude),
+      size: const Size.square(_currentSiteMarkerSize),
+      offset: const Offset(0, -_currentSiteMarkerSize / 2),
+      builder: (ctx, point, isDragging) => Stack(
+        alignment: Alignment.center,
+        children: [
+          // White outline
+          Icon(
+            Icons.location_on,
+            color: Colors.white,
+            size: _currentSiteMarkerSize,
+          ),
+          // Red marker with opacity during drag
+          Icon(
+            Icons.location_on,
+            color: isDragging ? Colors.red.withValues(alpha: 0.7) : Colors.red,
+            size: _siteMarkerSize,
+          ),
+        ],
+      ),
+      onDragEnd: (details, point) => _handleCurrentSiteDrop(details, point),
+    );
+  }
+
+  /// Build local site drag marker (blue, draggable)
+  DragMarker _buildLocalSiteDragMarker(Site site) {
+    final tooltipMessage = site.name.trim().isEmpty 
+        ? 'Unknown Site${site.country != null ? '\n${site.country}' : ''}'
+        : '${site.name}${site.country != null ? '\n${site.country}' : ''}';
+    
+    return DragMarker(
+      point: LatLng(site.latitude, site.longitude),
+      size: const Size.square(_siteMarkerSize),
+      offset: const Offset(0, -_siteMarkerSize / 2),
+      builder: (ctx, point, isDragging) => Tooltip(
+        message: tooltipMessage,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // White outline
+            const Icon(
+              Icons.location_on,
+              color: Colors.white,
+              size: _siteMarkerSize,
+            ),
+            // Blue marker with opacity during drag
+            Icon(
+              Icons.location_on,
+              color: isDragging ? Colors.blue.withValues(alpha: 0.7) : Colors.blue,
+              size: _siteMarkerIconSize,
+            ),
+          ],
+        ),
+      ),
+      onDragEnd: (details, point) => _handleFlownSiteDrop(site, point),
+    );
+  }
+
+  /// Build API site drag marker (green, not draggable - only drop target)
+  DragMarker _buildApiSiteDragMarker(ParaglidingSite site) {
+    final tooltipMessage = site.name.trim().isEmpty 
+        ? 'Unknown Site${site.country != null ? '\n${site.country}' : ''}'
+        : '${site.name}${site.country != null ? '\n${site.country}' : ''}';
+    
+    return DragMarker(
+      point: LatLng(site.latitude, site.longitude),
+      size: const Size.square(_siteMarkerSize),
+      offset: const Offset(0, -_siteMarkerSize / 2),
+      disableDrag: true, // Cannot drag API sites, only drop onto them
+      builder: (ctx, point, isDragging) => Tooltip(
+        message: tooltipMessage,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // White outline
+            const Icon(
+              Icons.location_on,
+              color: Colors.white,
+              size: _siteMarkerSize,
+            ),
+            // Green marker
+            const Icon(
+              Icons.location_on,
+              color: Colors.green,
+              size: _siteMarkerIconSize,
+            ),
+          ],
+        ),
+      ),
+      onTap: (point) => _onApiSiteMarkerTap(site),
+    );
+  }
+
   /// Build an info row for the dialog
   Widget _buildInfoRow(String label, String value) {
     return Padding(
@@ -1579,6 +1466,335 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         ],
       ),
     );
+  }
+
+  /// Handle current site drop - check for merge with flown or new sites
+  Future<void> _handleCurrentSiteDrop(DragEndDetails details, LatLng dropPoint) async {
+    // Find if dropped on another site
+    final targetSite = _findSiteAtPoint(dropPoint);
+    if (targetSite == null || widget.site == null) return;
+    
+    // Only allow dropping current site on flown (local) or new (API) sites
+    if (targetSite is Site) {
+      // Dropped on flown site - merge current into flown
+      await _mergeCurrentIntoFlownSite(targetSite);
+    } else if (targetSite is ParaglidingSite) {
+      // Dropped on new (API) site - merge current into API site
+      await _mergeCurrentIntoApiSite(targetSite);
+    }
+  }
+
+  /// Handle flown site drop - check for merge with current site
+  Future<void> _handleFlownSiteDrop(Site sourceSite, LatLng dropPoint) async {
+    // Only allow merging when editing an existing site
+    if (widget.site == null || widget.site!.id == null) return;
+    
+    // Check if dropped on current site using geographical distance
+    const double geoDistanceThreshold = 0.0005; // ~50 meters in degrees
+    final latDiff = (dropPoint.latitude - widget.site!.latitude).abs();
+    final lngDiff = (dropPoint.longitude - widget.site!.longitude).abs();
+    
+    if (latDiff <= geoDistanceThreshold && lngDiff <= geoDistanceThreshold) {
+      // Dropped on current site - merge flown into current
+      await _mergeFlownIntoCurrent(sourceSite);
+    }
+  }
+
+  /// Find site at the given point within drop detection radius
+  dynamic _findSiteAtPoint(LatLng point) {
+    // For flutter_map_dragmarker, we need to use a small geographical distance
+    // because the plugin handles screen coordinate conversion
+    const double geoDistanceThreshold = 0.0005; // ~50 meters in degrees
+    
+    // Check local sites (flown sites)
+    for (final site in _localSites) {
+      if (widget.site != null && site.id == widget.site!.id) continue; // Skip current site
+      
+      final latDiff = (point.latitude - site.latitude).abs();
+      final lngDiff = (point.longitude - site.longitude).abs();
+      if (latDiff <= geoDistanceThreshold && lngDiff <= geoDistanceThreshold) {
+        return site;
+      }
+    }
+    
+    // Check API sites (new sites) 
+    for (final site in _apiSites) {
+      if (_isDuplicateApiSite(site)) continue; // Skip duplicates
+      if (widget.site != null && 
+          site.latitude == widget.site!.latitude && 
+          site.longitude == widget.site!.longitude) {
+        continue; // Skip current site
+      }
+      
+      final latDiff = (point.latitude - site.latitude).abs();
+      final lngDiff = (point.longitude - site.longitude).abs();
+      if (latDiff <= geoDistanceThreshold && lngDiff <= geoDistanceThreshold) {
+        return site;
+      }
+    }
+    
+    return null;
+  }
+
+  /// Merge current site into a flown (local) site
+  Future<void> _mergeCurrentIntoFlownSite(Site targetSite) async {
+    if (widget.site == null || widget.site!.id == null) return;
+    
+    // Get the flights that will be affected
+    final affectedFlights = await _databaseService.getFlightsBySite(widget.site!.id!);
+    
+    if (!mounted) return;
+    
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Merge sites?'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Merge "${widget.site!.name}" into "${targetSite.name}"?'),
+              const SizedBox(height: 16),
+              Text(
+                'This will update the current site with ${targetSite.name}\'s details and move ${affectedFlights.length} flight${affectedFlights.length == 1 ? '' : 's'}.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'The target site will be deleted after merging.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Merge Sites'),
+          ),
+        ],
+      ),
+    );
+    
+    if (confirmed == true && mounted) {
+      try {
+        // Update current site with target site's details
+        final updatedSite = widget.site!.copyWith(
+          name: targetSite.name,
+          latitude: targetSite.latitude,
+          longitude: targetSite.longitude,
+          altitude: targetSite.altitude?.toDouble(),
+          country: targetSite.country,
+          customName: targetSite.customName,
+        );
+        await _databaseService.updateSite(updatedSite);
+        
+        // Move target site's flights to current site
+        await _databaseService.reassignFlights(targetSite.id!, widget.site!.id!);
+        
+        // Delete target site
+        await _databaseService.deleteSite(targetSite.id!);
+        
+        LoggingService.info('EditSiteScreen: Merged "${widget.site!.name}" into "${targetSite.name}"');
+        
+        if (mounted) {
+          // Return the updated site
+          Navigator.of(context).pop(updatedSite);
+        }
+      } catch (e) {
+        LoggingService.error('EditSiteScreen: Error merging sites', e);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error merging sites: $e'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  /// Merge current site into an API site
+  Future<void> _mergeCurrentIntoApiSite(ParaglidingSite targetSite) async {
+    if (widget.site == null || widget.site!.id == null) return;
+    
+    // Get the flights that will be affected
+    final affectedFlights = await _databaseService.getFlightsBySite(widget.site!.id!);
+    
+    if (!mounted) return;
+    
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Merge sites?'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Merge "${widget.site!.name}" into "${targetSite.name}"?'),
+              const SizedBox(height: 16),
+              Text(
+                'This will update the current site with ${targetSite.name}\'s details and affect ${affectedFlights.length} flight${affectedFlights.length == 1 ? '' : 's'}.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'The site data will be replaced with ParaglidingEarth data.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Merge Sites'),
+          ),
+        ],
+      ),
+    );
+    
+    if (confirmed == true && mounted) {
+      try {
+        // Update current site with API site's details
+        final updatedSite = widget.site!.copyWith(
+          name: targetSite.name,
+          latitude: targetSite.latitude,
+          longitude: targetSite.longitude,
+          altitude: targetSite.altitude?.toDouble(),
+          country: targetSite.country,
+          customName: false, // Mark as not custom since from API
+        );
+        await _databaseService.updateSite(updatedSite);
+        
+        LoggingService.info('EditSiteScreen: Updated current site with API data from "${targetSite.name}"');
+        
+        if (mounted) {
+          // Return the updated site
+          Navigator.of(context).pop(updatedSite);
+        }
+      } catch (e) {
+        LoggingService.error('EditSiteScreen: Error updating site with API data', e);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error updating site: $e'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  /// Merge flown site into current site
+  Future<void> _mergeFlownIntoCurrent(Site sourceSite) async {
+    if (widget.site == null || widget.site!.id == null) return;
+    
+    // Get the flights that will be affected
+    final affectedFlights = await _databaseService.getFlightsBySite(sourceSite.id!);
+    
+    if (!mounted) return;
+    
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Merge sites?'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Merge "${sourceSite.name}" into "${widget.site!.name}"?'),
+              const SizedBox(height: 16),
+              Text(
+                'This will move ${affectedFlights.length} flight${affectedFlights.length == 1 ? '' : 's'} from "${sourceSite.name}" to "${widget.site!.name}".',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'The source site will be deleted after merging.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Merge Sites'),
+          ),
+        ],
+      ),
+    );
+    
+    if (confirmed == true && mounted) {
+      try {
+        // Move source site's flights to current site
+        await _databaseService.reassignFlights(sourceSite.id!, widget.site!.id!);
+        
+        // Delete source site
+        await _databaseService.deleteSite(sourceSite.id!);
+        
+        LoggingService.info('EditSiteScreen: Moved ${affectedFlights.length} flights from "${sourceSite.name}" to "${widget.site!.name}"');
+        
+        // Refresh the map data to show changes
+        await _loadLaunchesForSite();
+        if (_currentBounds != null) {
+          await _loadSitesForBounds(_currentBounds!);
+        }
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Merged "${sourceSite.name}" into "${widget.site!.name}" successfully'),
+              backgroundColor: Theme.of(context).colorScheme.primary,
+            ),
+          );
+        }
+      } catch (e) {
+        LoggingService.error('EditSiteScreen: Error merging sites', e);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error merging sites: $e'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          );
+        }
+      }
+    }
   }
 
   Widget _buildLocationMap() {
@@ -1606,10 +1822,9 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         // Map layers in order (bottom to top)
         _buildTileLayer(),
         _buildLaunchesLayer(),
-        _buildLocalSitesLayer(),
-        _buildApiSitesLayer(),
         if (widget.actualLaunchCoordinates != null) _buildActualLaunchLayer()!,
-        if (widget.site != null) _buildCurrentSiteLayer()!,
+        // DragMarkers layer must be last to handle gestures properly
+        _buildDragMarkersLayer(),
         // Attribution overlay - required for OSM and satellite tiles
         Align(
           alignment: Alignment.bottomRight,
