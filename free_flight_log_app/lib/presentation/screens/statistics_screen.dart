@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import '../../utils/date_time_utils.dart';
 import '../../services/database_service.dart';
 import '../../services/logging_service.dart';
-import 'edit_site_screen.dart';
-import '../../data/models/site.dart';
 
 class StatisticsScreen extends StatefulWidget {
   const StatisticsScreen({super.key});
@@ -14,6 +12,14 @@ class StatisticsScreen extends StatefulWidget {
 
 class _StatisticsScreenState extends State<StatisticsScreen> {
   final DatabaseService _databaseService = DatabaseService.instance;
+  
+  // Constants
+  static const double _cardElevation = 2.0;
+  static const EdgeInsets _cardPadding = EdgeInsets.all(16.0);
+  static const EdgeInsets _scrollPadding = EdgeInsets.only(top: 16.0, bottom: 16.0);
+  static const EdgeInsets _rowPadding = EdgeInsets.symmetric(vertical: 12);
+  static const double _headerBorderWidth = 2.0;
+  static const double _sectionSpacing = 24.0;
   
   // State variables
   List<Map<String, dynamic>> _yearlyStats = [];
@@ -66,63 +72,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     }
   }
   
-  void _clearError() {
-    setState(() {
-      _errorMessage = null;
-    });
-  }
-  
-  Future<void> _editSite(int siteId) async {
-    try {
-      LoggingService.debug('StatisticsScreen: Fetching site $siteId for editing');
-      
-      // Fetch the complete Site object
-      final site = await _databaseService.getSite(siteId);
-      if (site == null) {
-        LoggingService.warning('StatisticsScreen: Site $siteId not found');
-        return;
-      }
-      
-      if (!mounted) return;
-      
-      // Navigate to edit screen
-      final updatedSite = await Navigator.of(context).push<Site>(
-        MaterialPageRoute(
-          builder: (context) => EditSiteScreen(site: site),
-        ),
-      );
-      
-      // If site was updated, save changes and refresh statistics
-      if (updatedSite != null && mounted) {
-        LoggingService.debug('StatisticsScreen: Updating site ${updatedSite.id}');
-        await _databaseService.updateSite(updatedSite);
-        
-        // Refresh statistics to show any changes
-        await _loadAllStatistics();
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Site "${updatedSite.name}" updated'),
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      LoggingService.error('StatisticsScreen: Failed to edit site', e);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to edit site: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-  
-  
   
   @override
   Widget build(BuildContext context) {
@@ -160,7 +109,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                       const SizedBox(height: 16),
                       ElevatedButton(
                         onPressed: () {
-                          _clearError();
+                          setState(() => _errorMessage = null);
                           _loadAllStatistics();
                         },
                         child: const Text('Retry'),
@@ -173,7 +122,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                   _siteStats.isEmpty
                   ? _buildEmptyState()
                   : SingleChildScrollView(
-            padding: const EdgeInsets.only(top: 16.0, bottom: 16.0),
+            padding: _scrollPadding,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -182,7 +131,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                   _buildSectionHeader('Flights by Year', Icons.calendar_today),
                   const SizedBox(height: 8),
                   _buildYearlyStatsTable(_yearlyStats),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: _sectionSpacing),
                 ],
                 
                 // Wing Statistics Section
@@ -190,7 +139,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                   _buildSectionHeader('Flights by Wing', Icons.paragliding),
                   const SizedBox(height: 8),
                   _buildWingStatsTable(_wingStats),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: _sectionSpacing),
                 ],
                 
                 // Site Statistics Section
@@ -249,6 +198,124 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       ],
     );
   }
+
+  // Text style helpers
+  TextStyle? get _headerTextStyle => Theme.of(context).textTheme.titleMedium?.copyWith(
+        fontWeight: FontWeight.bold,
+      );
+
+  TextStyle? get _bodyTextStyle => Theme.of(context).textTheme.bodyLarge;
+
+  TextStyle? get _bodyBoldTextStyle => Theme.of(context).textTheme.bodyLarge?.copyWith(
+        fontWeight: FontWeight.w500,
+      );
+
+  TextStyle? get _primaryTextStyle => Theme.of(context).textTheme.bodyLarge?.copyWith(
+        color: Theme.of(context).colorScheme.primary,
+        fontWeight: FontWeight.w500,
+      );
+
+  TextStyle? get _totalHeaderTextStyle => Theme.of(context).textTheme.titleMedium?.copyWith(
+        fontWeight: FontWeight.bold,
+      );
+
+  TextStyle? get _totalPrimaryTextStyle => Theme.of(context).textTheme.titleMedium?.copyWith(
+        color: Theme.of(context).colorScheme.primary,
+        fontWeight: FontWeight.bold,
+      );
+
+  // Common table building helpers
+  Widget _buildTableHeader(List<String> headers, List<int> flexValues) {
+    return Container(
+      padding: _rowPadding,
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).dividerColor,
+            width: _headerBorderWidth,
+          ),
+        ),
+      ),
+      child: Row(
+        children: headers.asMap().entries.map((entry) {
+          final index = entry.key;
+          final header = entry.value;
+          return Expanded(
+            flex: flexValues[index],
+            child: Text(
+              header,
+              style: _headerTextStyle,
+              textAlign: index == 0 ? TextAlign.start : 
+                       index == headers.length - 1 ? TextAlign.right : 
+                       TextAlign.center,
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildDataRow(List<Widget> cells, List<int> flexValues, {bool isLast = false}) {
+    return Container(
+      padding: _rowPadding,
+      decoration: BoxDecoration(
+        border: isLast ? null : Border(
+          bottom: BorderSide(
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
+          ),
+        ),
+      ),
+      child: Row(
+        children: cells.asMap().entries.map((entry) {
+          final index = entry.key;
+          final cell = entry.value;
+          return Expanded(
+            flex: flexValues[index],
+            child: cell,
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildTotalRow(String totalLabel, int totalFlights, double totalHours, List<int> flexValues) {
+    return Container(
+      padding: _rowPadding,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
+        border: Border(
+          top: BorderSide(
+            color: Theme.of(context).dividerColor,
+            width: _headerBorderWidth,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: flexValues[0],
+            child: Text(totalLabel, style: _totalHeaderTextStyle),
+          ),
+          Expanded(
+            flex: flexValues[1],
+            child: Text(
+              totalFlights.toString(),
+              style: _totalHeaderTextStyle,
+              textAlign: TextAlign.center,
+            ),
+          ),
+          Expanded(
+            flex: flexValues[2],
+            child: Text(
+              DateTimeUtils.formatHours(totalHours),
+              style: _totalPrimaryTextStyle,
+              textAlign: TextAlign.right,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
   
   Widget _buildYearlyStatsTable(List<Map<String, dynamic>> yearlyStats) {
     // Calculate totals
@@ -259,149 +326,32 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       totalFlights += stat['flight_count'] as int;
     }
     
+    const flexValues = [2, 2, 3];
+    
     return Card(
-      elevation: 2,
+      elevation: _cardElevation,
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: _cardPadding,
         child: Column(
           children: [
-            // Header Row
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(
-                    color: Theme.of(context).dividerColor,
-                    width: 2,
-                  ),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      'Year',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      'Flights',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                  Expanded(
-                    flex: 3,
-                    child: Text(
-                      'Total Hours',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.right,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            _buildTableHeader(['Year', 'Flights', 'Total Hours'], flexValues),
             
             // Data Rows
-            ...yearlyStats.map((stat) => Container(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(
-                    color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
-                  ),
+            ...yearlyStats.asMap().entries.map((entry) {
+              final index = entry.key;
+              final stat = entry.value;
+              return _buildDataRow([
+                Text(stat['year'].toString(), style: _bodyBoldTextStyle),
+                Text(stat['flight_count'].toString(), style: _bodyTextStyle, textAlign: TextAlign.center),
+                Text(
+                  DateTimeUtils.formatHours((stat['total_hours'] as num?)?.toDouble() ?? 0.0),
+                  style: _primaryTextStyle,
+                  textAlign: TextAlign.right,
                 ),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      stat['year'].toString(),
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      stat['flight_count'].toString(),
-                      style: Theme.of(context).textTheme.bodyLarge,
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                  Expanded(
-                    flex: 3,
-                    child: Text(
-                      DateTimeUtils.formatHours((stat['total_hours'] as num?)?.toDouble() ?? 0.0),
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      textAlign: TextAlign.right,
-                    ),
-                  ),
-                ],
-              ),
-            )),
+              ], flexValues, isLast: index == yearlyStats.length - 1);
+            }),
             
-            // Total Row
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
-                border: Border(
-                  top: BorderSide(
-                    color: Theme.of(context).dividerColor,
-                    width: 2,
-                  ),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      'TOTAL',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      totalFlights.toString(),
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                  Expanded(
-                    flex: 3,
-                    child: Text(
-                      DateTimeUtils.formatHours(totalHours),
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.right,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            _buildTotalRow('TOTAL', totalFlights, totalHours, flexValues),
           ],
         ),
       ),
@@ -417,163 +367,50 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       totalFlights += stat['flight_count'] as int;
     }
     
+    const flexValues = [4, 2, 3];
+    
     return Card(
-      elevation: 2,
+      elevation: _cardElevation,
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: _cardPadding,
         child: Column(
           children: [
-            // Header Row
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(
-                    color: Theme.of(context).dividerColor,
-                    width: 2,
-                  ),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: 4,
-                    child: Text(
-                      'Wing',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      'Flights',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                  Expanded(
-                    flex: 3,
-                    child: Text(
-                      'Total Hours',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.right,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            _buildTableHeader(['Wing', 'Flights', 'Total Hours'], flexValues),
             
             // Data Rows
-            ...wingStats.map((stat) => Container(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(
-                    color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
-                  ),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: 4,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          (stat['name'] as String?) ?? 'Unknown Wing',
-                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            fontWeight: FontWeight.w500,
-                          ),
+            ...wingStats.asMap().entries.map((entry) {
+              final index = entry.key;
+              final stat = entry.value;
+              return _buildDataRow([
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      (stat['name'] as String?) ?? 'Unknown Wing',
+                      style: _bodyBoldTextStyle,
+                    ),
+                    if (stat['size'] != null && (stat['size'] as String).isNotEmpty)
+                      Text(
+                        'Size: ${stat['size']}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.grey[600],
+                          fontSize: 12,
                         ),
-                        if (stat['size'] != null && (stat['size'] as String).isNotEmpty)
-                          Text(
-                            'Size: ${stat['size']}',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Colors.grey[600],
-                              fontSize: 12,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      stat['flight_count'].toString(),
-                      style: Theme.of(context).textTheme.bodyLarge,
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                  Expanded(
-                    flex: 3,
-                    child: Text(
-                      DateTimeUtils.formatHours((stat['total_hours'] as num?)?.toDouble() ?? 0.0),
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.w500,
                       ),
-                      textAlign: TextAlign.right,
-                    ),
-                  ),
-                ],
-              ),
-            )),
+                  ],
+                ),
+                Text(stat['flight_count'].toString(), style: _bodyTextStyle, textAlign: TextAlign.center),
+                Text(
+                  DateTimeUtils.formatHours((stat['total_hours'] as num?)?.toDouble() ?? 0.0),
+                  style: _primaryTextStyle,
+                  textAlign: TextAlign.right,
+                ),
+              ], flexValues, isLast: index == wingStats.length - 1 && wingStats.length == 1);
+            }),
             
             // Total Row (if more than one wing)
             if (wingStats.length > 1)
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
-                  border: Border(
-                    top: BorderSide(
-                      color: Theme.of(context).dividerColor,
-                      width: 2,
-                    ),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: 4,
-                      child: Text(
-                        'TOTAL',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        totalFlights.toString(),
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    Expanded(
-                      flex: 3,
-                      child: Text(
-                        DateTimeUtils.formatHours(totalHours),
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.primary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.right,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              _buildTotalRow('TOTAL', totalFlights, totalHours, flexValues),
           ],
         ),
       ),
@@ -606,64 +443,23 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       return a.compareTo(b);
     });
     
+    const flexValues = [4, 2, 3];
+    final hasMultipleCountries = groupedSites.keys.length > 1;
+    
     return Card(
-      elevation: 2,
+      elevation: _cardElevation,
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: _cardPadding,
         child: Column(
           children: [
-            // Header Row
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(
-                    color: Theme.of(context).dividerColor,
-                    width: 2,
-                  ),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: 4,
-                    child: Text(
-                      'Site',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      'Flights',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                  Expanded(
-                    flex: 3,
-                    child: Text(
-                      'Total Hours',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.right,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            _buildTableHeader(['Site', 'Flights', 'Total Hours'], flexValues),
             
             // Country Groups
             ...sortedCountries.expand((country) {
               final sites = groupedSites[country]!;
               return [
                 // Country Header (only show if more than one country)
-                if (groupedSites.keys.length > 1)
+                if (hasMultipleCountries)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
@@ -700,69 +496,56 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                     ),
                   ),
                 // Sites in this country
-                ...sites.map((stat) => Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: stat['id'] != null 
-                      ? () => _editSite(stat['id'] as int)
-                      : null,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        border: Border(
-                          bottom: BorderSide(
-                            color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
+                ...sites.map((stat) => Container(
+                  padding: _rowPadding,
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(
+                        color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
+                      ),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 4,
+                        child: Padding(
+                          padding: EdgeInsets.only(left: hasMultipleCountries ? 24.0 : 0.0),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.location_on,
+                                size: 16,
+                                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  (stat['name'] as String?) ?? 'Unknown Site',
+                                  style: _bodyBoldTextStyle,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 4,
-                            child: Padding(
-                              padding: EdgeInsets.only(left: groupedSites.keys.length > 1 ? 24.0 : 0.0),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.location_on,
-                                    size: 16,
-                                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Expanded(
-                                    child: Text(
-                                      (stat['name'] as String?) ?? 'Unknown Site',
-                                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            flex: 2,
-                            child: Text(
-                              stat['flight_count'].toString(),
-                              style: Theme.of(context).textTheme.bodyLarge,
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                          Expanded(
-                            flex: 3,
-                            child: Text(
-                              DateTimeUtils.formatHours((stat['total_hours'] as num?)?.toDouble() ?? 0.0),
-                              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                color: Theme.of(context).colorScheme.primary,
-                                fontWeight: FontWeight.w500,
-                              ),
-                              textAlign: TextAlign.right,
-                            ),
-                          ),
-                        ],
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          stat['flight_count'].toString(),
+                          style: _bodyTextStyle,
+                          textAlign: TextAlign.center,
+                        ),
                       ),
-                    ),
+                      Expanded(
+                        flex: 3,
+                        child: Text(
+                          DateTimeUtils.formatHours((stat['total_hours'] as num?)?.toDouble() ?? 0.0),
+                          style: _primaryTextStyle,
+                          textAlign: TextAlign.right,
+                        ),
+                      ),
+                    ],
                   ),
                 )),
               ];
@@ -770,52 +553,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
             
             // Total Row (if more than one site)
             if (siteStats.length > 1)
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
-                  border: Border(
-                    top: BorderSide(
-                      color: Theme.of(context).dividerColor,
-                      width: 2,
-                    ),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: 4,
-                      child: Text(
-                        'TOTAL',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        totalFlights.toString(),
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    Expanded(
-                      flex: 3,
-                      child: Text(
-                        DateTimeUtils.formatHours(totalHours),
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.primary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.right,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              _buildTotalRow('TOTAL', totalFlights, totalHours, flexValues),
           ],
         ),
       ),
