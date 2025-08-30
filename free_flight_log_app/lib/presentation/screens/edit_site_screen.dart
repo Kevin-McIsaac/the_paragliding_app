@@ -55,9 +55,9 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   static const double _defaultLongitude = 7.4474;
   static const double _initialZoom = 13.0;
   static const double _minZoom = 1.0;
-  static const double _launchMarkerSize = 16.0;
-  static const double _siteMarkerSize = 36.0;
-  static const double _siteMarkerIconSize = 32.0;
+  static const double _launchMarkerSize = 20.0;
+  static const double _siteMarkerSize = 48.0;
+  static const double _siteMarkerIconSize = 42.0;
   static const double _currentSiteMarkerSize = 40.0;
   static const double _boundsThreshold = 0.001;
   static const int _debounceDurationMs = 500;
@@ -1417,7 +1417,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       point: LatLng(site.latitude, site.longitude),
       size: const Size.square(_siteMarkerSize),
       offset: const Offset(0, -_siteMarkerSize / 2),
-      dragOffset: const Offset(0, -50), // Move marker above finger during drag
+      dragOffset: const Offset(0, -70), // Move marker well above finger during drag
       onTap: (point) => _isMergeMode ? _handleMergeTarget(site) : _showSiteEditDialog(site),
       onLongPress: (point) => _enterMergeMode(site),
       builder: (ctx, point, isDragging) => Tooltip(
