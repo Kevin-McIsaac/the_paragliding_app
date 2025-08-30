@@ -212,6 +212,12 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
       ),
     );
 
+    // Always refresh the site list when returning from EditSiteScreen
+    // This ensures newly created sites (or merged/deleted sites) are reflected
+    if (mounted) {
+      await _loadSites();
+    }
+
     if (result != null && mounted) {
       bool success = false;
       String? errorMessage;
@@ -221,7 +227,7 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
         await _databaseService.updateSite(result);
         success = true;
         LoggingService.info('ManageSitesScreen: Updated site ${result.id}');
-        await _loadSites(); // Reload the list
+        // Site list already refreshed above when returning from EditSiteScreen
       } catch (e) {
         LoggingService.error('ManageSitesScreen: Failed to update site', e);
         errorMessage = 'Failed to update site: $e';
