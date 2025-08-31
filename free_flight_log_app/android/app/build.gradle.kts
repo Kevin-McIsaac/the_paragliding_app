@@ -5,6 +5,22 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+import java.io.ByteArrayOutputStream
+
+// Function to get git commit hash
+fun getGitCommitHash(): String {
+    return try {
+        val stdout = ByteArrayOutputStream()
+        exec {
+            commandLine("git", "rev-parse", "--short", "HEAD")
+            standardOutput = stdout
+        }
+        stdout.toString().trim()
+    } catch (e: Exception) {
+        "unknown"
+    }
+}
+
 android {
     namespace = "com.freeflightlog.free_flight_log_app"
     compileSdk = flutter.compileSdkVersion
@@ -19,6 +35,10 @@ android {
         jvmTarget = JavaVersion.VERSION_11.toString()
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.freeflightlog.free_flight_log_app"
@@ -28,6 +48,9 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        
+        // Pass git commit hash to Flutter
+        buildConfigField("String", "GIT_COMMIT", "\"${getGitCommitHash()}\"")
     }
 
     buildTypes {

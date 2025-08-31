@@ -3,8 +3,28 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../services/logging_service.dart';
 import '../../utils/build_info.dart';
 
-class AboutScreen extends StatelessWidget {
+class AboutScreen extends StatefulWidget {
   const AboutScreen({super.key});
+
+  @override
+  State<AboutScreen> createState() => _AboutScreenState();
+}
+
+class _AboutScreenState extends State<AboutScreen> {
+  String _gitCommit = 'loading...';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadGitCommit();
+  }
+
+  Future<void> _loadGitCommit() async {
+    final commit = await BuildInfo.gitCommit;
+    setState(() {
+      _gitCommit = commit;
+    });
+  }
 
   Future<void> _launchUrl(String url) async {
     final uri = Uri.parse(url);
@@ -60,7 +80,7 @@ class AboutScreen extends StatelessWidget {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                'Build: ${BuildInfo.buildIdentifier}',
+                                'Build: $_gitCommit',
                                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                   fontFamily: 'monospace',
                                   color: Colors.grey[500],
