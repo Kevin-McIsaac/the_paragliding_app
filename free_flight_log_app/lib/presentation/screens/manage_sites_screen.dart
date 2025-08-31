@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
 import '../../data/models/site.dart';
 import '../../utils/ui_utils.dart';
 import 'edit_site_screen.dart';
@@ -160,15 +161,67 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
     }
   }
 
+  /// Get a default location for new sites based on existing sites or use a fallback
+  LatLng _getDefaultNewSiteLocation() {
+    if (_sites.isNotEmpty) {
+      // Calculate the centroid of existing sites
+      double totalLat = 0;
+      double totalLon = 0;
+      
+      for (final site in _sites) {
+        totalLat += site.latitude;
+        totalLon += site.longitude;
+      }
+      
+      return LatLng(totalLat / _sites.length, totalLon / _sites.length);
+    } else {
+      // Fallback to Swiss Alps (same as edit screen default)
+      return const LatLng(46.9480, 7.4474);
+    }
+  }
+
   Future<void> _addNewSite() async {
-    final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (context) => const EditSiteScreen(),
+    final defaultLocation = _getDefaultNewSiteLocation();
+    
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => SiteCreationDialog(
+        point: defaultLocation,
+        eligibleLaunchCount: 0, // No launches to reassign from manage screen
+        launchRadiusMeters: 500.0, // Match EditSiteScreen constant
+        siteName: null,
+        country: null,
+        altitude: null,
       ),
     );
-
-    if (result == true && mounted) {
-      _loadSites();
+    
+    if (result != null && mounted) {
+      try {
+        // Create the new site using user-entered coordinates
+        final newSite = Site(
+          name: result['name'],
+          latitude: result['latitude'] ?? defaultLocation.latitude,
+          longitude: result['longitude'] ?? defaultLocation.longitude,
+          altitude: result['altitude'],
+          country: result['country'],
+          customName: true,
+        );
+        
+        await _databaseService.insertSite(newSite);
+        LoggingService.info('ManageSitesScreen: Created new site "${result['name']}"');
+        
+        // Refresh the sites list
+        await _loadSites();
+        
+        if (mounted) {
+          UiUtils.showSuccessMessage(context, 'Site "${result['name']}" created successfully');
+        }
+      } catch (e) {
+        LoggingService.error('ManageSitesScreen: Error creating site', e);
+        if (mounted) {
+          UiUtils.showErrorDialog(context, 'Error', 'Failed to create site: $e');
+        }
+      }
     }
   }
 

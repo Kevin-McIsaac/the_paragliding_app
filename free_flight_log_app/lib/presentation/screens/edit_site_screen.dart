@@ -1037,7 +1037,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     
     return showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => _SiteCreationDialog(
+      builder: (context) => SiteCreationDialog(
         point: point,
         eligibleLaunchCount: eligibleLaunchCount,
         launchRadiusMeters: _launchRadiusMeters,
@@ -1470,7 +1470,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       size: const Size(300, 120), // Wider and taller to accommodate text
       offset: const Offset(0, -_siteMarkerSize / 2),
       disableDrag: true, // Cannot drag API sites, only drop onto them
-      onLongPress: (point) => _handleApiSiteClick(site),
+      onLongPress: (point) => _isMergeMode ? _handleMergeIntoApiSite(site) : _handleApiSiteClick(site),
       builder: (ctx, point, isDragging) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1489,6 +1489,16 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                 color: Colors.green,
                 size: _siteMarkerIconSize,
               ),
+              // Merge target indicator
+              if (_isMergeMode && _selectedSourceSite != null)
+                Container(
+                  width: _siteMarkerSize + 4,
+                  height: _siteMarkerSize + 4,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.green, width: 2),
+                  ),
+                ),
             ],
           ),
           // Text label - API sites show only name
@@ -1506,7 +1516,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                 maxLines: 1,
                 style: const TextStyle(
                   fontSize: 9,
-                  color: Colors.black87,
+                  color: Colors.white,
                   fontWeight: FontWeight.w500,
                 ),
                 textAlign: TextAlign.center,
@@ -1568,6 +1578,17 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
     // Perform the merge
     _mergeFlownIntoFlownSite(_selectedSourceSite!, targetSite);
+    _exitMergeMode();
+  }
+
+  /// Handle merge into API site target
+  void _handleMergeIntoApiSite(ParaglidingSite apiSite) {
+    if (_selectedSourceSite == null) {
+      return;
+    }
+
+    // Perform the merge
+    _mergeFlownIntoApiSite(_selectedSourceSite!, apiSite);
     _exitMergeMode();
   }
 
@@ -1896,7 +1917,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 }
 
 /// Site creation dialog widget that properly manages its own state and controllers
-class _SiteCreationDialog extends StatefulWidget {
+class SiteCreationDialog extends StatefulWidget {
   final LatLng point;
   final int eligibleLaunchCount;
   final String? siteName;
@@ -1904,7 +1925,7 @@ class _SiteCreationDialog extends StatefulWidget {
   final double? altitude;
   final double launchRadiusMeters;
 
-  const _SiteCreationDialog({
+  const SiteCreationDialog({
     required this.point,
     required this.eligibleLaunchCount,
     required this.launchRadiusMeters,
@@ -1914,11 +1935,13 @@ class _SiteCreationDialog extends StatefulWidget {
   });
 
   @override
-  State<_SiteCreationDialog> createState() => _SiteCreationDialogState();
+  State<SiteCreationDialog> createState() => _SiteCreationDialogState();
 }
 
-class _SiteCreationDialogState extends State<_SiteCreationDialog> {
+class _SiteCreationDialogState extends State<SiteCreationDialog> {
   late TextEditingController _nameController;
+  late TextEditingController _latitudeController;
+  late TextEditingController _longitudeController;
   late TextEditingController _altitudeController;
   late TextEditingController _countryController;
 
@@ -1926,6 +1949,8 @@ class _SiteCreationDialogState extends State<_SiteCreationDialog> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.siteName ?? '');
+    _latitudeController = TextEditingController(text: '');
+    _longitudeController = TextEditingController(text: '');
     _altitudeController = TextEditingController(text: widget.altitude?.toStringAsFixed(0) ?? '');
     _countryController = TextEditingController(text: widget.country ?? '');
 
@@ -1937,6 +1962,8 @@ class _SiteCreationDialogState extends State<_SiteCreationDialog> {
   void dispose() {
     _nameController.removeListener(_onTextChanged);
     _nameController.dispose();
+    _latitudeController.dispose();
+    _longitudeController.dispose();
     _altitudeController.dispose();
     _countryController.dispose();
     super.dispose();
@@ -1977,9 +2004,6 @@ class _SiteCreationDialogState extends State<_SiteCreationDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildInfoRow('Location:', '${widget.point.latitude.toStringAsFixed(6)}, ${widget.point.longitude.toStringAsFixed(6)}'),
-            const SizedBox(height: 16),
-            
             // Site details form
             TextField(
               controller: _nameController,
@@ -1987,6 +2011,32 @@ class _SiteCreationDialogState extends State<_SiteCreationDialog> {
                 labelText: 'Site Name',
                 border: OutlineInputBorder(),
               ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _latitudeController,
+                    decoration: const InputDecoration(
+                      labelText: 'Latitude',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _longitudeController,
+                    decoration: const InputDecoration(
+                      labelText: 'Longitude',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
             Row(
@@ -2032,11 +2082,49 @@ class _SiteCreationDialogState extends State<_SiteCreationDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: _nameController.text.trim().isEmpty ? null : () => Navigator.of(context).pop({
-            'name': _nameController.text.trim(),
-            'altitude': _altitudeController.text.trim().isEmpty ? null : double.tryParse(_altitudeController.text.trim()),
-            'country': _countryController.text.trim().isEmpty ? null : _countryController.text.trim(),
-          }),
+          onPressed: _nameController.text.trim().isEmpty ? null : () {
+            final latitude = double.tryParse(_latitudeController.text.trim());
+            final longitude = double.tryParse(_longitudeController.text.trim());
+            
+            if (latitude == null || longitude == null) {
+              // Show error for invalid coordinates
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Please enter valid latitude and longitude values'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+              return;
+            }
+            
+            if (latitude < -90 || latitude > 90) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Latitude must be between -90 and 90'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+              return;
+            }
+            
+            if (longitude < -180 || longitude > 180) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Longitude must be between -180 and 180'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+              return;
+            }
+            
+            Navigator.of(context).pop({
+              'name': _nameController.text.trim(),
+              'latitude': latitude,
+              'longitude': longitude,
+              'altitude': _altitudeController.text.trim().isEmpty ? null : double.tryParse(_altitudeController.text.trim()),
+              'country': _countryController.text.trim().isEmpty ? null : _countryController.text.trim(),
+            });
+          },
           child: Text('Create Site${widget.eligibleLaunchCount > 0 ? ' & Reassign Flights' : ''}'),
         ),
       ],
