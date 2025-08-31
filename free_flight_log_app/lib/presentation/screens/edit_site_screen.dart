@@ -1413,7 +1413,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                   height: _siteMarkerSize + 4,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.yellow, width: 2),
+                    border: Border.all(color: Colors.blue, width: 2),
                   ),
                 ),
             ],
@@ -1497,7 +1497,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                   height: _siteMarkerSize + 4,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.yellow, width: 2),
+                    border: Border.all(color: Colors.green, width: 2),
                   ),
                 ),
             ],
