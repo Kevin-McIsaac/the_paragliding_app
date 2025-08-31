@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../../data/models/flight.dart';
 import '../../services/database_service.dart';
 import '../../utils/date_time_utils.dart';
-import '../../utils/startup_performance_tracker.dart';
 import '../../services/logging_service.dart';
 import 'add_flight_screen.dart';
 import 'igc_import_screen.dart';
@@ -49,18 +48,9 @@ class _FlightListScreenState extends State<FlightListScreen> {
     // The splash screen already handled initialization
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (mounted) {
-        final perfTracker = StartupPerformanceTracker();
-        perfTracker.recordTimestamp('Starting First Data Load');
-        
-        final loadWatch = perfTracker.startMeasurement('First Flight Data Load');
+        LoggingService.debug('Loading initial flight data');
         await _loadFlights();
-        perfTracker.completeMeasurement('First Flight Data Load', loadWatch);
-        
-        perfTracker.recordTimestamp('First Data Load Complete');
-        
-        // Log timing for first meaningful paint
-        final finalReport = perfTracker.generateReport();
-        LoggingService.info('FINAL STARTUP REPORT:\n$finalReport');
+        LoggingService.debug('Initial flight data loaded');
       }
     });
   }

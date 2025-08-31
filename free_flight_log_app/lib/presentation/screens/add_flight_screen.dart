@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../../data/models/flight.dart';
-import '../../utils/date_time_utils.dart';
+import '../../data/models/site.dart';
+import '../../data/models/wing.dart';
 import '../../services/database_service.dart';
 import '../../services/logging_service.dart';
+import '../widgets/flight_form_widget.dart';
 
 class AddFlightScreen extends StatefulWidget {
   const AddFlightScreen({super.key});
@@ -13,117 +14,50 @@ class AddFlightScreen extends StatefulWidget {
 }
 
 class _AddFlightScreenState extends State<AddFlightScreen> {
-  final _formKey = GlobalKey<FormState>();
   final DatabaseService _databaseService = DatabaseService.instance;
   
-  // Form controllers
-  final _notesController = TextEditingController();
-  final _maxAltitudeController = TextEditingController();
-  final _distanceController = TextEditingController();
-  final _straightDistanceController = TextEditingController();
-  
-  // Form data
-  DateTime _selectedDate = DateTime.now();
-  TimeOfDay _launchTime = TimeOfDay.now();
-  TimeOfDay _landingTime = TimeOfDay.now();
-  
-  // State
+  List<Site> _sites = [];
+  List<Wing> _wings = [];
+  bool _isLoading = true;
   bool _isSaving = false;
   String? _errorMessage;
 
   @override
-  void dispose() {
-    _notesController.dispose();
-    _maxAltitudeController.dispose();
-    _distanceController.dispose();
-    _straightDistanceController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    _loadData();
   }
 
-  Future<void> _selectDate() async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now(),
-    );
-    if (picked != null && picked != _selectedDate) {
-      setState(() {
-        _selectedDate = picked;
-      });
+  Future<void> _loadData() async {
+    try {
+      final sites = await _databaseService.getAllSites();
+      final wings = await _databaseService.getAllWings();
+      
+      if (mounted) {
+        setState(() {
+          _sites = sites;
+          _wings = wings;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      LoggingService.error('AddFlightScreen: Failed to load data', e);
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Failed to load data: $e';
+        });
+      }
     }
   }
 
-  Future<void> _selectLaunchTime() async {
-    final TimeOfDay? picked = await showTimePicker(
-      context: context,
-      initialTime: _launchTime,
-    );
-    if (picked != null && picked != _launchTime) {
-      setState(() {
-        _launchTime = picked;
-      });
-    }
-  }
-
-  Future<void> _selectLandingTime() async {
-    final TimeOfDay? picked = await showTimePicker(
-      context: context,
-      initialTime: _landingTime,
-    );
-    if (picked != null && picked != _landingTime) {
-      setState(() {
-        _landingTime = picked;
-      });
-    }
-  }
-
-  int _calculateDuration() {
-    final launchMinutes = _launchTime.hour * 60 + _launchTime.minute;
-    final landingMinutes = _landingTime.hour * 60 + _landingTime.minute;
-    int duration = landingMinutes - launchMinutes;
-    
-    if (duration < 0) {
-      duration += 24 * 60;
-    }
-    
-    return duration;
-  }
-
-  String _formatTime(TimeOfDay time) {
-    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
-  }
-
-  Future<void> _saveFlight() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
+  Future<void> _saveFlight(Flight flight) async {
     setState(() {
       _isSaving = true;
       _errorMessage = null;
     });
 
     try {
-      final flight = Flight(
-        date: _selectedDate,
-        launchTime: _formatTime(_launchTime),
-        landingTime: _formatTime(_landingTime),
-        duration: _calculateDuration(),
-        maxAltitude: _maxAltitudeController.text.isNotEmpty 
-            ? double.tryParse(_maxAltitudeController.text)
-            : null,
-        distance: _distanceController.text.isNotEmpty
-            ? double.tryParse(_distanceController.text)
-            : null,
-        straightDistance: _straightDistanceController.text.isNotEmpty
-            ? double.tryParse(_straightDistanceController.text)
-            : null,
-        notes: _notesController.text.isNotEmpty ? _notesController.text : null,
-        source: 'manual',
-        timezone: null, // Manual flights don't have timezone info
-      );
-
       LoggingService.debug('AddFlightScreen: Saving new flight');
       final flightId = await _databaseService.insertFlight(flight);
       LoggingService.info('AddFlightScreen: Flight saved with ID: $flightId');
@@ -156,196 +90,42 @@ class _AddFlightScreenState extends State<AddFlightScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final duration = _calculateDuration();
-    
     return Scaffold(
       appBar: AppBar(
         title: const Text('Add Flight'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        actions: [
-          if (_isSaving)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(16.0),
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-            )
-          else
-            TextButton(
-              onPressed: _saveFlight,
-              child: const Text('SAVE'),
-            ),
-        ],
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.only(top: 16.0, bottom: 16.0),
-          children: [
-            // Date Selection
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.calendar_today),
-                title: const Text('Flight Date'),
-                subtitle: Text(DateFormat('EEEE, MMMM dd, yyyy').format(_selectedDate)),
-                trailing: const Icon(Icons.edit),
-                onTap: _selectDate,
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Time Selection
-            Row(
-              children: [
-                Expanded(
-                  child: Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.flight_takeoff),
-                      title: const Text('Launch Time'),
-                      subtitle: Text(_formatTime(_launchTime)),
-                      onTap: _selectLaunchTime,
-                    ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _errorMessage != null
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        _errorMessage!,
+                        style: TextStyle(color: Theme.of(context).colorScheme.error),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () {
+                          setState(() {
+                            _errorMessage = null;
+                            _isLoading = true;
+                          });
+                          _loadData();
+                        },
+                        child: const Text('Retry'),
+                      ),
+                    ],
                   ),
+                )
+              : FlightFormWidget(
+                  sites: _sites,
+                  wings: _wings,
+                  onSave: _saveFlight,
+                  isLoading: _isSaving,
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.flight_land),
-                      title: const Text('Landing Time'),
-                      subtitle: Text(_formatTime(_landingTime)),
-                      onTap: _selectLandingTime,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Duration Display
-            Card(
-              color: Theme.of(context).colorScheme.primaryContainer,
-              child: ListTile(
-                leading: const Icon(Icons.timer),
-                title: const Text('Flight Duration'),
-                subtitle: Text(DateTimeUtils.formatDuration(duration)),
-                trailing: duration < 5 
-                    ? const Icon(Icons.warning, color: Colors.orange)
-                    : duration > 480 
-                        ? const Icon(Icons.warning, color: Colors.red)
-                        : const Icon(Icons.check, color: Colors.green),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Flight Data
-            TextFormField(
-              controller: _maxAltitudeController,
-              decoration: const InputDecoration(
-                labelText: 'Maximum Altitude (m)',
-                hintText: 'e.g. 1200',
-                prefixIcon: Icon(Icons.height),
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.number,
-              validator: (value) {
-                if (value != null && value.isNotEmpty) {
-                  final altitude = double.tryParse(value);
-                  if (altitude == null) {
-                    return 'Please enter a valid number';
-                  }
-                  if (altitude < 0 || altitude > 10000) {
-                    return 'Altitude must be between 0 and 10,000m';
-                  }
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-
-            TextFormField(
-              controller: _distanceController,
-              decoration: const InputDecoration(
-                labelText: 'Ground Track Distance (km)',
-                hintText: 'e.g. 25.5',
-                prefixIcon: Icon(Icons.timeline),
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.number,
-              validator: (value) {
-                if (value != null && value.isNotEmpty) {
-                  final distance = double.tryParse(value);
-                  if (distance == null) {
-                    return 'Please enter a valid number';
-                  }
-                  if (distance < 0 || distance > 1000) {
-                    return 'Distance must be between 0 and 1,000km';
-                  }
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-
-            TextFormField(
-              controller: _straightDistanceController,
-              decoration: const InputDecoration(
-                labelText: 'Straight Distance (km)',
-                hintText: 'e.g. 15.2',
-                prefixIcon: Icon(Icons.straighten),
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.number,
-              validator: (value) {
-                if (value != null && value.isNotEmpty) {
-                  final distance = double.tryParse(value);
-                  if (distance == null) {
-                    return 'Please enter a valid number';
-                  }
-                  if (distance < 0 || distance > 1000) {
-                    return 'Distance must be between 0 and 1,000km';
-                  }
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-
-            TextFormField(
-              controller: _notesController,
-              decoration: const InputDecoration(
-                labelText: 'Notes',
-                hintText: 'Weather conditions, thermals, landing notes...',
-                prefixIcon: Icon(Icons.notes),
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 3,
-              maxLength: 500,
-            ),
-            const SizedBox(height: 32),
-
-            // Save Button
-            ElevatedButton.icon(
-              onPressed: _isSaving ? null : _saveFlight,
-              icon: _isSaving 
-                  ? const SizedBox(
-                      width: 20, 
-                      height: 20, 
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.save),
-              label: Text(_isSaving ? 'Saving...' : 'Save Flight'),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
