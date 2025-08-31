@@ -4,36 +4,22 @@ import 'dart:io' show Platform;
 import 'dart:async';
 import 'presentation/screens/splash_screen.dart';
 import 'presentation/screens/igc_import_screen.dart';
-import 'utils/startup_performance_tracker.dart';
 import 'utils/file_sharing_handler.dart';
 import 'data/datasources/database_helper.dart';
 
 void main() {
-  // Start performance tracking
-  final perfTracker = StartupPerformanceTracker();
-  perfTracker.startTracking();
-  
   // Ensure Flutter is initialized
-  final flutterInitWatch = perfTracker.startMeasurement('Flutter Binding Init');
   WidgetsFlutterBinding.ensureInitialized();
-  perfTracker.completeMeasurement('Flutter Binding Init', flutterInitWatch);
   
-  // Initialize sqflite for desktop platforms (lightweight, can stay in main)
+  // Initialize sqflite for desktop platforms
   if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
-    final dbInitWatch = perfTracker.startMeasurement('SQLite FFI Init (Desktop)');
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
-    perfTracker.completeMeasurement('SQLite FFI Init (Desktop)', dbInitWatch);
   }
   
   // OPTIMIZATION: Lazy load timezone data - only needed for IGC imports
-  // Timezone initialization moved to when it's actually needed
-  // This saves ~50-100ms from startup time
   // TimezoneService.initialize() will be called lazily in TimezoneService
   
-  perfTracker.recordTimestamp('Starting App Widget');
-  
-  // Don't await heavy initialization - let splash screen handle it
   runApp(const FreeFlightLogApp());
 }
 
@@ -90,17 +76,11 @@ class _AppInitializerState extends State<AppInitializer> {
   }
 
   Future<void> _initialize() async {
-    final perfTracker = StartupPerformanceTracker();
-    
     try {
-      // Initialize database (very fast, just creates singleton)
-      final dbWatch = perfTracker.startMeasurement('Database Init');
+      // Initialize database
       final db = DatabaseHelper.instance;
       // Pre-warm database connection
       await db.database;
-      perfTracker.completeMeasurement('Database Init', dbWatch);
-      
-      perfTracker.recordTimestamp('App Initialized');
       
       if (mounted) {
         setState(() {

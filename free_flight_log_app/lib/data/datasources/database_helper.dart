@@ -2,7 +2,6 @@ import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:path/path.dart';
 import '../../services/logging_service.dart';
-import '../../utils/startup_performance_tracker.dart';
 
 class DatabaseHelper {
   static const _databaseName = "FlightLog.db";
@@ -16,30 +15,15 @@ class DatabaseHelper {
   Future<Database> get database async => _database ??= await _initDatabase();
 
   Future<Database> _initDatabase() async {
-    final perfTracker = StartupPerformanceTracker();
-    
-    final pathWatch = perfTracker.startMeasurement('Get Database Path');
     String path = join(await getDatabasesPath(), _databaseName);
-    perfTracker.completeMeasurement('Get Database Path', pathWatch);
-    
     LoggingService.database('INIT', 'Opening database at: $path');
     
-    final openWatch = perfTracker.startMeasurement('Open Database');
     final db = await openDatabase(
       path,
       version: _databaseVersion,
-      onCreate: (db, version) async {
-        final createWatch = perfTracker.startMeasurement('Create Database Schema');
-        await _onCreate(db, version);
-        perfTracker.completeMeasurement('Create Database Schema', createWatch);
-      },
-      onUpgrade: (db, oldVersion, newVersion) async {
-        final upgradeWatch = perfTracker.startMeasurement('Upgrade Database');
-        await _onUpgrade(db, oldVersion, newVersion);
-        perfTracker.completeMeasurement('Upgrade Database', upgradeWatch);
-      },
+      onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
-    perfTracker.completeMeasurement('Open Database', openWatch);
     
     return db;
   }
@@ -125,13 +109,10 @@ class DatabaseHelper {
   
   /// Create database indexes for optimal query performance
   Future<void> _createIndexes(Database db) async {
-    LoggingService.database('INDEX', 'Creating ONLY essential indexes (reduced from 18 to 3)');
-    final perfTracker = StartupPerformanceTracker();
-    final indexWatch = perfTracker.startMeasurement('Create Essential Indexes');
+    LoggingService.database('INDEX', 'Creating essential indexes');
     
     try {
-      // ONLY 3 ESSENTIAL INDEXES for <5000 records
-      // Removed 14 unnecessary indexes that were adding overhead with minimal benefit
+      // Essential indexes for <5000 records
       
       // 1. Foreign key index for launch site joins (used in almost every query)
       await db.execute('CREATE INDEX IF NOT EXISTS idx_flights_launch_site ON flights(launch_site_id)');
@@ -147,10 +128,8 @@ class DatabaseHelper {
       await db.execute('CREATE INDEX IF NOT EXISTS idx_wing_aliases_alias_name ON wing_aliases(alias_name)');
       
       LoggingService.database('INDEX', 'Successfully created essential indexes');
-      perfTracker.completeMeasurement('Create Essential Indexes', indexWatch);
     } catch (e) {
       LoggingService.error('DatabaseHelper: Failed to create indexes', e);
-      perfTracker.completeMeasurement('Create Essential Indexes', indexWatch);
       rethrow;
     }
   }
