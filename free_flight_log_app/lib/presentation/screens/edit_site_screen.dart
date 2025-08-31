@@ -1413,7 +1413,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                   height: _siteMarkerSize + 4,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.green, width: 2),
+                    border: Border.all(color: Colors.yellow, width: 2),
                   ),
                 ),
             ],
@@ -1470,7 +1470,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       size: const Size(300, 120), // Wider and taller to accommodate text
       offset: const Offset(0, -_siteMarkerSize / 2),
       disableDrag: true, // Cannot drag API sites, only drop onto them
-      onLongPress: (point) => _isMergeMode ? _handleMergeIntoApiSite(site) : _handleApiSiteClick(site),
+      onTap: (point) => _isMergeMode ? _handleMergeIntoApiSite(site) : null,
+      onLongPress: (point) => _isMergeMode ? null : _handleApiSiteClick(site),
       builder: (ctx, point, isDragging) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1496,7 +1497,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                   height: _siteMarkerSize + 4,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.green, width: 2),
+                    border: Border.all(color: Colors.yellow, width: 2),
                   ),
                 ),
             ],
@@ -1531,15 +1532,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
   /// Get marker color based on state
   Color _getSiteMarkerColor(Site site, bool isDragging) {
-    if (_isMergeMode && _selectedSourceSite?.id == site.id) {
-      return Colors.orange; // Selected source site
-    } else if (_isMergeMode && _selectedSourceSite?.id != site.id) {
-      return Colors.green; // Valid merge target
-    } else if (isDragging) {
-      return Colors.blue.withValues(alpha: 0.7); // Being dragged
-    } else {
-      return Colors.blue; // Normal state
-    }
+    return Colors.blue; // Always blue for local sites
   }
 
   /// Enter merge mode
