@@ -51,6 +51,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   
   // Constants
   static const String _mapProviderKey = 'edit_site_map_provider';
+  static const String _helpShownKey = 'edit_site_help_shown';
   static const double _defaultLatitude = 46.9480; // Swiss Alps
   static const double _defaultLongitude = 7.4474;
   static const double _initialZoom = 13.0;
@@ -96,6 +97,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     _countryController = TextEditingController();
     _loadMapProviderPreference();
     _loadFlightCounts(); // Load flight counts for sites
+    _checkAndShowHelpOnFirstVisit(); // Show help dialog on first visit
     
     // Start cache refresh timer for debug overlay (debug mode only)
     if (kDebugMode) {
@@ -150,6 +152,80 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     } catch (e) {
       LoggingService.error('EditSiteScreen: Error loading map provider preference', e);
     }
+  }
+
+  /// Check if this is the first visit and show help dialog if needed
+  Future<void> _checkAndShowHelpOnFirstVisit() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final helpShown = prefs.getBool(_helpShownKey) ?? false;
+      
+      if (!helpShown && mounted) {
+        // Show help dialog after a short delay to ensure the screen is fully loaded
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _showHelpDialogFirstTime();
+          }
+        });
+      }
+    } catch (e) {
+      LoggingService.error('EditSiteScreen: Error checking first visit help', e);
+    }
+  }
+
+  /// Show help dialog for first time with option to mark as seen
+  void _showHelpDialogFirstTime() async {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.help_outline),
+            SizedBox(width: 8),
+            Text('Using the Sites Map'),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(height: 12),
+            _HelpItem(
+              icon: Icons.edit,
+              title: 'Edit Site',
+              description: 'Long press on a Site to see and edit the details,  e.g, name, country, latitude, longitude and altitude.',
+            ),
+            SizedBox(height: 12),
+            _HelpItem(
+              icon: Icons.merge,
+              title: 'Merge Sites',
+              description: 'Either drag a Site onto another, or long press a Site then select the other, to merge into a single Site.',
+            ),
+            SizedBox(height: 12),
+            _HelpItem(
+              icon: Icons.add_location,
+              title: 'Create Site',
+              description: 'Long press on the map or a Launch to create a new Site at that location.',
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    ).then((_) async {
+      // Mark help as shown after dialog is dismissed
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_helpShownKey, true);
+        LoggingService.debug('EditSiteScreen: Marked help dialog as shown for first-time user');
+      } catch (e) {
+        LoggingService.error('EditSiteScreen: Error saving help shown preference', e);
+      }
+    });
   }
 
   @override
@@ -261,7 +337,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       width: _launchMarkerSize,
       height: _launchMarkerSize,
       child: GestureDetector(
-        onTap: () => _handleSiteCreationAtPoint(
+        onLongPress: () => _handleSiteCreationAtPoint(
           LatLng(launch.launchLatitude!, launch.launchLongitude!),
           siteName: 'Launch ${launch.date.toLocal().toString().split(' ')[0]}',
           altitude: launch.launchAltitude,
@@ -613,7 +689,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
             _HelpItem(
               icon: Icons.edit,
               title: 'Edit Site',
-              description: 'Click on a Site to see and edit the details,  e.g, name, country, latitude, longitude and altitude.',
+              description: 'Long press on a Site to see and edit the details,  e.g, name, country, latitude, longitude and altitude.',
             ),
             SizedBox(height: 12),
             _HelpItem(
@@ -625,7 +701,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
             _HelpItem(
               icon: Icons.add_location,
               title: 'Create Site',
-              description: 'Click on the map or a Launch to create a new Site at that location.',
+              description: 'Long press on the map or a Launch to create a new Site at that location.',
             ),
           ],
         ),
@@ -1386,8 +1462,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       size: const Size(300, 120), // Wider and taller to accommodate text
       offset: const Offset(0, -_siteMarkerSize / 2),
       dragOffset: const Offset(0, -70), // Move marker well above finger during drag
-      onTap: (point) => _isMergeMode ? _handleMergeTarget(site) : _showSiteEditDialog(site),
-      onLongPress: (point) => _enterMergeMode(site),
+      onTap: (point) => _isMergeMode ? _handleMergeTarget(site) : _enterMergeMode(site),
+      onLongPress: (point) => _isMergeMode ? null : _showSiteEditDialog(site),
       builder: (ctx, point, isDragging) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1480,7 +1556,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       size: const Size(300, 120), // Wider and taller to accommodate text
       offset: const Offset(0, -_siteMarkerSize / 2),
       disableDrag: true, // Cannot drag API sites, only drop onto them
-      onTap: (point) => _handleApiSiteClick(site),
+      onLongPress: (point) => _handleApiSiteClick(site),
       builder: (ctx, point, isDragging) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1855,7 +1931,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         initialZoom: _initialZoom,
         onMapReady: _onMapReady,
         onMapEvent: _onMapEvent,
-        onTap: _onMapTap,
+        onLongPress: _onMapTap,
         // Dynamic zoom limits based on selected provider
         minZoom: _minZoom,
         maxZoom: _selectedMapProvider.maxZoom.toDouble(),

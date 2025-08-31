@@ -605,11 +605,14 @@ class _SiteListTile extends StatelessWidget {
                         Text(' • ', style: TextStyle(color: Colors.grey[600])),
                       ]
                       else ...[
-                        Text(
-                          'Unknown Country',
-                          style: TextStyle(
-                            color: Colors.grey[500],
-                            fontStyle: FontStyle.italic,
+                        Flexible(
+                          child: Text(
+                            'Unknown Country',
+                            style: TextStyle(
+                              color: Colors.grey[500],
+                              fontStyle: FontStyle.italic,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         Text(' • ', style: TextStyle(color: Colors.grey[600])),
