@@ -1421,7 +1421,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           // Text label
           IntrinsicWidth(
             child: Container(
-              constraints: const BoxConstraints(maxWidth: 300),
+              constraints: const BoxConstraints(maxWidth: 140),
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               decoration: BoxDecoration(
                 color: Colors.black.withValues(alpha: 0.3),
@@ -1505,7 +1505,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           // Text label - API sites show only name
           IntrinsicWidth(
             child: Container(
-              constraints: const BoxConstraints(maxWidth: 300),
+              constraints: const BoxConstraints(maxWidth: 140),
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               decoration: BoxDecoration(
                 color: Colors.black.withValues(alpha: 0.3),
