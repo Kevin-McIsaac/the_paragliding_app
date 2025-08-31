@@ -146,9 +146,31 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
           return dateB.compareTo(dateA); // Most recent first
         });
         break;
+      case 'flights':
+        _filteredSites.sort((a, b) {
+          final flightCountA = a.flightCount ?? 0;
+          final flightCountB = b.flightCount ?? 0;
+          final countComparison = flightCountB.compareTo(flightCountA); // Most flights first
+          if (countComparison == 0) {
+            return a.name.toLowerCase().compareTo(b.name.toLowerCase()); // Then by name
+          }
+          return countComparison;
+        });
+        break;
     }
   }
 
+  Future<void> _addNewSite() async {
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (context) => const EditSiteScreen(),
+      ),
+    );
+
+    if (result == true && mounted) {
+      _loadSites();
+    }
+  }
 
   Future<void> _deleteSite(Site site) async {
     if (!mounted) return;
@@ -295,6 +317,25 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
                   ],
                 ),
               ),
+              PopupMenuItem(
+                value: 'flights',
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.flight_takeoff,
+                      color: _sortBy == 'flights' ? Theme.of(context).colorScheme.primary : null,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Sort by Flight Count',
+                      style: TextStyle(
+                        fontWeight: _sortBy == 'flights' ? FontWeight.bold : null,
+                        color: _sortBy == 'flights' ? Theme.of(context).colorScheme.primary : null,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ],
@@ -418,6 +459,11 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
                             ),
                           ],
                         ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _addNewSite,
+        tooltip: 'Add Site',
+        child: const Icon(Icons.add),
+      ),
     );
   }
 

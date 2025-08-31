@@ -55,10 +55,9 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   static const double _defaultLongitude = 7.4474;
   static const double _initialZoom = 13.0;
   static const double _minZoom = 1.0;
-  static const double _launchMarkerSize = 20.0;
-  static const double _siteMarkerSize = 48.0;
-  static const double _siteMarkerIconSize = 42.0;
-  static const double _currentSiteMarkerSize = 40.0;
+  static const double _launchMarkerSize = 15.0;
+  static const double _siteMarkerSize = 72.0;
+  static const double _siteMarkerIconSize = 66.0;
   static const double _boundsThreshold = 0.001;
   static const int _debounceDurationMs = 500;
   static const double _launchRadiusMeters = 500.0;
@@ -254,10 +253,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   Marker _buildLaunchMarker(Flight launch) {
     final markerColor = Colors.blue;
     
-    // Build tooltip message with site name and date
+    // Build site name for launch marker
     final siteName = launch.launchSiteName ?? 'Unknown Site';
-    final date = launch.date.toLocal().toString().split(' ')[0];
-    final tooltipMessage = '$siteName\n$date';
     
     return Marker(
       point: LatLng(launch.launchLatitude!, launch.launchLongitude!),
@@ -269,23 +266,20 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           siteName: 'Launch ${launch.date.toLocal().toString().split(' ')[0]}',
           altitude: launch.launchAltitude,
         ),
-        child: Tooltip(
-          message: tooltipMessage,
-          child: Container(
-            width: _launchMarkerSize,
-            height: _launchMarkerSize,
-            decoration: BoxDecoration(
-              color: markerColor,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.3),
-                  blurRadius: 2,
-                  offset: const Offset(0, 1),
-                ),
-              ],
-            ),
+        child: Container(
+          width: _launchMarkerSize,
+          height: _launchMarkerSize,
+          decoration: BoxDecoration(
+            color: markerColor,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 2,
+                offset: const Offset(0, 1),
+              ),
+            ],
           ),
         ),
       ),
@@ -608,29 +602,24 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           children: [
             Icon(Icons.help_outline),
             SizedBox(width: 8),
-            Text('Using the Map'),
+            Text('Using the Sites Map'),
           ],
         ),
         content: const Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _HelpItem(
-              icon: Icons.visibility,
-              title: 'View Site',
-              description: 'Hover over a Site to see the details, e.g, name, country, latitude, longitude and altitude.',
-            ),
             SizedBox(height: 12),
             _HelpItem(
               icon: Icons.edit,
               title: 'Edit Site',
-              description: 'Click on a Site to edit the details.',
+              description: 'Click on a Site to see and edit the details,  e.g, name, country, latitude, longitude and altitude.',
             ),
             SizedBox(height: 12),
             _HelpItem(
               icon: Icons.merge,
-              title: 'Merge Site',
-              description: 'Drag a Site onto another to merge into a single Site.',
+              title: 'Merge Sites',
+              description: 'Either drag a Site onto another, or long press a Site then select the other, to merge into a single Site.',
             ),
             SizedBox(height: 12),
             _HelpItem(
@@ -771,26 +760,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     }
   }
   
-  /// Create consistent tooltip format for all site types
-  String _createSiteTooltip(String name, String? country, int? launchCount, {bool showLaunchCount = true}) {
-    final parts = <String>[];
-    
-    // Name (or fallback)
-    parts.add(name.trim().isEmpty ? 'Unknown Site' : name);
-    
-    // Country
-    if (country != null && country.isNotEmpty) {
-      parts.add(country);
-    }
-    
-    // Launches count (only if requested)
-    if (showLaunchCount) {
-      final count = launchCount ?? 0;
-      parts.add('$count launch${count == 1 ? '' : 'es'}');
-    }
-    
-    return parts.join('\n');
-  }
 
   /// Load all launches in the current viewport bounds
   Future<void> _loadAllLaunchesInBounds(LatLngBounds bounds) async {
@@ -1411,54 +1380,92 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   /// Build local site drag marker (blue, draggable)
   DragMarker _buildLocalSiteDragMarker(Site site) {
     final launchCount = site.id != null ? _siteFlightCounts[site.id!] : null;
-    final tooltipMessage = _createSiteTooltip(site.name, site.country, launchCount);
     
     return DragMarker(
       point: LatLng(site.latitude, site.longitude),
-      size: const Size.square(_siteMarkerSize),
+      size: const Size(300, 120), // Wider and taller to accommodate text
       offset: const Offset(0, -_siteMarkerSize / 2),
       dragOffset: const Offset(0, -70), // Move marker well above finger during drag
       onTap: (point) => _isMergeMode ? _handleMergeTarget(site) : _showSiteEditDialog(site),
       onLongPress: (point) => _enterMergeMode(site),
-      builder: (ctx, point, isDragging) => Tooltip(
-        message: tooltipMessage,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            // White outline
-            const Icon(
-              Icons.location_on,
-              color: Colors.white,
-              size: _siteMarkerSize,
-            ),
-            // Blue marker with visual feedback for merge mode
-            Icon(
-              Icons.location_on,
-              color: _getSiteMarkerColor(site, isDragging),
-              size: _siteMarkerIconSize,
-            ),
-            // Merge mode indicator
-            if (_isMergeMode && _selectedSourceSite?.id == site.id)
-              Container(
-                width: _siteMarkerSize + 8,
-                height: _siteMarkerSize + 8,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.orange, width: 3),
-                ),
+      builder: (ctx, point, isDragging) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              // White outline
+              const Icon(
+                Icons.location_on,
+                color: Colors.white,
+                size: _siteMarkerSize,
               ),
-            // Valid merge target indicator
-            if (_isMergeMode && _selectedSourceSite?.id != site.id)
-              Container(
-                width: _siteMarkerSize + 4,
-                height: _siteMarkerSize + 4,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.green, width: 2),
-                ),
+              // Blue marker with visual feedback for merge mode
+              Icon(
+                Icons.location_on,
+                color: _getSiteMarkerColor(site, isDragging),
+                size: _siteMarkerIconSize,
               ),
-          ],
-        ),
+              // Merge mode indicator
+              if (_isMergeMode && _selectedSourceSite?.id == site.id)
+                Container(
+                  width: _siteMarkerSize + 8,
+                  height: _siteMarkerSize + 8,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.orange, width: 3),
+                  ),
+                ),
+              // Valid merge target indicator
+              if (_isMergeMode && _selectedSourceSite?.id != site.id)
+                Container(
+                  width: _siteMarkerSize + 4,
+                  height: _siteMarkerSize + 4,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.green, width: 2),
+                  ),
+                ),
+            ],
+          ),
+          // Text label
+          IntrinsicWidth(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 300),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    site.name,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  if (launchCount != null && launchCount > 0)
+                    Text(
+                      '$launchCount flight${launchCount == 1 ? '' : 's'}',
+                      style: const TextStyle(
+                        fontSize: 9,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
       onDragEnd: (details, point) => _handleFlownSiteDrop(site, point),
     );
@@ -1467,33 +1474,56 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   /// Build API site drag marker (green, not draggable - only drop target)
   DragMarker _buildApiSiteDragMarker(ParaglidingSite site) {
     // API sites have no local flight counts, always 0
-    final tooltipMessage = _createSiteTooltip(site.name, site.country, 0, showLaunchCount: false);
     
     return DragMarker(
       point: LatLng(site.latitude, site.longitude),
-      size: const Size.square(_siteMarkerSize),
+      size: const Size(300, 120), // Wider and taller to accommodate text
       offset: const Offset(0, -_siteMarkerSize / 2),
       disableDrag: true, // Cannot drag API sites, only drop onto them
       onTap: (point) => _handleApiSiteClick(site),
-      builder: (ctx, point, isDragging) => Tooltip(
-        message: tooltipMessage,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            // White outline
-            const Icon(
-              Icons.location_on,
-              color: Colors.white,
-              size: _siteMarkerSize,
+      builder: (ctx, point, isDragging) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              // White outline
+              const Icon(
+                Icons.location_on,
+                color: Colors.white,
+                size: _siteMarkerSize,
+              ),
+              // Green marker
+              const Icon(
+                Icons.location_on,
+                color: Colors.green,
+                size: _siteMarkerIconSize,
+              ),
+            ],
+          ),
+          // Text label - API sites show only name
+          IntrinsicWidth(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 300),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                site.name,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+                style: const TextStyle(
+                  fontSize: 9,
+                  color: Colors.black87,
+                  fontWeight: FontWeight.w500,
+                ),
+                textAlign: TextAlign.center,
+              ),
             ),
-            // Green marker
-            const Icon(
-              Icons.location_on,
-              color: Colors.green,
-              size: _siteMarkerIconSize,
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
