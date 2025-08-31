@@ -329,8 +329,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   Marker _buildLaunchMarker(Flight launch) {
     final markerColor = Colors.blue;
     
-    // Build site name for launch marker
-    final siteName = launch.launchSiteName ?? 'Unknown Site';
+    // Build site name for launch marker - used in tooltip/debugging
     
     return Marker(
       point: LatLng(launch.launchLatitude!, launch.launchLongitude!),
@@ -1021,117 +1020,32 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     int eligibleLaunchCount,
     {String? siteName, String? country, double? altitude}
   ) async {
-    final nameController = TextEditingController();
-    final altitudeController = TextEditingController();
-    final countryController = TextEditingController();
-    
-    // Pre-populate fields with passed values
-    nameController.text = siteName ?? '';
-    countryController.text = country ?? '';
-    
-    if (altitude != null) {
-      altitudeController.text = altitude.toStringAsFixed(0);
-    } else {
-      // No altitude provided - find nearest launch with altitude data
+    // Find altitude from nearest launch if not provided
+    double? finalAltitude = altitude;
+    if (finalAltitude == null) {
       final (nearestLaunch, distance) = _findNearestLaunchWithAltitude(point);
       if (nearestLaunch != null && nearestLaunch.launchAltitude != null) {
-        altitudeController.text = nearestLaunch.launchAltitude!.toStringAsFixed(0);
+        finalAltitude = nearestLaunch.launchAltitude!.toDouble();
       }
     }
 
     // Auto-populate country from nearest site if not provided
-    if (country == null || country.isEmpty) {
-      final nearestCountry = _findNearestSiteCountry(point);
-      if (nearestCountry != null) {
-        countryController.text = nearestCountry;
-      }
+    String? finalCountry = country;
+    if (finalCountry == null || finalCountry.isEmpty) {
+      finalCountry = _findNearestSiteCountry(point);
     }
     
-    final result = await showDialog<Map<String, dynamic>>(
+    return showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: const Text('Create New Site'),
-          content: SizedBox(
-            width: 400,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildInfoRow('Location:', '${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}'),
-                const SizedBox(height: 16),
-                
-                // Site details form
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Site Name',
-                    border: OutlineInputBorder(),
-                  ),
-                  onChanged: (value) => setState(() {}), // Trigger rebuild when text changes
-                ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: altitudeController,
-                      decoration: const InputDecoration(
-                        labelText: 'Altitude (m)',
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextField(
-                      controller: countryController,
-                      decoration: const InputDecoration(
-                        labelText: 'Country',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              
-              if (eligibleLaunchCount > 0) ...[
-                const SizedBox(height: 16),
-                Text(
-                  '$eligibleLaunchCount flight${eligibleLaunchCount == 1 ? '' : 's'} within ${_launchRadiusMeters.toInt()}m will be reassigned to this new site.',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
-              ]
-            ],
-          ),
-        ),
-        actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(null),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: nameController.text.trim().isEmpty ? null : () => Navigator.of(context).pop({
-                'name': nameController.text.trim(),
-                'altitude': altitudeController.text.trim().isEmpty ? null : double.tryParse(altitudeController.text.trim()),
-                'country': countryController.text.trim().isEmpty ? null : countryController.text.trim(),
-              }),
-              child: Text('Create Site${eligibleLaunchCount > 0 ? ' & Reassign Flights' : ''}'),
-            ),
-          ],
-        ),
+      builder: (context) => _SiteCreationDialog(
+        point: point,
+        eligibleLaunchCount: eligibleLaunchCount,
+        launchRadiusMeters: _launchRadiusMeters,
+        siteName: siteName,
+        country: finalCountry,
+        altitude: finalAltitude,
       ),
     );
-    
-    // Clean up controllers
-    nameController.dispose();
-    altitudeController.dispose();
-    countryController.dispose();
-    
-    return result;
   }
 
   /// Show site edit dialog for any site (current, local, or newly created)
@@ -1604,27 +1518,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     );
   }
 
-  /// Build an info row for the dialog
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 80,
-            child: Text(
-              label,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-          Expanded(
-            child: Text(value),
-          ),
-        ],
-      ),
-    );
-  }
 
   /// Get marker color based on state
   Color _getSiteMarkerColor(Site site, bool isDragging) {
@@ -2000,6 +1893,155 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     );
   }
 
+}
+
+/// Site creation dialog widget that properly manages its own state and controllers
+class _SiteCreationDialog extends StatefulWidget {
+  final LatLng point;
+  final int eligibleLaunchCount;
+  final String? siteName;
+  final String? country;
+  final double? altitude;
+  final double launchRadiusMeters;
+
+  const _SiteCreationDialog({
+    required this.point,
+    required this.eligibleLaunchCount,
+    required this.launchRadiusMeters,
+    this.siteName,
+    this.country,
+    this.altitude,
+  });
+
+  @override
+  State<_SiteCreationDialog> createState() => _SiteCreationDialogState();
+}
+
+class _SiteCreationDialogState extends State<_SiteCreationDialog> {
+  late TextEditingController _nameController;
+  late TextEditingController _altitudeController;
+  late TextEditingController _countryController;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.siteName ?? '');
+    _altitudeController = TextEditingController(text: widget.altitude?.toStringAsFixed(0) ?? '');
+    _countryController = TextEditingController(text: widget.country ?? '');
+
+    // Add listeners to trigger rebuilds when text changes
+    _nameController.addListener(_onTextChanged);
+  }
+
+  @override
+  void dispose() {
+    _nameController.removeListener(_onTextChanged);
+    _nameController.dispose();
+    _altitudeController.dispose();
+    _countryController.dispose();
+    super.dispose();
+  }
+
+  void _onTextChanged() {
+    setState(() {}); // Trigger rebuild to update button state
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          Expanded(
+            child: Text(value),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Create New Site'),
+      content: SizedBox(
+        width: 400,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildInfoRow('Location:', '${widget.point.latitude.toStringAsFixed(6)}, ${widget.point.longitude.toStringAsFixed(6)}'),
+            const SizedBox(height: 16),
+            
+            // Site details form
+            TextField(
+              controller: _nameController,
+              decoration: const InputDecoration(
+                labelText: 'Site Name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _altitudeController,
+                    decoration: const InputDecoration(
+                      labelText: 'Altitude (m)',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _countryController,
+                    decoration: const InputDecoration(
+                      labelText: 'Country',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            
+            if (widget.eligibleLaunchCount > 0) ...[
+              const SizedBox(height: 16),
+              Text(
+                '${widget.eligibleLaunchCount} flight${widget.eligibleLaunchCount == 1 ? '' : 's'} within ${widget.launchRadiusMeters.toInt()}m will be reassigned to this new site.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ]
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(null),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _nameController.text.trim().isEmpty ? null : () => Navigator.of(context).pop({
+            'name': _nameController.text.trim(),
+            'altitude': _altitudeController.text.trim().isEmpty ? null : double.tryParse(_altitudeController.text.trim()),
+            'country': _countryController.text.trim().isEmpty ? null : _countryController.text.trim(),
+          }),
+          child: Text('Create Site${widget.eligibleLaunchCount > 0 ? ' & Reassign Flights' : ''}'),
+        ),
+      ],
+    );
+  }
 }
 
 /// Help item widget for the instructions dialog
