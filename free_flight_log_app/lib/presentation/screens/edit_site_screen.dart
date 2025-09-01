@@ -1855,7 +1855,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
 /// Site creation dialog widget that properly manages its own state and controllers
 class SiteCreationDialog extends StatefulWidget {
-  final LatLng point;
+  final LatLng? point;
   final int eligibleLaunchCount;
   final String? siteName;
   final String? country;
@@ -1863,7 +1863,7 @@ class SiteCreationDialog extends StatefulWidget {
   final double launchRadiusMeters;
 
   const SiteCreationDialog({
-    required this.point,
+    this.point,
     required this.eligibleLaunchCount,
     required this.launchRadiusMeters,
     this.siteName,
@@ -1886,8 +1886,8 @@ class _SiteCreationDialogState extends State<SiteCreationDialog> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.siteName ?? '');
-    _latitudeController = TextEditingController(text: widget.point.latitude.toStringAsFixed(6));
-    _longitudeController = TextEditingController(text: widget.point.longitude.toStringAsFixed(6));
+    _latitudeController = TextEditingController(text: widget.point != null ? widget.point!.latitude.toStringAsFixed(6) : '');
+    _longitudeController = TextEditingController(text: widget.point != null ? widget.point!.longitude.toStringAsFixed(6) : '');
     _altitudeController = TextEditingController(text: widget.altitude?.toStringAsFixed(0) ?? '');
     _countryController = TextEditingController(text: widget.country ?? '');
 

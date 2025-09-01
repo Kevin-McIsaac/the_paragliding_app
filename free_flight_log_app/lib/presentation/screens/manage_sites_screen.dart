@@ -161,32 +161,12 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
     }
   }
 
-  /// Get a default location for new sites based on existing sites or use a fallback
-  LatLng _getDefaultNewSiteLocation() {
-    if (_sites.isNotEmpty) {
-      // Calculate the centroid of existing sites
-      double totalLat = 0;
-      double totalLon = 0;
-      
-      for (final site in _sites) {
-        totalLat += site.latitude;
-        totalLon += site.longitude;
-      }
-      
-      return LatLng(totalLat / _sites.length, totalLon / _sites.length);
-    } else {
-      // Fallback to Swiss Alps (same as edit screen default)
-      return const LatLng(46.9480, 7.4474);
-    }
-  }
 
   Future<void> _addNewSite() async {
-    final defaultLocation = _getDefaultNewSiteLocation();
-    
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => SiteCreationDialog(
-        point: defaultLocation,
+        point: null, // Let user enter coordinates manually
         eligibleLaunchCount: 0, // No launches to reassign from manage screen
         launchRadiusMeters: 500.0, // Match EditSiteScreen constant
         siteName: null,
@@ -200,8 +180,8 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
         // Create the new site using user-entered coordinates
         final newSite = Site(
           name: result['name'],
-          latitude: result['latitude'] ?? defaultLocation.latitude,
-          longitude: result['longitude'] ?? defaultLocation.longitude,
+          latitude: result['latitude'],
+          longitude: result['longitude'],
           altitude: result['altitude'],
           country: result['country'],
           customName: true,
