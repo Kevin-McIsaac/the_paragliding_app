@@ -78,7 +78,9 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   bool _isMergeMode = false;
   Timer? _cacheRefreshTimer;
   
-  // Drag and drop state - no longer needed as we use geographical distance
+  // Drag and drop hover state
+  Site? _currentlyDraggedSite;
+  dynamic _hoveredTargetSite; // Can be Site or ParaglidingSite
   
   // Flight count cache for tooltips
   Map<int, int> _siteFlightCounts = {};
@@ -1378,6 +1380,12 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       dragOffset: const Offset(0, -70), // Move marker well above finger during drag
       onTap: (point) => _isMergeMode ? _handleMergeTarget(site) : _enterMergeMode(site),
       onLongPress: (point) => _isMergeMode ? null : _showSiteEditDialog(site),
+      onDragStart: (details, point) {
+        setState(() {
+          _currentlyDraggedSite = site;
+        });
+      },
+      onDragUpdate: (details, point) => _updateDragHoverState(point),
       builder: (ctx, point, isDragging) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1414,6 +1422,19 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.blue, width: 2),
+                  ),
+                ),
+              // Drag hover target indicator
+              if (_currentlyDraggedSite != null && 
+                  _hoveredTargetSite == site && 
+                  _currentlyDraggedSite!.id != site.id)
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  width: _siteMarkerSize + 12,
+                  height: _siteMarkerSize + 12,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.blue, width: 4),
                   ),
                 ),
             ],
@@ -1457,7 +1478,10 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           ),
         ],
       ),
-      onDragEnd: (details, point) => _handleFlownSiteDrop(site, point),
+      onDragEnd: (details, point) {
+        _clearDragState();
+        _handleFlownSiteDrop(site, point);
+      },
     );
   }
 
@@ -1498,6 +1522,17 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.green, width: 2),
+                  ),
+                ),
+              // Drag hover target indicator
+              if (_currentlyDraggedSite != null && _hoveredTargetSite == site)
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  width: _siteMarkerSize + 12,
+                  height: _siteMarkerSize + 12,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.green, width: 4),
                   ),
                 ),
             ],
@@ -1642,6 +1677,26 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     }
     
     return null;
+  }
+
+  /// Update drag hover state based on current drag position
+  void _updateDragHoverState(LatLng dragPosition) {
+    final hoveredSite = _findSiteAtPoint(dragPosition);
+    
+    // Only update if the hovered site has changed
+    if (_hoveredTargetSite != hoveredSite) {
+      setState(() {
+        _hoveredTargetSite = hoveredSite;
+      });
+    }
+  }
+
+  /// Clear all drag-related state
+  void _clearDragState() {
+    setState(() {
+      _currentlyDraggedSite = null;
+      _hoveredTargetSite = null;
+    });
   }
 
 
