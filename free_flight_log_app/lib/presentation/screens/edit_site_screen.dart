@@ -41,11 +41,6 @@ class EditSiteScreen extends StatefulWidget {
 }
 
 class _EditSiteScreenState extends State<EditSiteScreen> {
-  late TextEditingController _nameController;
-  late TextEditingController _latitudeController;
-  late TextEditingController _longitudeController;
-  late TextEditingController _altitudeController;
-  late TextEditingController _countryController;
   MapController? _mapController;
   MapProvider _selectedMapProvider = MapProvider.openStreetMap;
   
@@ -62,6 +57,18 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   static const double _boundsThreshold = 0.001;
   static const int _debounceDurationMs = 500;
   static const double _launchRadiusMeters = 500.0;
+  
+  // Common UI shadows
+  static const BoxShadow _standardElevatedShadow = BoxShadow(
+    color: Colors.black26,
+    blurRadius: 4,
+    offset: Offset(0, 2),
+  );
+  static const BoxShadow _bottomNavigationShadow = BoxShadow(
+    color: Colors.black12,
+    blurRadius: 4,
+    offset: Offset(0, -2),
+  );
   
   // Site markers state
   List<Site> _localSites = [];
@@ -92,11 +99,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController();
-    _latitudeController = TextEditingController();
-    _longitudeController = TextEditingController();
-    _altitudeController = TextEditingController();
-    _countryController = TextEditingController();
     _loadMapProviderPreference();
     _loadFlightCounts(); // Load flight counts for sites
     _checkAndShowHelpOnFirstVisit(); // Show help dialog on first visit
@@ -166,7 +168,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         // Show help dialog after a short delay to ensure the screen is fully loaded
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
-            _showHelpDialogFirstTime();
+            _showHelpDialog(markAsShown: true);
           }
         });
       }
@@ -175,8 +177,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     }
   }
 
-  /// Show help dialog for first time with option to mark as seen
-  void _showHelpDialogFirstTime() async {
+  /// Show help dialog with map usage instructions
+  void _showHelpDialog({bool markAsShown = false}) async {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -219,13 +221,15 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         ],
       ),
     ).then((_) async {
-      // Mark help as shown after dialog is dismissed
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool(_helpShownKey, true);
-        LoggingService.debug('EditSiteScreen: Marked help dialog as shown for first-time user');
-      } catch (e) {
-        LoggingService.error('EditSiteScreen: Error saving help shown preference', e);
+      if (markAsShown) {
+        // Mark help as shown after dialog is dismissed
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool(_helpShownKey, true);
+          LoggingService.debug('EditSiteScreen: Marked help dialog as shown for first-time user');
+        } catch (e) {
+          LoggingService.error('EditSiteScreen: Error saving help shown preference', e);
+        }
       }
     });
   }
@@ -234,11 +238,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   void dispose() {
     _debounceTimer?.cancel();
     _cacheRefreshTimer?.cancel();
-    _nameController.dispose();
-    _latitudeController.dispose();
-    _longitudeController.dispose();
-    _altitudeController.dispose();
-    _countryController.dispose();
     super.dispose();
   }
 
@@ -268,13 +267,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Theme.of(context).scaffoldBackgroundColor,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black12,
-              blurRadius: 4,
-              offset: Offset(0, -2),
-            ),
-          ],
+          boxShadow: [_bottomNavigationShadow],
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.end,
@@ -413,13 +406,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(4),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black26,
-                blurRadius: 4,
-                offset: Offset(0, 2),
-              ),
-            ],
+            boxShadow: [_standardElevatedShadow],
           ),
           child: PopupMenuButton<MapProvider>(
             onSelected: _selectMapProvider,
@@ -521,13 +508,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.95),
           borderRadius: BorderRadius.circular(4),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black26,
-              blurRadius: 4,
-              offset: Offset(0, 2),
-            ),
-          ],
+          boxShadow: [_standardElevatedShadow],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -670,52 +651,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     );
   }
 
-  /// Show help dialog with map usage instructions
-  void _showHelpDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.help_outline),
-            SizedBox(width: 8),
-            Text('Using the Sites Map'),
-          ],
-        ),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(height: 12),
-            _HelpItem(
-              icon: Icons.edit,
-              title: 'Edit Site',
-              description: 'Long press on a Site to see and edit the details,  e.g, name, country, latitude, longitude and altitude.',
-            ),
-            SizedBox(height: 12),
-            _HelpItem(
-              icon: Icons.merge,
-              title: 'Merge Sites',
-              description: 'Either drag a Site onto another, or long press a Site then select the other, to merge into a single Site.',
-            ),
-            SizedBox(height: 12),
-            _HelpItem(
-              icon: Icons.add_location,
-              title: 'Create Site',
-              description: 'Long press on the map or a Launch to create a new Site at that location.',
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Got it'),
-          ),
-        ],
-      ),
-    );
-  }
-  
   void _updateMapBounds() {
     if (_mapController == null) return;
     
@@ -1401,7 +1336,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
               // Blue marker with visual feedback for merge mode
               Icon(
                 Icons.location_on,
-                color: _getSiteMarkerColor(site, isDragging),
+                color: Colors.blue,
                 size: _siteMarkerIconSize,
               ),
               // Merge mode indicator
@@ -1566,9 +1501,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
 
   /// Get marker color based on state
-  Color _getSiteMarkerColor(Site site, bool isDragging) {
-    return Colors.blue; // Always blue for local sites
-  }
 
   /// Enter merge mode
   void _enterMergeMode(Site sourceSite) {
@@ -1904,49 +1836,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         _buildLaunchesLayer(),
         // DragMarkers layer must be last to handle gestures properly
         _buildDragMarkersLayer(),
-        // Attribution overlay - required for OSM and satellite tiles
-        Align(
-          alignment: Alignment.bottomRight,
-          child: Container(
-            margin: const EdgeInsets.all(4),
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.9),
-              borderRadius: BorderRadius.circular(2),
-            ),
-            child: GestureDetector(
-              onTap: () async {
-                // Open appropriate copyright page based on provider
-                String url;
-                switch (_selectedMapProvider) {
-                  case MapProvider.openStreetMap:
-                    url = 'https://www.openstreetmap.org/copyright';
-                    break;
-                  case MapProvider.googleSatellite:
-                    url = 'https://www.google.com/permissions/geoguidelines/';
-                    break;
-                  case MapProvider.esriWorldImagery:
-                    url = 'https://www.esri.com/en-us/legal/terms/full-master-agreement';
-                    break;
-                }
-                final uri = Uri.parse(url);
-                try {
-                  await launchUrl(uri, mode: LaunchMode.platformDefault);
-                } catch (e) {
-                  LoggingService.error('EditSiteScreen: Could not launch URL', e);
-                }
-              },
-              child: Text(
-                _selectedMapProvider.attribution,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.blue[800],
-                  decoration: TextDecoration.underline,
-                ),
-              ),
-            ),
-          ),
-        ),
       ],
     ),
         // Map overlays
@@ -2021,26 +1910,6 @@ class _SiteCreationDialogState extends State<SiteCreationDialog> {
     setState(() {}); // Trigger rebuild to update button state
   }
 
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 80,
-            child: Text(
-              label,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-          Expanded(
-            child: Text(value),
-          ),
-        ],
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
