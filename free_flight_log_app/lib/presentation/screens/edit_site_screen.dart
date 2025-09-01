@@ -1942,8 +1942,8 @@ class _SiteCreationDialogState extends State<SiteCreationDialog> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.siteName ?? '');
-    _latitudeController = TextEditingController(text: '');
-    _longitudeController = TextEditingController(text: '');
+    _latitudeController = TextEditingController(text: widget.point.latitude.toStringAsFixed(6));
+    _longitudeController = TextEditingController(text: widget.point.longitude.toStringAsFixed(6));
     _altitudeController = TextEditingController(text: widget.altitude?.toStringAsFixed(0) ?? '');
     _countryController = TextEditingController(text: widget.country ?? '');
 
