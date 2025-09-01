@@ -41,27 +41,34 @@ class EditSiteScreen extends StatefulWidget {
 }
 
 class _EditSiteScreenState extends State<EditSiteScreen> {
-  late TextEditingController _nameController;
-  late TextEditingController _latitudeController;
-  late TextEditingController _longitudeController;
-  late TextEditingController _altitudeController;
-  late TextEditingController _countryController;
   MapController? _mapController;
   MapProvider _selectedMapProvider = MapProvider.openStreetMap;
   
   // Constants
   static const String _mapProviderKey = 'edit_site_map_provider';
+  static const String _helpShownKey = 'edit_site_help_shown';
   static const double _defaultLatitude = 46.9480; // Swiss Alps
   static const double _defaultLongitude = 7.4474;
   static const double _initialZoom = 13.0;
   static const double _minZoom = 1.0;
-  static const double _launchMarkerSize = 20.0;
-  static const double _siteMarkerSize = 48.0;
-  static const double _siteMarkerIconSize = 42.0;
-  static const double _currentSiteMarkerSize = 40.0;
+  static const double _launchMarkerSize = 15.0;
+  static const double _siteMarkerSize = 72.0;
+  static const double _siteMarkerIconSize = 66.0;
   static const double _boundsThreshold = 0.001;
   static const int _debounceDurationMs = 500;
   static const double _launchRadiusMeters = 500.0;
+  
+  // Common UI shadows
+  static const BoxShadow _standardElevatedShadow = BoxShadow(
+    color: Colors.black26,
+    blurRadius: 4,
+    offset: Offset(0, 2),
+  );
+  static const BoxShadow _bottomNavigationShadow = BoxShadow(
+    color: Colors.black12,
+    blurRadius: 4,
+    offset: Offset(0, -2),
+  );
   
   // Site markers state
   List<Site> _localSites = [];
@@ -78,7 +85,9 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   bool _isMergeMode = false;
   Timer? _cacheRefreshTimer;
   
-  // Drag and drop state - no longer needed as we use geographical distance
+  // Drag and drop hover state
+  Site? _currentlyDraggedSite;
+  dynamic _hoveredTargetSite; // Can be Site or ParaglidingSite
   
   // Flight count cache for tooltips
   Map<int, int> _siteFlightCounts = {};
@@ -90,13 +99,9 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController();
-    _latitudeController = TextEditingController();
-    _longitudeController = TextEditingController();
-    _altitudeController = TextEditingController();
-    _countryController = TextEditingController();
     _loadMapProviderPreference();
     _loadFlightCounts(); // Load flight counts for sites
+    _checkAndShowHelpOnFirstVisit(); // Show help dialog on first visit
     
     // Start cache refresh timer for debug overlay (debug mode only)
     if (kDebugMode) {
@@ -153,15 +158,86 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     }
   }
 
+  /// Check if this is the first visit and show help dialog if needed
+  Future<void> _checkAndShowHelpOnFirstVisit() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final helpShown = prefs.getBool(_helpShownKey) ?? false;
+      
+      if (!helpShown && mounted) {
+        // Show help dialog after a short delay to ensure the screen is fully loaded
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _showHelpDialog(markAsShown: true);
+          }
+        });
+      }
+    } catch (e) {
+      LoggingService.error('EditSiteScreen: Error checking first visit help', e);
+    }
+  }
+
+  /// Show help dialog with map usage instructions
+  void _showHelpDialog({bool markAsShown = false}) async {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.help_outline),
+            SizedBox(width: 8),
+            Text('Using the Sites Map'),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(height: 12),
+            _HelpItem(
+              icon: Icons.edit,
+              title: 'Edit Site',
+              description: 'Long press on a Site to see and edit the details,  e.g, name, country, latitude, longitude and altitude.',
+            ),
+            SizedBox(height: 12),
+            _HelpItem(
+              icon: Icons.merge,
+              title: 'Merge Sites',
+              description: 'Either drag a Site onto another, or long press a Site then select the other, to merge into a single Site.',
+            ),
+            SizedBox(height: 12),
+            _HelpItem(
+              icon: Icons.add_location,
+              title: 'Create Site',
+              description: 'Long press on the map or a Launch to create a new Site at that location.',
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    ).then((_) async {
+      if (markAsShown) {
+        // Mark help as shown after dialog is dismissed
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool(_helpShownKey, true);
+          LoggingService.debug('EditSiteScreen: Marked help dialog as shown for first-time user');
+        } catch (e) {
+          LoggingService.error('EditSiteScreen: Error saving help shown preference', e);
+        }
+      }
+    });
+  }
+
   @override
   void dispose() {
     _debounceTimer?.cancel();
     _cacheRefreshTimer?.cancel();
-    _nameController.dispose();
-    _latitudeController.dispose();
-    _longitudeController.dispose();
-    _altitudeController.dispose();
-    _countryController.dispose();
     super.dispose();
   }
 
@@ -191,13 +267,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Theme.of(context).scaffoldBackgroundColor,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black12,
-              blurRadius: 4,
-              offset: Offset(0, -2),
-            ),
-          ],
+          boxShadow: [_bottomNavigationShadow],
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.end,
@@ -254,38 +324,32 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   Marker _buildLaunchMarker(Flight launch) {
     final markerColor = Colors.blue;
     
-    // Build tooltip message with site name and date
-    final siteName = launch.launchSiteName ?? 'Unknown Site';
-    final date = launch.date.toLocal().toString().split(' ')[0];
-    final tooltipMessage = '$siteName\n$date';
+    // Build site name for launch marker - used in tooltip/debugging
     
     return Marker(
       point: LatLng(launch.launchLatitude!, launch.launchLongitude!),
       width: _launchMarkerSize,
       height: _launchMarkerSize,
       child: GestureDetector(
-        onTap: () => _handleSiteCreationAtPoint(
+        onLongPress: () => _handleSiteCreationAtPoint(
           LatLng(launch.launchLatitude!, launch.launchLongitude!),
           siteName: 'Launch ${launch.date.toLocal().toString().split(' ')[0]}',
           altitude: launch.launchAltitude,
         ),
-        child: Tooltip(
-          message: tooltipMessage,
-          child: Container(
-            width: _launchMarkerSize,
-            height: _launchMarkerSize,
-            decoration: BoxDecoration(
-              color: markerColor,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.3),
-                  blurRadius: 2,
-                  offset: const Offset(0, 1),
-                ),
-              ],
-            ),
+        child: Container(
+          width: _launchMarkerSize,
+          height: _launchMarkerSize,
+          decoration: BoxDecoration(
+            color: markerColor,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 2,
+                offset: const Offset(0, 1),
+              ),
+            ],
           ),
         ),
       ),
@@ -342,13 +406,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(4),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black26,
-                blurRadius: 4,
-                offset: Offset(0, 2),
-              ),
-            ],
+            boxShadow: [_standardElevatedShadow],
           ),
           child: PopupMenuButton<MapProvider>(
             onSelected: _selectMapProvider,
@@ -450,13 +508,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.95),
           borderRadius: BorderRadius.circular(4),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black26,
-              blurRadius: 4,
-              offset: Offset(0, 2),
-            ),
-          ],
+          boxShadow: [_standardElevatedShadow],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -599,57 +651,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     );
   }
 
-  /// Show help dialog with map usage instructions
-  void _showHelpDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.help_outline),
-            SizedBox(width: 8),
-            Text('Using the Map'),
-          ],
-        ),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _HelpItem(
-              icon: Icons.visibility,
-              title: 'View Site',
-              description: 'Hover over a Site to see the details, e.g, name, country, latitude, longitude and altitude.',
-            ),
-            SizedBox(height: 12),
-            _HelpItem(
-              icon: Icons.edit,
-              title: 'Edit Site',
-              description: 'Click on a Site to edit the details.',
-            ),
-            SizedBox(height: 12),
-            _HelpItem(
-              icon: Icons.merge,
-              title: 'Merge Site',
-              description: 'Drag a Site onto another to merge into a single Site.',
-            ),
-            SizedBox(height: 12),
-            _HelpItem(
-              icon: Icons.add_location,
-              title: 'Create Site',
-              description: 'Click on the map or a Launch to create a new Site at that location.',
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Got it'),
-          ),
-        ],
-      ),
-    );
-  }
-  
   void _updateMapBounds() {
     if (_mapController == null) return;
     
@@ -771,26 +772,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     }
   }
   
-  /// Create consistent tooltip format for all site types
-  String _createSiteTooltip(String name, String? country, int? launchCount, {bool showLaunchCount = true}) {
-    final parts = <String>[];
-    
-    // Name (or fallback)
-    parts.add(name.trim().isEmpty ? 'Unknown Site' : name);
-    
-    // Country
-    if (country != null && country.isNotEmpty) {
-      parts.add(country);
-    }
-    
-    // Launches count (only if requested)
-    if (showLaunchCount) {
-      final count = launchCount ?? 0;
-      parts.add('$count launch${count == 1 ? '' : 'es'}');
-    }
-    
-    return parts.join('\n');
-  }
 
   /// Load all launches in the current viewport bounds
   Future<void> _loadAllLaunchesInBounds(LatLngBounds bounds) async {
@@ -976,117 +957,32 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     int eligibleLaunchCount,
     {String? siteName, String? country, double? altitude}
   ) async {
-    final nameController = TextEditingController();
-    final altitudeController = TextEditingController();
-    final countryController = TextEditingController();
-    
-    // Pre-populate fields with passed values
-    nameController.text = siteName ?? '';
-    countryController.text = country ?? '';
-    
-    if (altitude != null) {
-      altitudeController.text = altitude.toStringAsFixed(0);
-    } else {
-      // No altitude provided - find nearest launch with altitude data
+    // Find altitude from nearest launch if not provided
+    double? finalAltitude = altitude;
+    if (finalAltitude == null) {
       final (nearestLaunch, distance) = _findNearestLaunchWithAltitude(point);
       if (nearestLaunch != null && nearestLaunch.launchAltitude != null) {
-        altitudeController.text = nearestLaunch.launchAltitude!.toStringAsFixed(0);
+        finalAltitude = nearestLaunch.launchAltitude!.toDouble();
       }
     }
 
     // Auto-populate country from nearest site if not provided
-    if (country == null || country.isEmpty) {
-      final nearestCountry = _findNearestSiteCountry(point);
-      if (nearestCountry != null) {
-        countryController.text = nearestCountry;
-      }
+    String? finalCountry = country;
+    if (finalCountry == null || finalCountry.isEmpty) {
+      finalCountry = _findNearestSiteCountry(point);
     }
     
-    final result = await showDialog<Map<String, dynamic>>(
+    return showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: const Text('Create New Site'),
-          content: SizedBox(
-            width: 400,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildInfoRow('Location:', '${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}'),
-                const SizedBox(height: 16),
-                
-                // Site details form
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Site Name',
-                    border: OutlineInputBorder(),
-                  ),
-                  onChanged: (value) => setState(() {}), // Trigger rebuild when text changes
-                ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: altitudeController,
-                      decoration: const InputDecoration(
-                        labelText: 'Altitude (m)',
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextField(
-                      controller: countryController,
-                      decoration: const InputDecoration(
-                        labelText: 'Country',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              
-              if (eligibleLaunchCount > 0) ...[
-                const SizedBox(height: 16),
-                Text(
-                  '$eligibleLaunchCount flight${eligibleLaunchCount == 1 ? '' : 's'} within ${_launchRadiusMeters.toInt()}m will be reassigned to this new site.',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
-              ]
-            ],
-          ),
-        ),
-        actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(null),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: nameController.text.trim().isEmpty ? null : () => Navigator.of(context).pop({
-                'name': nameController.text.trim(),
-                'altitude': altitudeController.text.trim().isEmpty ? null : double.tryParse(altitudeController.text.trim()),
-                'country': countryController.text.trim().isEmpty ? null : countryController.text.trim(),
-              }),
-              child: Text('Create Site${eligibleLaunchCount > 0 ? ' & Reassign Flights' : ''}'),
-            ),
-          ],
-        ),
+      builder: (context) => SiteCreationDialog(
+        point: point,
+        eligibleLaunchCount: eligibleLaunchCount,
+        launchRadiusMeters: _launchRadiusMeters,
+        siteName: siteName,
+        country: finalCountry,
+        altitude: finalAltitude,
       ),
     );
-    
-    // Clean up controllers
-    nameController.dispose();
-    altitudeController.dispose();
-    countryController.dispose();
-    
-    return result;
   }
 
   /// Show site edit dialog for any site (current, local, or newly created)
@@ -1411,127 +1307,200 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   /// Build local site drag marker (blue, draggable)
   DragMarker _buildLocalSiteDragMarker(Site site) {
     final launchCount = site.id != null ? _siteFlightCounts[site.id!] : null;
-    final tooltipMessage = _createSiteTooltip(site.name, site.country, launchCount);
     
     return DragMarker(
       point: LatLng(site.latitude, site.longitude),
-      size: const Size.square(_siteMarkerSize),
+      size: const Size(300, 120), // Wider and taller to accommodate text
       offset: const Offset(0, -_siteMarkerSize / 2),
       dragOffset: const Offset(0, -70), // Move marker well above finger during drag
-      onTap: (point) => _isMergeMode ? _handleMergeTarget(site) : _showSiteEditDialog(site),
-      onLongPress: (point) => _enterMergeMode(site),
-      builder: (ctx, point, isDragging) => Tooltip(
-        message: tooltipMessage,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            // White outline
-            const Icon(
-              Icons.location_on,
-              color: Colors.white,
-              size: _siteMarkerSize,
-            ),
-            // Blue marker with visual feedback for merge mode
-            Icon(
-              Icons.location_on,
-              color: _getSiteMarkerColor(site, isDragging),
-              size: _siteMarkerIconSize,
-            ),
-            // Merge mode indicator
-            if (_isMergeMode && _selectedSourceSite?.id == site.id)
-              Container(
-                width: _siteMarkerSize + 8,
-                height: _siteMarkerSize + 8,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.orange, width: 3),
-                ),
+      onTap: (point) => _isMergeMode ? _handleMergeTarget(site) : _enterMergeMode(site),
+      onLongPress: (point) => _isMergeMode ? null : _showSiteEditDialog(site),
+      onDragStart: (details, point) {
+        setState(() {
+          _currentlyDraggedSite = site;
+        });
+      },
+      onDragUpdate: (details, point) => _updateDragHoverState(point),
+      builder: (ctx, point, isDragging) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              // White outline
+              const Icon(
+                Icons.location_on,
+                color: Colors.white,
+                size: _siteMarkerSize,
               ),
-            // Valid merge target indicator
-            if (_isMergeMode && _selectedSourceSite?.id != site.id)
-              Container(
-                width: _siteMarkerSize + 4,
-                height: _siteMarkerSize + 4,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.green, width: 2),
-                ),
+              // Blue marker with visual feedback for merge mode
+              Icon(
+                Icons.location_on,
+                color: Colors.blue,
+                size: _siteMarkerIconSize,
               ),
-          ],
-        ),
+              // Merge mode indicator
+              if (_isMergeMode && _selectedSourceSite?.id == site.id)
+                Container(
+                  width: _siteMarkerSize + 8,
+                  height: _siteMarkerSize + 8,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.orange, width: 3),
+                  ),
+                ),
+              // Valid merge target indicator
+              if (_isMergeMode && _selectedSourceSite?.id != site.id)
+                Container(
+                  width: _siteMarkerSize + 4,
+                  height: _siteMarkerSize + 4,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.blue, width: 2),
+                  ),
+                ),
+              // Drag hover target indicator
+              if (_currentlyDraggedSite != null && 
+                  _hoveredTargetSite == site && 
+                  _currentlyDraggedSite!.id != site.id)
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  width: _siteMarkerSize + 12,
+                  height: _siteMarkerSize + 12,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.blue, width: 4),
+                  ),
+                ),
+            ],
+          ),
+          // Text label
+          IntrinsicWidth(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 140),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    site.name,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  if (launchCount != null && launchCount > 0)
+                    Text(
+                      '$launchCount flight${launchCount == 1 ? '' : 's'}',
+                      style: const TextStyle(
+                        fontSize: 9,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
-      onDragEnd: (details, point) => _handleFlownSiteDrop(site, point),
+      onDragEnd: (details, point) {
+        _clearDragState();
+        _handleFlownSiteDrop(site, point);
+      },
     );
   }
 
   /// Build API site drag marker (green, not draggable - only drop target)
   DragMarker _buildApiSiteDragMarker(ParaglidingSite site) {
     // API sites have no local flight counts, always 0
-    final tooltipMessage = _createSiteTooltip(site.name, site.country, 0, showLaunchCount: false);
     
     return DragMarker(
       point: LatLng(site.latitude, site.longitude),
-      size: const Size.square(_siteMarkerSize),
+      size: const Size(300, 120), // Wider and taller to accommodate text
       offset: const Offset(0, -_siteMarkerSize / 2),
       disableDrag: true, // Cannot drag API sites, only drop onto them
-      onTap: (point) => _handleApiSiteClick(site),
-      builder: (ctx, point, isDragging) => Tooltip(
-        message: tooltipMessage,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            // White outline
-            const Icon(
-              Icons.location_on,
-              color: Colors.white,
-              size: _siteMarkerSize,
-            ),
-            // Green marker
-            const Icon(
-              Icons.location_on,
-              color: Colors.green,
-              size: _siteMarkerIconSize,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build an info row for the dialog
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      onTap: (point) => _isMergeMode ? _handleMergeIntoApiSite(site) : null,
+      onLongPress: (point) => _isMergeMode ? null : _handleApiSiteClick(site),
+      builder: (ctx, point, isDragging) => Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            width: 80,
-            child: Text(
-              label,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              // White outline
+              const Icon(
+                Icons.location_on,
+                color: Colors.white,
+                size: _siteMarkerSize,
+              ),
+              // Green marker
+              const Icon(
+                Icons.location_on,
+                color: Colors.green,
+                size: _siteMarkerIconSize,
+              ),
+              // Merge target indicator
+              if (_isMergeMode && _selectedSourceSite != null)
+                Container(
+                  width: _siteMarkerSize + 4,
+                  height: _siteMarkerSize + 4,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.green, width: 2),
+                  ),
+                ),
+              // Drag hover target indicator
+              if (_currentlyDraggedSite != null && _hoveredTargetSite == site)
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  width: _siteMarkerSize + 12,
+                  height: _siteMarkerSize + 12,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.green, width: 4),
+                  ),
+                ),
+            ],
           ),
-          Expanded(
-            child: Text(value),
+          // Text label - API sites show only name
+          IntrinsicWidth(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 140),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                site.name,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+                style: const TextStyle(
+                  fontSize: 9,
+                  color: Colors.white,
+                  fontWeight: FontWeight.w500,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
+
   /// Get marker color based on state
-  Color _getSiteMarkerColor(Site site, bool isDragging) {
-    if (_isMergeMode && _selectedSourceSite?.id == site.id) {
-      return Colors.orange; // Selected source site
-    } else if (_isMergeMode && _selectedSourceSite?.id != site.id) {
-      return Colors.green; // Valid merge target
-    } else if (isDragging) {
-      return Colors.blue.withValues(alpha: 0.7); // Being dragged
-    } else {
-      return Colors.blue; // Normal state
-    }
-  }
 
   /// Enter merge mode
   void _enterMergeMode(Site sourceSite) {
@@ -1569,6 +1538,17 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
     // Perform the merge
     _mergeFlownIntoFlownSite(_selectedSourceSite!, targetSite);
+    _exitMergeMode();
+  }
+
+  /// Handle merge into API site target
+  void _handleMergeIntoApiSite(ParaglidingSite apiSite) {
+    if (_selectedSourceSite == null) {
+      return;
+    }
+
+    // Perform the merge
+    _mergeFlownIntoApiSite(_selectedSourceSite!, apiSite);
     _exitMergeMode();
   }
 
@@ -1629,6 +1609,26 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     }
     
     return null;
+  }
+
+  /// Update drag hover state based on current drag position
+  void _updateDragHoverState(LatLng dragPosition) {
+    final hoveredSite = _findSiteAtPoint(dragPosition);
+    
+    // Only update if the hovered site has changed
+    if (_hoveredTargetSite != hoveredSite) {
+      setState(() {
+        _hoveredTargetSite = hoveredSite;
+      });
+    }
+  }
+
+  /// Clear all drag-related state
+  void _clearDragState() {
+    setState(() {
+      _currentlyDraggedSite = null;
+      _hoveredTargetSite = null;
+    });
   }
 
 
@@ -1825,7 +1825,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         initialZoom: _initialZoom,
         onMapReady: _onMapReady,
         onMapEvent: _onMapEvent,
-        onTap: _onMapTap,
+        onLongPress: _onMapTap,
         // Dynamic zoom limits based on selected provider
         minZoom: _minZoom,
         maxZoom: _selectedMapProvider.maxZoom.toDouble(),
@@ -1836,49 +1836,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         _buildLaunchesLayer(),
         // DragMarkers layer must be last to handle gestures properly
         _buildDragMarkersLayer(),
-        // Attribution overlay - required for OSM and satellite tiles
-        Align(
-          alignment: Alignment.bottomRight,
-          child: Container(
-            margin: const EdgeInsets.all(4),
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.9),
-              borderRadius: BorderRadius.circular(2),
-            ),
-            child: GestureDetector(
-              onTap: () async {
-                // Open appropriate copyright page based on provider
-                String url;
-                switch (_selectedMapProvider) {
-                  case MapProvider.openStreetMap:
-                    url = 'https://www.openstreetmap.org/copyright';
-                    break;
-                  case MapProvider.googleSatellite:
-                    url = 'https://www.google.com/permissions/geoguidelines/';
-                    break;
-                  case MapProvider.esriWorldImagery:
-                    url = 'https://www.esri.com/en-us/legal/terms/full-master-agreement';
-                    break;
-                }
-                final uri = Uri.parse(url);
-                try {
-                  await launchUrl(uri, mode: LaunchMode.platformDefault);
-                } catch (e) {
-                  LoggingService.error('EditSiteScreen: Could not launch URL', e);
-                }
-              },
-              child: Text(
-                _selectedMapProvider.attribution,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.blue[800],
-                  decoration: TextDecoration.underline,
-                ),
-              ),
-            ),
-          ),
-        ),
       ],
     ),
         // Map overlays
@@ -1894,6 +1851,202 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     );
   }
 
+}
+
+/// Site creation dialog widget that properly manages its own state and controllers
+class SiteCreationDialog extends StatefulWidget {
+  final LatLng? point;
+  final int eligibleLaunchCount;
+  final String? siteName;
+  final String? country;
+  final double? altitude;
+  final double launchRadiusMeters;
+
+  const SiteCreationDialog({
+    this.point,
+    required this.eligibleLaunchCount,
+    required this.launchRadiusMeters,
+    this.siteName,
+    this.country,
+    this.altitude,
+  });
+
+  @override
+  State<SiteCreationDialog> createState() => _SiteCreationDialogState();
+}
+
+class _SiteCreationDialogState extends State<SiteCreationDialog> {
+  late TextEditingController _nameController;
+  late TextEditingController _latitudeController;
+  late TextEditingController _longitudeController;
+  late TextEditingController _altitudeController;
+  late TextEditingController _countryController;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.siteName ?? '');
+    _latitudeController = TextEditingController(text: widget.point != null ? widget.point!.latitude.toStringAsFixed(6) : '');
+    _longitudeController = TextEditingController(text: widget.point != null ? widget.point!.longitude.toStringAsFixed(6) : '');
+    _altitudeController = TextEditingController(text: widget.altitude?.toStringAsFixed(0) ?? '');
+    _countryController = TextEditingController(text: widget.country ?? '');
+
+    // Add listeners to trigger rebuilds when text changes
+    _nameController.addListener(_onTextChanged);
+  }
+
+  @override
+  void dispose() {
+    _nameController.removeListener(_onTextChanged);
+    _nameController.dispose();
+    _latitudeController.dispose();
+    _longitudeController.dispose();
+    _altitudeController.dispose();
+    _countryController.dispose();
+    super.dispose();
+  }
+
+  void _onTextChanged() {
+    setState(() {}); // Trigger rebuild to update button state
+  }
+
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Create New Site'),
+      content: SizedBox(
+        width: 400,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Site details form
+            TextField(
+              controller: _nameController,
+              decoration: const InputDecoration(
+                labelText: 'Site Name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _latitudeController,
+                    decoration: const InputDecoration(
+                      labelText: 'Latitude',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _longitudeController,
+                    decoration: const InputDecoration(
+                      labelText: 'Longitude',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _altitudeController,
+                    decoration: const InputDecoration(
+                      labelText: 'Altitude (m)',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _countryController,
+                    decoration: const InputDecoration(
+                      labelText: 'Country',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            
+            if (widget.eligibleLaunchCount > 0) ...[
+              const SizedBox(height: 16),
+              Text(
+                '${widget.eligibleLaunchCount} flight${widget.eligibleLaunchCount == 1 ? '' : 's'} within ${widget.launchRadiusMeters.toInt()}m will be reassigned to this new site.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ]
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(null),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _nameController.text.trim().isEmpty ? null : () {
+            final latitude = double.tryParse(_latitudeController.text.trim());
+            final longitude = double.tryParse(_longitudeController.text.trim());
+            
+            if (latitude == null || longitude == null) {
+              // Show error for invalid coordinates
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Please enter valid latitude and longitude values'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+              return;
+            }
+            
+            if (latitude < -90 || latitude > 90) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Latitude must be between -90 and 90'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+              return;
+            }
+            
+            if (longitude < -180 || longitude > 180) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Longitude must be between -180 and 180'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+              return;
+            }
+            
+            Navigator.of(context).pop({
+              'name': _nameController.text.trim(),
+              'latitude': latitude,
+              'longitude': longitude,
+              'altitude': _altitudeController.text.trim().isEmpty ? null : double.tryParse(_altitudeController.text.trim()),
+              'country': _countryController.text.trim().isEmpty ? null : _countryController.text.trim(),
+            });
+          },
+          child: Text('Create Site${widget.eligibleLaunchCount > 0 ? ' & Reassign Flights' : ''}'),
+        ),
+      ],
+    );
+  }
 }
 
 /// Help item widget for the instructions dialog

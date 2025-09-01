@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
 import '../../data/models/site.dart';
 import '../../utils/ui_utils.dart';
 import 'edit_site_screen.dart';
@@ -146,9 +147,63 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
           return dateB.compareTo(dateA); // Most recent first
         });
         break;
+      case 'flights':
+        _filteredSites.sort((a, b) {
+          final flightCountA = a.flightCount ?? 0;
+          final flightCountB = b.flightCount ?? 0;
+          final countComparison = flightCountB.compareTo(flightCountA); // Most flights first
+          if (countComparison == 0) {
+            return a.name.toLowerCase().compareTo(b.name.toLowerCase()); // Then by name
+          }
+          return countComparison;
+        });
+        break;
     }
   }
 
+
+  Future<void> _addNewSite() async {
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => SiteCreationDialog(
+        point: null, // Let user enter coordinates manually
+        eligibleLaunchCount: 0, // No launches to reassign from manage screen
+        launchRadiusMeters: 500.0, // Match EditSiteScreen constant
+        siteName: null,
+        country: null,
+        altitude: null,
+      ),
+    );
+    
+    if (result != null && mounted) {
+      try {
+        // Create the new site using user-entered coordinates
+        final newSite = Site(
+          name: result['name'],
+          latitude: result['latitude'],
+          longitude: result['longitude'],
+          altitude: result['altitude'],
+          country: result['country'],
+          customName: true,
+        );
+        
+        await _databaseService.insertSite(newSite);
+        LoggingService.info('ManageSitesScreen: Created new site "${result['name']}"');
+        
+        // Refresh the sites list
+        await _loadSites();
+        
+        if (mounted) {
+          UiUtils.showSuccessMessage(context, 'Site "${result['name']}" created successfully');
+        }
+      } catch (e) {
+        LoggingService.error('ManageSitesScreen: Error creating site', e);
+        if (mounted) {
+          UiUtils.showErrorDialog(context, 'Error', 'Failed to create site: $e');
+        }
+      }
+    }
+  }
 
   Future<void> _deleteSite(Site site) async {
     if (!mounted) return;
@@ -295,6 +350,25 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
                   ],
                 ),
               ),
+              PopupMenuItem(
+                value: 'flights',
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.flight_takeoff,
+                      color: _sortBy == 'flights' ? Theme.of(context).colorScheme.primary : null,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Sort by Flight Count',
+                      style: TextStyle(
+                        fontWeight: _sortBy == 'flights' ? FontWeight.bold : null,
+                        color: _sortBy == 'flights' ? Theme.of(context).colorScheme.primary : null,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ],
@@ -418,6 +492,11 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
                             ),
                           ],
                         ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _addNewSite,
+        tooltip: 'Add Site',
+        child: const Icon(Icons.add),
+      ),
     );
   }
 
@@ -559,11 +638,14 @@ class _SiteListTile extends StatelessWidget {
                         Text(' • ', style: TextStyle(color: Colors.grey[600])),
                       ]
                       else ...[
-                        Text(
-                          'Unknown Country',
-                          style: TextStyle(
-                            color: Colors.grey[500],
-                            fontStyle: FontStyle.italic,
+                        Flexible(
+                          child: Text(
+                            'Unknown Country',
+                            style: TextStyle(
+                              color: Colors.grey[500],
+                              fontStyle: FontStyle.italic,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         Text(' • ', style: TextStyle(color: Colors.grey[600])),
