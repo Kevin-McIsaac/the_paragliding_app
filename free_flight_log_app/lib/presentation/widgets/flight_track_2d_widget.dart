@@ -497,7 +497,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
       dotData: const FlDotData(show: false),
       belowBarData: BarAreaData(
         show: true,
-        color: Colors.grey[200]!.withValues(alpha: 0.4),
+        color: Colors.grey.withValues(alpha: 0.25),
       ),
       showingIndicators: _selectionFromMap && _selectedTrackPointIndex != null 
         ? [_selectedTrackPointIndex!] 
