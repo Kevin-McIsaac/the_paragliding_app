@@ -617,11 +617,19 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               sideTitles: SideTitles(
                 showTitles: true,
                 reservedSize: 10,
+                interval: 15,
                 getTitlesWidget: (value, meta) {
                   final minutesFromStart = value;
+                  // Only show labels at quarter-hour intervals
+                  if (minutesFromStart % 15 != 0) {
+                    return const SizedBox.shrink();
+                  }
                   final firstTime = _trackPoints.first.timestamp;
                   final currentTime = firstTime.add(Duration(seconds: (minutesFromStart * 60).round()));
-                  final timeString = '${currentTime.hour.toString().padLeft(2, '0')}:${currentTime.minute.toString().padLeft(2, '0')}';
+                  // Round to nearest 15-minute mark
+                  final roundedMinute = (currentTime.minute ~/ 15) * 15;
+                  final roundedTime = DateTime(currentTime.year, currentTime.month, currentTime.day, currentTime.hour, roundedMinute);
+                  final timeString = '${roundedTime.hour.toString().padLeft(2, '0')}:${roundedTime.minute.toString().padLeft(2, '0')}';
                   return Text(
                     timeString,
                     style: const TextStyle(fontSize: 10, color: Colors.grey),
