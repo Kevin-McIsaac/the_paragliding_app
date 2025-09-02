@@ -54,6 +54,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   String? _error;
   MapProvider _selectedMapProvider = MapProvider.openStreetMap;
   int? _selectedTrackPointIndex;
+  bool _selectionFromMap = false;
   
   @override
   void initState() {
@@ -190,6 +191,42 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     }
     
     return lines;
+  }
+
+  void _onMapTapped(LatLng position) {
+    if (_trackPoints.isEmpty) return;
+    
+    // Find the closest track point to the tapped position
+    int closestIndex = 0;
+    double minDistance = _calculateDistance(position, LatLng(_trackPoints[0].latitude, _trackPoints[0].longitude));
+    
+    for (int i = 1; i < _trackPoints.length; i++) {
+      final distance = _calculateDistance(position, LatLng(_trackPoints[i].latitude, _trackPoints[i].longitude));
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestIndex = i;
+      }
+    }
+    
+    setState(() {
+      _selectedTrackPointIndex = closestIndex;
+      _selectionFromMap = true;
+    });
+  }
+  
+  double _calculateDistance(LatLng point1, LatLng point2) {
+    // Simple distance calculation (Haversine would be more accurate but this is sufficient)
+    final lat1Rad = point1.latitude * (math.pi / 180);
+    final lat2Rad = point2.latitude * (math.pi / 180);
+    final deltaLat = (point2.latitude - point1.latitude) * (math.pi / 180);
+    final deltaLng = (point2.longitude - point1.longitude) * (math.pi / 180);
+    
+    final a = math.sin(deltaLat / 2) * math.sin(deltaLat / 2) +
+        math.cos(lat1Rad) * math.cos(lat2Rad) *
+        math.sin(deltaLng / 2) * math.sin(deltaLng / 2);
+    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    
+    return 6371000 * c; // Earth radius in meters
   }
 
   List<Marker> _buildTrackPointMarker() {
@@ -451,6 +488,19 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     final altRange = maxAlt - minAlt;
     final padding = altRange * 0.1;
 
+    // Create the line bar data to reuse in both places
+    final lineBarData = LineChartBarData(
+      spots: spots,
+      isCurved: false,
+      color: Colors.blue,
+      barWidth: 1,
+      dotData: const FlDotData(show: false),
+      belowBarData: BarAreaData(
+        show: true,
+        color: Colors.grey[200]!.withValues(alpha: 0.4),
+      ),
+    );
+
     return Container(
       height: 100,
       padding: const EdgeInsets.all(8),
@@ -459,9 +509,18 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
       ),
       child: LineChart(
         LineChartData(
+          showingTooltipIndicators: _selectedTrackPointIndex != null ? [
+            ShowingTooltipIndicators([
+              LineBarSpot(
+                lineBarData,
+                0, // bar index
+                spots[_selectedTrackPointIndex!],
+              ),
+            ])
+          ] : [],
           lineTouchData: LineTouchData(
             enabled: true,
-            handleBuiltInTouches: true,
+            handleBuiltInTouches: !_selectionFromMap,
             touchCallback: (FlTouchEvent event, LineTouchResponse? touchResponse) {
               if (touchResponse != null && touchResponse.lineBarSpots != null && touchResponse.lineBarSpots!.isNotEmpty) {
                 final spot = touchResponse.lineBarSpots!.first;
@@ -483,11 +542,15 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                 
                 setState(() {
                   _selectedTrackPointIndex = closestIndex;
+                  _selectionFromMap = false; // Reset flag since this is from chart
                 });
               } else {
-                setState(() {
-                  _selectedTrackPointIndex = null;
-                });
+                // Only clear if selection wasn't from map
+                if (!_selectionFromMap) {
+                  setState(() {
+                    _selectedTrackPointIndex = null;
+                  });
+                }
               }
             },
             touchTooltipData: LineTouchTooltipData(
@@ -572,17 +635,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           minY: minAlt - padding,
           maxY: maxAlt + padding,
           lineBarsData: [
-            LineChartBarData(
-              spots: spots,
-              isCurved: false,
-              color: Colors.blue,
-              barWidth: 1,
-              dotData: const FlDotData(show: false),
-              belowBarData: BarAreaData(
-                show: true,
-                color: Colors.grey[200]!.withValues(alpha: 0.4),
-              ),
-            ),
+            lineBarData,
           ],
         ),
       ),
@@ -635,6 +688,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               minZoom: 1.0,
               maxZoom: _selectedMapProvider.maxZoom.toDouble(),
               onMapReady: _fitMapToBounds,
+              onTap: (tapPosition, point) => _onMapTapped(point),
             ),
             children: [
               TileLayer(
