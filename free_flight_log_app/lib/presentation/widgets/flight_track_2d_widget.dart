@@ -616,7 +616,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                reservedSize: 30,
+                reservedSize: 10,
                 getTitlesWidget: (value, meta) {
                   final minutesFromStart = value;
                   final firstTime = _trackPoints.first.timestamp;
