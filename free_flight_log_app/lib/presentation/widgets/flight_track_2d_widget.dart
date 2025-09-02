@@ -474,12 +474,11 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
       return const SizedBox(height: 100, child: Center(child: Text('Insufficient data for altitude chart')));
     }
 
-    // Calculate time and altitude data points
-    final firstTime = _trackPoints.first.timestamp;
+    // Calculate time and altitude data points using actual timestamps
     final spots = _trackPoints.map((point) {
-      final minutesFromStart = point.timestamp.difference(firstTime).inSeconds / 60.0;
-      return FlSpot(minutesFromStart, point.gpsAltitude.toDouble());
+      return FlSpot(point.timestamp.millisecondsSinceEpoch.toDouble(), point.gpsAltitude.toDouble());
     }).toList();
+
 
     // Calculate altitude bounds
     final altitudes = _trackPoints.map((p) => p.gpsAltitude).toList();
@@ -527,16 +526,14 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
             touchCallback: (FlTouchEvent event, LineTouchResponse? touchResponse) {
               if (touchResponse != null && touchResponse.lineBarSpots != null && touchResponse.lineBarSpots!.isNotEmpty) {
                 final spot = touchResponse.lineBarSpots!.first;
-                final minutesFromStart = spot.x;
-                final firstTime = _trackPoints.first.timestamp;
-                final targetTime = firstTime.add(Duration(seconds: (minutesFromStart * 60).round()));
+                final targetTimestamp = spot.x.toInt();
                 
-                // Find the closest track point by time
+                // Find the closest track point by timestamp
                 int closestIndex = 0;
-                Duration minDifference = (targetTime.difference(_trackPoints[0].timestamp)).abs();
+                double minDifference = (targetTimestamp - _trackPoints[0].timestamp.millisecondsSinceEpoch).abs().toDouble();
                 
                 for (int i = 1; i < _trackPoints.length; i++) {
-                  final difference = (targetTime.difference(_trackPoints[i].timestamp)).abs();
+                  final difference = (targetTimestamp - _trackPoints[i].timestamp.millisecondsSinceEpoch).abs().toDouble();
                   if (difference < minDifference) {
                     minDifference = difference;
                     closestIndex = i;
@@ -616,20 +613,33 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                reservedSize: 10,
-                interval: 15,
+                reservedSize: 15,
+                interval: 15 * 60 * 1000, // 15 minutes in milliseconds
                 getTitlesWidget: (value, meta) {
-                  final minutesFromStart = value;
-                  // Only show labels at quarter-hour intervals
-                  if (minutesFromStart % 15 != 0) {
+                  // Find the closest track point to this timestamp value
+                  final targetTimestamp = value.toInt();
+                  
+                  // Find the track point with the closest timestamp
+                  IgcPoint? closestPoint;
+                  double minDifference = double.infinity;
+                  
+                  for (final point in _trackPoints) {
+                    final difference = (targetTimestamp - point.timestamp.millisecondsSinceEpoch).abs().toDouble();
+                    if (difference < minDifference) {
+                      minDifference = difference;
+                      closestPoint = point;
+                    }
+                  }
+                  
+                  if (closestPoint == null) {
                     return const SizedBox.shrink();
                   }
-                  final firstTime = _trackPoints.first.timestamp;
-                  final currentTime = firstTime.add(Duration(seconds: (minutesFromStart * 60).round()));
-                  // Round to nearest 15-minute mark
-                  final roundedMinute = (currentTime.minute ~/ 15) * 15;
-                  final roundedTime = DateTime(currentTime.year, currentTime.month, currentTime.day, currentTime.hour, roundedMinute);
-                  final timeString = '${roundedTime.hour.toString().padLeft(2, '0')}:${roundedTime.minute.toString().padLeft(2, '0')}';
+                  
+                  // Since we set interval to 15 minutes, show all labels
+                  // (the interval setting handles the spacing)
+                  
+                  // Show actual time of day from original timestamp (which is in local time)
+                  final timeString = '${closestPoint.timestamp.hour.toString().padLeft(2, '0')}:${closestPoint.timestamp.minute.toString().padLeft(2, '0')}';
                   return Text(
                     timeString,
                     style: const TextStyle(fontSize: 10, color: Colors.grey),
