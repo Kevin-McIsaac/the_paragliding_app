@@ -499,6 +499,9 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         show: true,
         color: Colors.grey[200]!.withValues(alpha: 0.4),
       ),
+      showingIndicators: _selectionFromMap && _selectedTrackPointIndex != null 
+        ? [_selectedTrackPointIndex!] 
+        : [],
     );
 
     return Container(
