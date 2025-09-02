@@ -526,7 +526,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         show: true,
         color: Colors.grey.withValues(alpha: 0.25),
       ),
-      showingIndicators: _selectionFromMap && _selectedTrackPointIndex != null 
+      showingIndicators: _selectedTrackPointIndex != null 
         ? [_selectedTrackPointIndex!] 
         : [],
     );
@@ -550,7 +550,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           ] : [],
           lineTouchData: LineTouchData(
             enabled: true,
-            handleBuiltInTouches: !_selectionFromMap,
+            handleBuiltInTouches: false,
             touchCallback: (FlTouchEvent event, LineTouchResponse? touchResponse) {
               if (touchResponse != null && touchResponse.lineBarSpots != null && touchResponse.lineBarSpots!.isNotEmpty) {
                 final spot = touchResponse.lineBarSpots!.first;
@@ -563,14 +563,8 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                     _selectionFromMap = false; // Reset flag since this is from chart
                   });
                 }
-              } else {
-                // Only clear if selection wasn't from map
-                if (!_selectionFromMap) {
-                  setState(() {
-                    _selectedTrackPointIndex = null;
-                  });
-                }
               }
+              // Don't clear selection when hover stops - keep crosshairs persistent
             },
             touchTooltipData: LineTouchTooltipData(
               getTooltipColor: (touchedSpot) => Colors.blue.withValues(alpha: 0.8),
