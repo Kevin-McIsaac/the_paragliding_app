@@ -47,6 +47,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   // Constants
   static const String _mapProviderKey = 'flight_track_2d_map_provider';
   static const double _chartHeight = 100.0;
+  static const double _totalChartsHeight = 300.0; // 3 charts * 100px each
   static const double _mapPadding = 0.005;
   static const double _altitudePaddingFactor = 0.1;
   static const int _chartIntervalMinutes = 15;
@@ -497,34 +498,39 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     );
   }
 
-  Widget _buildAltitudeChart() {
+  Widget _buildSynchronizedChart({
+    required String title,
+    required String unit,
+    required Color color,
+    required double Function(IgcPoint) dataExtractor,
+    bool showTimeLabels = false,
+  }) {
     if (_trackPoints.length < 2) {
-      return SizedBox(height: _chartHeight, child: const Center(child: Text('Insufficient data for altitude chart')));
+      return SizedBox(height: _chartHeight, child: Center(child: Text('Insufficient data for $title chart')));
     }
 
-    // Calculate time and altitude data points using actual timestamps
+    // Calculate data points using actual timestamps
     final spots = _trackPoints.map((point) {
-      return FlSpot(point.timestamp.millisecondsSinceEpoch.toDouble(), point.gpsAltitude.toDouble());
+      return FlSpot(point.timestamp.millisecondsSinceEpoch.toDouble(), dataExtractor(point));
     }).toList();
 
+    // Calculate bounds
+    final values = spots.map((s) => s.y).toList();
+    final minVal = values.reduce(math.min);
+    final maxVal = values.reduce(math.max);
+    final valRange = maxVal - minVal;
+    final padding = valRange * _altitudePaddingFactor;
 
-    // Calculate altitude bounds
-    final altitudes = _trackPoints.map((p) => p.gpsAltitude).toList();
-    final minAlt = altitudes.reduce(math.min).toDouble();
-    final maxAlt = altitudes.reduce(math.max).toDouble();
-    final altRange = maxAlt - minAlt;
-    final padding = altRange * _altitudePaddingFactor;
-
-    // Create the line bar data to reuse in both places
+    // Create the line bar data
     final lineBarData = LineChartBarData(
       spots: spots,
       isCurved: false,
-      color: Colors.blue,
+      color: color,
       barWidth: 1,
       dotData: const FlDotData(show: false),
       belowBarData: BarAreaData(
         show: true,
-        color: Colors.grey.withValues(alpha: 0.25),
+        color: color.withValues(alpha: 0.15),
       ),
       showingIndicators: _selectedTrackPointIndex != null 
         ? [_selectedTrackPointIndex!] 
@@ -543,7 +549,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
             ShowingTooltipIndicators([
               LineBarSpot(
                 lineBarData,
-                0, // bar index
+                0,
                 spots[_selectedTrackPointIndex!],
               ),
             ])
@@ -560,19 +566,20 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                 if (closestIndex != -1) {
                   setState(() {
                     _selectedTrackPointIndex = closestIndex;
-                    _selectionFromMap = false; // Reset flag since this is from chart
+                    _selectionFromMap = false;
                   });
                 }
               }
-              // Don't clear selection when hover stops - keep crosshairs persistent
             },
             touchTooltipData: LineTouchTooltipData(
-              getTooltipColor: (touchedSpot) => Colors.blue.withValues(alpha: 0.8),
+              getTooltipColor: (touchedSpot) => color.withValues(alpha: 0.8),
               tooltipPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
                 return touchedBarSpots.map((barSpot) {
+                  final value = barSpot.y;
+                  final displayValue = unit == 'm' ? value.toInt().toString() : value.toStringAsFixed(1);
                   return LineTooltipItem(
-                    '${barSpot.y.toInt()}m',
+                    '$displayValue$unit',
                     const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
@@ -586,7 +593,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               return spotIndexes.map((spotIndex) {
                 return TouchedSpotIndicatorData(
                   FlLine(
-                    color: Colors.blue.withValues(alpha: 0.5),
+                    color: color.withValues(alpha: 0.5),
                     strokeWidth: 1,
                     dashArray: [3, 3],
                   ),
@@ -595,7 +602,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                     getDotPainter: (spot, percent, barData, index) {
                       return FlDotCirclePainter(
                         radius: 3,
-                        color: Colors.blue,
+                        color: color,
                         strokeWidth: 1,
                         strokeColor: Colors.white,
                       );
@@ -608,7 +615,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           gridData: FlGridData(
             show: true,
             drawVerticalLine: false,
-            horizontalInterval: altRange / 4,
+            horizontalInterval: valRange / 4,
             getDrawingHorizontalLine: (value) {
               return FlLine(
                 color: Colors.grey[350]!,
@@ -625,10 +632,12 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
             ),
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 15,
+                showTitles: showTimeLabels,
+                reservedSize: showTimeLabels ? 15 : 0,
                 interval: _chartIntervalMs.toDouble(),
                 getTitlesWidget: (value, meta) {
+                  if (!showTimeLabels) return const SizedBox.shrink();
+                  
                   final targetTimestamp = value.toInt();
                   final closestIndex = _findClosestTrackPointByTimestamp(targetTimestamp);
                   
@@ -651,13 +660,36 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           borderData: FlBorderData(show: false),
           minX: spots.first.x,
           maxX: spots.last.x,
-          minY: minAlt - padding,
-          maxY: maxAlt + padding,
+          minY: minVal - padding,
+          maxY: maxVal + padding,
           lineBarsData: [
             lineBarData,
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildChartWithTitle(String title, Widget chart) {
+    return Stack(
+      children: [
+        chart,
+        Positioned(
+          top: 2,
+          left: 0,
+          right: 0,
+          child: Center(
+            child: Text(
+              title,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -694,7 +726,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
       children: [
         // Flight Track Map
         SizedBox(
-          height: (widget.height ?? 400) - _chartHeight - 20,
+          height: (widget.height ?? 400) - _totalChartsHeight - 20,
           child: Stack(
             children: [
           FlutterMap(
@@ -815,27 +847,36 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
             ],
           ),
         ),
-        // Altitude Chart
-        Stack(
-          children: [
-            _buildAltitudeChart(),
-            // Title positioned at top center of chart
-            const Positioned(
-              top: 2,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: Text(
-                  'Altitude (m)',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.grey,
-                  ),
-                ),
-              ),
-            ),
-          ],
+        // Three synchronized charts
+        _buildChartWithTitle(
+          'Altitude (m)',
+          _buildSynchronizedChart(
+            title: 'altitude',
+            unit: 'm',
+            color: Colors.blue,
+            dataExtractor: (point) => point.gpsAltitude.toDouble(),
+            showTimeLabels: true,
+          ),
+        ),
+        _buildChartWithTitle(
+          'Climb Rate (m/s)',
+          _buildSynchronizedChart(
+            title: 'climb rate',
+            unit: 'm/s',
+            color: Colors.green,
+            dataExtractor: (point) => point.climbRate,
+            showTimeLabels: false,
+          ),
+        ),
+        _buildChartWithTitle(
+          'Ground Speed (km/h)',
+          _buildSynchronizedChart(
+            title: 'ground speed',
+            unit: 'km/h',
+            color: Colors.orange,
+            dataExtractor: (point) => point.groundSpeed,
+            showTimeLabels: false,
+          ),
         ),
       ],
     );
