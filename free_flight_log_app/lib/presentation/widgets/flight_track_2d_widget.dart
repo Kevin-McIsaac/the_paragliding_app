@@ -481,14 +481,14 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('Track Color:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal, color: Colors.black87)),
+                  const Text('Track Color:', style: TextStyle(fontSize: 10, fontWeight: FontWeight.normal, color: Colors.black87)),
                   const SizedBox(height: 4),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(width: 14, height: 3, decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(1.5))),
                       const SizedBox(width: 8),
-                      const Text('Climbing', style: TextStyle(fontSize: 12, color: Colors.black87)),
+                      const Text('Climbing', style: TextStyle(fontSize: 10, color: Colors.black87)),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -497,7 +497,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                     children: [
                       Container(width: 14, height: 3, decoration: BoxDecoration(color: Colors.blue, borderRadius: BorderRadius.circular(1.5))),
                       const SizedBox(width: 8),
-                      const Text('Descending', style: TextStyle(fontSize: 12, color: Colors.black87)),
+                      const Text('Sink (<1.5m/s)', style: TextStyle(fontSize: 10, color: Colors.black87)),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -506,7 +506,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                     children: [
                       Container(width: 14, height: 3, decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(1.5))),
                       const SizedBox(width: 8),
-                      const Text('Sinking', style: TextStyle(fontSize: 12, color: Colors.black87)),
+                      const Text('Sink (>1.5m/s)', style: TextStyle(fontSize: 10, color: Colors.black87)),
                     ],
                   ),
                 ],
