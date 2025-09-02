@@ -336,3 +336,67 @@ Use the 3D viewer to analyse flight performance and relive flights.
 - **Geographic analysis**: Flights per country and site
 
 This user manual structure prioritises practical workflows over feature descriptions, making it easier for pilots to accomplish their goals quickly and efficiently.
+
+---
+
+## Flight Statistics Reference
+
+### Understanding Your Flight Data
+
+The flight detail screen shows comprehensive statistics calculated from your GPS track. Here's how each metric is calculated:
+
+| **Statistic** | **Data Source** | **Units** | **Notes** |
+|---------------|----------------|-----------|-----------|
+| **Basic Statistics** |
+| Duration | IGC timestamps | HH:MM | Total flight time from takeoff to landing |
+| Straight Distance | GPS coordinates | km | Direct distance from launch to landing |
+| Track Distance | GPS coordinates | km | Total distance flown along the track |
+| Max Altitude | GPS altitude | m | Highest GPS altitude recorded |
+| **Climb Rate Statistics** |
+| Max Climb (Inst) | GPS/Pressure altitude | m/s | Maximum instantaneous climb rate |
+| Max Sink (Inst) | GPS/Pressure altitude | m/s | Maximum instantaneous sink rate (negative) |
+| Max Climb (5s) | GPS/Pressure altitude | m/s | Maximum 5-second averaged climb rate |
+| Max Sink (5s) | GPS/Pressure altitude | m/s | Maximum 5-second averaged sink rate |
+| **Advanced Statistics - Row 1** |
+| Best L/D | GPS coordinates + altitude | ratio | Best glide ratio achieved |
+| Avg L/D | GPS coordinates + altitude | ratio | Average glide ratio for entire flight |
+| Longest Glide | GPS coordinates + altitude | km | Maximum distance flown while losing altitude |
+| Climb % | Climb rate analysis | % | Percentage of flight time spent climbing |
+| **Advanced Statistics - Row 2** |
+| Thermals | 15-second smoothed climb rates ≥0.5 m/s for ≥30s | count | Number of thermal cycles detected |
+| Avg Thermal | Average climb rate across all detected thermals | m/s | Average strength of detected thermals |
+| Best Thermal | Strongest average climb rate from any single thermal | m/s | Strongest thermal encountered |
+| Thermal % | Total thermal duration / flight duration | % | Percentage of flight time spent thermalling |
+| **Advanced Statistics - Row 3** |
+| Max Speed | GPS coordinates + timestamps | km/h | Maximum instantaneous ground speed |
+| Avg Speed | GPS coordinates + timestamps | km/h | Average ground speed for entire flight |
+| GPS Quality | GPS fix data | % | Quality of GPS reception during flight |
+| Recording | IGC file metadata | seconds | GPS logging frequency |
+| **Chart Data** |
+| Altitude Chart | GPS altitude | m | Real-time altitude profile |
+| Climb Rate Chart | GPS/Pressure altitude | m/s | Smoothed climb rate over time (5-second window) |
+| Ground Speed Chart | GPS coordinates | km/h | Smoothed speed using simplified distance calculation (5-second window) |
+
+### Key Calculation Details
+
+**Distance Calculations:**
+- **Long distances**: Haversine formula for Earth curvature
+- **Short distances** (chart data): Pythagorean
+
+**Smoothing Windows:**
+- **5-second averaging**: Includes all points within ±2.5 seconds of current point
+- **15-second averaging**: Includes all points within ±7.5 seconds of current point
+
+**Data Sources Priority:**
+1. **Altitude**: Always GPS altitude (`gpsAltitude`)
+2. **Climb Rate**: Pressure altitude if available, otherwise GPS altitude
+3. **Speed**: Always calculated from GPS coordinates and timestamps
+
+**Thermal Detection Algorithm:**
+- **Threshold**: Climb rate ≥ 0.5 m/s (using 15-second smoothed data)
+- **Minimum Duration**: 30 seconds continuous climbing
+- **Detection**: State machine tracks climb/sink transitions
+- **Validation**: Only sustained lift periods count as thermals
+- **Statistics**: Average strength calculated per thermal, best thermal recorded
+
+

@@ -275,9 +275,9 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
               if (widget.flight.totalTimeInThermals != null)
                 Expanded(
                   child: _buildStatItem(
-                    'Thermal Time',
-                    _formatDuration(widget.flight.totalTimeInThermals!),
-                    Icons.access_time,
+                    'Thermal %',
+                    '${((widget.flight.totalTimeInThermals! / (widget.flight.duration * 60)) * 100).toStringAsFixed(0)}%',
+                    Icons.trending_up,
                     context,
                   ),
                 )
@@ -346,17 +346,6 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
     );
   }
 
-
-  String _formatDuration(int seconds) {
-    final minutes = seconds ~/ 60;
-    if (minutes < 60) {
-      return '${minutes}m';
-    } else {
-      final hours = minutes ~/ 60;
-      final remainingMinutes = minutes % 60;
-      return '${hours}h ${remainingMinutes}m';
-    }
-  }
 
   Widget _buildStatItem(String label, String value, IconData icon, BuildContext context) {
     return Column(

@@ -152,6 +152,66 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     return altitudeDiff / timeDiff;
   }
 
+  /// Calculate smoothed ground speed using 5-second time-based moving average
+  /// Similar to the existing climbRate5s implementation but for ground speed
+  double _getSmoothedGroundSpeed(IgcPoint point) {
+    if (point.parentFile == null || point.pointIndex == null) {
+      return point.groundSpeed;
+    }
+    
+    final tracks = point.parentFile!.trackPoints;
+    final currentIndex = point.pointIndex!;
+    
+    if (currentIndex >= tracks.length || currentIndex == 0) {
+      return point.groundSpeed; // Fallback to instantaneous for first point
+    }
+    
+    // Find the first point in the 5-second window (looking backwards from current point)
+    IgcPoint? firstInWindow;
+    for (int i = currentIndex - 1; i >= 0; i--) {
+      final timeDiff = point.timestamp.difference(tracks[i].timestamp).inSeconds;
+      if (timeDiff >= 5) {
+        firstInWindow = tracks[i];
+        break;
+      }
+    }
+    
+    // If we don't have enough points in the window, use instantaneous rate
+    if (firstInWindow == null || firstInWindow == point) {
+      return point.groundSpeed;
+    }
+    
+    // Calculate the average ground speed over the 5-second window
+    final timeDiffSeconds = point.timestamp.difference(firstInWindow.timestamp).inSeconds.toDouble();
+    
+    if (timeDiffSeconds <= 0) {
+      return point.groundSpeed; // Fallback to instantaneous
+    }
+    
+    // Calculate distance traveled over the time window using simple Pythagorean formula
+    final distanceMeters = _calculateSimpleDistance(
+      firstInWindow.latitude, firstInWindow.longitude,
+      point.latitude, point.longitude
+    );
+    
+    // Convert to km/h: (meters/second) * 3.6
+    return (distanceMeters / timeDiffSeconds) * 3.6;
+  }
+  
+  /// Calculate distance between two lat/lng points using simple Pythagorean formula
+  /// For small distances (GPS points), Earth curvature correction is negligible
+  double _calculateSimpleDistance(double lat1, double lng1, double lat2, double lng2) {
+    // Convert degrees to approximate meters at mid-latitude
+    final avgLat = (lat1 + lat2) / 2;
+    final metersPerDegreeLat = 111319.9; // meters per degree latitude (constant)
+    final metersPerDegreeLng = 111319.9 * math.cos(avgLat * math.pi / 180); // varies by latitude
+    
+    final deltaLat = (lat2 - lat1) * metersPerDegreeLat;
+    final deltaLng = (lng2 - lng1) * metersPerDegreeLng;
+    
+    return math.sqrt(deltaLat * deltaLat + deltaLng * deltaLng);
+  }
+
   Color _getClimbRateColor(double climbRate) {
     if (climbRate >= 0) return Colors.green;
     if (climbRate > -1.5) return Colors.blue;
@@ -864,7 +924,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
             title: 'climb rate',
             unit: 'm/s',
             color: Colors.green,
-            dataExtractor: (point) => point.climbRate,
+            dataExtractor: (point) => point.climbRate5s,
             showTimeLabels: false,
           ),
         ),
@@ -874,7 +934,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
             title: 'ground speed',
             unit: 'km/h',
             color: Colors.orange,
-            dataExtractor: (point) => point.groundSpeed,
+            dataExtractor: (point) => _getSmoothedGroundSpeed(point),
             showTimeLabels: false,
           ),
         ),

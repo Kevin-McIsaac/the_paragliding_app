@@ -13,7 +13,21 @@ This repository contains:
 
 ## Flutter commands
 
-Alwyas use the flutter/dart MCP insead of flutter comamnd, e.g, to run, hot reload etc. 
+```bash
+# Allways run the app using flutter_controller.sh in background
+
+# Run app
+flutter_controller.sh run 
+
+# Hot reload
+flutter_controller.sh r
+
+# Hot restart
+flutter_controller.sh R
+
+# Quit app
+flutter_controller.sh q
+```
 
 ## Key Files
 
