@@ -23,6 +23,7 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
   bool _groupByCountry = true;
   bool _isLoading = false;
   String? _errorMessage;
+  bool _sitesModified = false; // Track if any sites were modified
 
   @override
   void initState() {
@@ -189,6 +190,9 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
         await _databaseService.insertSite(newSite);
         LoggingService.info('ManageSitesScreen: Created new site "${result['name']}"');
         
+        // Mark sites as modified
+        _sitesModified = true;
+        
         // Refresh the sites list
         await _loadSites();
         
@@ -230,6 +234,10 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
         await _databaseService.deleteSite(site.id!);
         success = true;
         LoggingService.info('ManageSitesScreen: Deleted site ${site.id}');
+        
+        // Mark sites as modified
+        _sitesModified = true;
+        
         await _loadSites(); // Reload the list
       }
     } catch (e) {
@@ -258,7 +266,7 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
   }
 
   Future<void> _editSite(Site site) async {
-    await Navigator.of(context).push(
+    final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (context) => EditSiteScreen(
           initialCoordinates: (latitude: site.latitude, longitude: site.longitude),
@@ -269,6 +277,11 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
     // Always refresh the site list when returning from EditSiteScreen
     // This ensures newly created sites (or merged/deleted sites) are reflected
     if (mounted) {
+      // Mark sites as modified if EditSiteScreen indicates changes were made
+      // EditSiteScreen should return true when changes are made, but we'll be
+      // conservative and assume changes were made since we navigated to edit
+      _sitesModified = true;
+      
       await _loadSites();
     }
   }
@@ -277,7 +290,15 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) async {
+        if (!didPop) {
+          // Return whether sites were modified when popping
+          Navigator.of(context).pop(_sitesModified);
+        }
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: const Text('Manage Sites'),
         actions: [
@@ -495,6 +516,7 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
         onPressed: _addNewSite,
         tooltip: 'Add Site',
         child: const Icon(Icons.add),
+      ),
       ),
     );
   }
