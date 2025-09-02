@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -14,14 +13,13 @@ import '../../services/logging_service.dart';
 import '../screens/flight_track_3d_fullscreen.dart';
 
 enum MapProvider {
-  openStreetMap('Street Map', 'OSM', 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', 18, '© OpenStreetMap contributors'),
-  googleSatellite('Google Satellite', 'Google', 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', 18, '© Google'),
-  esriWorldImagery('Esri Satellite', 'Esri', 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', 18, '© Esri');
+  openStreetMap('Street Map', 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', 18, '© OpenStreetMap contributors'),
+  googleSatellite('Google Satellite', 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', 18, '© Google'),
+  esriWorldImagery('Esri Satellite', 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', 18, '© Esri');
 
-  const MapProvider(this.displayName, this.shortName, this.urlTemplate, this.maxZoom, this.attribution);
+  const MapProvider(this.displayName, this.urlTemplate, this.maxZoom, this.attribution);
   
   final String displayName;
-  final String shortName;
   final String urlTemplate;
   final int maxZoom;
   final String attribution;
@@ -46,7 +44,13 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   final DatabaseService _databaseService = DatabaseService.instance;
   final MapController _mapController = MapController();
   
+  // Constants
   static const String _mapProviderKey = 'flight_track_2d_map_provider';
+  static const double _chartHeight = 100.0;
+  static const double _mapPadding = 0.005;
+  static const double _altitudePaddingFactor = 0.1;
+  static const int _chartIntervalMinutes = 15;
+  static const int _chartIntervalMs = _chartIntervalMinutes * 60 * 1000;
   
   List<IgcPoint> _trackPoints = [];
   Site? _launchSite;
@@ -94,9 +98,9 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   Future<void> _loadSiteData() async {
     if (widget.flight.launchSiteId != null) {
       try {
-        _launchSite = await _databaseService.getSite(widget.flight.launchSiteId!);
+        final site = await _databaseService.getSite(widget.flight.launchSiteId!);
         setState(() {
-          // Trigger rebuild to update markers with site name
+          _launchSite = site;
         });
       } catch (e) {
         LoggingService.error('FlightTrack2DWidget: Error loading site data', e);
@@ -194,19 +198,8 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   }
 
   void _onMapTapped(LatLng position) {
-    if (_trackPoints.isEmpty) return;
-    
-    // Find the closest track point to the tapped position
-    int closestIndex = 0;
-    double minDistance = _calculateDistance(position, LatLng(_trackPoints[0].latitude, _trackPoints[0].longitude));
-    
-    for (int i = 1; i < _trackPoints.length; i++) {
-      final distance = _calculateDistance(position, LatLng(_trackPoints[i].latitude, _trackPoints[i].longitude));
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestIndex = i;
-      }
-    }
+    final closestIndex = _findClosestTrackPointByPosition(position);
+    if (closestIndex == -1) return;
     
     setState(() {
       _selectedTrackPointIndex = closestIndex;
@@ -227,6 +220,42 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
     
     return 6371000 * c; // Earth radius in meters
+  }
+
+  /// Finds the closest track point index by geographic distance
+  int _findClosestTrackPointByPosition(LatLng position) {
+    if (_trackPoints.isEmpty) return -1;
+    
+    int closestIndex = 0;
+    double minDistance = _calculateDistance(position, LatLng(_trackPoints[0].latitude, _trackPoints[0].longitude));
+    
+    for (int i = 1; i < _trackPoints.length; i++) {
+      final distance = _calculateDistance(position, LatLng(_trackPoints[i].latitude, _trackPoints[i].longitude));
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestIndex = i;
+      }
+    }
+    
+    return closestIndex;
+  }
+
+  /// Finds the closest track point index by timestamp
+  int _findClosestTrackPointByTimestamp(int targetTimestamp) {
+    if (_trackPoints.isEmpty) return -1;
+    
+    int closestIndex = 0;
+    double minDifference = (targetTimestamp - _trackPoints[0].timestamp.millisecondsSinceEpoch).abs().toDouble();
+    
+    for (int i = 1; i < _trackPoints.length; i++) {
+      final difference = (targetTimestamp - _trackPoints[i].timestamp.millisecondsSinceEpoch).abs().toDouble();
+      if (difference < minDifference) {
+        minDifference = difference;
+        closestIndex = i;
+      }
+    }
+    
+    return closestIndex;
   }
 
   List<Marker> _buildTrackPointMarker() {
@@ -345,10 +374,9 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     }
     
     // Add padding
-    const padding = 0.005;
     return LatLngBounds(
-      LatLng(minLat - padding, minLng - padding),
-      LatLng(maxLat + padding, maxLng + padding),
+      LatLng(minLat - _mapPadding, minLng - _mapPadding),
+      LatLng(maxLat + _mapPadding, maxLng + _mapPadding),
     );
   }
 
@@ -471,7 +499,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
 
   Widget _buildAltitudeChart() {
     if (_trackPoints.length < 2) {
-      return const SizedBox(height: 100, child: Center(child: Text('Insufficient data for altitude chart')));
+      return SizedBox(height: _chartHeight, child: const Center(child: Text('Insufficient data for altitude chart')));
     }
 
     // Calculate time and altitude data points using actual timestamps
@@ -485,7 +513,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     final minAlt = altitudes.reduce(math.min).toDouble();
     final maxAlt = altitudes.reduce(math.max).toDouble();
     final altRange = maxAlt - minAlt;
-    final padding = altRange * 0.1;
+    final padding = altRange * _altitudePaddingFactor;
 
     // Create the line bar data to reuse in both places
     final lineBarData = LineChartBarData(
@@ -504,7 +532,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     );
 
     return Container(
-      height: 100,
+      height: _chartHeight,
       padding: const EdgeInsets.all(8),
       decoration: const BoxDecoration(
         color: Colors.white,
@@ -527,23 +555,14 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               if (touchResponse != null && touchResponse.lineBarSpots != null && touchResponse.lineBarSpots!.isNotEmpty) {
                 final spot = touchResponse.lineBarSpots!.first;
                 final targetTimestamp = spot.x.toInt();
+                final closestIndex = _findClosestTrackPointByTimestamp(targetTimestamp);
                 
-                // Find the closest track point by timestamp
-                int closestIndex = 0;
-                double minDifference = (targetTimestamp - _trackPoints[0].timestamp.millisecondsSinceEpoch).abs().toDouble();
-                
-                for (int i = 1; i < _trackPoints.length; i++) {
-                  final difference = (targetTimestamp - _trackPoints[i].timestamp.millisecondsSinceEpoch).abs().toDouble();
-                  if (difference < minDifference) {
-                    minDifference = difference;
-                    closestIndex = i;
-                  }
+                if (closestIndex != -1) {
+                  setState(() {
+                    _selectedTrackPointIndex = closestIndex;
+                    _selectionFromMap = false; // Reset flag since this is from chart
+                  });
                 }
-                
-                setState(() {
-                  _selectedTrackPointIndex = closestIndex;
-                  _selectionFromMap = false; // Reset flag since this is from chart
-                });
               } else {
                 // Only clear if selection wasn't from map
                 if (!_selectionFromMap) {
@@ -614,31 +633,16 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               sideTitles: SideTitles(
                 showTitles: true,
                 reservedSize: 15,
-                interval: 15 * 60 * 1000, // 15 minutes in milliseconds
+                interval: _chartIntervalMs.toDouble(),
                 getTitlesWidget: (value, meta) {
-                  // Find the closest track point to this timestamp value
                   final targetTimestamp = value.toInt();
+                  final closestIndex = _findClosestTrackPointByTimestamp(targetTimestamp);
                   
-                  // Find the track point with the closest timestamp
-                  IgcPoint? closestPoint;
-                  double minDifference = double.infinity;
-                  
-                  for (final point in _trackPoints) {
-                    final difference = (targetTimestamp - point.timestamp.millisecondsSinceEpoch).abs().toDouble();
-                    if (difference < minDifference) {
-                      minDifference = difference;
-                      closestPoint = point;
-                    }
-                  }
-                  
-                  if (closestPoint == null) {
+                  if (closestIndex == -1) {
                     return const SizedBox.shrink();
                   }
                   
-                  // Since we set interval to 15 minutes, show all labels
-                  // (the interval setting handles the spacing)
-                  
-                  // Show actual time of day from original timestamp (which is in local time)
+                  final closestPoint = _trackPoints[closestIndex];
                   final timeString = '${closestPoint.timestamp.hour.toString().padLeft(2, '0')}:${closestPoint.timestamp.minute.toString().padLeft(2, '0')}';
                   return Text(
                     timeString,
@@ -696,7 +700,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
       children: [
         // Flight Track Map
         SizedBox(
-          height: (widget.height ?? 400) - 120,
+          height: (widget.height ?? 400) - _chartHeight - 20,
           child: Stack(
             children: [
           FlutterMap(
