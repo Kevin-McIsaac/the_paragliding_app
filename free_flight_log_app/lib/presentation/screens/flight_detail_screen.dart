@@ -667,7 +667,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                               const SizedBox(height: 16),
                               FlightTrack2DWidget(
                                 flight: _flight,
-                                height: 400,
+                                height: 532,
                               ),
                             ],
                           ),
