@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/flight.dart';
@@ -401,6 +402,135 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     );
   }
 
+  Widget _buildAltitudeChart() {
+    if (_trackPoints.length < 2) {
+      return const SizedBox(height: 100, child: Center(child: Text('Insufficient data for altitude chart')));
+    }
+
+    // Calculate time and altitude data points
+    final firstTime = _trackPoints.first.timestamp;
+    final spots = _trackPoints.map((point) {
+      final minutesFromStart = point.timestamp.difference(firstTime).inSeconds / 60.0;
+      return FlSpot(minutesFromStart, point.gpsAltitude.toDouble());
+    }).toList();
+
+    // Calculate altitude bounds
+    final altitudes = _trackPoints.map((p) => p.gpsAltitude).toList();
+    final minAlt = altitudes.reduce(math.min).toDouble();
+    final maxAlt = altitudes.reduce(math.max).toDouble();
+    final altRange = maxAlt - minAlt;
+    final padding = altRange * 0.1;
+
+    return Container(
+      height: 100,
+      padding: const EdgeInsets.all(8),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+      ),
+      child: LineChart(
+        LineChartData(
+          lineTouchData: LineTouchData(
+            enabled: true,
+            handleBuiltInTouches: true,
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipColor: (touchedSpot) => Colors.blue.withValues(alpha: 0.8),
+              tooltipPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
+                return touchedBarSpots.map((barSpot) {
+                  return LineTooltipItem(
+                    '${barSpot.y.toInt()}m',
+                    const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 10,
+                    ),
+                  );
+                }).toList();
+              },
+            ),
+            getTouchedSpotIndicator: (LineChartBarData barData, List<int> spotIndexes) {
+              return spotIndexes.map((spotIndex) {
+                return TouchedSpotIndicatorData(
+                  FlLine(
+                    color: Colors.blue.withValues(alpha: 0.5),
+                    strokeWidth: 1,
+                    dashArray: [3, 3],
+                  ),
+                  FlDotData(
+                    show: true,
+                    getDotPainter: (spot, percent, barData, index) {
+                      return FlDotCirclePainter(
+                        radius: 3,
+                        color: Colors.blue,
+                        strokeWidth: 1,
+                        strokeColor: Colors.white,
+                      );
+                    },
+                  ),
+                );
+              }).toList();
+            },
+          ),
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            horizontalInterval: altRange / 4,
+            getDrawingHorizontalLine: (value) {
+              return FlLine(
+                color: Colors.grey[350]!,
+                strokeWidth: 0.5,
+              );
+            },
+          ),
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: false,
+                reservedSize: 0,
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 30,
+                getTitlesWidget: (value, meta) {
+                  final minutesFromStart = value;
+                  final firstTime = _trackPoints.first.timestamp;
+                  final currentTime = firstTime.add(Duration(seconds: (minutesFromStart * 60).round()));
+                  final timeString = '${currentTime.hour.toString().padLeft(2, '0')}:${currentTime.minute.toString().padLeft(2, '0')}';
+                  return Text(
+                    timeString,
+                    style: const TextStyle(fontSize: 10, color: Colors.grey),
+                  );
+                },
+              ),
+            ),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          ),
+          borderData: FlBorderData(show: false),
+          minX: spots.first.x,
+          maxX: spots.last.x,
+          minY: minAlt - padding,
+          maxY: maxAlt + padding,
+          lineBarsData: [
+            LineChartBarData(
+              spots: spots,
+              isCurved: false,
+              color: Colors.blue,
+              barWidth: 1,
+              dotData: const FlDotData(show: false),
+              belowBarData: BarAreaData(
+                show: true,
+                color: Colors.grey[200]!.withValues(alpha: 0.4),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -430,10 +560,13 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
       );
     }
 
-    return SizedBox(
-      height: widget.height,
-      child: Stack(
-        children: [
+    return Column(
+      children: [
+        // Flight Track Map
+        SizedBox(
+          height: (widget.height ?? 400) - 120,
+          child: Stack(
+            children: [
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
@@ -548,8 +681,32 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               ),
             ),
           ),
-        ],
-      ),
+            ],
+          ),
+        ),
+        // Altitude Chart
+        Stack(
+          children: [
+            _buildAltitudeChart(),
+            // Title positioned at top center of chart
+            const Positioned(
+              top: 2,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Text(
+                  'Altitude (m)',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
