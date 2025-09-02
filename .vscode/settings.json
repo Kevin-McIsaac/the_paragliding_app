@@ -4,5 +4,7 @@
         "DODGERBLUE",
         "FXAA",
         "inappwebview"
-    ]
+    ],
+    "dart.enableDtd": true,
+    "flutter.enableDtd": true
 }

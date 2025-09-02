@@ -1863,6 +1863,7 @@ class SiteCreationDialog extends StatefulWidget {
   final double launchRadiusMeters;
 
   const SiteCreationDialog({
+    super.key,
     this.point,
     required this.eligibleLaunchCount,
     required this.launchRadiusMeters,

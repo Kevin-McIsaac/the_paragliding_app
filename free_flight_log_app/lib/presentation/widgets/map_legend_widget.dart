@@ -15,7 +15,7 @@ class MapLegendWidget extends StatelessWidget {
       bottom: 60,
       left: 10,
       child: Card(
-        color: Colors.white.withOpacity(0.9),
+        color: Colors.white.withValues(alpha: 0.9),
         child: Padding(
           padding: const EdgeInsets.all(8.0),
           child: Column(

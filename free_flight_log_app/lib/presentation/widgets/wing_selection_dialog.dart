@@ -34,37 +34,31 @@ class _WingSelectionDialogState extends State<WingSelectionDialog> {
       content: SizedBox(
         width: double.maxFinite,
         height: 300,
-        child: Column(
-          children: [
-            ListTile(
-              title: const Text('No wing'),
-              leading: Radio<Wing?>(
+        child: RadioGroup<Wing?>(
+          groupValue: _selectedWing,
+          onChanged: (value) => setState(() => _selectedWing = value),
+          child: Column(
+            children: [
+              RadioListTile<Wing?>(
+                title: const Text('No wing'),
                 value: null,
-                groupValue: _selectedWing,
-                onChanged: (value) => setState(() => _selectedWing = value),
               ),
-              onTap: () => setState(() => _selectedWing = null),
-            ),
-            const Divider(),
-            Expanded(
-              child: ListView.builder(
-                itemCount: sortedWings.length,
-                itemBuilder: (context, index) {
-                  final wing = sortedWings[index];
-                  return ListTile(
-                    title: Text(wing.displayName),
-                    subtitle: wing.size?.isNotEmpty == true ? Text('Size: ${wing.size}') : null,
-                    leading: Radio<Wing>(
+              const Divider(),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: sortedWings.length,
+                  itemBuilder: (context, index) {
+                    final wing = sortedWings[index];
+                    return RadioListTile<Wing>(
+                      title: Text(wing.displayName),
+                      subtitle: wing.size?.isNotEmpty == true ? Text('Size: ${wing.size}') : null,
                       value: wing,
-                      groupValue: _selectedWing,
-                      onChanged: (value) => setState(() => _selectedWing = value),
-                    ),
-                    onTap: () => setState(() => _selectedWing = wing),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
       actions: [

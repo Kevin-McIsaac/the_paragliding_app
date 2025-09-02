@@ -145,7 +145,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
           _hasValidUserToken = hasValidToken;
         });
         
-        LoggingService.debug('Cesium3D: Loaded preferences - Scene: $sceneMode, BaseMap: $baseMap, Terrain: $terrainEnabled, NavDialog: $navigationHelpDialogOpen, FlyThrough: $flyThroughMode, Trail: ${trailDuration}s, Quality: ${quality ?? 'default'}, UserToken: ${userToken != null ? 'present' : 'none'}, TokenValid: $hasValidToken');
+        LoggingService.debug('Cesium3D: Loaded preferences - Scene: $sceneMode, BaseMap: $baseMap, Terrain: $terrainEnabled, NavDialog: $navigationHelpDialogOpen, FlyThrough: $flyThroughMode, Trail: ${trailDuration}s, Quality: $quality, UserToken: ${userToken != null ? 'present' : 'none'}, TokenValid: $hasValidToken');
       }
     } catch (e) {
       LoggingService.error('Cesium3D', 'Failed to load preferences: $e');
