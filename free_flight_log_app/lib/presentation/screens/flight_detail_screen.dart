@@ -652,7 +652,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
 
                     const SizedBox(height: 16),
 
-                    // 2D Flight Track Map (if track data available)
+                    // Flight Track Map (if track data available)
                     if (_flight.trackLogPath != null)
                       Card(
                         child: Padding(
@@ -661,7 +661,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                '2D Flight Track',
+                                'Flight Track',
                                 style: Theme.of(context).textTheme.titleLarge,
                               ),
                               const SizedBox(height: 16),

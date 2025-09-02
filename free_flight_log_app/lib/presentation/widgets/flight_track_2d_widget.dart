@@ -369,6 +369,37 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
       ),
     );
   }
+  
+  Widget _build3DViewButton() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(4),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Tooltip(
+        message: 'View in 3D',
+        child: InkWell(
+          onTap: _openFullscreen3D,
+          borderRadius: BorderRadius.circular(4),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Icon(
+              Icons.threed_rotation,
+              size: 16,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -428,36 +459,17 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               ),
             ],
           ),
-          // Map provider selector (top right, like Site Maps)
+          // Top right controls (map provider and 3D view)
           Positioned(
             top: 8,
             right: 8,
-            child: _buildMapProviderButton(),
-          ),
-          // 3D View button (bottom right)
-          Positioned(
-            bottom: 60,
-            right: 8,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.grey[900],
-                borderRadius: BorderRadius.circular(8),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.4),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: TextButton.icon(
-                onPressed: _openFullscreen3D,
-                icon: const Icon(Icons.threed_rotation, color: Colors.white, size: 18),
-                label: const Text('3D View', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500)),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                ),
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _build3DViewButton(),
+                const SizedBox(width: 8),
+                _buildMapProviderButton(),
+              ],
             ),
           ),
           // Legend
