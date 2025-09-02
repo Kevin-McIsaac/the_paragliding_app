@@ -20,7 +20,6 @@ class CesiumTokenManager extends StatefulWidget {
 class _CesiumTokenManagerState extends State<CesiumTokenManager> {
   String? _currentToken;
   bool _isTokenValidated = false;
-  DateTime? _validationDate;
   bool _isValidating = false;
   bool _isLoading = true;
   
@@ -43,13 +42,11 @@ class _CesiumTokenManagerState extends State<CesiumTokenManager> {
     try {
       final token = await PreferencesHelper.getCesiumUserToken();
       final validated = await PreferencesHelper.getCesiumTokenValidated() ?? false;
-      final validationDate = await PreferencesHelper.getCesiumTokenValidationDate();
       
       if (mounted) {
         setState(() {
           _currentToken = token;
           _isTokenValidated = validated;
-          _validationDate = validationDate;
           _isLoading = false;
         });
       }
@@ -85,7 +82,6 @@ class _CesiumTokenManagerState extends State<CesiumTokenManager> {
         setState(() {
           _currentToken = token;
           _isTokenValidated = true;
-          _validationDate = DateTime.now();
           _tokenController.clear();
         });
         
@@ -145,7 +141,6 @@ class _CesiumTokenManagerState extends State<CesiumTokenManager> {
         setState(() {
           _currentToken = null;
           _isTokenValidated = false;
-          _validationDate = null;
           _tokenController.clear();
         });
         
@@ -193,8 +188,7 @@ class _CesiumTokenManagerState extends State<CesiumTokenManager> {
           await PreferencesHelper.setCesiumTokenValidated(true);
           setState(() {
             _isTokenValidated = true;
-            _validationDate = DateTime.now();
-          });
+            });
         }
       }
     } catch (e) {

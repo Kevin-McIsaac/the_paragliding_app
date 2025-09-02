@@ -23,7 +23,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   // Cesium Ion Token preferences
   String? _cesiumUserToken;
   bool? _cesiumTokenValidated;
-  DateTime? _cesiumTokenValidationDate;
   
   // Import preferences
   String? _igcLastFolder;
@@ -52,7 +51,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       // Load Cesium Ion Token preferences
       final userToken = await PreferencesHelper.getCesiumUserToken();
       final tokenValidated = await PreferencesHelper.getCesiumTokenValidated();
-      final tokenValidationDate = await PreferencesHelper.getCesiumTokenValidationDate();
       
       // Load Import preferences
       final lastFolder = await PreferencesHelper.getIgcLastFolder();
@@ -69,7 +67,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           
           _cesiumUserToken = userToken;
           _cesiumTokenValidated = tokenValidated ?? false;
-          _cesiumTokenValidationDate = tokenValidationDate;
           
           _igcLastFolder = lastFolder;
           
@@ -286,7 +283,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     setState(() {
       _cesiumUserToken = null;
       _cesiumTokenValidated = false;
-      _cesiumTokenValidationDate = null;
     });
     PreferencesHelper.removeCesiumUserToken();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -297,36 +293,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     );
   }
 
-  Widget _buildTextFieldRow(
-    String title,
-    String subtitle,
-    String? value,
-    Function(String) onSubmitted, {
-    bool obscureText = false,
-    String? hintText,
-  }) {
-    return ListTile(
-      title: Text(title),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (subtitle.isNotEmpty) Text(subtitle),
-          const SizedBox(height: 8),
-          TextField(
-            controller: TextEditingController(text: value ?? ''),
-            obscureText: obscureText,
-            decoration: InputDecoration(
-              hintText: hintText,
-              border: const OutlineInputBorder(),
-              isDense: true,
-            ),
-            onSubmitted: onSubmitted,
-          ),
-        ],
-      ),
-      contentPadding: EdgeInsets.zero,
-    );
-  }
 
   @override
   Widget build(BuildContext context) {

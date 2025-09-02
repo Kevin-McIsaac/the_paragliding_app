@@ -308,7 +308,7 @@ class _FlightFormWidgetState extends State<FlightFormWidget> {
                   labelText: 'Launch Site',
                   border: OutlineInputBorder(),
                 ),
-                value: _selectedLaunchSite,
+                initialValue: _selectedLaunchSite,
                 hint: const Text('Select launch site'),
                 items: widget.sites.map((site) {
                   return DropdownMenuItem<Site>(
@@ -332,7 +332,7 @@ class _FlightFormWidgetState extends State<FlightFormWidget> {
                   labelText: 'Wing',
                   border: OutlineInputBorder(),
                 ),
-                value: _selectedWing,
+                initialValue: _selectedWing,
                 hint: const Text('Select wing'),
                 items: [
                   // Regular wings

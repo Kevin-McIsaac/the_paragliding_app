@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:latlong2/latlong.dart';
 import '../../data/models/site.dart';
 import '../../utils/ui_utils.dart';
 import 'edit_site_screen.dart';

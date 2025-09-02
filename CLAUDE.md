@@ -11,37 +11,9 @@ This repository contains:
   - [Functional requirements](documentation/FUNCTIONAL_SPECIFICATION.md)
   - [Technical architecture](documentation/TECHNICAL_DESIGN.md)
 
-## Flutter development commands
+## Flutter commands
 
-```bash
-# Install dependencies
-flutter pub get
-
-# check for errors after making a batch of changes
-flutter analyze
-```
-
-## Flutter app testing commands
-
-Test the using `flutter_controller.sh` and monitor the
-logs captured in the shell output
-Run flutter_controller.sh in the background, do not change directory or use full path names
-
-```bash
-flutter_controller.sh run [device]
-
-# reload the app after code changes
-flutter_controller.sh r
-
-# restart the app 
-flutter_controller.sh R
-
-# quilt the app 
-flutter_controller.sh q
-
-# Take screenshot from running app
-flutter screenshot -o screenshots/$(date +%Y%m%d_%H%M%S).png -d [device]
-```
+Alwyas use the flutter/dart MCP insead of flutter comamnd, e.g, to run, hot reload etc. 
 
 ## Key Files
 
