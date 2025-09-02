@@ -5,7 +5,7 @@ import '../../services/logging_service.dart';
 
 class DatabaseHelper {
   static const _databaseName = "FlightLog.db";
-  static const _databaseVersion = 10; // Added wing aliases support
+  static const _databaseVersion = 11; // Added comprehensive IGC statistics
 
   // Singleton pattern
   DatabaseHelper._privateConstructor();
@@ -59,6 +59,18 @@ class DatabaseHelper {
         timezone TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        max_ground_speed REAL,
+        avg_ground_speed REAL,
+        thermal_count INTEGER,
+        avg_thermal_strength REAL,
+        total_time_in_thermals INTEGER,
+        best_thermal REAL,
+        best_ld REAL,
+        avg_ld REAL,
+        longest_glide REAL,
+        climb_percentage REAL,
+        gps_fix_quality REAL,
+        recording_interval REAL,
         FOREIGN KEY (launch_site_id) REFERENCES sites (id),
         FOREIGN KEY (wing_id) REFERENCES wings (id)
       )
@@ -207,6 +219,32 @@ class DatabaseHelper {
       }
     }
     
+    // Migration for v11: Add comprehensive IGC statistics
+    if (oldVersion < 11) {
+      try {
+        LoggingService.database('MIGRATION', 'Adding comprehensive IGC statistics columns');
+        
+        // Add new statistics columns to flights table
+        await db.execute('ALTER TABLE flights ADD COLUMN max_ground_speed REAL');
+        await db.execute('ALTER TABLE flights ADD COLUMN avg_ground_speed REAL');
+        await db.execute('ALTER TABLE flights ADD COLUMN thermal_count INTEGER');
+        await db.execute('ALTER TABLE flights ADD COLUMN avg_thermal_strength REAL');
+        await db.execute('ALTER TABLE flights ADD COLUMN total_time_in_thermals INTEGER');
+        await db.execute('ALTER TABLE flights ADD COLUMN best_thermal REAL');
+        await db.execute('ALTER TABLE flights ADD COLUMN best_ld REAL');
+        await db.execute('ALTER TABLE flights ADD COLUMN avg_ld REAL');
+        await db.execute('ALTER TABLE flights ADD COLUMN longest_glide REAL');
+        await db.execute('ALTER TABLE flights ADD COLUMN climb_percentage REAL');
+        await db.execute('ALTER TABLE flights ADD COLUMN gps_fix_quality REAL');
+        await db.execute('ALTER TABLE flights ADD COLUMN recording_interval REAL');
+        
+        LoggingService.database('MIGRATION', 'Successfully added comprehensive IGC statistics columns');
+      } catch (e) {
+        LoggingService.error('DatabaseHelper: Failed to add IGC statistics columns', e);
+        rethrow; // This is important for data integrity
+      }
+    }
+    
     LoggingService.database('UPGRADE', 'Database upgrade complete');
   }
 
@@ -239,7 +277,10 @@ class DatabaseHelper {
         'id', 'date', 'launch_time', 'landing_time', 'duration',
         'launch_site_id', 'landing_latitude', 'landing_longitude', 'landing_altitude', 'landing_description',
         'max_altitude', 'max_climb_rate', 'max_sink_rate', 'max_climb_rate_5_sec', 'max_sink_rate_5_sec',
-        'distance', 'straight_distance', 'wing_id', 'notes', 'created_at', 'updated_at', 'timezone'
+        'distance', 'straight_distance', 'wing_id', 'notes', 'created_at', 'updated_at', 'timezone',
+        'max_ground_speed', 'avg_ground_speed', 'thermal_count', 'avg_thermal_strength',
+        'total_time_in_thermals', 'best_thermal', 'best_ld', 'avg_ld', 'longest_glide',
+        'climb_percentage', 'gps_fix_quality', 'recording_interval'
       };
       
       final actualFlightColumns = flightColumns.map((col) => col['name'] as String).toSet();

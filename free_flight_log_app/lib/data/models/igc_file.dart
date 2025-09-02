@@ -356,6 +356,242 @@ class IgcFile {
 
   /// Get landing site coordinates  
   IgcPoint? get landingSite => trackPoints.isNotEmpty ? trackPoints.last : null;
+
+  /// Calculate speed statistics
+  Map<String, double> calculateSpeedStatistics() {
+    if (trackPoints.length < 2) {
+      return {
+        'maxGroundSpeed': 0,
+        'avgGroundSpeed': 0,
+      };
+    }
+
+    double maxSpeed = 0;
+    double totalSpeed = 0;
+    int validSpeedPoints = 0;
+
+    for (int i = 1; i < trackPoints.length; i++) {
+      final speed = trackPoints[i].groundSpeed;
+      if (speed > 0) {
+        if (speed > maxSpeed) maxSpeed = speed;
+        totalSpeed += speed;
+        validSpeedPoints++;
+      }
+    }
+
+    return {
+      'maxGroundSpeed': maxSpeed,
+      'avgGroundSpeed': validSpeedPoints > 0 ? totalSpeed / validSpeedPoints : 0,
+    };
+  }
+
+  /// Detect and analyze thermals
+  Map<String, dynamic> analyzeThermals() {
+    if (trackPoints.length < 2) {
+      return {
+        'thermalCount': 0,
+        'avgThermalStrength': 0.0,
+        'totalTimeInThermals': 0,
+        'bestThermal': 0.0,
+      };
+    }
+
+    final climbRates = calculate15SecondClimbRates();
+    final List<ThermalEvent> thermals = [];
+    
+    int thermalStart = -1;
+    int thermalEnd = -1;
+    double thermalClimbSum = 0;
+    int thermalPointCount = 0;
+    const double thermalThreshold = 0.5; // m/s minimum climb rate
+    const int minThermalDuration = 30; // seconds
+
+    for (int i = 0; i < climbRates.length; i++) {
+      final climbRate = climbRates[i];
+      
+      if (climbRate >= thermalThreshold) {
+        // In thermal
+        if (thermalStart == -1) {
+          thermalStart = i;
+        }
+        thermalEnd = i;
+        thermalClimbSum += climbRate;
+        thermalPointCount++;
+      } else {
+        // Out of thermal
+        if (thermalStart != -1) {
+          // Check if thermal was long enough
+          final thermalDuration = trackPoints[thermalEnd].timestamp
+              .difference(trackPoints[thermalStart].timestamp)
+              .inSeconds;
+          
+          if (thermalDuration >= minThermalDuration && thermalPointCount > 0) {
+            final avgStrength = thermalClimbSum / thermalPointCount;
+            thermals.add(ThermalEvent(
+              startIndex: thermalStart,
+              endIndex: thermalEnd,
+              duration: thermalDuration,
+              avgStrength: avgStrength,
+            ));
+          }
+          
+          // Reset for next thermal
+          thermalStart = -1;
+          thermalEnd = -1;
+          thermalClimbSum = 0;
+          thermalPointCount = 0;
+        }
+      }
+    }
+    
+    // Handle thermal that goes to end of flight
+    if (thermalStart != -1) {
+      final thermalDuration = trackPoints[thermalEnd].timestamp
+          .difference(trackPoints[thermalStart].timestamp)
+          .inSeconds;
+      
+      if (thermalDuration >= minThermalDuration && thermalPointCount > 0) {
+        final avgStrength = thermalClimbSum / thermalPointCount;
+        thermals.add(ThermalEvent(
+          startIndex: thermalStart,
+          endIndex: thermalEnd,
+          duration: thermalDuration,
+          avgStrength: avgStrength,
+        ));
+      }
+    }
+
+    double totalThermalTime = 0;
+    double totalThermalStrength = 0;
+    double bestThermal = 0;
+
+    for (final thermal in thermals) {
+      totalThermalTime += thermal.duration;
+      totalThermalStrength += thermal.avgStrength;
+      if (thermal.avgStrength > bestThermal) {
+        bestThermal = thermal.avgStrength;
+      }
+    }
+
+    return {
+      'thermalCount': thermals.length,
+      'avgThermalStrength': thermals.isNotEmpty ? totalThermalStrength / thermals.length : 0.0,
+      'totalTimeInThermals': totalThermalTime,
+      'bestThermal': bestThermal,
+    };
+  }
+
+  /// Calculate glide performance statistics
+  Map<String, double> calculateGlidePerformance() {
+    if (trackPoints.length < 2) {
+      return {
+        'bestLD': 0,
+        'avgLD': 0,
+        'longestGlide': 0,
+        'climbPercentage': 0,
+      };
+    }
+
+    final climbRates = calculate15SecondClimbRates();
+    final List<double> glideRatios = [];
+    double longestGlideDistance = 0;
+    double currentGlideDistance = 0;
+    int climbingPoints = 0;
+    
+    for (int i = 1; i < trackPoints.length; i++) {
+      final climbRate = i < climbRates.length ? climbRates[i] : 0.0;
+      final speed = trackPoints[i].groundSpeed;
+      
+      if (climbRate > 0.1) { // Climbing
+        climbingPoints++;
+        // End current glide
+        if (currentGlideDistance > longestGlideDistance) {
+          longestGlideDistance = currentGlideDistance;
+        }
+        currentGlideDistance = 0;
+      } else if (climbRate < -0.1 && speed > 5) { // Gliding (min 5 km/h to filter out stops)
+        // Calculate L/D ratio
+        final sinkRate = -climbRate; // Make positive for L/D calculation
+        final glideSpeed = speed / 3.6; // Convert km/h to m/s
+        final glideRatio = glideSpeed / sinkRate;
+        
+        if (glideRatio > 0 && glideRatio < 50) { // Reasonable glide ratio range
+          glideRatios.add(glideRatio);
+        }
+        
+        // Add to current glide distance
+        if (i > 0) {
+          currentGlideDistance += _haversineDistance(trackPoints[i-1], trackPoints[i]);
+        }
+      }
+    }
+    
+    // Check final glide
+    if (currentGlideDistance > longestGlideDistance) {
+      longestGlideDistance = currentGlideDistance;
+    }
+
+    final bestLD = glideRatios.isNotEmpty ? glideRatios.reduce(max) : 0.0;
+    final avgLD = glideRatios.isNotEmpty ? glideRatios.reduce((a, b) => a + b) / glideRatios.length : 0.0;
+    final climbPercentage = trackPoints.length > 1 ? (climbingPoints / (trackPoints.length - 1)) * 100 : 0.0;
+
+    return {
+      'bestLD': bestLD,
+      'avgLD': avgLD,
+      'longestGlide': longestGlideDistance,
+      'climbPercentage': climbPercentage,
+    };
+  }
+
+  /// Calculate GPS quality metrics
+  Map<String, double> calculateGpsQuality() {
+    if (trackPoints.isEmpty) {
+      return {
+        'gpsFixQuality': 0,
+        'recordingInterval': 0,
+      };
+    }
+
+    // Calculate GPS fix quality (percentage of valid fixes)
+    final validFixes = trackPoints.where((p) => p.isValid).length;
+    final gpsFixQuality = (validFixes / trackPoints.length) * 100;
+
+    // Calculate average recording interval
+    double totalInterval = 0;
+    int intervalCount = 0;
+    
+    for (int i = 1; i < trackPoints.length; i++) {
+      final interval = trackPoints[i].timestamp
+          .difference(trackPoints[i-1].timestamp)
+          .inSeconds;
+      if (interval > 0 && interval < 300) { // Filter out unreasonable intervals
+        totalInterval += interval;
+        intervalCount++;
+      }
+    }
+    
+    final avgInterval = intervalCount > 0 ? totalInterval / intervalCount : 0.0;
+
+    return {
+      'gpsFixQuality': gpsFixQuality,
+      'recordingInterval': avgInterval,
+    };
+  }
+}
+
+/// Represents a thermal event detected in the flight
+class ThermalEvent {
+  final int startIndex;
+  final int endIndex;
+  final int duration; // seconds
+  final double avgStrength; // m/s
+  
+  ThermalEvent({
+    required this.startIndex,
+    required this.endIndex,
+    required this.duration,
+    required this.avgStrength,
+  });
 }
 
 /// Single track point in IGC file

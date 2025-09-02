@@ -6,5 +6,6 @@
         "inappwebview"
     ],
     "dart.enableDtd": true,
-    "flutter.enableDtd": true
+    "flutter.enableDtd": true,
+    "dart.mcpServer": true
 }
