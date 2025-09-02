@@ -176,94 +176,10 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
   Widget _buildAdvancedStatistics() {
     return Column(
       children: [
-        // Speed Statistics
-        if (widget.flight.maxGroundSpeed != null || widget.flight.avgGroundSpeed != null) ...[
-          _buildSectionHeader('Speed Statistics', Icons.speed),
-          const SizedBox(height: 8),
+        // Row 1: Best L/D, Avg L/D, Longest Glide, Climb % (4 items)
+        if (widget.flight.bestLD != null || widget.flight.avgLD != null || widget.flight.longestGlide != null || widget.flight.climbPercentage != null) ...[
           Row(
-            children: [
-              if (widget.flight.maxGroundSpeed != null)
-                Expanded(
-                  child: _buildStatItem(
-                    'Max Speed',
-                    '${widget.flight.maxGroundSpeed!.toStringAsFixed(1)} km/h',
-                    Icons.speed,
-                    context,
-                  ),
-                ),
-              if (widget.flight.avgGroundSpeed != null)
-                Expanded(
-                  child: _buildStatItem(
-                    'Avg Speed',
-                    '${widget.flight.avgGroundSpeed!.toStringAsFixed(1)} km/h',
-                    Icons.speed,
-                    context,
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 12),
-        ],
-        
-        // Thermal Analysis
-        if (widget.flight.thermalCount != null || widget.flight.avgThermalStrength != null) ...[
-          _buildSectionHeader('Thermal Analysis', Icons.thermostat),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              if (widget.flight.thermalCount != null)
-                Expanded(
-                  child: _buildStatItem(
-                    'Thermals',
-                    '${widget.flight.thermalCount}',
-                    Icons.air,
-                    context,
-                  ),
-                ),
-              if (widget.flight.avgThermalStrength != null)
-                Expanded(
-                  child: _buildStatItem(
-                    'Avg Thermal',
-                    '${widget.flight.avgThermalStrength!.toStringAsFixed(1)} m/s',
-                    Icons.trending_up,
-                    context,
-                  ),
-                ),
-            ],
-          ),
-          if (widget.flight.bestThermal != null || widget.flight.totalTimeInThermals != null) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                if (widget.flight.bestThermal != null)
-                  Expanded(
-                    child: _buildStatItem(
-                      'Best Thermal',
-                      '${widget.flight.bestThermal!.toStringAsFixed(1)} m/s',
-                      Icons.trending_up,
-                      context,
-                    ),
-                  ),
-                if (widget.flight.totalTimeInThermals != null)
-                  Expanded(
-                    child: _buildStatItem(
-                      'Thermal Time',
-                      '${_formatDuration(widget.flight.totalTimeInThermals!)}',
-                      Icons.access_time,
-                      context,
-                    ),
-                  ),
-              ],
-            ),
-          ],
-          const SizedBox(height: 12),
-        ],
-        
-        // Glide Performance
-        if (widget.flight.bestLD != null || widget.flight.avgLD != null) ...[
-          _buildSectionHeader('Glide Performance', Icons.flight),
-          const SizedBox(height: 8),
-          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               if (widget.flight.bestLD != null)
                 Expanded(
@@ -273,7 +189,9 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                     Icons.flight,
                     context,
                   ),
-                ),
+                )
+              else
+                const Expanded(child: SizedBox()),
               if (widget.flight.avgLD != null)
                 Expanded(
                   child: _buildStatItem(
@@ -282,43 +200,121 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                     Icons.flight,
                     context,
                   ),
-                ),
+                )
+              else
+                const Expanded(child: SizedBox()),
+              if (widget.flight.longestGlide != null)
+                Expanded(
+                  child: _buildStatItem(
+                    'Longest Glide',
+                    '${widget.flight.longestGlide!.toStringAsFixed(1)} km',
+                    Icons.trending_flat,
+                    context,
+                  ),
+                )
+              else
+                const Expanded(child: SizedBox()),
+              if (widget.flight.climbPercentage != null)
+                Expanded(
+                  child: _buildStatItem(
+                    'Climb %',
+                    '${widget.flight.climbPercentage!.toStringAsFixed(0)}%',
+                    Icons.trending_up,
+                    context,
+                  ),
+                )
+              else
+                const Expanded(child: SizedBox()),
             ],
           ),
-          if (widget.flight.longestGlide != null || widget.flight.climbPercentage != null) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                if (widget.flight.longestGlide != null)
-                  Expanded(
-                    child: _buildStatItem(
-                      'Longest Glide',
-                      '${widget.flight.longestGlide!.toStringAsFixed(1)} km',
-                      Icons.trending_flat,
-                      context,
-                    ),
-                  ),
-                if (widget.flight.climbPercentage != null)
-                  Expanded(
-                    child: _buildStatItem(
-                      'Climb %',
-                      '${widget.flight.climbPercentage!.toStringAsFixed(0)}%',
-                      Icons.trending_up,
-                      context,
-                    ),
-                  ),
-              ],
-            ),
-          ],
-          const SizedBox(height: 12),
         ],
         
-        // GPS Quality
-        if (widget.flight.gpsFixQuality != null || widget.flight.recordingInterval != null) ...[
-          _buildSectionHeader('GPS Quality', Icons.gps_fixed),
+        // Row 2: Thermals, Avg Thermal, Best Thermal, Thermal Time (4 items)  
+        if (widget.flight.thermalCount != null || widget.flight.avgThermalStrength != null || widget.flight.bestThermal != null || widget.flight.totalTimeInThermals != null) ...[
+          const SizedBox(height: 12),
+          const Divider(height: 1),
           const SizedBox(height: 8),
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
+              if (widget.flight.thermalCount != null)
+                Expanded(
+                  child: _buildStatItem(
+                    'Thermals',
+                    widget.flight.thermalCount.toString(),
+                    Icons.air,
+                    context,
+                  ),
+                )
+              else
+                const Expanded(child: SizedBox()),
+              if (widget.flight.avgThermalStrength != null)
+                Expanded(
+                  child: _buildStatItem(
+                    'Avg Thermal',
+                    '${widget.flight.avgThermalStrength!.toStringAsFixed(1)} m/s',
+                    Icons.trending_up,
+                    context,
+                  ),
+                )
+              else
+                const Expanded(child: SizedBox()),
+              if (widget.flight.bestThermal != null)
+                Expanded(
+                  child: _buildStatItem(
+                    'Best Thermal',
+                    '${widget.flight.bestThermal!.toStringAsFixed(1)} m/s',
+                    Icons.trending_up,
+                    context,
+                  ),
+                )
+              else
+                const Expanded(child: SizedBox()),
+              if (widget.flight.totalTimeInThermals != null)
+                Expanded(
+                  child: _buildStatItem(
+                    'Thermal Time',
+                    _formatDuration(widget.flight.totalTimeInThermals!),
+                    Icons.access_time,
+                    context,
+                  ),
+                )
+              else
+                const Expanded(child: SizedBox()),
+            ],
+          ),
+        ],
+        
+        // Row 3: Max Speed, Avg Speed, GPS Quality, Recording (4 items)
+        if (widget.flight.maxGroundSpeed != null || widget.flight.avgGroundSpeed != null || widget.flight.gpsFixQuality != null || widget.flight.recordingInterval != null) ...[
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              if (widget.flight.maxGroundSpeed != null)
+                Expanded(
+                  child: _buildStatItem(
+                    'Max Speed',
+                    '${widget.flight.maxGroundSpeed!.toStringAsFixed(1)} km/h',
+                    Icons.speed,
+                    context,
+                  ),
+                )
+              else
+                const Expanded(child: SizedBox()),
+              if (widget.flight.avgGroundSpeed != null)
+                Expanded(
+                  child: _buildStatItem(
+                    'Avg Speed',
+                    '${widget.flight.avgGroundSpeed!.toStringAsFixed(1)} km/h',
+                    Icons.speed,
+                    context,
+                  ),
+                )
+              else
+                const Expanded(child: SizedBox()),
               if (widget.flight.gpsFixQuality != null)
                 Expanded(
                   child: _buildStatItem(
@@ -327,7 +323,9 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                     Icons.gps_fixed,
                     context,
                   ),
-                ),
+                )
+              else
+                const Expanded(child: SizedBox()),
               if (widget.flight.recordingInterval != null)
                 Expanded(
                   child: _buildStatItem(
@@ -336,7 +334,9 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                     Icons.schedule,
                     context,
                   ),
-                ),
+                )
+              else
+                const Expanded(child: SizedBox()),
             ],
           ),
         ],
@@ -344,22 +344,6 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
     );
   }
 
-  Widget _buildSectionHeader(String title, IconData icon) {
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: Theme.of(context).colorScheme.primary),
-        const SizedBox(width: 8),
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-        ),
-      ],
-    );
-  }
 
   String _formatDuration(int seconds) {
     final minutes = seconds ~/ 60;

@@ -312,7 +312,7 @@ class IgcImportService {
       avgGroundSpeed: speedStats['avgGroundSpeed'],
       thermalCount: thermalStats['thermalCount'] as int,
       avgThermalStrength: thermalStats['avgThermalStrength'] as double,
-      totalTimeInThermals: thermalStats['totalTimeInThermals'] as int,
+      totalTimeInThermals: (thermalStats['totalTimeInThermals'] as double).round(),
       bestThermal: thermalStats['bestThermal'] as double,
       bestLD: glideStats['bestLD'],
       avgLD: glideStats['avgLD'],

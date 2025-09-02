@@ -17,8 +17,9 @@ void main() {
     databaseFactory = databaseFactoryFfi;
   }
   
-  // OPTIMIZATION: Lazy load timezone data - only needed for IGC imports
+  // OPTIMIZATION: Lazy load timezone data - only needed for IGC imports  
   // TimezoneService.initialize() will be called lazily in TimezoneService
+  // Hot reload test comment
   
   runApp(const FreeFlightLogApp());
 }
