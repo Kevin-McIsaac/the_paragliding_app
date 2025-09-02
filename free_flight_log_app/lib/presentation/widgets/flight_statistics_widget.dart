@@ -32,6 +32,7 @@ class FlightStatisticsWidget extends StatelessWidget {
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: _buildStatItem(
@@ -79,6 +80,7 @@ class FlightStatisticsWidget extends StatelessWidget {
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (flight.maxClimbRate != null)
                   Expanded(
