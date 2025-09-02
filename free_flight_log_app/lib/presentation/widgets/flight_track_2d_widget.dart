@@ -53,6 +53,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   bool _isLoading = true;
   String? _error;
   MapProvider _selectedMapProvider = MapProvider.openStreetMap;
+  int? _selectedTrackPointIndex;
   
   @override
   void initState() {
@@ -189,6 +190,35 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     }
     
     return lines;
+  }
+
+  List<Marker> _buildTrackPointMarker() {
+    if (_selectedTrackPointIndex == null || _selectedTrackPointIndex! >= _trackPoints.length) {
+      return [];
+    }
+    
+    final point = _trackPoints[_selectedTrackPointIndex!];
+    
+    return [
+      Marker(
+        point: LatLng(point.latitude, point.longitude),
+        width: 12,
+        height: 12,
+        child: Container(
+          decoration: const BoxDecoration(
+            color: Colors.yellow,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 2,
+                offset: Offset(0, 1),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ];
   }
 
   List<Marker> _buildMarkers() {
@@ -432,6 +462,34 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           lineTouchData: LineTouchData(
             enabled: true,
             handleBuiltInTouches: true,
+            touchCallback: (FlTouchEvent event, LineTouchResponse? touchResponse) {
+              if (touchResponse != null && touchResponse.lineBarSpots != null && touchResponse.lineBarSpots!.isNotEmpty) {
+                final spot = touchResponse.lineBarSpots!.first;
+                final minutesFromStart = spot.x;
+                final firstTime = _trackPoints.first.timestamp;
+                final targetTime = firstTime.add(Duration(seconds: (minutesFromStart * 60).round()));
+                
+                // Find the closest track point by time
+                int closestIndex = 0;
+                Duration minDifference = (targetTime.difference(_trackPoints[0].timestamp)).abs();
+                
+                for (int i = 1; i < _trackPoints.length; i++) {
+                  final difference = (targetTime.difference(_trackPoints[i].timestamp)).abs();
+                  if (difference < minDifference) {
+                    minDifference = difference;
+                    closestIndex = i;
+                  }
+                }
+                
+                setState(() {
+                  _selectedTrackPointIndex = closestIndex;
+                });
+              } else {
+                setState(() {
+                  _selectedTrackPointIndex = null;
+                });
+              }
+            },
             touchTooltipData: LineTouchTooltipData(
               getTooltipColor: (touchedSpot) => Colors.blue.withValues(alpha: 0.8),
               tooltipPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -588,7 +646,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                 polylines: _buildColoredTrackLines(),
               ),
               MarkerLayer(
-                markers: _buildMarkers(),
+                markers: [..._buildMarkers(), ..._buildTrackPointMarker()],
               ),
             ],
           ),
