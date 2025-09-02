@@ -28,6 +28,20 @@ class Flight {
   final String? timezone; // Timezone offset (e.g., "+10:00", "-05:30", null for UTC)
   final DateTime? createdAt;
   final DateTime? updatedAt;
+  
+  // New IGC statistics
+  final double? maxGroundSpeed; // km/h
+  final double? avgGroundSpeed; // km/h
+  final int? thermalCount;
+  final double? avgThermalStrength; // m/s
+  final int? totalTimeInThermals; // seconds
+  final double? bestThermal; // m/s
+  final double? bestLD; // glide ratio
+  final double? avgLD; // glide ratio
+  final double? longestGlide; // km
+  final double? climbPercentage; // percentage
+  final double? gpsFixQuality; // percentage
+  final double? recordingInterval; // seconds
 
   Flight({
     this.id,
@@ -59,6 +73,18 @@ class Flight {
     this.timezone,
     this.createdAt,
     this.updatedAt,
+    this.maxGroundSpeed,
+    this.avgGroundSpeed,
+    this.thermalCount,
+    this.avgThermalStrength,
+    this.totalTimeInThermals,
+    this.bestThermal,
+    this.bestLD,
+    this.avgLD,
+    this.longestGlide,
+    this.climbPercentage,
+    this.gpsFixQuality,
+    this.recordingInterval,
   });
 
   Map<String, dynamic> toMap() {
@@ -92,6 +118,18 @@ class Flight {
       'timezone': timezone,
       'created_at': createdAt?.toIso8601String(),
       'updated_at': updatedAt?.toIso8601String(),
+      'max_ground_speed': maxGroundSpeed,
+      'avg_ground_speed': avgGroundSpeed,
+      'thermal_count': thermalCount,
+      'avg_thermal_strength': avgThermalStrength,
+      'total_time_in_thermals': totalTimeInThermals,
+      'best_thermal': bestThermal,
+      'best_ld': bestLD,
+      'avg_ld': avgLD,
+      'longest_glide': longestGlide,
+      'climb_percentage': climbPercentage,
+      'gps_fix_quality': gpsFixQuality,
+      'recording_interval': recordingInterval,
     };
   }
 
@@ -126,6 +164,18 @@ class Flight {
       timezone: map['timezone'],
       createdAt: map['created_at'] != null ? DateTime.parse(map['created_at']) : null,
       updatedAt: map['updated_at'] != null ? DateTime.parse(map['updated_at']) : null,
+      maxGroundSpeed: map['max_ground_speed']?.toDouble(),
+      avgGroundSpeed: map['avg_ground_speed']?.toDouble(),
+      thermalCount: map['thermal_count'],
+      avgThermalStrength: map['avg_thermal_strength']?.toDouble(),
+      totalTimeInThermals: map['total_time_in_thermals'],
+      bestThermal: map['best_thermal']?.toDouble(),
+      bestLD: map['best_ld']?.toDouble(),
+      avgLD: map['avg_ld']?.toDouble(),
+      longestGlide: map['longest_glide']?.toDouble(),
+      climbPercentage: map['climb_percentage']?.toDouble(),
+      gpsFixQuality: map['gps_fix_quality']?.toDouble(),
+      recordingInterval: map['recording_interval']?.toDouble(),
     );
   }
 
@@ -158,6 +208,18 @@ class Flight {
     String? timezone,
     DateTime? createdAt,
     DateTime? updatedAt,
+    double? maxGroundSpeed,
+    double? avgGroundSpeed,
+    int? thermalCount,
+    double? avgThermalStrength,
+    int? totalTimeInThermals,
+    double? bestThermal,
+    double? bestLD,
+    double? avgLD,
+    double? longestGlide,
+    double? climbPercentage,
+    double? gpsFixQuality,
+    double? recordingInterval,
   }) {
     return Flight(
       id: id ?? this.id,
@@ -188,6 +250,18 @@ class Flight {
       timezone: timezone ?? this.timezone,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      maxGroundSpeed: maxGroundSpeed ?? this.maxGroundSpeed,
+      avgGroundSpeed: avgGroundSpeed ?? this.avgGroundSpeed,
+      thermalCount: thermalCount ?? this.thermalCount,
+      avgThermalStrength: avgThermalStrength ?? this.avgThermalStrength,
+      totalTimeInThermals: totalTimeInThermals ?? this.totalTimeInThermals,
+      bestThermal: bestThermal ?? this.bestThermal,
+      bestLD: bestLD ?? this.bestLD,
+      avgLD: avgLD ?? this.avgLD,
+      longestGlide: longestGlide ?? this.longestGlide,
+      climbPercentage: climbPercentage ?? this.climbPercentage,
+      gpsFixQuality: gpsFixQuality ?? this.gpsFixQuality,
+      recordingInterval: recordingInterval ?? this.recordingInterval,
     );
   }
 }

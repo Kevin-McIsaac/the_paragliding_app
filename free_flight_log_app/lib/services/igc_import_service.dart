@@ -124,6 +124,18 @@ class IgcImportService {
           timezone: flight.timezone,
           notes: flight.notes,
           createdAt: existingFlight.createdAt, // Keep original creation time
+          maxGroundSpeed: flight.maxGroundSpeed,
+          avgGroundSpeed: flight.avgGroundSpeed,
+          thermalCount: flight.thermalCount,
+          avgThermalStrength: flight.avgThermalStrength,
+          totalTimeInThermals: flight.totalTimeInThermals,
+          bestThermal: flight.bestThermal,
+          bestLD: flight.bestLD,
+          avgLD: flight.avgLD,
+          longestGlide: flight.longestGlide,
+          climbPercentage: flight.climbPercentage,
+          gpsFixQuality: flight.gpsFixQuality,
+          recordingInterval: flight.recordingInterval
         );
         
         await _databaseService.updateFlight(updatedFlight);
@@ -172,6 +184,12 @@ class IgcImportService {
     final straightDistance = igcData.calculateLaunchToLandingDistance();
     final climbRates = igcData.calculateClimbRates();
     final climbRates5Sec = igcData.calculate5SecondMaxClimbRates();
+    
+    // Calculate new comprehensive statistics
+    final speedStats = igcData.calculateSpeedStatistics();
+    final thermalStats = igcData.analyzeThermals();
+    final glideStats = igcData.calculateGlidePerformance();
+    final gpsStats = igcData.calculateGpsQuality();
     
     // Get or create launch site with paragliding site matching
     Site? launchSite;
@@ -290,6 +308,18 @@ class IgcImportService {
       source: 'igc',
       timezone: igcData.timezone,
       notes: 'Imported from IGC file: $originalFilename${igcData.pilot.isNotEmpty ? '\nPilot: ${igcData.pilot}' : ''}${igcData.gliderType.isNotEmpty ? '\nGlider: ${igcData.gliderType}' : ''}',
+      maxGroundSpeed: speedStats['maxGroundSpeed'],
+      avgGroundSpeed: speedStats['avgGroundSpeed'],
+      thermalCount: thermalStats['thermalCount'] as int,
+      avgThermalStrength: thermalStats['avgThermalStrength'] as double,
+      totalTimeInThermals: thermalStats['totalTimeInThermals'] as int,
+      bestThermal: thermalStats['bestThermal'] as double,
+      bestLD: glideStats['bestLD'],
+      avgLD: glideStats['avgLD'],
+      longestGlide: glideStats['longestGlide'],
+      climbPercentage: glideStats['climbPercentage'],
+      gpsFixQuality: gpsStats['gpsFixQuality'],
+      recordingInterval: gpsStats['recordingInterval'],
     );
   }
 
@@ -336,6 +366,18 @@ class IgcImportService {
       originalFilename: flight.originalFilename,
       source: flight.source,
       timezone: flight.timezone,
+      maxGroundSpeed: flight.maxGroundSpeed,
+      avgGroundSpeed: flight.avgGroundSpeed,
+      thermalCount: flight.thermalCount,
+      avgThermalStrength: flight.avgThermalStrength,
+      totalTimeInThermals: flight.totalTimeInThermals,
+      bestThermal: flight.bestThermal,
+      bestLD: flight.bestLD,
+      avgLD: flight.avgLD,
+      longestGlide: flight.longestGlide,
+      climbPercentage: flight.climbPercentage,
+      gpsFixQuality: flight.gpsFixQuality,
+      recordingInterval: flight.recordingInterval,
     );
   }
 
