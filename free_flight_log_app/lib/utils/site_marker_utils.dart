@@ -55,7 +55,7 @@ class SiteMarkerUtils {
     required String siteName,
     int? flightCount,
     double fontSize = 9.0,
-    Color backgroundColor = const Color(0x4D000000), // Colors.black.withValues(alpha: 0.3)
+    Color backgroundColor = const Color(0x80000000), // Colors.black.withValues(alpha: 0.5)
     Color textColor = Colors.white,
     double maxWidth = 140.0,
   }) {
@@ -150,13 +150,36 @@ class SiteMarkerUtils {
     );
   }
   
+  /// Create a landing marker with consistent styling
+  static Widget buildLandingMarkerIcon({
+    Color color = Colors.red,
+    double size = launchMarkerSize,
+  }) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 2,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+    );
+  }
+  
   /// Create legend items for consistent styling across maps
   static Widget buildLegendItem(
     IconData? icon,
     Color color,
     String label, {
     bool isCircle = false,
-    double iconSize = 20,
+    double iconSize = 16,
     double circleSize = launchMarkerSize,
   }) {
     return Row(
@@ -178,7 +201,7 @@ class SiteMarkerUtils {
         Text(
           label,
           style: const TextStyle(
-            fontSize: 12,
+            fontSize: 10,
             fontWeight: FontWeight.normal,
             color: Colors.black87,
           ),
@@ -224,6 +247,80 @@ class SiteMarkerUtils {
             ],
           ],
         ),
+      ),
+    );
+  }
+  
+  /// Build a collapsible legend widget with consistent styling
+  static Widget buildCollapsibleMapLegend({
+    required BuildContext context,
+    required bool isExpanded,
+    required VoidCallback onToggle,
+    required List<Widget> legendItems,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(4),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 4,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Toggle button
+          GestureDetector(
+            onTap: onToggle,
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Legend',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  AnimatedRotation(
+                    turns: isExpanded ? 0.25 : 0.0,
+                    duration: const Duration(milliseconds: 300),
+                    child: const Icon(
+                      Icons.chevron_right,
+                      size: 16,
+                      color: Colors.black54,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // Legend content
+          AnimatedCrossFade(
+            firstChild: const SizedBox.shrink(),
+            secondChild: Container(
+              padding: const EdgeInsets.only(left: 8, right: 8, bottom: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: legendItems,
+              ),
+            ),
+            crossFadeState: isExpanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 300),
+          ),
+        ],
       ),
     );
   }

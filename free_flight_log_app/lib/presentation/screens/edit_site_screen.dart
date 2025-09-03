@@ -77,6 +77,10 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   List<ParaglidingSite> _apiSites = [];
   List<Flight> _launches = [];
   Timer? _debounceTimer;
+  
+  // Legend state
+  bool _isLegendExpanded = true;
+  static const String _legendExpandedKey = 'edit_site_legend_expanded';
   LatLngBounds? _currentBounds;
   bool _isLoadingSites = false;
   String? _lastLoadedBoundsKey;
@@ -102,6 +106,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   void initState() {
     super.initState();
     _loadMapProviderPreference();
+    _loadLegendState();
     _loadFlightCounts(); // Load flight counts for sites
     _checkAndShowHelpOnFirstVisit(); // Show help dialog on first visit
     
@@ -158,6 +163,40 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     } catch (e) {
       LoggingService.error('EditSiteScreen: Error loading map provider preference', e);
     }
+  }
+
+  /// Load the saved legend expansion state
+  Future<void> _loadLegendState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final isExpanded = prefs.getBool(_legendExpandedKey) ?? true;
+      
+      if (mounted) {
+        setState(() {
+          _isLegendExpanded = isExpanded;
+        });
+      }
+    } catch (e) {
+      LoggingService.error('EditSiteScreen: Error loading legend state', e);
+    }
+  }
+
+  /// Save the legend expansion state
+  Future<void> _saveLegendState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_legendExpandedKey, _isLegendExpanded);
+    } catch (e) {
+      LoggingService.error('EditSiteScreen: Error saving legend state', e);
+    }
+  }
+
+  /// Toggle legend expansion state
+  void _toggleLegend() {
+    setState(() {
+      _isLegendExpanded = !_isLegendExpanded;
+    });
+    _saveLegendState();
   }
 
   /// Check if this is the first visit and show help dialog if needed
@@ -500,64 +539,30 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     );
   }
 
-  /// Build the legend widget
+  /// Build the collapsible legend widget
   Widget _buildLegend() {
+    final legendItems = <Widget>[
+      if (_launches.isNotEmpty) ...[
+        SiteMarkerUtils.buildLegendItem(null, Colors.blue, 'Launches', isCircle: true),
+        const SizedBox(height: 4),
+      ],
+      SiteMarkerUtils.buildLegendItem(Icons.location_on, SiteMarkerUtils.flownSiteColor, 'Flown Sites'),
+      const SizedBox(height: 4),
+      SiteMarkerUtils.buildLegendItem(Icons.location_on, SiteMarkerUtils.newSiteColor, 'New Sites'),
+    ];
+    
     return Positioned(
       top: 8,
       left: 8,
-      child: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.95),
-          borderRadius: BorderRadius.circular(4),
-          boxShadow: [_standardElevatedShadow],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_launches.isNotEmpty) ...[
-              _buildLegendItem(null, Colors.blue, 'Launches', isCircle: true),
-              const SizedBox(height: 4),
-            ],
-            _buildLegendItem(Icons.location_on, Colors.blue, 'Flown Sites'),
-            const SizedBox(height: 4),
-            _buildLegendItem(Icons.location_on, Colors.green, 'New Sites'),
-          ],
-        ),
+      child: SiteMarkerUtils.buildCollapsibleMapLegend(
+        context: context,
+        isExpanded: _isLegendExpanded,
+        onToggle: _toggleLegend,
+        legendItems: legendItems,
       ),
     );
   }
 
-  /// Build a single legend item
-  Widget _buildLegendItem(IconData? icon, Color color, String label, {bool isCircle = false}) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (isCircle)
-          Container(
-            width: _launchMarkerSize,
-            height: _launchMarkerSize,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
-            ),
-          )
-        else
-          Icon(icon!, color: color, size: 20),
-        const SizedBox(width: 8),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.normal,
-            color: Colors.black87,
-          ),
-        ),
-      ],
-    );
-  }
 
   /// Build the loading indicator
   Widget? _buildLoadingIndicator() {

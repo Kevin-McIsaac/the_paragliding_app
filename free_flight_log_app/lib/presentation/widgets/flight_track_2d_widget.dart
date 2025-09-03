@@ -83,7 +83,6 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   void initState() {
     super.initState();
     _loadMapProvider();
-    _loadLegendPreference();
     _loadTrackData();
     _loadSiteData();
   }
@@ -201,22 +200,17 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Site legend items (when sites are loaded)
-                  if (_localSites.isNotEmpty || _apiSites.isNotEmpty) ...[
-                    SiteMarkerUtils.buildLegendItem(Icons.location_on, SiteMarkerUtils.flownSiteColor, 'Flown Sites'),
-                    const SizedBox(height: 4),
-                    SiteMarkerUtils.buildLegendItem(Icons.location_on, SiteMarkerUtils.newSiteColor, 'New Sites'),
-                    const SizedBox(height: 8),
-                  ],
-                  // Track color legend
-                  const Text('Track Color:', style: TextStyle(fontSize: 10, fontWeight: FontWeight.normal, color: Colors.black87)),
+                  // Site legend items (always shown for consistent layout)
+                  SiteMarkerUtils.buildLegendItem(Icons.location_on, SiteMarkerUtils.flownSiteColor, 'Flown Sites'),
+                  const SizedBox(height: 4),
+                  SiteMarkerUtils.buildLegendItem(Icons.location_on, SiteMarkerUtils.newSiteColor, 'New Sites'),
                   const SizedBox(height: 4),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(width: 14, height: 3, decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(1.5))),
                       const SizedBox(width: 8),
-                      const Text('Climbing', style: TextStyle(fontSize: 10, color: Colors.black87)),
+                      const Text('Climb', style: TextStyle(fontSize: 10, color: Colors.black87)),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -625,24 +619,19 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         height: 24,
         child: Tooltip(
           message: _launchSite?.name ?? 'Launch Site',
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.green,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.3),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: const Icon(
-              Icons.flight_takeoff,
-              color: Colors.white,
-              size: 16,
-            ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SiteMarkerUtils.buildLaunchMarkerIcon(
+                color: Colors.green,
+                size: SiteMarkerUtils.launchMarkerSize,
+              ),
+              const Icon(
+                Icons.flight_takeoff,
+                color: Colors.white,
+                size: 10,
+              ),
+            ],
           ),
         ),
       ),
@@ -653,24 +642,19 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         height: 24,
         child: Tooltip(
           message: widget.flight.landingDescription ?? 'Landing Site',
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.red,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.3),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: const Icon(
-              Icons.flight_land,
-              color: Colors.white,
-              size: 16,
-            ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SiteMarkerUtils.buildLandingMarkerIcon(
+                color: Colors.red,
+                size: SiteMarkerUtils.launchMarkerSize,
+              ),
+              const Icon(
+                Icons.flight_land,
+                color: Colors.white,
+                size: 10,
+              ),
+            ],
           ),
         ),
       ),
@@ -1149,7 +1133,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           ),
           // Collapsible Legend for track colors and sites
           Positioned(
-            bottom: 8,
+            top: 8,
             left: 8,
             child: _buildCollapsibleLegend(),
           ),
