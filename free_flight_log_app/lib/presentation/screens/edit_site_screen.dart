@@ -489,14 +489,21 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
   /// Build the attribution widget
   Widget _buildAttribution() {
-    return Align(
-      alignment: Alignment.bottomRight,
+    return Positioned(
+      bottom: 8,
+      right: 8,
       child: Container(
-        margin: const EdgeInsets.all(4),
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.9),
-          borderRadius: BorderRadius.circular(2),
+          color: Colors.grey[900]!.withValues(alpha: 0.8),
+          borderRadius: BorderRadius.circular(4),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.3),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: GestureDetector(
           onTap: () async {
@@ -522,11 +529,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           },
           child: Text(
             _selectedMapProvider.attribution,
-            style: TextStyle(
-              fontSize: 10,
-              color: Colors.blue[800],
-              decoration: TextDecoration.underline,
-            ),
+            style: const TextStyle(fontSize: 8, color: Colors.white70),
           ),
         ),
       ),
