@@ -5,7 +5,7 @@ import '../../data/models/site.dart';
 import '../../data/models/wing.dart';
 import '../../services/database_service.dart';
 import '../../services/logging_service.dart';
-import '../widgets/flight_track_3d_widget.dart';
+import '../widgets/flight_track_2d_widget.dart';
 import '../widgets/flight_statistics_widget.dart';
 import '../widgets/site_selection_dialog.dart';
 import '../widgets/wing_selection_dialog.dart';
@@ -652,8 +652,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
 
                     const SizedBox(height: 16),
 
-
-                    // Flight Track 3D Visualization (if available)
+                    // Flight Track Map (if track data available)
                     if (_flight.trackLogPath != null)
                       Card(
                         child: Padding(
@@ -666,15 +665,37 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                                 style: Theme.of(context).textTheme.titleLarge,
                               ),
                               const SizedBox(height: 16),
-                              FlightTrack3DWidget(
+                              FlightTrack2DWidget(
                                 flight: _flight,
-                                config: FlightTrack3DConfig.embedded(),
-                                showPlaybackPanel: true,
+                                height: 732,
                               ),
                             ],
                           ),
                         ),
                       ),
+
+                    // Hidden: Flight Track 3D Visualization (accessible via 2D map button)
+                    // if (_flight.trackLogPath != null)
+                    //   Card(
+                    //     child: Padding(
+                    //       padding: const EdgeInsets.all(16.0),
+                    //       child: Column(
+                    //         crossAxisAlignment: CrossAxisAlignment.start,
+                    //         children: [
+                    //           Text(
+                    //             'Flight Track',
+                    //             style: Theme.of(context).textTheme.titleLarge,
+                    //           ),
+                    //           const SizedBox(height: 16),
+                    //           FlightTrack3DWidget(
+                    //             flight: _flight,
+                    //             config: FlightTrack3DConfig.embedded(),
+                    //             showPlaybackPanel: true,
+                    //           ),
+                    //         ],
+                    //       ),
+                    //     ),
+                    //   ),
 
                     const SizedBox(height: 16),
 
