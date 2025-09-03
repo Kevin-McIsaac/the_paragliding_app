@@ -51,6 +51,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   
   // Constants
   static const String _mapProviderKey = 'flight_track_2d_map_provider';
+  static const String _legendExpandedKey = 'flight_track_2d_legend_expanded';
   static const double _chartHeight = 100.0;
   static const double _totalChartsHeight = 300.0; // 3 charts * 100px each
   static const double _mapPadding = 0.005;
@@ -65,6 +66,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   MapProvider _selectedMapProvider = MapProvider.openStreetMap;
   int? _selectedTrackPointIndex;
   bool _selectionFromMap = false;
+  bool _isLegendExpanded = true; // Default to expanded for new users
   
   // Site display state
   List<Site> _localSites = [];
@@ -81,6 +83,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   void initState() {
     super.initState();
     _loadMapProvider();
+    _loadLegendPreference();
     _loadTrackData();
     _loadSiteData();
   }
@@ -110,6 +113,138 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     } catch (e) {
       LoggingService.error('FlightTrack2DWidget: Error saving map provider', e);
     }
+  }
+
+  Future<void> _loadLegendPreference() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final isExpanded = prefs.getBool(_legendExpandedKey) ?? true; // Default to expanded
+      setState(() {
+        _isLegendExpanded = isExpanded;
+      });
+    } catch (e) {
+      LoggingService.error('FlightTrack2DWidget: Error loading legend preference', e);
+    }
+  }
+
+  Future<void> _saveLegendPreference(bool isExpanded) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_legendExpandedKey, isExpanded);
+    } catch (e) {
+      LoggingService.error('FlightTrack2DWidget: Error saving legend preference', e);
+    }
+  }
+
+  void _toggleLegend() {
+    setState(() {
+      _isLegendExpanded = !_isLegendExpanded;
+    });
+    _saveLegendPreference(_isLegendExpanded);
+  }
+
+  Widget _buildCollapsibleLegend() {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(4),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 4,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Toggle button header
+          InkWell(
+            onTap: _toggleLegend,
+            borderRadius: BorderRadius.circular(4),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _isLegendExpanded ? Icons.expand_less : Icons.expand_more,
+                    size: 16,
+                    color: Colors.grey[700],
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Legend',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // Expandable content
+          AnimatedCrossFade(
+            duration: const Duration(milliseconds: 300),
+            crossFadeState: _isLegendExpanded 
+                ? CrossFadeState.showFirst 
+                : CrossFadeState.showSecond,
+            firstChild: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Site legend items (when sites are loaded)
+                  if (_localSites.isNotEmpty || _apiSites.isNotEmpty) ...[
+                    SiteMarkerUtils.buildLegendItem(Icons.location_on, SiteMarkerUtils.flownSiteColor, 'Flown Sites'),
+                    const SizedBox(height: 4),
+                    SiteMarkerUtils.buildLegendItem(Icons.location_on, SiteMarkerUtils.newSiteColor, 'New Sites'),
+                    const SizedBox(height: 8),
+                  ],
+                  // Track color legend
+                  const Text('Track Color:', style: TextStyle(fontSize: 10, fontWeight: FontWeight.normal, color: Colors.black87)),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(width: 14, height: 3, decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(1.5))),
+                      const SizedBox(width: 8),
+                      const Text('Climbing', style: TextStyle(fontSize: 10, color: Colors.black87)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(width: 14, height: 3, decoration: BoxDecoration(color: Colors.blue, borderRadius: BorderRadius.circular(1.5))),
+                      const SizedBox(width: 8),
+                      const Text('Sink (<1.5m/s)', style: TextStyle(fontSize: 10, color: Colors.black87)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(width: 14, height: 3, decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(1.5))),
+                      const SizedBox(width: 8),
+                      const Text('Sink (>1.5m/s)', style: TextStyle(fontSize: 10, color: Colors.black87)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            secondChild: const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _loadSiteData() async {
@@ -1012,66 +1147,11 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               ],
             ),
           ),
-          // Combined Legend for track colors and sites
+          // Collapsible Legend for track colors and sites
           Positioned(
             bottom: 8,
             left: 8,
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.95),
-                borderRadius: BorderRadius.circular(4),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Colors.black26,
-                    blurRadius: 4,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Site legend items (when sites are loaded)
-                  if (_localSites.isNotEmpty || _apiSites.isNotEmpty) ...[
-                    SiteMarkerUtils.buildLegendItem(Icons.location_on, SiteMarkerUtils.flownSiteColor, 'Flown Sites'),
-                    const SizedBox(height: 4),
-                    SiteMarkerUtils.buildLegendItem(Icons.location_on, SiteMarkerUtils.newSiteColor, 'New Sites'),
-                    const SizedBox(height: 8),
-                  ],
-                  // Track color legend
-                  const Text('Track Color:', style: TextStyle(fontSize: 10, fontWeight: FontWeight.normal, color: Colors.black87)),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(width: 14, height: 3, decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(1.5))),
-                      const SizedBox(width: 8),
-                      const Text('Climbing', style: TextStyle(fontSize: 10, color: Colors.black87)),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(width: 14, height: 3, decoration: BoxDecoration(color: Colors.blue, borderRadius: BorderRadius.circular(1.5))),
-                      const SizedBox(width: 8),
-                      const Text('Sink (<1.5m/s)', style: TextStyle(fontSize: 10, color: Colors.black87)),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(width: 14, height: 3, decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(1.5))),
-                      const SizedBox(width: 8),
-                      const Text('Sink (>1.5m/s)', style: TextStyle(fontSize: 10, color: Colors.black87)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+            child: _buildCollapsibleLegend(),
           ),
           // Attribution
           Positioned(
