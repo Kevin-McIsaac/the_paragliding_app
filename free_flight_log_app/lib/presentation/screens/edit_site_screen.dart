@@ -443,6 +443,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
             boxShadow: [_standardElevatedShadow],
           ),
           child: PopupMenuButton<MapProvider>(
+            tooltip: 'Change Maps',
             onSelected: _selectMapProvider,
             initialValue: _selectedMapProvider,
             child: Padding(
