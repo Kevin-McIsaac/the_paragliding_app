@@ -13,6 +13,7 @@ import '../../data/models/flight.dart';
 import '../../services/database_service.dart';
 import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
+import '../../utils/site_marker_utils.dart';
 
 enum MapProvider {
   openStreetMap('Street Map', 'OSM', 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', 18, '© OpenStreetMap contributors'),
@@ -52,8 +53,9 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   static const double _initialZoom = 13.0;
   static const double _minZoom = 1.0;
   static const double _launchMarkerSize = 15.0;
-  static const double _siteMarkerSize = 72.0;
-  static const double _siteMarkerIconSize = 66.0;
+  // Use shared constants from SiteMarkerUtils
+  static const double _siteMarkerSize = SiteMarkerUtils.siteMarkerSize;
+  static const double _siteMarkerIconSize = SiteMarkerUtils.siteMarkerIconSize;
   static const double _boundsThreshold = 0.001;
   static const int _debounceDurationMs = 500;
   static const double _launchRadiusMeters = 500.0;
@@ -1310,9 +1312,9 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     
     return DragMarker(
       point: LatLng(site.latitude, site.longitude),
-      size: const Size(300, 120), // Wider and taller to accommodate text
+      size: const Size(140, 80), // Use shared marker container size
       offset: const Offset(0, -_siteMarkerSize / 2),
-      dragOffset: const Offset(0, -70), // Move marker well above finger during drag
+      dragOffset: const Offset(0, -40), // Move marker well above finger during drag
       onTap: (point) => _isMergeMode ? _handleMergeTarget(site) : _enterMergeMode(site),
       onLongPress: (point) => _isMergeMode ? null : _showSiteEditDialog(site),
       onDragStart: (details, point) {
@@ -1327,17 +1329,9 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           Stack(
             alignment: Alignment.center,
             children: [
-              // White outline
-              const Icon(
-                Icons.location_on,
-                color: Colors.white,
-                size: _siteMarkerSize,
-              ),
-              // Blue marker with visual feedback for merge mode
-              Icon(
-                Icons.location_on,
-                color: Colors.blue,
-                size: _siteMarkerIconSize,
+              // Use shared marker icon helper for consistent styling
+              SiteMarkerUtils.buildSiteMarkerIcon(
+                color: SiteMarkerUtils.flownSiteColor,
               ),
               // Merge mode indicator
               if (_isMergeMode && _selectedSourceSite?.id == site.id)
@@ -1374,42 +1368,10 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                 ),
             ],
           ),
-          // Text label
-          IntrinsicWidth(
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 140),
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    site.name,
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                    style: const TextStyle(
-                      fontSize: 9,
-                      color: Colors.white,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  if (launchCount != null && launchCount > 0)
-                    Text(
-                      '$launchCount flight${launchCount == 1 ? '' : 's'}',
-                      style: const TextStyle(
-                        fontSize: 9,
-                        color: Colors.white,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                ],
-              ),
-            ),
+          // Use shared label helper for consistent styling
+          SiteMarkerUtils.buildSiteLabel(
+            siteName: site.name,
+            flightCount: launchCount,
           ),
         ],
       ),
@@ -1426,7 +1388,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     
     return DragMarker(
       point: LatLng(site.latitude, site.longitude),
-      size: const Size(300, 120), // Wider and taller to accommodate text
+      size: const Size(140, 80), // Use shared marker container size
       offset: const Offset(0, -_siteMarkerSize / 2),
       disableDrag: true, // Cannot drag API sites, only drop onto them
       onTap: (point) => _isMergeMode ? _handleMergeIntoApiSite(site) : null,
@@ -1437,17 +1399,9 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           Stack(
             alignment: Alignment.center,
             children: [
-              // White outline
-              const Icon(
-                Icons.location_on,
-                color: Colors.white,
-                size: _siteMarkerSize,
-              ),
-              // Green marker
-              const Icon(
-                Icons.location_on,
-                color: Colors.green,
-                size: _siteMarkerIconSize,
+              // Use shared marker icon helper for consistent styling
+              SiteMarkerUtils.buildSiteMarkerIcon(
+                color: SiteMarkerUtils.newSiteColor,
               ),
               // Merge target indicator
               if (_isMergeMode && _selectedSourceSite != null)
@@ -1472,27 +1426,10 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                 ),
             ],
           ),
-          // Text label - API sites show only name
-          IntrinsicWidth(
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 140),
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                site.name,
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-                style: const TextStyle(
-                  fontSize: 9,
-                  color: Colors.white,
-                  fontWeight: FontWeight.w500,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
+          // Use shared label helper for consistent styling (API sites show only name)
+          SiteMarkerUtils.buildSiteLabel(
+            siteName: site.name,
+            flightCount: null, // API sites don't have flight counts
           ),
         ],
       ),
