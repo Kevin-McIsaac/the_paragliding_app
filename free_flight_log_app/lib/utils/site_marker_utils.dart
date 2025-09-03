@@ -5,9 +5,9 @@ import 'package:latlong2/latlong.dart';
 /// Shared utilities for creating consistent site markers across different map views
 class SiteMarkerUtils {
   // Marker size constants
-  static const double siteMarkerSize = 35.0;
-  static const double siteMarkerIconSize = 30.0;
-  static const double launchMarkerSize = 15.0;
+  static const double siteMarkerSize = 42.0;
+  static const double siteMarkerIconSize = 36.0;
+  static const double launchMarkerSize = 25.0;
   
   // Colors
   static const Color flownSiteColor = Colors.blue;

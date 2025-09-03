@@ -586,8 +586,8 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     return [
       Marker(
         point: LatLng(point.latitude, point.longitude),
-        width: 12,
-        height: 12,
+        width: 16,
+        height: 16,
         child: Container(
           decoration: const BoxDecoration(
             color: Colors.yellow,
@@ -615,8 +615,8 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
       // Launch marker
       Marker(
         point: LatLng(firstPoint.latitude, firstPoint.longitude),
-        width: 24,
-        height: 24,
+        width: 32,
+        height: 32,
         child: Tooltip(
           message: _launchSite?.name ?? 'Launch Site',
           child: Stack(
@@ -629,7 +629,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               const Icon(
                 Icons.flight_takeoff,
                 color: Colors.white,
-                size: 10,
+                size: 14,
               ),
             ],
           ),
@@ -638,8 +638,8 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
       // Landing marker
       Marker(
         point: LatLng(lastPoint.latitude, lastPoint.longitude),
-        width: 24,
-        height: 24,
+        width: 32,
+        height: 32,
         child: Tooltip(
           message: widget.flight.landingDescription ?? 'Landing Site',
           child: Stack(
@@ -652,7 +652,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               const Icon(
                 Icons.flight_land,
                 color: Colors.white,
-                size: 10,
+                size: 14,
               ),
             ],
           ),
