@@ -205,6 +205,59 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                   const SizedBox(height: 4),
                   SiteMarkerUtils.buildLegendItem(Icons.location_on, SiteMarkerUtils.newSiteColor, 'New Sites'),
                   const SizedBox(height: 4),
+                  // Launch and landing markers
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            SiteMarkerUtils.buildLaunchMarkerIcon(
+                              color: Colors.green,
+                              size: 16,
+                            ),
+                            const Icon(
+                              Icons.flight_takeoff,
+                              color: Colors.white,
+                              size: 8,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Text('Launch', style: TextStyle(fontSize: 10, color: Colors.black87)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            SiteMarkerUtils.buildLandingMarkerIcon(
+                              color: Colors.red,
+                              size: 16,
+                            ),
+                            const Icon(
+                              Icons.flight_land,
+                              color: Colors.white,
+                              size: 8,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Text('Landing', style: TextStyle(fontSize: 10, color: Colors.black87)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
