@@ -216,7 +216,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                           alignment: Alignment.center,
                           children: [
                             SiteMarkerUtils.buildLaunchMarkerIcon(
-                              color: Colors.green,
+                              color: SiteMarkerUtils.launchColor,
                               size: 16,
                             ),
                             const Icon(
@@ -242,7 +242,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                           alignment: Alignment.center,
                           children: [
                             SiteMarkerUtils.buildLandingMarkerIcon(
-                              color: Colors.red,
+                              color: SiteMarkerUtils.landingColor,
                               size: 16,
                             ),
                             const Icon(
@@ -643,7 +643,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         height: 16,
         child: Container(
           decoration: const BoxDecoration(
-            color: Colors.yellow,
+            color: SiteMarkerUtils.selectedPointColor,
             shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
@@ -676,7 +676,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
             alignment: Alignment.center,
             children: [
               SiteMarkerUtils.buildLaunchMarkerIcon(
-                color: Colors.green,
+                color: SiteMarkerUtils.launchColor,
                 size: SiteMarkerUtils.launchMarkerSize,
               ),
               const Icon(
@@ -699,7 +699,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
             alignment: Alignment.center,
             children: [
               SiteMarkerUtils.buildLandingMarkerIcon(
-                color: Colors.red,
+                color: SiteMarkerUtils.landingColor,
                 size: SiteMarkerUtils.launchMarkerSize,
               ),
               const Icon(

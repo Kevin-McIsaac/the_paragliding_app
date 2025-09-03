@@ -11,8 +11,10 @@ class SiteMarkerUtils {
   
   // Colors
   static const Color flownSiteColor = Colors.blue;
-  static const Color newSiteColor = Colors.green;
-  static const Color launchColor = Colors.blue;
+  static const Color newSiteColor = Colors.deepPurple;
+  static const Color launchColor = Colors.green;
+  static const Color landingColor = Colors.red;
+  static const Color selectedPointColor = Colors.amber;
   
   /// Create a site marker icon with consistent styling
   static Widget buildSiteMarkerIcon({
