@@ -78,7 +78,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   Timer? _debounceTimer;
   
   // Legend state
-  bool _isLegendExpanded = true;
+  bool _isLegendExpanded = false;
   static const String _legendExpandedKey = 'edit_site_legend_expanded';
   LatLngBounds? _currentBounds;
   bool _isLoadingSites = false;
@@ -168,7 +168,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   Future<void> _loadLegendState() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final isExpanded = prefs.getBool(_legendExpandedKey) ?? true;
+      final isExpanded = prefs.getBool(_legendExpandedKey) ?? false;
       
       if (mounted) {
         setState(() {

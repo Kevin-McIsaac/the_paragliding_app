@@ -66,7 +66,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   MapProvider _selectedMapProvider = MapProvider.openStreetMap;
   int? _selectedTrackPointIndex;
   bool _selectionFromMap = false;
-  bool _isLegendExpanded = true; // Default to expanded for new users
+  bool _isLegendExpanded = false; // Default to collapsed for cleaner initial view
   
   // Site display state
   List<Site> _localSites = [];
@@ -179,9 +179,9 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                   Text(
                     'Legend',
                     style: TextStyle(
-                      fontSize: 10,
+                      fontSize: 11,
                       fontWeight: FontWeight.w500,
-                      color: Colors.grey[700],
+                      color: Colors.black87,
                     ),
                   ),
                 ],
