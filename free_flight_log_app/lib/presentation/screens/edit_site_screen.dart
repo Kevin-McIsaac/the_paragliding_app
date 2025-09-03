@@ -52,7 +52,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   static const double _defaultLongitude = 7.4474;
   static const double _initialZoom = 13.0;
   static const double _minZoom = 1.0;
-  static const double _launchMarkerSize = 15.0;
   // Use shared constants from SiteMarkerUtils
   static const double _siteMarkerSize = SiteMarkerUtils.siteMarkerSize;
   static const double _siteMarkerIconSize = SiteMarkerUtils.siteMarkerIconSize;
@@ -361,37 +360,31 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     }
   }
 
-  /// Create a launch marker with consistent styling
+  /// Create a launch marker with consistent styling using shared helper
   Marker _buildLaunchMarker(Flight launch) {
-    final markerColor = Colors.blue;
-    
-    // Build site name for launch marker - used in tooltip/debugging
-    
     return Marker(
       point: LatLng(launch.launchLatitude!, launch.launchLongitude!),
-      width: _launchMarkerSize,
-      height: _launchMarkerSize,
+      width: (SiteMarkerUtils.launchMarkerSize * 0.75) + 4, // Add padding for touch target
+      height: (SiteMarkerUtils.launchMarkerSize * 0.75) + 4,
       child: GestureDetector(
         onLongPress: () => _handleSiteCreationAtPoint(
           LatLng(launch.launchLatitude!, launch.launchLongitude!),
           siteName: 'Launch ${launch.date.toLocal().toString().split(' ')[0]}',
           altitude: launch.launchAltitude,
         ),
-        child: Container(
-          width: _launchMarkerSize,
-          height: _launchMarkerSize,
-          decoration: BoxDecoration(
-            color: markerColor,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 2),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.3),
-                blurRadius: 2,
-                offset: const Offset(0, 1),
-              ),
-            ],
-          ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            SiteMarkerUtils.buildLaunchMarkerIcon(
+              color: SiteMarkerUtils.launchColor,
+              size: SiteMarkerUtils.launchMarkerSize * 0.75,
+            ),
+            const Icon(
+              Icons.flight_takeoff,
+              color: Colors.white,
+              size: 10,
+            ),
+          ],
         ),
       ),
     );
@@ -543,7 +536,38 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   Widget _buildLegend() {
     final legendItems = <Widget>[
       if (_launches.isNotEmpty) ...[
-        SiteMarkerUtils.buildLegendItem(null, Colors.blue, 'Launches', isCircle: true),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  SiteMarkerUtils.buildLaunchMarkerIcon(
+                    color: SiteMarkerUtils.launchColor,
+                    size: 16,
+                  ),
+                  const Icon(
+                    Icons.flight_takeoff,
+                    color: Colors.white,
+                    size: 8,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Text(
+              'Launches',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.normal,
+                color: Colors.black87,
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 4),
       ],
       SiteMarkerUtils.buildLegendItem(Icons.location_on, SiteMarkerUtils.flownSiteColor, 'Flown Sites'),
