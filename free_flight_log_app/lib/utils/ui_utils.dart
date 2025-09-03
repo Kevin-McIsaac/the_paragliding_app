@@ -182,3 +182,72 @@ class UiUtils {
     };
   }
 }
+
+/// AppTooltip provides consistent Material Design tooltip styling across the app
+/// 
+/// Features:
+/// - Mobile-friendly long-press activation
+/// - Consistent width constraints (max 200px)
+/// - Material Design styling (11px font, grey background)
+/// - Support for both simple and rich content
+/// 
+/// Example usage:
+/// ```dart
+/// AppTooltip(
+///   message: 'Simple tooltip text',
+///   child: Icon(Icons.info),
+/// )
+/// 
+/// AppTooltip.rich(
+///   richMessage: Text('Rich content with custom styling'),
+///   child: Icon(Icons.info),
+/// )
+/// ```
+class AppTooltip extends StatelessWidget {
+  final String? message;
+  final Widget? richMessage;
+  final Widget child;
+
+  const AppTooltip({
+    super.key,
+    required this.message,
+    required this.child,
+  }) : richMessage = null;
+
+  const AppTooltip.rich({
+    super.key,
+    required this.richMessage,
+    required this.child,
+  }) : message = null;
+
+  @override
+  Widget build(BuildContext context) {
+    if (message != null) {
+      // Simple tooltip using theme defaults
+      return Tooltip(
+        message: message!,
+        child: child,
+      );
+    } else if (richMessage != null) {
+      // Rich tooltip with custom constraints
+      return Tooltip(
+        richMessage: WidgetSpan(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 200),
+            child: DefaultTextStyle(
+              style: const TextStyle(
+                fontSize: 11,
+                height: 1.2,
+                color: Colors.white,
+              ),
+              child: richMessage!,
+            ),
+          ),
+        ),
+        child: child,
+      );
+    }
+    
+    return child;
+  }
+}

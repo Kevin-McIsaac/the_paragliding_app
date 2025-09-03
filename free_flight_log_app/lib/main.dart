@@ -116,6 +116,24 @@ class _AppInitializerState extends State<AppInitializer> {
               brightness: Brightness.dark,
             ),
             useMaterial3: true,
+            tooltipTheme: TooltipThemeData(
+              triggerMode: TooltipTriggerMode.longPress,
+              showDuration: const Duration(seconds: 2),
+              waitDuration: const Duration(seconds: 1),
+              preferBelow: false,
+              verticalOffset: 20,
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.grey[800],
+                borderRadius: BorderRadius.circular(4),
+              ),
+              textStyle: const TextStyle(
+                fontSize: 11,
+                height: 1.2,
+                color: Colors.white,
+              ),
+            ),
           ),
           home: _sharedFiles != null && _sharedFiles!.isNotEmpty
               ? IgcImportScreen(initialFiles: _sharedFiles!)
@@ -132,6 +150,24 @@ class _AppInitializerState extends State<AppInitializer> {
           brightness: Brightness.light,
         ),
         useMaterial3: true,
+        tooltipTheme: TooltipThemeData(
+          triggerMode: TooltipTriggerMode.longPress,
+          showDuration: const Duration(seconds: 2),
+          waitDuration: const Duration(seconds: 1),
+          preferBelow: false,
+          verticalOffset: 20,
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.grey[800],
+            borderRadius: BorderRadius.circular(4),
+          ),
+          textStyle: const TextStyle(
+            fontSize: 11,
+            height: 1.2,
+            color: Colors.white,
+          ),
+        ),
       ),
       darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -139,6 +175,24 @@ class _AppInitializerState extends State<AppInitializer> {
           brightness: Brightness.dark,
         ),
         useMaterial3: true,
+        tooltipTheme: TooltipThemeData(
+          triggerMode: TooltipTriggerMode.longPress,
+          showDuration: const Duration(seconds: 2),
+          waitDuration: const Duration(seconds: 1),
+          preferBelow: false,
+          verticalOffset: 20,
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.grey[800],
+            borderRadius: BorderRadius.circular(4),
+          ),
+          textStyle: const TextStyle(
+            fontSize: 11,
+            height: 1.2,
+            color: Colors.white,
+          ),
+        ),
       ),
       home: Scaffold(
         body: Center(

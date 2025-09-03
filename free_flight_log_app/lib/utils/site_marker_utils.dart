@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'ui_utils.dart';
 
 /// Shared utilities for creating consistent site markers across different map views
 class SiteMarkerUtils {
@@ -125,7 +126,7 @@ class SiteMarkerUtils {
       point: position,
       width: 140,
       height: 80,
-      child: Tooltip(
+      child: AppTooltip(
         message: tooltip ?? siteName,
         child: Column(
           mainAxisSize: MainAxisSize.min,

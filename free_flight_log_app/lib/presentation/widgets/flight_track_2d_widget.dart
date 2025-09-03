@@ -14,6 +14,7 @@ import '../../services/database_service.dart';
 import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
 import '../../utils/site_marker_utils.dart';
+import '../../utils/ui_utils.dart';
 import '../screens/flight_track_3d_fullscreen.dart';
 
 enum MapProvider {
@@ -670,7 +671,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         point: LatLng(firstPoint.latitude, firstPoint.longitude),
         width: 32,
         height: 32,
-        child: Tooltip(
+        child: AppTooltip(
           message: _launchSite?.name ?? 'Launch Site',
           child: Stack(
             alignment: Alignment.center,
@@ -693,7 +694,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         point: LatLng(lastPoint.latitude, lastPoint.longitude),
         width: 32,
         height: 32,
-        child: Tooltip(
+        child: AppTooltip(
           message: widget.flight.landingDescription ?? 'Landing Site',
           child: Stack(
             alignment: Alignment.center,
@@ -881,8 +882,8 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           ),
         ],
       ),
-      child: Tooltip(
-        message: 'View in 3D',
+      child: AppTooltip(
+        message: '3D Fly Through',
         child: InkWell(
           onTap: _openFullscreen3D,
           borderRadius: BorderRadius.circular(4),
