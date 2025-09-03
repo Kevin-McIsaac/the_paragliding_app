@@ -178,6 +178,7 @@ class SiteMarkerUtils {
   
   /// Create legend items for consistent styling across maps
   static Widget buildLegendItem(
+    BuildContext context,
     IconData? icon,
     Color color,
     String label, {
@@ -203,10 +204,10 @@ class SiteMarkerUtils {
         const SizedBox(width: 8),
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 10,
             fontWeight: FontWeight.normal,
-            color: Colors.black87,
+            color: Theme.of(context).colorScheme.onSurface,
           ),
         ),
       ],
@@ -240,13 +241,13 @@ class SiteMarkerUtils {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (showLaunches) ...[
-              buildLegendItem(null, launchColor, 'Launches', isCircle: true),
+              buildLegendItem(context, null, launchColor, 'Launches', isCircle: true),
               const SizedBox(height: 4),
             ],
             if (showSites) ...[
-              buildLegendItem(Icons.location_on, flownSiteColor, 'Flown Sites'),
+              buildLegendItem(context, Icons.location_on, flownSiteColor, 'Flown Sites'),
               const SizedBox(height: 4),
-              buildLegendItem(Icons.location_on, newSiteColor, 'New Sites'),
+              buildLegendItem(context, Icons.location_on, newSiteColor, 'New Sites'),
             ],
           ],
         ),

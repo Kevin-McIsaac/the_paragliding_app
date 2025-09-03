@@ -202,9 +202,9 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // Site legend items (always shown for consistent layout)
-                  SiteMarkerUtils.buildLegendItem(Icons.location_on, SiteMarkerUtils.flownSiteColor, 'Flown Sites'),
+                  SiteMarkerUtils.buildLegendItem(context, Icons.location_on, SiteMarkerUtils.flownSiteColor, 'Flown Sites'),
                   const SizedBox(height: 4),
-                  SiteMarkerUtils.buildLegendItem(Icons.location_on, SiteMarkerUtils.newSiteColor, 'New Sites'),
+                  SiteMarkerUtils.buildLegendItem(context, Icons.location_on, SiteMarkerUtils.newSiteColor, 'New Sites'),
                   const SizedBox(height: 4),
                   // Launch and landing markers
                   Row(
