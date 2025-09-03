@@ -5,7 +5,20 @@
         "FXAA",
         "inappwebview"
     ],
-    "dart.enableDtd": true,
-    "flutter.enableDtd": true,
-    "dart.mcpServer": true
+    "dart.enableDtd": false,
+    "flutter.enableDtd": false,
+    "dart.mcpServer": false,
+    "dart.analysisServerFolding": false,
+    "dart.analysisServerMaxRssBytes": 512000000,
+    "files.watcherExclude": {
+      "**/build/**": true,
+      "**/.dart_tool/**": true,
+      "**/node_modules/**": true,
+      "**/.git/**": true
+    },
+    "dart.analysisExcludedFolders": ["build", ".dart_tool"],
+    "search.exclude": {
+      "**/build": true,
+      "**/.dart_tool": true
+    }
 }

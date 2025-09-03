@@ -3,8 +3,7 @@
 ## Project Overview
 
 Free Flight Log is a free, android first, cross-platform application for
-logging, reporting, and visualising paraglider, hang glider, and microlight flights.
-This repository contains:
+logging, reporting, and visualising paraglider, hang glider, and microlight flights. This repository contains:
 
 - **Complete Flutter Application**: Fully functional flight logbook capabilities
 - **Planning Documents** (for reference):
@@ -14,41 +13,85 @@ This repository contains:
 ## Flutter commands
 
 ```bash
-# Allways run the app using flutter_controller.sh in background
+# Always run the app using flutter_controller.sh from project root directory
+# Script location: /home/kmcisaac/flutter/bin/flutter_controller.sh
+# IMPORTANT: Must be run from /home/kmcisaac/Projects/free_flight_log (project root), NOT from free_flight_log_app subdirectory
 
-# Run app
-flutter_controller.sh run 
+# Run app on Android emulator (emulator-5554 by default)
+/home/kmcisaac/flutter/bin/flutter_controller.sh run 
 
 # Hot reload
-flutter_controller.sh r
+/home/kmcisaac/flutter/bin/flutter_controller.sh r
 
 # Hot restart
-flutter_controller.sh R
+/home/kmcisaac/flutter/bin/flutter_controller.sh R
 
 # Quit app
-flutter_controller.sh q
+/home/kmcisaac/flutter/bin/flutter_controller.sh q
 ```
 
-## Key Files
+## Key Files Structure
 
-- IGC parser: `lib/services/igc_parser.dart`
-- Cesium 3D: `assets/cesium/cesium.js`  
-- Database: `lib/data/datasources/local/database_helper.dart`
-- Screens: `lib/presentation/screens/`
+### **Main Entry & Core**
+
+- `lib/main.dart` - App entry point
+- `lib/data/datasources/database_helper.dart` - Low-level database operations
+- `lib/services/database_service.dart` - Main database service layer
+- `assets/cesium/cesium.js` - Cesium 3D map integration
+
+### **Screens** (main app screens)
+
+- `lib/presentation/screens/flight_list_screen.dart` - Main flight list
+- `lib/presentation/screens/flight_detail_screen.dart` - Individual flight details
+- `lib/presentation/screens/add_flight_screen.dart` / `edit_flight_screen.dart` - Flight creation/editing
+- `lib/presentation/screens/igc_import_screen.dart` - IGC file import
+- `lib/presentation/screens/statistics_screen.dart` - Flight statistics
+- `lib/presentation/screens/manage_sites_screen.dart` / `edit_site_screen.dart` - Site management
+- `lib/presentation/screens/wing_management_screen.dart` / `edit_wing_screen.dart` - Wing management
+- `lib/presentation/screens/preferences_screen.dart` - App settings
+
+### **Services** (core business logic)
+
+- `lib/services/igc_parser.dart` - IGC file parsing
+- `lib/services/igc_import_service.dart` - IGC import workflow
+- `lib/services/paragliding_earth_api.dart` - External API integration
+- `lib/services/site_matching_service.dart` / `site_merge_service.dart` - Site management logic
+- `lib/services/timezone_service.dart` - Timezone handling
+- `lib/services/logging_service.dart` - App logging
+
+### **Models** (data structures)
+
+- `lib/data/models/flight.dart` - Flight data model
+- `lib/data/models/site.dart` / `paragliding_site.dart` - Site models
+- `lib/data/models/wing.dart` - Wing/equipment model
+- `lib/data/models/igc_file.dart` - IGC file structure
+
+### **Widgets** (reusable UI components)
+
+- `lib/presentation/widgets/flight_track_2d_widget.dart` - 2D flight visualization
+- `lib/presentation/widgets/flight_track_3d_widget.dart` - 3D flight visualization
+- `lib/presentation/widgets/flight_statistics_widget.dart` - Statistics display
+- `lib/utils/site_marker_utils.dart` - Site marker utilities
+
+### **Utils/Helpers** (utility functions)
+
+- `lib/utils/date_time_utils.dart` - Date/time utilities
+- `lib/utils/ui_utils.dart` - UI helper functions
+- `lib/utils/file_sharing_handler.dart` - File sharing logic
 
 ## Core Principles
 
 - **Keep it Simple**: This is a simple app with a few screen and typically less than 5,000 flights, 100 sites and 10 wings. Choose simple, proven solutions over complex architectures
 - **State Management**: Keep state simple - this app has <10 screens
 - **Database**: Keep database managment simple, this app has < 10 tables, and the largest table will have < 5000 rows
-- **Idomatic**: Look for solutions that are idomatic to the language/tool, e.g., Flutter, Cesium and Javascript, especially large data handling.
+- **Idomatic**: Look for solutions that are idomatic to the language/tool, e.g., Flutter, Cesium and Javascript, especially large data handling code.
 - **WebView Constraints**: WebView has limitations (no ES6 modules, single JS context). Work within them.
 - **Error Recovery**: Add fallbacks for external services (maps, network)
 - **Performance Measurement**: Measure performance before optimizing. Add monitoring to debug logs, then make informed decisions from app testing.
 - **App Testing**: Test app changes by:
   - Adding logging that helps with understanding app usage, performance and diagnoing errors.
   - Runing the app in the bash tool on the emulator and telling the user what to do.
-  - When requested by the user reviewing the logs in the bash shell output for:
+  - When requested by the user, reviewing the logs in the bash shell output for:
     - errors,
     - ways to improve efficency and performance,
     - improve map image quality while reducing cost.
