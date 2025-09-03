@@ -264,7 +264,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                     children: [
                       Container(width: 14, height: 3, decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(1.5))),
                       const SizedBox(width: 8),
-                      const Text('Climb', style: TextStyle(fontSize: 10, color: Colors.black87)),
+                      Text('Climb', style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurface)),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -273,7 +273,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                     children: [
                       Container(width: 14, height: 3, decoration: BoxDecoration(color: Colors.blue, borderRadius: BorderRadius.circular(1.5))),
                       const SizedBox(width: 8),
-                      const Text('Sink (<1.5m/s)', style: TextStyle(fontSize: 10, color: Colors.black87)),
+                      Text('Sink (<1.5m/s)', style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurface)),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -282,7 +282,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                     children: [
                       Container(width: 14, height: 3, decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(1.5))),
                       const SizedBox(width: 8),
-                      const Text('Sink (>1.5m/s)', style: TextStyle(fontSize: 10, color: Colors.black87)),
+                      Text('Sink (>1.5m/s)', style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurface)),
                     ],
                   ),
                 ],

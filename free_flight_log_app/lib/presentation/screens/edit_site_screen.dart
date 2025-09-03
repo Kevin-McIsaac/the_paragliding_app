@@ -562,12 +562,12 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
               ),
             ),
             const SizedBox(width: 8),
-            const Text(
+            Text(
               'Launches',
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.normal,
-                color: Colors.black87,
+                color: Theme.of(context).colorScheme.onSurface,
               ),
             ),
           ],
