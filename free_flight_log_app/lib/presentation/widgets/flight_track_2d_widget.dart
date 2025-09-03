@@ -71,8 +71,10 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   List<ParaglidingSite> _apiSites = [];
   Map<int, int> _siteFlightCounts = {};
   Timer? _debounceTimer;
+  Timer? _loadingDelayTimer;
   LatLngBounds? _currentBounds;
   bool _isLoadingSites = false;
+  bool _showLoadingIndicator = false;
   String? _lastLoadedBoundsKey;
   
   @override
@@ -167,6 +169,14 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     }
 
     setState(() => _isLoadingSites = true);
+    
+    // Show loading indicator after 500ms delay to prevent flashing
+    _loadingDelayTimer?.cancel();
+    _loadingDelayTimer = Timer(const Duration(milliseconds: 500), () {
+      if (mounted && _isLoadingSites) {
+        setState(() => _showLoadingIndicator = true);
+      }
+    });
 
     try {
       // Load local sites from database
@@ -196,7 +206,9 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           _localSites = localSites;
           _apiSites = apiSites;
           _isLoadingSites = false;
+          _showLoadingIndicator = false;
         });
+        _loadingDelayTimer?.cancel();
         
         _lastLoadedBoundsKey = boundsKey;
         
@@ -206,7 +218,11 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     } catch (e) {
       LoggingService.error('FlightTrack2DWidget: Error loading sites', e);
       if (mounted) {
-        setState(() => _isLoadingSites = false);
+        setState(() {
+          _isLoadingSites = false;
+          _showLoadingIndicator = false;
+        });
+        _loadingDelayTimer?.cancel();
       }
     }
   }
@@ -470,8 +486,8 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
       // Launch marker
       Marker(
         point: LatLng(firstPoint.latitude, firstPoint.longitude),
-        width: 30,
-        height: 30,
+        width: 24,
+        height: 24,
         child: Tooltip(
           message: _launchSite?.name ?? 'Launch Site',
           child: Container(
@@ -498,8 +514,8 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
       // Landing marker
       Marker(
         point: LatLng(lastPoint.latitude, lastPoint.longitude),
-        width: 30,
-        height: 30,
+        width: 24,
+        height: 24,
         child: Tooltip(
           message: widget.flight.landingDescription ?? 'Landing Site',
           child: Container(
@@ -595,6 +611,9 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     if (_trackPoints.isNotEmpty) {
       final bounds = _calculateBounds();
       _mapController.fitCamera(CameraFit.bounds(bounds: bounds));
+      
+      // Load sites for the new bounds after fitting
+      _loadSitesForBounds(bounds);
     }
   }
 
@@ -906,6 +925,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   @override
   void dispose() {
     _debounceTimer?.cancel();
+    _loadingDelayTimer?.cancel();
     super.dispose();
   }
 
@@ -968,11 +988,14 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                 maxZoom: _selectedMapProvider.maxZoom.toDouble(),
                 userAgentPackageName: 'com.example.free_flight_log_app',
               ),
+              MarkerLayer(
+                markers: _buildSiteMarkers(),
+              ),
               PolylineLayer(
                 polylines: _buildColoredTrackLines(),
               ),
               MarkerLayer(
-                markers: [..._buildSiteMarkers(), ..._buildMarkers(), ..._buildTrackPointMarker()],
+                markers: [..._buildMarkers(), ..._buildTrackPointMarker()],
               ),
             ],
           ),
@@ -1073,6 +1096,46 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               ),
             ),
           ),
+          // Bottom center loading indicator like Site Maps
+          if (_showLoadingIndicator)
+            Positioned(
+              bottom: 16,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.95),
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      Text(
+                        'Loading sites...',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
             ],
           ),
         ),
