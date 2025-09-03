@@ -16,6 +16,18 @@ class SiteMarkerUtils {
   static const Color landingColor = Colors.red;
   static const Color selectedPointColor = Colors.amber;
   
+  // Common const decorations for performance
+  static const _defaultBoxShadow = [
+    BoxShadow(
+      color: Color(0x4D000000), // Colors.black.withValues(alpha: 0.3) as const
+      blurRadius: 2,
+      offset: Offset(0, 1),
+    ),
+  ];
+  
+  // Static methods for commonly used non-const objects
+  static Border get _whiteCircleBorder => Border.all(color: Colors.white, width: 2);
+  
   /// Create a site marker icon with consistent styling
   static Widget buildSiteMarkerIcon({
     required Color color,
@@ -140,14 +152,8 @@ class SiteMarkerUtils {
       decoration: BoxDecoration(
         color: color,
         shape: BoxShape.circle,
-        border: Border.all(color: Colors.white, width: 2),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 2,
-            offset: const Offset(0, 1),
-          ),
-        ],
+        border: _whiteCircleBorder,
+        boxShadow: _defaultBoxShadow,
       ),
     );
   }
@@ -163,14 +169,8 @@ class SiteMarkerUtils {
       decoration: BoxDecoration(
         color: color,
         shape: BoxShape.circle,
-        border: Border.all(color: Colors.white, width: 2),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 2,
-            offset: const Offset(0, 1),
-          ),
-        ],
+        border: _whiteCircleBorder,
+        boxShadow: _defaultBoxShadow,
       ),
     );
   }
@@ -194,7 +194,7 @@ class SiteMarkerUtils {
             decoration: BoxDecoration(
               color: color,
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
+              border: _whiteCircleBorder,
             ),
           )
         else
