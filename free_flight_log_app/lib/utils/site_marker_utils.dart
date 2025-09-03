@@ -263,13 +263,13 @@ class SiteMarkerUtils {
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.95),
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(4),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
-            color: Colors.black26,
+            color: Colors.black.withValues(alpha: 0.2),
             blurRadius: 4,
-            offset: Offset(0, 2),
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -285,22 +285,22 @@ class SiteMarkerUtils {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
+                  Text(
                     'Legend',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w500,
-                      color: Colors.black87,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                   const SizedBox(width: 4),
                   AnimatedRotation(
                     turns: isExpanded ? 0.25 : 0.0,
                     duration: const Duration(milliseconds: 300),
-                    child: const Icon(
+                    child: Icon(
                       Icons.chevron_right,
                       size: 16,
-                      color: Colors.black54,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                 ],

@@ -148,13 +148,13 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.95),
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(4),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
-            color: Colors.black26,
+            color: Colors.black.withValues(alpha: 0.2),
             blurRadius: 4,
-            offset: Offset(0, 2),
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -174,7 +174,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                   Icon(
                     _isLegendExpanded ? Icons.expand_less : Icons.expand_more,
                     size: 16,
-                    color: Colors.grey[700],
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                   const SizedBox(width: 4),
                   Text(
@@ -182,7 +182,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w500,
-                      color: Colors.black87,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                 ],
@@ -823,6 +823,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         ],
       ),
       child: PopupMenuButton<MapProvider>(
+        tooltip: 'Change Maps',
         onSelected: (provider) async {
           setState(() {
             _selectedMapProvider = provider;
