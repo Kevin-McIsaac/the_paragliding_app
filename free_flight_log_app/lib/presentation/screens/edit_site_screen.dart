@@ -243,7 +243,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
             _HelpItem(
               icon: Icons.merge,
               title: 'Merge Sites',
-              description: 'Either drag a Site onto another, or long press a Site then select the other, to merge into a single Site.',
+              description: 'Either drag a Site onto another, or click on a Site then select the other, to merge into a single Site.',
             ),
             SizedBox(height: 12),
             _HelpItem(
