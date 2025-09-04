@@ -1133,6 +1133,9 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   ExtraLinesData _buildGridLineLabels(double minY, double maxY, double interval, String unit) {
     List<HorizontalLine> lines = [];
     
+    // Calculate a small downward offset to float labels above grid lines
+    double labelOffset = (maxY - minY) * -0.085; // 8.5% of the value range
+    
     // Calculate grid line positions based on the interval
     // Use floor for negative values to ensure we include 0 when range crosses zero
     double currentY = minY < 0 ? (minY / interval).floor() * interval : (minY / interval).ceil() * interval;
@@ -1168,9 +1171,9 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           ));
         }
         
-        // Add transparent line with left label positioned at exact grid line Y coordinate
+        // Add transparent line with left label positioned above grid line
         lines.add(HorizontalLine(
-          y: currentY,
+          y: currentY + labelOffset,
           color: Colors.transparent,
           strokeWidth: 0,
           label: HorizontalLineLabel(
@@ -1185,9 +1188,9 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           ),
         ));
         
-        // Add transparent line with right label positioned at exact grid line Y coordinate
+        // Add transparent line with right label positioned above grid line
         lines.add(HorizontalLine(
-          y: currentY,
+          y: currentY + labelOffset,
           color: Colors.transparent,
           strokeWidth: 0,
           label: HorizontalLineLabel(
