@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'ui_utils.dart';
 
 /// Shared utilities for creating consistent site markers across different map views
 class SiteMarkerUtils {
@@ -125,18 +126,15 @@ class SiteMarkerUtils {
       point: position,
       width: 140,
       height: 80,
-      child: Tooltip(
-        message: tooltip ?? siteName,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            buildSiteMarkerIcon(color: color),
-            buildSiteLabel(
-              siteName: siteName,
-              flightCount: flightCount,
-            ),
-          ],
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          buildSiteMarkerIcon(color: color),
+          buildSiteLabel(
+            siteName: siteName,
+            flightCount: flightCount,
+          ),
+        ],
       ),
     );
   }
@@ -177,6 +175,7 @@ class SiteMarkerUtils {
   
   /// Create legend items for consistent styling across maps
   static Widget buildLegendItem(
+    BuildContext context,
     IconData? icon,
     Color color,
     String label, {
@@ -197,15 +196,24 @@ class SiteMarkerUtils {
               border: _whiteCircleBorder,
             ),
           )
+        else if (icon == Icons.location_on)
+          // Site markers need white outline like actual markers
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              Icon(Icons.location_on, color: Colors.white, size: iconSize + 2),
+              Icon(Icons.location_on, color: color, size: iconSize),
+            ],
+          )
         else
           Icon(icon!, color: color, size: iconSize),
         const SizedBox(width: 8),
         Text(
           label,
           style: const TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.normal,
-            color: Colors.black87,
+            fontSize: 9,
+            fontWeight: FontWeight.w500,
+            color: Colors.white,
           ),
         ),
       ],
@@ -223,11 +231,11 @@ class SiteMarkerUtils {
       left: 8,
       child: Container(
         padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.95),
-          borderRadius: BorderRadius.circular(4),
+        decoration: const BoxDecoration(
+          color: Color(0x80000000),
+          borderRadius: BorderRadius.all(Radius.circular(4)),
           boxShadow: [
-            const BoxShadow(
+            BoxShadow(
               color: Colors.black26,
               blurRadius: 4,
               offset: Offset(0, 2),
@@ -239,13 +247,13 @@ class SiteMarkerUtils {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (showLaunches) ...[
-              buildLegendItem(null, launchColor, 'Launches', isCircle: true),
+              buildLegendItem(context, null, launchColor, 'Launches', isCircle: true),
               const SizedBox(height: 4),
             ],
             if (showSites) ...[
-              buildLegendItem(Icons.location_on, flownSiteColor, 'Flown Sites'),
+              buildLegendItem(context, Icons.location_on, flownSiteColor, 'Flown Sites'),
               const SizedBox(height: 4),
-              buildLegendItem(Icons.location_on, newSiteColor, 'New Sites'),
+              buildLegendItem(context, Icons.location_on, newSiteColor, 'New Sites'),
             ],
           ],
         ),
@@ -261,10 +269,10 @@ class SiteMarkerUtils {
     required List<Widget> legendItems,
   }) {
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(4),
-        boxShadow: const [
+      decoration: const BoxDecoration(
+        color: Color(0x80000000),
+        borderRadius: BorderRadius.all(Radius.circular(4)),
+        boxShadow: [
           BoxShadow(
             color: Colors.black26,
             blurRadius: 4,
@@ -287,9 +295,9 @@ class SiteMarkerUtils {
                   const Text(
                     'Legend',
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 9,
                       fontWeight: FontWeight.w500,
-                      color: Colors.black87,
+                      color: Colors.white,
                     ),
                   ),
                   const SizedBox(width: 4),
@@ -299,7 +307,7 @@ class SiteMarkerUtils {
                     child: const Icon(
                       Icons.chevron_right,
                       size: 16,
-                      color: Colors.black54,
+                      color: Colors.white,
                     ),
                   ),
                 ],

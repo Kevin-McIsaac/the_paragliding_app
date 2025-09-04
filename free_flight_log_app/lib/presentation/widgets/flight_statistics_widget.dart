@@ -47,6 +47,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                   duration,
                   Icons.access_time,
                   context,
+                  tooltip: 'Total time from launch to landing in hours and minutes',
                 ),
               ),
               Expanded(
@@ -57,6 +58,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                       : 'N/A',
                   Icons.straighten,
                   context,
+                  tooltip: 'Direct point-to-point distance between launch and landing sites',
                 ),
               ),
               Expanded(
@@ -67,6 +69,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                       : 'N/A',
                   Icons.timeline,
                   context,
+                  tooltip: 'Total distance flown along the actual flight path',
                 ),
               ),
               Expanded(
@@ -77,6 +80,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                       : 'N/A',
                   Icons.height,
                   context,
+                  tooltip: 'Maximum GPS altitude above sea level',
                 ),
               ),
             ],
@@ -98,6 +102,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                       '${widget.flight.maxClimbRate!.toStringAsFixed(1)} m/s',
                       Icons.trending_up,
                       context,
+                      tooltip: 'Peak instantaneous climb rate',
                     ),
                   ),
                 if (widget.flight.maxSinkRate != null)
@@ -107,6 +112,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                       '${widget.flight.maxSinkRate!.toStringAsFixed(1)} m/s',
                       Icons.trending_down,
                       context,
+                      tooltip: 'Peak instantaneous sink rate',
                     ),
                   ),
                 if (widget.flight.maxClimbRate5Sec != null)
@@ -116,6 +122,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                       '${widget.flight.maxClimbRate5Sec!.toStringAsFixed(1)} m/s',
                       Icons.trending_up,
                       context,
+                      tooltip: 'Maximum 5-second average climb rate.',
                     ),
                   ),
                 if (widget.flight.maxSinkRate5Sec != null)
@@ -125,6 +132,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                       '${widget.flight.maxSinkRate5Sec!.toStringAsFixed(1)} m/s',
                       Icons.trending_down,
                       context,
+                      tooltip: 'Maximum 5-second average sink rate',
                     ),
                   ),
               ],
@@ -190,6 +198,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                     widget.flight.bestLD!.toStringAsFixed(1),
                     Icons.flight,
                     context,
+                    tooltip: 'Best glide ratio achieved',
                   ),
                 )
               else
@@ -201,6 +210,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                     widget.flight.avgLD!.toStringAsFixed(1),
                     Icons.flight,
                     context,
+                    tooltip: 'Average glide ratio over the entire flight',
                   ),
                 )
               else
@@ -212,6 +222,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                     '${widget.flight.longestGlide!.toStringAsFixed(1)} km',
                     Icons.trending_flat,
                     context,
+                    tooltip: 'Maximum distance covered in a single glide without thermaling or climbing',
                   ),
                 )
               else
@@ -223,6 +234,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                     '${widget.flight.climbPercentage!.toStringAsFixed(0)}%',
                     Icons.trending_up,
                     context,
+                    tooltip: 'Percentage of flight time spent climbing',
                   ),
                 )
               else
@@ -246,6 +258,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                     widget.flight.thermalCount.toString(),
                     Icons.air,
                     context,
+                    tooltip: 'Number of distinct thermal climbs. 15s Average climb rate > 0.5m/s for 30 seconds',
                   ),
                 )
               else
@@ -257,6 +270,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                     '${widget.flight.avgThermalStrength!.toStringAsFixed(1)} m/s',
                     Icons.trending_up,
                     context,
+                    tooltip: 'Average climb rate across all thermals. Indicates typical thermal strength for the day',
                   ),
                 )
               else
@@ -268,6 +282,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                     '${widget.flight.bestThermal!.toStringAsFixed(1)} m/s',
                     Icons.trending_up,
                     context,
+                    tooltip: 'Strongest average climb rate achieved in a single thermal',
                   ),
                 )
               else
@@ -279,6 +294,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                     '${((widget.flight.totalTimeInThermals! / (widget.flight.duration * 60)) * 100).toStringAsFixed(0)}%',
                     Icons.trending_up,
                     context,
+                    tooltip: 'Percentage of total flight time spent thermaling',
                   ),
                 )
               else
@@ -302,6 +318,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                     '${widget.flight.maxGroundSpeed!.toStringAsFixed(1)} km/h',
                     Icons.speed,
                     context,
+                    tooltip: 'Maximum GPS ground speed recorded during the flight',
                   ),
                 )
               else
@@ -313,6 +330,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                     '${widget.flight.avgGroundSpeed!.toStringAsFixed(1)} km/h',
                     Icons.speed,
                     context,
+                    tooltip: 'Average GPS ground speed over the entire flight',
                   ),
                 )
               else
@@ -324,6 +342,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                     '${widget.flight.gpsFixQuality!.toStringAsFixed(0)}%',
                     Icons.gps_fixed,
                     context,
+                    tooltip: 'Percentage of GPS fixes with good satellite reception (>4 satellites)',
                   ),
                 )
               else
@@ -335,6 +354,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                     '${widget.flight.recordingInterval!.toStringAsFixed(0)}s',
                     Icons.schedule,
                     context,
+                    tooltip: 'Time interval between GPS track points in the IGC file',
                   ),
                 )
               else
@@ -347,8 +367,8 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
   }
 
 
-  Widget _buildStatItem(String label, String value, IconData icon, BuildContext context) {
-    return Column(
+  Widget _buildStatItem(String label, String value, IconData icon, BuildContext context, {String? tooltip}) {
+    Widget statWidget = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
@@ -366,5 +386,33 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
         ),
       ],
     );
+
+    if (tooltip != null) {
+      return Tooltip(
+        richMessage: WidgetSpan(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 200),
+            child: Text(
+              tooltip,
+              style: const TextStyle(fontSize: 11, height: 1.2, color: Colors.white),
+            ),
+          ),
+        ),
+        triggerMode: TooltipTriggerMode.longPress,
+        showDuration: const Duration(seconds: 2),
+        waitDuration: const Duration(seconds: 1),
+        preferBelow: false,
+        verticalOffset: 20,
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.grey[800],
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: statWidget,
+      );
+    }
+
+    return statWidget;
   }
 }

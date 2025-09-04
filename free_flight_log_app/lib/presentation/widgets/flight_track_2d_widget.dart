@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/flight.dart';
@@ -14,6 +15,7 @@ import '../../services/database_service.dart';
 import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
 import '../../utils/site_marker_utils.dart';
+import '../../utils/ui_utils.dart';
 import '../screens/flight_track_3d_fullscreen.dart';
 
 enum MapProvider {
@@ -146,10 +148,10 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(4),
-        boxShadow: const [
+      decoration: const BoxDecoration(
+        color: Color(0x80000000),
+        borderRadius: BorderRadius.all(Radius.circular(4)),
+        boxShadow: [
           BoxShadow(
             color: Colors.black26,
             blurRadius: 4,
@@ -170,18 +172,22 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    _isLegendExpanded ? Icons.expand_less : Icons.expand_more,
-                    size: 16,
-                    color: Colors.grey[700],
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
+                  const Text(
                     'Legend',
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 9,
                       fontWeight: FontWeight.w500,
-                      color: Colors.black87,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  AnimatedRotation(
+                    turns: _isLegendExpanded ? 0.25 : 0.0,
+                    duration: const Duration(milliseconds: 300),
+                    child: const Icon(
+                      Icons.chevron_right,
+                      size: 16,
+                      color: Colors.white,
                     ),
                   ),
                 ],
@@ -201,9 +207,9 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // Site legend items (always shown for consistent layout)
-                  SiteMarkerUtils.buildLegendItem(Icons.location_on, SiteMarkerUtils.flownSiteColor, 'Flown Sites'),
+                  SiteMarkerUtils.buildLegendItem(context, Icons.location_on, SiteMarkerUtils.flownSiteColor, 'Flown Sites'),
                   const SizedBox(height: 4),
-                  SiteMarkerUtils.buildLegendItem(Icons.location_on, SiteMarkerUtils.newSiteColor, 'New Sites'),
+                  SiteMarkerUtils.buildLegendItem(context, Icons.location_on, SiteMarkerUtils.newSiteColor, 'New Sites'),
                   const SizedBox(height: 4),
                   // Launch and landing markers
                   Row(
@@ -228,7 +234,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      const Text('Launch', style: TextStyle(fontSize: 10, color: Colors.black87)),
+                      Text('Launch', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w500, color: Colors.white)),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -254,7 +260,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      const Text('Landing', style: TextStyle(fontSize: 10, color: Colors.black87)),
+                      Text('Landing', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w500, color: Colors.white)),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -263,7 +269,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                     children: [
                       Container(width: 14, height: 3, decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(1.5))),
                       const SizedBox(width: 8),
-                      const Text('Climb', style: TextStyle(fontSize: 10, color: Colors.black87)),
+                      Text('Climb', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w500, color: Colors.white)),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -272,7 +278,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                     children: [
                       Container(width: 14, height: 3, decoration: BoxDecoration(color: Colors.blue, borderRadius: BorderRadius.circular(1.5))),
                       const SizedBox(width: 8),
-                      const Text('Sink (<1.5m/s)', style: TextStyle(fontSize: 10, color: Colors.black87)),
+                      Text('Sink (<1.5m/s)', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w500, color: Colors.white)),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -281,7 +287,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                     children: [
                       Container(width: 14, height: 3, decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(1.5))),
                       const SizedBox(width: 8),
-                      const Text('Sink (>1.5m/s)', style: TextStyle(fontSize: 10, color: Colors.black87)),
+                      Text('Sink (>1.5m/s)', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w500, color: Colors.white)),
                     ],
                   ),
                 ],
@@ -670,7 +676,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         point: LatLng(firstPoint.latitude, firstPoint.longitude),
         width: 32,
         height: 32,
-        child: Tooltip(
+        child: AppTooltip(
           message: _launchSite?.name ?? 'Launch Site',
           child: Stack(
             alignment: Alignment.center,
@@ -693,7 +699,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         point: LatLng(lastPoint.latitude, lastPoint.longitude),
         width: 32,
         height: 32,
-        child: Tooltip(
+        child: AppTooltip(
           message: widget.flight.landingDescription ?? 'Landing Site',
           child: Stack(
             alignment: Alignment.center,
@@ -811,7 +817,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   Widget _buildMapProviderButton() {
     return Container(
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: Color(0x80000000),
         borderRadius: BorderRadius.circular(4),
         boxShadow: [
           BoxShadow(
@@ -822,6 +828,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         ],
       ),
       child: PopupMenuButton<MapProvider>(
+        tooltip: 'Change Maps',
         onSelected: (provider) async {
           setState(() {
             _selectedMapProvider = provider;
@@ -871,7 +878,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   Widget _build3DViewButton() {
     return Container(
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: Color(0x80000000),
         borderRadius: BorderRadius.circular(4),
         boxShadow: [
           BoxShadow(
@@ -881,8 +888,8 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           ),
         ],
       ),
-      child: Tooltip(
-        message: 'View in 3D',
+      child: AppTooltip(
+        message: '3D Fly Through',
         child: InkWell(
           onTap: _openFullscreen3D,
           borderRadius: BorderRadius.circular(4),
@@ -905,6 +912,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     required Color color,
     required double Function(IgcPoint) dataExtractor,
     bool showTimeLabels = false,
+    bool showGridLabels = false,
   }) {
     if (_trackPoints.length < 2) {
       return SizedBox(height: _chartHeight, child: Center(child: Text('Insufficient data for $title chart')));
@@ -1063,6 +1071,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           maxX: spots.last.x,
           minY: minVal - padding,
           maxY: maxVal + padding,
+          extraLinesData: showGridLabels ? _buildGridLineLabels(minVal - padding, maxVal + padding, valRange / 4, unit) : null,
           lineBarsData: [
             lineBarData,
           ],
@@ -1071,7 +1080,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     );
   }
 
-  Widget _buildChartWithTitle(String title, Widget chart) {
+  Widget _buildChartWithTitle(String title, Widget chart, {String? tooltip}) {
     return Stack(
       children: [
         chart,
@@ -1080,18 +1089,112 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           left: 0,
           right: 0,
           child: Center(
-            child: Text(
-              title,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: Colors.grey,
-              ),
-            ),
+            child: tooltip != null
+                ? AppTooltip(
+                    message: tooltip,
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  )
+                : Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey,
+                    ),
+                  ),
           ),
         ),
       ],
     );
+  }
+
+  ExtraLinesData _buildGridLineLabels(double minY, double maxY, double interval, String unit) {
+    List<HorizontalLine> lines = [];
+    
+    // Calculate a small downward offset to float labels above grid lines
+    double labelOffset = (maxY - minY) * -0.085; // 8.5% of the value range
+    
+    // Calculate grid line positions based on the interval
+    // Use floor for negative values to ensure we include 0 when range crosses zero
+    double currentY = minY < 0 ? (minY / interval).floor() * interval : (minY / interval).ceil() * interval;
+    
+    while (currentY <= maxY) {
+      if (currentY >= minY && currentY <= maxY) {
+        // Format the value for display based on unit
+        String labelText;
+        if (currentY.abs() < 0.1) {
+          labelText = '0';
+        } else if (unit == 'm/s') {
+          // Climb rate: show decimal places
+          labelText = currentY.toStringAsFixed(1);
+        } else if (unit == 'm' || unit == 'km/h') {
+          // Altitude (meters) and Speed (km/h): show as integers with thousand separators
+          final formatter = NumberFormat('#,###');
+          labelText = formatter.format(currentY.round());
+        } else {
+          // Fallback
+          labelText = currentY.toStringAsFixed(1);
+        }
+        
+        // Special styling for zero line
+        bool isZeroLine = currentY.abs() < 0.1;
+        
+        // Add dotted zero line for climb rate charts
+        if (isZeroLine && unit == 'm/s') {
+          lines.add(HorizontalLine(
+            y: currentY,
+            color: Colors.grey[400]!,
+            strokeWidth: 1,
+            dashArray: [2, 4],
+          ));
+        }
+        
+        // Add transparent line with left label positioned above grid line
+        lines.add(HorizontalLine(
+          y: currentY + labelOffset,
+          color: Colors.transparent,
+          strokeWidth: 0,
+          label: HorizontalLineLabel(
+            show: true,
+            labelResolver: (line) => labelText,
+            style: TextStyle(
+              fontSize: 9,
+              color: isZeroLine ? Colors.grey[600] : Colors.grey[500],
+              fontWeight: isZeroLine ? FontWeight.w500 : FontWeight.normal,
+            ),
+            alignment: Alignment.topLeft,
+          ),
+        ));
+        
+        // Add transparent line with right label positioned above grid line
+        lines.add(HorizontalLine(
+          y: currentY + labelOffset,
+          color: Colors.transparent,
+          strokeWidth: 0,
+          label: HorizontalLineLabel(
+            show: true,
+            labelResolver: (line) => labelText,
+            style: TextStyle(
+              fontSize: 9,
+              color: isZeroLine ? Colors.grey[600] : Colors.grey[500],
+              fontWeight: isZeroLine ? FontWeight.w500 : FontWeight.normal,
+            ),
+            alignment: Alignment.topRight,
+          ),
+        ));
+      }
+      
+      currentY += interval;
+    }
+    
+    return ExtraLinesData(horizontalLines: lines);
   }
 
   @override
@@ -1162,12 +1265,14 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               ),
               MarkerLayer(
                 markers: _buildSiteMarkers(),
+                rotate: false,
               ),
               PolylineLayer(
                 polylines: _buildColoredTrackLines(),
               ),
               MarkerLayer(
                 markers: [..._buildMarkers(), ..._buildTrackPointMarker()],
+                rotate: false,
               ),
             ],
           ),
@@ -1264,8 +1369,10 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
             unit: 'm',
             color: Colors.blue,
             dataExtractor: (point) => point.gpsAltitude.toDouble(),
-            showTimeLabels: true,
+            showTimeLabels: false,
+            showGridLabels: true,
           ),
+          tooltip: 'GPS altitude above sea level in meters',
         ),
         _buildChartWithTitle(
           'Climb Rate (m/s)',
@@ -1275,7 +1382,9 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
             color: Colors.green,
             dataExtractor: (point) => point.climbRate5s,
             showTimeLabels: false,
+            showGridLabels: true,
           ),
+          tooltip: '5 second average Climb Rate in meters per second ',
         ),
         _buildChartWithTitle(
           'Ground Speed (km/h)',
@@ -1285,7 +1394,9 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
             color: Colors.orange,
             dataExtractor: (point) => _getSmoothedGroundSpeed(point),
             showTimeLabels: false,
+            showGridLabels: true,
           ),
+          tooltip: 'GPS ground speed in meters',
         ),
       ],
     );

@@ -46,6 +46,39 @@ class _AppInitializerState extends State<AppInitializer> {
   StreamSubscription? _intentDataStreamSubscription;
   List<String>? _sharedFiles;
 
+  // Shared theme configurations to avoid duplication
+  static const TooltipThemeData _tooltipTheme = TooltipThemeData(
+    triggerMode: TooltipTriggerMode.longPress,
+    showDuration: Duration(seconds: 2),
+    waitDuration: Duration(seconds: 1),
+    preferBelow: false,
+    verticalOffset: 20,
+    margin: EdgeInsets.symmetric(horizontal: 16),
+    padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+    decoration: BoxDecoration(
+      color: Color(0x80000000),
+      borderRadius: BorderRadius.all(Radius.circular(4)),
+    ),
+    textStyle: TextStyle(
+      fontSize: 9,
+      height: 1.2,
+      color: Colors.white,
+      fontWeight: FontWeight.w500,
+    ),
+  );
+
+  static const PopupMenuThemeData _popupMenuTheme = PopupMenuThemeData(
+    color: Color(0x80000000),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.all(Radius.circular(4)),
+    ),
+    textStyle: TextStyle(
+      fontSize: 9,
+      color: Colors.white,
+      fontWeight: FontWeight.w500,
+    ),
+  );
+
   @override
   void initState() {
     super.initState();
@@ -109,14 +142,18 @@ class _AppInitializerState extends State<AppInitializer> {
             brightness: Brightness.light,
           ),
           useMaterial3: true,
+          tooltipTheme: _tooltipTheme,
+          popupMenuTheme: _popupMenuTheme,
         ),
         darkTheme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: Colors.blue,
-              brightness: Brightness.dark,
-            ),
-            useMaterial3: true,
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Colors.blue,
+            brightness: Brightness.dark,
           ),
+          useMaterial3: true,
+          tooltipTheme: _tooltipTheme,
+          popupMenuTheme: _popupMenuTheme,
+        ),
           home: _sharedFiles != null && _sharedFiles!.isNotEmpty
               ? IgcImportScreen(initialFiles: _sharedFiles!)
               : const SplashScreen(),
@@ -132,6 +169,8 @@ class _AppInitializerState extends State<AppInitializer> {
           brightness: Brightness.light,
         ),
         useMaterial3: true,
+        tooltipTheme: _tooltipTheme,
+        popupMenuTheme: _popupMenuTheme,
       ),
       darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -139,6 +178,8 @@ class _AppInitializerState extends State<AppInitializer> {
           brightness: Brightness.dark,
         ),
         useMaterial3: true,
+        tooltipTheme: _tooltipTheme,
+        popupMenuTheme: _popupMenuTheme,
       ),
       home: Scaffold(
         body: Center(
