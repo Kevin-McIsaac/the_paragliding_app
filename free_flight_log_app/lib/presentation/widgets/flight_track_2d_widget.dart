@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map_dragmarker/flutter_map_dragmarker.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
@@ -664,7 +665,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     ];
   }
 
-  List<Marker> _buildMarkers() {
+  List<DragMarker> _buildFlightMarkers() {
     if (_trackPoints.isEmpty) return [];
     
     final firstPoint = _trackPoints.first;
@@ -672,11 +673,11 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     
     return [
       // Launch marker
-      Marker(
+      DragMarker(
         point: LatLng(firstPoint.latitude, firstPoint.longitude),
-        width: 32,
-        height: 32,
-        child: AppTooltip(
+        size: const Size(32, 32),
+        disableDrag: true, // Disable drag functionality
+        builder: (ctx, point, isDragging) => AppTooltip(
           message: _launchSite?.name ?? 'Launch Site',
           child: Stack(
             alignment: Alignment.center,
@@ -695,11 +696,11 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         ),
       ),
       // Landing marker
-      Marker(
+      DragMarker(
         point: LatLng(lastPoint.latitude, lastPoint.longitude),
-        width: 32,
-        height: 32,
-        child: AppTooltip(
+        size: const Size(32, 32),
+        disableDrag: true, // Disable drag functionality
+        builder: (ctx, point, isDragging) => AppTooltip(
           message: widget.flight.landingDescription ?? 'Landing Site',
           child: Stack(
             alignment: Alignment.center,
@@ -721,21 +722,36 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   }
 
   /// Build site markers using shared helper functions
-  List<Marker> _buildSiteMarkers() {
-    List<Marker> markers = [];
+  List<DragMarker> _buildSiteMarkers() {
+    List<DragMarker> markers = [];
     
     // Add local sites (flown sites - blue)
     for (final site in _localSites) {
       final flightCount = site.id != null ? _siteFlightCounts[site.id] : null;
+      final tooltip = flightCount != null && flightCount > 0 
+          ? '${site.name} ($flightCount flight${flightCount == 1 ? '' : 's'})'
+          : site.name;
+      
       markers.add(
-        SiteMarkerUtils.buildDisplaySiteMarker(
-          position: LatLng(site.latitude, site.longitude),
-          siteName: site.name,
-          isFlownSite: true, // Local sites are always flown sites
-          flightCount: flightCount,
-          tooltip: flightCount != null && flightCount > 0 
-            ? '${site.name} ($flightCount flight${flightCount == 1 ? '' : 's'})'
-            : site.name,
+        DragMarker(
+          point: LatLng(site.latitude, site.longitude),
+          size: const Size(SiteMarkerUtils.siteMarkerSize + 40, SiteMarkerUtils.siteMarkerSize + 20), // Container size for label
+          disableDrag: true, // Disable drag functionality
+          builder: (ctx, point, isDragging) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppTooltip(
+                message: tooltip,
+                child: SiteMarkerUtils.buildSiteMarkerIcon(
+                  color: SiteMarkerUtils.flownSiteColor,
+                ),
+              ),
+              SiteMarkerUtils.buildSiteLabel(
+                siteName: site.name,
+                flightCount: flightCount,
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -744,12 +760,25 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     for (final site in _apiSites) {
       if (!_isDuplicateApiSite(site)) {
         markers.add(
-          SiteMarkerUtils.buildDisplaySiteMarker(
-            position: LatLng(site.latitude, site.longitude),
-            siteName: site.name,
-            isFlownSite: false, // API sites are new sites
-            flightCount: null, // API sites don't have local flight counts
-            tooltip: site.name,
+          DragMarker(
+            point: LatLng(site.latitude, site.longitude),
+            size: const Size(SiteMarkerUtils.siteMarkerSize + 40, SiteMarkerUtils.siteMarkerSize + 20), // Container size for label
+            disableDrag: true, // Disable drag functionality
+            builder: (ctx, point, isDragging) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppTooltip(
+                  message: site.name,
+                  child: SiteMarkerUtils.buildSiteMarkerIcon(
+                    color: SiteMarkerUtils.newSiteColor,
+                  ),
+                ),
+                SiteMarkerUtils.buildSiteLabel(
+                  siteName: site.name,
+                  flightCount: null, // API sites don't have local flight counts
+                ),
+              ],
+            ),
           ),
         );
       }
@@ -1263,15 +1292,15 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                 maxZoom: _selectedMapProvider.maxZoom.toDouble(),
                 userAgentPackageName: 'com.example.free_flight_log_app',
               ),
-              MarkerLayer(
-                markers: _buildSiteMarkers(),
-                rotate: false,
-              ),
               PolylineLayer(
                 polylines: _buildColoredTrackLines(),
               ),
+              DragMarkers(
+                markers: [..._buildSiteMarkers(), ..._buildFlightMarkers()],
+              ),
+              // Keep track point marker as regular MarkerLayer since it's just a selection indicator
               MarkerLayer(
-                markers: [..._buildMarkers(), ..._buildTrackPointMarker()],
+                markers: _buildTrackPointMarker(),
                 rotate: false,
               ),
             ],
