@@ -442,21 +442,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
             borderRadius: BorderRadius.circular(4),
             boxShadow: [_standardElevatedShadow],
           ),
-          child: Theme(
-            data: Theme.of(context).copyWith(
-              popupMenuTheme: PopupMenuThemeData(
-                color: const Color(0x80000000),
-                shape: const RoundedRectangleBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(4)),
-                ),
-                textStyle: const TextStyle(
-                  fontSize: 9,
-                  color: Colors.white,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-            child: PopupMenuButton<MapProvider>(
+          child: PopupMenuButton<MapProvider>(
             tooltip: 'Change Maps',
             onSelected: _selectMapProvider,
             initialValue: _selectedMapProvider,
@@ -495,7 +481,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                 ),
               )
             ).toList(),
-            ),
           ),
         ),
       ],
