@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/flight.dart';
@@ -1085,7 +1086,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           maxX: spots.last.x,
           minY: minVal - padding,
           maxY: maxVal + padding,
-          extraLinesData: showGridLabels ? _buildGridLineLabels(minVal - padding, maxVal + padding, valRange / 4) : null,
+          extraLinesData: showGridLabels ? _buildGridLineLabels(minVal - padding, maxVal + padding, valRange / 4, unit) : null,
           lineBarsData: [
             lineBarData,
           ],
@@ -1129,26 +1130,49 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     );
   }
 
-  ExtraLinesData _buildGridLineLabels(double minY, double maxY, double interval) {
+  ExtraLinesData _buildGridLineLabels(double minY, double maxY, double interval, String unit) {
     List<HorizontalLine> lines = [];
     
     // Calculate grid line positions based on the interval
-    double currentY = (minY / interval).ceil() * interval;
+    // Use floor for negative values to ensure we include 0 when range crosses zero
+    double currentY = minY < 0 ? (minY / interval).floor() * interval : (minY / interval).ceil() * interval;
     
     while (currentY <= maxY) {
       if (currentY >= minY && currentY <= maxY) {
-        // Format the value for display
-        String labelText = currentY.abs() < 0.1 ? '0' : currentY.toStringAsFixed(1);
+        // Format the value for display based on unit
+        String labelText;
+        if (currentY.abs() < 0.1) {
+          labelText = '0';
+        } else if (unit == 'm/s') {
+          // Climb rate: show decimal places
+          labelText = currentY.toStringAsFixed(1);
+        } else if (unit == 'm' || unit == 'km/h') {
+          // Altitude (meters) and Speed (km/h): show as integers with thousand separators
+          final formatter = NumberFormat('#,###');
+          labelText = formatter.format(currentY.round());
+        } else {
+          // Fallback
+          labelText = currentY.toStringAsFixed(1);
+        }
         
         // Special styling for zero line
         bool isZeroLine = currentY.abs() < 0.1;
         
-        // Add line with left label
+        // Add dotted zero line for climb rate charts
+        if (isZeroLine && unit == 'm/s') {
+          lines.add(HorizontalLine(
+            y: currentY,
+            color: Colors.grey[400]!,
+            strokeWidth: 1,
+            dashArray: [2, 4],
+          ));
+        }
+        
+        // Add transparent line with left label positioned at exact grid line Y coordinate
         lines.add(HorizontalLine(
           y: currentY,
-          color: isZeroLine ? Colors.grey[400]! : Colors.transparent,
-          strokeWidth: isZeroLine ? 1.0 : 0,
-          dashArray: isZeroLine ? [4, 2] : null,
+          color: Colors.transparent,
+          strokeWidth: 0,
           label: HorizontalLineLabel(
             show: true,
             labelResolver: (line) => labelText,
@@ -1161,7 +1185,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           ),
         ));
         
-        // Add transparent line with right label
+        // Add transparent line with right label positioned at exact grid line Y coordinate
         lines.add(HorizontalLine(
           y: currentY,
           color: Colors.transparent,
