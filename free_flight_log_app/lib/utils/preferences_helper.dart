@@ -39,6 +39,12 @@ class PreferencesHelper {
   
   static Future<String?> getCesiumBaseMap() async {
     final prefs = await SharedPreferences.getInstance();
+    // Check if the preference has been set before
+    if (!prefs.containsKey(cesiumBaseMapKey)) {
+      // First time - set default to satellite
+      await prefs.setString(cesiumBaseMapKey, 'satellite');
+      return 'satellite';
+    }
     return prefs.getString(cesiumBaseMapKey);
   }
   
