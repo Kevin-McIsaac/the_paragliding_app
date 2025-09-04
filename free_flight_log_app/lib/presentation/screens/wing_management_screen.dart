@@ -193,11 +193,6 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
               tooltip: 'Merge Wings',
               onPressed: _showMergeDialog,
             ),
-          IconButton(
-            icon: const Icon(Icons.add),
-            tooltip: 'Add Wing',
-            onPressed: _addNewWing,
-          ),
         ],
       ),
       body: _isLoading

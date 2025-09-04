@@ -340,31 +340,6 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
                   ),
                   const SizedBox(height: 16),
                   
-                  // Refresh Stats
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _loadDatabaseStats,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Refresh Statistics'),
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 12),
-                  
-                  // Clear Flights
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: (_dbStats?['flights'] ?? 0) > 0 ? _clearFlights : null,
-                      icon: const Icon(Icons.flight_takeoff),
-                      label: Text('Clear All Flights (${_dbStats?['flights'] ?? 0})'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.orange,
-                      ),
-                    ),
-                  ),
-                  
                   const SizedBox(height: 12),
 
                   // Test API Connection

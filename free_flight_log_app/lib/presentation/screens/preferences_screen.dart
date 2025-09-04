@@ -58,7 +58,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       if (mounted) {
         setState(() {
           _cesiumSceneMode = sceneMode;
-          _cesiumBaseMap = baseMap;
+          _cesiumBaseMap = baseMap ?? 'satellite';
           _cesiumTerrainEnabled = terrainEnabled;
           _cesiumNavigationHelpDialog = navHelpDialog;
           _cesiumFlyThroughMode = flyThroughMode ?? false;
@@ -364,28 +364,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                       });
                       _savePreference('base map', value, PreferencesHelper.setCesiumBaseMap);
                     }
-                  },
-                ),
-                _buildSwitchRow(
-                  'Navigation Help Dialog',
-                  'Show navigation help when opening 3D view',
-                  _cesiumNavigationHelpDialog,
-                  (value) {
-                    setState(() {
-                      _cesiumNavigationHelpDialog = value;
-                    });
-                    _savePreference('navigation help dialog', value, PreferencesHelper.setCesiumNavigationHelpDialog);
-                  },
-                ),
-                _buildSwitchRow(
-                  'Fly Through Mode',
-                  'Camera follows flight path during playback',
-                  _cesiumFlyThroughMode,
-                  (value) {
-                    setState(() {
-                      _cesiumFlyThroughMode = value;
-                    });
-                    _savePreference('fly through mode', value, PreferencesHelper.setCesiumFlyThroughMode);
                   },
                 ),
                 _buildSliderRow(
