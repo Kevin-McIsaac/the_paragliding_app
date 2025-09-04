@@ -56,25 +56,21 @@ class _AppInitializerState extends State<AppInitializer> {
     margin: EdgeInsets.symmetric(horizontal: 16),
     padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
     decoration: BoxDecoration(
-      color: Color(0x80000000),
       borderRadius: BorderRadius.all(Radius.circular(4)),
     ),
     textStyle: TextStyle(
       fontSize: 9,
       height: 1.2,
-      color: Colors.white,
       fontWeight: FontWeight.w500,
     ),
   );
 
   static const PopupMenuThemeData _popupMenuTheme = PopupMenuThemeData(
-    color: Color(0x80000000),
     shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.all(Radius.circular(4)),
     ),
     textStyle: TextStyle(
       fontSize: 9,
-      color: Colors.white,
       fontWeight: FontWeight.w500,
     ),
   );
