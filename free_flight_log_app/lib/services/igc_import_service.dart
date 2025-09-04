@@ -307,7 +307,7 @@ class IgcImportService {
       originalFilename: originalFilename,
       source: 'igc',
       timezone: igcData.timezone,
-      notes: 'Imported from IGC file: $originalFilename${igcData.pilot.isNotEmpty ? '\nPilot: ${igcData.pilot}' : ''}${igcData.gliderType.isNotEmpty ? '\nGlider: ${igcData.gliderType}' : ''}',
+      notes: _buildNotesFromIgcData(igcData, originalFilename),
       maxGroundSpeed: speedStats['maxGroundSpeed'],
       avgGroundSpeed: speedStats['avgGroundSpeed'],
       thermalCount: thermalStats['thermalCount'] as int,
@@ -509,5 +509,69 @@ class IgcImportService {
       notes: newWing.notes,
       createdAt: newWing.createdAt,
     );
+  }
+
+  /// Build comprehensive notes from IGC file headers and data
+  String _buildNotesFromIgcData(IgcFile igcData, String originalFilename) {
+    final notes = <String>[];
+    
+    // Basic import info
+    notes.add('Imported from IGC file: $originalFilename');
+    
+    // Pilot information
+    if (igcData.pilot.isNotEmpty) {
+      notes.add('Pilot: ${igcData.pilot}');
+    }
+    
+    // Glider information
+    if (igcData.gliderType.isNotEmpty) {
+      notes.add('Glider: ${igcData.gliderType}');
+    }
+    if (igcData.gliderID.isNotEmpty) {
+      notes.add('Glider ID: ${igcData.gliderID}');
+    }
+    
+    // Flight recorder information
+    final frType = igcData.headers['HFFTY'] ?? igcData.headers['HFFTYFRTYPE'];
+    if (frType != null) {
+      final cleanFrType = frType.replaceAll('HFFTYFRTYPE:', '').trim();
+      if (cleanFrType.isNotEmpty) {
+        notes.add('Flight Recorder: $cleanFrType');
+      }
+    }
+    
+    // Firmware version
+    final fwVersion = igcData.headers['HFRFW'] ?? igcData.headers['HFRFWFIRMWAREVERSION'];
+    if (fwVersion != null) {
+      final cleanFwVersion = fwVersion.replaceAll('HFRFWFIRMWAREVERSION:', '').trim();
+      if (cleanFwVersion.isNotEmpty) {
+        notes.add('Firmware: $cleanFwVersion');
+      }
+    }
+    
+    // Competition class
+    final compClass = igcData.headers['HFCCL'] ?? igcData.headers['HFCCLCOMPETITIONCLASS'];
+    if (compClass != null) {
+      final cleanCompClass = compClass.replaceAll('HFCCLCOMPETITIONCLASS:', '').trim();
+      if (cleanCompClass.isNotEmpty) {
+        notes.add('Competition Class: $cleanCompClass');
+      }
+    }
+    
+    // GPS datum
+    final gpsDatum = igcData.headers['GPS_DATUM'];
+    if (gpsDatum != null && gpsDatum.isNotEmpty) {
+      notes.add('GPS Datum: $gpsDatum');
+    }
+    
+    // Competition task info
+    final cRecords = igcData.headers.entries
+        .where((entry) => entry.key == 'C' && entry.value.contains('Competition task'))
+        .toList();
+    if (cRecords.isNotEmpty) {
+      notes.add('Competition Task Flight');
+    }
+    
+    return notes.join('\n');
   }
 }

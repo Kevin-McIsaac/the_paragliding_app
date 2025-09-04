@@ -30,6 +30,7 @@ class IgcParser {
     String gliderType = '';
     String gliderID = '';
     String? timezone;
+    String? gpsDatum;
     
     // Track current date for midnight crossing detection
     DateTime? currentDate;
@@ -49,12 +50,24 @@ class IgcParser {
           if (line.startsWith('HFDTE')) {
             flightDate = _parseDate(line);
             currentDate = flightDate; // Initialize current date
-          } else if (line.startsWith('HFPLTPILOT')) {
-            pilot = _extractHeaderValue(line, 'HFPLTPILOT');
+          } else if (line.startsWith('HFPLT')) {
+            // Handle both HFPLTPILOT and HFPLTPILOTINCHARGE formats
+            if (line.startsWith('HFPLTPILOT')) {
+              pilot = _extractHeaderValue(line, 'HFPLTPILOT');
+            } else if (line.startsWith('HFPLTPILOTINCHARGE')) {
+              pilot = _extractHeaderValue(line, 'HFPLTPILOTINCHARGE');
+            }
           } else if (line.startsWith('HFGTYGLIDERTYPE')) {
             gliderType = _extractHeaderValue(line, 'HFGTYGLIDERTYPE');
           } else if (line.startsWith('HFGIDGLIDERID')) {
             gliderID = _extractHeaderValue(line, 'HFGIDGLIDERID');
+          } else if (line.startsWith('HFDTM') || line.startsWith('HODTM')) {
+            // Parse GPS datum from both old (HFDTM) and new (HODTM) formats
+            if (line.startsWith('HFDTM100GPSDATUM')) {
+              gpsDatum = _extractHeaderValue(line, 'HFDTM100GPSDATUM');
+            } else if (line.startsWith('HODTM100GPSDATUM')) {
+              gpsDatum = _extractHeaderValue(line, 'HODTM100GPSDATUM');
+            }
           } 
           // Commented out - always use GPS-based timezone detection instead
           // else if (line.startsWith('HFTZNUTCOFFSET') || line.startsWith('HFTZN')) {
@@ -104,6 +117,11 @@ class IgcParser {
           // Other record types - store in headers for reference
           headers[recordType] = line;
       }
+    }
+
+    // Store GPS datum in headers if found
+    if (gpsDatum != null) {
+      headers['GPS_DATUM'] = gpsDatum;
     }
 
     // If no date found in headers, try to extract from first B record
