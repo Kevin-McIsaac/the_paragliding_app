@@ -926,6 +926,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     required Color color,
     required double Function(IgcPoint) dataExtractor,
     bool showTimeLabels = false,
+    bool showZeroLine = false,
   }) {
     if (_trackPoints.length < 2) {
       return SizedBox(height: _chartHeight, child: Center(child: Text('Insufficient data for $title chart')));
@@ -1084,6 +1085,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           maxX: spots.last.x,
           minY: minVal - padding,
           maxY: maxVal + padding,
+          extraLinesData: showZeroLine ? _buildGridLineLabels(minVal - padding, maxVal + padding, valRange / 4) : null,
           lineBarsData: [
             lineBarData,
           ],
@@ -1125,6 +1127,62 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         ),
       ],
     );
+  }
+
+  ExtraLinesData _buildGridLineLabels(double minY, double maxY, double interval) {
+    List<HorizontalLine> lines = [];
+    
+    // Calculate grid line positions based on the interval
+    double currentY = (minY / interval).ceil() * interval;
+    
+    while (currentY <= maxY) {
+      if (currentY >= minY && currentY <= maxY) {
+        // Format the value for display
+        String labelText = currentY.abs() < 0.1 ? '0' : currentY.toStringAsFixed(1);
+        
+        // Special styling for zero line
+        bool isZeroLine = currentY.abs() < 0.1;
+        
+        // Add line with left label
+        lines.add(HorizontalLine(
+          y: currentY,
+          color: isZeroLine ? Colors.grey[400]! : Colors.transparent,
+          strokeWidth: isZeroLine ? 1.0 : 0,
+          dashArray: isZeroLine ? [4, 2] : null,
+          label: HorizontalLineLabel(
+            show: true,
+            labelResolver: (line) => labelText,
+            style: TextStyle(
+              fontSize: 9,
+              color: isZeroLine ? Colors.grey[600] : Colors.grey[500],
+              fontWeight: isZeroLine ? FontWeight.w500 : FontWeight.normal,
+            ),
+            alignment: Alignment.centerLeft,
+          ),
+        ));
+        
+        // Add transparent line with right label
+        lines.add(HorizontalLine(
+          y: currentY,
+          color: Colors.transparent,
+          strokeWidth: 0,
+          label: HorizontalLineLabel(
+            show: true,
+            labelResolver: (line) => labelText,
+            style: TextStyle(
+              fontSize: 9,
+              color: isZeroLine ? Colors.grey[600] : Colors.grey[500],
+              fontWeight: isZeroLine ? FontWeight.w500 : FontWeight.normal,
+            ),
+            alignment: Alignment.centerRight,
+          ),
+        ));
+      }
+      
+      currentY += interval;
+    }
+    
+    return ExtraLinesData(horizontalLines: lines);
   }
 
   @override
@@ -1309,6 +1367,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
             color: Colors.green,
             dataExtractor: (point) => point.climbRate5s,
             showTimeLabels: false,
+            showZeroLine: true,
           ),
           tooltip: '5 second average Climb Rate in meters per second ',
         ),
