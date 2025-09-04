@@ -171,17 +171,21 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    _isLegendExpanded ? Icons.expand_less : Icons.expand_more,
-                    size: 16,
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                  const SizedBox(width: 4),
                   const Text(
                     'Legend',
                     style: TextStyle(
-                      fontSize: 10,
+                      fontSize: 9,
                       fontWeight: FontWeight.w500,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  AnimatedRotation(
+                    turns: _isLegendExpanded ? 0.25 : 0.0,
+                    duration: const Duration(milliseconds: 300),
+                    child: const Icon(
+                      Icons.chevron_right,
+                      size: 16,
                       color: Colors.white,
                     ),
                   ),
