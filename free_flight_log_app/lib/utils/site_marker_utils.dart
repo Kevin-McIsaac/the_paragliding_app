@@ -126,18 +126,15 @@ class SiteMarkerUtils {
       point: position,
       width: 140,
       height: 80,
-      child: AppTooltip(
-        message: tooltip ?? siteName,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            buildSiteMarkerIcon(color: color),
-            buildSiteLabel(
-              siteName: siteName,
-              flightCount: flightCount,
-            ),
-          ],
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          buildSiteMarkerIcon(color: color),
+          buildSiteLabel(
+            siteName: siteName,
+            flightCount: flightCount,
+          ),
+        ],
       ),
     );
   }

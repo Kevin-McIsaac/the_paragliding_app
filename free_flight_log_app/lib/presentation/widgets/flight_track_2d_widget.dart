@@ -1280,12 +1280,14 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               ),
               MarkerLayer(
                 markers: _buildSiteMarkers(),
+                rotate: false,
               ),
               PolylineLayer(
                 polylines: _buildColoredTrackLines(),
               ),
               MarkerLayer(
                 markers: [..._buildMarkers(), ..._buildTrackPointMarker()],
+                rotate: false,
               ),
             ],
           ),
