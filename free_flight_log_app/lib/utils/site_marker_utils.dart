@@ -199,6 +199,15 @@ class SiteMarkerUtils {
               border: _whiteCircleBorder,
             ),
           )
+        else if (icon == Icons.location_on)
+          // Site markers need white outline like actual markers
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              Icon(Icons.location_on, color: Colors.white, size: iconSize + 2),
+              Icon(Icons.location_on, color: color, size: iconSize),
+            ],
+          )
         else
           Icon(icon!, color: color, size: iconSize),
         const SizedBox(width: 8),
