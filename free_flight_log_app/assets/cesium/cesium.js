@@ -869,7 +869,7 @@ class CesiumFlightApp {
             navigationInstructionsInitiallyVisible: config.savedNavigationHelpDialogOpen || false,
             animation: false,
             timeline: true,
-            fullscreenButton: true,
+            fullscreenButton: false,
             vrButton: false,
             shadows: false,
             shouldAnimate: false,
