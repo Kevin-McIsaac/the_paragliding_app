@@ -204,10 +204,10 @@ class SiteMarkerUtils {
         const SizedBox(width: 8),
         Text(
           label,
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.normal,
-            color: Theme.of(context).colorScheme.onSurface,
+          style: const TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.w500,
+            color: Colors.white,
           ),
         ),
       ],
@@ -225,11 +225,11 @@ class SiteMarkerUtils {
       left: 8,
       child: Container(
         padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.95),
-          borderRadius: BorderRadius.circular(4),
+        decoration: const BoxDecoration(
+          color: Color(0x80000000),
+          borderRadius: BorderRadius.all(Radius.circular(4)),
           boxShadow: [
-            const BoxShadow(
+            BoxShadow(
               color: Colors.black26,
               blurRadius: 4,
               offset: Offset(0, 2),
@@ -263,14 +263,14 @@ class SiteMarkerUtils {
     required List<Widget> legendItems,
   }) {
     return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(4),
+      decoration: const BoxDecoration(
+        color: Color(0x80000000),
+        borderRadius: BorderRadius.all(Radius.circular(4)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
+            color: Colors.black26,
             blurRadius: 4,
-            offset: const Offset(0, 2),
+            offset: Offset(0, 2),
           ),
         ],
       ),
@@ -286,22 +286,22 @@ class SiteMarkerUtils {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
+                  const Text(
                     'Legend',
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 9,
                       fontWeight: FontWeight.w500,
-                      color: Theme.of(context).colorScheme.onSurface,
+                      color: Colors.white,
                     ),
                   ),
                   const SizedBox(width: 4),
                   AnimatedRotation(
                     turns: isExpanded ? 0.25 : 0.0,
                     duration: const Duration(milliseconds: 300),
-                    child: Icon(
+                    child: const Icon(
                       Icons.chevron_right,
                       size: 16,
-                      color: Theme.of(context).colorScheme.onSurface,
+                      color: Colors.white,
                     ),
                   ),
                 ],

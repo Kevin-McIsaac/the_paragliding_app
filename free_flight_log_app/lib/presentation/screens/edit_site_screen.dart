@@ -438,7 +438,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         // Map provider selector
         Container(
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            color: Color(0x80000000),
             borderRadius: BorderRadius.circular(4),
             boxShadow: [_standardElevatedShadow],
           ),
@@ -562,12 +562,12 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
               ),
             ),
             const SizedBox(width: 8),
-            Text(
+            const Text(
               'Launches',
               style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.normal,
-                color: Theme.of(context).colorScheme.onSurface,
+                fontSize: 9,
+                fontWeight: FontWeight.w500,
+                color: Colors.white,
               ),
             ),
           ],

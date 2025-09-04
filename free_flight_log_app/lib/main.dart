@@ -123,15 +123,16 @@ class _AppInitializerState extends State<AppInitializer> {
               preferBelow: false,
               verticalOffset: 20,
               margin: const EdgeInsets.symmetric(horizontal: 16),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.grey[800],
-                borderRadius: BorderRadius.circular(4),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              decoration: const BoxDecoration(
+                color: Color(0x80000000),
+                borderRadius: BorderRadius.all(Radius.circular(4)),
               ),
               textStyle: const TextStyle(
-                fontSize: 11,
+                fontSize: 9,
                 height: 1.2,
                 color: Colors.white,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ),
