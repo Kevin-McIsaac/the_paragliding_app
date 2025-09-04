@@ -24,8 +24,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   String? _cesiumUserToken;
   bool? _cesiumTokenValidated;
   
-  // Import preferences
-  String? _igcLastFolder;
   
   bool _isLoading = true;
   bool _isSaving = false;
@@ -51,9 +49,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       // Load Cesium Ion Token preferences
       final userToken = await PreferencesHelper.getCesiumUserToken();
       final tokenValidated = await PreferencesHelper.getCesiumTokenValidated();
-      
-      // Load Import preferences
-      final lastFolder = await PreferencesHelper.getIgcLastFolder();
 
       if (mounted) {
         setState(() {
@@ -67,8 +62,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           
           _cesiumUserToken = userToken;
           _cesiumTokenValidated = tokenValidated ?? false;
-          
-          _igcLastFolder = lastFolder;
           
           _isLoading = false;
         });
@@ -439,31 +432,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   ),
               ], collapsed: true),
 
-              // Import Settings
-              _buildSection('Import Settings', [
-                ListTile(
-                  title: const Text('Last Import Folder'),
-                  subtitle: Text(_igcLastFolder ?? 'Not set'),
-                  trailing: _igcLastFolder != null
-                      ? IconButton(
-                          icon: const Icon(Icons.clear),
-                          onPressed: () {
-                            setState(() {
-                              _igcLastFolder = null;
-                            });
-                            PreferencesHelper.removeIgcLastFolder();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Cleared last import folder'),
-                                duration: Duration(seconds: 1),
-                              ),
-                            );
-                          },
-                        )
-                      : null,
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ], collapsed: true),
             ],
           ),
           if (_isSaving)
