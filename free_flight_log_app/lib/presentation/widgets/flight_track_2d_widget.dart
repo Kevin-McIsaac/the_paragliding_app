@@ -1092,7 +1092,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     );
   }
 
-  Widget _buildChartWithTitle(String title, Widget chart) {
+  Widget _buildChartWithTitle(String title, Widget chart, {String? tooltip}) {
     return Stack(
       children: [
         chart,
@@ -1101,14 +1101,26 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           left: 0,
           right: 0,
           child: Center(
-            child: Text(
-              title,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: Colors.grey,
-              ),
-            ),
+            child: tooltip != null
+                ? AppTooltip(
+                    message: tooltip,
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  )
+                : Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey,
+                    ),
+                  ),
           ),
         ),
       ],
@@ -1287,6 +1299,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
             dataExtractor: (point) => point.gpsAltitude.toDouble(),
             showTimeLabels: true,
           ),
+          tooltip: 'GPS altitude above sea level in meters',
         ),
         _buildChartWithTitle(
           'Climb Rate (m/s)',
@@ -1297,6 +1310,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
             dataExtractor: (point) => point.climbRate5s,
             showTimeLabels: false,
           ),
+          tooltip: '5 second average Climb Rate in meters per second ',
         ),
         _buildChartWithTitle(
           'Ground Speed (km/h)',
@@ -1307,6 +1321,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
             dataExtractor: (point) => _getSmoothedGroundSpeed(point),
             showTimeLabels: false,
           ),
+          tooltip: 'GPS ground speed in meters',
         ),
       ],
     );
