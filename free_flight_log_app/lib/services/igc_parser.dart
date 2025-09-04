@@ -257,17 +257,30 @@ class IgcParser {
   /// Parse date from HFDTE record
   DateTime? _parseDate(String line) {
     // HFDTEDDMMYY where DD is day, MM is month, YY is year
-    if (line.length < 11) return null;
+    // Handle both "HFDTE120725" and "HFDTEDATE:120725,01" formats
+    
+    LoggingService.debug('IgcParser: Parsing date line: $line');
     
     try {
-      final dateStr = line.substring(5, 11); // DDMMYY
+      // Find the 6-digit date pattern (DDMMYY)
+      final dateMatch = RegExp(r'(\d{6})').firstMatch(line);
+      if (dateMatch == null) {
+        LoggingService.warning('IgcParser: No 6-digit date pattern found in line: $line');
+        return null;
+      }
+      
+      final dateStr = dateMatch.group(1)!; // DDMMYY
+      LoggingService.debug('IgcParser: Extracted date string: $dateStr');
+      
       final day = int.parse(dateStr.substring(0, 2));
       final month = int.parse(dateStr.substring(2, 4));
       final year = 2000 + int.parse(dateStr.substring(4, 6));
       
-      return DateTime(year, month, day);
+      final result = DateTime(year, month, day);
+      LoggingService.info('IgcParser: Successfully parsed date: $result');
+      return result;
     } catch (e) {
-      LoggingService.error('IgcParser: Error parsing date', e);
+      LoggingService.error('IgcParser: Error parsing date from line: $line', e);
       return null;
     }
   }

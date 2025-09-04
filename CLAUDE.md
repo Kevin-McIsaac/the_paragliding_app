@@ -154,3 +154,4 @@ For detailed technical architecture, database schema, and implementation details
 - **Map Services**: Assume quotas exist. Default to free providers (OpenStreetMap) during development
 - **GPS/Sensors**: Primary data source. All calculations derive from GPS timestamps and coordinates
 - **File Storage**: IGC files are immutable once imported. Parse once, store results
+- don't cd when using flutter controller
