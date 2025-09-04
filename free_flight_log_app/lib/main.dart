@@ -135,17 +135,6 @@ class _AppInitializerState extends State<AppInitializer> {
                 fontWeight: FontWeight.w500,
               ),
             ),
-            popupMenuTheme: PopupMenuThemeData(
-              color: const Color(0x80000000),
-              shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.all(Radius.circular(4)),
-              ),
-              textStyle: const TextStyle(
-                fontSize: 9,
-                color: Colors.white,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
           ),
           home: _sharedFiles != null && _sharedFiles!.isNotEmpty
               ? IgcImportScreen(initialFiles: _sharedFiles!)

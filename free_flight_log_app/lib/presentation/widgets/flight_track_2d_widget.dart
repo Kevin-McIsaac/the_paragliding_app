@@ -826,7 +826,21 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           ),
         ],
       ),
-      child: PopupMenuButton<MapProvider>(
+      child: Theme(
+        data: Theme.of(context).copyWith(
+          popupMenuTheme: PopupMenuThemeData(
+            color: const Color(0x80000000),
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(4)),
+            ),
+            textStyle: const TextStyle(
+              fontSize: 9,
+              color: Colors.white,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        child: PopupMenuButton<MapProvider>(
         tooltip: 'Change Maps',
         onSelected: (provider) async {
           setState(() {
@@ -869,6 +883,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               ),
             ],
           ),
+        ),
         ),
       ),
     );
