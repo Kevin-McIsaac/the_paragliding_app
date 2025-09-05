@@ -229,21 +229,9 @@ class AppTooltip extends StatelessWidget {
         child: child,
       );
     } else if (richMessage != null) {
-      // Rich tooltip with custom constraints
+      // Rich tooltip using default theme
       return Tooltip(
-        richMessage: WidgetSpan(
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 200),
-            child: DefaultTextStyle(
-              style: const TextStyle(
-                fontSize: 11,
-                height: 1.2,
-                color: Colors.white,
-              ),
-              child: richMessage!,
-            ),
-          ),
-        ),
+        richMessage: WidgetSpan(child: richMessage!),
         child: child,
       );
     }

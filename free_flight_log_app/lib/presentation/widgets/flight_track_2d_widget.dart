@@ -677,22 +677,19 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         point: LatLng(firstPoint.latitude, firstPoint.longitude),
         size: const Size(32, 32),
         disableDrag: true, // Disable drag functionality
-        builder: (ctx, point, isDragging) => AppTooltip(
-          message: _launchSite?.name ?? 'Launch Site',
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              SiteMarkerUtils.buildLaunchMarkerIcon(
-                color: SiteMarkerUtils.launchColor,
-                size: SiteMarkerUtils.launchMarkerSize,
-              ),
-              const Icon(
-                Icons.flight_takeoff,
-                color: Colors.white,
-                size: 14,
-              ),
-            ],
-          ),
+        builder: (ctx, point, isDragging) => Stack(
+          alignment: Alignment.center,
+          children: [
+            SiteMarkerUtils.buildLaunchMarkerIcon(
+              color: SiteMarkerUtils.launchColor,
+              size: SiteMarkerUtils.launchMarkerSize,
+            ),
+            const Icon(
+              Icons.flight_takeoff,
+              color: Colors.white,
+              size: 14,
+            ),
+          ],
         ),
       ),
       // Landing marker
@@ -735,16 +732,14 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
       markers.add(
         DragMarker(
           point: LatLng(site.latitude, site.longitude),
-          size: const Size(SiteMarkerUtils.siteMarkerSize + 40, SiteMarkerUtils.siteMarkerSize + 20), // Container size for label
+          size: const Size(140, 80), // Fixed size to match Site Map
+          offset: const Offset(0, -SiteMarkerUtils.siteMarkerSize / 2), // Center the marker
           disableDrag: true, // Disable drag functionality
           builder: (ctx, point, isDragging) => Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              AppTooltip(
-                message: tooltip,
-                child: SiteMarkerUtils.buildSiteMarkerIcon(
-                  color: SiteMarkerUtils.flownSiteColor,
-                ),
+              SiteMarkerUtils.buildSiteMarkerIcon(
+                color: SiteMarkerUtils.flownSiteColor,
               ),
               SiteMarkerUtils.buildSiteLabel(
                 siteName: site.name,
@@ -762,16 +757,14 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         markers.add(
           DragMarker(
             point: LatLng(site.latitude, site.longitude),
-            size: const Size(SiteMarkerUtils.siteMarkerSize + 40, SiteMarkerUtils.siteMarkerSize + 20), // Container size for label
+            size: const Size(140, 80), // Fixed size to match Site Map
+            offset: const Offset(0, -SiteMarkerUtils.siteMarkerSize / 2), // Center the marker
             disableDrag: true, // Disable drag functionality
             builder: (ctx, point, isDragging) => Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                AppTooltip(
-                  message: site.name,
-                  child: SiteMarkerUtils.buildSiteMarkerIcon(
-                    color: SiteMarkerUtils.newSiteColor,
-                  ),
+                SiteMarkerUtils.buildSiteMarkerIcon(
+                  color: SiteMarkerUtils.newSiteColor,
                 ),
                 SiteMarkerUtils.buildSiteLabel(
                   siteName: site.name,

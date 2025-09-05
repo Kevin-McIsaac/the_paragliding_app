@@ -389,26 +389,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
 
     if (tooltip != null) {
       return Tooltip(
-        richMessage: WidgetSpan(
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 200),
-            child: Text(
-              tooltip,
-              style: const TextStyle(fontSize: 11, height: 1.2, color: Colors.white),
-            ),
-          ),
-        ),
-        triggerMode: TooltipTriggerMode.longPress,
-        showDuration: const Duration(seconds: 2),
-        waitDuration: const Duration(seconds: 1),
-        preferBelow: false,
-        verticalOffset: 20,
-        margin: const EdgeInsets.symmetric(horizontal: 16),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.grey[800],
-          borderRadius: BorderRadius.circular(4),
-        ),
+        message: tooltip,
         child: statWidget,
       );
     }
