@@ -47,23 +47,6 @@ class _AppInitializerState extends State<AppInitializer> {
   List<String>? _sharedFiles;
 
   // Shared theme configurations to avoid duplication
-  static const TooltipThemeData _tooltipTheme = TooltipThemeData(
-    triggerMode: TooltipTriggerMode.longPress,
-    showDuration: Duration(seconds: 2),
-    waitDuration: Duration(seconds: 1),
-    preferBelow: false,
-    verticalOffset: 20,
-    margin: EdgeInsets.symmetric(horizontal: 16),
-    padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.all(Radius.circular(4)),
-    ),
-    textStyle: TextStyle(
-      fontSize: 9,
-      height: 1.2,
-      fontWeight: FontWeight.w500,
-    ),
-  );
 
   static const PopupMenuThemeData _popupMenuTheme = PopupMenuThemeData(
     shape: RoundedRectangleBorder(
@@ -138,7 +121,6 @@ class _AppInitializerState extends State<AppInitializer> {
             brightness: Brightness.light,
           ),
           useMaterial3: true,
-          tooltipTheme: _tooltipTheme,
           popupMenuTheme: _popupMenuTheme,
         ),
         darkTheme: ThemeData(
@@ -147,7 +129,6 @@ class _AppInitializerState extends State<AppInitializer> {
             brightness: Brightness.dark,
           ),
           useMaterial3: true,
-          tooltipTheme: _tooltipTheme,
           popupMenuTheme: _popupMenuTheme,
         ),
           home: _sharedFiles != null && _sharedFiles!.isNotEmpty
@@ -165,7 +146,6 @@ class _AppInitializerState extends State<AppInitializer> {
           brightness: Brightness.light,
         ),
         useMaterial3: true,
-        tooltipTheme: _tooltipTheme,
         popupMenuTheme: _popupMenuTheme,
       ),
       darkTheme: ThemeData(
@@ -174,7 +154,6 @@ class _AppInitializerState extends State<AppInitializer> {
           brightness: Brightness.dark,
         ),
         useMaterial3: true,
-        tooltipTheme: _tooltipTheme,
         popupMenuTheme: _popupMenuTheme,
       ),
       home: Scaffold(
