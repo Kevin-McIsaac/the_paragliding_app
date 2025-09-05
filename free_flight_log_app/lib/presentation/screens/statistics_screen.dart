@@ -45,11 +45,18 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     });
     
     try {
+      final stopwatch = Stopwatch()..start();
       LoggingService.debug('StatisticsScreen: Loading all statistics');
       
       // Get date range for filtering
       DateTime? startDate = _selectedDateRange?.start;
       DateTime? endDate = _selectedDateRange?.end;
+      
+      if (startDate != null || endDate != null) {
+        LoggingService.debug('StatisticsScreen: Filtering statistics from '
+            '${startDate?.toIso8601String().split('T')[0] ?? 'beginning'} to '
+            '${endDate?.toIso8601String().split('T')[0] ?? 'end'}');
+      }
       
       // Load all statistics in parallel
       final results = await Future.wait([
@@ -57,6 +64,9 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         _databaseService.getWingStatistics(startDate: startDate, endDate: endDate),
         _databaseService.getSiteStatistics(startDate: startDate, endDate: endDate),
       ]);
+      
+      stopwatch.stop();
+      LoggingService.debug('StatisticsScreen: Statistics loaded in ${stopwatch.elapsedMilliseconds}ms');
       
       if (mounted) {
         setState(() {
@@ -93,22 +103,24 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
           end: today,
         );
       case '12_months':
+        // Subtract exactly 12 months using DateTime arithmetic
+        final twelveMonthsAgo = DateTime(now.year, now.month - 12, now.day);
         return DateTimeRange(
-          start: DateTime(now.year - 1, now.month, now.day),
+          start: DateTime(twelveMonthsAgo.year, twelveMonthsAgo.month, twelveMonthsAgo.day),
           end: today,
         );
       case '6_months':
-        final startMonth = now.month > 6 ? now.month - 6 : now.month - 6 + 12;
-        final startYear = now.month > 6 ? now.year : now.year - 1;
+        // Subtract exactly 6 months using DateTime arithmetic  
+        final sixMonthsAgo = DateTime(now.year, now.month - 6, now.day);
         return DateTimeRange(
-          start: DateTime(startYear, startMonth, now.day),
+          start: DateTime(sixMonthsAgo.year, sixMonthsAgo.month, sixMonthsAgo.day),
           end: today,
         );
       case '3_months':
-        final startMonth = now.month > 3 ? now.month - 3 : now.month - 3 + 12;
-        final startYear = now.month > 3 ? now.year : now.year - 1;
+        // Subtract exactly 3 months using DateTime arithmetic
+        final threeMonthsAgo = DateTime(now.year, now.month - 3, now.day);
         return DateTimeRange(
-          start: DateTime(startYear, startMonth, now.day),
+          start: DateTime(threeMonthsAgo.year, threeMonthsAgo.month, threeMonthsAgo.day),
           end: today,
         );
       case '30_days':
