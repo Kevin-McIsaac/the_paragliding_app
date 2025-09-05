@@ -73,6 +73,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0              # For downloading KML files in development tool
+  flutter_launcher_icons: ^0.14.1    # Generate launcher icons for Android and iOS
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -88,6 +89,7 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/cesium/
+    - assets/icons/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
@@ -114,3 +116,24 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# Flutter Launcher Icons configuration
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/icons/app_icon.png"
+  min_sdk_android: 21 # android min sdk min:16, default 21
+  adaptive_icon_background: "#4FC3F7" # Blue background color
+  adaptive_icon_foreground: "assets/icons/adaptive_foreground.png"
+  web:
+    generate: true
+    image_path: "assets/icons/app_icon.png"
+    background_color: "#4FC3F7"
+    theme_color: "#4FC3F7"
+  windows:
+    generate: true
+    image_path: "assets/icons/app_icon.png"
+    icon_size: 48 # min:48, max:256, default: 48
+  macos:
+    generate: true
+    image_path: "assets/icons/app_icon.png"
