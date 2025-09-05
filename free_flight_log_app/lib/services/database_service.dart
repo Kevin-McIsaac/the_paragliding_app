@@ -389,10 +389,26 @@ class DatabaseService {
   }
 
   /// Get flight statistics grouped by year
-  Future<List<Map<String, dynamic>>> getYearlyStatistics() async {
+  Future<List<Map<String, dynamic>>> getYearlyStatistics({DateTime? startDate, DateTime? endDate}) async {
     LoggingService.debug('DatabaseService: Getting yearly statistics');
     
     Database db = await _databaseHelper.database;
+    
+    String whereClause = '';
+    List<dynamic> whereArgs = [];
+    
+    if (startDate != null || endDate != null) {
+      whereClause = 'WHERE ';
+      if (startDate != null) {
+        whereClause += 'date >= ?';
+        whereArgs.add(startDate.toIso8601String().split('T')[0]);
+      }
+      if (endDate != null) {
+        if (startDate != null) whereClause += ' AND ';
+        whereClause += 'date <= ?';
+        whereArgs.add(endDate.toIso8601String().split('T')[0]);
+      }
+    }
     
     List<Map<String, dynamic>> results = await db.rawQuery('''
       SELECT 
@@ -403,9 +419,10 @@ class DatabaseService {
         AVG(duration) as avg_duration,
         AVG(max_altitude) as avg_altitude
       FROM flights
+      $whereClause
       GROUP BY year
       ORDER BY year DESC
-    ''');
+    ''', whereArgs);
     
     final yearlyStats = results.map((row) {
       final totalMinutes = (row['total_minutes'] as int?) ?? 0;
@@ -450,10 +467,24 @@ class DatabaseService {
   }
 
   /// Get statistics for wings grouped by manufacturer, model, and size
-  Future<List<Map<String, dynamic>>> getWingStatistics() async {
+  Future<List<Map<String, dynamic>>> getWingStatistics({DateTime? startDate, DateTime? endDate}) async {
     LoggingService.debug('DatabaseService: Getting wing statistics');
     
     Database db = await _databaseHelper.database;
+    
+    String whereClause = 'WHERE w.active = 1';
+    List<dynamic> whereArgs = [];
+    
+    if (startDate != null || endDate != null) {
+      if (startDate != null) {
+        whereClause += ' AND f.date >= ?';
+        whereArgs.add(startDate.toIso8601String().split('T')[0]);
+      }
+      if (endDate != null) {
+        whereClause += ' AND f.date <= ?';
+        whereArgs.add(endDate.toIso8601String().split('T')[0]);
+      }
+    }
     
     List<Map<String, dynamic>> results = await db.rawQuery('''
       SELECT 
@@ -475,10 +506,10 @@ class DatabaseService {
         AVG(f.duration) as avg_duration
       FROM wings w
       LEFT JOIN flights f ON f.wing_id = w.id
-      WHERE w.active = 1
+      $whereClause
       GROUP BY w.manufacturer, w.model, w.size
       ORDER BY flight_count DESC
-    ''');
+    ''', whereArgs);
     
     // Convert duration from minutes to hours
     final wingStats = results.map((row) {
@@ -494,10 +525,26 @@ class DatabaseService {
   }
 
   /// Get statistics for sites
-  Future<List<Map<String, dynamic>>> getSiteStatistics() async {
+  Future<List<Map<String, dynamic>>> getSiteStatistics({DateTime? startDate, DateTime? endDate}) async {
     LoggingService.debug('DatabaseService: Getting site statistics');
     
     Database db = await _databaseHelper.database;
+    
+    String whereClause = '';
+    List<dynamic> whereArgs = [];
+    
+    if (startDate != null || endDate != null) {
+      whereClause = 'WHERE ';
+      if (startDate != null) {
+        whereClause += 'f.date >= ?';
+        whereArgs.add(startDate.toIso8601String().split('T')[0]);
+      }
+      if (endDate != null) {
+        if (startDate != null) whereClause += ' AND ';
+        whereClause += 'f.date <= ?';
+        whereArgs.add(endDate.toIso8601String().split('T')[0]);
+      }
+    }
     
     List<Map<String, dynamic>> results = await db.rawQuery('''
       SELECT 
@@ -510,10 +557,11 @@ class DatabaseService {
         AVG(f.duration) as avg_duration
       FROM sites s
       INNER JOIN flights f ON f.launch_site_id = s.id
+      $whereClause
       GROUP BY s.id
       HAVING COUNT(f.id) > 0
       ORDER BY flight_count DESC
-    ''');
+    ''', whereArgs);
     
     // Convert duration from minutes to hours
     final siteStats = results.map((row) {

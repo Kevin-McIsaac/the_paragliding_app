@@ -28,6 +28,10 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   bool _isLoading = false;
   String? _errorMessage;
   
+  // Date range filtering
+  DateTimeRange? _selectedDateRange;
+  String _selectedPreset = 'all';
+  
   @override
   void initState() {
     super.initState();
@@ -43,11 +47,15 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     try {
       LoggingService.debug('StatisticsScreen: Loading all statistics');
       
+      // Get date range for filtering
+      DateTime? startDate = _selectedDateRange?.start;
+      DateTime? endDate = _selectedDateRange?.end;
+      
       // Load all statistics in parallel
       final results = await Future.wait([
-        _databaseService.getYearlyStatistics(),
-        _databaseService.getWingStatistics(),
-        _databaseService.getSiteStatistics(),
+        _databaseService.getYearlyStatistics(startDate: startDate, endDate: endDate),
+        _databaseService.getWingStatistics(startDate: startDate, endDate: endDate),
+        _databaseService.getSiteStatistics(startDate: startDate, endDate: endDate),
       ]);
       
       if (mounted) {
@@ -71,6 +79,145 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       }
     }
   }
+
+  DateTimeRange? _getDateRangeForPreset(String preset) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    
+    switch (preset) {
+      case 'all':
+        return null;
+      case 'this_year':
+        return DateTimeRange(
+          start: DateTime(now.year, 1, 1),
+          end: today,
+        );
+      case '12_months':
+        return DateTimeRange(
+          start: DateTime(now.year - 1, now.month, now.day),
+          end: today,
+        );
+      case '6_months':
+        final startMonth = now.month > 6 ? now.month - 6 : now.month - 6 + 12;
+        final startYear = now.month > 6 ? now.year : now.year - 1;
+        return DateTimeRange(
+          start: DateTime(startYear, startMonth, now.day),
+          end: today,
+        );
+      case '3_months':
+        final startMonth = now.month > 3 ? now.month - 3 : now.month - 3 + 12;
+        final startYear = now.month > 3 ? now.year : now.year - 1;
+        return DateTimeRange(
+          start: DateTime(startYear, startMonth, now.day),
+          end: today,
+        );
+      case '30_days':
+        return DateTimeRange(
+          start: today.subtract(const Duration(days: 30)),
+          end: today,
+        );
+      default:
+        return null;
+    }
+  }
+
+  String _getPresetLabel(String preset) {
+    switch (preset) {
+      case 'all':
+        return 'All time';
+      case 'this_year':
+        return 'This year';
+      case '12_months':
+        return 'Last 12 months';
+      case '6_months':
+        return 'Last 6 months';
+      case '3_months':
+        return 'Last 3 months';
+      case '30_days':
+        return 'Last 30 days';
+      case 'custom':
+        return 'Custom range';
+      default:
+        return preset;
+    }
+  }
+
+  String _formatDateRange(DateTimeRange? range) {
+    if (range == null) return 'All time';
+    return '${DateTimeUtils.formatDateShort(range.start)} - ${DateTimeUtils.formatDateShort(range.end)}';
+  }
+
+  Future<void> _selectPreset(String preset) async {
+    if (preset == 'custom') {
+      // Always show date picker when custom is tapped
+      final DateTimeRange? picked = await showDateRangePicker(
+        context: context,
+        firstDate: DateTime(2000),
+        lastDate: DateTime.now(),
+        initialDateRange: _selectedDateRange,
+        helpText: 'Select date range for statistics',
+      );
+      if (picked != null) {
+        setState(() {
+          _selectedPreset = 'custom';
+          _selectedDateRange = picked;
+        });
+        _loadAllStatistics();
+      }
+    } else {
+      setState(() {
+        _selectedPreset = preset;
+        _selectedDateRange = _getDateRangeForPreset(preset);
+      });
+      _loadAllStatistics();
+    }
+  }
+
+  Widget _buildDateRangeSelector() {
+    final presets = ['all', '12_months', 'this_year', '6_months', '3_months', '30_days', 'custom'];
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Preset chips
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: presets.map((preset) {
+              final isSelected = _selectedPreset == preset;
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: FilterChip(
+                  label: Text(_getPresetLabel(preset)),
+                  selected: isSelected,
+                  onSelected: (_) => _selectPreset(preset),
+                  selectedColor: Theme.of(context).colorScheme.primaryContainer,
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+        
+        // Selected range display
+        if (_selectedDateRange != null) ...[
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'Showing: ${_formatDateRange(_selectedDateRange)}',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+        
+        const SizedBox(height: 16),
+      ],
+    );
+  }
   
   @override
   Widget build(BuildContext context) {
@@ -82,74 +229,89 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
-              ?
- Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(
-                        Icons.error_outline,
-                        size: 64,
-                        color: Colors.red,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Error loading statistics',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _errorMessage!,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.grey,
+              ? Column(
+                  children: [
+                    // Always show date range selector
+                    _buildDateRangeSelector(),
+                    Expanded(
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.error_outline,
+                              size: 64,
+                              color: Colors.red,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Error loading statistics',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _errorMessage!,
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Colors.grey,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: () {
+                                setState(() => _errorMessage = null);
+                                _loadAllStatistics();
+                              },
+                              child: const Text('Retry'),
+                            ),
+                          ],
                         ),
-                        textAlign: TextAlign.center,
                       ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () {
-                          setState(() => _errorMessage = null);
-                          _loadAllStatistics();
-                        },
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 )
-              : _yearlyStats.isEmpty && 
-                  _wingStats.isEmpty && 
-                  _siteStats.isEmpty
-                  ? _buildEmptyState()
-                  : SingleChildScrollView(
-            padding: _scrollPadding,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Yearly Statistics Section
-                if (_yearlyStats.isNotEmpty) ...[
-                  _buildSectionHeader('Flights by Year', Icons.calendar_today),
-                  const SizedBox(height: 8),
-                  _buildYearlyStatsTable(_yearlyStats),
-                  const SizedBox(height: _sectionSpacing),
-                ],
-                
-                // Wing Statistics Section
-                if (_wingStats.isNotEmpty) ...[
-                  _buildSectionHeader('Flights by Wing', Icons.paragliding),
-                  const SizedBox(height: 8),
-                  _buildWingStatsTable(_wingStats),
-                  const SizedBox(height: _sectionSpacing),
-                ],
-                
-                // Site Statistics Section
-                if (_siteStats.isNotEmpty) ...[
-                  _buildSectionHeader('Flights by Site', Icons.location_on),
-                  const SizedBox(height: 8),
-                  _buildSiteStatsTable(_siteStats),
-                ],
-              ],
-            ),
-          ),
+              : Column(
+                  children: [
+                    // Always show date range selector
+                    _buildDateRangeSelector(),
+                    Expanded(
+                      child: _yearlyStats.isEmpty && 
+                              _wingStats.isEmpty && 
+                              _siteStats.isEmpty
+                          ? _buildEmptyState()
+                          : SingleChildScrollView(
+                              padding: _scrollPadding,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Yearly Statistics Section
+                                  if (_yearlyStats.isNotEmpty) ...[
+                                    _buildSectionHeader('Flights by Year', Icons.calendar_today),
+                                    const SizedBox(height: 8),
+                                    _buildYearlyStatsTable(_yearlyStats),
+                                    const SizedBox(height: _sectionSpacing),
+                                  ],
+                                  
+                                  // Wing Statistics Section
+                                  if (_wingStats.isNotEmpty) ...[
+                                    _buildSectionHeader('Flights by Wing', Icons.paragliding),
+                                    const SizedBox(height: 8),
+                                    _buildWingStatsTable(_wingStats),
+                                    const SizedBox(height: _sectionSpacing),
+                                  ],
+                                  
+                                  // Site Statistics Section
+                                  if (_siteStats.isNotEmpty) ...[
+                                    _buildSectionHeader('Flights by Site', Icons.location_on),
+                                    const SizedBox(height: 8),
+                                    _buildSiteStatsTable(_siteStats),
+                                  ],
+                                ],
+                              ),
+                            ),
+                    ),
+                  ],
+                ),
     );
   }
   
