@@ -198,15 +198,7 @@ class IgcImportService {
     String? faiTrianglePointsJson;
     if (faiTriangle['trianglePoints'] != null) {
       final trianglePoints = faiTriangle['trianglePoints'] as List<dynamic>;
-      if (trianglePoints.length == 3) {
-        faiTrianglePointsJson = jsonEncode(
-          trianglePoints.map((point) => {
-            'lat': point.latitude,
-            'lng': point.longitude,
-            'alt': point.gpsAltitude,
-          }).toList()
-        );
-      }
+      faiTrianglePointsJson = Flight.encodeTrianglePointsToJson(trianglePoints);
     }
     
     // Get or create launch site with paragliding site matching
@@ -481,15 +473,7 @@ class IgcImportService {
     String? faiTrianglePointsJson;
     if (faiTriangle['trianglePoints'] != null) {
       final trianglePoints = faiTriangle['trianglePoints'] as List<dynamic>;
-      if (trianglePoints.length == 3) {
-        faiTrianglePointsJson = jsonEncode(
-          trianglePoints.map((point) => {
-            'lat': point.latitude,
-            'lng': point.longitude,
-            'alt': point.gpsAltitude,
-          }).toList()
-        );
-      }
+      faiTrianglePointsJson = Flight.encodeTrianglePointsToJson(trianglePoints);
     }
     
     // Get or create launch site with paragliding site matching

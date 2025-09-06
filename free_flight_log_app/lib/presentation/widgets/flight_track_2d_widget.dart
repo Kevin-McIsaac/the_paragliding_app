@@ -596,7 +596,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   }
 
   List<Polyline> _buildFaiTriangleLines() {
-    if (_faiTrianglePoints.length != 3) return [];
+    if (_faiTrianglePoints.length != Flight.expectedTrianglePoints) return [];
     
     // Convert IgcPoint to LatLng
     final p1 = LatLng(_faiTrianglePoints[0].latitude, _faiTrianglePoints[0].longitude);
