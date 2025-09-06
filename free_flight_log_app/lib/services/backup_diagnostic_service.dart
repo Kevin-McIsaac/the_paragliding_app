@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'logging_service.dart';
 
@@ -47,7 +46,6 @@ class IGCBackupStats {
 /// Provides methods to test IGC compression, backup status, and backup configuration
 class BackupDiagnosticService {
   static const String _tag = 'BackupDiagnostic';
-  static const MethodChannel _channel = MethodChannel('backup_diagnostics');
 
   /// Get backup configuration status
   static Future<Map<String, dynamic>> getBackupStatus() async {
@@ -259,7 +257,7 @@ class BackupDiagnosticService {
       LoggingService.debug(_tag, 'Total IGC files found through directory search: ${igcFiles.length}');
       for (final file in igcFiles.take(5)) { // Log first 5 files
         final size = await file.length();
-        LoggingService.debug(_tag, 'IGC file: ${file.path} (${size} bytes)');
+        LoggingService.debug(_tag, 'IGC file: ${file.path} ($size bytes)');
       }
     } catch (e) {
       LoggingService.debug(_tag, 'Error checking IGC file details: $e');

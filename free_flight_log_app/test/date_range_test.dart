@@ -1,17 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:free_flight_log/presentation/screens/statistics_screen.dart';
 
 void main() {
   group('Date Range Calculations', () {
-    late _StatisticsScreenState screenState;
-    
-    setUp(() {
-      // Create a test instance to access private methods
-      final widget = const StatisticsScreen();
-      final state = widget.createState() as _StatisticsScreenState;
-      screenState = state;
-    });
 
     test('_getDateRangeForPreset handles month boundaries correctly', () {
       // Test date: March 15, 2024

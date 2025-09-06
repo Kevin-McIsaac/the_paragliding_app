@@ -7,6 +7,7 @@ import '../../utils/cache_utils.dart';
 import '../../utils/preferences_helper.dart';
 import '../../services/backup_diagnostic_service.dart';
 import '../../services/igc_cleanup_service.dart';
+import '../../services/logging_service.dart';
 
 class DataManagementScreen extends StatefulWidget {
   final bool expandPremiumMaps;
@@ -32,7 +33,6 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
   bool _cleanupExpanded = false;
   bool _apiTestExpanded = false;
   bool _premiumMapsExpanded = false;
-  bool _actionsExpanded = false;
   
   // Cesium token state
   String? _cesiumToken;
@@ -70,7 +70,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
         _cleanupStats = cleanupStats;
       });
     } catch (e) {
-      print('Error loading backup diagnostics: $e');
+      LoggingService.error('DataManagementScreen', 'Error loading backup diagnostics: $e');
     }
   }
 
@@ -86,7 +86,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
         });
       }
     } catch (e) {
-      print('Error loading Cesium token: $e');
+      LoggingService.error('DataManagementScreen', 'Error loading Cesium token: $e');
     }
   }
 
@@ -145,7 +145,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
         await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
       }
     } catch (e) {
-      print('Failed to launch signup URL: $e');
+      LoggingService.error('DataManagementScreen', 'Failed to launch signup URL: $e');
     }
   }
 
@@ -156,7 +156,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
         await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
       }
     } catch (e) {
-      print('Failed to launch tokens URL: $e');
+      LoggingService.error('DataManagementScreen', 'Failed to launch tokens URL: $e');
     }
   }
 
@@ -208,6 +208,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
             FilledButton(
               onPressed: _isValidatingCesium ? null : () async {
                 if (formKey.currentState?.validate() ?? false) {
+                  final scaffoldMessenger = ScaffoldMessenger.of(context);
                   Navigator.of(context).pop();
                   final token = controller.text.trim();
                   
@@ -230,7 +231,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                           _isCesiumTokenValidated = true;
                         });
                         
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        scaffoldMessenger.showSnackBar(
                           const SnackBar(
                             content: Text('✓ Token validated! Premium maps are now available.'),
                             backgroundColor: Colors.green,
@@ -238,7 +239,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                           ),
                         );
                       } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        scaffoldMessenger.showSnackBar(
                           const SnackBar(
                             content: Text('Invalid token. Please check and try again.'),
                             backgroundColor: Colors.red,
@@ -249,7 +250,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                     }
                   } catch (e) {
                     if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
+                      scaffoldMessenger.showSnackBar(
                         const SnackBar(
                           content: Text('Error validating token. Please check your internet connection.'),
                           backgroundColor: Colors.orange,
@@ -380,14 +381,10 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
 
     try {
       String currentFile = '';
-      int processed = 0;
-      int total = 0;
       
       final result = await DatabaseResetHelper.recreateDatabaseFromIGCFiles(
         onProgress: (filename, current, totalFiles) {
           currentFile = filename;
-          processed = current;
-          total = totalFiles;
           
           // Update progress dialog
           if (mounted) {
@@ -405,8 +402,6 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
           _dataModified = true; // Mark data as modified
         });
         
-        final found = result['found'] ?? 0;
-        final imported = result['imported'] ?? 0;
         final failed = result['failed'] ?? 0;
         final errors = result['errors'] as List<String>? ?? [];
         
@@ -431,39 +426,6 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
     }
   }
 
-  Future<void> _clearFlights() async {
-    final confirmed = await _showConfirmationDialog(
-      'Clear All Flights',
-      'This will permanently delete all flight records.\n\n'
-      'Sites and wings will be preserved.\n\n'
-      'This action cannot be undone.',
-    );
-
-    if (!confirmed) return;
-
-    _showLoadingDialog('Clearing flights...');
-
-    try {
-      final result = await DatabaseResetHelper.clearAllFlights();
-      
-      // Close loading dialog
-      if (mounted) Navigator.of(context).pop();
-
-      if (result['success']) {
-        setState(() {
-          _dataModified = true; // Mark data as modified
-        });
-        _showSuccessDialog('Flights Cleared', result['message']);
-        await _loadDatabaseStats(); // Refresh stats
-      } else {
-        _showErrorDialog('Clear Failed', result['message']);
-      }
-    } catch (e) {
-      // Close loading dialog
-      if (mounted) Navigator.of(context).pop();
-      _showErrorDialog('Error', 'Failed to clear flights: $e');
-    }
-  }
 
   Future<void> _clearMapCache() async {
     final confirmed = await _showConfirmationDialog(
@@ -669,38 +631,6 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
     }
   }
 
-  Future<void> _testIGCCompression() async {
-    _showLoadingDialog('Testing IGC compression...');
-
-    try {
-      final result = await BackupDiagnosticService.testCompressionIntegrity();
-      
-      if (mounted) Navigator.of(context).pop(); // Close loading
-      
-      if (result['success'] == true) {
-        final filename = result['filename'] ?? 'Unknown';
-        final originalSize = result['originalSize'] ?? 0;
-        final compressedSize = result['compressedSize'] ?? 0;
-        final ratio = result['compressionRatio'] ?? 0.0;
-        final dataIntact = result['dataIntact'] ?? false;
-        
-        _showSuccessDialog(
-          'IGC Compression Test',
-          'Test completed successfully!\n\n'
-          'File: $filename\n'
-          'Original: ${_formatBytes(originalSize)}\n'
-          'Compressed: ${_formatBytes(compressedSize)}\n'
-          'Ratio: ${ratio.toStringAsFixed(1)}x compression\n'
-          'Data integrity: ${dataIntact ? '✓ Perfect' : '✗ Failed'}'
-        );
-      } else {
-        _showErrorDialog('Compression Test Failed', result['error'] ?? 'Unknown error');
-      }
-    } catch (e) {
-      if (mounted) Navigator.of(context).pop();
-      _showErrorDialog('Test Error', 'Failed to test compression: $e');
-    }
-  }
 
   Future<void> _showBackupDiagnostics() async {
     _showLoadingDialog('Loading backup diagnostics...');
@@ -833,11 +763,6 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
     }
   }
 
-  String _formatBytes(int bytes) {
-    if (bytes < 1024) return '${bytes}B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)}KB';
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)}MB';
-  }
 
 
   @override
@@ -931,7 +856,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                               if (_backupStatus?['success'] == true) ...[
                             _buildStatRow(
                               'Status', 
-                              '${_backupStatus!['backupEnabled'] ? '✓ Enabled' : '✗ Disabled'}',
+                              _backupStatus!['backupEnabled'] ? '✓ Enabled' : '✗ Disabled',
                             ),
                             _buildStatRow('Type', '${_backupStatus!['backupType'] ?? 'Unknown'}'),
                             _buildStatRow('Limit', '${_backupStatus!['maxBackupSize'] ?? 'Unknown'}'),

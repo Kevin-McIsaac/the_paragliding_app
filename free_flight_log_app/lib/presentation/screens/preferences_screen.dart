@@ -14,8 +14,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   String? _cesiumSceneMode;
   String? _cesiumBaseMap;
   bool? _cesiumTerrainEnabled;
-  bool? _cesiumNavigationHelpDialog;
-  bool? _cesiumFlyThroughMode;
   int? _cesiumTrailDuration;
   double? _cesiumQuality;
   
@@ -36,8 +34,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       final sceneMode = await PreferencesHelper.getCesiumSceneMode();
       final baseMap = await PreferencesHelper.getCesiumBaseMap();
       final terrainEnabled = await PreferencesHelper.getCesiumTerrainEnabled();
-      final navHelpDialog = await PreferencesHelper.getCesiumNavigationHelpDialog();
-      final flyThroughMode = await PreferencesHelper.getCesiumFlyThroughMode();
       final trailDuration = await PreferencesHelper.getCesiumTrailDuration();
       final quality = await PreferencesHelper.getCesiumQuality();
       
@@ -46,8 +42,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           _cesiumSceneMode = sceneMode;
           _cesiumBaseMap = baseMap ?? 'satellite';
           _cesiumTerrainEnabled = terrainEnabled;
-          _cesiumNavigationHelpDialog = navHelpDialog;
-          _cesiumFlyThroughMode = flyThroughMode ?? false;
           _cesiumTrailDuration = trailDuration;
           _cesiumQuality = quality;
           
