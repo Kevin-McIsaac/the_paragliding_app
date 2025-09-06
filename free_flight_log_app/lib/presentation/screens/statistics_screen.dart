@@ -83,7 +83,14 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       LoggingService.error('StatisticsScreen: Failed to load statistics', e);
       if (mounted) {
         setState(() {
-          _errorMessage = 'Failed to load statistics: $e';
+          // Provide more specific error messages for different failure types
+          if (e.toString().contains('date') || e.toString().contains('range')) {
+            _errorMessage = 'Failed to filter statistics by date range. Please try a different date range.';
+          } else if (e.toString().contains('database') || e.toString().contains('sql')) {
+            _errorMessage = 'Database error while loading statistics. Please try again.';
+          } else {
+            _errorMessage = 'Failed to load statistics: $e';
+          }
           _isLoading = false;
         });
       }
@@ -103,24 +110,21 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
           end: today,
         );
       case '12_months':
-        // Subtract exactly 12 months using DateTime arithmetic
-        final twelveMonthsAgo = DateTime(now.year, now.month - 12, now.day);
+        // Use Duration-based calculation for 12 months (approx 365 days)
         return DateTimeRange(
-          start: DateTime(twelveMonthsAgo.year, twelveMonthsAgo.month, twelveMonthsAgo.day),
+          start: today.subtract(const Duration(days: 365)),
           end: today,
         );
       case '6_months':
-        // Subtract exactly 6 months using DateTime arithmetic  
-        final sixMonthsAgo = DateTime(now.year, now.month - 6, now.day);
+        // Use Duration-based calculation for 6 months (approx 183 days)  
         return DateTimeRange(
-          start: DateTime(sixMonthsAgo.year, sixMonthsAgo.month, sixMonthsAgo.day),
+          start: today.subtract(const Duration(days: 183)),
           end: today,
         );
       case '3_months':
-        // Subtract exactly 3 months using DateTime arithmetic
-        final threeMonthsAgo = DateTime(now.year, now.month - 3, now.day);
+        // Use Duration-based calculation for 3 months (approx 91 days)
         return DateTimeRange(
-          start: DateTime(threeMonthsAgo.year, threeMonthsAgo.month, threeMonthsAgo.day),
+          start: today.subtract(const Duration(days: 91)),
           end: today,
         );
       case '30_days':
@@ -156,7 +160,31 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
 
   String _formatDateRange(DateTimeRange? range) {
     if (range == null) return 'All time';
-    return '${DateTimeUtils.formatDateShort(range.start)} - ${DateTimeUtils.formatDateShort(range.end)}';
+    
+    // Use smart formatting that includes year when dates span years or are not current year
+    final startFormatted = DateTimeUtils.formatDateSmart(range.start);
+    final endFormatted = DateTimeUtils.formatDateSmart(range.end);
+    
+    return '$startFormatted - $endFormatted';
+  }
+
+  String _buildFlightCountText() {
+    // Calculate total flights from yearly stats (most reliable)
+    int totalFlights = 0;
+    double totalHours = 0.0;
+    
+    for (final stat in _yearlyStats) {
+      totalFlights += stat['flight_count'] as int;
+      totalHours += (stat['total_hours'] as num?)?.toDouble() ?? 0.0;
+    }
+    
+    if (totalFlights == 0) {
+      return 'No flights found in this period';
+    } else if (totalFlights == 1) {
+      return 'Showing 1 flight (${DateTimeUtils.formatHours(totalHours)})';
+    } else {
+      return 'Showing $totalFlights flights (${DateTimeUtils.formatHours(totalHours)})';
+    }
   }
 
   Future<void> _selectPreset(String preset) async {
@@ -170,6 +198,18 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         helpText: 'Select date range for statistics',
       );
       if (picked != null) {
+        // Validate that end date is not before start date
+        if (picked.end.isBefore(picked.start)) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('End date cannot be before start date'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
         setState(() {
           _selectedPreset = 'custom';
           _selectedDateRange = picked;
@@ -205,23 +245,43 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                   selected: isSelected,
                   onSelected: (_) => _selectPreset(preset),
                   selectedColor: Theme.of(context).colorScheme.primaryContainer,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                  // Add semantic labels for accessibility
+                  tooltip: isSelected 
+                    ? 'Currently showing ${_getPresetLabel(preset)} statistics'
+                    : 'Show ${_getPresetLabel(preset)} statistics',
                 ),
               );
             }).toList(),
           ),
         ),
         
-        // Selected range display
-        if (_selectedDateRange != null) ...[
+        // Selected range display and flight count
+        if (_selectedDateRange != null || !_isLoading) ...[
           const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              'Showing: ${_formatDateRange(_selectedDateRange)}',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.primary,
-                fontWeight: FontWeight.w500,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_selectedDateRange != null)
+                  Text(
+                    'Showing: ${_formatDateRange(_selectedDateRange)}',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                if (!_isLoading && _errorMessage == null)
+                  Text(
+                    _buildFlightCountText(),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+              ],
             ),
           ),
         ],
@@ -238,7 +298,16 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         title: const Text('Flight Statistics'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: _isLoading
+      // Add semantic label for the main content area
+      body: Semantics(
+        label: 'Flight statistics with date range filtering',
+        child: _buildMainContent(),
+      ),
+    );
+  }
+
+  Widget _buildMainContent() {
+    return _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
               ? Column(
@@ -323,8 +392,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                             ),
                     ),
                   ],
-                ),
-    );
+                );
   }
   
   Widget _buildEmptyState() {
