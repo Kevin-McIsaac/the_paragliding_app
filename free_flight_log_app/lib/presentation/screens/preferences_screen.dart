@@ -280,19 +280,24 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                     }
                   },
                 ),
-                _buildSliderRow(
+                _buildDropdownRow<int>(
                   'Trail Duration',
-                  'How long the flight trail remains visible (seconds)',
-                  _cesiumTrailDuration?.toDouble(),
-                  10.0,
-                  300.0,
-                  29,
-                  (value) => '${value.round()}s',
+                  'How long the flight trail remains visible',
+                  _cesiumTrailDuration,
+                  [
+                    const DropdownMenuItem(value: 60, child: Text('1 minute')),
+                    const DropdownMenuItem(value: 120, child: Text('2 minutes')),
+                    const DropdownMenuItem(value: 180, child: Text('3 minutes')),
+                    const DropdownMenuItem(value: 240, child: Text('4 minutes')),
+                    const DropdownMenuItem(value: 300, child: Text('5 minutes')),
+                  ],
                   (value) {
-                    setState(() {
-                      _cesiumTrailDuration = value.round();
-                    });
-                    _savePreference('trail duration', value.round(), PreferencesHelper.setCesiumTrailDuration);
+                    if (value != null) {
+                      setState(() {
+                        _cesiumTrailDuration = value;
+                      });
+                      _savePreference('trail duration', value, PreferencesHelper.setCesiumTrailDuration);
+                    }
                   },
                 ),
                 _buildDropdownRow<double>(
