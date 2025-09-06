@@ -5,7 +5,7 @@ import '../../services/logging_service.dart';
 
 class DatabaseHelper {
   static const _databaseName = "FlightLog.db";
-  static const _databaseVersion = 11; // Added comprehensive IGC statistics
+  static const _databaseVersion = 12; // Added FAI triangle distance
 
   // Singleton pattern
   DatabaseHelper._privateConstructor();
@@ -51,6 +51,7 @@ class DatabaseHelper {
         max_sink_rate_5_sec REAL,
         distance REAL,
         straight_distance REAL,
+        fai_triangle_distance REAL,
         wing_id INTEGER,
         notes TEXT,
         track_log_path TEXT,
@@ -242,6 +243,20 @@ class DatabaseHelper {
       } catch (e) {
         LoggingService.error('DatabaseHelper: Failed to add IGC statistics columns', e);
         rethrow; // This is important for data integrity
+      }
+    }
+    
+    // Migration for v12: Add FAI triangle distance
+    if (oldVersion < 12) {
+      try {
+        LoggingService.database('MIGRATION', 'Adding FAI triangle distance column');
+        
+        await db.execute('ALTER TABLE flights ADD COLUMN fai_triangle_distance REAL');
+        
+        LoggingService.database('MIGRATION', 'Successfully added FAI triangle distance column');
+      } catch (e) {
+        LoggingService.error('DatabaseHelper: Failed to add FAI triangle distance column', e);
+        rethrow;
       }
     }
     

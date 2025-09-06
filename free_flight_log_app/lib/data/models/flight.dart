@@ -20,6 +20,7 @@ class Flight {
   final double? maxSinkRate5Sec;
   final double? distance;
   final double? straightDistance;
+  final double? faiTriangleDistance;
   final int? wingId;
   final String? notes;
   final String? trackLogPath;
@@ -65,6 +66,7 @@ class Flight {
     this.maxSinkRate5Sec,
     this.distance,
     this.straightDistance,
+    this.faiTriangleDistance,
     this.wingId,
     this.notes,
     this.trackLogPath,
@@ -110,6 +112,7 @@ class Flight {
       'max_sink_rate_5_sec': maxSinkRate5Sec,
       'distance': distance,
       'straight_distance': straightDistance,
+      'fai_triangle_distance': faiTriangleDistance,
       'wing_id': wingId,
       'notes': notes,
       'track_log_path': trackLogPath,
@@ -156,6 +159,7 @@ class Flight {
       maxSinkRate5Sec: map['max_sink_rate_5_sec']?.toDouble(),
       distance: map['distance']?.toDouble(),
       straightDistance: map['straight_distance']?.toDouble(),
+      faiTriangleDistance: map['fai_triangle_distance']?.toDouble(),
       wingId: map['wing_id'],
       notes: map['notes'],
       trackLogPath: map['track_log_path'],
@@ -201,6 +205,7 @@ class Flight {
     double? maxSinkRate5Sec,
     double? distance,
     double? straightDistance,
+    double? faiTriangleDistance,
     int? wingId,
     String? notes,
     String? trackLogPath,
@@ -243,6 +248,7 @@ class Flight {
       maxSinkRate5Sec: maxSinkRate5Sec ?? this.maxSinkRate5Sec,
       distance: distance ?? this.distance,
       straightDistance: straightDistance ?? this.straightDistance,
+      faiTriangleDistance: faiTriangleDistance ?? this.faiTriangleDistance,
       wingId: wingId ?? this.wingId,
       notes: notes ?? this.notes,
       trackLogPath: trackLogPath ?? this.trackLogPath,
