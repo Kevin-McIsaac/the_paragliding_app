@@ -9,7 +9,9 @@ import '../../services/backup_diagnostic_service.dart';
 import '../../services/igc_cleanup_service.dart';
 
 class DataManagementScreen extends StatefulWidget {
-  const DataManagementScreen({super.key});
+  final bool expandPremiumMaps;
+  
+  const DataManagementScreen({super.key, this.expandPremiumMaps = false});
 
   @override
   State<DataManagementScreen> createState() => _DataManagementScreenState();
@@ -40,6 +42,8 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
   @override
   void initState() {
     super.initState();
+    // Set initial Premium Maps expansion state based on parameter
+    _premiumMapsExpanded = widget.expandPremiumMaps;
     _loadDatabaseStats();
     _loadBackupDiagnostics();
     _loadCesiumToken();

@@ -8,7 +8,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../services/logging_service.dart';
 import '../../utils/preferences_helper.dart';
 import '../../config/cesium_config.dart';
-import '../screens/cesium_settings_demo_screen.dart';
+import '../screens/data_management_screen.dart';
 
 class Cesium3DMapInAppWebView extends StatefulWidget {
   final double? initialLat;
@@ -122,15 +122,9 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
       // Load user token and validation status
       final userToken = await PreferencesHelper.getCesiumUserToken();
       final tokenValidated = await PreferencesHelper.getCesiumTokenValidated() ?? false;
-      final validationDate = await PreferencesHelper.getCesiumTokenValidationDate();
       
-      // Check if token validation is still fresh (within 24 hours)
-      bool hasValidToken = false;
-      if (userToken != null && tokenValidated && validationDate != null) {
-        final now = DateTime.now();
-        final hoursSinceValidation = now.difference(validationDate).inHours;
-        hasValidToken = hoursSinceValidation < 24;
-      }
+      // Check if token is validated (no expiry check - once validated, remains valid indefinitely)
+      bool hasValidToken = userToken != null && tokenValidated;
       
       if (mounted && !_isDisposed) {
         setState(() {
@@ -624,7 +618,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                     await Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => const CesiumSettingsDemoScreen(),
+                        builder: (context) => const DataManagementScreen(expandPremiumMaps: true),
                       ),
                     );
                     // Refresh token status after returning from settings

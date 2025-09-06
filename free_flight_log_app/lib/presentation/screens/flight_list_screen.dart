@@ -404,12 +404,6 @@ class _FlightListScreenState extends State<FlightListScreen> {
                         builder: (context) => const AboutScreen(),
                       ),
                     );
-                  } else if (value == 'cesium_demo') {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const CesiumSettingsDemoScreen(),
-                      ),
-                    );
                   } else if (value == 'preferences') {
                     Navigator.of(context).push(
                       MaterialPageRoute(
@@ -479,16 +473,6 @@ class _FlightListScreenState extends State<FlightListScreen> {
                         Icon(Icons.storage),
                         SizedBox(width: 8),
                         Text('Data Management'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'cesium_demo',
-                    child: Row(
-                      children: [
-                        Icon(Icons.map),
-                        SizedBox(width: 8),
-                        Text('Premium Maps'),
                       ],
                     ),
                   ),
