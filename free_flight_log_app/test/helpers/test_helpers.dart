@@ -163,4 +163,53 @@ class TestHelpers {
       expect(find.byIcon(expectedIcon), findsOneWidget);
     }
   }
+
+  /// Create multiple test flights with sequential IDs and dates
+  static List<Flight> createMultipleTestFlights({
+    required int count,
+    DateTime? startDate,
+    int? startId,
+    int? launchSiteId,
+    int? wingId,
+  }) {
+    final baseDate = startDate ?? DateTime.parse('2023-01-01');
+    return List.generate(count, (index) {
+      return Flight(
+        id: (startId ?? 1) + index,
+        date: baseDate.add(Duration(days: index * 7)),
+        launchTime: '10:00',
+        landingTime: '12:00',
+        duration: 120,
+        launchSiteId: launchSiteId ?? 1,
+        wingId: wingId ?? 1,
+        originalFilename: 'test_flight_$index.igc',
+      );
+    });
+  }
+
+  /// Measure and assert performance of a database operation
+  static Future<T> measurePerformance<T>({
+    required Future<T> Function() operation,
+    required int maxMilliseconds,
+    String? operationName,
+  }) async {
+    final stopwatch = Stopwatch()..start();
+    final result = await operation();
+    stopwatch.stop();
+    
+    final elapsed = stopwatch.elapsedMilliseconds;
+    final name = operationName ?? 'Operation';
+    
+    expect(elapsed, lessThan(maxMilliseconds), 
+      reason: '$name should complete within ${maxMilliseconds}ms but took ${elapsed}ms');
+    
+    print('Performance: $name completed in ${elapsed}ms');
+    return result;
+  }
+
+  /// Clean up database for isolated testing
+  static Future<void> cleanDatabase(DatabaseService databaseService) async {
+    // Note: This would require implementing cleanup methods in DatabaseService
+    // For now, we rely on the in-memory database being recreated for each test
+  }
 }

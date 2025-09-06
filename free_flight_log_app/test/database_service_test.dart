@@ -1346,4 +1346,112 @@ void main() {
       expect(updatedFlights.every((f) => f.launchSiteId == 2), isTrue);
     });
   });
+
+  group('Performance Benchmarks', () {
+    late DatabaseService databaseService;
+
+    setUp(() async {
+      databaseService = await TestHelpers.initializeDatabaseForTesting();
+    });
+
+    tearDown(() async {
+      await databaseService.close();
+    });
+
+    test('should benchmark bulk flight insertion performance', () async {
+      const int flightCount = 100;
+      
+      // Create test data using helper
+      final flights = TestHelpers.createMultipleTestFlights(
+        count: flightCount,
+        startDate: DateTime.parse('2023-07-15'),
+      );
+
+      // Measure bulk insertion performance
+      await TestHelpers.measurePerformance(
+        operation: () async {
+          for (final flight in flights) {
+            await databaseService.insertFlight(flight);
+          }
+        },
+        maxMilliseconds: 5000,
+        operationName: 'Bulk insertion of $flightCount flights',
+      );
+      
+      // Verify all flights were inserted
+      final allFlights = await databaseService.getAllFlights();
+      expect(allFlights.length, equals(flightCount));
+    });
+
+    test('should benchmark complex query performance', () async {
+      // Setup test data
+      const int flightCount = 50;
+      for (int i = 0; i < flightCount; i++) {
+        final flight = Flight(
+          id: i + 1,
+          date: DateTime.parse('2023-01-01').add(Duration(days: i * 7)),
+          launchTime: '10:00',
+          landingTime: '12:00',
+          duration: 120 + (i * 10),
+          maxAltitude: 2000 + (i * 50),
+          launchSiteId: (i % 3) + 1,
+          wingId: (i % 2) + 1,
+          originalFilename: 'flight_$i.igc',
+        );
+        await databaseService.insertFlight(flight);
+      }
+
+      final stopwatch = Stopwatch()..start();
+      
+      // Perform complex queries
+      await databaseService.getOverallStatistics();
+      await databaseService.getYearlyStatistics();
+      await databaseService.getSiteStatistics();
+      await databaseService.getWingStatistics();
+      
+      stopwatch.stop();
+      final queryTime = stopwatch.elapsedMilliseconds;
+      
+      // Performance assertion
+      expect(queryTime, lessThan(2000), reason: 'Complex statistics queries should complete within 2 seconds');
+      
+      print('Performance: Complex statistics queries completed in ${queryTime}ms');
+    });
+
+    test('should benchmark search performance', () async {
+      // Setup test data with searchable content
+      const int flightCount = 100;
+      final searchTerms = ['alpine', 'thermal', 'cross-country', 'coastal', 'mountain'];
+      
+      for (int i = 0; i < flightCount; i++) {
+        final flight = Flight(
+          id: i + 1,
+          date: DateTime.parse('2023-01-01').add(Duration(days: i)),
+          launchTime: '10:00',
+          landingTime: '12:00',
+          duration: 120,
+          launchSiteId: 1,
+          wingId: 1,
+          notes: '${searchTerms[i % searchTerms.length]} flight conditions were excellent',
+          originalFilename: 'flight_$i.igc',
+        );
+        await databaseService.insertFlight(flight);
+      }
+
+      final stopwatch = Stopwatch()..start();
+      
+      // Perform search operations
+      for (final term in searchTerms) {
+        await databaseService.searchFlights(term);
+      }
+      
+      stopwatch.stop();
+      final searchTime = stopwatch.elapsedMilliseconds;
+      
+      // Performance assertion
+      expect(searchTime, lessThan(1000), reason: 'Search operations should complete within 1 second');
+      
+      print('Performance: ${searchTerms.length} search operations completed in ${searchTime}ms');
+    });
+  });
 }
