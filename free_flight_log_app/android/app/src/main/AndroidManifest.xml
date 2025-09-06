@@ -24,7 +24,11 @@
         android:icon="@mipmap/launcher_icon"
         android:largeHeap="true"
         android:requestLegacyExternalStorage="true"
-        android:enableOnBackInvokedCallback="true">
+        android:enableOnBackInvokedCallback="true"
+        android:allowBackup="true"
+        android:backupAgent=".IGCBackupAgent"
+        android:fullBackupOnly="false"
+        android:fullBackupContent="@xml/backup_rules">
         <activity
             android:name=".MainActivity"
             android:exported="true"

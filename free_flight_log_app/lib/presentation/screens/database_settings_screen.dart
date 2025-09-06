@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../utils/database_reset_helper.dart';
 import '../../services/site_matching_service.dart';
 import '../../utils/cache_utils.dart';
+import '../../services/backup_diagnostic_service.dart';
+import '../../services/igc_cleanup_service.dart';
 
 class DatabaseSettingsScreen extends StatefulWidget {
   const DatabaseSettingsScreen({super.key});
@@ -12,6 +14,9 @@ class DatabaseSettingsScreen extends StatefulWidget {
 
 class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
   Map<String, dynamic>? _dbStats;
+  Map<String, dynamic>? _backupStatus;
+  IGCBackupStats? _igcStats;
+  IGCCleanupStats? _cleanupStats;
   bool _isLoading = true;
   bool _dataModified = false; // Track if any data was modified
 
@@ -19,6 +24,7 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
   void initState() {
     super.initState();
     _loadDatabaseStats();
+    _loadBackupDiagnostics();
   }
 
   Future<void> _loadDatabaseStats() async {
@@ -28,6 +34,22 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
       _dbStats = stats;
       _isLoading = false;
     });
+  }
+
+  Future<void> _loadBackupDiagnostics() async {
+    try {
+      final backupStatus = await BackupDiagnosticService.getBackupStatus();
+      final igcStats = await BackupDiagnosticService.calculateIGCCompressionStats();
+      final cleanupStats = await IGCCleanupService.analyzeIGCFiles();
+      
+      setState(() {
+        _backupStatus = backupStatus;
+        _igcStats = igcStats;
+        _cleanupStats = cleanupStats;
+      });
+    } catch (e) {
+      print('Error loading backup diagnostics: $e');
+    }
   }
 
   Future<void> _resetDatabase() async {
@@ -203,6 +225,27 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
     );
   }
 
+  void _showInfoDialog(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: SingleChildScrollView(
+          child: Text(
+            message,
+            style: const TextStyle(fontFamily: 'monospace'),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _testApiConnection() async {
     // Show loading
     _showLoadingDialog('Testing ParaglidingEarth API connection...');
@@ -239,6 +282,176 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
         _showErrorDialog('API Test Error', 'Error testing API connection: $e');
       }
     }
+  }
+
+  Future<void> _testIGCCompression() async {
+    _showLoadingDialog('Testing IGC compression...');
+
+    try {
+      final result = await BackupDiagnosticService.testCompressionIntegrity();
+      
+      if (mounted) Navigator.of(context).pop(); // Close loading
+      
+      if (result['success'] == true) {
+        final filename = result['filename'] ?? 'Unknown';
+        final originalSize = result['originalSize'] ?? 0;
+        final compressedSize = result['compressedSize'] ?? 0;
+        final ratio = result['compressionRatio'] ?? 0.0;
+        final dataIntact = result['dataIntact'] ?? false;
+        
+        _showSuccessDialog(
+          'IGC Compression Test',
+          'Test completed successfully!\n\n'
+          'File: $filename\n'
+          'Original: ${_formatBytes(originalSize)}\n'
+          'Compressed: ${_formatBytes(compressedSize)}\n'
+          'Ratio: ${ratio.toStringAsFixed(1)}x compression\n'
+          'Data integrity: ${dataIntact ? '✓ Perfect' : '✗ Failed'}'
+        );
+      } else {
+        _showErrorDialog('Compression Test Failed', result['error'] ?? 'Unknown error');
+      }
+    } catch (e) {
+      if (mounted) Navigator.of(context).pop();
+      _showErrorDialog('Test Error', 'Failed to test compression: $e');
+    }
+  }
+
+  Future<void> _showBackupDiagnostics() async {
+    _showLoadingDialog('Loading backup diagnostics...');
+
+    try {
+      final dbEstimate = await BackupDiagnosticService.getDatabaseBackupEstimate();
+      
+      if (mounted) Navigator.of(context).pop(); // Close loading
+      
+      final StringBuffer message = StringBuffer();
+      message.writeln('ANDROID BACKUP STATUS\n');
+      
+      if (_backupStatus?['success'] == true) {
+        message.writeln('✓ Backup: ${_backupStatus!['backupEnabled'] ? 'Enabled' : 'Disabled'}');
+        message.writeln('✓ Custom Agent: ${_backupStatus!['hasCustomAgent'] ? 'Yes' : 'No'}');
+        message.writeln('✓ Backup Rules: ${_backupStatus!['hasBackupRules'] ? 'Yes' : 'No'}');
+        message.writeln('✓ Type: ${_backupStatus!['backupType']}');
+        message.writeln('✓ Limit: ${_backupStatus!['maxBackupSize']}\n');
+      }
+      
+      message.writeln('DATABASE BACKUP\n');
+      if (dbEstimate['success'] == true) {
+        message.writeln('Database Size: ${dbEstimate['formattedSize']}');
+        message.writeln('Backup Usage: ${dbEstimate['backupLimitPercent'].toStringAsFixed(1)}%\n');
+      }
+      
+      message.writeln('IGC FILES BACKUP\n');
+      if (_igcStats != null) {
+        message.writeln('Files: ${_igcStats!.fileCount}');
+        message.writeln('Original Size: ${_igcStats!.formattedOriginalSize}');
+        message.writeln('Compressed: ${_igcStats!.formattedCompressedSize}');
+        message.writeln('Compression: ${_igcStats!.compressionRatio.toStringAsFixed(1)}x');
+        message.writeln('Backup Usage: ${_igcStats!.backupLimitUsagePercent.toStringAsFixed(1)}%');
+        message.writeln('Flight Capacity: ~${_igcStats!.estimatedFlightCapacity} flights');
+      }
+      
+      _showInfoDialog('Backup Diagnostics', message.toString());
+      
+    } catch (e) {
+      if (mounted) Navigator.of(context).pop();
+      _showErrorDialog('Diagnostics Error', 'Failed to load diagnostics: $e');
+    }
+  }
+
+  Future<void> _analyzeIGCFiles() async {
+    _showLoadingDialog('Analyzing IGC files...');
+    try {
+      final cleanupStats = await IGCCleanupService.analyzeIGCFiles();
+      
+      if (mounted) Navigator.of(context).pop(); // Close loading
+      
+      setState(() {
+        _cleanupStats = cleanupStats;
+      });
+      
+      if (cleanupStats != null) {
+        _showSuccessDialog(
+          'IGC File Analysis',
+          'Analysis completed!\n\n'
+          'Total IGC Files: ${cleanupStats.totalIgcFiles}\n'
+          'Referenced by Flights: ${cleanupStats.referencedFiles}\n'
+          'Orphaned Files: ${cleanupStats.orphanedFiles}\n'
+          'Total Size: ${cleanupStats.formattedTotalSize}\n'
+          'Orphaned Size: ${cleanupStats.formattedOrphanedSize}\n'
+          'Orphaned Percentage: ${cleanupStats.orphanedPercentage.toStringAsFixed(1)}%'
+        );
+      } else {
+        _showErrorDialog('Analysis Failed', 'Failed to analyze IGC files.');
+      }
+      
+    } catch (e) {
+      if (mounted) Navigator.of(context).pop(); // Close loading
+      _showErrorDialog('Error', 'Failed to analyze IGC files: $e');
+    }
+  }
+
+  Future<void> _cleanupOrphanedFiles() async {
+    if (_cleanupStats == null || _cleanupStats!.orphanedFiles == 0) {
+      _showInfoDialog('No Cleanup Needed', 'No orphaned IGC files found.');
+      return;
+    }
+    
+    final confirmed = await _showConfirmationDialog(
+      'Clean Orphaned IGC Files',
+      'This will permanently delete ${_cleanupStats!.orphanedFiles} orphaned IGC files '
+      '(${_cleanupStats!.formattedOrphanedSize}).\n\n'
+      'These files are not referenced by any flight records and can be safely removed.\n\n'
+      'This action cannot be undone.',
+    );
+    
+    if (!confirmed) return;
+    
+    _showLoadingDialog('Cleaning up orphaned IGC files...');
+    try {
+      final result = await IGCCleanupService.cleanupOrphanedFiles(dryRun: false);
+      
+      if (mounted) Navigator.of(context).pop(); // Close loading
+      
+      if (result['success'] == true) {
+        final filesDeleted = result['filesDeleted'] ?? 0;
+        final sizeFreed = result['formattedSizeFreed'] ?? '0B';
+        final errors = result['errors'] as List<String>? ?? [];
+        
+        setState(() {
+          _dataModified = true;
+        });
+        
+        // Refresh the analysis
+        await _analyzeIGCFiles();
+        
+        String message = 'Cleanup completed successfully!\n\n'
+            'Files deleted: $filesDeleted\n'
+            'Space freed: $sizeFreed';
+        
+        if (errors.isNotEmpty) {
+          message += '\n\nWarnings:\n${errors.take(3).join('\n')}';
+          if (errors.length > 3) {
+            message += '\n... and ${errors.length - 3} more';
+          }
+        }
+        
+        _showSuccessDialog('Cleanup Complete', message);
+      } else {
+        _showErrorDialog('Cleanup Failed', result['error'] ?? 'Unknown error');
+      }
+      
+    } catch (e) {
+      if (mounted) Navigator.of(context).pop(); // Close loading
+      _showErrorDialog('Error', 'Failed to cleanup IGC files: $e');
+    }
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return '${bytes}B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)}KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)}MB';
   }
 
 
@@ -325,6 +538,131 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
                                 foregroundColor: Colors.blue,
                               ),
                             ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 24),
+
+                  // Android Backup Status
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Android Backup',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 16),
+                          if (_backupStatus?['success'] == true) ...[
+                            _buildStatRow(
+                              'Status', 
+                              '${_backupStatus!['backupEnabled'] ? '✓ Enabled' : '✗ Disabled'}',
+                            ),
+                            _buildStatRow('Type', '${_backupStatus!['backupType'] ?? 'Unknown'}'),
+                            _buildStatRow('Limit', '${_backupStatus!['maxBackupSize'] ?? 'Unknown'}'),
+                          ],
+                          if (_igcStats != null) ...[
+                            const SizedBox(height: 8),
+                            _buildStatRow('IGC Files', '${_igcStats!.fileCount}'),
+                            _buildStatRow('Original Size', _igcStats!.formattedOriginalSize),
+                            _buildStatRow('Compressed', _igcStats!.formattedCompressedSize),
+                            _buildStatRow(
+                              'Compression', 
+                              '${_igcStats!.compressionRatio.toStringAsFixed(1)}x'
+                            ),
+                            _buildStatRow(
+                              'Backup Usage', 
+                              '${_igcStats!.backupLimitUsagePercent.toStringAsFixed(1)}%'
+                            ),
+                          ],
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: _testIGCCompression,
+                                  icon: const Icon(Icons.compress),
+                                  label: const Text('Test Compression'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.blue,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: _showBackupDiagnostics,
+                                  icon: const Icon(Icons.info),
+                                  label: const Text('Full Diagnostics'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.green,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 24),
+                  // IGC File Cleanup
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'IGC File Cleanup',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 16),
+                          if (_cleanupStats != null) ...[
+                            _buildStatRow('Total IGC Files', '${_cleanupStats!.totalIgcFiles}'),
+                            _buildStatRow('Referenced by Flights', '${_cleanupStats!.referencedFiles}'),
+                            _buildStatRow('Orphaned Files', '${_cleanupStats!.orphanedFiles}'),
+                            if (_cleanupStats!.orphanedFiles > 0) ...[
+                              _buildStatRow('Total Size', _cleanupStats!.formattedTotalSize),
+                              _buildStatRow('Orphaned Size', _cleanupStats!.formattedOrphanedSize),
+                              _buildStatRow('Orphaned %', '${_cleanupStats!.orphanedPercentage.toStringAsFixed(1)}%'),
+                            ],
+                          ] else ...[
+                            const Text('Analyzing IGC files...'),
+                            const SizedBox(height: 8),
+                            const LinearProgressIndicator(),
+                          ],
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: _analyzeIGCFiles,
+                                  icon: const Icon(Icons.refresh),
+                                  label: const Text('Refresh Analysis'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.blue,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: (_cleanupStats?.orphanedFiles ?? 0) > 0 ? _cleanupOrphanedFiles : null,
+                                  icon: const Icon(Icons.cleaning_services),
+                                  label: const Text('Clean Orphaned'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.orange,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
