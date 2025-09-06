@@ -591,19 +591,19 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         points: [p1, p2],
         strokeWidth: 2.0,
         color: Colors.grey,
-        pattern: const StrokePattern.dashed(),
+        pattern: StrokePattern.dashed(segments: [5, 5]),
       ),
       Polyline(
         points: [p2, p3],
         strokeWidth: 2.0,
         color: Colors.grey,
-        pattern: const StrokePattern.dashed(),
+        pattern: StrokePattern.dashed(segments: [5, 5]),
       ),
       Polyline(
         points: [p3, p1],
         strokeWidth: 2.0,
         color: Colors.grey,
-        pattern: const StrokePattern.dashed(),
+        pattern: StrokePattern.dashed(segments: [5, 5]),
       ),
     ];
   }
