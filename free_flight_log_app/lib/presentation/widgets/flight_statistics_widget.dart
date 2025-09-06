@@ -155,14 +155,19 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
            widget.flight.maxGroundSpeed != null ||
            widget.flight.thermalCount != null ||
            widget.flight.bestLD != null ||
+           widget.flight.avgLD != null ||
+           widget.flight.longestGlide != null ||
+           widget.flight.climbPercentage != null ||
+           widget.flight.avgThermalStrength != null ||
+           widget.flight.bestThermal != null ||
            widget.flight.gpsFixQuality != null;
   }
 
   Widget _buildAdvancedStatistics() {
     return Column(
       children: [
-        // Row 1: Max Alt, Best L/D, Avg L/D, Longest Glide (4 items)
-        if (widget.flight.maxAltitude != null || widget.flight.bestLD != null || widget.flight.avgLD != null || widget.flight.longestGlide != null) ...[
+        // Row 1: Max Alt, Best L/D, Avg L/D, Climb % (4 items)
+        if (widget.flight.maxAltitude != null || widget.flight.bestLD != null || widget.flight.avgLD != null || widget.flight.climbPercentage != null) ...[
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
@@ -202,31 +207,6 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                 )
               else
                 const Expanded(child: SizedBox()),
-              if (widget.flight.longestGlide != null)
-                Expanded(
-                  child: _buildStatItem(
-                    'Longest Glide',
-                    '${widget.flight.longestGlide!.toStringAsFixed(1)} km',
-                    Icons.trending_flat,
-                    context,
-                    tooltip: 'Maximum distance covered in a single glide without thermaling or climbing',
-                  ),
-                )
-              else
-                const Expanded(child: SizedBox()),
-              const Expanded(child: SizedBox()),
-            ],
-          ),
-        ],
-        
-        // Row 2: Climb %, Thermals, Avg Thermal, Best Thermal (4 items)  
-        if (widget.flight.climbPercentage != null || widget.flight.thermalCount != null || widget.flight.avgThermalStrength != null || widget.flight.bestThermal != null) ...[
-          const SizedBox(height: 12),
-          const Divider(height: 1),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
               if (widget.flight.climbPercentage != null)
                 Expanded(
                   child: _buildStatItem(
@@ -235,6 +215,30 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                     Icons.trending_up,
                     context,
                     tooltip: 'Percentage of flight time spent climbing',
+                  ),
+                )
+              else
+                const Expanded(child: SizedBox()),
+            ],
+          ),
+        ],
+        
+        // Row 2: Longest Glide, Thermals, Avg Thermal, Best Thermal (4 items)  
+        if (widget.flight.longestGlide != null || widget.flight.thermalCount != null || widget.flight.avgThermalStrength != null || widget.flight.bestThermal != null) ...[
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              if (widget.flight.longestGlide != null)
+                Expanded(
+                  child: _buildStatItem(
+                    'Longest Glide',
+                    '${widget.flight.longestGlide!.toStringAsFixed(1)} km',
+                    Icons.trending_flat,
+                    context,
+                    tooltip: 'Maximum distance covered in a single glide without thermaling or climbing',
                   ),
                 )
               else
@@ -275,7 +279,6 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                 )
               else
                 const Expanded(child: SizedBox()),
-              const Expanded(child: SizedBox()),
             ],
           ),
         ],
