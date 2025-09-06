@@ -486,10 +486,12 @@ class FlightDataSource extends Cesium.CustomDataSource {
         });
         
         this._ribbonEnabled = false;
-        this._ribbonSeconds = 3.0;
+        this._ribbonSeconds = (window.cesiumConfig?.savedTrailDuration || 180);
+        
     }
     
     enableRibbonMode(enabled) {
+        
         this._ribbonEnabled = enabled;
         this.staticCurtainEntity.show = !enabled;
         this.dynamicCurtainEntity.show = enabled;
@@ -501,7 +503,10 @@ class FlightDataSource extends Cesium.CustomDataSource {
         
         const windowSize = this._calculateRibbonWindow();
         const startIdx = Math.max(0, index - windowSize + 1);
-        return this.positions.slice(startIdx, index + 1);
+        const positions = this.positions.slice(startIdx, index + 1);
+        
+        
+        return positions;
     }
     
     _getTrailAltitudes(currentTime) {
@@ -518,9 +523,12 @@ class FlightDataSource extends Cesium.CustomDataSource {
         if (!viewer) return 100;
         
         const speedMultiplier = viewer.clock.multiplier || 1;
-        const flightSeconds = this._ribbonSeconds * speedMultiplier;
+        const flightSeconds = this._ribbonSeconds; // Trail duration in flight time, not affected by playback speed
         const pointsPerSecond = this.igcPoints.length / this.totalDuration;
-        return Math.ceil(flightSeconds * pointsPerSecond);
+        const windowSize = Math.ceil(flightSeconds * pointsPerSecond);
+        
+        
+        return windowSize;
     }
     
     _findTimeIndex(time) {
