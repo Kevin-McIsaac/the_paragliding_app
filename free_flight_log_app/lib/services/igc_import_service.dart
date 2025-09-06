@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -193,6 +194,21 @@ class IgcImportService {
     final gpsStats = igcData.calculateGpsQuality();
     final faiTriangle = igcData.calculateFaiTriangle();
     
+    // Convert triangle points to JSON for storage
+    String? faiTrianglePointsJson;
+    if (faiTriangle['trianglePoints'] != null) {
+      final trianglePoints = faiTriangle['trianglePoints'] as List<dynamic>;
+      if (trianglePoints.length == 3) {
+        faiTrianglePointsJson = jsonEncode(
+          trianglePoints.map((point) => {
+            'lat': point.latitude,
+            'lng': point.longitude,
+            'alt': point.gpsAltitude,
+          }).toList()
+        );
+      }
+    }
+    
     // Get or create launch site with paragliding site matching
     Site? launchSite;
     if (igcData.launchSite != null) {
@@ -306,6 +322,7 @@ class IgcImportService {
       distance: groundTrackDistance,
       straightDistance: straightDistance,
       faiTriangleDistance: faiTriangle['triangleDistance'],
+      faiTrianglePoints: faiTrianglePointsJson,
       trackLogPath: trackLogPath,
       originalFilename: originalFilename,
       source: 'igc',
@@ -460,6 +477,21 @@ class IgcImportService {
     final gpsStats = igcData.calculateGpsQuality();
     final faiTriangle = igcData.calculateFaiTriangle();
     
+    // Convert triangle points to JSON for storage
+    String? faiTrianglePointsJson;
+    if (faiTriangle['trianglePoints'] != null) {
+      final trianglePoints = faiTriangle['trianglePoints'] as List<dynamic>;
+      if (trianglePoints.length == 3) {
+        faiTrianglePointsJson = jsonEncode(
+          trianglePoints.map((point) => {
+            'lat': point.latitude,
+            'lng': point.longitude,
+            'alt': point.gpsAltitude,
+          }).toList()
+        );
+      }
+    }
+    
     // Get or create launch site with paragliding site matching
     Site? launchSite;
     if (igcData.launchSite != null) {
@@ -551,6 +583,7 @@ class IgcImportService {
       distance: groundTrackDistance,
       straightDistance: straightDistance,
       faiTriangleDistance: faiTriangle['triangleDistance'],
+      faiTrianglePoints: faiTrianglePointsJson,
       notes: _buildNotesFromIgcData(igcData, originalFilename),
       trackLogPath: trackLogPath,
       originalFilename: originalFilename,

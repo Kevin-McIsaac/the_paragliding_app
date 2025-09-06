@@ -52,6 +52,7 @@ class DatabaseHelper {
         distance REAL,
         straight_distance REAL,
         fai_triangle_distance REAL,
+        fai_triangle_points TEXT,
         wing_id INTEGER,
         notes TEXT,
         track_log_path TEXT,

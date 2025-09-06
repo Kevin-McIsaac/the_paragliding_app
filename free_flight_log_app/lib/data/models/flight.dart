@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class Flight {
   final int? id;
   final DateTime date;
@@ -21,6 +23,7 @@ class Flight {
   final double? distance;
   final double? straightDistance;
   final double? faiTriangleDistance;
+  final String? faiTrianglePoints; // JSON string storing triangle points
   final int? wingId;
   final String? notes;
   final String? trackLogPath;
@@ -67,6 +70,7 @@ class Flight {
     this.distance,
     this.straightDistance,
     this.faiTriangleDistance,
+    this.faiTrianglePoints,
     this.wingId,
     this.notes,
     this.trackLogPath,
@@ -113,6 +117,7 @@ class Flight {
       'distance': distance,
       'straight_distance': straightDistance,
       'fai_triangle_distance': faiTriangleDistance,
+      'fai_triangle_points': faiTrianglePoints,
       'wing_id': wingId,
       'notes': notes,
       'track_log_path': trackLogPath,
@@ -160,6 +165,7 @@ class Flight {
       distance: map['distance']?.toDouble(),
       straightDistance: map['straight_distance']?.toDouble(),
       faiTriangleDistance: map['fai_triangle_distance']?.toDouble(),
+      faiTrianglePoints: map['fai_triangle_points'],
       wingId: map['wing_id'],
       notes: map['notes'],
       trackLogPath: map['track_log_path'],
@@ -206,6 +212,7 @@ class Flight {
     double? distance,
     double? straightDistance,
     double? faiTriangleDistance,
+    String? faiTrianglePoints,
     int? wingId,
     String? notes,
     String? trackLogPath,
@@ -249,6 +256,7 @@ class Flight {
       distance: distance ?? this.distance,
       straightDistance: straightDistance ?? this.straightDistance,
       faiTriangleDistance: faiTriangleDistance ?? this.faiTriangleDistance,
+      faiTrianglePoints: faiTrianglePoints ?? this.faiTrianglePoints,
       wingId: wingId ?? this.wingId,
       notes: notes ?? this.notes,
       trackLogPath: trackLogPath ?? this.trackLogPath,
@@ -269,5 +277,26 @@ class Flight {
       gpsFixQuality: gpsFixQuality ?? this.gpsFixQuality,
       recordingInterval: recordingInterval ?? this.recordingInterval,
     );
+  }
+  
+  /// Parse the JSON-stored FAI triangle points into a list of coordinate maps
+  /// Returns null if no triangle points are stored or if parsing fails
+  List<Map<String, double>>? getParsedTrianglePoints() {
+    if (faiTrianglePoints == null || faiTrianglePoints!.isEmpty) {
+      return null;
+    }
+    
+    try {
+      final List<dynamic> decoded = jsonDecode(faiTrianglePoints!);
+      return decoded.cast<Map<String, dynamic>>().map((point) {
+        return {
+          'lat': (point['lat'] as num).toDouble(),
+          'lng': (point['lng'] as num).toDouble(),
+          'alt': (point['alt'] as num).toDouble(),
+        };
+      }).toList();
+    } catch (e) {
+      return null; // Return null if JSON parsing fails
+    }
   }
 }

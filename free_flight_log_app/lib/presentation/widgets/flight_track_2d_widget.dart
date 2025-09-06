@@ -321,19 +321,37 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         return;
       }
 
-      // Calculate FAI triangle using the IGC parser
+      // Get FAI triangle points (optimized to use stored data first)
       List<IgcPoint> faiTrianglePoints = [];
-      try {
-        final igcParser = IgcParser();
-        final igcFile = await igcParser.parseFile(widget.flight.trackLogPath!);
-        final faiTriangle = igcFile.calculateFaiTriangle();
-        final trianglePoints = faiTriangle['trianglePoints'] as List<dynamic>?;
-        
-        if (trianglePoints != null && trianglePoints.length == 3) {
-          faiTrianglePoints = trianglePoints.cast<IgcPoint>();
+      
+      // Try to use pre-calculated triangle points from database (fast!)
+      final storedTrianglePoints = widget.flight.getParsedTrianglePoints();
+      if (storedTrianglePoints != null && storedTrianglePoints.length == 3) {
+        LoggingService.ui('FlightTrack2D', 'Using stored FAI triangle points (fast)');
+        // Convert stored coordinate maps to IgcPoint objects
+        faiTrianglePoints = storedTrianglePoints.map((point) => IgcPoint(
+          latitude: point['lat']!,
+          longitude: point['lng']!,
+          gpsAltitude: point['alt']!.toInt(),
+          pressureAltitude: 0,
+          timestamp: DateTime.now(), // Timestamp not needed for triangle display
+          isValid: true, // Stored points are assumed valid
+        )).toList();
+      } else {
+        // Fallback to calculation if no stored points (should be rare after reimport)
+        LoggingService.ui('FlightTrack2D', 'No stored triangle points, calculating from IGC (slow)');
+        try {
+          final igcParser = IgcParser();
+          final igcFile = await igcParser.parseFile(widget.flight.trackLogPath!);
+          final faiTriangle = igcFile.calculateFaiTriangle();
+          final trianglePoints = faiTriangle['trianglePoints'] as List<dynamic>?;
+          
+          if (trianglePoints != null && trianglePoints.length == 3) {
+            faiTrianglePoints = trianglePoints.cast<IgcPoint>();
+          }
+        } catch (e) {
+          LoggingService.ui('FlightTrack2D', 'Failed to calculate FAI triangle: $e');
         }
-      } catch (e) {
-        LoggingService.ui('FlightTrack2D', 'Failed to calculate FAI triangle: $e');
       }
 
       setState(() {
