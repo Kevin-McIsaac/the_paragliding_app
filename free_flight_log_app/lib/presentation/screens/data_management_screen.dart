@@ -29,6 +29,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
   bool _mapCacheExpanded = false;
   bool _cleanupExpanded = false;
   bool _apiTestExpanded = false;
+  bool _premiumMapsExpanded = false;
   bool _actionsExpanded = false;
   
   // Cesium token state
@@ -1034,12 +1035,12 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                   
                   const SizedBox(height: 24),
                   
-                  // PGE API Test
+                  // ParaglidingEarth API
                   Card(
                     child: ExpansionTile(
                       leading: const Icon(Icons.cloud_sync),
-                      title: const Text('APIs'),
-                      subtitle: const Text('Manage external API connections'),
+                      title: const Text('ParaglidingEarth API'),
+                      subtitle: const Text('Lookup site details, eg., name, latitude/longitude, country'),
                       initiallyExpanded: _apiTestExpanded,
                       onExpansionChanged: (expanded) {
                         setState(() {
@@ -1052,17 +1053,11 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // ParaglidingEarth API Section
                               const Text(
-                                'ParaglidingEarth API',
-                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                              ),
-                              const SizedBox(height: 8),
-                              const Text(
-                                'Test the connection to ParaglidingEarth.com API for site data synchronization.',
+                                'Test the connection to ParaglidingEarth.com API to lookup site details like name, latitude/longitude, and country.',
                                 style: TextStyle(color: Colors.grey),
                               ),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 16),
                               SizedBox(
                                 width: double.infinity,
                                 child: OutlinedButton.icon(
@@ -1074,17 +1069,41 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                                   ),
                                 ),
                               ),
-                              
-                              const SizedBox(height: 24),
-                              const Divider(),
-                              const SizedBox(height: 16),
-                              
-                              // Cesium Token Section
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 24),
+                  
+                  // Free Premium Maps
+                  Card(
+                    child: ExpansionTile(
+                      leading: const Icon(Icons.map),
+                      title: const Text('Free Premium Maps'),
+                      subtitle: Text(_cesiumToken != null 
+                        ? (_isCesiumTokenValidated ? 'Active' : 'Not validated') 
+                        : 'No token configured'),
+                      initiallyExpanded: _premiumMapsExpanded,
+                      onExpansionChanged: (expanded) {
+                        setState(() {
+                          _premiumMapsExpanded = expanded;
+                        });
+                      },
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
                               const Text(
-                                'Cesium Ion Access Token',
-                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                                'To unlock free access to premium Bing Maps you need to provide your own Cesium ION access token. '
+                                'Registering with Cesium is free, quick and easy.',
+                                style: TextStyle(fontSize: 14, color: Colors.grey),
                               ),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 12),
                               Text(
                                 'Status: ${_cesiumToken != null ? (_isCesiumTokenValidated ? "Active" : "Not validated") : "No token configured"}',
                                 style: TextStyle(
