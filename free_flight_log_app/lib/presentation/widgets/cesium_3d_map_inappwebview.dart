@@ -66,7 +66,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   bool _savedTerrainEnabled = true;
   bool _savedNavigationHelpDialogOpen = false;
   bool _savedFlyThroughMode = false;
-  int _savedTrailDuration = 5;
+  int _savedTrailDuration = PreferencesHelper.defaultCesiumTrailDuration;
   double? _savedQuality;
   
   // User token for premium maps
@@ -116,7 +116,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
       final terrainEnabled = await PreferencesHelper.getCesiumTerrainEnabled() ?? true;
       final navigationHelpDialogOpen = await PreferencesHelper.getCesiumNavigationHelpDialog() ?? false;
       final flyThroughMode = await PreferencesHelper.getCesiumFlyThroughMode() ?? false;
-      final trailDuration = await PreferencesHelper.getCesiumTrailDuration() ?? 30;
+      final trailDuration = await PreferencesHelper.getCesiumTrailDuration() ?? PreferencesHelper.defaultCesiumTrailDuration;
       final quality = await PreferencesHelper.getCesiumQuality() ?? 1.0;
       
       // Load user token and validation status

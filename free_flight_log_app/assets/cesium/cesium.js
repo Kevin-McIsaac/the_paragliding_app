@@ -486,7 +486,8 @@ class FlightDataSource extends Cesium.CustomDataSource {
         });
         
         this._ribbonEnabled = false;
-        this._ribbonSeconds = 3.0;
+        // Trail duration in seconds - defaults to 3 minutes if not configured
+        this._ribbonSeconds = (window.cesiumConfig?.savedTrailDuration || 180);
     }
     
     enableRibbonMode(enabled) {
@@ -501,7 +502,9 @@ class FlightDataSource extends Cesium.CustomDataSource {
         
         const windowSize = this._calculateRibbonWindow();
         const startIdx = Math.max(0, index - windowSize + 1);
-        return this.positions.slice(startIdx, index + 1);
+        const positions = this.positions.slice(startIdx, index + 1);
+        
+        return positions;
     }
     
     _getTrailAltitudes(currentTime) {
@@ -517,10 +520,13 @@ class FlightDataSource extends Cesium.CustomDataSource {
         const viewer = cesiumApp?.viewer;
         if (!viewer) return 100;
         
-        const speedMultiplier = viewer.clock.multiplier || 1;
-        const flightSeconds = this._ribbonSeconds * speedMultiplier;
+        // Trail duration in flight time, not affected by playback speed
+        // Note: speedMultiplier was removed as trail duration should be constant regardless of playback speed
+        const flightSeconds = this._ribbonSeconds;
         const pointsPerSecond = this.igcPoints.length / this.totalDuration;
-        return Math.ceil(flightSeconds * pointsPerSecond);
+        const windowSize = Math.ceil(flightSeconds * pointsPerSecond);
+        
+        return windowSize;
     }
     
     _findTimeIndex(time) {
