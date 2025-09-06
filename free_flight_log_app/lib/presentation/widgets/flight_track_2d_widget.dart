@@ -63,12 +63,10 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   static const int _chartIntervalMs = _chartIntervalMinutes * 60 * 1000;
   
   List<IgcPoint> _trackPoints = [];
-  Site? _launchSite;
   bool _isLoading = true;
   String? _error;
   MapProvider _selectedMapProvider = MapProvider.openStreetMap;
   int? _selectedTrackPointIndex;
-  bool _selectionFromMap = false;
   bool _isLegendExpanded = false; // Default to collapsed for cleaner initial view
   
   // Site display state
@@ -77,7 +75,6 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   Map<int, int> _siteFlightCounts = {};
   Timer? _debounceTimer;
   Timer? _loadingDelayTimer;
-  LatLngBounds? _currentBounds;
   bool _isLoadingSites = false;
   bool _showLoadingIndicator = false;
   String? _lastLoadedBoundsKey;
@@ -117,17 +114,6 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     }
   }
 
-  Future<void> _loadLegendPreference() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final isExpanded = prefs.getBool(_legendExpandedKey) ?? true; // Default to expanded
-      setState(() {
-        _isLegendExpanded = isExpanded;
-      });
-    } catch (e) {
-      LoggingService.error('FlightTrack2DWidget: Error loading legend preference', e);
-    }
-  }
 
   Future<void> _saveLegendPreference(bool isExpanded) async {
     try {
@@ -304,9 +290,8 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   Future<void> _loadSiteData() async {
     if (widget.flight.launchSiteId != null) {
       try {
-        final site = await _databaseService.getSite(widget.flight.launchSiteId!);
+        await _databaseService.getSite(widget.flight.launchSiteId!);
         setState(() {
-          _launchSite = site;
         });
       } catch (e) {
         LoggingService.error('FlightTrack2DWidget: Error loading site data', e);
@@ -455,7 +440,6 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     _debounceTimer = Timer(const Duration(milliseconds: 500), () {
       if (mounted) {
         final bounds = _mapController.camera.visibleBounds;
-        _currentBounds = bounds;
         _loadSitesForBounds(bounds);
       }
     });
@@ -581,7 +565,6 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     
     setState(() {
       _selectedTrackPointIndex = closestIndex;
-      _selectionFromMap = true;
     });
   }
   
@@ -725,9 +708,6 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     // Add local sites (flown sites - blue)
     for (final site in _localSites) {
       final flightCount = site.id != null ? _siteFlightCounts[site.id] : null;
-      final tooltip = flightCount != null && flightCount > 0 
-          ? '${site.name} ($flightCount flight${flightCount == 1 ? '' : 's'})'
-          : site.name;
       
       markers.add(
         DragMarker(
@@ -997,7 +977,6 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                 if (closestIndex != -1) {
                   setState(() {
                     _selectedTrackPointIndex = closestIndex;
-                    _selectionFromMap = false;
                   });
                 }
               }

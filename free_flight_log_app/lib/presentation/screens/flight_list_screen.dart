@@ -11,7 +11,6 @@ import 'manage_sites_screen.dart';
 import 'statistics_screen.dart';
 import 'data_management_screen.dart';
 import 'about_screen.dart';
-import 'cesium_settings_demo_screen.dart';
 import 'preferences_screen.dart';
 
 class FlightListScreen extends StatefulWidget {

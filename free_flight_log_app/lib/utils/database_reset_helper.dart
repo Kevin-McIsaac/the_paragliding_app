@@ -147,8 +147,7 @@ class DatabaseResetHelper {
       
       return {
         'success': true,
-        'message': 'Database recreated successfully! Imported $imported flights from $totalFiles IGC files' + 
-                  (failed > 0 ? '. $failed files failed to import.' : '.'),
+        'message': 'Database recreated successfully! Imported $imported flights from $totalFiles IGC files${failed > 0 ? '. $failed files failed to import.' : '.'}',
         'found': totalFiles,
         'imported': imported,
         'failed': failed,
@@ -407,7 +406,6 @@ class DatabaseResetHelper {
       LoggingService.info('DatabaseResetHelper: Found $totalIGCFiles IGC files to delete');
       
       // Get current database stats before deletion
-      final db = await _databaseHelper.database;
       final flightCount = await _getTableCount('flights');
       final siteCount = await _getTableCount('sites');
       final wingCount = await _getTableCount('wings');

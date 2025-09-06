@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'ui_utils.dart';
 
 /// Shared utilities for creating consistent site markers across different map views
 class SiteMarkerUtils {

@@ -266,7 +266,7 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
   }
 
   Future<void> _editSite(Site site) async {
-    final result = await Navigator.of(context).push<bool>(
+    await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (context) => EditSiteScreen(
           initialCoordinates: (latitude: site.latitude, longitude: site.longitude),
@@ -292,7 +292,7 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      onPopInvoked: (didPop) async {
+      onPopInvokedWithResult: (didPop, result) async {
         if (!didPop) {
           // Return whether sites were modified when popping
           Navigator.of(context).pop(_sitesModified);

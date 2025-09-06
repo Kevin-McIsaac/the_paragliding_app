@@ -217,16 +217,6 @@ class IGCCleanupService {
   }
 
   /// Get relative path for comparison with database
-  static Future<String> _getRelativePath(File file) async {
-    try {
-      final appDir = await getApplicationDocumentsDirectory();
-      final relativePath = path.relative(file.path, from: appDir.path);
-      return relativePath;
-    } catch (e) {
-      LoggingService.warning(_tag, 'Failed to get relative path for ${file.path}: $e');
-      return file.path;
-    }
-  }
 
   static String _formatBytes(int bytes) {
     if (bytes < 1024) return '${bytes}B';

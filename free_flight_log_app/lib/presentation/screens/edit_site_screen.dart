@@ -54,7 +54,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   static const double _minZoom = 1.0;
   // Use shared constants from SiteMarkerUtils
   static const double _siteMarkerSize = SiteMarkerUtils.siteMarkerSize;
-  static const double _siteMarkerIconSize = SiteMarkerUtils.siteMarkerIconSize;
   static const double _boundsThreshold = 0.001;
   static const int _debounceDurationMs = 500;
   static const double _launchRadiusMeters = 500.0;
