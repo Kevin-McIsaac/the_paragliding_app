@@ -12,6 +12,9 @@ class PreferencesHelper {
   static const String cesiumTrailDurationKey = 'cesium_trail_duration';
   static const String cesiumQualityKey = 'cesium_quality';
   
+  // Default values
+  static const int defaultCesiumTrailDuration = 60; // 1 minute in seconds
+  
   // Cesium Ion Token preferences (for premium maps)
   static const String cesiumUserTokenKey = 'cesium_user_token';
   static const String cesiumTokenValidatedKey = 'cesium_token_validated';
@@ -99,9 +102,9 @@ class PreferencesHelper {
     final prefs = await SharedPreferences.getInstance();
     // Check if the preference has been set before
     if (!prefs.containsKey(cesiumTrailDurationKey)) {
-      // First time - set default to 30 seconds
-      await prefs.setInt(cesiumTrailDurationKey, 30);
-      return 30;
+      // First time - set default to 1 minute
+      await prefs.setInt(cesiumTrailDurationKey, defaultCesiumTrailDuration);
+      return defaultCesiumTrailDuration;
     }
     return prefs.getInt(cesiumTrailDurationKey);
   }

@@ -76,6 +76,11 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     return value != null && validModes.contains(value);
   }
 
+  bool _isValidTrailDuration(int? value) {
+    const validDurations = [60, 120, 180, 240, 300];
+    return value != null && validDurations.contains(value);
+  }
+
   Future<void> _savePreference<T>(
     String prefName, 
     T value, 
@@ -283,7 +288,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 _buildDropdownRow<int>(
                   'Trail Duration',
                   'How long the flight trail remains visible',
-                  _cesiumTrailDuration,
+                  _isValidTrailDuration(_cesiumTrailDuration) ? _cesiumTrailDuration : null,
                   [
                     const DropdownMenuItem(value: 60, child: Text('1 minute')),
                     const DropdownMenuItem(value: 120, child: Text('2 minutes')),
