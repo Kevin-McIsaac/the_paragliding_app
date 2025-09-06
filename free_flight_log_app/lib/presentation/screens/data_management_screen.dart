@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../utils/database_reset_helper.dart';
 import '../../services/site_matching_service.dart';
+import '../../services/cesium_token_validator.dart';
 import '../../utils/cache_utils.dart';
+import '../../utils/preferences_helper.dart';
 import '../../services/backup_diagnostic_service.dart';
 import '../../services/igc_cleanup_service.dart';
 
@@ -27,12 +29,18 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
   bool _cleanupExpanded = false;
   bool _apiTestExpanded = false;
   bool _actionsExpanded = false;
+  
+  // Cesium token state
+  String? _cesiumToken;
+  bool _isCesiumTokenValidated = false;
+  bool _isValidatingCesium = false;
 
   @override
   void initState() {
     super.initState();
     _loadDatabaseStats();
     _loadBackupDiagnostics();
+    _loadCesiumToken();
   }
 
   Future<void> _loadDatabaseStats() async {
@@ -57,6 +65,70 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
       });
     } catch (e) {
       print('Error loading backup diagnostics: $e');
+    }
+  }
+
+  Future<void> _loadCesiumToken() async {
+    try {
+      final token = await PreferencesHelper.getCesiumUserToken();
+      final validated = await PreferencesHelper.getCesiumTokenValidated() ?? false;
+      
+      if (mounted) {
+        setState(() {
+          _cesiumToken = token;
+          _isCesiumTokenValidated = validated;
+        });
+      }
+    } catch (e) {
+      print('Error loading Cesium token: $e');
+    }
+  }
+
+  Future<void> _testCesiumToken() async {
+    if (_cesiumToken == null) return;
+    
+    setState(() {
+      _isValidatingCesium = true;
+    });
+
+    try {
+      final isValid = await CesiumTokenValidator.validateToken(_cesiumToken!);
+      
+      if (mounted) {
+        final message = isValid 
+          ? 'Token is valid and working correctly.'
+          : 'Token validation failed. It may be expired or have insufficient permissions.';
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: isValid ? Colors.green : Colors.red,
+            duration: Duration(seconds: isValid ? 2 : 4),
+          ),
+        );
+        
+        if (isValid) {
+          await PreferencesHelper.setCesiumTokenValidated(true);
+          setState(() {
+            _isCesiumTokenValidated = true;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error testing connection. Check your internet connection.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isValidatingCesium = false;
+        });
+      }
     }
   }
 
@@ -782,8 +854,8 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                   Card(
                     child: ExpansionTile(
                       leading: const Icon(Icons.cloud_sync),
-                      title: const Text('ParaglidingEarth API'),
-                      subtitle: const Text('Test external API connectivity'),
+                      title: const Text('APIs'),
+                      subtitle: const Text('Manage external API connections'),
                       initiallyExpanded: _apiTestExpanded,
                       onExpansionChanged: (expanded) {
                         setState(() {
@@ -796,22 +868,103 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              // ParaglidingEarth API Section
+                              const Text(
+                                'ParaglidingEarth API',
+                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(height: 8),
                               const Text(
                                 'Test the connection to ParaglidingEarth.com API for site data synchronization.',
                                 style: TextStyle(color: Colors.grey),
                               ),
-                              const SizedBox(height: 16),
+                              const SizedBox(height: 12),
                               SizedBox(
                                 width: double.infinity,
                                 child: OutlinedButton.icon(
                                   onPressed: _testApiConnection,
                                   icon: const Icon(Icons.cloud_sync),
-                                  label: const Text('Test API Connection'),
+                                  label: const Text('Test ParaglidingEarth API'),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: Colors.green,
                                   ),
                                 ),
                               ),
+                              
+                              const SizedBox(height: 24),
+                              const Divider(),
+                              const SizedBox(height: 16),
+                              
+                              // Cesium Token Section
+                              const Text(
+                                'Cesium Ion Access Token',
+                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Status: ${_cesiumToken != null ? (_isCesiumTokenValidated ? "Active" : "Not validated") : "No token configured"}',
+                                style: TextStyle(
+                                  color: _cesiumToken != null 
+                                    ? (_isCesiumTokenValidated ? Colors.green : Colors.orange)
+                                    : Colors.grey,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              if (_cesiumToken != null) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Token: ${CesiumTokenValidator.maskToken(_cesiumToken!)}',
+                                  style: const TextStyle(
+                                    fontFamily: 'monospace',
+                                    fontSize: 12,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 8),
+                              Text(
+                                _cesiumToken != null && _isCesiumTokenValidated
+                                  ? 'Premium Bing maps are available for use.'
+                                  : 'Configure your Cesium Ion token to access premium maps.',
+                                style: TextStyle(
+                                  color: _cesiumToken != null && _isCesiumTokenValidated 
+                                    ? Colors.green 
+                                    : Colors.grey,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              if (_cesiumToken != null)
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: _isValidatingCesium ? null : _testCesiumToken,
+                                    icon: _isValidatingCesium 
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        )
+                                      : const Icon(Icons.wifi_protected_setup),
+                                    label: const Text('Test Cesium Token'),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.blue,
+                                    ),
+                                  ),
+                                )
+                              else
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: () {
+                                      Navigator.pushNamed(context, '/preferences');
+                                    },
+                                    icon: const Icon(Icons.settings),
+                                    label: const Text('Configure in Preferences'),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.blue,
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                         ),
