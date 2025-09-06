@@ -100,6 +100,75 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
     }
   }
 
+  Future<void> _recreateDatabaseFromIGC() async {
+    // Show confirmation dialog
+    final confirmed = await _showConfirmationDialog(
+      'Recreate Database from IGC Files',
+      'This will reset the database and reimport all IGC files found on device.\n\n'
+      'This process may take several minutes depending on the number of IGC files.\n\n'
+      'The database will be completely rebuilt from your IGC files. '
+      'This is useful for data recovery or fixing corruption issues.\n\n'
+      'Are you sure you want to continue?',
+    );
+
+    if (!confirmed) return;
+
+    // Show progress dialog initially
+    _showProgressDialog('Finding IGC files...', '', 0, 0);
+
+    try {
+      String currentFile = '';
+      int processed = 0;
+      int total = 0;
+      
+      final result = await DatabaseResetHelper.recreateDatabaseFromIGCFiles(
+        onProgress: (filename, current, totalFiles) {
+          currentFile = filename;
+          processed = current;
+          total = totalFiles;
+          
+          // Update progress dialog
+          if (mounted) {
+            Navigator.of(context).pop(); // Close current dialog
+            _showProgressDialog('Recreating database from IGC files...', currentFile, current, totalFiles);
+          }
+        },
+      );
+      
+      // Close progress dialog
+      if (mounted) Navigator.of(context).pop();
+
+      if (result['success']) {
+        setState(() {
+          _dataModified = true; // Mark data as modified
+        });
+        
+        final found = result['found'] ?? 0;
+        final imported = result['imported'] ?? 0;
+        final failed = result['failed'] ?? 0;
+        final errors = result['errors'] as List<String>? ?? [];
+        
+        String message = result['message'] ?? 'Database recreated successfully!';
+        
+        if (failed > 0 && errors.isNotEmpty) {
+          // Show errors in dialog for failed imports
+          final errorDetails = errors.take(5).join('\n'); // Show first 5 errors
+          final moreErrors = errors.length > 5 ? '\n... and ${errors.length - 5} more errors' : '';
+          message += '\n\nFailed imports:\n$errorDetails$moreErrors';
+        }
+        
+        _showSuccessDialog('Database Recreation Complete', message);
+        await _loadDatabaseStats(); // Refresh stats
+      } else {
+        _showErrorDialog('Recreation Failed', result['message']);
+      }
+    } catch (e) {
+      // Close progress dialog
+      if (mounted) Navigator.of(context).pop();
+      _showErrorDialog('Error', 'Failed to recreate database from IGC files: $e');
+    }
+  }
+
   Future<void> _clearFlights() async {
     final confirmed = await _showConfirmationDialog(
       'Clear All Flights',
@@ -195,6 +264,52 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
             const CircularProgressIndicator(),
             const SizedBox(width: 16),
             Text(message),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showProgressDialog(String title, String currentFile, int current, int total) {
+    String progressText = total > 0 ? 'Processing file $current of $total' : 'Preparing...';
+    String fileText = currentFile.isNotEmpty ? 'Current: $currentFile' : '';
+    
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(width: 16),
+                Expanded(child: Text(progressText)),
+              ],
+            ),
+            if (total > 0) ...[
+              const SizedBox(height: 16),
+              LinearProgressIndicator(
+                value: total > 0 ? current / total : null,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '${(total > 0 ? (current / total * 100).toStringAsFixed(1) : '0')}% complete',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+            if (fileText.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                fileText,
+                style: Theme.of(context).textTheme.bodySmall,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ],
         ),
       ),
@@ -736,6 +851,21 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                                 Text(
                                   'Path: ${_dbStats!['path'] ?? 'Unknown'}',
                                   style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                                
+                                const SizedBox(height: 24),
+                                
+                                // Recreate from IGC Files button
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: _recreateDatabaseFromIGC,
+                                    icon: const Icon(Icons.restore),
+                                    label: const Text('Recreate from IGC Files'),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.blue,
+                                    ),
+                                  ),
                                 ),
                                 
                                 const SizedBox(height: 24),
