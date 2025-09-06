@@ -118,6 +118,7 @@ class IgcImportService {
           maxSinkRate5Sec: flight.maxSinkRate5Sec,
           distance: flight.distance,
           straightDistance: flight.straightDistance,
+          faiTriangleDistance: flight.faiTriangleDistance,
           trackLogPath: flight.trackLogPath,
           originalFilename: flight.originalFilename,
           source: flight.source,
@@ -190,6 +191,7 @@ class IgcImportService {
     final thermalStats = igcData.analyzeThermals();
     final glideStats = igcData.calculateGlidePerformance();
     final gpsStats = igcData.calculateGpsQuality();
+    final faiTriangle = igcData.calculateFaiTriangle();
     
     // Get or create launch site with paragliding site matching
     Site? launchSite;
@@ -303,6 +305,7 @@ class IgcImportService {
       maxSinkRate5Sec: climbRates5Sec['maxSink5Sec'],
       distance: groundTrackDistance,
       straightDistance: straightDistance,
+      faiTriangleDistance: faiTriangle['triangleDistance'],
       trackLogPath: trackLogPath,
       originalFilename: originalFilename,
       source: 'igc',
@@ -361,6 +364,7 @@ class IgcImportService {
       maxSinkRate5Sec: flight.maxSinkRate5Sec,
       distance: flight.distance,
       straightDistance: flight.straightDistance,
+      faiTriangleDistance: flight.faiTriangleDistance,
       notes: flight.notes,
       trackLogPath: flight.trackLogPath,
       originalFilename: flight.originalFilename,
@@ -420,6 +424,7 @@ class IgcImportService {
       maxSinkRate5Sec: flight.maxSinkRate5Sec,
       distance: flight.distance,
       straightDistance: flight.straightDistance,
+      faiTriangleDistance: flight.faiTriangleDistance,
       notes: flight.notes,
       trackLogPath: flight.trackLogPath,
       originalFilename: flight.originalFilename,
@@ -453,6 +458,7 @@ class IgcImportService {
     final thermalStats = igcData.analyzeThermals();
     final glideStats = igcData.calculateGlidePerformance();
     final gpsStats = igcData.calculateGpsQuality();
+    final faiTriangle = igcData.calculateFaiTriangle();
     
     // Get or create launch site with paragliding site matching
     Site? launchSite;
@@ -544,6 +550,7 @@ class IgcImportService {
       maxSinkRate5Sec: climbRates5Sec['maxSink5Sec'],
       distance: groundTrackDistance,
       straightDistance: straightDistance,
+      faiTriangleDistance: faiTriangle['triangleDistance'],
       notes: _buildNotesFromIgcData(igcData, originalFilename),
       trackLogPath: trackLogPath,
       originalFilename: originalFilename,

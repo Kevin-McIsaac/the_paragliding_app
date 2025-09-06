@@ -15,7 +15,6 @@ class FlightStatisticsWidget extends StatefulWidget {
 }
 
 class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
-  bool _showAdvanced = false;
 
   @override
   Widget build(BuildContext context) {
@@ -63,6 +62,17 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
               ),
               Expanded(
                 child: _buildStatItem(
+                  'FAI Triangle',
+                  widget.flight.faiTriangleDistance != null 
+                      ? '${widget.flight.faiTriangleDistance!.toStringAsFixed(1)} km'
+                      : 'N/A',
+                  Icons.change_history,
+                  context,
+                  tooltip: 'FAI triangle distance using maximum area approximation',
+                ),
+              ),
+              Expanded(
+                child: _buildStatItem(
                   'Track Distance',
                   widget.flight.distance != null 
                       ? '${widget.flight.distance!.toStringAsFixed(1)} km'
@@ -70,17 +80,6 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                   Icons.timeline,
                   context,
                   tooltip: 'Total distance flown along the actual flight path',
-                ),
-              ),
-              Expanded(
-                child: _buildStatItem(
-                  'Max Alt',
-                  widget.flight.maxAltitude != null
-                      ? '${widget.flight.maxAltitude!.toInt()} m'
-                      : 'N/A',
-                  Icons.height,
-                  context,
-                  tooltip: 'Maximum GPS altitude above sea level',
                 ),
               ),
             ],
@@ -139,36 +138,11 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
             ),
           ],
           
-          // Expandable Advanced Statistics
+          // Advanced Statistics
           if (_hasAdvancedStats()) ...[
             const SizedBox(height: 12),
             const Divider(height: 1),
             const SizedBox(height: 8),
-            InkWell(
-              onTap: () => setState(() => _showAdvanced = !_showAdvanced),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    _showAdvanced ? Icons.expand_less : Icons.expand_more,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    _showAdvanced ? 'Hide Advanced Stats' : 'Show Advanced Stats',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.primary,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          
-          // Advanced Statistics (expandable)
-          if (_showAdvanced && _hasAdvancedStats()) ...[
-            const SizedBox(height: 12),
             _buildAdvancedStatistics(),
           ],
         ],
@@ -177,20 +151,38 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
   }
 
   bool _hasAdvancedStats() {
-    return widget.flight.maxGroundSpeed != null ||
+    return widget.flight.maxAltitude != null ||
+           widget.flight.maxGroundSpeed != null ||
            widget.flight.thermalCount != null ||
            widget.flight.bestLD != null ||
+           widget.flight.avgLD != null ||
+           widget.flight.longestGlide != null ||
+           widget.flight.climbPercentage != null ||
+           widget.flight.avgThermalStrength != null ||
+           widget.flight.bestThermal != null ||
            widget.flight.gpsFixQuality != null;
   }
 
   Widget _buildAdvancedStatistics() {
     return Column(
       children: [
-        // Row 1: Best L/D, Avg L/D, Longest Glide, Climb % (4 items)
-        if (widget.flight.bestLD != null || widget.flight.avgLD != null || widget.flight.longestGlide != null || widget.flight.climbPercentage != null) ...[
+        // Row 1: Max Alt, Best L/D, Avg L/D, Climb % (4 items)
+        if (widget.flight.maxAltitude != null || widget.flight.bestLD != null || widget.flight.avgLD != null || widget.flight.climbPercentage != null) ...[
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
+              if (widget.flight.maxAltitude != null)
+                Expanded(
+                  child: _buildStatItem(
+                    'Max Alt',
+                    '${widget.flight.maxAltitude!.toInt()} m',
+                    Icons.height,
+                    context,
+                    tooltip: 'Maximum GPS altitude above sea level',
+                  ),
+                )
+              else
+                const Expanded(child: SizedBox()),
               if (widget.flight.bestLD != null)
                 Expanded(
                   child: _buildStatItem(
@@ -215,18 +207,6 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                 )
               else
                 const Expanded(child: SizedBox()),
-              if (widget.flight.longestGlide != null)
-                Expanded(
-                  child: _buildStatItem(
-                    'Longest Glide',
-                    '${widget.flight.longestGlide!.toStringAsFixed(1)} km',
-                    Icons.trending_flat,
-                    context,
-                    tooltip: 'Maximum distance covered in a single glide without thermaling or climbing',
-                  ),
-                )
-              else
-                const Expanded(child: SizedBox()),
               if (widget.flight.climbPercentage != null)
                 Expanded(
                   child: _buildStatItem(
@@ -243,14 +223,26 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
           ),
         ],
         
-        // Row 2: Thermals, Avg Thermal, Best Thermal, Thermal Time (4 items)  
-        if (widget.flight.thermalCount != null || widget.flight.avgThermalStrength != null || widget.flight.bestThermal != null || widget.flight.totalTimeInThermals != null) ...[
+        // Row 2: Longest Glide, Thermals, Avg Thermal, Best Thermal (4 items)  
+        if (widget.flight.longestGlide != null || widget.flight.thermalCount != null || widget.flight.avgThermalStrength != null || widget.flight.bestThermal != null) ...[
           const SizedBox(height: 12),
           const Divider(height: 1),
           const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
+              if (widget.flight.longestGlide != null)
+                Expanded(
+                  child: _buildStatItem(
+                    'Longest Glide',
+                    '${widget.flight.longestGlide!.toStringAsFixed(1)} km',
+                    Icons.trending_flat,
+                    context,
+                    tooltip: 'Maximum distance covered in a single glide without thermaling or climbing',
+                  ),
+                )
+              else
+                const Expanded(child: SizedBox()),
               if (widget.flight.thermalCount != null)
                 Expanded(
                   child: _buildStatItem(
@@ -283,18 +275,6 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                     Icons.trending_up,
                     context,
                     tooltip: 'Strongest average climb rate achieved in a single thermal',
-                  ),
-                )
-              else
-                const Expanded(child: SizedBox()),
-              if (widget.flight.totalTimeInThermals != null)
-                Expanded(
-                  child: _buildStatItem(
-                    'Thermal %',
-                    '${((widget.flight.totalTimeInThermals! / (widget.flight.duration * 60)) * 100).toStringAsFixed(0)}%',
-                    Icons.trending_up,
-                    context,
-                    tooltip: 'Percentage of total flight time spent thermaling',
                   ),
                 )
               else

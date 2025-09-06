@@ -12,6 +12,7 @@ import '../../data/models/site.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/igc_file.dart';
 import '../../services/igc_import_service.dart';
+import '../../services/igc_parser.dart';
 import '../../services/database_service.dart';
 import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
@@ -63,6 +64,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   static const int _chartIntervalMs = _chartIntervalMinutes * 60 * 1000;
   
   List<IgcPoint> _trackPoints = [];
+  List<IgcPoint> _faiTrianglePoints = [];
   bool _isLoading = true;
   String? _error;
   MapProvider _selectedMapProvider = MapProvider.openStreetMap;
@@ -319,12 +321,28 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         return;
       }
 
+      // Calculate FAI triangle using the IGC parser
+      List<IgcPoint> faiTrianglePoints = [];
+      try {
+        final igcParser = IgcParser();
+        final igcFile = await igcParser.parseFile(widget.flight.trackLogPath!);
+        final faiTriangle = igcFile.calculateFaiTriangle();
+        final trianglePoints = faiTriangle['trianglePoints'] as List<dynamic>?;
+        
+        if (trianglePoints != null && trianglePoints.length == 3) {
+          faiTrianglePoints = trianglePoints.cast<IgcPoint>();
+        }
+      } catch (e) {
+        LoggingService.ui('FlightTrack2D', 'Failed to calculate FAI triangle: $e');
+      }
+
       setState(() {
         _trackPoints = trackData.points;
+        _faiTrianglePoints = faiTrianglePoints;
         _isLoading = false;
       });
       
-      LoggingService.info('FlightTrack2DWidget: Loaded ${_trackPoints.length} track points');
+      LoggingService.info('FlightTrack2DWidget: Loaded ${_trackPoints.length} track points, FAI triangle: ${_faiTrianglePoints.length} points');
     } catch (e) {
       LoggingService.error('FlightTrack2DWidget: Error loading track data', e);
       setState(() {
@@ -557,6 +575,37 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     }
     
     return lines;
+  }
+
+  List<Polyline> _buildFaiTriangleLines() {
+    if (_faiTrianglePoints.length != 3) return [];
+    
+    // Convert IgcPoint to LatLng
+    final p1 = LatLng(_faiTrianglePoints[0].latitude, _faiTrianglePoints[0].longitude);
+    final p2 = LatLng(_faiTrianglePoints[1].latitude, _faiTrianglePoints[1].longitude);
+    final p3 = LatLng(_faiTrianglePoints[2].latitude, _faiTrianglePoints[2].longitude);
+    
+    // Create triangle as dashed grey lines
+    return [
+      Polyline(
+        points: [p1, p2],
+        strokeWidth: 2.0,
+        color: Colors.grey,
+        pattern: StrokePattern.dashed(segments: [5, 5]),
+      ),
+      Polyline(
+        points: [p2, p3],
+        strokeWidth: 2.0,
+        color: Colors.grey,
+        pattern: StrokePattern.dashed(segments: [5, 5]),
+      ),
+      Polyline(
+        points: [p3, p1],
+        strokeWidth: 2.0,
+        color: Colors.grey,
+        pattern: StrokePattern.dashed(segments: [5, 5]),
+      ),
+    ];
   }
 
   void _onMapTapped(LatLng position) {
@@ -1265,7 +1314,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                 userAgentPackageName: 'com.example.free_flight_log_app',
               ),
               PolylineLayer(
-                polylines: _buildColoredTrackLines(),
+                polylines: [..._buildColoredTrackLines(), ..._buildFaiTriangleLines()],
               ),
               DragMarkers(
                 markers: [..._buildSiteMarkers(), ..._buildFlightMarkers()],

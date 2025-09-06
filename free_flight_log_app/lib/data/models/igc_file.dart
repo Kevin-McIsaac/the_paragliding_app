@@ -577,6 +577,85 @@ class IgcFile {
       'recordingInterval': avgInterval,
     };
   }
+
+  /// Calculate FAI triangle using maximum area approach
+  /// Returns a map with triangle points and total distance
+  Map<String, dynamic> calculateFaiTriangle() {
+    if (trackPoints.length < 3) {
+      return {
+        'trianglePoints': <IgcPoint>[],
+        'triangleDistance': 0.0,
+      };
+    }
+
+    double maxArea = 0.0;
+    List<IgcPoint> bestTriangle = [];
+
+    // For performance, sample every nth point for large tracks
+    int step = trackPoints.length > 1000 ? trackPoints.length ~/ 500 : 1;
+    
+    for (int i = 0; i < trackPoints.length; i += step) {
+      for (int j = i + step; j < trackPoints.length; j += step) {
+        for (int k = j + step; k < trackPoints.length; k += step) {
+          final p1 = trackPoints[i];
+          final p2 = trackPoints[j];
+          final p3 = trackPoints[k];
+          
+          final area = _calculateTriangleArea(p1, p2, p3);
+          if (area > maxArea) {
+            maxArea = area;
+            bestTriangle = [p1, p2, p3];
+          }
+        }
+      }
+    }
+
+    if (bestTriangle.length != 3) {
+      return {
+        'trianglePoints': <IgcPoint>[],
+        'triangleDistance': 0.0,
+      };
+    }
+
+    // Calculate triangle perimeter (FAI distance)
+    final distance1 = _haversineDistance(bestTriangle[0], bestTriangle[1]);
+    final distance2 = _haversineDistance(bestTriangle[1], bestTriangle[2]);
+    final distance3 = _haversineDistance(bestTriangle[2], bestTriangle[0]);
+    final totalDistance = distance1 + distance2 + distance3;
+
+    return {
+      'trianglePoints': bestTriangle,
+      'triangleDistance': totalDistance,
+    };
+  }
+
+  /// Calculate triangle area using cross product
+  /// Returns area in square kilometers
+  double _calculateTriangleArea(IgcPoint p1, IgcPoint p2, IgcPoint p3) {
+    // Convert to approximate Cartesian coordinates (meters)
+    const double earthRadius = 6371000; // meters
+    final lat1 = p1.latitude * pi / 180;
+    final lon1 = p1.longitude * pi / 180;
+    final lat2 = p2.latitude * pi / 180;
+    final lon2 = p2.longitude * pi / 180;
+    final lat3 = p3.latitude * pi / 180;
+    final lon3 = p3.longitude * pi / 180;
+    
+    // Project to plane using equirectangular projection
+    final avgLat = (lat1 + lat2 + lat3) / 3;
+    final x1 = earthRadius * lon1 * cos(avgLat);
+    final y1 = earthRadius * lat1;
+    final x2 = earthRadius * lon2 * cos(avgLat);
+    final y2 = earthRadius * lat2;
+    final x3 = earthRadius * lon3 * cos(avgLat);
+    final y3 = earthRadius * lat3;
+    
+    // Calculate area using cross product
+    final area = 0.5 * ((x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1)).abs();
+    
+    // Convert to square kilometers
+    return area / 1000000;
+  }
 }
 
 /// Represents a thermal event detected in the flight
