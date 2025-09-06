@@ -60,26 +60,26 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
     }
   }
 
-  Future<void> _resetDatabase() async {
+  Future<void> _deleteAllFlightData() async {
     // Show confirmation dialog
     final confirmed = await _showConfirmationDialog(
-      'Reset Database',
-      'This will permanently delete ALL data including:\n\n'
+      'Delete All Flight Data',
+      'This will permanently delete ALL flight data including:\n\n'
       '• All flight records\n'
       '• All sites\n' 
       '• All wings\n'
-      '• All track log files\n\n'
-      'This action cannot be undone.\n\n'
+      '• All IGC track files\n\n'
+      'This is a complete data wipe and cannot be undone.\n\n'
       'Are you sure you want to continue?',
     );
 
     if (!confirmed) return;
 
     // Show loading
-    _showLoadingDialog('Resetting database...');
+    _showLoadingDialog('Deleting all flight data...');
 
     try {
-      final result = await DatabaseResetHelper.resetDatabase();
+      final result = await DatabaseResetHelper.deleteAllFlightData();
       
       // Close loading dialog
       if (mounted) Navigator.of(context).pop();
@@ -88,15 +88,15 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
         setState(() {
           _dataModified = true; // Mark data as modified
         });
-        _showSuccessDialog('Database Reset Complete', result['message']);
+        _showSuccessDialog('All Flight Data Deleted', result['message']);
         await _loadDatabaseStats(); // Refresh stats
       } else {
-        _showErrorDialog('Reset Failed', result['message']);
+        _showErrorDialog('Deletion Failed', result['message']);
       }
     } catch (e) {
       // Close loading dialog
       if (mounted) Navigator.of(context).pop();
-      _showErrorDialog('Error', 'Failed to reset database: $e');
+      _showErrorDialog('Error', 'Failed to delete all flight data: $e');
     }
   }
 
@@ -109,6 +109,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
       'The database will be completely rebuilt from your IGC files. '
       'This is useful for data recovery or fixing corruption issues.\n\n'
       'Are you sure you want to continue?',
+      confirmButtonText: 'Recreate Database',
     );
 
     if (!confirmed) return;
@@ -231,7 +232,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
     }
   }
 
-  Future<bool> _showConfirmationDialog(String title, String message) async {
+  Future<bool> _showConfirmationDialog(String title, String message, {String? confirmButtonText}) async {
     return await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -247,7 +248,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
             style: FilledButton.styleFrom(
               backgroundColor: Colors.red,
             ),
-            child: const Text('Delete All Data'),
+            child: Text(confirmButtonText ?? 'Delete All Data'),
           ),
         ],
       ),
@@ -855,16 +856,55 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                                 
                                 const SizedBox(height: 24),
                                 
-                                // Recreate from IGC Files button
-                                SizedBox(
+                                // Recreate Information Box
+                                Container(
                                   width: double.infinity,
-                                  child: OutlinedButton.icon(
-                                    onPressed: _recreateDatabaseFromIGC,
-                                    icon: const Icon(Icons.restore),
-                                    label: const Text('Recreate from IGC Files'),
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: Colors.blue,
-                                    ),
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                                    borderRadius: BorderRadius.circular(8),
+                                    color: Colors.blue.withValues(alpha: 0.1),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Row(
+                                        children: [
+                                          Icon(Icons.info, color: Colors.blue),
+                                          SizedBox(width: 8),
+                                          Text(
+                                            'Recreate from IGC Files',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.blue,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        '• Resets the database and reimports all IGC files found on device\n'
+                                        '• Use when database is corrupted but IGC files are intact\n'
+                                        '• Rebuilds complete database from your existing track files\n'
+                                        '• Preserves all IGC files, only rebuilds database records',
+                                        style: TextStyle(color: Colors.blue[700]),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      
+                                      // Recreate from IGC Files button
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: OutlinedButton.icon(
+                                          onPressed: _recreateDatabaseFromIGC,
+                                          icon: const Icon(Icons.restore),
+                                          label: const Text('Recreate from IGC Files'),
+                                          style: OutlinedButton.styleFrom(
+                                            foregroundColor: Colors.blue,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                                 
@@ -898,52 +938,25 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                                       ),
                                       const SizedBox(height: 12),
                                       const Text(
-                                        'The following action will permanently delete all flights, sites, and wings. This action cannot be undone.',
+                                        'Delete All Flight Data\n\n'
+                                        '• Completely removes ALL data (database + IGC files)\n'
+                                        '• Use when starting completely fresh or freeing storage space\n'
+                                        '• Deletes everything - database records AND IGC files\n'
+                                        '• Warning: This is irreversible - all flight data will be lost\n\n'
+                                        'This action cannot be undone.',
                                         style: TextStyle(color: Colors.red),
                                       ),
                                       const SizedBox(height: 16),
                                       SizedBox(
                                         width: double.infinity,
                                         child: FilledButton.icon(
-                                          onPressed: (_dbStats?['total_records'] ?? 0) > 0 ? _resetDatabase : null,
+                                          onPressed: (_dbStats?['total_records'] ?? 0) > 0 ? _deleteAllFlightData : null,
                                           icon: const Icon(Icons.delete_forever),
-                                          label: const Text('Reset Database'),
+                                          label: const Text('Delete All Flight Data'),
                                           style: FilledButton.styleFrom(
                                             backgroundColor: Colors.red,
                                           ),
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                
-                                const SizedBox(height: 24),
-                                
-                                // About Database Reset
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
-                                    borderRadius: BorderRadius.circular(8),
-                                    color: Colors.grey.withValues(alpha: 0.1),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      const Text(
-                                        'About Database Reset',
-                                        style: TextStyle(fontWeight: FontWeight.bold),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        'Database reset completely removes all data and recreates the database with the latest schema. '
-                                        'This is useful for:\n\n'
-                                        '• Starting fresh with no data\n'
-                                        '• Fixing database corruption issues\n'
-                                        '• Development and testing\n\n'
-                                        'The database will be recreated with the current version (${_dbStats?['version'] ?? 'Unknown'}) schema.',
-                                        style: const TextStyle(color: Colors.grey),
                                       ),
                                     ],
                                   ),
