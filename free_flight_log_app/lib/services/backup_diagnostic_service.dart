@@ -271,29 +271,63 @@ class BackupDiagnosticService {
     try {
       LoggingService.debug(_tag, 'Calculating database backup size estimate');
       
-      final appDir = await getApplicationDocumentsDirectory();
       int totalDbSize = 0;
+      final foundFiles = <String>[];
       
-      // Look for SQLite database files
-      final dbDir = Directory(appDir.path);
-      if (await dbDir.exists()) {
-        await for (final entity in dbDir.list(recursive: true)) {
+      // First check application documents directory
+      final appDir = await getApplicationDocumentsDirectory();
+      LoggingService.debug(_tag, 'Checking app documents directory: ${appDir.path}');
+      
+      if (await appDir.exists()) {
+        await for (final entity in appDir.list(recursive: true)) {
           if (entity is File) {
             final path = entity.path.toLowerCase();
-            if (path.endsWith('.db') || path.endsWith('.sqlite')) {
+            if (path.endsWith('.db') || path.endsWith('.sqlite') || path.endsWith('.db-journal') || path.endsWith('.db-wal')) {
               final size = await entity.length();
               totalDbSize += size;
+              foundFiles.add('${entity.path} (${_formatBytes(size)})');
               LoggingService.debug(_tag, 'Found database file: ${entity.path} (${_formatBytes(size)})');
             }
           }
         }
       }
       
+      // Also check if we can access the actual databases directory
+      // On Android this is typically in /data/data/package/databases/
+      try {
+        // Try to get database path from Flutter's path_provider
+        final String appDocPath = appDir.path;
+        // Convert from app_flutter to databases path
+        final String possibleDbPath = appDocPath.replaceAll('/app_flutter', '/databases');
+        final dbDir = Directory(possibleDbPath);
+        
+        LoggingService.debug(_tag, 'Checking databases directory: $possibleDbPath');
+        
+        if (await dbDir.exists()) {
+          await for (final entity in dbDir.list()) {
+            if (entity is File) {
+              final path = entity.path.toLowerCase();
+              if (path.endsWith('.db') || path.endsWith('.sqlite') || path.endsWith('.db-journal') || path.endsWith('.db-wal')) {
+                final size = await entity.length();
+                totalDbSize += size;
+                foundFiles.add('${entity.path} (${_formatBytes(size)})');
+                LoggingService.debug(_tag, 'Found database file in databases dir: ${entity.path} (${_formatBytes(size)})');
+              }
+            }
+          }
+        }
+      } catch (e) {
+        LoggingService.debug(_tag, 'Could not access databases directory: $e');
+      }
+      
+      LoggingService.debug(_tag, 'Database backup estimate complete: ${_formatBytes(totalDbSize)} total from ${foundFiles.length} files');
+      
       return {
         'success': true,
         'databaseSizeBytes': totalDbSize,
         'formattedSize': _formatBytes(totalDbSize),
         'backupLimitPercent': (totalDbSize / (25 * 1024 * 1024)) * 100,
+        'foundFiles': foundFiles,
       };
       
     } catch (e) {

@@ -5,20 +5,28 @@ import '../../utils/cache_utils.dart';
 import '../../services/backup_diagnostic_service.dart';
 import '../../services/igc_cleanup_service.dart';
 
-class DatabaseSettingsScreen extends StatefulWidget {
-  const DatabaseSettingsScreen({super.key});
+class DataManagementScreen extends StatefulWidget {
+  const DataManagementScreen({super.key});
 
   @override
-  State<DatabaseSettingsScreen> createState() => _DatabaseSettingsScreenState();
+  State<DataManagementScreen> createState() => _DataManagementScreenState();
 }
 
-class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
+class _DataManagementScreenState extends State<DataManagementScreen> {
   Map<String, dynamic>? _dbStats;
   Map<String, dynamic>? _backupStatus;
   IGCBackupStats? _igcStats;
   IGCCleanupStats? _cleanupStats;
   bool _isLoading = true;
   bool _dataModified = false; // Track if any data was modified
+  
+  // Expansion state for collapsible cards - all start collapsed
+  bool _dbStatsExpanded = false;
+  bool _backupExpanded = false;
+  bool _mapCacheExpanded = false;
+  bool _cleanupExpanded = false;
+  bool _apiTestExpanded = false;
+  bool _actionsExpanded = false;
 
   @override
   void initState() {
@@ -468,7 +476,7 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Database Settings'),
+          title: const Text('Data Management'),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () => Navigator.of(context).pop(_dataModified),
@@ -481,66 +489,43 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Database Statistics
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Database Statistics',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 16),
-                          if (_dbStats != null) ...[
-                            _buildStatRow('Version', '${_dbStats!['version'] ?? 'Unknown'}'),
-                            _buildStatRow('Flights', '${_dbStats!['flights'] ?? 0}'),
-                            _buildStatRow('Sites', '${_dbStats!['sites'] ?? 0}'),
-                            _buildStatRow('Wings', '${_dbStats!['wings'] ?? 0}'),
-                            _buildStatRow('Total Records', '${_dbStats!['total_records'] ?? 0}'),
-                            _buildStatRow('Database Size', '${_dbStats!['size_kb'] ?? '0'}KB'),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Path: ${_dbStats!['path'] ?? 'Unknown'}',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 24),
 
                   // Map Cache Statistics
                   Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Map Tile Cache',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 16),
-                          _buildStatRow('Cached Tiles', CacheUtils.getCurrentCacheCount().toString()),
-                          _buildStatRow('Cache Size', CacheUtils.formatBytes(CacheUtils.getCurrentCacheSize())),
-                          const SizedBox(height: 16),
-                          SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton.icon(
-                              onPressed: CacheUtils.getCurrentCacheCount() > 0 ? _clearMapCache : null,
-                              icon: const Icon(Icons.cleaning_services),
-                              label: const Text('Clear Map Cache'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.blue,
+                    child: ExpansionTile(
+                      leading: const Icon(Icons.map),
+                      title: const Text('Map Tile Cache'),
+                      subtitle: Text('${CacheUtils.getCurrentCacheCount()} tiles • ${CacheUtils.formatBytes(CacheUtils.getCurrentCacheSize())}'),
+                      initiallyExpanded: _mapCacheExpanded,
+                      onExpansionChanged: (expanded) {
+                        setState(() {
+                          _mapCacheExpanded = expanded;
+                        });
+                      },
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildStatRow('Cached Tiles', CacheUtils.getCurrentCacheCount().toString()),
+                              _buildStatRow('Cache Size', CacheUtils.formatBytes(CacheUtils.getCurrentCacheSize())),
+                              const SizedBox(height: 16),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: CacheUtils.getCurrentCacheCount() > 0 ? _clearMapCache : null,
+                                  icon: const Icon(Icons.cleaning_services),
+                                  label: const Text('Clear Map Cache'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.blue,
+                                  ),
+                                ),
                               ),
-                            ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                   
@@ -548,25 +533,33 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
 
                   // Android Backup Status
                   Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Android Backup',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 16),
-                          if (_backupStatus?['success'] == true) ...[
+                    child: ExpansionTile(
+                      leading: const Icon(Icons.backup),
+                      title: const Text('Android Backup'),
+                      subtitle: _backupStatus?['success'] == true 
+                        ? Text('${_backupStatus!['backupEnabled'] ? '✓ Enabled' : '✗ Disabled'} • ${_igcStats?.fileCount ?? 0} IGC files')
+                        : const Text('Loading...'),
+                      initiallyExpanded: _backupExpanded,
+                      onExpansionChanged: (expanded) {
+                        setState(() {
+                          _backupExpanded = expanded;
+                        });
+                      },
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (_backupStatus?['success'] == true) ...[
                             _buildStatRow(
                               'Status', 
                               '${_backupStatus!['backupEnabled'] ? '✓ Enabled' : '✗ Disabled'}',
                             ),
                             _buildStatRow('Type', '${_backupStatus!['backupType'] ?? 'Unknown'}'),
                             _buildStatRow('Limit', '${_backupStatus!['maxBackupSize'] ?? 'Unknown'}'),
-                          ],
-                          if (_igcStats != null) ...[
+                              ],
+                              if (_igcStats != null) ...[
                             const SizedBox(height: 8),
                             _buildStatRow('IGC Files', '${_igcStats!.fileCount}'),
                             _buildStatRow('Original Size', _igcStats!.formattedOriginalSize),
@@ -579,22 +572,10 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
                               'Backup Usage', 
                               '${_igcStats!.backupLimitUsagePercent.toStringAsFixed(1)}%'
                             ),
-                          ],
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: _testIGCCompression,
-                                  icon: const Icon(Icons.compress),
-                                  label: const Text('Test Compression'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: Colors.blue,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
+                              ],
+                              const SizedBox(height: 16),
+                              SizedBox(
+                                width: double.infinity,
                                 child: OutlinedButton.icon(
                                   onPressed: _showBackupDiagnostics,
                                   icon: const Icon(Icons.info),
@@ -606,136 +587,73 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
                               ),
                             ],
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                   
                   const SizedBox(height: 24),
                   // IGC File Cleanup
                   Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'IGC File Cleanup',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 16),
-                          if (_cleanupStats != null) ...[
-                            _buildStatRow('Total IGC Files', '${_cleanupStats!.totalIgcFiles}'),
-                            _buildStatRow('Referenced by Flights', '${_cleanupStats!.referencedFiles}'),
-                            _buildStatRow('Orphaned Files', '${_cleanupStats!.orphanedFiles}'),
-                            if (_cleanupStats!.orphanedFiles > 0) ...[
-                              _buildStatRow('Total Size', _cleanupStats!.formattedTotalSize),
-                              _buildStatRow('Orphaned Size', _cleanupStats!.formattedOrphanedSize),
-                              _buildStatRow('Orphaned %', '${_cleanupStats!.orphanedPercentage.toStringAsFixed(1)}%'),
-                            ],
-                          ] else ...[
-                            const Text('Analyzing IGC files...'),
-                            const SizedBox(height: 8),
-                            const LinearProgressIndicator(),
-                          ],
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: _analyzeIGCFiles,
-                                  icon: const Icon(Icons.refresh),
-                                  label: const Text('Refresh Analysis'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: Colors.blue,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: (_cleanupStats?.orphanedFiles ?? 0) > 0 ? _cleanupOrphanedFiles : null,
-                                  icon: const Icon(Icons.cleaning_services),
-                                  label: const Text('Clean Orphaned'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: Colors.orange,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 24),
-                  
-                  // Actions
-                  const Text(
-                    'Database Actions',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  const SizedBox(height: 12),
-
-                  // Test API Connection
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _testApiConnection,
-                      icon: const Icon(Icons.cloud_sync),
-                      label: const Text('Test ParaglidingEarth API'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.green,
-                      ),
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 24),
-                  
-                  // Danger Zone
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
-                      borderRadius: BorderRadius.circular(8),
-                      color: Colors.red.withValues(alpha: 0.1),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: ExpansionTile(
+                      leading: const Icon(Icons.cleaning_services),
+                      title: const Text('IGC File Cleanup'),
+                      subtitle: _cleanupStats != null 
+                        ? Text('${_cleanupStats!.totalIgcFiles} total • ${_cleanupStats!.orphanedFiles} orphaned')
+                        : const Text('Analyzing files...'),
+                      initiallyExpanded: _cleanupExpanded,
+                      onExpansionChanged: (expanded) {
+                        setState(() {
+                          _cleanupExpanded = expanded;
+                        });
+                      },
                       children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.warning, color: Colors.red),
-                            SizedBox(width: 8),
-                            Text(
-                              'Danger Zone',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.red,
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (_cleanupStats != null) ...[
+                                _buildStatRow('Total IGC Files', '${_cleanupStats!.totalIgcFiles}'),
+                                _buildStatRow('Referenced by Flights', '${_cleanupStats!.referencedFiles}'),
+                                _buildStatRow('Orphaned Files', '${_cleanupStats!.orphanedFiles}'),
+                                if (_cleanupStats!.orphanedFiles > 0) ...[
+                                  _buildStatRow('Total Size', _cleanupStats!.formattedTotalSize),
+                                  _buildStatRow('Orphaned Size', _cleanupStats!.formattedOrphanedSize),
+                                  _buildStatRow('Orphaned %', '${_cleanupStats!.orphanedPercentage.toStringAsFixed(1)}%'),
+                                ],
+                              ] else ...[
+                                const Text('Analyzing IGC files...'),
+                                const SizedBox(height: 8),
+                                const LinearProgressIndicator(),
+                              ],
+                              const SizedBox(height: 16),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      onPressed: _analyzeIGCFiles,
+                                      icon: const Icon(Icons.refresh),
+                                      label: const Text('Refresh Analysis'),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: Colors.blue,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      onPressed: (_cleanupStats?.orphanedFiles ?? 0) > 0 ? _cleanupOrphanedFiles : null,
+                                      icon: const Icon(Icons.cleaning_services),
+                                      label: const Text('Clean Orphaned'),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: Colors.orange,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'The following action will permanently delete all data and cannot be undone.',
-                          style: TextStyle(color: Colors.red),
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            onPressed: (_dbStats?['total_records'] ?? 0) > 0 ? _resetDatabase : null,
-                            icon: const Icon(Icons.delete_forever),
-                            label: const Text('Reset Database'),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: Colors.red,
-                            ),
+                            ],
                           ),
                         ),
                       ],
@@ -744,31 +662,170 @@ class _DatabaseSettingsScreenState extends State<DatabaseSettingsScreen> {
                   
                   const SizedBox(height: 24),
                   
-                  // Help Text
+                  // PGE API Test
                   Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'About Database Reset',
-                            style: TextStyle(fontWeight: FontWeight.bold),
+                    child: ExpansionTile(
+                      leading: const Icon(Icons.cloud_sync),
+                      title: const Text('ParaglidingEarth API'),
+                      subtitle: const Text('Test external API connectivity'),
+                      initiallyExpanded: _apiTestExpanded,
+                      onExpansionChanged: (expanded) {
+                        setState(() {
+                          _apiTestExpanded = expanded;
+                        });
+                      },
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Test the connection to ParaglidingEarth.com API for site data synchronization.',
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                              const SizedBox(height: 16),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: _testApiConnection,
+                                  icon: const Icon(Icons.cloud_sync),
+                                  label: const Text('Test API Connection'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.green,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Database reset completely removes all data and recreates the database with the latest schema. '
-                            'This is useful for:\n\n'
-                            '• Starting fresh with no data\n'
-                            '• Fixing database corruption issues\n'
-                            '• Development and testing\n\n'
-                            'The database will be recreated with the current version (${_dbStats?['version'] ?? 'Unknown'}) schema.',
-                            style: Theme.of(context).textTheme.bodyMedium,
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
+                  
+                  const SizedBox(height: 24),
+                  
+                  // Database Management
+                  Card(
+                    child: ExpansionTile(
+                      leading: const Icon(Icons.storage),
+                      title: const Text('Database Management'),
+                      subtitle: _dbStats != null 
+                        ? Text('${_dbStats!['flights'] ?? 0} flights • ${_dbStats!['sites'] ?? 0} sites • ${_dbStats!['wings'] ?? 0} wings')
+                        : const Text('Loading...'),
+                      initiallyExpanded: _dbStatsExpanded,
+                      onExpansionChanged: (expanded) {
+                        setState(() {
+                          _dbStatsExpanded = expanded;
+                        });
+                      },
+                      children: [
+                        if (_dbStats != null) 
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildStatRow('Version', '${_dbStats!['version'] ?? 'Unknown'}'),
+                                _buildStatRow('Flights', '${_dbStats!['flights'] ?? 0}'),
+                                _buildStatRow('Sites', '${_dbStats!['sites'] ?? 0}'),
+                                _buildStatRow('Wings', '${_dbStats!['wings'] ?? 0}'),
+                                _buildStatRow('Total Records', '${_dbStats!['total_records'] ?? 0}'),
+                                _buildStatRow('Database Size', '${_dbStats!['size_kb'] ?? '0'}KB'),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Path: ${_dbStats!['path'] ?? 'Unknown'}',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                                
+                                const SizedBox(height: 24),
+                                
+                                // Danger Zone
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                                    borderRadius: BorderRadius.circular(8),
+                                    color: Colors.red.withValues(alpha: 0.1),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Row(
+                                        children: [
+                                          Icon(Icons.warning, color: Colors.red),
+                                          SizedBox(width: 8),
+                                          Text(
+                                            'Danger Zone',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.red,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 12),
+                                      const Text(
+                                        'The following action will permanently delete all flights, sites, and wings. This action cannot be undone.',
+                                        style: TextStyle(color: Colors.red),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: FilledButton.icon(
+                                          onPressed: (_dbStats?['total_records'] ?? 0) > 0 ? _resetDatabase : null,
+                                          icon: const Icon(Icons.delete_forever),
+                                          label: const Text('Reset Database'),
+                                          style: FilledButton.styleFrom(
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                
+                                const SizedBox(height: 24),
+                                
+                                // About Database Reset
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+                                    borderRadius: BorderRadius.circular(8),
+                                    color: Colors.grey.withValues(alpha: 0.1),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'About Database Reset',
+                                        style: TextStyle(fontWeight: FontWeight.bold),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Database reset completely removes all data and recreates the database with the latest schema. '
+                                        'This is useful for:\n\n'
+                                        '• Starting fresh with no data\n'
+                                        '• Fixing database corruption issues\n'
+                                        '• Development and testing\n\n'
+                                        'The database will be recreated with the current version (${_dbStats?['version'] ?? 'Unknown'}) schema.',
+                                        style: const TextStyle(color: Colors.grey),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 24),
                 ],
               ),
             ),
