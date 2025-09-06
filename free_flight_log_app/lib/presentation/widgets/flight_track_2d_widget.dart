@@ -321,13 +321,13 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         return;
       }
 
-      // Get FAI triangle points (optimized to use stored data first)
+      // Get triangle points (optimized to use stored data first)
       List<IgcPoint> faiTrianglePoints = [];
       
       // Try to use pre-calculated triangle points from database (fast!)
       final storedTrianglePoints = widget.flight.getParsedTrianglePoints();
       if (storedTrianglePoints != null && storedTrianglePoints.length == 3) {
-        LoggingService.ui('FlightTrack2D', 'Using stored FAI triangle points (fast)');
+        LoggingService.ui('FlightTrack2D', 'Using stored triangle points (fast)');
         // Convert stored coordinate maps to IgcPoint objects
         faiTrianglePoints = storedTrianglePoints.map((point) => IgcPoint(
           latitude: point['lat']!,
@@ -350,7 +350,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
             faiTrianglePoints = trianglePoints.cast<IgcPoint>();
           }
         } catch (e) {
-          LoggingService.ui('FlightTrack2D', 'Failed to calculate FAI triangle: $e');
+          LoggingService.ui('FlightTrack2D', 'Failed to calculate triangle: $e');
         }
       }
 
@@ -360,7 +360,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         _isLoading = false;
       });
       
-      LoggingService.info('FlightTrack2DWidget: Loaded ${_trackPoints.length} track points, FAI triangle: ${_faiTrianglePoints.length} points');
+      LoggingService.info('FlightTrack2DWidget: Loaded ${_trackPoints.length} track points, triangle: ${_faiTrianglePoints.length} points');
     } catch (e) {
       LoggingService.error('FlightTrack2DWidget: Error loading track data', e);
       setState(() {
