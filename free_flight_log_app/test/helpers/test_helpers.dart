@@ -3,9 +3,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:free_flight_log_app/data/models/flight.dart';
 import 'package:free_flight_log_app/data/models/site.dart';
 import 'package:free_flight_log_app/data/models/wing.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 /// Test helper utilities for widget testing
 class TestHelpers {
+  
+  /// Initialize database factory for testing
+  static void initializeDatabaseForTesting() {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
   
   /// Create a test app wrapper
   static Widget createTestApp({
