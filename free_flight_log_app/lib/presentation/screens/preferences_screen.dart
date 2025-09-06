@@ -20,10 +20,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   double? _cesiumQuality;
   
   
-  // Cesium Ion Token preferences
-  String? _cesiumUserToken;
-  bool? _cesiumTokenValidated;
-  
   
   bool _isLoading = true;
   bool _isSaving = false;
@@ -45,11 +41,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       final trailDuration = await PreferencesHelper.getCesiumTrailDuration();
       final quality = await PreferencesHelper.getCesiumQuality();
       
-      
-      // Load Cesium Ion Token preferences
-      final userToken = await PreferencesHelper.getCesiumUserToken();
-      final tokenValidated = await PreferencesHelper.getCesiumTokenValidated();
-
       if (mounted) {
         setState(() {
           _cesiumSceneMode = sceneMode;
@@ -59,9 +50,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           _cesiumFlyThroughMode = flyThroughMode ?? false;
           _cesiumTrailDuration = trailDuration;
           _cesiumQuality = quality;
-          
-          _cesiumUserToken = userToken;
-          _cesiumTokenValidated = tokenValidated ?? false;
           
           _isLoading = false;
         });
@@ -224,67 +212,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     );
   }
 
-  void _showTokenDialog() {
-    final controller = TextEditingController(text: _cesiumUserToken ?? '');
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Cesium Ion Access Token'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Enter your Cesium Ion access token for premium imagery and terrain:'),
-              const SizedBox(height: 16),
-              TextField(
-                controller: controller,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  hintText: 'Enter token...',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final token = controller.text.trim();
-                if (token.isEmpty) {
-                  _removeToken();
-                } else {
-                  setState(() {
-                    _cesiumUserToken = token;
-                  });
-                  _savePreference('Cesium token', token, PreferencesHelper.setCesiumUserToken);
-                }
-                Navigator.of(context).pop();
-              },
-              child: const Text('Save'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _removeToken() {
-    setState(() {
-      _cesiumUserToken = null;
-      _cesiumTokenValidated = false;
-    });
-    PreferencesHelper.removeCesiumUserToken();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Cesium Ion token removed'),
-        duration: Duration(seconds: 1),
-      ),
-    );
-  }
 
 
   @override
@@ -395,42 +322,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 ),
               ]),
 
-              // Premium Maps Settings
-              _buildSection('Premium Maps', [
-                ListTile(
-                  title: const Text('Token Status'),
-                  subtitle: Text(
-                    _cesiumTokenValidated == true
-                        ? 'Valid premium token configured'
-                        : 'No token or invalid token',
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        _cesiumTokenValidated == true ? Icons.check_circle : Icons.error,
-                        color: _cesiumTokenValidated == true ? Colors.green : Colors.red,
-                      ),
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: () => _showTokenDialog(),
-                        child: Text(_cesiumUserToken != null ? 'Update Token' : 'Add Token'),
-                      ),
-                    ],
-                  ),
-                  contentPadding: EdgeInsets.zero,
-                ),
-                if (_cesiumUserToken != null && _cesiumUserToken!.isNotEmpty)
-                  ListTile(
-                    title: const Text('Remove Token'),
-                    subtitle: const Text('Clear stored Cesium Ion token'),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete),
-                      onPressed: () => _removeToken(),
-                    ),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-              ], collapsed: true),
 
             ],
           ),

@@ -381,6 +381,191 @@ class IgcImportService {
     );
   }
 
+  /// Import an IGC file without copying it (for database recreation from existing files)
+  /// This method reuses existing IGC files and doesn't create duplicates
+  Future<Flight> importIgcFileWithoutCopy(String filePath) async {
+    // Parse IGC file
+    final igcData = await parser.parseFile(filePath);
+    
+    if (igcData.trackPoints.isEmpty) {
+      throw Exception('No track points found in IGC file');
+    }
+    
+    // Create flight record using existing file path (no copying)
+    final flight = await _createFlightFromIgcDataNoCopy(igcData, filePath);
+    
+    // Save to database
+    final savedFlightId = await _databaseService.insertFlight(flight);
+    
+    // Return the flight with the new ID
+    return Flight(
+      id: savedFlightId,
+      date: flight.date,
+      launchTime: flight.launchTime,
+      landingTime: flight.landingTime,
+      duration: flight.duration,
+      launchSiteId: flight.launchSiteId,
+      launchLatitude: flight.launchLatitude,
+      launchLongitude: flight.launchLongitude,
+      launchAltitude: flight.launchAltitude,
+      landingLatitude: flight.landingLatitude,
+      landingLongitude: flight.landingLongitude,
+      landingAltitude: flight.landingAltitude,
+      landingDescription: flight.landingDescription,
+      wingId: flight.wingId,
+      maxAltitude: flight.maxAltitude,
+      maxClimbRate: flight.maxClimbRate,
+      maxSinkRate: flight.maxSinkRate,
+      maxClimbRate5Sec: flight.maxClimbRate5Sec,
+      maxSinkRate5Sec: flight.maxSinkRate5Sec,
+      distance: flight.distance,
+      straightDistance: flight.straightDistance,
+      notes: flight.notes,
+      trackLogPath: flight.trackLogPath,
+      originalFilename: flight.originalFilename,
+      source: flight.source,
+      timezone: flight.timezone,
+      maxGroundSpeed: flight.maxGroundSpeed,
+      avgGroundSpeed: flight.avgGroundSpeed,
+      thermalCount: flight.thermalCount,
+      avgThermalStrength: flight.avgThermalStrength,
+      totalTimeInThermals: flight.totalTimeInThermals,
+      bestThermal: flight.bestThermal,
+      bestLD: flight.bestLD,
+      avgLD: flight.avgLD,
+      longestGlide: flight.longestGlide,
+      climbPercentage: flight.climbPercentage,
+      gpsFixQuality: flight.gpsFixQuality,
+      recordingInterval: flight.recordingInterval,
+    );
+  }
+
+  /// Create a flight record from IGC data without copying the file (for database recreation)
+  Future<Flight> _createFlightFromIgcDataNoCopy(IgcFile igcData, String filePath) async {
+    // Calculate flight statistics
+    final groundTrackDistance = igcData.calculateGroundTrackDistance();
+    final straightDistance = igcData.calculateLaunchToLandingDistance();
+    final climbRates = igcData.calculateClimbRates();
+    final climbRates5Sec = igcData.calculate5SecondMaxClimbRates();
+    
+    // Calculate new comprehensive statistics
+    final speedStats = igcData.calculateSpeedStatistics();
+    final thermalStats = igcData.analyzeThermals();
+    final glideStats = igcData.calculateGlidePerformance();
+    final gpsStats = igcData.calculateGpsQuality();
+    
+    // Get or create launch site with paragliding site matching
+    Site? launchSite;
+    if (igcData.launchSite != null) {
+      final launchPoint = igcData.launchSite!;
+      
+      // Try to match with a paragliding site to get name and location info
+      final siteMatchingService = SiteMatchingService.instance;
+      if (!siteMatchingService.isReady) {
+        await siteMatchingService.initialize();
+      }
+      
+      final matchedSite = await siteMatchingService.findNearestSite(
+        launchPoint.latitude,
+        launchPoint.longitude,
+        maxDistance: 500, // 500m for launch sites
+        preferredType: 'launch',
+      );
+      
+      String siteName;
+      String? country;
+      double siteLatitude;
+      double siteLongitude;
+      double siteAltitude;
+      
+      if (matchedSite != null) {
+        // Use ParaglidingEarth coordinates for the site
+        siteName = matchedSite.name;
+        country = matchedSite.country;
+        siteLatitude = matchedSite.latitude;
+        siteLongitude = matchedSite.longitude;
+        siteAltitude = matchedSite.altitude?.toDouble() ?? launchPoint.gpsAltitude.toDouble();
+        
+        LoggingService.info('IgcImportService: API found site "$siteName" at ${siteLatitude.toStringAsFixed(4)}, ${siteLongitude.toStringAsFixed(4)}');
+      } else {
+        // No ParaglidingEarth match - use GPS coordinates
+        siteName = 'Unknown';
+        country = null;
+        siteLatitude = launchPoint.latitude;
+        siteLongitude = launchPoint.longitude;
+        siteAltitude = launchPoint.gpsAltitude.toDouble();
+        LoggingService.info('IgcImportService: No API site found for GPS launch at ${launchPoint.latitude.toStringAsFixed(4)}, ${launchPoint.longitude.toStringAsFixed(4)}');
+      }
+      
+      launchSite = await _databaseService.findOrCreateSite(
+        latitude: siteLatitude,
+        longitude: siteLongitude,
+        altitude: siteAltitude,
+        name: siteName,
+        country: country,
+      );
+    }
+
+    // Get or create wing from glider information
+    Wing? wing;
+    if (igcData.gliderType.isNotEmpty || igcData.gliderID.isNotEmpty) {
+      wing = await _findOrCreateWing(
+        gliderType: igcData.gliderType,
+        gliderID: igcData.gliderID,
+      );
+    }
+
+    // Use existing file path directly (no copying)
+    final trackLogPath = filePath;
+    
+    // Get original filename
+    final originalFilename = path.basename(filePath);
+    
+    // Create flight record
+    return Flight(
+      date: igcData.date,
+      launchTime: _formatTime(igcData.launchTime),
+      landingTime: _formatTime(igcData.landingTime),
+      duration: igcData.duration,
+      launchSiteId: launchSite?.id,
+      launchLatitude: igcData.launchSite?.latitude,
+      launchLongitude: igcData.launchSite?.longitude,
+      launchAltitude: igcData.launchSite?.gpsAltitude.toDouble(),
+      landingLatitude: igcData.landingSite?.latitude,
+      landingLongitude: igcData.landingSite?.longitude,
+      landingAltitude: igcData.landingSite?.gpsAltitude.toDouble(),
+      landingDescription: igcData.landingSite != null ? 
+        'GPS: ${igcData.landingSite!.latitude.toStringAsFixed(4)}, ${igcData.landingSite!.longitude.toStringAsFixed(4)}' : null,
+      wingId: wing?.id,
+      maxAltitude: igcData.maxAltitude.toDouble(),
+      maxClimbRate: climbRates['maxClimb'],
+      maxSinkRate: climbRates['maxSink'],
+      maxClimbRate5Sec: climbRates5Sec['maxClimb5Sec'],
+      maxSinkRate5Sec: climbRates5Sec['maxSink5Sec'],
+      distance: groundTrackDistance,
+      straightDistance: straightDistance,
+      notes: _buildNotesFromIgcData(igcData, originalFilename),
+      trackLogPath: trackLogPath,
+      originalFilename: originalFilename,
+      source: 'igc',
+      timezone: igcData.timezone,
+      
+      // New comprehensive statistics
+      maxGroundSpeed: speedStats['maxGroundSpeed'],
+      avgGroundSpeed: speedStats['avgGroundSpeed'],
+      thermalCount: thermalStats['thermalCount'] as int,
+      avgThermalStrength: thermalStats['avgThermalStrength'] as double,
+      totalTimeInThermals: (thermalStats['totalTimeInThermals'] as double).round(),
+      bestThermal: thermalStats['bestThermal'] as double,
+      bestLD: glideStats['bestLD'],
+      avgLD: glideStats['avgLD'],
+      longestGlide: glideStats['longestGlide'],
+      climbPercentage: glideStats['climbPercentage'],
+      gpsFixQuality: gpsStats['gpsFixQuality'],
+      recordingInterval: gpsStats['recordingInterval'],
+    );
+  }
+
   /// Save IGC file to app storage
   Future<String> _saveIgcFile(String sourcePath) async {
     final appDir = await getApplicationDocumentsDirectory();

@@ -1,7 +1,9 @@
 import 'dart:io';
 import 'package:sqflite/sqflite.dart';
+import 'package:path_provider/path_provider.dart';
 import '../data/datasources/database_helper.dart';
 import '../services/logging_service.dart';
+import '../services/igc_import_service.dart';
 
 /// Helper class for resetting/clearing database data
 /// Can be called from within the Flutter app
@@ -70,6 +72,146 @@ class DatabaseResetHelper {
         'message': 'Error resetting database: $e',
       };
     }
+  }
+
+  /// Recreate database from existing IGC files
+  /// This will reset the database and reimport all IGC files found on device
+  static Future<Map<String, dynamic>> recreateDatabaseFromIGCFiles({
+    Function(String, int, int)? onProgress,
+  }) async {
+    try {
+      LoggingService.info('DatabaseResetHelper: Recreating database from IGC files...');
+      
+      // First, find all IGC files before we reset the database
+      final igcFiles = await _findAllIGCFiles();
+      final totalFiles = igcFiles.length;
+      
+      LoggingService.info('DatabaseResetHelper: Found $totalFiles IGC files to process');
+      
+      if (totalFiles == 0) {
+        return {
+          'success': false,
+          'message': 'No IGC files found to recreate database from',
+          'found': 0,
+          'imported': 0,
+          'failed': 0,
+          'errors': <String>[],
+        };
+      }
+      
+      // Reset the database first
+      final resetResult = await resetDatabase();
+      if (!resetResult['success']) {
+        return {
+          'success': false,
+          'message': 'Failed to reset database: ${resetResult['message']}',
+          'found': totalFiles,
+          'imported': 0,
+          'failed': 0,
+          'errors': [resetResult['message']],
+        };
+      }
+      
+      LoggingService.info('DatabaseResetHelper: Database reset complete, now importing IGC files...');
+      
+      // Import each IGC file
+      final importService = IgcImportService.instance;
+      int imported = 0;
+      int failed = 0;
+      final errors = <String>[];
+      
+      for (int i = 0; i < igcFiles.length; i++) {
+        final file = igcFiles[i];
+        final filename = file.path.split('/').last;
+        
+        // Call progress callback if provided
+        onProgress?.call(filename, i + 1, totalFiles);
+        
+        try {
+          LoggingService.debug('DatabaseResetHelper: Importing ${i + 1}/$totalFiles: $filename');
+          
+          await importService.importIgcFileWithoutCopy(file.path);
+          imported++;
+          
+          LoggingService.debug('DatabaseResetHelper: Successfully imported $filename');
+          
+        } catch (e) {
+          failed++;
+          final errorMsg = '$filename: $e';
+          errors.add(errorMsg);
+          LoggingService.warning('DatabaseResetHelper: Failed to import $filename: $e');
+        }
+      }
+      
+      LoggingService.info('DatabaseResetHelper: Import complete - $imported successful, $failed failed');
+      
+      return {
+        'success': true,
+        'message': 'Database recreated successfully! Imported $imported flights from $totalFiles IGC files' + 
+                  (failed > 0 ? '. $failed files failed to import.' : '.'),
+        'found': totalFiles,
+        'imported': imported,
+        'failed': failed,
+        'errors': errors,
+      };
+      
+    } catch (e) {
+      LoggingService.error('DatabaseResetHelper: Error recreating database from IGC files', e);
+      return {
+        'success': false,
+        'message': 'Error recreating database from IGC files: $e',
+        'found': 0,
+        'imported': 0,
+        'failed': 0,
+        'errors': [e.toString()],
+      };
+    }
+  }
+
+  /// Find all IGC files in app directories
+  static Future<List<File>> _findAllIGCFiles() async {
+    final List<File> igcFiles = [];
+    
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      
+      // IGC file locations used by this app
+      final igcDirectories = [
+        'igc_tracks',        // Primary location
+        'igc_files',         // Legacy location
+        'imported_igc',      // Alternative location
+        'flight_tracks',     // Alternative location
+      ];
+      
+      // Check root documents directory
+      final rootFiles = await appDir
+          .list()
+          .where((entity) => entity is File && 
+                 entity.path.toLowerCase().endsWith('.igc'))
+          .cast<File>()
+          .toList();
+      igcFiles.addAll(rootFiles);
+      
+      // Check subdirectories
+      for (final dirName in igcDirectories) {
+        final dir = Directory('${appDir.path}/$dirName');
+        
+        if (await dir.exists()) {
+          final files = await dir
+              .list()
+              .where((entity) => entity is File && 
+                     entity.path.toLowerCase().endsWith('.igc'))
+              .cast<File>()
+              .toList();
+          igcFiles.addAll(files);
+        }
+      }
+      
+    } catch (e) {
+      LoggingService.error('DatabaseResetHelper: Error finding IGC files', e);
+    }
+    
+    return igcFiles;
   }
   
   /// Clear all flight data (keep sites and wings)
@@ -249,6 +391,123 @@ class DatabaseResetHelper {
     } catch (e) {
       LoggingService.error('DatabaseResetHelper: Error initializing database', e);
       rethrow;
+    }
+  }
+
+  /// Delete all flight data including database records AND all IGC files
+  /// This is a complete data wipe - removes everything flight-related
+  static Future<Map<String, dynamic>> deleteAllFlightData() async {
+    try {
+      LoggingService.info('DatabaseResetHelper: Starting complete flight data deletion...');
+      
+      // First, find all IGC files before we reset the database
+      final igcFiles = await _findAllIGCFiles();
+      final totalIGCFiles = igcFiles.length;
+      
+      LoggingService.info('DatabaseResetHelper: Found $totalIGCFiles IGC files to delete');
+      
+      // Get current database stats before deletion
+      final db = await _databaseHelper.database;
+      final flightCount = await _getTableCount('flights');
+      final siteCount = await _getTableCount('sites');
+      final wingCount = await _getTableCount('wings');
+      
+      // Calculate total IGC file size
+      int totalIGCSize = 0;
+      for (final file in igcFiles) {
+        try {
+          if (await file.exists()) {
+            totalIGCSize += await file.length();
+          }
+        } catch (e) {
+          LoggingService.warning('DatabaseResetHelper: Error checking IGC file size: ${file.path}', e);
+        }
+      }
+      
+      LoggingService.info('DatabaseResetHelper: Total IGC file size: ${(totalIGCSize / 1024).toStringAsFixed(1)}KB');
+      
+      // Reset the database first
+      final resetResult = await resetDatabase();
+      if (!resetResult['success']) {
+        return {
+          'success': false,
+          'message': 'Failed to reset database: ${resetResult['message']}',
+          'database': resetResult,
+          'igc_files': {
+            'found': totalIGCFiles,
+            'deleted': 0,
+            'failed': 0,
+            'size_deleted_bytes': 0,
+          },
+        };
+      }
+      
+      LoggingService.info('DatabaseResetHelper: Database reset complete, now deleting IGC files...');
+      
+      // Delete all IGC files
+      int deletedIGCFiles = 0;
+      int failedIGCFiles = 0;
+      int deletedIGCSize = 0;
+      final igcErrors = <String>[];
+      
+      for (final file in igcFiles) {
+        try {
+          if (await file.exists()) {
+            final fileSize = await file.length();
+            await file.delete();
+            deletedIGCFiles++;
+            deletedIGCSize += fileSize;
+            LoggingService.debug('DatabaseResetHelper: Deleted IGC file: ${file.path}');
+          }
+        } catch (e) {
+          failedIGCFiles++;
+          final errorMsg = 'Failed to delete ${file.path}: $e';
+          igcErrors.add(errorMsg);
+          LoggingService.warning('DatabaseResetHelper: $errorMsg');
+        }
+      }
+      
+      LoggingService.info('DatabaseResetHelper: IGC file deletion complete - $deletedIGCFiles deleted, $failedIGCFiles failed');
+      LoggingService.info('DatabaseResetHelper: Total space freed: ${(deletedIGCSize / 1024).toStringAsFixed(1)}KB');
+      
+      final String message;
+      if (failedIGCFiles == 0) {
+        message = 'All flight data deleted successfully!\n\n'
+                 'Database: $flightCount flights, $siteCount sites, $wingCount wings\n'
+                 'IGC Files: $deletedIGCFiles files (${(deletedIGCSize / 1024).toStringAsFixed(1)}KB)';
+      } else {
+        message = 'Flight data deletion completed with warnings!\n\n'
+                 'Database: $flightCount flights, $siteCount sites, $wingCount wings deleted\n'
+                 'IGC Files: $deletedIGCFiles deleted, $failedIGCFiles failed to delete';
+      }
+      
+      return {
+        'success': true,
+        'message': message,
+        'database': resetResult,
+        'igc_files': {
+          'found': totalIGCFiles,
+          'deleted': deletedIGCFiles,
+          'failed': failedIGCFiles,
+          'size_deleted_bytes': deletedIGCSize,
+          'size_deleted_kb': (deletedIGCSize / 1024).toStringAsFixed(1),
+          'errors': igcErrors,
+        },
+      };
+      
+    } catch (e) {
+      LoggingService.error('DatabaseResetHelper: Error deleting all flight data', e);
+      return {
+        'success': false,
+        'message': 'Error deleting all flight data: $e',
+        'database': {'success': false},
+        'igc_files': {
+          'found': 0,
+          'deleted': 0,
+          'failed': 0,
+          'size_deleted_bytes': 0,
+        },
+      };
     }
   }
 
