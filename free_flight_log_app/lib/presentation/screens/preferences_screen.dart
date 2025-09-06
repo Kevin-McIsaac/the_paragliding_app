@@ -77,8 +77,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   }
 
   bool _isValidTrailDuration(int? value) {
-    const validDurations = [60, 120, 180, 240, 300];
-    return value != null && validDurations.contains(value);
+    return value != null && PreferencesHelper.validCesiumTrailDurations.contains(value);
   }
 
   Future<void> _savePreference<T>(

@@ -14,6 +14,7 @@ class PreferencesHelper {
   
   // Default values
   static const int defaultCesiumTrailDuration = 180; // 3 minutes in seconds
+  static const List<int> validCesiumTrailDurations = [60, 120, 180, 240, 300]; // 1-5 minutes in seconds
   
   // Cesium Ion Token preferences (for premium maps)
   static const String cesiumUserTokenKey = 'cesium_user_token';
