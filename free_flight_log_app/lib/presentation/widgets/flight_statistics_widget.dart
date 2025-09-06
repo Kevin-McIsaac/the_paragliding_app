@@ -62,13 +62,13 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
               ),
               Expanded(
                 child: _buildStatItem(
-                  'FAI Triangle',
+                  'Triangle',
                   widget.flight.faiTriangleDistance != null 
                       ? '${widget.flight.faiTriangleDistance!.toStringAsFixed(1)} km'
                       : 'N/A',
                   Icons.change_history,
                   context,
-                  tooltip: 'FAI triangle distance using maximum area approximation',
+                  tooltip: 'A quick approximation and does not check for triangle closing or minimum side lengths',
                 ),
               ),
               Expanded(

@@ -1,4 +1,9 @@
+import 'dart:convert';
+import '../../services/logging_service.dart';
+
 class Flight {
+  // Constants
+  static const int expectedTrianglePoints = 3;
   final int? id;
   final DateTime date;
   final String launchTime;
@@ -21,6 +26,7 @@ class Flight {
   final double? distance;
   final double? straightDistance;
   final double? faiTriangleDistance;
+  final String? faiTrianglePoints; // JSON string storing triangle points
   final int? wingId;
   final String? notes;
   final String? trackLogPath;
@@ -67,6 +73,7 @@ class Flight {
     this.distance,
     this.straightDistance,
     this.faiTriangleDistance,
+    this.faiTrianglePoints,
     this.wingId,
     this.notes,
     this.trackLogPath,
@@ -113,6 +120,7 @@ class Flight {
       'distance': distance,
       'straight_distance': straightDistance,
       'fai_triangle_distance': faiTriangleDistance,
+      'fai_triangle_points': faiTrianglePoints,
       'wing_id': wingId,
       'notes': notes,
       'track_log_path': trackLogPath,
@@ -160,6 +168,7 @@ class Flight {
       distance: map['distance']?.toDouble(),
       straightDistance: map['straight_distance']?.toDouble(),
       faiTriangleDistance: map['fai_triangle_distance']?.toDouble(),
+      faiTrianglePoints: map['fai_triangle_points'],
       wingId: map['wing_id'],
       notes: map['notes'],
       trackLogPath: map['track_log_path'],
@@ -206,6 +215,7 @@ class Flight {
     double? distance,
     double? straightDistance,
     double? faiTriangleDistance,
+    String? faiTrianglePoints,
     int? wingId,
     String? notes,
     String? trackLogPath,
@@ -249,6 +259,7 @@ class Flight {
       distance: distance ?? this.distance,
       straightDistance: straightDistance ?? this.straightDistance,
       faiTriangleDistance: faiTriangleDistance ?? this.faiTriangleDistance,
+      faiTrianglePoints: faiTrianglePoints ?? this.faiTrianglePoints,
       wingId: wingId ?? this.wingId,
       notes: notes ?? this.notes,
       trackLogPath: trackLogPath ?? this.trackLogPath,
@@ -269,5 +280,117 @@ class Flight {
       gpsFixQuality: gpsFixQuality ?? this.gpsFixQuality,
       recordingInterval: recordingInterval ?? this.recordingInterval,
     );
+  }
+  
+  /// Parse the JSON-stored FAI triangle points into a list of coordinate maps
+  /// Returns null if no triangle points are stored or if parsing fails
+  List<Map<String, double>>? getParsedTrianglePoints() {
+    if (faiTrianglePoints == null || faiTrianglePoints!.isEmpty) {
+      return null;
+    }
+    
+    try {
+      final List<dynamic> decoded = jsonDecode(faiTrianglePoints!);
+      
+      // Validate JSON structure
+      if (!_isValidTrianglePointsStructure(decoded)) {
+        LoggingService.warning('Flight.getParsedTrianglePoints: Invalid triangle points structure for flight $id');
+        return null;
+      }
+      
+      final points = decoded.cast<Map<String, dynamic>>().map((point) {
+        return {
+          'lat': (point['lat'] as num).toDouble(),
+          'lng': (point['lng'] as num).toDouble(),
+          'alt': (point['alt'] as num).toDouble(),
+        };
+      }).toList();
+      
+      // Validate that we have exactly 3 distinct points
+      if (!_isValidTriangle(points)) {
+        LoggingService.warning('Flight.getParsedTrianglePoints: Invalid triangle geometry for flight $id');
+        return null;
+      }
+      
+      return points;
+    } catch (e) {
+      LoggingService.warning('Flight.getParsedTrianglePoints: Failed to parse triangle points JSON for flight $id', e);
+      return null;
+    }
+  }
+
+  /// Validates that the decoded JSON structure is correct for triangle points
+  bool _isValidTrianglePointsStructure(List<dynamic> points) {
+    if (points.length != expectedTrianglePoints) {
+      return false;
+    }
+    
+    for (final point in points) {
+      if (point is! Map<String, dynamic>) {
+        return false;
+      }
+      
+      // Check required fields exist and are numeric
+      if (!point.containsKey('lat') || !point.containsKey('lng') || !point.containsKey('alt')) {
+        return false;
+      }
+      
+      if (point['lat'] is! num || point['lng'] is! num || point['alt'] is! num) {
+        return false;
+      }
+      
+      // Basic coordinate validation
+      final lat = point['lat'] as num;
+      final lng = point['lng'] as num;
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        return false;
+      }
+    }
+    
+    return true;
+  }
+
+  /// Validates that the three points form a valid triangle (distinct points)
+  bool _isValidTriangle(List<Map<String, double>> points) {
+    if (points.length != expectedTrianglePoints) {
+      return false;
+    }
+    
+    // Check that all points are distinct (no two points are the same)
+    for (int i = 0; i < points.length; i++) {
+      for (int j = i + 1; j < points.length; j++) {
+        final p1 = points[i];
+        final p2 = points[j];
+        
+        // Consider points the same if they're within ~1 meter (very small lat/lng difference)
+        const double tolerance = 0.00001; // approximately 1 meter
+        if ((p1['lat']! - p2['lat']!).abs() < tolerance && 
+            (p1['lng']! - p2['lng']!).abs() < tolerance) {
+          return false;
+        }
+      }
+    }
+    
+    return true;
+  }
+
+  /// Helper method to encode triangle points to JSON
+  static String? encodeTrianglePointsToJson(List<dynamic> trianglePoints) {
+    if (trianglePoints.length != expectedTrianglePoints) {
+      return null;
+    }
+    
+    try {
+      return jsonEncode(
+        trianglePoints.map((point) => {
+          'lat': point.latitude,
+          'lng': point.longitude,
+          'alt': point.gpsAltitude,
+        }).toList()
+      );
+    } catch (e) {
+      LoggingService.error('Flight.encodeTrianglePointsToJson: Failed to encode triangle points', e);
+      return null;
+    }
   }
 }

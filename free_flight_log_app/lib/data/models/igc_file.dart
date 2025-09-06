@@ -578,7 +578,7 @@ class IgcFile {
     };
   }
 
-  /// Calculate FAI triangle using maximum area approach
+  /// Calculate triangle using maximum area approach
   /// Returns a map with triangle points and total distance
   Map<String, dynamic> calculateFaiTriangle() {
     if (trackPoints.length < 3) {
@@ -617,7 +617,7 @@ class IgcFile {
       };
     }
 
-    // Calculate triangle perimeter (FAI distance)
+    // Calculate triangle perimeter
     final distance1 = _haversineDistance(bestTriangle[0], bestTriangle[1]);
     final distance2 = _haversineDistance(bestTriangle[1], bestTriangle[2]);
     final distance3 = _haversineDistance(bestTriangle[2], bestTriangle[0]);
