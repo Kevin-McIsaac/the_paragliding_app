@@ -3,15 +3,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:free_flight_log_app/data/models/flight.dart';
 import 'package:free_flight_log_app/data/models/site.dart';
 import 'package:free_flight_log_app/data/models/wing.dart';
+import 'package:free_flight_log_app/services/database_service.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 /// Test helper utilities for widget testing
 class TestHelpers {
   
-  /// Initialize database factory for testing
-  static void initializeDatabaseForTesting() {
+  /// Initialize database factory for testing and return DatabaseService instance
+  static Future<DatabaseService> initializeDatabaseForTesting() async {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
+    return DatabaseService.instance;
   }
   
   /// Create a test app wrapper

@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:free_flight_log/services/database_service.dart';
-import 'package:free_flight_log/data/models/flight.dart';
-import 'package:free_flight_log/data/models/site.dart';
-import 'package:free_flight_log/data/models/wing.dart';
+import 'package:free_flight_log_app/services/database_service.dart';
+import 'package:free_flight_log_app/data/models/flight.dart';
+import 'package:free_flight_log_app/data/models/site.dart';
+import 'package:free_flight_log_app/data/models/wing.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'helpers/test_helpers.dart';
 
@@ -43,14 +43,14 @@ void main() {
 
       final flight = Flight(
         id: 1,
-        date: '2023-07-15',
+        date: DateTime.parse('2023-07-15'),
         launchSiteId: 1,
         wingId: 1,
         launchTime: '14:30',
         landingTime: '16:15',
         duration: 105,
         maxAltitude: 2500,
-        igcFileName: 'test_flight.igc',
+        originalFilename: 'test_flight.igc',
       );
 
       // Act
@@ -75,14 +75,14 @@ void main() {
 
       final originalFlight = Flight(
         id: 1,
-        date: '2023-07-15',
+        date: DateTime.parse('2023-07-15'),
         launchSiteId: 1,
         wingId: 1,
         launchTime: '14:30',
         landingTime: '16:15',
         duration: 105,
         maxAltitude: 2500,
-        igcFileName: 'test_flight.igc',
+        originalFilename: 'test_flight.igc',
       );
       await databaseService.insertFlight(originalFlight);
 
@@ -112,14 +112,14 @@ void main() {
 
       final flight = Flight(
         id: 1,
-        date: '2023-07-15',
+        date: DateTime.parse('2023-07-15'),
         launchSiteId: 1,
         wingId: 1,
         launchTime: '14:30',
         landingTime: '16:15',
         duration: 105,
         maxAltitude: 2500,
-        igcFileName: 'test_flight.igc',
+        originalFilename: 'test_flight.igc',
       );
       await databaseService.insertFlight(flight);
 
@@ -149,26 +149,26 @@ void main() {
 
       final flight1 = Flight(
         id: 1,
-        date: '2023-07-15',
+        date: DateTime.parse('2023-07-15'),
         launchSiteId: 1,
         wingId: 1,
         launchTime: '14:30',
         landingTime: '16:15',
         duration: 105,
         maxAltitude: 2500,
-        igcFileName: 'flight1.igc',
+        originalFilename: 'flight1.igc',
       );
 
       final flight2 = Flight(
         id: 2,
-        date: '2023-07-20',
+        date: DateTime.parse('2023-07-20'),
         launchSiteId: 1,
         wingId: 1,
         launchTime: '15:00',
         landingTime: '17:30',
         duration: 150,
         maxAltitude: 3000,
-        igcFileName: 'flight2.igc',
+        originalFilename: 'flight2.igc',
       );
 
       await databaseService.insertFlight(flight1);
@@ -193,14 +193,14 @@ void main() {
 
       final flight = Flight(
         id: 1,
-        date: '2023-07-15',
+        date: DateTime.parse('2023-07-15'),
         launchSiteId: 1,
         wingId: 1,
         launchTime: '14:30',
         landingTime: '16:15',
         duration: 105,
         maxAltitude: 2500,
-        igcFileName: 'test_flight.igc',
+        originalFilename: 'test_flight.igc',
       );
       await databaseService.insertFlight(flight);
 
@@ -225,14 +225,14 @@ void main() {
       // This test ensures the database handles constraint violations properly
       final invalidFlight = Flight(
         id: 1,
-        date: '',  // Invalid empty date
+        date: DateTime(1900, 1, 1),  // Invalid date for testing
         launchSiteId: 999,  // Non-existent site
         wingId: 999,  // Non-existent wing
         launchTime: '14:30',
         landingTime: '16:15',
         duration: 105,
         maxAltitude: 2500,
-        igcFileName: 'test_flight.igc',
+        originalFilename: 'test_flight.igc',
       );
 
       // Act & Assert
@@ -669,15 +669,15 @@ void main() {
       await databaseService.insertWing(wing);
 
       final flight1 = Flight(
-        id: 1, date: '2023-07-15', launchSiteId: 1, wingId: 1,
+        id: 1, date: DateTime.parse('2023-07-15'), launchSiteId: 1, wingId: 1,
         launchTime: '14:30', landingTime: '16:15', duration: 105,
-        maxAltitude: 2500, igcFileName: 'flight1.igc',
+        maxAltitude: 2500, originalFilename: 'flight1.igc',
       );
 
       final flight2 = Flight(
-        id: 2, date: '2023-07-20', launchSiteId: 1, wingId: 1,
+        id: 2, date: DateTime.parse('2023-07-20'), launchSiteId: 1, wingId: 1,
         launchTime: '15:00', landingTime: '17:30', duration: 150,
-        maxAltitude: 3200, igcFileName: 'flight2.igc',
+        maxAltitude: 3200, originalFilename: 'flight2.igc',
       );
 
       await databaseService.insertFlight(flight1);
@@ -703,19 +703,19 @@ void main() {
 
       // 2023 flights
       final flight2023 = Flight(
-        id: 1, date: '2023-07-15', launchSiteId: 1, wingId: 1,
-        duration: 120, maxAltitude: 2500, igcFileName: 'flight2023.igc',
+        id: 1, date: DateTime.parse('2023-07-15'), launchTime: '10:00', landingTime: '12:00', launchSiteId: 1, wingId: 1,
+        duration: 120, maxAltitude: 2500, originalFilename: 'flight2023.igc',
       );
 
       // 2024 flights
       final flight2024a = Flight(
-        id: 2, date: '2024-06-10', launchSiteId: 1, wingId: 1,
-        duration: 90, maxAltitude: 2800, igcFileName: 'flight2024a.igc',
+        id: 2, date: DateTime.parse('2024-06-10'), launchTime: '09:00', landingTime: '10:30', launchSiteId: 1, wingId: 1,
+        duration: 90, maxAltitude: 2800, originalFilename: 'flight2024a.igc',
       );
 
       final flight2024b = Flight(
-        id: 3, date: '2024-08-20', launchSiteId: 1, wingId: 1,
-        duration: 180, maxAltitude: 3100, igcFileName: 'flight2024b.igc',
+        id: 3, date: DateTime.parse('2024-08-20'), launchTime: '11:00', landingTime: '14:00', launchSiteId: 1, wingId: 1,
+        duration: 180, maxAltitude: 3100, originalFilename: 'flight2024b.igc',
       );
 
       await databaseService.insertFlight(flight2023);
@@ -742,13 +742,13 @@ void main() {
       await databaseService.insertWing(wing);
 
       final flight2023 = Flight(
-        id: 1, date: '2023-07-15', launchSiteId: 1, wingId: 1,
-        duration: 180, igcFileName: 'flight2023.igc', // 3 hours
+        id: 1, date: DateTime.parse('2023-07-15'), launchTime: '09:00', landingTime: '12:00', launchSiteId: 1, wingId: 1,
+        duration: 180, originalFilename: 'flight2023.igc', // 3 hours
       );
 
       final flight2024 = Flight(
-        id: 2, date: '2024-06-10', launchSiteId: 1, wingId: 1,
-        duration: 240, igcFileName: 'flight2024.igc', // 4 hours
+        id: 2, date: DateTime.parse('2024-06-10'), launchTime: '08:00', landingTime: '12:00', launchSiteId: 1, wingId: 1,
+        duration: 240, originalFilename: 'flight2024.igc', // 4 hours
       );
 
       await databaseService.insertFlight(flight2023);
@@ -773,9 +773,9 @@ void main() {
       await databaseService.insertWing(wing1);
       await databaseService.insertWing(wing2);
 
-      final flight1 = Flight(id: 1, date: '2023-07-15', launchSiteId: 1, wingId: 1, duration: 120, igcFileName: 'f1.igc');
-      final flight2 = Flight(id: 2, date: '2023-07-20', launchSiteId: 1, wingId: 1, duration: 180, igcFileName: 'f2.igc');
-      final flight3 = Flight(id: 3, date: '2023-08-01', launchSiteId: 1, wingId: 2, duration: 90, igcFileName: 'f3.igc');
+      final flight1 = Flight(id: 1, date: DateTime.parse('2023-07-15'), launchTime: '10:00', landingTime: '12:00', launchSiteId: 1, wingId: 1, duration: 120, originalFilename: 'f1.igc');
+      final flight2 = Flight(id: 2, date: DateTime.parse('2023-07-20'), launchTime: '09:00', landingTime: '12:00', launchSiteId: 1, wingId: 1, duration: 180, originalFilename: 'f2.igc');
+      final flight3 = Flight(id: 3, date: DateTime.parse('2023-08-01'), launchTime: '11:00', landingTime: '12:30', launchSiteId: 1, wingId: 2, duration: 90, originalFilename: 'f3.igc');
 
       await databaseService.insertFlight(flight1);
       await databaseService.insertFlight(flight2);
@@ -806,9 +806,9 @@ void main() {
       final wing = Wing(id: 1, name: 'Test Wing', manufacturer: 'Test', model: 'Model');
       await databaseService.insertWing(wing);
 
-      final flight1 = Flight(id: 1, date: '2023-07-15', launchSiteId: 1, wingId: 1, duration: 120, igcFileName: 'f1.igc');
-      final flight2 = Flight(id: 2, date: '2023-07-20', launchSiteId: 1, wingId: 1, duration: 180, igcFileName: 'f2.igc');
-      final flight3 = Flight(id: 3, date: '2023-08-01', launchSiteId: 2, wingId: 1, duration: 90, igcFileName: 'f3.igc');
+      final flight1 = Flight(id: 1, date: DateTime.parse('2023-07-15'), launchTime: '10:00', landingTime: '12:00', launchSiteId: 1, wingId: 1, duration: 120, originalFilename: 'f1.igc');
+      final flight2 = Flight(id: 2, date: DateTime.parse('2023-07-20'), launchTime: '09:00', landingTime: '12:00', launchSiteId: 1, wingId: 1, duration: 180, originalFilename: 'f2.igc');
+      final flight3 = Flight(id: 3, date: DateTime.parse('2023-08-01'), launchTime: '11:00', landingTime: '12:30', launchSiteId: 2, wingId: 1, duration: 90, originalFilename: 'f3.igc');
 
       await databaseService.insertFlight(flight1);
       await databaseService.insertFlight(flight2);
@@ -837,8 +837,8 @@ void main() {
       final wing = Wing(id: 1, name: 'Test Wing', manufacturer: 'Test', model: 'Model');
       await databaseService.insertWing(wing);
 
-      final flight1 = Flight(id: 1, date: '2023-07-15', launchSiteId: 1, wingId: 1, duration: 120, maxAltitude: 2500, igcFileName: 'f1.igc');
-      final flight2 = Flight(id: 2, date: '2023-07-20', launchSiteId: 1, wingId: 1, duration: 180, maxAltitude: 3200, igcFileName: 'f2.igc');
+      final flight1 = Flight(id: 1, date: DateTime.parse('2023-07-15'), launchTime: '10:00', landingTime: '12:00', launchSiteId: 1, wingId: 1, duration: 120, maxAltitude: 2500, originalFilename: 'f1.igc');
+      final flight2 = Flight(id: 2, date: DateTime.parse('2023-07-20'), launchTime: '09:00', landingTime: '12:00', launchSiteId: 1, wingId: 1, duration: 180, maxAltitude: 3200, originalFilename: 'f2.igc');
 
       await databaseService.insertFlight(flight1);
       await databaseService.insertFlight(flight2);
@@ -873,9 +873,9 @@ void main() {
       final wing = Wing(id: 1, name: 'Test Wing', manufacturer: 'Test', model: 'Model');
       await databaseService.insertWing(wing);
 
-      final flight1 = Flight(id: 1, date: '2023-07-10', launchSiteId: 1, wingId: 1, igcFileName: 'f1.igc');
-      final flight2 = Flight(id: 2, date: '2023-07-15', launchSiteId: 1, wingId: 1, igcFileName: 'f2.igc');
-      final flight3 = Flight(id: 3, date: '2023-07-25', launchSiteId: 1, wingId: 1, igcFileName: 'f3.igc');
+      final flight1 = Flight(id: 1, date: DateTime.parse('2023-07-10'), launchTime: '10:00', landingTime: '12:00', launchSiteId: 1, wingId: 1, originalFilename: 'f1.igc');
+      final flight2 = Flight(id: 2, date: DateTime.parse('2023-07-15'), launchTime: '11:00', landingTime: '13:00', launchSiteId: 1, wingId: 1, originalFilename: 'f2.igc');
+      final flight3 = Flight(id: 3, date: DateTime.parse('2023-07-25'), launchTime: '12:00', landingTime: '14:00', launchSiteId: 1, wingId: 1, originalFilename: 'f3.igc');
 
       await databaseService.insertFlight(flight1);
       await databaseService.insertFlight(flight2);
@@ -899,9 +899,9 @@ void main() {
       final wing = Wing(id: 1, name: 'Test Wing', manufacturer: 'Test', model: 'Model');
       await databaseService.insertWing(wing);
 
-      final flight1 = Flight(id: 1, date: '2023-07-15', launchSiteId: 1, wingId: 1, igcFileName: 'f1.igc');
-      final flight2 = Flight(id: 2, date: '2023-07-20', launchSiteId: 2, wingId: 1, igcFileName: 'f2.igc');
-      final flight3 = Flight(id: 3, date: '2023-07-25', launchSiteId: 1, wingId: 1, igcFileName: 'f3.igc');
+      final flight1 = Flight(id: 1, date: DateTime.parse('2023-07-15'), launchTime: '10:00', landingTime: '12:00', launchSiteId: 1, wingId: 1, originalFilename: 'f1.igc', duration: 120);
+      final flight2 = Flight(id: 2, date: DateTime.parse('2023-07-20'), launchTime: '11:00', landingTime: '13:00', launchSiteId: 2, wingId: 1, originalFilename: 'f2.igc', duration: 120);
+      final flight3 = Flight(id: 3, date: DateTime.parse('2023-07-25'), launchTime: '12:00', landingTime: '14:00', launchSiteId: 1, wingId: 1, originalFilename: 'f3.igc');
 
       await databaseService.insertFlight(flight1);
       await databaseService.insertFlight(flight2);
@@ -925,9 +925,9 @@ void main() {
       await databaseService.insertWing(wing1);
       await databaseService.insertWing(wing2);
 
-      final flight1 = Flight(id: 1, date: '2023-07-15', launchSiteId: 1, wingId: 1, igcFileName: 'f1.igc');
-      final flight2 = Flight(id: 2, date: '2023-07-20', launchSiteId: 1, wingId: 2, igcFileName: 'f2.igc');
-      final flight3 = Flight(id: 3, date: '2023-07-25', launchSiteId: 1, wingId: 1, igcFileName: 'f3.igc');
+      final flight1 = Flight(id: 1, date: DateTime.parse('2023-07-15'), launchTime: '10:00', landingTime: '12:00', launchSiteId: 1, wingId: 1, originalFilename: 'f1.igc', duration: 120);
+      final flight2 = Flight(id: 2, date: DateTime.parse('2023-07-20'), launchTime: '11:00', landingTime: '13:00', launchSiteId: 1, wingId: 2, originalFilename: 'f2.igc', duration: 120);
+      final flight3 = Flight(id: 3, date: DateTime.parse('2023-07-25'), launchTime: '12:00', landingTime: '14:00', launchSiteId: 1, wingId: 1, originalFilename: 'f3.igc');
 
       await databaseService.insertFlight(flight1);
       await databaseService.insertFlight(flight2);
@@ -950,8 +950,8 @@ void main() {
       await databaseService.insertWing(wing);
 
       final existingFlight = Flight(
-        id: 1, date: '2023-07-15', launchSiteId: 1, wingId: 1, 
-        igcFileName: 'duplicate_flight.igc'
+        id: 1, date: DateTime.parse('2023-07-15'), launchTime: '10:00', landingTime: '12:00', launchSiteId: 1, wingId: 1, 
+        duration: 120, originalFilename: 'duplicate_flight.igc'
       );
       await databaseService.insertFlight(existingFlight);
 
@@ -973,8 +973,8 @@ void main() {
       await databaseService.insertWing(wing);
 
       final existingFlight = Flight(
-        id: 1, date: '2023-07-15', launchTime: '14:30', landingTime: '16:15',
-        launchSiteId: 1, wingId: 1, igcFileName: 'existing.igc'
+        id: 1, date: DateTime.parse('2023-07-15'), launchTime: '14:30', landingTime: '16:15',
+        launchSiteId: 1, wingId: 1, originalFilename: 'existing.igc'
       );
       await databaseService.insertFlight(existingFlight);
 
@@ -998,12 +998,12 @@ void main() {
       await databaseService.insertWing(wing);
 
       final flight1 = Flight(
-        id: 1, date: '2023-07-15', launchSiteId: 1, wingId: 1,
-        notes: 'Great alpine conditions', igcFileName: 'alpine_flight.igc'
+        id: 1, date: DateTime.parse('2023-07-15'), launchTime: '10:00', landingTime: '12:00', launchSiteId: 1, wingId: 1,
+        duration: 120, notes: 'Great alpine conditions', originalFilename: 'alpine_flight.igc'
       );
       final flight2 = Flight(
-        id: 2, date: '2023-07-20', launchSiteId: 2, wingId: 1,
-        notes: 'Valley wind was strong', igcFileName: 'valley_flight.igc'
+        id: 2, date: DateTime.parse('2023-07-20'), launchTime: '11:00', landingTime: '13:00', launchSiteId: 2, wingId: 1,
+        duration: 120, notes: 'Valley wind was strong', originalFilename: 'valley_flight.igc'
       );
 
       await databaseService.insertFlight(flight1);
@@ -1033,8 +1033,8 @@ void main() {
       final wing = Wing(id: 1, name: 'Test Wing', manufacturer: 'Test', model: 'Model');
       await databaseService.insertWing(wing);
 
-      final flight1 = Flight(id: 1, date: '2023-07-15', launchSiteId: 1, wingId: 1, igcFileName: 'f1.igc');
-      final flight2 = Flight(id: 2, date: '2023-07-20', launchSiteId: 2, wingId: 1, igcFileName: 'f2.igc');
+      final flight1 = Flight(id: 1, date: DateTime.parse('2023-07-15'), launchTime: '10:00', landingTime: '12:00', launchSiteId: 1, wingId: 1, originalFilename: 'f1.igc', duration: 120);
+      final flight2 = Flight(id: 2, date: DateTime.parse('2023-07-20'), launchTime: '11:00', landingTime: '13:00', launchSiteId: 2, wingId: 1, originalFilename: 'f2.igc', duration: 120);
 
       await databaseService.insertFlight(flight1);
       await databaseService.insertFlight(flight2);
@@ -1071,13 +1071,13 @@ void main() {
       await databaseService.insertWing(wing);
 
       final flight1 = Flight(
-        id: 1, date: '2023-07-15', launchSiteId: 1, wingId: 1,
-        igcFileName: 'flight1.igc'
+        id: 1, date: DateTime.parse('2023-07-15'), launchTime: '10:00', landingTime: '12:00', launchSiteId: 1, wingId: 1,
+        duration: 120, originalFilename: 'flight1.igc'
       );
 
       final flight2 = Flight(
-        id: 2, date: '2023-07-20', launchSiteId: 1, wingId: 1,
-        igcFileName: 'flight2.igc'
+        id: 2, date: DateTime.parse('2023-07-20'), launchTime: '11:00', landingTime: '13:00', launchSiteId: 1, wingId: 1,
+        duration: 120, originalFilename: 'flight2.igc'
       );
 
       // Act - Insert flights concurrently (simulate concurrent operations)
@@ -1101,8 +1101,8 @@ void main() {
       await databaseService.insertWing(wing);
 
       final flight = Flight(
-        id: 1, date: '2023-07-15', launchSiteId: 1, wingId: 1,
-        igcFileName: 'test_flight.igc'
+        id: 1, date: DateTime.parse('2023-07-15'), launchTime: '10:00', landingTime: '12:00', launchSiteId: 1, wingId: 1,
+        duration: 120, originalFilename: 'test_flight.igc'
       );
       await databaseService.insertFlight(flight);
 
@@ -1122,8 +1122,8 @@ void main() {
       await databaseService.insertWing(wing);
 
       final flight = Flight(
-        id: 1, date: '2023-07-15', launchSiteId: 1, wingId: 1,
-        igcFileName: 'test_flight.igc'
+        id: 1, date: DateTime.parse('2023-07-15'), launchTime: '10:00', landingTime: '12:00', launchSiteId: 1, wingId: 1,
+        duration: 120, originalFilename: 'test_flight.igc'
       );
       await databaseService.insertFlight(flight);
 
@@ -1169,9 +1169,9 @@ void main() {
       await databaseService.insertWing(wing);
 
       // Add multiple flights to site1, one flight to site2
-      final flight1 = Flight(id: 1, date: '2023-07-15', launchSiteId: 1, wingId: 1, igcFileName: 'f1.igc');
-      final flight2 = Flight(id: 2, date: '2023-07-20', launchSiteId: 1, wingId: 1, igcFileName: 'f2.igc');
-      final flight3 = Flight(id: 3, date: '2023-07-25', launchSiteId: 2, wingId: 1, igcFileName: 'f3.igc');
+      final flight1 = Flight(id: 1, date: DateTime.parse('2023-07-15'), launchTime: '10:00', landingTime: '12:00', launchSiteId: 1, wingId: 1, originalFilename: 'f1.igc', duration: 120);
+      final flight2 = Flight(id: 2, date: DateTime.parse('2023-07-20'), launchTime: '11:00', landingTime: '13:00', launchSiteId: 1, wingId: 1, originalFilename: 'f2.igc', duration: 120);
+      final flight3 = Flight(id: 3, date: DateTime.parse('2023-07-25'), launchTime: '12:00', landingTime: '14:00', launchSiteId: 2, wingId: 1, originalFilename: 'f3.igc', duration: 120);
 
       await databaseService.insertFlight(flight1);
       await databaseService.insertFlight(flight2);
@@ -1196,8 +1196,8 @@ void main() {
       final wing = Wing(id: 1, name: 'Test Wing', manufacturer: 'Test', model: 'Model');
       await databaseService.insertWing(wing);
 
-      final flight1 = Flight(id: 1, date: '2023-07-15', launchSiteId: 1, wingId: 1, igcFileName: 'f1.igc');
-      final flight2 = Flight(id: 2, date: '2023-07-20', launchSiteId: 1, wingId: 1, igcFileName: 'f2.igc');
+      final flight1 = Flight(id: 1, date: DateTime.parse('2023-07-15'), launchTime: '10:00', landingTime: '12:00', launchSiteId: 1, wingId: 1, originalFilename: 'f1.igc', duration: 120);
+      final flight2 = Flight(id: 2, date: DateTime.parse('2023-07-20'), launchTime: '11:00', landingTime: '13:00', launchSiteId: 1, wingId: 1, originalFilename: 'f2.igc', duration: 120);
 
       await databaseService.insertFlight(flight1);
       await databaseService.insertFlight(flight2);
@@ -1223,7 +1223,7 @@ void main() {
       final wing = Wing(id: 1, name: 'Test Wing', manufacturer: 'Test', model: 'Model');
       await databaseService.insertWing(wing);
 
-      final flight = Flight(id: 1, date: '2023-07-15', launchSiteId: 1, wingId: 1, igcFileName: 'f1.igc');
+      final flight = Flight(id: 1, date: DateTime.parse('2023-07-15'), launchTime: '10:00', landingTime: '12:00', launchSiteId: 1, wingId: 1, originalFilename: 'f1.igc', duration: 120);
       await databaseService.insertFlight(flight);
 
       // Act
@@ -1261,8 +1261,8 @@ void main() {
       await databaseService.insertWing(wing1);
       await databaseService.insertWing(wing2);
 
-      final flight1 = Flight(id: 1, date: '2023-07-15', launchSiteId: 1, wingId: 1, igcFileName: 'f1.igc');
-      final flight2 = Flight(id: 2, date: '2023-07-20', launchSiteId: 1, wingId: 2, igcFileName: 'f2.igc');
+      final flight1 = Flight(id: 1, date: DateTime.parse('2023-07-15'), launchTime: '10:00', landingTime: '12:00', launchSiteId: 1, wingId: 1, originalFilename: 'f1.igc', duration: 120);
+      final flight2 = Flight(id: 2, date: DateTime.parse('2023-07-20'), launchTime: '11:00', landingTime: '13:00', launchSiteId: 1, wingId: 2, originalFilename: 'f2.igc', duration: 120);
 
       await databaseService.insertFlight(flight1);
       await databaseService.insertFlight(flight2);
@@ -1308,7 +1308,7 @@ void main() {
       final wing = Wing(id: 1, name: 'Test Wing', manufacturer: 'Test', model: 'Model');
       await databaseService.insertWing(wing);
 
-      final flight = Flight(id: 1, date: '2023-07-15', launchSiteId: 1, wingId: 1, igcFileName: 'f1.igc');
+      final flight = Flight(id: 1, date: DateTime.parse('2023-07-15'), launchTime: '10:00', landingTime: '12:00', launchSiteId: 1, wingId: 1, originalFilename: 'f1.igc', duration: 120);
       await databaseService.insertFlight(flight);
 
       // Act
@@ -1330,8 +1330,8 @@ void main() {
       await databaseService.insertWing(wing);
 
       final flights = [
-        Flight(id: 1, date: '2023-07-15', launchSiteId: 1, wingId: 1, igcFileName: 'f1.igc'),
-        Flight(id: 2, date: '2023-07-20', launchSiteId: 1, wingId: 1, igcFileName: 'f2.igc'),
+        Flight(id: 1, date: DateTime.parse('2023-07-15'), launchTime: '10:00', landingTime: '12:00', launchSiteId: 1, wingId: 1, originalFilename: 'f1.igc', duration: 120),
+        Flight(id: 2, date: DateTime.parse('2023-07-20'), launchTime: '11:00', landingTime: '13:00', launchSiteId: 1, wingId: 1, originalFilename: 'f2.igc', duration: 120),
       ];
 
       for (final flight in flights) {
