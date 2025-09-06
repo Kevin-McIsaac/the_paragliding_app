@@ -1,3 +1,5 @@
+import 'package:intl/intl.dart';
+
 /// Utility class for date and time formatting operations
 class DateTimeUtils {
   /// Formats a duration in minutes to "Xh Ym" format
@@ -90,5 +92,36 @@ class DateTimeUtils {
       // Next day crossing: add 24 hours to end time
       return (endMinutes + 24 * 60) - startMinutes;
     }
+  }
+  
+  /// Formats a date to a short string format (MMM d)
+  /// 
+  /// Examples:
+  /// - January 15, 2024 -> "Jan 15"
+  /// - December 31, 2023 -> "Dec 31"
+  static String formatDateShort(DateTime date) {
+    return DateFormat('MMM d').format(date);
+  }
+
+  /// Formats a date to include year for cross-year ranges (MMM d, yyyy)
+  /// 
+  /// Examples:
+  /// - January 15, 2024 -> "Jan 15, 2024"
+  /// - December 31, 2023 -> "Dec 31, 2023"
+  static String formatDateWithYear(DateTime date) {
+    return DateFormat('MMM d, yyyy').format(date);
+  }
+
+  /// Smart date formatting that includes year when needed for clarity
+  /// 
+  /// Shows year when:
+  /// - Date is not in current year
+  /// - When comparing dates across year boundaries
+  static String formatDateSmart(DateTime date) {
+    final now = DateTime.now();
+    if (date.year != now.year) {
+      return formatDateWithYear(date);
+    }
+    return formatDateShort(date);
   }
 }

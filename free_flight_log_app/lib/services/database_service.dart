@@ -359,6 +359,56 @@ class DatabaseService {
   // FLIGHT STATISTICS OPERATIONS
   // ========================================================================
   
+  /// Helper method to build date filtering WHERE clause and arguments
+  /// Returns a tuple of (whereClause, whereArgs)
+  (String, List<dynamic>) _buildDateFilter(DateTime? startDate, DateTime? endDate, {String? tablePrefix}) {
+    String whereClause = '';
+    List<dynamic> whereArgs = [];
+    
+    if (startDate != null || endDate != null) {
+      final prefix = tablePrefix != null ? '$tablePrefix.' : '';
+      whereClause = 'WHERE ';
+      
+      if (startDate != null) {
+        whereClause += '${prefix}date >= ?';
+        whereArgs.add(startDate.toIso8601String().split('T')[0]);
+      }
+      
+      if (endDate != null) {
+        if (startDate != null) whereClause += ' AND ';
+        whereClause += '${prefix}date <= ?';
+        whereArgs.add(endDate.toIso8601String().split('T')[0]);
+      }
+    }
+    
+    return (whereClause, whereArgs);
+  }
+  
+  /// Helper method to add date filtering to existing WHERE clause
+  /// Returns updated (whereClause, whereArgs)
+  (String, List<dynamic>) _addDateFilter(String existingWhereClause, List<dynamic> existingWhereArgs, 
+      DateTime? startDate, DateTime? endDate, {String? tablePrefix}) {
+    if (startDate == null && endDate == null) {
+      return (existingWhereClause, existingWhereArgs);
+    }
+    
+    final prefix = tablePrefix != null ? '$tablePrefix.' : '';
+    String whereClause = existingWhereClause;
+    List<dynamic> whereArgs = List.from(existingWhereArgs);
+    
+    if (startDate != null) {
+      whereClause += ' AND ${prefix}date >= ?';
+      whereArgs.add(startDate.toIso8601String().split('T')[0]);
+    }
+    
+    if (endDate != null) {
+      whereClause += ' AND ${prefix}date <= ?';
+      whereArgs.add(endDate.toIso8601String().split('T')[0]);
+    }
+    
+    return (whereClause, whereArgs);
+  }
+  
   /// Get overall flight statistics (total flights, hours, max altitude)
   Future<Map<String, dynamic>> getOverallStatistics() async {
     LoggingService.debug('DatabaseService: Getting overall statistics');
@@ -389,10 +439,13 @@ class DatabaseService {
   }
 
   /// Get flight statistics grouped by year
-  Future<List<Map<String, dynamic>>> getYearlyStatistics() async {
+  Future<List<Map<String, dynamic>>> getYearlyStatistics({DateTime? startDate, DateTime? endDate}) async {
+    final stopwatch = Stopwatch()..start();
     LoggingService.debug('DatabaseService: Getting yearly statistics');
     
     Database db = await _databaseHelper.database;
+    
+    final (whereClause, whereArgs) = _buildDateFilter(startDate, endDate);
     
     List<Map<String, dynamic>> results = await db.rawQuery('''
       SELECT 
@@ -403,9 +456,13 @@ class DatabaseService {
         AVG(duration) as avg_duration,
         AVG(max_altitude) as avg_altitude
       FROM flights
+      $whereClause
       GROUP BY year
       ORDER BY year DESC
-    ''');
+    ''', whereArgs);
+    
+    stopwatch.stop();
+    LoggingService.debug('DatabaseService: Yearly statistics query completed in ${stopwatch.elapsedMilliseconds}ms');
     
     final yearlyStats = results.map((row) {
       final totalMinutes = (row['total_minutes'] as int?) ?? 0;
@@ -450,10 +507,13 @@ class DatabaseService {
   }
 
   /// Get statistics for wings grouped by manufacturer, model, and size
-  Future<List<Map<String, dynamic>>> getWingStatistics() async {
+  Future<List<Map<String, dynamic>>> getWingStatistics({DateTime? startDate, DateTime? endDate}) async {
+    final stopwatch = Stopwatch()..start();
     LoggingService.debug('DatabaseService: Getting wing statistics');
     
     Database db = await _databaseHelper.database;
+    
+    final (whereClause, whereArgs) = _addDateFilter('WHERE w.active = 1', [], startDate, endDate, tablePrefix: 'f');
     
     List<Map<String, dynamic>> results = await db.rawQuery('''
       SELECT 
@@ -475,10 +535,13 @@ class DatabaseService {
         AVG(f.duration) as avg_duration
       FROM wings w
       LEFT JOIN flights f ON f.wing_id = w.id
-      WHERE w.active = 1
+      $whereClause
       GROUP BY w.manufacturer, w.model, w.size
       ORDER BY flight_count DESC
-    ''');
+    ''', whereArgs);
+    
+    stopwatch.stop();
+    LoggingService.debug('DatabaseService: Wing statistics query completed in ${stopwatch.elapsedMilliseconds}ms');
     
     // Convert duration from minutes to hours
     final wingStats = results.map((row) {
@@ -494,10 +557,13 @@ class DatabaseService {
   }
 
   /// Get statistics for sites
-  Future<List<Map<String, dynamic>>> getSiteStatistics() async {
+  Future<List<Map<String, dynamic>>> getSiteStatistics({DateTime? startDate, DateTime? endDate}) async {
+    final stopwatch = Stopwatch()..start();
     LoggingService.debug('DatabaseService: Getting site statistics');
     
     Database db = await _databaseHelper.database;
+    
+    final (whereClause, whereArgs) = _buildDateFilter(startDate, endDate, tablePrefix: 'f');
     
     List<Map<String, dynamic>> results = await db.rawQuery('''
       SELECT 
@@ -510,10 +576,14 @@ class DatabaseService {
         AVG(f.duration) as avg_duration
       FROM sites s
       INNER JOIN flights f ON f.launch_site_id = s.id
+      $whereClause
       GROUP BY s.id
       HAVING COUNT(f.id) > 0
       ORDER BY flight_count DESC
-    ''');
+    ''', whereArgs);
+    
+    stopwatch.stop();
+    LoggingService.debug('DatabaseService: Site statistics query completed in ${stopwatch.elapsedMilliseconds}ms');
     
     // Convert duration from minutes to hours
     final siteStats = results.map((row) {
