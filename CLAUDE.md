@@ -116,6 +116,46 @@ For detailed technical architecture, database schema, and implementation details
 - Test after implementing or updating a feature.
 - Follow the current implementation patterns.
 
+## Logging Best Practices
+
+Use the centralized `LoggingService` for all application logging. **Never use `print()` statements** - they should be replaced with appropriate LoggingService calls.
+
+### Usage Pattern
+
+```dart
+import 'package:free_flight_log/services/logging_service.dart';
+
+// General logging
+LoggingService.debug('Debug information');
+LoggingService.info('General information');
+LoggingService.warning('Warning message');
+LoggingService.error('Error occurred', error, stackTrace);
+
+// Specialized logging with context
+LoggingService.database('INSERT', 'Added new flight record');
+LoggingService.igc('PARSE', 'Processing IGC file: filename.igc');
+LoggingService.ui('FlightList', 'User tapped add flight button');
+LoggingService.performance('IGC Parse', duration, 'Parsed 1000 points');
+
+// Extension methods (automatically include class name)
+class MyWidget extends StatefulWidget {
+  void someMethod() {
+    logDebug('Widget initialized');  // Output: MyWidget: Widget initialized
+    logError('Something went wrong', error);
+  }
+}
+```
+
+### Key Benefits
+
+- **Production-ready**: Automatically reduces logging verbosity in release builds
+- **Structured**: Provides context with prefixes for database, IGC, UI, and performance operations
+- **Performance monitoring**: Built-in performance logging with timing
+- **Error handling**: Proper error and stack trace logging
+- **Consistent format**: Standardized log format across the entire application
+
+Replace any `print()` statements with the appropriate LoggingService method based on the log level and context.
+
 ## Key Calculations
 
 - ALL WAYS use GPS for Altitude
