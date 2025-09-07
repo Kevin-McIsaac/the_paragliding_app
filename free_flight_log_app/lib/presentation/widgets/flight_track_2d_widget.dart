@@ -804,61 +804,69 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
       Marker(
         point: LatLng(point.latitude, point.longitude),
         width: 80,
-        height: 50,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        height: 60,  // Increase to accommodate label below
+        alignment: Alignment.center,
+        child: Stack(
+          clipBehavior: Clip.none,
           children: [
-            // Yellow pilot circle
-            Container(
-              width: 16,
-              height: 16,
-              decoration: const BoxDecoration(
-                color: SiteMarkerUtils.selectedPointColor,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black26,
-                    blurRadius: 2,
-                    offset: Offset(0, 1),
-                  ),
-                ],
+            // Yellow circle - positioned at center
+            Positioned(
+              left: 32, // (80 - 16) / 2 = center horizontally
+              top: 22,  // (60 / 2) - 8 = center vertically
+              child: Container(
+                width: 16,
+                height: 16,
+                decoration: const BoxDecoration(
+                  color: SiteMarkerUtils.selectedPointColor,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 2,
+                      offset: Offset(0, 1),
+                    ),
+                  ],
+                ),
               ),
             ),
-            const SizedBox(height: 2),
-            // Debug label with distance and index
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              decoration: BoxDecoration(
-                color: SiteMarkerUtils.selectedPointColor.withValues(alpha: 0.9),
-                borderRadius: BorderRadius.circular(3),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.3),
-                    blurRadius: 2,
-                    offset: const Offset(0, 1),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '${distanceFromLaunch.toStringAsFixed(0)}m',
-                    style: const TextStyle(
-                      color: Colors.black,
-                      fontSize: 8,
-                      fontWeight: FontWeight.bold,
+            // Label positioned below the circle
+            Positioned(
+              left: 24, // Center horizontally under the circle at x=32
+              top: 40,  // Position below circle: 22 (circle center) + 8 (circle radius) + 10 (spacing)
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                decoration: BoxDecoration(
+                  color: SiteMarkerUtils.selectedPointColor.withValues(alpha: 0.5), // 50% transparent
+                  borderRadius: BorderRadius.circular(3),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      blurRadius: 2,
+                      offset: const Offset(0, 1),
                     ),
-                  ),
-                  Text(
-                    '${_selectedTrackPointIndex! + 1}/${_trackPoints.length}',
-                    style: const TextStyle(
-                      color: Colors.black,
-                      fontSize: 8,
-                      fontWeight: FontWeight.bold,
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${distanceFromLaunch.toStringAsFixed(0)}m',
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 8,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                ],
+                    Text(
+                      '${_selectedTrackPointIndex! + 1}/${_trackPoints.length}',
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 8,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
