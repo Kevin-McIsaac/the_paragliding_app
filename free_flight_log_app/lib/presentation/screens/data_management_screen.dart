@@ -351,7 +351,19 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
           _dataModified = true; // Mark data as modified
         });
         _showSuccessDialog('All Flight Data Deleted', result['message']);
-        await _loadDatabaseStats(); // Refresh stats
+        
+        // Refresh all statistics after deletion
+        await _loadDatabaseStats();
+        await _loadBackupDiagnostics(); // This includes IGC analysis
+        
+        // Force refresh of cleanup stats to show cleared state
+        setState(() {
+          _cleanupStats = null; // Clear to show loading state
+        });
+        final newCleanupStats = await IGCCleanupService.analyzeIGCFiles();
+        setState(() {
+          _cleanupStats = newCleanupStats;
+        });
       } else {
         _showErrorDialog('Deletion Failed', result['message']);
       }
@@ -415,7 +427,19 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
         }
         
         _showSuccessDialog('Database Recreation Complete', message);
-        await _loadDatabaseStats(); // Refresh stats
+        
+        // Refresh all statistics after recreation
+        await _loadDatabaseStats();
+        await _loadBackupDiagnostics(); // This includes IGC analysis
+        
+        // Force refresh of cleanup stats to show updated state
+        setState(() {
+          _cleanupStats = null; // Clear to show loading state
+        });
+        final newCleanupStats = await IGCCleanupService.analyzeIGCFiles();
+        setState(() {
+          _cleanupStats = newCleanupStats;
+        });
       } else {
         _showErrorDialog('Recreation Failed', result['message']);
       }
