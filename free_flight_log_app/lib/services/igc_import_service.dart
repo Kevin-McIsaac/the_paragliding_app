@@ -97,7 +97,7 @@ class IgcImportService {
       }
 
       // Create flight record (either new or replacement)
-      final flight = await _createFlightFromIgcData(igcData, filePath);
+      final flight = await _createFlightFromIgcData(igcData, filePath, copyFile: true);
       
       if (existingFlight != null && replace) {
         // Replace existing flight
@@ -180,8 +180,8 @@ class IgcImportService {
     }
   }
 
-  /// Create a flight record from IGC data (shared between import methods)
-  Future<Flight> _createFlightFromIgcData(IgcFile igcData, String filePath) async {
+  /// Create a flight record from IGC data (unified for import and recreate)
+  Future<Flight> _createFlightFromIgcData(IgcFile igcData, String filePath, {bool copyFile = true}) async {
     // Get detection thresholds from preferences
     final speedThreshold = await PreferencesHelper.getDetectionSpeedThreshold();
     final climbRateThreshold = await PreferencesHelper.getDetectionClimbRateThreshold();
@@ -193,14 +193,14 @@ class IgcImportService {
       climbRateThresholdMs: climbRateThreshold,
     );
     
-    LoggingService.info('IgcImportService: Detection result - ${detectionResult.message}');
+    LoggingService.info('IgcImportService: Detection result${copyFile ? '' : ' (no copy)'} - ${detectionResult.message}');
     
     // Calculate flight statistics on trimmed data if detection successful
     final dataForStats = detectionResult.isComplete
         ? igcData.copyWithTrimmedPoints(detectionResult.takeoffIndex!, detectionResult.landingIndex!)
         : igcData;
         
-    LoggingService.debug('IgcImportService: Calculating statistics on ${dataForStats.trackPoints.length}/${igcData.trackPoints.length} points (trimmed: ${detectionResult.isComplete})');
+    LoggingService.debug('IgcImportService: Calculating statistics${copyFile ? '' : ' (no copy)'} on ${dataForStats.trackPoints.length}/${igcData.trackPoints.length} points (trimmed: ${detectionResult.isComplete})');
     
     final groundTrackDistance = dataForStats.calculateGroundTrackDistance();
     final straightDistance = dataForStats.calculateLaunchToLandingDistance();
@@ -212,14 +212,6 @@ class IgcImportService {
     final thermalStats = dataForStats.analyzeThermals();
     final glideStats = dataForStats.calculateGlidePerformance();
     final gpsStats = dataForStats.calculateGpsQuality();
-    final faiTriangle = dataForStats.calculateFaiTriangle();
-    
-    // Convert triangle points to JSON for storage
-    String? faiTrianglePointsJson;
-    if (faiTriangle['trianglePoints'] != null) {
-      final trianglePoints = faiTriangle['trianglePoints'] as List<dynamic>;
-      faiTrianglePointsJson = Flight.encodeTrianglePointsToJson(trianglePoints);
-    }
     
     // Get or create launch site with paragliding site matching
     Site? launchSite;
@@ -278,6 +270,69 @@ class IgcImportService {
       // Debug output to see what was actually stored
       LoggingService.info('IgcImportService: Created/found site in database with ID ${launchSite.id}, name "${launchSite.name}", country "${launchSite.country ?? 'null'}"');
     }
+    
+    // Perform triangle closing point detection on trimmed data (after launch site is available)
+    final closingDistance = await PreferencesHelper.getTriangleClosingDistance();
+    final closingPointIndex = dataForStats.getClosingPointIndex(maxDistanceMeters: closingDistance);
+    double? actualClosingDistance;
+    
+    // Create flight context for logging
+    final flightContext = '[${igcData.date.toIso8601String().substring(0, 10)} ${launchSite?.name ?? 'Unknown'} ${igcData.launchTime.toLocal().toIso8601String().substring(11, 16)}]';
+    
+    if (closingPointIndex != null) {
+      final launchPoint = dataForStats.trackPoints.first;
+      final closingPoint = dataForStats.trackPoints[closingPointIndex];
+      actualClosingDistance = dataForStats.calculateSimpleDistance(launchPoint, closingPoint);
+      
+      LoggingService.info('IgcImportService: CLOSING POINT DETAILS for $flightContext${copyFile ? '' : ' (NO COPY)'}:');
+      LoggingService.info('  Index: $closingPointIndex of ${dataForStats.trackPoints.length} points (${(closingPointIndex / dataForStats.trackPoints.length * 100).toStringAsFixed(1)}% of flight)');
+      LoggingService.info('  Time: ${closingPoint.timestamp.toLocal().toIso8601String().substring(11, 16)} (flight time: ${closingPoint.timestamp.difference(launchPoint.timestamp).inMinutes}m)');
+      LoggingService.info('  Coordinates: ${closingPoint.latitude.toStringAsFixed(6)}, ${closingPoint.longitude.toStringAsFixed(6)}');
+      LoggingService.info('  Distance to Launch: ${actualClosingDistance.toStringAsFixed(1)}m');
+      LoggingService.info('  Status: CLOSED');
+    } else {
+      LoggingService.info('IgcImportService: CLOSING POINT DETAILS for $flightContext${copyFile ? '' : ' (NO COPY)'}:');
+      LoggingService.info('  Status: OPEN (no point within ${closingDistance.toStringAsFixed(0)}m of launch)');
+      
+      // Find minimum distance for debugging
+      double minDistance = double.infinity;
+      int minDistanceIndex = -1;
+      final launchPoint = dataForStats.trackPoints.first;
+      
+      for (int i = dataForStats.trackPoints.length - 1; i >= 1; i--) {
+        final currentPoint = dataForStats.trackPoints[i];
+        final distance = dataForStats.calculateSimpleDistance(launchPoint, currentPoint);
+        if (distance < minDistance) {
+          minDistance = distance;
+          minDistanceIndex = i;
+        }
+      }
+      
+      if (minDistanceIndex >= 0) {
+        LoggingService.info('  Minimum distance: ${minDistance.toStringAsFixed(1)}m at point $minDistanceIndex');
+      }
+    }
+
+    // Calculate FAI triangle on appropriate data subset
+    Map<String, dynamic> faiTriangle;
+    String? faiTrianglePointsJson;
+    
+    if (closingPointIndex != null) {
+      // If there's a closing point, calculate triangle on track from launch to closing point
+      final dataForTriangle = dataForStats.copyWithTrimmedPoints(0, closingPointIndex);
+      faiTriangle = dataForTriangle.calculateFaiTriangle();
+      LoggingService.debug('IgcImportService: Triangle calculated${copyFile ? '' : ' (NO COPY)'} on ${dataForTriangle.trackPoints.length} points (launch to closing point)');
+    } else {
+      // No closing point, use entire trimmed track
+      faiTriangle = dataForStats.calculateFaiTriangle();
+      LoggingService.debug('IgcImportService: Triangle calculated${copyFile ? '' : ' (NO COPY)'} on ${dataForStats.trackPoints.length} points (full trimmed track)');
+    }
+    
+    // Convert triangle points to JSON for storage
+    if (faiTriangle['trianglePoints'] != null) {
+      final trianglePoints = faiTriangle['trianglePoints'] as List<dynamic>;
+      faiTrianglePointsJson = Flight.encodeTrianglePointsToJson(trianglePoints);
+    }
 
     // Get landing coordinates (no longer create landing sites)
     double? landingLatitude;
@@ -305,8 +360,8 @@ class IgcImportService {
       );
     }
 
-    // Copy IGC file to app storage
-    final trackLogPath = await _saveIgcFile(filePath);
+    // Handle IGC file path (copy or use existing)
+    final trackLogPath = copyFile ? await _saveIgcFile(filePath) : filePath;
     
     // Get original filename
     final originalFilename = path.basename(filePath);
@@ -357,6 +412,9 @@ class IgcImportService {
       landingIndex: detectionResult.landingIndex,
       detectedTakeoffTime: detectionResult.takeoffTime,
       detectedLandingTime: detectionResult.landingTime,
+      // Add closing point data
+      closingPointIndex: closingPointIndex,
+      closingDistance: actualClosingDistance,
     );
   }
 
@@ -370,7 +428,7 @@ class IgcImportService {
     }
 
     // Create flight record
-    final flight = await _createFlightFromIgcData(igcData, filePath);
+    final flight = await _createFlightFromIgcData(igcData, filePath, copyFile: true);
 
     // Save to database
     final savedFlightId = await _databaseService.insertFlight(flight);
@@ -434,7 +492,7 @@ class IgcImportService {
     }
     
     // Create flight record using existing file path (no copying)
-    final flight = await _createFlightFromIgcDataNoCopy(igcData, filePath);
+    final flight = await _createFlightFromIgcData(igcData, filePath, copyFile: false);
     
     // Save to database
     final savedFlightId = await _databaseService.insertFlight(flight);
@@ -483,166 +541,6 @@ class IgcImportService {
     );
   }
 
-  /// Create a flight record from IGC data without copying the file (for database recreation)
-  Future<Flight> _createFlightFromIgcDataNoCopy(IgcFile igcData, String filePath) async {
-    // Get detection thresholds from preferences
-    final speedThreshold = await PreferencesHelper.getDetectionSpeedThreshold();
-    final climbRateThreshold = await PreferencesHelper.getDetectionClimbRateThreshold();
-    
-    // Perform takeoff/landing detection
-    final detectionResult = TakeoffLandingDetector.detectTakeoffLanding(
-      igcData,
-      speedThresholdKmh: speedThreshold,
-      climbRateThresholdMs: climbRateThreshold,
-    );
-    
-    LoggingService.info('IgcImportService: Detection result (no copy) - ${detectionResult.message}');
-    
-    // Calculate flight statistics on trimmed data if detection successful
-    final dataForStats = detectionResult.isComplete
-        ? igcData.copyWithTrimmedPoints(detectionResult.takeoffIndex!, detectionResult.landingIndex!)
-        : igcData;
-        
-    LoggingService.debug('IgcImportService: Calculating statistics (no copy) on ${dataForStats.trackPoints.length}/${igcData.trackPoints.length} points (trimmed: ${detectionResult.isComplete})');
-    
-    final groundTrackDistance = dataForStats.calculateGroundTrackDistance();
-    final straightDistance = dataForStats.calculateLaunchToLandingDistance();
-    final climbRates = dataForStats.calculateClimbRates();
-    final climbRates5Sec = dataForStats.calculate5SecondMaxClimbRates();
-    
-    // Calculate new comprehensive statistics on trimmed data
-    final speedStats = dataForStats.calculateSpeedStatistics();
-    final thermalStats = dataForStats.analyzeThermals();
-    final glideStats = dataForStats.calculateGlidePerformance();
-    final gpsStats = dataForStats.calculateGpsQuality();
-    final faiTriangle = dataForStats.calculateFaiTriangle();
-    
-    // Convert triangle points to JSON for storage
-    String? faiTrianglePointsJson;
-    if (faiTriangle['trianglePoints'] != null) {
-      final trianglePoints = faiTriangle['trianglePoints'] as List<dynamic>;
-      faiTrianglePointsJson = Flight.encodeTrianglePointsToJson(trianglePoints);
-    }
-    
-    // Get or create launch site with paragliding site matching
-    Site? launchSite;
-    if (igcData.launchSite != null) {
-      final launchPoint = igcData.launchSite!;
-      
-      // Try to match with a paragliding site to get name and location info
-      final siteMatchingService = SiteMatchingService.instance;
-      if (!siteMatchingService.isReady) {
-        await siteMatchingService.initialize();
-      }
-      
-      final matchedSite = await siteMatchingService.findNearestSite(
-        launchPoint.latitude,
-        launchPoint.longitude,
-        maxDistance: 500, // 500m for launch sites
-        preferredType: 'launch',
-      );
-      
-      String siteName;
-      String? country;
-      double siteLatitude;
-      double siteLongitude;
-      double siteAltitude;
-      
-      if (matchedSite != null) {
-        // Use ParaglidingEarth coordinates for the site
-        siteName = matchedSite.name;
-        country = matchedSite.country;
-        siteLatitude = matchedSite.latitude;
-        siteLongitude = matchedSite.longitude;
-        siteAltitude = matchedSite.altitude?.toDouble() ?? launchPoint.gpsAltitude.toDouble();
-        
-        LoggingService.info('IgcImportService: API found site "$siteName" at ${siteLatitude.toStringAsFixed(4)}, ${siteLongitude.toStringAsFixed(4)}');
-      } else {
-        // No ParaglidingEarth match - use GPS coordinates
-        siteName = 'Unknown';
-        country = null;
-        siteLatitude = launchPoint.latitude;
-        siteLongitude = launchPoint.longitude;
-        siteAltitude = launchPoint.gpsAltitude.toDouble();
-        LoggingService.info('IgcImportService: No API site found for GPS launch at ${launchPoint.latitude.toStringAsFixed(4)}, ${launchPoint.longitude.toStringAsFixed(4)}');
-      }
-      
-      launchSite = await _databaseService.findOrCreateSite(
-        latitude: siteLatitude,
-        longitude: siteLongitude,
-        altitude: siteAltitude,
-        name: siteName,
-        country: country,
-      );
-    }
-
-    // Get or create wing from glider information
-    Wing? wing;
-    if (igcData.gliderType.isNotEmpty || igcData.gliderID.isNotEmpty) {
-      wing = await _findOrCreateWing(
-        gliderType: igcData.gliderType,
-        gliderID: igcData.gliderID,
-      );
-    }
-
-    // Use existing file path directly (no copying)
-    final trackLogPath = filePath;
-    
-    // Get original filename
-    final originalFilename = path.basename(filePath);
-    
-    // Create flight record
-    return Flight(
-      date: igcData.date,
-      launchTime: _formatTime(igcData.launchTime),
-      landingTime: _formatTime(igcData.landingTime),
-      duration: igcData.duration,
-      launchSiteId: launchSite?.id,
-      launchLatitude: igcData.launchSite?.latitude,
-      launchLongitude: igcData.launchSite?.longitude,
-      launchAltitude: igcData.launchSite?.gpsAltitude.toDouble(),
-      landingLatitude: igcData.landingSite?.latitude,
-      landingLongitude: igcData.landingSite?.longitude,
-      landingAltitude: igcData.landingSite?.gpsAltitude.toDouble(),
-      landingDescription: igcData.landingSite != null ? 
-        'GPS: ${igcData.landingSite!.latitude.toStringAsFixed(4)}, ${igcData.landingSite!.longitude.toStringAsFixed(4)}' : null,
-      wingId: wing?.id,
-      maxAltitude: igcData.maxAltitude.toDouble(),
-      maxClimbRate: climbRates['maxClimb'],
-      maxSinkRate: climbRates['maxSink'],
-      maxClimbRate5Sec: climbRates5Sec['maxClimb5Sec'],
-      maxSinkRate5Sec: climbRates5Sec['maxSink5Sec'],
-      distance: groundTrackDistance,
-      straightDistance: straightDistance,
-      faiTriangleDistance: faiTriangle['triangleDistance'],
-      faiTrianglePoints: faiTrianglePointsJson,
-      notes: _buildNotesFromIgcData(igcData, originalFilename),
-      trackLogPath: trackLogPath,
-      originalFilename: originalFilename,
-      source: 'igc',
-      timezone: igcData.timezone,
-      
-      // New comprehensive statistics
-      maxGroundSpeed: speedStats['maxGroundSpeed'],
-      avgGroundSpeed: speedStats['avgGroundSpeed'],
-      thermalCount: thermalStats['thermalCount'] as int,
-      avgThermalStrength: thermalStats['avgThermalStrength'] as double,
-      totalTimeInThermals: (thermalStats['totalTimeInThermals'] as double).round(),
-      bestThermal: thermalStats['bestThermal'] as double,
-      bestLD: glideStats['bestLD'],
-      avgLD: glideStats['avgLD'],
-      longestGlide: glideStats['longestGlide'],
-      climbPercentage: glideStats['climbPercentage'],
-      gpsFixQuality: gpsStats['gpsFixQuality'],
-      recordingInterval: gpsStats['recordingInterval'],
-      
-      // Add detection data
-      takeoffIndex: detectionResult.takeoffIndex,
-      landingIndex: detectionResult.landingIndex,
-      detectedTakeoffTime: detectionResult.takeoffTime,
-      detectedLandingTime: detectionResult.landingTime,
-    );
-  }
 
   /// Save IGC file to app storage
   Future<String> _saveIgcFile(String sourcePath) async {

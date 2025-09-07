@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import '../../services/logging_service.dart';
+
 /// IGC file data model
 class IgcFile {
   final DateTime date;
@@ -596,83 +598,127 @@ class IgcFile {
     };
   }
 
-  /// Calculate triangle using maximum area approach
+  /// Calculate triangle using maximum perimeter approach
   /// Returns a map with triangle points and total distance
   Map<String, dynamic> calculateFaiTriangle() {
+    final stopwatch = Stopwatch()..start();
+    
     if (trackPoints.length < 3) {
+      LoggingService.debug('Triangle calculation: Insufficient points (${trackPoints.length} < 3)');
       return {
         'trianglePoints': <IgcPoint>[],
-        'triangleDistance': 0.0,
+        'triangleDistance': 0.0, // Already in kilometers
       };
     }
 
-    double maxArea = 0.0;
+    double maxPerimeter = 0.0;
     List<IgcPoint> bestTriangle = [];
 
     // For performance, sample every nth point for large tracks
     int step = trackPoints.length > 1000 ? trackPoints.length ~/ 500 : 1;
+    int comparisons = 0;
     
     for (int i = 0; i < trackPoints.length; i += step) {
       for (int j = i + step; j < trackPoints.length; j += step) {
         for (int k = j + step; k < trackPoints.length; k += step) {
+          comparisons++;
           final p1 = trackPoints[i];
           final p2 = trackPoints[j];
           final p3 = trackPoints[k];
           
-          final area = _calculateTriangleArea(p1, p2, p3);
-          if (area > maxArea) {
-            maxArea = area;
+          // Calculate perimeter using Pythagorean distance
+          final distance1 = calculateSimpleDistance(p1, p2);
+          final distance2 = calculateSimpleDistance(p2, p3);
+          final distance3 = calculateSimpleDistance(p3, p1);
+          final perimeter = distance1 + distance2 + distance3;
+          
+          if (perimeter > maxPerimeter) {
+            maxPerimeter = perimeter;
             bestTriangle = [p1, p2, p3];
           }
         }
       }
     }
 
+    stopwatch.stop();
+
     if (bestTriangle.length != 3) {
+      LoggingService.debug('Triangle calculation: No valid triangle found in ${stopwatch.elapsedMilliseconds}ms ($comparisons comparisons)');
       return {
         'trianglePoints': <IgcPoint>[],
-        'triangleDistance': 0.0,
+        'triangleDistance': 0.0, // Already in kilometers
       };
     }
 
-    // Calculate triangle perimeter
-    final distance1 = _haversineDistance(bestTriangle[0], bestTriangle[1]);
-    final distance2 = _haversineDistance(bestTriangle[1], bestTriangle[2]);
-    final distance3 = _haversineDistance(bestTriangle[2], bestTriangle[0]);
+    // Calculate final triangle perimeter using Pythagorean distance
+    final distance1 = calculateSimpleDistance(bestTriangle[0], bestTriangle[1]);
+    final distance2 = calculateSimpleDistance(bestTriangle[1], bestTriangle[2]);
+    final distance3 = calculateSimpleDistance(bestTriangle[2], bestTriangle[0]);
     final totalDistance = distance1 + distance2 + distance3;
+
+    // Log detailed triangle information
+    LoggingService.info('Triangle calculation completed in ${stopwatch.elapsedMilliseconds}ms ($comparisons comparisons)');
+    LoggingService.info('Triangle vertices:');
+    LoggingService.info('  P1: ${bestTriangle[0].latitude.toStringAsFixed(6)}, ${bestTriangle[0].longitude.toStringAsFixed(6)}');
+    LoggingService.info('  P2: ${bestTriangle[1].latitude.toStringAsFixed(6)}, ${bestTriangle[1].longitude.toStringAsFixed(6)}');
+    LoggingService.info('  P3: ${bestTriangle[2].latitude.toStringAsFixed(6)}, ${bestTriangle[2].longitude.toStringAsFixed(6)}');
+    LoggingService.info('Triangle side distances:');
+    LoggingService.info('  P1-P2: ${(distance1 / 1000).toStringAsFixed(3)}km');
+    LoggingService.info('  P2-P3: ${(distance2 / 1000).toStringAsFixed(3)}km');
+    LoggingService.info('  P3-P1: ${(distance3 / 1000).toStringAsFixed(3)}km');
+    LoggingService.info('Triangle perimeter: ${(totalDistance / 1000).toStringAsFixed(3)}km');
 
     return {
       'trianglePoints': bestTriangle,
-      'triangleDistance': totalDistance,
+      'triangleDistance': totalDistance / 1000.0, // Convert meters to kilometers
     };
   }
 
-  /// Calculate triangle area using cross product
-  /// Returns area in square kilometers
-  double _calculateTriangleArea(IgcPoint p1, IgcPoint p2, IgcPoint p3) {
-    // Convert to approximate Cartesian coordinates (meters)
-    const double earthRadius = 6371000; // meters
-    final lat1 = p1.latitude * pi / 180;
-    final lon1 = p1.longitude * pi / 180;
-    final lat2 = p2.latitude * pi / 180;
-    final lon2 = p2.longitude * pi / 180;
-    final lat3 = p3.latitude * pi / 180;
-    final lon3 = p3.longitude * pi / 180;
+
+  /// Find the closing point index by scanning backwards from the end
+  /// Returns the index of the first point within maxDistanceMeters of the launch point
+  /// Returns null if no point is found within the specified distance
+  int? getClosingPointIndex({double maxDistanceMeters = 100.0}) {
+    final stopwatch = Stopwatch()..start();
     
-    // Project to plane using equirectangular projection
-    final avgLat = (lat1 + lat2 + lat3) / 3;
-    final x1 = earthRadius * lon1 * cos(avgLat);
-    final y1 = earthRadius * lat1;
-    final x2 = earthRadius * lon2 * cos(avgLat);
-    final y2 = earthRadius * lat2;
-    final x3 = earthRadius * lon3 * cos(avgLat);
-    final y3 = earthRadius * lat3;
+    if (trackPoints.length < 2) {
+      LoggingService.debug('Closing point detection: Insufficient points (${trackPoints.length} < 2)');
+      return null;
+    }
     
-    // Calculate area using cross product
-    final area = 0.5 * ((x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1)).abs();
+    final launchPoint = trackPoints.first;
+    int pointsChecked = 0;
     
-    // Convert to square kilometers
-    return area / 1000000;
+    // Scan backwards from the end of the flight
+    for (int i = trackPoints.length - 1; i >= 1; i--) {
+      pointsChecked++;
+      final currentPoint = trackPoints[i];
+      final distance = calculateSimpleDistance(launchPoint, currentPoint);
+      
+      if (distance <= maxDistanceMeters) {
+        stopwatch.stop();
+        LoggingService.info('Closing point found in ${stopwatch.elapsedMilliseconds}ms ($pointsChecked points checked)');
+        LoggingService.info('Closing point: Index $i, ${currentPoint.latitude.toStringAsFixed(6)}, ${currentPoint.longitude.toStringAsFixed(6)}');
+        LoggingService.info('Actual closing distance: ${distance.toStringAsFixed(1)}m (threshold: ${maxDistanceMeters.toStringAsFixed(1)}m)');
+        return i;
+      }
+    }
+    
+    stopwatch.stop();
+    LoggingService.debug('Closing point detection: No point within ${maxDistanceMeters.toStringAsFixed(1)}m found in ${stopwatch.elapsedMilliseconds}ms ($pointsChecked points checked)');
+    return null; // No closing point found
+  }
+
+  /// Calculate simple Pythagorean distance in meters (accurate for distances < 1km)
+  /// Much faster than haversine calculation for short distances
+  double calculateSimpleDistance(IgcPoint p1, IgcPoint p2) {
+    const double metersPerDegreeLat = 111320.0; // Meters per degree latitude (constant)
+    final double metersPerDegreeLon = 111320.0 * cos(p1.latitude * pi / 180); // Adjust for longitude at this latitude
+    
+    final double deltaLat = (p2.latitude - p1.latitude) * metersPerDegreeLat;
+    final double deltaLon = (p2.longitude - p1.longitude) * metersPerDegreeLon;
+    
+    return sqrt(deltaLat * deltaLat + deltaLon * deltaLon);
   }
 }
 
@@ -860,4 +906,5 @@ class IgcPoint {
     
     return earthRadius * c;
   }
+
 }

@@ -268,8 +268,6 @@ class DatabaseService {
 
   /// Find a flight by original filename (used for fast duplicate detection)
   Future<Flight?> findFlightByFilename(String filename) async {
-    LoggingService.debug('DatabaseService: Checking for duplicate by filename: $filename');
-    
     Database db = await _databaseHelper.database;
     
     List<Map<String, dynamic>> maps = await db.rawQuery('''
@@ -283,18 +281,15 @@ class DatabaseService {
     
     if (maps.isNotEmpty) {
       final flight = Flight.fromMap(maps.first);
-      LoggingService.debug('DatabaseService: Found duplicate by filename - Flight ID: ${flight.id}');
+      LoggingService.warning('DatabaseService: Found duplicate flight by filename: $filename (ID: ${flight.id})');
       return flight;
     }
     
-    LoggingService.debug('DatabaseService: No duplicate found for filename: $filename');
     return null;
   }
 
   /// Find flight by date and launch time to check for duplicates during import
   Future<Flight?> findFlightByDateTime(DateTime date, String launchTime) async {
-    LoggingService.debug('DatabaseService: Checking for duplicate flight on ${date.toIso8601String()} at $launchTime');
-    
     Database db = await _databaseHelper.database;
     
     // Format date as ISO string for database comparison
@@ -311,11 +306,10 @@ class DatabaseService {
     
     if (maps.isNotEmpty) {
       final duplicate = Flight.fromMap(maps.first);
-      LoggingService.debug('DatabaseService: Found duplicate flight with ID ${duplicate.id}');
+      LoggingService.warning('DatabaseService: Found duplicate flight on $dateStr at $launchTime (ID: ${duplicate.id})');
       return duplicate;
     }
     
-    LoggingService.debug('DatabaseService: No duplicate flight found');
     return null;
   }
 
