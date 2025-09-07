@@ -185,6 +185,7 @@ class IgcImportService {
     // Get detection thresholds from preferences
     final speedThreshold = await PreferencesHelper.getDetectionSpeedThreshold();
     final climbRateThreshold = await PreferencesHelper.getDetectionClimbRateThreshold();
+    final triangleSamplingInterval = await PreferencesHelper.getTriangleSamplingInterval();
     
     // Perform takeoff/landing detection
     final detectionResult = TakeoffLandingDetector.detectTakeoffLanding(
@@ -320,11 +321,11 @@ class IgcImportService {
     if (closingPointIndex != null) {
       // If there's a closing point, calculate triangle on track from launch to closing point
       final dataForTriangle = dataForStats.copyWithTrimmedPoints(0, closingPointIndex);
-      faiTriangle = dataForTriangle.calculateFaiTriangle();
+      faiTriangle = dataForTriangle.calculateFaiTriangle(samplingIntervalSeconds: triangleSamplingInterval);
       LoggingService.debug('IgcImportService: Triangle calculated${copyFile ? '' : ' (NO COPY)'} on ${dataForTriangle.trackPoints.length} points (launch to closing point)');
     } else {
       // No closing point, use entire trimmed track
-      faiTriangle = dataForStats.calculateFaiTriangle();
+      faiTriangle = dataForStats.calculateFaiTriangle(samplingIntervalSeconds: triangleSamplingInterval);
       LoggingService.debug('IgcImportService: Triangle calculated${copyFile ? '' : ' (NO COPY)'} on ${dataForStats.trackPoints.length} points (full trimmed track)');
     }
     
@@ -540,7 +541,6 @@ class IgcImportService {
       recordingInterval: flight.recordingInterval,
     );
   }
-
 
   /// Save IGC file to app storage
   Future<String> _saveIgcFile(String sourcePath) async {

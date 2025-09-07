@@ -16,9 +16,9 @@ import '../../services/igc_parser.dart';
 import '../../services/database_service.dart';
 import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
+import '../../utils/preferences_helper.dart';
 import '../../utils/site_marker_utils.dart';
 import '../../utils/ui_utils.dart';
-import '../../utils/preferences_helper.dart';
 import '../screens/flight_track_3d_fullscreen.dart';
 
 enum MapProvider {
@@ -415,7 +415,8 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         try {
           final igcParser = IgcParser();
           final igcFile = await igcParser.parseFile(widget.flight.trackLogPath!);
-          final faiTriangle = igcFile.calculateFaiTriangle();
+          final triangleSamplingInterval = await PreferencesHelper.getTriangleSamplingInterval();
+          final faiTriangle = igcFile.calculateFaiTriangle(samplingIntervalSeconds: triangleSamplingInterval);
           final trianglePoints = faiTriangle['trianglePoints'] as List<dynamic>?;
           
           if (trianglePoints != null && trianglePoints.length == 3) {

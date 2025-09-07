@@ -22,6 +22,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   double? _detectionClimbRateThreshold;
   bool? _chartTrimmingEnabled;
   double? _triangleClosingDistance;
+  int? _triangleSamplingInterval;
   
   bool _isLoading = true;
   bool _isSaving = false;
@@ -46,6 +47,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       final climbRateThreshold = await PreferencesHelper.getDetectionClimbRateThreshold();
       final chartTrimmingEnabled = await PreferencesHelper.getChartTrimmingEnabled();
       final triangleClosingDistance = await PreferencesHelper.getTriangleClosingDistance();
+      final triangleSamplingInterval = await PreferencesHelper.getTriangleSamplingInterval();
       
       if (mounted) {
         setState(() {
@@ -59,6 +61,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           _detectionClimbRateThreshold = climbRateThreshold;
           _chartTrimmingEnabled = chartTrimmingEnabled;
           _triangleClosingDistance = triangleClosingDistance;
+          _triangleSamplingInterval = triangleSamplingInterval;
           
           _isLoading = false;
         });
@@ -380,6 +383,25 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                     }
                   },
                 ),
+                _buildDropdownRow<int>(
+                  'Triangle Calculation Sampling',
+                  'Time interval between sample points for triangle optimization (shorter = more precise but slower)',
+                  _triangleSamplingInterval,
+                  PreferencesHelper.validTriangleSamplingIntervals.map((interval) => 
+                    DropdownMenuItem(
+                      value: interval,
+                      child: Text(_getTriangleSamplingDescription(interval)),
+                    )
+                  ).toList(),
+                  (value) {
+                    if (value != null) {
+                      setState(() {
+                        _triangleSamplingInterval = value;
+                      });
+                      _savePreference('triangle sampling interval', value, PreferencesHelper.setTriangleSamplingInterval);
+                    }
+                  },
+                ),
               ]),
 
             ],
@@ -394,5 +416,21 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
         ],
       ),
     );
+  }
+  
+  /// Get user-friendly description for triangle sampling intervals
+  String _getTriangleSamplingDescription(int interval) {
+    switch (interval) {
+      case 15:
+        return '15s - Maximum precision (slow for long flights)';
+      case 30:
+        return '30s - High precision (balanced)';
+      case 60:
+        return '60s - Standard precision (recommended)';
+      case 120:
+        return '2m - Fast processing (may miss optimal triangle)';
+      default:
+        return '${interval}s';
+    }
   }
 }

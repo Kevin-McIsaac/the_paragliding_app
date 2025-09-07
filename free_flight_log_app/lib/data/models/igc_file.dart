@@ -598,9 +598,34 @@ class IgcFile {
     };
   }
 
+  /// Select track points for triangle calculation using time-based sampling
+  /// Returns a list of points sampled at the specified interval in seconds
+  List<IgcPoint> _selectTimeBasedSamples(int intervalSeconds) {
+    if (trackPoints.isEmpty) return [];
+    
+    List<IgcPoint> samples = [trackPoints.first];
+    DateTime nextSampleTime = trackPoints.first.timestamp.add(Duration(seconds: intervalSeconds));
+    
+    for (final point in trackPoints) {
+      if (point.timestamp.isAfter(nextSampleTime) || 
+          point.timestamp.isAtSameMomentAs(nextSampleTime)) {
+        samples.add(point);
+        nextSampleTime = point.timestamp.add(Duration(seconds: intervalSeconds));
+      }
+    }
+    
+    // Ensure last point is included if not already
+    if (samples.isNotEmpty && samples.last != trackPoints.last) {
+      samples.add(trackPoints.last);
+    }
+    
+    return samples;
+  }
+
   /// Calculate triangle using maximum perimeter approach
   /// Returns a map with triangle points and total distance
-  Map<String, dynamic> calculateFaiTriangle() {
+  /// Optional samplingIntervalSeconds for time-based sampling instead of point-based sampling
+  Map<String, dynamic> calculateFaiTriangle({int? samplingIntervalSeconds}) {
     final stopwatch = Stopwatch()..start();
     
     if (trackPoints.length < 3) {
@@ -614,17 +639,34 @@ class IgcFile {
     double maxPerimeter = 0.0;
     List<IgcPoint> bestTriangle = [];
 
-    // For performance, sample every nth point for large tracks
-    int step = trackPoints.length > 1000 ? trackPoints.length ~/ 500 : 1;
-    int comparisons = 0;
+    // Select sample points based on time or point-based sampling
+    List<IgcPoint> samplePoints;
+    String samplingMethod;
     
-    for (int i = 0; i < trackPoints.length; i += step) {
-      for (int j = i + step; j < trackPoints.length; j += step) {
-        for (int k = j + step; k < trackPoints.length; k += step) {
+    if (samplingIntervalSeconds != null) {
+      // Use time-based sampling
+      samplePoints = _selectTimeBasedSamples(samplingIntervalSeconds);
+      samplingMethod = 'time-based (${samplingIntervalSeconds}s intervals)';
+    } else {
+      // Use legacy point-based sampling for backward compatibility
+      int step = trackPoints.length > 1000 ? trackPoints.length ~/ 500 : 1;
+      samplePoints = [];
+      for (int i = 0; i < trackPoints.length; i += step) {
+        samplePoints.add(trackPoints[i]);
+      }
+      samplingMethod = 'point-based (step=$step)';
+    }
+    
+    int comparisons = 0;
+    LoggingService.debug('Triangle calculation: Using $samplingMethod sampling - ${samplePoints.length} points selected from ${trackPoints.length} total');
+    
+    for (int i = 0; i < samplePoints.length; i++) {
+      for (int j = i + 1; j < samplePoints.length; j++) {
+        for (int k = j + 1; k < samplePoints.length; k++) {
           comparisons++;
-          final p1 = trackPoints[i];
-          final p2 = trackPoints[j];
-          final p3 = trackPoints[k];
+          final p1 = samplePoints[i];
+          final p2 = samplePoints[j];
+          final p3 = samplePoints[k];
           
           // Calculate perimeter using Pythagorean distance
           final distance1 = calculateSimpleDistance(p1, p2);
@@ -643,7 +685,7 @@ class IgcFile {
     stopwatch.stop();
 
     if (bestTriangle.length != 3) {
-      LoggingService.debug('Triangle calculation: No valid triangle found in ${stopwatch.elapsedMilliseconds}ms ($comparisons comparisons)');
+      LoggingService.debug('Triangle calculation: No valid triangle found using $samplingMethod in ${stopwatch.elapsedMilliseconds}ms ($comparisons comparisons)');
       return {
         'trianglePoints': <IgcPoint>[],
         'triangleDistance': 0.0, // Already in kilometers
@@ -657,7 +699,7 @@ class IgcFile {
     final totalDistance = distance1 + distance2 + distance3;
 
     // Log detailed triangle information
-    LoggingService.info('Triangle calculation completed in ${stopwatch.elapsedMilliseconds}ms ($comparisons comparisons)');
+    LoggingService.info('Triangle calculation completed using $samplingMethod in ${stopwatch.elapsedMilliseconds}ms ($comparisons comparisons)');
     LoggingService.info('Triangle vertices:');
     LoggingService.info('  P1: ${bestTriangle[0].latitude.toStringAsFixed(6)}, ${bestTriangle[0].longitude.toStringAsFixed(6)}');
     LoggingService.info('  P2: ${bestTriangle[1].latitude.toStringAsFixed(6)}, ${bestTriangle[1].longitude.toStringAsFixed(6)}');

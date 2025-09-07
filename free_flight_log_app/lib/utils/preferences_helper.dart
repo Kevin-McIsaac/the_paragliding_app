@@ -29,15 +29,18 @@ class PreferencesHelper {
   static const String detectionClimbRateThresholdKey = 'detection_climb_rate_threshold';
   static const String chartTrimmingEnabledKey = 'chart_trimming_enabled';
   static const String triangleClosingDistanceKey = 'triangle_closing_distance';
+  static const String triangleSamplingIntervalKey = 'triangle_sampling_interval';
   
   // Default values for detection
   static const double defaultDetectionSpeedThreshold = 9.0; // km/h
   static const double defaultDetectionClimbRateThreshold = 0.2; // m/s
   static const bool defaultChartTrimmingEnabled = true; // Default to trimmed charts
   static const double defaultTriangleClosingDistance = 100.0; // meters
+  static const int defaultTriangleSamplingInterval = 60; // seconds
   static const List<double> validSpeedThresholds = [5.0, 7.0, 9.0, 11.0, 15.0]; // km/h
   static const List<double> validClimbRateThresholds = [0.1, 0.2, 0.3, 0.5]; // m/s
   static const List<double> validTriangleClosingDistances = [50.0, 100.0, 250.0, 500.0, 1000.0]; // meters
+  static const List<int> validTriangleSamplingIntervals = [15, 30, 60, 120]; // seconds
   
   // Cesium 3D Map methods
   static Future<String?> getCesiumSceneMode() async {
@@ -260,6 +263,22 @@ class PreferencesHelper {
   static Future<void> setTriangleClosingDistance(double value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(triangleClosingDistanceKey, value);
+  }
+  
+  static Future<int> getTriangleSamplingInterval() async {
+    final prefs = await SharedPreferences.getInstance();
+    // Check if the preference has been set before
+    if (!prefs.containsKey(triangleSamplingIntervalKey)) {
+      // First time - set default
+      await prefs.setInt(triangleSamplingIntervalKey, defaultTriangleSamplingInterval);
+      return defaultTriangleSamplingInterval;
+    }
+    return prefs.getInt(triangleSamplingIntervalKey) ?? defaultTriangleSamplingInterval;
+  }
+  
+  static Future<void> setTriangleSamplingInterval(int value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(triangleSamplingIntervalKey, value);
   }
   
   // Generic methods for direct access if needed
