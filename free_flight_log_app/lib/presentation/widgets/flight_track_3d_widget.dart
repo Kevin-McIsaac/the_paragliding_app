@@ -4,6 +4,7 @@ import '../../data/models/flight.dart';
 import '../../data/models/igc_file.dart';
 import '../../services/igc_import_service.dart';
 import '../../services/logging_service.dart';
+import '../../utils/preferences_helper.dart';
 import 'cesium_3d_map_inappwebview.dart';
 
 /// Configuration for the 3D flight track visualization
@@ -79,10 +80,13 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
     }
 
     try {
+      // Check if chart trimming is enabled in preferences
+      final chartTrimmingEnabled = await PreferencesHelper.getChartTrimmingEnabled();
+      
       final trackData = await _igcService.getTrackPointsWithTimezone(
         widget.flight.trackLogPath!,
-        takeoffIndex: widget.flight.takeoffIndex,
-        landingIndex: widget.flight.landingIndex,
+        takeoffIndex: chartTrimmingEnabled ? widget.flight.takeoffIndex : null,
+        landingIndex: chartTrimmingEnabled ? widget.flight.landingIndex : null,
       );
       
       if (trackData.points.isEmpty) {

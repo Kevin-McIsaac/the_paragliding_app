@@ -118,13 +118,13 @@ class _FlightListScreenState extends State<FlightListScreen> {
         _sortedFlights.sort((a, b) {
           final aDateTime = DateTime(
             a.date.year, a.date.month, a.date.day,
-            int.parse(a.launchTime.split(':')[0]),
-            int.parse(a.launchTime.split(':')[1]),
+            int.parse(a.effectiveLaunchTime.split(':')[0]),
+            int.parse(a.effectiveLaunchTime.split(':')[1]),
           );
           final bDateTime = DateTime(
             b.date.year, b.date.month, b.date.day,
-            int.parse(b.launchTime.split(':')[0]),
-            int.parse(b.launchTime.split(':')[1]),
+            int.parse(b.effectiveLaunchTime.split(':')[0]),
+            int.parse(b.effectiveLaunchTime.split(':')[1]),
           );
           return _sortAscending 
               ? aDateTime.compareTo(bDateTime)
@@ -134,8 +134,8 @@ class _FlightListScreenState extends State<FlightListScreen> {
       case 'duration':
         _sortedFlights.sort((a, b) {
           return _sortAscending 
-              ? a.duration.compareTo(b.duration)
-              : b.duration.compareTo(a.duration);
+              ? a.effectiveDuration.compareTo(b.effectiveDuration)
+              : b.effectiveDuration.compareTo(a.effectiveDuration);
         });
         break;
       case 'track_distance':
@@ -691,7 +691,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
       // In selection mode, count only selected flights
       final selectedFlights = flights.where((flight) => _selectedFlightIds.contains(flight.id)).toList();
       totalFlights = selectedFlights.length;
-      totalTime = selectedFlights.fold(0, (sum, flight) => sum + flight.duration);
+      totalTime = selectedFlights.fold(0, (sum, flight) => sum + flight.effectiveDuration);
     } else {
       // Normal mode: use totals from the database
       totalFlights = _totalFlights;
@@ -809,7 +809,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                   Text(
                     '${flight.date.day.toString().padLeft(2, '0')}/'
                     '${flight.date.month.toString().padLeft(2, '0')}/'
-                    '${flight.date.year} ${flight.launchTime}',
+                    '${flight.date.year} ${flight.effectiveLaunchTime}',
                   ),
                   onTap: _isSelectionMode 
                       ? null 
@@ -825,7 +825,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                         },
                 ),
                 DataCell(
-                  Text(DateTimeUtils.formatDuration(flight.duration)),
+                  Text(DateTimeUtils.formatDuration(flight.effectiveDuration)),
                   onTap: _isSelectionMode 
                       ? null 
                       : () async {

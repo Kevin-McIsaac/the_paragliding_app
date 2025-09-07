@@ -18,6 +18,7 @@ import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
 import '../../utils/site_marker_utils.dart';
 import '../../utils/ui_utils.dart';
+import '../../utils/preferences_helper.dart';
 import '../screens/flight_track_3d_fullscreen.dart';
 
 enum MapProvider {
@@ -311,10 +312,13 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     }
 
     try {
+      // Check if chart trimming is enabled in preferences
+      final chartTrimmingEnabled = await PreferencesHelper.getChartTrimmingEnabled();
+      
       final trackData = await _igcService.getTrackPointsWithTimezone(
         widget.flight.trackLogPath!,
-        takeoffIndex: widget.flight.takeoffIndex,
-        landingIndex: widget.flight.landingIndex,
+        takeoffIndex: chartTrimmingEnabled ? widget.flight.takeoffIndex : null,
+        landingIndex: chartTrimmingEnabled ? widget.flight.landingIndex : null,
       );
       
       if (trackData.points.isEmpty) {

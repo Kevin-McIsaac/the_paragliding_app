@@ -20,6 +20,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   // Takeoff/Landing Detection preferences
   double? _detectionSpeedThreshold;
   double? _detectionClimbRateThreshold;
+  bool? _chartTrimmingEnabled;
   
   bool _isLoading = true;
   bool _isSaving = false;
@@ -42,6 +43,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       // Load Detection preferences
       final speedThreshold = await PreferencesHelper.getDetectionSpeedThreshold();
       final climbRateThreshold = await PreferencesHelper.getDetectionClimbRateThreshold();
+      final chartTrimmingEnabled = await PreferencesHelper.getChartTrimmingEnabled();
       
       if (mounted) {
         setState(() {
@@ -53,6 +55,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           
           _detectionSpeedThreshold = speedThreshold;
           _detectionClimbRateThreshold = climbRateThreshold;
+          _chartTrimmingEnabled = chartTrimmingEnabled;
           
           _isLoading = false;
         });
@@ -372,6 +375,17 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                       });
                       _savePreference('climb rate threshold', value, PreferencesHelper.setDetectionClimbRateThreshold);
                     }
+                  },
+                ),
+                _buildSwitchRow(
+                  'Apply Trimming to Charts',
+                  'Show only detected flight period in charts (launch to landing)',
+                  _chartTrimmingEnabled,
+                  (value) {
+                    setState(() {
+                      _chartTrimmingEnabled = value;
+                    });
+                    _savePreference('chart trimming', value, PreferencesHelper.setChartTrimmingEnabled);
                   },
                 ),
               ]),
