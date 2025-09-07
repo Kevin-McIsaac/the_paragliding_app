@@ -410,8 +410,8 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           isValid: true, // Stored points are assumed valid
         )).toList();
       } else {
-        // Fallback to calculation if no stored points (should be rare after reimport)
-        LoggingService.ui('FlightTrack2D', 'No stored triangle points, calculating from IGC (slow)');
+        // Fallback: calculate from IGC file if no stored points (should be rare after reimport)
+        LoggingService.ui('FlightTrack2D', 'No stored triangle points, calculating from IGC file (slow)');
         try {
           final igcParser = IgcParser();
           final igcFile = await igcParser.parseFile(widget.flight.trackLogPath!);
@@ -422,7 +422,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
             faiTrianglePoints = trianglePoints.cast<IgcPoint>();
           }
         } catch (e) {
-          LoggingService.ui('FlightTrack2D', 'Failed to calculate triangle: $e');
+          LoggingService.ui('FlightTrack2D', 'Failed to calculate triangle from IGC: $e');
         }
       }
 

@@ -212,14 +212,6 @@ class IgcImportService {
     final thermalStats = dataForStats.analyzeThermals();
     final glideStats = dataForStats.calculateGlidePerformance();
     final gpsStats = dataForStats.calculateGpsQuality();
-    final faiTriangle = dataForStats.calculateFaiTriangle();
-    
-    // Convert triangle points to JSON for storage
-    String? faiTrianglePointsJson;
-    if (faiTriangle['trianglePoints'] != null) {
-      final trianglePoints = faiTriangle['trianglePoints'] as List<dynamic>;
-      faiTrianglePointsJson = Flight.encodeTrianglePointsToJson(trianglePoints);
-    }
     
     // Get or create launch site with paragliding site matching
     Site? launchSite;
@@ -319,6 +311,27 @@ class IgcImportService {
       if (minDistanceIndex >= 0) {
         LoggingService.info('  Minimum distance: ${minDistance.toStringAsFixed(1)}m at point $minDistanceIndex');
       }
+    }
+
+    // Calculate FAI triangle on appropriate data subset
+    Map<String, dynamic> faiTriangle;
+    String? faiTrianglePointsJson;
+    
+    if (closingPointIndex != null) {
+      // If there's a closing point, calculate triangle on track from launch to closing point
+      final dataForTriangle = dataForStats.copyWithTrimmedPoints(0, closingPointIndex);
+      faiTriangle = dataForTriangle.calculateFaiTriangle();
+      LoggingService.debug('IgcImportService: Triangle calculated on ${dataForTriangle.trackPoints.length} points (launch to closing point)');
+    } else {
+      // No closing point, use entire trimmed track
+      faiTriangle = dataForStats.calculateFaiTriangle();
+      LoggingService.debug('IgcImportService: Triangle calculated on ${dataForStats.trackPoints.length} points (full trimmed track)');
+    }
+    
+    // Convert triangle points to JSON for storage
+    if (faiTriangle['trianglePoints'] != null) {
+      final trianglePoints = faiTriangle['trianglePoints'] as List<dynamic>;
+      faiTrianglePointsJson = Flight.encodeTrianglePointsToJson(trianglePoints);
     }
 
     // Get landing coordinates (no longer create landing sites)
@@ -560,14 +573,6 @@ class IgcImportService {
     final thermalStats = dataForStats.analyzeThermals();
     final glideStats = dataForStats.calculateGlidePerformance();
     final gpsStats = dataForStats.calculateGpsQuality();
-    final faiTriangle = dataForStats.calculateFaiTriangle();
-    
-    // Convert triangle points to JSON for storage
-    String? faiTrianglePointsJson;
-    if (faiTriangle['trianglePoints'] != null) {
-      final trianglePoints = faiTriangle['trianglePoints'] as List<dynamic>;
-      faiTrianglePointsJson = Flight.encodeTrianglePointsToJson(trianglePoints);
-    }
     
     // Get or create launch site with paragliding site matching
     Site? launchSite;
@@ -661,6 +666,27 @@ class IgcImportService {
       if (minDistanceIndex >= 0) {
         LoggingService.info('  Minimum distance: ${minDistance.toStringAsFixed(1)}m at point $minDistanceIndex');
       }
+    }
+
+    // Calculate FAI triangle on appropriate data subset
+    Map<String, dynamic> faiTriangle;
+    String? faiTrianglePointsJson;
+    
+    if (closingPointIndex != null) {
+      // If there's a closing point, calculate triangle on track from launch to closing point
+      final dataForTriangle = dataForStats.copyWithTrimmedPoints(0, closingPointIndex);
+      faiTriangle = dataForTriangle.calculateFaiTriangle();
+      LoggingService.debug('IgcImportService: Triangle calculated (NO COPY) on ${dataForTriangle.trackPoints.length} points (launch to closing point)');
+    } else {
+      // No closing point, use entire trimmed track
+      faiTriangle = dataForStats.calculateFaiTriangle();
+      LoggingService.debug('IgcImportService: Triangle calculated (NO COPY) on ${dataForStats.trackPoints.length} points (full trimmed track)');
+    }
+    
+    // Convert triangle points to JSON for storage
+    if (faiTriangle['trianglePoints'] != null) {
+      final trianglePoints = faiTriangle['trianglePoints'] as List<dynamic>;
+      faiTrianglePointsJson = Flight.encodeTrianglePointsToJson(trianglePoints);
     }
 
     // Get or create wing from glider information
