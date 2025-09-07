@@ -279,21 +279,21 @@ class IgcImportService {
       LoggingService.info('IgcImportService: Created/found site in database with ID ${launchSite.id}, name "${launchSite.name}", country "${launchSite.country ?? 'null'}"');
     }
     
-    // Perform triangle closing point detection (after launch site is available)
+    // Perform triangle closing point detection on trimmed data (after launch site is available)
     final closingDistance = await PreferencesHelper.getTriangleClosingDistance();
-    final closingPointIndex = igcData.getClosingPointIndex(maxDistanceMeters: closingDistance);
+    final closingPointIndex = dataForStats.getClosingPointIndex(maxDistanceMeters: closingDistance);
     double? actualClosingDistance;
     
     // Create flight context for logging
     final flightContext = '[${igcData.date.toIso8601String().substring(0, 10)} ${launchSite?.name ?? 'Unknown'} ${igcData.launchTime.toLocal().toIso8601String().substring(11, 16)}]';
     
     if (closingPointIndex != null) {
-      final launchPoint = igcData.trackPoints.first;
-      final closingPoint = igcData.trackPoints[closingPointIndex];
-      actualClosingDistance = igcData.calculateSimpleDistance(launchPoint, closingPoint);
+      final launchPoint = dataForStats.trackPoints.first;
+      final closingPoint = dataForStats.trackPoints[closingPointIndex];
+      actualClosingDistance = dataForStats.calculateSimpleDistance(launchPoint, closingPoint);
       
       LoggingService.info('IgcImportService: CLOSING POINT DETAILS for $flightContext:');
-      LoggingService.info('  Index: $closingPointIndex of ${igcData.trackPoints.length} points (${(closingPointIndex / igcData.trackPoints.length * 100).toStringAsFixed(1)}% of flight)');
+      LoggingService.info('  Index: $closingPointIndex of ${dataForStats.trackPoints.length} points (${(closingPointIndex / dataForStats.trackPoints.length * 100).toStringAsFixed(1)}% of flight)');
       LoggingService.info('  Time: ${closingPoint.timestamp.toLocal().toIso8601String().substring(11, 16)} (flight time: ${closingPoint.timestamp.difference(launchPoint.timestamp).inMinutes}m)');
       LoggingService.info('  Coordinates: ${closingPoint.latitude.toStringAsFixed(6)}, ${closingPoint.longitude.toStringAsFixed(6)}');
       LoggingService.info('  Distance to Launch: ${actualClosingDistance?.toStringAsFixed(1) ?? 'N/A'}m');
@@ -305,11 +305,11 @@ class IgcImportService {
       // Find minimum distance for debugging
       double minDistance = double.infinity;
       int minDistanceIndex = -1;
-      final launchPoint = igcData.trackPoints.first;
+      final launchPoint = dataForStats.trackPoints.first;
       
-      for (int i = igcData.trackPoints.length - 1; i >= 1; i--) {
-        final currentPoint = igcData.trackPoints[i];
-        final distance = igcData.calculateSimpleDistance(launchPoint, currentPoint);
+      for (int i = dataForStats.trackPoints.length - 1; i >= 1; i--) {
+        final currentPoint = dataForStats.trackPoints[i];
+        final distance = dataForStats.calculateSimpleDistance(launchPoint, currentPoint);
         if (distance < minDistance) {
           minDistance = distance;
           minDistanceIndex = i;
@@ -621,21 +621,21 @@ class IgcImportService {
       );
     }
     
-    // Perform triangle closing point detection (after launch site is available)
+    // Perform triangle closing point detection on trimmed data (after launch site is available)
     final closingDistance = await PreferencesHelper.getTriangleClosingDistance();
-    final closingPointIndex = igcData.getClosingPointIndex(maxDistanceMeters: closingDistance);
+    final closingPointIndex = dataForStats.getClosingPointIndex(maxDistanceMeters: closingDistance);
     double? actualClosingDistance;
     
     // Create flight context for logging
     final flightContext = '[${igcData.date.toIso8601String().substring(0, 10)} ${launchSite?.name ?? 'Unknown'} ${igcData.launchTime.toLocal().toIso8601String().substring(11, 16)}]';
     
     if (closingPointIndex != null) {
-      final launchPoint = igcData.trackPoints.first;
-      final closingPoint = igcData.trackPoints[closingPointIndex];
-      actualClosingDistance = igcData.calculateSimpleDistance(launchPoint, closingPoint);
+      final launchPoint = dataForStats.trackPoints.first;
+      final closingPoint = dataForStats.trackPoints[closingPointIndex];
+      actualClosingDistance = dataForStats.calculateSimpleDistance(launchPoint, closingPoint);
       
       LoggingService.info('IgcImportService: CLOSING POINT DETAILS for $flightContext (NO COPY):');
-      LoggingService.info('  Index: $closingPointIndex of ${igcData.trackPoints.length} points (${(closingPointIndex / igcData.trackPoints.length * 100).toStringAsFixed(1)}% of flight)');
+      LoggingService.info('  Index: $closingPointIndex of ${dataForStats.trackPoints.length} points (${(closingPointIndex / dataForStats.trackPoints.length * 100).toStringAsFixed(1)}% of flight)');
       LoggingService.info('  Time: ${closingPoint.timestamp.toLocal().toIso8601String().substring(11, 16)} (flight time: ${closingPoint.timestamp.difference(launchPoint.timestamp).inMinutes}m)');
       LoggingService.info('  Coordinates: ${closingPoint.latitude.toStringAsFixed(6)}, ${closingPoint.longitude.toStringAsFixed(6)}');
       LoggingService.info('  Distance to Launch: ${actualClosingDistance?.toStringAsFixed(1) ?? 'N/A'}m');
@@ -647,11 +647,11 @@ class IgcImportService {
       // Find minimum distance for debugging
       double minDistance = double.infinity;
       int minDistanceIndex = -1;
-      final launchPoint = igcData.trackPoints.first;
+      final launchPoint = dataForStats.trackPoints.first;
       
-      for (int i = igcData.trackPoints.length - 1; i >= 1; i--) {
-        final currentPoint = igcData.trackPoints[i];
-        final distance = igcData.calculateSimpleDistance(launchPoint, currentPoint);
+      for (int i = dataForStats.trackPoints.length - 1; i >= 1; i--) {
+        final currentPoint = dataForStats.trackPoints[i];
+        final distance = dataForStats.calculateSimpleDistance(launchPoint, currentPoint);
         if (distance < minDistance) {
           minDistance = distance;
           minDistanceIndex = i;

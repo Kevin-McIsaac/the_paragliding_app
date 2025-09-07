@@ -610,10 +610,9 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   /// Calculate distance between two lat/lng points using simple Pythagorean formula
   /// For small distances (GPS points), Earth curvature correction is negligible
   double _calculateSimpleDistance(double lat1, double lng1, double lat2, double lng2) {
-    // Convert degrees to approximate meters at mid-latitude
-    final avgLat = (lat1 + lat2) / 2;
-    final metersPerDegreeLat = 111319.9; // meters per degree latitude (constant)
-    final metersPerDegreeLng = 111319.9 * math.cos(avgLat * math.pi / 180); // varies by latitude
+    // Convert degrees to approximate meters using first point's latitude for longitude correction
+    const metersPerDegreeLat = 111320.0; // Meters per degree latitude (constant)
+    final metersPerDegreeLng = 111320.0 * math.cos(lat1 * math.pi / 180); // Adjust for longitude at first point's latitude
     
     final deltaLat = (lat2 - lat1) * metersPerDegreeLat;
     final deltaLng = (lng2 - lng1) * metersPerDegreeLng;
