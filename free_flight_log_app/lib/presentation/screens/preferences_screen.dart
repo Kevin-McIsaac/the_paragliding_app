@@ -192,36 +192,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     );
   }
 
-  Widget _buildSliderRow(
-    String title,
-    String subtitle,
-    double? value,
-    double min,
-    double max,
-    int? divisions,
-    String Function(double) labelBuilder,
-    Function(double) onChanged,
-  ) {
-    return ListTile(
-      title: Text(title),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (subtitle.isNotEmpty) Text(subtitle),
-          Slider(
-            value: value ?? min,
-            min: min,
-            max: max,
-            divisions: divisions,
-            label: labelBuilder(value ?? min),
-            onChanged: onChanged,
-          ),
-        ],
-      ),
-      contentPadding: EdgeInsets.zero,
-    );
-  }
-
 
 
   @override
