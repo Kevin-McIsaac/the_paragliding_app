@@ -11,6 +11,8 @@ import 'database_service.dart';
 import 'logging_service.dart';
 import 'igc_parser.dart';
 import 'site_matching_service.dart';
+import 'takeoff_landing_detector.dart';
+import '../utils/preferences_helper.dart';
 
 /// Service for importing IGC files into the flight log
 class IgcImportService {
@@ -181,7 +183,20 @@ class IgcImportService {
 
   /// Create a flight record from IGC data (shared between import methods)
   Future<Flight> _createFlightFromIgcData(IgcFile igcData, String filePath) async {
-    // Calculate flight statistics
+    // Get detection thresholds from preferences
+    final speedThreshold = await PreferencesHelper.getDetectionSpeedThreshold();
+    final climbRateThreshold = await PreferencesHelper.getDetectionClimbRateThreshold();
+    
+    // Perform takeoff/landing detection
+    final detectionResult = TakeoffLandingDetector.detectTakeoffLanding(
+      igcData,
+      speedThresholdKmh: speedThreshold,
+      climbRateThresholdMs: climbRateThreshold,
+    );
+    
+    LoggingService.info('IgcImportService: Detection result - ${detectionResult.message}');
+    
+    // Calculate flight statistics (will be updated to use trimmed data later)
     final groundTrackDistance = igcData.calculateGroundTrackDistance();
     final straightDistance = igcData.calculateLaunchToLandingDistance();
     final climbRates = igcData.calculateClimbRates();
@@ -291,7 +306,7 @@ class IgcImportService {
     // Get original filename
     final originalFilename = path.basename(filePath);
 
-    // Create flight record
+    // Create flight record with detection data
     return Flight(
       date: igcData.date,
       launchTime: _formatTime(igcData.launchTime),
@@ -332,6 +347,11 @@ class IgcImportService {
       climbPercentage: glideStats['climbPercentage'],
       gpsFixQuality: gpsStats['gpsFixQuality'],
       recordingInterval: gpsStats['recordingInterval'],
+      // Add detection data
+      takeoffIndex: detectionResult.takeoffIndex,
+      landingIndex: detectionResult.landingIndex,
+      detectedTakeoffTime: detectionResult.takeoffTime,
+      detectedLandingTime: detectionResult.landingTime,
     );
   }
 
@@ -391,6 +411,10 @@ class IgcImportService {
       climbPercentage: flight.climbPercentage,
       gpsFixQuality: flight.gpsFixQuality,
       recordingInterval: flight.recordingInterval,
+      takeoffIndex: flight.takeoffIndex,
+      landingIndex: flight.landingIndex,
+      detectedTakeoffTime: flight.detectedTakeoffTime,
+      detectedLandingTime: flight.detectedLandingTime,
     );
   }
 
@@ -456,6 +480,18 @@ class IgcImportService {
 
   /// Create a flight record from IGC data without copying the file (for database recreation)
   Future<Flight> _createFlightFromIgcDataNoCopy(IgcFile igcData, String filePath) async {
+    // Get detection thresholds from preferences
+    final speedThreshold = await PreferencesHelper.getDetectionSpeedThreshold();
+    final climbRateThreshold = await PreferencesHelper.getDetectionClimbRateThreshold();
+    
+    // Perform takeoff/landing detection
+    final detectionResult = TakeoffLandingDetector.detectTakeoffLanding(
+      igcData,
+      speedThresholdKmh: speedThreshold,
+      climbRateThresholdMs: climbRateThreshold,
+    );
+    
+    LoggingService.info('IgcImportService: Detection result (no copy) - ${detectionResult.message}');
     // Calculate flight statistics
     final groundTrackDistance = igcData.calculateGroundTrackDistance();
     final straightDistance = igcData.calculateLaunchToLandingDistance();
@@ -587,6 +623,12 @@ class IgcImportService {
       climbPercentage: glideStats['climbPercentage'],
       gpsFixQuality: gpsStats['gpsFixQuality'],
       recordingInterval: gpsStats['recordingInterval'],
+      
+      // Add detection data
+      takeoffIndex: detectionResult.takeoffIndex,
+      landingIndex: detectionResult.landingIndex,
+      detectedTakeoffTime: detectionResult.takeoffTime,
+      detectedLandingTime: detectionResult.landingTime,
     );
   }
 

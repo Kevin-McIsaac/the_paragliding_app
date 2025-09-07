@@ -549,6 +549,13 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     return math.sqrt(deltaLat * deltaLat + deltaLng * deltaLng);
   }
 
+  /// Format timestamp as HH:MM:SS for the time overlay
+  String _formatTimeHMS(DateTime timestamp) {
+    return '${timestamp.hour.toString().padLeft(2, '0')}:'
+           '${timestamp.minute.toString().padLeft(2, '0')}:'
+           '${timestamp.second.toString().padLeft(2, '0')}';
+  }
+
   Color _getClimbRateColor(double climbRate) {
     if (climbRate >= 0) return Colors.green;
     if (climbRate > -1.5) return Colors.blue;
@@ -1426,6 +1433,34 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                 ),
               ),
             ),
+          // Time display overlay for selected point
+          if (_selectedTrackPointIndex != null && _selectedTrackPointIndex! < _trackPoints.length)
+            Positioned(
+              bottom: 8,
+              left: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.8),
+                  borderRadius: BorderRadius.circular(4),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  'Time: ${_formatTimeHMS(_trackPoints[_selectedTrackPointIndex!].timestamp)}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
             ],
           ),
         ),
@@ -1464,7 +1499,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
             showTimeLabels: false,
             showGridLabels: true,
           ),
-          tooltip: 'GPS ground speed in meters',
+          tooltip: '5-second average GPS ground speed in km/h',
         ),
       ],
     );

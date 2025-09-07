@@ -24,6 +24,16 @@ class PreferencesHelper {
   // IGC Import preferences
   static const String igcLastFolderKey = 'igc_last_folder';
   
+  // Takeoff/Landing Detection preferences
+  static const String detectionSpeedThresholdKey = 'detection_speed_threshold';
+  static const String detectionClimbRateThresholdKey = 'detection_climb_rate_threshold';
+  
+  // Default values for detection
+  static const double defaultDetectionSpeedThreshold = 9.0; // km/h
+  static const double defaultDetectionClimbRateThreshold = 0.2; // m/s
+  static const List<double> validSpeedThresholds = [5.0, 7.0, 9.0, 11.0, 15.0]; // km/h
+  static const List<double> validClimbRateThresholds = [0.1, 0.2, 0.3, 0.5]; // m/s
+  
   // Cesium 3D Map methods
   static Future<String?> getCesiumSceneMode() async {
     final prefs = await SharedPreferences.getInstance();
@@ -180,6 +190,39 @@ class PreferencesHelper {
   static Future<void> removeIgcLastFolder() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(igcLastFolderKey);
+  }
+  
+  // Takeoff/Landing Detection methods
+  static Future<double> getDetectionSpeedThreshold() async {
+    final prefs = await SharedPreferences.getInstance();
+    // Check if the preference has been set before
+    if (!prefs.containsKey(detectionSpeedThresholdKey)) {
+      // First time - set default
+      await prefs.setDouble(detectionSpeedThresholdKey, defaultDetectionSpeedThreshold);
+      return defaultDetectionSpeedThreshold;
+    }
+    return prefs.getDouble(detectionSpeedThresholdKey) ?? defaultDetectionSpeedThreshold;
+  }
+  
+  static Future<void> setDetectionSpeedThreshold(double value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(detectionSpeedThresholdKey, value);
+  }
+  
+  static Future<double> getDetectionClimbRateThreshold() async {
+    final prefs = await SharedPreferences.getInstance();
+    // Check if the preference has been set before
+    if (!prefs.containsKey(detectionClimbRateThresholdKey)) {
+      // First time - set default
+      await prefs.setDouble(detectionClimbRateThresholdKey, defaultDetectionClimbRateThreshold);
+      return defaultDetectionClimbRateThreshold;
+    }
+    return prefs.getDouble(detectionClimbRateThresholdKey) ?? defaultDetectionClimbRateThreshold;
+  }
+  
+  static Future<void> setDetectionClimbRateThreshold(double value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(detectionClimbRateThresholdKey, value);
   }
   
   // Generic methods for direct access if needed

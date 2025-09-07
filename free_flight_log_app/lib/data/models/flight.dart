@@ -49,6 +49,12 @@ class Flight {
   final double? climbPercentage; // percentage
   final double? gpsFixQuality; // percentage
   final double? recordingInterval; // seconds
+  
+  // Takeoff/Landing Detection fields
+  final int? takeoffIndex; // Index of detected takeoff point in IGC track points
+  final int? landingIndex; // Index of detected landing point in IGC track points
+  final DateTime? detectedTakeoffTime; // Detected takeoff time (may differ from launchTime)
+  final DateTime? detectedLandingTime; // Detected landing time (may differ from landingTime)
 
   Flight({
     this.id,
@@ -94,6 +100,10 @@ class Flight {
     this.climbPercentage,
     this.gpsFixQuality,
     this.recordingInterval,
+    this.takeoffIndex,
+    this.landingIndex,
+    this.detectedTakeoffTime,
+    this.detectedLandingTime,
   });
 
   Map<String, dynamic> toMap() {
@@ -141,6 +151,10 @@ class Flight {
       'climb_percentage': climbPercentage,
       'gps_fix_quality': gpsFixQuality,
       'recording_interval': recordingInterval,
+      'takeoff_index': takeoffIndex,
+      'landing_index': landingIndex,
+      'detected_takeoff_time': detectedTakeoffTime?.toIso8601String(),
+      'detected_landing_time': detectedLandingTime?.toIso8601String(),
     };
   }
 
@@ -189,6 +203,10 @@ class Flight {
       climbPercentage: map['climb_percentage']?.toDouble(),
       gpsFixQuality: map['gps_fix_quality']?.toDouble(),
       recordingInterval: map['recording_interval']?.toDouble(),
+      takeoffIndex: map['takeoff_index']?.toInt(),
+      landingIndex: map['landing_index']?.toInt(),
+      detectedTakeoffTime: map['detected_takeoff_time'] != null ? DateTime.parse(map['detected_takeoff_time']) : null,
+      detectedLandingTime: map['detected_landing_time'] != null ? DateTime.parse(map['detected_landing_time']) : null,
     );
   }
 
@@ -235,6 +253,10 @@ class Flight {
     double? climbPercentage,
     double? gpsFixQuality,
     double? recordingInterval,
+    int? takeoffIndex,
+    int? landingIndex,
+    DateTime? detectedTakeoffTime,
+    DateTime? detectedLandingTime,
   }) {
     return Flight(
       id: id ?? this.id,
@@ -279,6 +301,10 @@ class Flight {
       climbPercentage: climbPercentage ?? this.climbPercentage,
       gpsFixQuality: gpsFixQuality ?? this.gpsFixQuality,
       recordingInterval: recordingInterval ?? this.recordingInterval,
+      takeoffIndex: takeoffIndex ?? this.takeoffIndex,
+      landingIndex: landingIndex ?? this.landingIndex,
+      detectedTakeoffTime: detectedTakeoffTime ?? this.detectedTakeoffTime,
+      detectedLandingTime: detectedLandingTime ?? this.detectedLandingTime,
     );
   }
   
@@ -392,5 +418,39 @@ class Flight {
       LoggingService.error('Flight.encodeTrianglePointsToJson: Failed to encode triangle points', e);
       return null;
     }
+  }
+  
+  /// Get effective takeoff time (detected time if available, otherwise launch time)
+  String get effectiveTakeoffTime {
+    if (detectedTakeoffTime != null) {
+      return '${detectedTakeoffTime!.hour.toString().padLeft(2, '0')}:${detectedTakeoffTime!.minute.toString().padLeft(2, '0')}';
+    }
+    return launchTime;
+  }
+  
+  /// Get effective landing time (detected time if available, otherwise landing time)  
+  String get effectiveLandingTime {
+    if (detectedLandingTime != null) {
+      return '${detectedLandingTime!.hour.toString().padLeft(2, '0')}:${detectedLandingTime!.minute.toString().padLeft(2, '0')}';
+    }
+    return landingTime;
+  }
+  
+  /// Get effective flight duration in minutes (detected duration if available, otherwise stored duration)
+  int get effectiveDuration {
+    if (detectedTakeoffTime != null && detectedLandingTime != null) {
+      return detectedLandingTime!.difference(detectedTakeoffTime!).inMinutes;
+    }
+    return duration;
+  }
+  
+  /// Check if this flight has takeoff/landing detection data
+  bool get hasDetectionData => takeoffIndex != null && landingIndex != null;
+  
+  /// Get trimmed track points based on detected takeoff/landing indices
+  /// Returns null if no detection data available - caller should use full track points
+  ({int startIndex, int endIndex})? get trimmedIndices {
+    if (!hasDetectionData) return null;
+    return (startIndex: takeoffIndex!, endIndex: landingIndex!);
   }
 }

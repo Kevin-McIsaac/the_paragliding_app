@@ -17,7 +17,9 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   int? _cesiumTrailDuration;
   double? _cesiumQuality;
   
-  
+  // Takeoff/Landing Detection preferences
+  double? _detectionSpeedThreshold;
+  double? _detectionClimbRateThreshold;
   
   bool _isLoading = true;
   bool _isSaving = false;
@@ -37,6 +39,10 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       final trailDuration = await PreferencesHelper.getCesiumTrailDuration();
       final quality = await PreferencesHelper.getCesiumQuality();
       
+      // Load Detection preferences
+      final speedThreshold = await PreferencesHelper.getDetectionSpeedThreshold();
+      final climbRateThreshold = await PreferencesHelper.getDetectionClimbRateThreshold();
+      
       if (mounted) {
         setState(() {
           _cesiumSceneMode = sceneMode;
@@ -44,6 +50,9 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           _cesiumTerrainEnabled = terrainEnabled;
           _cesiumTrailDuration = trailDuration;
           _cesiumQuality = quality;
+          
+          _detectionSpeedThreshold = speedThreshold;
+          _detectionClimbRateThreshold = climbRateThreshold;
           
           _isLoading = false;
         });
@@ -324,7 +333,48 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   },
                 ),
               ]),
-
+              
+              // Flight Detection Settings
+              _buildSection('Flight Detection', [
+                _buildDropdownRow<double>(
+                  'Speed Threshold',
+                  'Minimum 5-second ground speed for takeoff/landing detection',
+                  _detectionSpeedThreshold,
+                  PreferencesHelper.validSpeedThresholds.map((speed) => 
+                    DropdownMenuItem(
+                      value: speed,
+                      child: Text('${speed.toStringAsFixed(0)} km/h'),
+                    )
+                  ).toList(),
+                  (value) {
+                    if (value != null) {
+                      setState(() {
+                        _detectionSpeedThreshold = value;
+                      });
+                      _savePreference('speed threshold', value, PreferencesHelper.setDetectionSpeedThreshold);
+                    }
+                  },
+                ),
+                _buildDropdownRow<double>(
+                  'Climb Rate Threshold',
+                  'Minimum absolute 5-second climb rate for takeoff/landing detection',
+                  _detectionClimbRateThreshold,
+                  PreferencesHelper.validClimbRateThresholds.map((rate) => 
+                    DropdownMenuItem(
+                      value: rate,
+                      child: Text('${rate.toStringAsFixed(1)} m/s'),
+                    )
+                  ).toList(),
+                  (value) {
+                    if (value != null) {
+                      setState(() {
+                        _detectionClimbRateThreshold = value;
+                      });
+                      _savePreference('climb rate threshold', value, PreferencesHelper.setDetectionClimbRateThreshold);
+                    }
+                  },
+                ),
+              ]),
 
             ],
           ),
