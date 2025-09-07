@@ -288,7 +288,7 @@ class IgcImportService {
       LoggingService.info('  Index: $closingPointIndex of ${dataForStats.trackPoints.length} points (${(closingPointIndex / dataForStats.trackPoints.length * 100).toStringAsFixed(1)}% of flight)');
       LoggingService.info('  Time: ${closingPoint.timestamp.toLocal().toIso8601String().substring(11, 16)} (flight time: ${closingPoint.timestamp.difference(launchPoint.timestamp).inMinutes}m)');
       LoggingService.info('  Coordinates: ${closingPoint.latitude.toStringAsFixed(6)}, ${closingPoint.longitude.toStringAsFixed(6)}');
-      LoggingService.info('  Distance to Launch: ${actualClosingDistance?.toStringAsFixed(1) ?? 'N/A'}m');
+      LoggingService.info('  Distance to Launch: ${actualClosingDistance.toStringAsFixed(1)}m');
       LoggingService.info('  Status: CLOSED');
     } else {
       LoggingService.info('IgcImportService: CLOSING POINT DETAILS for $flightContext:');
@@ -643,7 +643,7 @@ class IgcImportService {
       LoggingService.info('  Index: $closingPointIndex of ${dataForStats.trackPoints.length} points (${(closingPointIndex / dataForStats.trackPoints.length * 100).toStringAsFixed(1)}% of flight)');
       LoggingService.info('  Time: ${closingPoint.timestamp.toLocal().toIso8601String().substring(11, 16)} (flight time: ${closingPoint.timestamp.difference(launchPoint.timestamp).inMinutes}m)');
       LoggingService.info('  Coordinates: ${closingPoint.latitude.toStringAsFixed(6)}, ${closingPoint.longitude.toStringAsFixed(6)}');
-      LoggingService.info('  Distance to Launch: ${actualClosingDistance?.toStringAsFixed(1) ?? 'N/A'}m');
+      LoggingService.info('  Distance to Launch: ${actualClosingDistance.toStringAsFixed(1)}m');
       LoggingService.info('  Status: CLOSED');
     } else {
       LoggingService.info('IgcImportService: CLOSING POINT DETAILS for $flightContext (NO COPY):');

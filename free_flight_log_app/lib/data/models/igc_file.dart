@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import '../../services/logging_service.dart';
+
 /// IGC file data model
 class IgcFile {
   final DateTime date;
@@ -599,10 +601,13 @@ class IgcFile {
   /// Calculate triangle using maximum perimeter approach
   /// Returns a map with triangle points and total distance
   Map<String, dynamic> calculateFaiTriangle() {
+    final stopwatch = Stopwatch()..start();
+    
     if (trackPoints.length < 3) {
+      LoggingService.debug('Triangle calculation: Insufficient points (${trackPoints.length} < 3)');
       return {
         'trianglePoints': <IgcPoint>[],
-        'triangleDistance': 0.0,
+        'triangleDistance': 0.0, // Already in kilometers
       };
     }
 
@@ -611,10 +616,12 @@ class IgcFile {
 
     // For performance, sample every nth point for large tracks
     int step = trackPoints.length > 1000 ? trackPoints.length ~/ 500 : 1;
+    int comparisons = 0;
     
     for (int i = 0; i < trackPoints.length; i += step) {
       for (int j = i + step; j < trackPoints.length; j += step) {
         for (int k = j + step; k < trackPoints.length; k += step) {
+          comparisons++;
           final p1 = trackPoints[i];
           final p2 = trackPoints[j];
           final p3 = trackPoints[k];
@@ -633,10 +640,13 @@ class IgcFile {
       }
     }
 
+    stopwatch.stop();
+
     if (bestTriangle.length != 3) {
+      LoggingService.debug('Triangle calculation: No valid triangle found in ${stopwatch.elapsedMilliseconds}ms ($comparisons comparisons)');
       return {
         'trianglePoints': <IgcPoint>[],
-        'triangleDistance': 0.0,
+        'triangleDistance': 0.0, // Already in kilometers
       };
     }
 
@@ -646,9 +656,21 @@ class IgcFile {
     final distance3 = calculateSimpleDistance(bestTriangle[2], bestTriangle[0]);
     final totalDistance = distance1 + distance2 + distance3;
 
+    // Log detailed triangle information
+    LoggingService.info('Triangle calculation completed in ${stopwatch.elapsedMilliseconds}ms ($comparisons comparisons)');
+    LoggingService.info('Triangle vertices:');
+    LoggingService.info('  P1: ${bestTriangle[0].latitude.toStringAsFixed(6)}, ${bestTriangle[0].longitude.toStringAsFixed(6)}');
+    LoggingService.info('  P2: ${bestTriangle[1].latitude.toStringAsFixed(6)}, ${bestTriangle[1].longitude.toStringAsFixed(6)}');
+    LoggingService.info('  P3: ${bestTriangle[2].latitude.toStringAsFixed(6)}, ${bestTriangle[2].longitude.toStringAsFixed(6)}');
+    LoggingService.info('Triangle side distances:');
+    LoggingService.info('  P1-P2: ${(distance1 / 1000).toStringAsFixed(3)}km');
+    LoggingService.info('  P2-P3: ${(distance2 / 1000).toStringAsFixed(3)}km');
+    LoggingService.info('  P3-P1: ${(distance3 / 1000).toStringAsFixed(3)}km');
+    LoggingService.info('Triangle perimeter: ${(totalDistance / 1000).toStringAsFixed(3)}km');
+
     return {
       'trianglePoints': bestTriangle,
-      'triangleDistance': totalDistance,
+      'triangleDistance': totalDistance / 1000.0, // Convert meters to kilometers
     };
   }
 
@@ -657,20 +679,33 @@ class IgcFile {
   /// Returns the index of the first point within maxDistanceMeters of the launch point
   /// Returns null if no point is found within the specified distance
   int? getClosingPointIndex({double maxDistanceMeters = 100.0}) {
-    if (trackPoints.length < 2) return null;
+    final stopwatch = Stopwatch()..start();
+    
+    if (trackPoints.length < 2) {
+      LoggingService.debug('Closing point detection: Insufficient points (${trackPoints.length} < 2)');
+      return null;
+    }
     
     final launchPoint = trackPoints.first;
+    int pointsChecked = 0;
     
     // Scan backwards from the end of the flight
     for (int i = trackPoints.length - 1; i >= 1; i--) {
+      pointsChecked++;
       final currentPoint = trackPoints[i];
       final distance = calculateSimpleDistance(launchPoint, currentPoint);
       
       if (distance <= maxDistanceMeters) {
+        stopwatch.stop();
+        LoggingService.info('Closing point found in ${stopwatch.elapsedMilliseconds}ms ($pointsChecked points checked)');
+        LoggingService.info('Closing point: Index $i, ${currentPoint.latitude.toStringAsFixed(6)}, ${currentPoint.longitude.toStringAsFixed(6)}');
+        LoggingService.info('Actual closing distance: ${distance.toStringAsFixed(1)}m (threshold: ${maxDistanceMeters.toStringAsFixed(1)}m)');
         return i;
       }
     }
     
+    stopwatch.stop();
+    LoggingService.debug('Closing point detection: No point within ${maxDistanceMeters.toStringAsFixed(1)}m found in ${stopwatch.elapsedMilliseconds}ms ($pointsChecked points checked)');
     return null; // No closing point found
   }
 

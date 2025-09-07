@@ -791,84 +791,24 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     }
     
     final point = _trackPoints[_selectedTrackPointIndex!];
-    final launchPoint = _trackPoints.first;
-    
-    // Calculate distance from launch using the same method as in the closing point detection
-    final distanceFromLaunch = _calculateSimpleDistance(
-      launchPoint.latitude, launchPoint.longitude,
-      point.latitude, point.longitude
-    );
     
     return [
       Marker(
         point: LatLng(point.latitude, point.longitude),
-        width: 80,
-        height: 60,  // Increase to accommodate label below
-        alignment: Alignment.center,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            // Yellow circle - positioned at center
-            Positioned(
-              left: 32, // (80 - 16) / 2 = center horizontally
-              top: 22,  // (60 / 2) - 8 = center vertically
-              child: Container(
-                width: 16,
-                height: 16,
-                decoration: const BoxDecoration(
-                  color: SiteMarkerUtils.selectedPointColor,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black26,
-                      blurRadius: 2,
-                      offset: Offset(0, 1),
-                    ),
-                  ],
-                ),
+        width: 24,
+        height: 24,
+        child: Container(
+          decoration: const BoxDecoration(
+            color: SiteMarkerUtils.selectedPointColor,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 2,
+                offset: Offset(0, 1),
               ),
-            ),
-            // Label positioned below the circle
-            Positioned(
-              left: 24, // Center horizontally under the circle at x=32
-              top: 40,  // Position below circle: 22 (circle center) + 8 (circle radius) + 10 (spacing)
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                decoration: BoxDecoration(
-                  color: SiteMarkerUtils.selectedPointColor.withValues(alpha: 0.5), // 50% transparent
-                  borderRadius: BorderRadius.circular(3),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.3),
-                      blurRadius: 2,
-                      offset: const Offset(0, 1),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '${distanceFromLaunch.toStringAsFixed(0)}m',
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 8,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      '${_selectedTrackPointIndex! + 1}/${_trackPoints.length}',
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 8,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     ];
