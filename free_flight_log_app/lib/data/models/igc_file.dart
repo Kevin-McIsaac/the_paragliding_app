@@ -596,7 +596,7 @@ class IgcFile {
     };
   }
 
-  /// Calculate triangle using maximum area approach
+  /// Calculate triangle using maximum perimeter approach
   /// Returns a map with triangle points and total distance
   Map<String, dynamic> calculateFaiTriangle() {
     if (trackPoints.length < 3) {
@@ -606,7 +606,7 @@ class IgcFile {
       };
     }
 
-    double maxArea = 0.0;
+    double maxPerimeter = 0.0;
     List<IgcPoint> bestTriangle = [];
 
     // For performance, sample every nth point for large tracks
@@ -619,9 +619,14 @@ class IgcFile {
           final p2 = trackPoints[j];
           final p3 = trackPoints[k];
           
-          final area = _calculateTriangleArea(p1, p2, p3);
-          if (area > maxArea) {
-            maxArea = area;
+          // Calculate perimeter using Pythagorean distance
+          final distance1 = calculateSimpleDistance(p1, p2);
+          final distance2 = calculateSimpleDistance(p2, p3);
+          final distance3 = calculateSimpleDistance(p3, p1);
+          final perimeter = distance1 + distance2 + distance3;
+          
+          if (perimeter > maxPerimeter) {
+            maxPerimeter = perimeter;
             bestTriangle = [p1, p2, p3];
           }
         }
@@ -635,10 +640,10 @@ class IgcFile {
       };
     }
 
-    // Calculate triangle perimeter
-    final distance1 = _haversineDistance(bestTriangle[0], bestTriangle[1]);
-    final distance2 = _haversineDistance(bestTriangle[1], bestTriangle[2]);
-    final distance3 = _haversineDistance(bestTriangle[2], bestTriangle[0]);
+    // Calculate final triangle perimeter using Pythagorean distance
+    final distance1 = calculateSimpleDistance(bestTriangle[0], bestTriangle[1]);
+    final distance2 = calculateSimpleDistance(bestTriangle[1], bestTriangle[2]);
+    final distance3 = calculateSimpleDistance(bestTriangle[2], bestTriangle[0]);
     final totalDistance = distance1 + distance2 + distance3;
 
     return {
@@ -647,33 +652,6 @@ class IgcFile {
     };
   }
 
-  /// Calculate triangle area using cross product
-  /// Returns area in square kilometers
-  double _calculateTriangleArea(IgcPoint p1, IgcPoint p2, IgcPoint p3) {
-    // Convert to approximate Cartesian coordinates (meters)
-    const double earthRadius = 6371000; // meters
-    final lat1 = p1.latitude * pi / 180;
-    final lon1 = p1.longitude * pi / 180;
-    final lat2 = p2.latitude * pi / 180;
-    final lon2 = p2.longitude * pi / 180;
-    final lat3 = p3.latitude * pi / 180;
-    final lon3 = p3.longitude * pi / 180;
-    
-    // Project to plane using equirectangular projection
-    final avgLat = (lat1 + lat2 + lat3) / 3;
-    final x1 = earthRadius * lon1 * cos(avgLat);
-    final y1 = earthRadius * lat1;
-    final x2 = earthRadius * lon2 * cos(avgLat);
-    final y2 = earthRadius * lat2;
-    final x3 = earthRadius * lon3 * cos(avgLat);
-    final y3 = earthRadius * lat3;
-    
-    // Calculate area using cross product
-    final area = 0.5 * ((x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1)).abs();
-    
-    // Convert to square kilometers
-    return area / 1000000;
-  }
 
   /// Find the closing point index by scanning backwards from the end
   /// Returns the index of the first point within maxDistanceMeters of the launch point
