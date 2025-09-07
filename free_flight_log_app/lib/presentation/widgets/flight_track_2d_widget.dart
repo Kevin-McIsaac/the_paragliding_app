@@ -281,13 +281,13 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(
-                            Icons.adjust,
+                            Icons.change_history,
                             color: Colors.white,
                             size: 8,
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Text('Closing Point', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w500, color: Colors.white)),
+                        Text('Close', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w500, color: Colors.white)),
                       ],
                     ),
                   ],
@@ -795,8 +795,8 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     return [
       Marker(
         point: LatLng(point.latitude, point.longitude),
-        width: 24,
-        height: 24,
+        width: 12,
+        height: 12,
         child: Container(
           decoration: const BoxDecoration(
             color: SiteMarkerUtils.selectedPointColor,
@@ -890,7 +890,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                   ],
                 ),
                 child: const Icon(
-                  Icons.adjust,
+                  Icons.change_history,
                   color: Colors.white,
                   size: 14,
                 ),
