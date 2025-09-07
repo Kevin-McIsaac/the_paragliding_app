@@ -18,7 +18,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final duration = DateTimeUtils.formatDurationCompact(widget.flight.duration);
+    final duration = DateTimeUtils.formatDurationCompact(widget.flight.effectiveDuration);
 
     return Container(
       padding: const EdgeInsets.all(16),

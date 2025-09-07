@@ -79,7 +79,11 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
     }
 
     try {
-      final trackData = await _igcService.getTrackPointsWithTimezone(widget.flight.trackLogPath!);
+      final trackData = await _igcService.getTrackPointsWithTimezone(
+        widget.flight.trackLogPath!,
+        takeoffIndex: widget.flight.takeoffIndex,
+        landingIndex: widget.flight.landingIndex,
+      );
       
       if (trackData.points.isEmpty) {
         setState(() {

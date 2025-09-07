@@ -1008,7 +1008,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                               ),
                             ),
                             child: Text(
-                              _formatTimeWithTimezone(_flight.launchTime, _flight.timezone),
+                              _formatTimeWithTimezone(_flight.effectiveLaunchTime, _flight.timezone),
                               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                 color: Theme.of(context).colorScheme.primary,
                               ),
@@ -1030,7 +1030,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                               ),
                             ),
                             child: Text(
-                              _formatTimeWithTimezone(_flight.launchTime, _flight.timezone),
+                              _formatTimeWithTimezone(_flight.effectiveLaunchTime, _flight.timezone),
                               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                 color: Theme.of(context).colorScheme.primary,
                               ),
@@ -1120,7 +1120,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                               ),
                             ),
                             child: Text(
-                              _formatTimeWithTimezone(_flight.landingTime, _flight.timezone),
+                              _formatTimeWithTimezone(_flight.effectiveLandingTime, _flight.timezone),
                               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                 color: Theme.of(context).colorScheme.primary,
                               ),
@@ -1142,7 +1142,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                               ),
                             ),
                             child: Text(
-                              _formatTimeWithTimezone(_flight.landingTime, _flight.timezone),
+                              _formatTimeWithTimezone(_flight.effectiveLandingTime, _flight.timezone),
                               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                 color: Theme.of(context).colorScheme.primary,
                               ),

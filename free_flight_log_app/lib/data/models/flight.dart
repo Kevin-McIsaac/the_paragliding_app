@@ -106,6 +106,35 @@ class Flight {
     this.detectedLandingTime,
   });
 
+  /// Get the effective launch time - uses detected takeoff time if available, otherwise original launch time
+  String get effectiveLaunchTime {
+    if (detectedTakeoffTime != null) {
+      // Format detected time as HH:mm
+      return '${detectedTakeoffTime!.hour.toString().padLeft(2, '0')}:${detectedTakeoffTime!.minute.toString().padLeft(2, '0')}';
+    }
+    return launchTime;
+  }
+
+  /// Get the effective landing time - uses detected landing time if available, otherwise original landing time  
+  String get effectiveLandingTime {
+    if (detectedLandingTime != null) {
+      // Format detected time as HH:mm
+      return '${detectedLandingTime!.hour.toString().padLeft(2, '0')}:${detectedLandingTime!.minute.toString().padLeft(2, '0')}';
+    }
+    return landingTime;
+  }
+
+  /// Get the effective duration - uses detected times if available, otherwise original duration
+  int get effectiveDuration {
+    if (detectedTakeoffTime != null && detectedLandingTime != null) {
+      return detectedLandingTime!.difference(detectedTakeoffTime!).inMinutes;
+    }
+    return duration;
+  }
+
+  /// Whether this flight has detected takeoff/landing data
+  bool get hasDetectionData => takeoffIndex != null && landingIndex != null;
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -428,24 +457,6 @@ class Flight {
     return launchTime;
   }
   
-  /// Get effective landing time (detected time if available, otherwise landing time)  
-  String get effectiveLandingTime {
-    if (detectedLandingTime != null) {
-      return '${detectedLandingTime!.hour.toString().padLeft(2, '0')}:${detectedLandingTime!.minute.toString().padLeft(2, '0')}';
-    }
-    return landingTime;
-  }
-  
-  /// Get effective flight duration in minutes (detected duration if available, otherwise stored duration)
-  int get effectiveDuration {
-    if (detectedTakeoffTime != null && detectedLandingTime != null) {
-      return detectedLandingTime!.difference(detectedTakeoffTime!).inMinutes;
-    }
-    return duration;
-  }
-  
-  /// Check if this flight has takeoff/landing detection data
-  bool get hasDetectionData => takeoffIndex != null && landingIndex != null;
   
   /// Get trimmed track points based on detected takeoff/landing indices
   /// Returns null if no detection data available - caller should use full track points
