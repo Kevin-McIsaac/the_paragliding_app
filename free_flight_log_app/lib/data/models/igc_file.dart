@@ -677,7 +677,8 @@ class IgcFile {
 
   /// Find the closing point index by scanning backwards from the end
   /// Returns the index of the first point within maxDistanceMeters of the launch point
-  /// Returns null if no point is found within the specified distance
+  /// Only returns a valid closing point if the track actually left the closing circle
+  /// Returns null if no point is found within the specified distance or if the track never left the circle
   int? getClosingPointIndex({double maxDistanceMeters = 100.0}) {
     final stopwatch = Stopwatch()..start();
     
@@ -688,6 +689,7 @@ class IgcFile {
     
     final launchPoint = trackPoints.first;
     int pointsChecked = 0;
+    int? potentialClosingIndex;
     
     // Scan backwards from the end of the flight
     for (int i = trackPoints.length - 1; i >= 1; i--) {
@@ -696,17 +698,53 @@ class IgcFile {
       final distance = calculateSimpleDistance(launchPoint, currentPoint);
       
       if (distance <= maxDistanceMeters) {
-        stopwatch.stop();
-        LoggingService.info('Closing point found in ${stopwatch.elapsedMilliseconds}ms ($pointsChecked points checked)');
-        LoggingService.info('Closing point: Index $i, ${currentPoint.latitude.toStringAsFixed(6)}, ${currentPoint.longitude.toStringAsFixed(6)}');
-        LoggingService.info('Actual closing distance: ${distance.toStringAsFixed(1)}m (threshold: ${maxDistanceMeters.toStringAsFixed(1)}m)');
-        return i;
+        potentialClosingIndex = i;
+        LoggingService.debug('Potential closing point found at index $i, distance: ${distance.toStringAsFixed(1)}m');
+        break; // Found potential closing point, now validate
+      }
+    }
+    
+    // If no potential closing point found, flight is definitely open
+    if (potentialClosingIndex == null) {
+      stopwatch.stop();
+      LoggingService.debug('Closing point detection: No point within ${maxDistanceMeters.toStringAsFixed(1)}m found in ${stopwatch.elapsedMilliseconds}ms ($pointsChecked points checked)');
+      return null;
+    }
+    
+    // Validate that the track actually left the closing circle
+    // Scan forward from launch to check if pilot flew away during flight
+    bool leftClosingCircle = false;
+    int validationPointsChecked = 0;
+    
+    for (int j = 1; j < potentialClosingIndex; j++) {
+      validationPointsChecked++;
+      final validationPoint = trackPoints[j];
+      final validationDistance = calculateSimpleDistance(launchPoint, validationPoint);
+      
+      if (validationDistance > maxDistanceMeters) {
+        leftClosingCircle = true;
+        LoggingService.debug('Validation: Found point outside circle during flight at index $j, distance: ${validationDistance.toStringAsFixed(1)}m');
+        break;
       }
     }
     
     stopwatch.stop();
-    LoggingService.debug('Closing point detection: No point within ${maxDistanceMeters.toStringAsFixed(1)}m found in ${stopwatch.elapsedMilliseconds}ms ($pointsChecked points checked)');
-    return null; // No closing point found
+    
+    if (leftClosingCircle) {
+      // Valid closing - track left the circle and returned
+      final closingPoint = trackPoints[potentialClosingIndex];
+      final closingDistance = calculateSimpleDistance(launchPoint, closingPoint);
+      LoggingService.info('Valid closing point found in ${stopwatch.elapsedMilliseconds}ms (${pointsChecked + validationPointsChecked} points total)');
+      LoggingService.info('Closing point: Index $potentialClosingIndex, ${closingPoint.latitude.toStringAsFixed(6)}, ${closingPoint.longitude.toStringAsFixed(6)}');
+      LoggingService.info('Actual closing distance: ${closingDistance.toStringAsFixed(1)}m (threshold: ${maxDistanceMeters.toStringAsFixed(1)}m)');
+      LoggingService.info('Track validation: Left closing circle during flight and returned (checked $validationPointsChecked points)');
+      return potentialClosingIndex;
+    } else {
+      // Invalid closing - track never left the closing circle
+      LoggingService.debug('Closing point detection: Track never left closing circle in ${stopwatch.elapsedMilliseconds}ms (${pointsChecked + validationPointsChecked} points total)');
+      LoggingService.debug('Potential closing at index $potentialClosingIndex rejected - flight stayed within ${maxDistanceMeters.toStringAsFixed(1)}m circle');
+      return null; // Not a valid closing - likely ground handling or very short flight
+    }
   }
 
   /// Calculate simple Pythagorean distance in meters (accurate for distances < 1km)

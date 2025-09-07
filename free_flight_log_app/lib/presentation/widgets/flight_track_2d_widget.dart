@@ -292,8 +292,8 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                     ),
                   ],
                   
-                  // Closing threshold legend (always shown when track points are available)
-                  if (_trackPoints.isNotEmpty) ...[
+                  // Closing threshold legend (only shown for closed flights)
+                  if (widget.flight.isClosed && _trackPoints.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Row(
                       mainAxisSize: MainAxisSize.min,
@@ -705,9 +705,101 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     ];
   }
 
+  List<Marker> _buildTriangleDistanceMarkers() {
+    // Only show for closed flights with valid triangle
+    if (!widget.flight.isClosed || _faiTrianglePoints.length != Flight.expectedTrianglePoints) return [];
+    
+    // Convert IgcPoint to LatLng
+    final p1 = LatLng(_faiTrianglePoints[0].latitude, _faiTrianglePoints[0].longitude);
+    final p2 = LatLng(_faiTrianglePoints[1].latitude, _faiTrianglePoints[1].longitude);
+    final p3 = LatLng(_faiTrianglePoints[2].latitude, _faiTrianglePoints[2].longitude);
+    
+    // Calculate distances in meters and convert to km
+    final side1Distance = _calculateDistance(p1, p2) / 1000.0; // P1-P2
+    final side2Distance = _calculateDistance(p2, p3) / 1000.0; // P2-P3
+    final side3Distance = _calculateDistance(p3, p1) / 1000.0; // P3-P1
+    
+    // Calculate midpoints for label placement
+    final midpoint1 = LatLng((p1.latitude + p2.latitude) / 2, (p1.longitude + p2.longitude) / 2);
+    final midpoint2 = LatLng((p2.latitude + p3.latitude) / 2, (p2.longitude + p3.longitude) / 2);
+    final midpoint3 = LatLng((p3.latitude + p1.latitude) / 2, (p3.longitude + p1.longitude) / 2);
+    
+    return [
+      // Side 1 distance label
+      Marker(
+        point: midpoint1,
+        width: 60,
+        height: 20,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.7),
+            borderRadius: BorderRadius.circular(3),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: Center(
+            child: Text(
+              '${side1Distance.toStringAsFixed(1)}km',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+      ),
+      // Side 2 distance label
+      Marker(
+        point: midpoint2,
+        width: 60,
+        height: 20,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.7),
+            borderRadius: BorderRadius.circular(3),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: Center(
+            child: Text(
+              '${side2Distance.toStringAsFixed(1)}km',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+      ),
+      // Side 3 distance label
+      Marker(
+        point: midpoint3,
+        width: 60,
+        height: 20,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.7),
+            borderRadius: BorderRadius.circular(3),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: Center(
+            child: Text(
+              '${side3Distance.toStringAsFixed(1)}km',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+      ),
+    ];
+  }
+
   List<CircleMarker> _buildClosingDistanceCircle() {
-    // Show for all flights with track points
-    if (_trackPoints.isEmpty) {
+    // Only show for closed flights
+    if (!widget.flight.isClosed || _trackPoints.isEmpty) {
       return [];
     }
     
@@ -1500,6 +1592,11 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               // Keep track point marker as regular MarkerLayer since it's just a selection indicator
               MarkerLayer(
                 markers: _buildTrackPointMarker(),
+                rotate: false,
+              ),
+              // Triangle distance labels
+              MarkerLayer(
+                markers: _buildTriangleDistanceMarkers(),
                 rotate: false,
               ),
             ],
