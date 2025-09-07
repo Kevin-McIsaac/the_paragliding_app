@@ -195,3 +195,4 @@ Replace any `print()` statements with the appropriate LoggingService method base
 - **GPS/Sensors**: Primary data source. All calculations derive from GPS timestamps and coordinates
 - **File Storage**: IGC files are immutable once imported. Parse once, store results
 - don't cd when using flutter controller
+- when doing a hot reload, check if the bash process is still running. If not start again

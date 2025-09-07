@@ -18,6 +18,7 @@ import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
 import '../../utils/site_marker_utils.dart';
 import '../../utils/ui_utils.dart';
+import '../../utils/preferences_helper.dart';
 import '../screens/flight_track_3d_fullscreen.dart';
 
 enum MapProvider {
@@ -311,7 +312,14 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     }
 
     try {
-      final trackData = await _igcService.getTrackPointsWithTimezone(widget.flight.trackLogPath!);
+      // Check if chart trimming is enabled in preferences
+      final chartTrimmingEnabled = await PreferencesHelper.getChartTrimmingEnabled();
+      
+      final trackData = await _igcService.getTrackPointsWithTimezone(
+        widget.flight.trackLogPath!,
+        takeoffIndex: chartTrimmingEnabled ? widget.flight.takeoffIndex : null,
+        landingIndex: chartTrimmingEnabled ? widget.flight.landingIndex : null,
+      );
       
       if (trackData.points.isEmpty) {
         setState(() {
@@ -547,6 +555,13 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     final deltaLng = (lng2 - lng1) * metersPerDegreeLng;
     
     return math.sqrt(deltaLat * deltaLat + deltaLng * deltaLng);
+  }
+
+  /// Format timestamp as HH:MM:SS for the time overlay
+  String _formatTimeHMS(DateTime timestamp) {
+    return '${timestamp.hour.toString().padLeft(2, '0')}:'
+           '${timestamp.minute.toString().padLeft(2, '0')}:'
+           '${timestamp.second.toString().padLeft(2, '0')}';
   }
 
   Color _getClimbRateColor(double climbRate) {
@@ -1426,6 +1441,34 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                 ),
               ),
             ),
+          // Time display overlay for selected point
+          if (_selectedTrackPointIndex != null && _selectedTrackPointIndex! < _trackPoints.length)
+            Positioned(
+              bottom: 8,
+              left: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.8),
+                  borderRadius: BorderRadius.circular(4),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  'Time: ${_formatTimeHMS(_trackPoints[_selectedTrackPointIndex!].timestamp)}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
             ],
           ),
         ),
@@ -1464,7 +1507,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
             showTimeLabels: false,
             showGridLabels: true,
           ),
-          tooltip: 'GPS ground speed in meters',
+          tooltip: '5-second average GPS ground speed in km/h',
         ),
       ],
     );

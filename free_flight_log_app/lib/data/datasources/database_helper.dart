@@ -5,7 +5,7 @@ import '../../services/logging_service.dart';
 
 class DatabaseHelper {
   static const _databaseName = "FlightLog.db";
-  static const _databaseVersion = 12; // Added FAI triangle distance
+  static const _databaseVersion = 13; // Added takeoff/landing detection fields
 
   // Singleton pattern
   DatabaseHelper._privateConstructor();
@@ -73,6 +73,10 @@ class DatabaseHelper {
         climb_percentage REAL,
         gps_fix_quality REAL,
         recording_interval REAL,
+        takeoff_index INTEGER,
+        landing_index INTEGER,
+        detected_takeoff_time TEXT,
+        detected_landing_time TEXT,
         FOREIGN KEY (launch_site_id) REFERENCES sites (id),
         FOREIGN KEY (wing_id) REFERENCES wings (id)
       )
@@ -261,6 +265,23 @@ class DatabaseHelper {
       }
     }
     
+    // Migration for v13: Add takeoff/landing detection fields
+    if (oldVersion < 13) {
+      try {
+        LoggingService.database('MIGRATION', 'Adding takeoff/landing detection fields');
+        
+        await db.execute('ALTER TABLE flights ADD COLUMN takeoff_index INTEGER');
+        await db.execute('ALTER TABLE flights ADD COLUMN landing_index INTEGER');
+        await db.execute('ALTER TABLE flights ADD COLUMN detected_takeoff_time TEXT');
+        await db.execute('ALTER TABLE flights ADD COLUMN detected_landing_time TEXT');
+        
+        LoggingService.database('MIGRATION', 'Successfully added takeoff/landing detection fields');
+      } catch (e) {
+        LoggingService.error('DatabaseHelper: Failed to add takeoff/landing detection fields', e);
+        rethrow;
+      }
+    }
+    
     LoggingService.database('UPGRADE', 'Database upgrade complete');
   }
 
@@ -296,7 +317,8 @@ class DatabaseHelper {
         'distance', 'straight_distance', 'wing_id', 'notes', 'created_at', 'updated_at', 'timezone',
         'max_ground_speed', 'avg_ground_speed', 'thermal_count', 'avg_thermal_strength',
         'total_time_in_thermals', 'best_thermal', 'best_ld', 'avg_ld', 'longest_glide',
-        'climb_percentage', 'gps_fix_quality', 'recording_interval'
+        'climb_percentage', 'gps_fix_quality', 'recording_interval',
+        'takeoff_index', 'landing_index', 'detected_takeoff_time', 'detected_landing_time'
       };
       
       final actualFlightColumns = flightColumns.map((col) => col['name'] as String).toSet();

@@ -20,6 +20,24 @@ class IgcFile {
     this.timezone,
   });
 
+  /// Create a copy of this IgcFile with trimmed track points
+  /// Uses sublist for efficient memory usage (no data duplication)
+  IgcFile copyWithTrimmedPoints(int startIndex, int endIndex) {
+    if (startIndex < 0 || endIndex >= trackPoints.length || startIndex > endIndex) {
+      throw ArgumentError('Invalid indices: startIndex=$startIndex, endIndex=$endIndex, length=${trackPoints.length}');
+    }
+    
+    return IgcFile(
+      date: date,
+      pilot: pilot,
+      gliderType: gliderType,
+      gliderID: gliderID,
+      trackPoints: trackPoints.sublist(startIndex, endIndex + 1),
+      headers: headers,
+      timezone: timezone,
+    );
+  }
+
   /// Get launch time from first track point
   DateTime get launchTime => trackPoints.isNotEmpty 
       ? trackPoints.first.timestamp 

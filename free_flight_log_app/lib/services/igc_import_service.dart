@@ -11,6 +11,8 @@ import 'database_service.dart';
 import 'logging_service.dart';
 import 'igc_parser.dart';
 import 'site_matching_service.dart';
+import 'takeoff_landing_detector.dart';
+import '../utils/preferences_helper.dart';
 
 /// Service for importing IGC files into the flight log
 class IgcImportService {
@@ -181,18 +183,37 @@ class IgcImportService {
 
   /// Create a flight record from IGC data (shared between import methods)
   Future<Flight> _createFlightFromIgcData(IgcFile igcData, String filePath) async {
-    // Calculate flight statistics
-    final groundTrackDistance = igcData.calculateGroundTrackDistance();
-    final straightDistance = igcData.calculateLaunchToLandingDistance();
-    final climbRates = igcData.calculateClimbRates();
-    final climbRates5Sec = igcData.calculate5SecondMaxClimbRates();
+    // Get detection thresholds from preferences
+    final speedThreshold = await PreferencesHelper.getDetectionSpeedThreshold();
+    final climbRateThreshold = await PreferencesHelper.getDetectionClimbRateThreshold();
     
-    // Calculate new comprehensive statistics
-    final speedStats = igcData.calculateSpeedStatistics();
-    final thermalStats = igcData.analyzeThermals();
-    final glideStats = igcData.calculateGlidePerformance();
-    final gpsStats = igcData.calculateGpsQuality();
-    final faiTriangle = igcData.calculateFaiTriangle();
+    // Perform takeoff/landing detection
+    final detectionResult = TakeoffLandingDetector.detectTakeoffLanding(
+      igcData,
+      speedThresholdKmh: speedThreshold,
+      climbRateThresholdMs: climbRateThreshold,
+    );
+    
+    LoggingService.info('IgcImportService: Detection result - ${detectionResult.message}');
+    
+    // Calculate flight statistics on trimmed data if detection successful
+    final dataForStats = detectionResult.isComplete
+        ? igcData.copyWithTrimmedPoints(detectionResult.takeoffIndex!, detectionResult.landingIndex!)
+        : igcData;
+        
+    LoggingService.debug('IgcImportService: Calculating statistics on ${dataForStats.trackPoints.length}/${igcData.trackPoints.length} points (trimmed: ${detectionResult.isComplete})');
+    
+    final groundTrackDistance = dataForStats.calculateGroundTrackDistance();
+    final straightDistance = dataForStats.calculateLaunchToLandingDistance();
+    final climbRates = dataForStats.calculateClimbRates();
+    final climbRates5Sec = dataForStats.calculate5SecondMaxClimbRates();
+    
+    // Calculate new comprehensive statistics on trimmed data
+    final speedStats = dataForStats.calculateSpeedStatistics();
+    final thermalStats = dataForStats.analyzeThermals();
+    final glideStats = dataForStats.calculateGlidePerformance();
+    final gpsStats = dataForStats.calculateGpsQuality();
+    final faiTriangle = dataForStats.calculateFaiTriangle();
     
     // Convert triangle points to JSON for storage
     String? faiTrianglePointsJson;
@@ -291,7 +312,7 @@ class IgcImportService {
     // Get original filename
     final originalFilename = path.basename(filePath);
 
-    // Create flight record
+    // Create flight record with detection data
     return Flight(
       date: igcData.date,
       launchTime: _formatTime(igcData.launchTime),
@@ -332,6 +353,11 @@ class IgcImportService {
       climbPercentage: glideStats['climbPercentage'],
       gpsFixQuality: gpsStats['gpsFixQuality'],
       recordingInterval: gpsStats['recordingInterval'],
+      // Add detection data
+      takeoffIndex: detectionResult.takeoffIndex,
+      landingIndex: detectionResult.landingIndex,
+      detectedTakeoffTime: detectionResult.takeoffTime,
+      detectedLandingTime: detectionResult.landingTime,
     );
   }
 
@@ -391,6 +417,10 @@ class IgcImportService {
       climbPercentage: flight.climbPercentage,
       gpsFixQuality: flight.gpsFixQuality,
       recordingInterval: flight.recordingInterval,
+      takeoffIndex: flight.takeoffIndex,
+      landingIndex: flight.landingIndex,
+      detectedTakeoffTime: flight.detectedTakeoffTime,
+      detectedLandingTime: flight.detectedLandingTime,
     );
   }
 
@@ -456,18 +486,37 @@ class IgcImportService {
 
   /// Create a flight record from IGC data without copying the file (for database recreation)
   Future<Flight> _createFlightFromIgcDataNoCopy(IgcFile igcData, String filePath) async {
-    // Calculate flight statistics
-    final groundTrackDistance = igcData.calculateGroundTrackDistance();
-    final straightDistance = igcData.calculateLaunchToLandingDistance();
-    final climbRates = igcData.calculateClimbRates();
-    final climbRates5Sec = igcData.calculate5SecondMaxClimbRates();
+    // Get detection thresholds from preferences
+    final speedThreshold = await PreferencesHelper.getDetectionSpeedThreshold();
+    final climbRateThreshold = await PreferencesHelper.getDetectionClimbRateThreshold();
     
-    // Calculate new comprehensive statistics
-    final speedStats = igcData.calculateSpeedStatistics();
-    final thermalStats = igcData.analyzeThermals();
-    final glideStats = igcData.calculateGlidePerformance();
-    final gpsStats = igcData.calculateGpsQuality();
-    final faiTriangle = igcData.calculateFaiTriangle();
+    // Perform takeoff/landing detection
+    final detectionResult = TakeoffLandingDetector.detectTakeoffLanding(
+      igcData,
+      speedThresholdKmh: speedThreshold,
+      climbRateThresholdMs: climbRateThreshold,
+    );
+    
+    LoggingService.info('IgcImportService: Detection result (no copy) - ${detectionResult.message}');
+    
+    // Calculate flight statistics on trimmed data if detection successful
+    final dataForStats = detectionResult.isComplete
+        ? igcData.copyWithTrimmedPoints(detectionResult.takeoffIndex!, detectionResult.landingIndex!)
+        : igcData;
+        
+    LoggingService.debug('IgcImportService: Calculating statistics (no copy) on ${dataForStats.trackPoints.length}/${igcData.trackPoints.length} points (trimmed: ${detectionResult.isComplete})');
+    
+    final groundTrackDistance = dataForStats.calculateGroundTrackDistance();
+    final straightDistance = dataForStats.calculateLaunchToLandingDistance();
+    final climbRates = dataForStats.calculateClimbRates();
+    final climbRates5Sec = dataForStats.calculate5SecondMaxClimbRates();
+    
+    // Calculate new comprehensive statistics on trimmed data
+    final speedStats = dataForStats.calculateSpeedStatistics();
+    final thermalStats = dataForStats.analyzeThermals();
+    final glideStats = dataForStats.calculateGlidePerformance();
+    final gpsStats = dataForStats.calculateGpsQuality();
+    final faiTriangle = dataForStats.calculateFaiTriangle();
     
     // Convert triangle points to JSON for storage
     String? faiTrianglePointsJson;
@@ -587,6 +636,12 @@ class IgcImportService {
       climbPercentage: glideStats['climbPercentage'],
       gpsFixQuality: gpsStats['gpsFixQuality'],
       recordingInterval: gpsStats['recordingInterval'],
+      
+      // Add detection data
+      takeoffIndex: detectionResult.takeoffIndex,
+      landingIndex: detectionResult.landingIndex,
+      detectedTakeoffTime: detectionResult.takeoffTime,
+      detectedLandingTime: detectionResult.landingTime,
     );
   }
 
@@ -632,11 +687,24 @@ class IgcImportService {
   }
   
   /// Get track points with timezone information from saved IGC file
-  Future<({List<IgcPoint> points, String? timezone})> getTrackPointsWithTimezone(String trackLogPath) async {
+  /// Optional trimming: if takeoffIndex and landingIndex are provided, returns only the trimmed flight period
+  Future<({List<IgcPoint> points, String? timezone})> getTrackPointsWithTimezone(
+    String trackLogPath, {
+    int? takeoffIndex,
+    int? landingIndex,
+  }) async {
     try {
       // Use isolate parsing for better performance
       final igcData = await parser.parseFile(trackLogPath);
-      return (points: igcData.trackPoints, timezone: igcData.timezone);
+      
+      // Apply trimming if both indices are provided
+      final points = (takeoffIndex != null && landingIndex != null)
+          ? igcData.trackPoints.sublist(takeoffIndex, landingIndex + 1)
+          : igcData.trackPoints;
+          
+      LoggingService.debug('IgcImportService: Loaded ${points.length}/${igcData.trackPoints.length} track points (trimmed: ${takeoffIndex != null && landingIndex != null})');
+      
+      return (points: points, timezone: igcData.timezone);
     } catch (e) {
       LoggingService.error('IgcImportService: Error reading track points with timezone', e);
       return (points: <IgcPoint>[], timezone: null);

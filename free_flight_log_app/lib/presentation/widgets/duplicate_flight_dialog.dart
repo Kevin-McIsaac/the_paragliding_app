@@ -80,8 +80,8 @@ class DuplicateFlightDialog extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   _buildFlightDetailRow('Date:', _formatDate(existingFlight.date)),
-                  _buildFlightDetailRow('Launch Time:', existingFlight.launchTime),
-                  _buildFlightDetailRow('Duration:', '${existingFlight.duration} minutes'),
+                  _buildFlightDetailRow('Launch Time:', existingFlight.effectiveLaunchTime),
+                  _buildFlightDetailRow('Duration:', '${existingFlight.effectiveDuration} minutes'),
                   if (existingFlight.maxAltitude != null)
                     _buildFlightDetailRow('Max Altitude:', '${existingFlight.maxAltitude!.round()}m'),
                   _buildFlightDetailRow('Source:', existingFlight.source),
