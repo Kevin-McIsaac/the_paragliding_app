@@ -63,12 +63,14 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
               Expanded(
                 child: _buildStatItem(
                   'Triangle',
-                  widget.flight.faiTriangleDistance != null 
-                      ? '${widget.flight.faiTriangleDistance!.toStringAsFixed(1)} km'
-                      : 'N/A',
-                  Icons.change_history,
+                  widget.flight.isClosed 
+                      ? 'Closed${widget.flight.faiTriangleDistance != null ? ' (${widget.flight.faiTriangleDistance!.toStringAsFixed(1)} km)' : ''}'
+                      : 'Open',
+                  widget.flight.isClosed ? Icons.change_history : Icons.open_in_new,
                   context,
-                  tooltip: 'A quick approximation and does not check for triangle closing or minimum side lengths',
+                  tooltip: widget.flight.isClosed 
+                      ? 'Flight returned within ${widget.flight.closingDistance?.toStringAsFixed(0) ?? 'N/A'}m of launch point${widget.flight.faiTriangleDistance != null ? '. Triangle distance shown.' : ''}'
+                      : 'Flight did not return close enough to launch point to be considered a closed triangle',
                 ),
               ),
               Expanded(

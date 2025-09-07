@@ -5,7 +5,7 @@ import '../../services/logging_service.dart';
 
 class DatabaseHelper {
   static const _databaseName = "FlightLog.db";
-  static const _databaseVersion = 13; // Added takeoff/landing detection fields
+  static const _databaseVersion = 14; // Added triangle closing point fields
 
   // Singleton pattern
   DatabaseHelper._privateConstructor();
@@ -77,6 +77,8 @@ class DatabaseHelper {
         landing_index INTEGER,
         detected_takeoff_time TEXT,
         detected_landing_time TEXT,
+        closing_point_index INTEGER,
+        closing_distance REAL,
         FOREIGN KEY (launch_site_id) REFERENCES sites (id),
         FOREIGN KEY (wing_id) REFERENCES wings (id)
       )
@@ -282,6 +284,21 @@ class DatabaseHelper {
       }
     }
     
+    // Migration for v14: Add triangle closing point fields
+    if (oldVersion < 14) {
+      try {
+        LoggingService.database('MIGRATION', 'Adding triangle closing point fields');
+        
+        await db.execute('ALTER TABLE flights ADD COLUMN closing_point_index INTEGER');
+        await db.execute('ALTER TABLE flights ADD COLUMN closing_distance REAL');
+        
+        LoggingService.database('MIGRATION', 'Successfully added triangle closing point fields');
+      } catch (e) {
+        LoggingService.error('DatabaseHelper: Failed to add triangle closing point fields', e);
+        rethrow;
+      }
+    }
+    
     LoggingService.database('UPGRADE', 'Database upgrade complete');
   }
 
@@ -318,7 +335,8 @@ class DatabaseHelper {
         'max_ground_speed', 'avg_ground_speed', 'thermal_count', 'avg_thermal_strength',
         'total_time_in_thermals', 'best_thermal', 'best_ld', 'avg_ld', 'longest_glide',
         'climb_percentage', 'gps_fix_quality', 'recording_interval',
-        'takeoff_index', 'landing_index', 'detected_takeoff_time', 'detected_landing_time'
+        'takeoff_index', 'landing_index', 'detected_takeoff_time', 'detected_landing_time',
+        'closing_point_index', 'closing_distance'
       };
       
       final actualFlightColumns = flightColumns.map((col) => col['name'] as String).toSet();

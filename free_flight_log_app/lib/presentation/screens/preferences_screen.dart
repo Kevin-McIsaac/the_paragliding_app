@@ -21,6 +21,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   double? _detectionSpeedThreshold;
   double? _detectionClimbRateThreshold;
   bool? _chartTrimmingEnabled;
+  double? _triangleClosingDistance;
   
   bool _isLoading = true;
   bool _isSaving = false;
@@ -44,6 +45,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       final speedThreshold = await PreferencesHelper.getDetectionSpeedThreshold();
       final climbRateThreshold = await PreferencesHelper.getDetectionClimbRateThreshold();
       final chartTrimmingEnabled = await PreferencesHelper.getChartTrimmingEnabled();
+      final triangleClosingDistance = await PreferencesHelper.getTriangleClosingDistance();
       
       if (mounted) {
         setState(() {
@@ -56,6 +58,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           _detectionSpeedThreshold = speedThreshold;
           _detectionClimbRateThreshold = climbRateThreshold;
           _chartTrimmingEnabled = chartTrimmingEnabled;
+          _triangleClosingDistance = triangleClosingDistance;
           
           _isLoading = false;
         });
@@ -356,6 +359,25 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                       _chartTrimmingEnabled = value;
                     });
                     _savePreference('chart trimming', value, PreferencesHelper.setChartTrimmingEnabled);
+                  },
+                ),
+                _buildDropdownRow<double>(
+                  'Triangle Closing Distance',
+                  'Maximum distance from launch to consider a flight as closed triangle',
+                  _triangleClosingDistance,
+                  PreferencesHelper.validTriangleClosingDistances.map((distance) => 
+                    DropdownMenuItem(
+                      value: distance,
+                      child: Text('${distance.toStringAsFixed(0)} m'),
+                    )
+                  ).toList(),
+                  (value) {
+                    if (value != null) {
+                      setState(() {
+                        _triangleClosingDistance = value;
+                      });
+                      _savePreference('triangle closing distance', value, PreferencesHelper.setTriangleClosingDistance);
+                    }
                   },
                 ),
               ]),

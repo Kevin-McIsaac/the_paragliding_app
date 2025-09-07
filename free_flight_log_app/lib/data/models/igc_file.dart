@@ -674,6 +674,39 @@ class IgcFile {
     // Convert to square kilometers
     return area / 1000000;
   }
+
+  /// Find the closing point index by scanning backwards from the end
+  /// Returns the index of the first point within maxDistanceMeters of the launch point
+  /// Returns null if no point is found within the specified distance
+  int? getClosingPointIndex({double maxDistanceMeters = 100.0}) {
+    if (trackPoints.length < 2) return null;
+    
+    final launchPoint = trackPoints.first;
+    
+    // Scan backwards from the end of the flight
+    for (int i = trackPoints.length - 1; i >= 1; i--) {
+      final currentPoint = trackPoints[i];
+      final distance = calculateSimpleDistance(launchPoint, currentPoint);
+      
+      if (distance <= maxDistanceMeters) {
+        return i;
+      }
+    }
+    
+    return null; // No closing point found
+  }
+
+  /// Calculate simple Pythagorean distance in meters (accurate for distances < 1km)
+  /// Much faster than haversine calculation for short distances
+  double calculateSimpleDistance(IgcPoint p1, IgcPoint p2) {
+    const double metersPerDegreeLat = 111320.0; // Meters per degree latitude (constant)
+    final double metersPerDegreeLon = 111320.0 * cos(p1.latitude * pi / 180); // Adjust for longitude at this latitude
+    
+    final double deltaLat = (p2.latitude - p1.latitude) * metersPerDegreeLat;
+    final double deltaLon = (p2.longitude - p1.longitude) * metersPerDegreeLon;
+    
+    return sqrt(deltaLat * deltaLat + deltaLon * deltaLon);
+  }
 }
 
 /// Represents a thermal event detected in the flight
@@ -860,4 +893,5 @@ class IgcPoint {
     
     return earthRadius * c;
   }
+
 }

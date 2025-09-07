@@ -28,13 +28,16 @@ class PreferencesHelper {
   static const String detectionSpeedThresholdKey = 'detection_speed_threshold';
   static const String detectionClimbRateThresholdKey = 'detection_climb_rate_threshold';
   static const String chartTrimmingEnabledKey = 'chart_trimming_enabled';
+  static const String triangleClosingDistanceKey = 'triangle_closing_distance';
   
   // Default values for detection
   static const double defaultDetectionSpeedThreshold = 9.0; // km/h
   static const double defaultDetectionClimbRateThreshold = 0.2; // m/s
   static const bool defaultChartTrimmingEnabled = true; // Default to trimmed charts
+  static const double defaultTriangleClosingDistance = 100.0; // meters
   static const List<double> validSpeedThresholds = [5.0, 7.0, 9.0, 11.0, 15.0]; // km/h
   static const List<double> validClimbRateThresholds = [0.1, 0.2, 0.3, 0.5]; // m/s
+  static const List<double> validTriangleClosingDistances = [50.0, 100.0, 250.0, 500.0, 1000.0]; // meters
   
   // Cesium 3D Map methods
   static Future<String?> getCesiumSceneMode() async {
@@ -241,6 +244,22 @@ class PreferencesHelper {
   static Future<void> setChartTrimmingEnabled(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(chartTrimmingEnabledKey, value);
+  }
+
+  static Future<double> getTriangleClosingDistance() async {
+    final prefs = await SharedPreferences.getInstance();
+    // Check if the preference has been set before
+    if (!prefs.containsKey(triangleClosingDistanceKey)) {
+      // First time - set default
+      await prefs.setDouble(triangleClosingDistanceKey, defaultTriangleClosingDistance);
+      return defaultTriangleClosingDistance;
+    }
+    return prefs.getDouble(triangleClosingDistanceKey) ?? defaultTriangleClosingDistance;
+  }
+  
+  static Future<void> setTriangleClosingDistance(double value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(triangleClosingDistanceKey, value);
   }
   
   // Generic methods for direct access if needed

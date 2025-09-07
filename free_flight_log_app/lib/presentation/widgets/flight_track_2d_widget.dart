@@ -71,6 +71,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   MapProvider _selectedMapProvider = MapProvider.openStreetMap;
   int? _selectedTrackPointIndex;
   bool _isLegendExpanded = false; // Default to collapsed for cleaner initial view
+  double _closingDistanceThreshold = 500.0; // Default value
   
   // Site display state
   List<Site> _localSites = [];
@@ -88,6 +89,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     _loadMapProvider();
     _loadTrackData();
     _loadSiteData();
+    _loadClosingDistanceThreshold();
   }
 
   Future<void> _loadMapProvider() async {
@@ -114,6 +116,17 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
       await prefs.setString(_mapProviderKey, provider.name);
     } catch (e) {
       LoggingService.error('FlightTrack2DWidget: Error saving map provider', e);
+    }
+  }
+
+  Future<void> _loadClosingDistanceThreshold() async {
+    try {
+      final threshold = await PreferencesHelper.getTriangleClosingDistance();
+      setState(() {
+        _closingDistanceThreshold = threshold;
+      });
+    } catch (e) {
+      LoggingService.error('FlightTrack2DWidget: Error loading closing distance threshold', e);
     }
   }
 
@@ -253,6 +266,57 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                       Text('Landing', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w500, color: Colors.white)),
                     ],
                   ),
+                  
+                  // Closing point legend (only for closed flights)
+                  if (widget.flight.isClosed) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 16,
+                          height: 16,
+                          decoration: const BoxDecoration(
+                            color: Colors.purple,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.adjust,
+                            color: Colors.white,
+                            size: 8,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text('Closing Point', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w500, color: Colors.white)),
+                      ],
+                    ),
+                  ],
+                  
+                  // Closing threshold legend (always shown when track points are available)
+                  if (_trackPoints.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 16,
+                          height: 16,
+                          decoration: BoxDecoration(
+                            color: Colors.transparent,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.purple,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text('Closing Threshold: ${_closingDistanceThreshold.toStringAsFixed(0)}m', 
+                             style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w500, color: Colors.white)),
+                      ],
+                    ),
+                  ],
+                  
                   const SizedBox(height: 4),
                   Row(
                     mainAxisSize: MainAxisSize.min,
@@ -611,7 +675,8 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   }
 
   List<Polyline> _buildFaiTriangleLines() {
-    if (_faiTrianglePoints.length != Flight.expectedTrianglePoints) return [];
+    // Only show triangle for closed flights
+    if (!widget.flight.isClosed || _faiTrianglePoints.length != Flight.expectedTrianglePoints) return [];
     
     // Convert IgcPoint to LatLng
     final p1 = LatLng(_faiTrianglePoints[0].latitude, _faiTrianglePoints[0].longitude);
@@ -637,6 +702,26 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         strokeWidth: 2.0,
         color: Colors.grey,
         pattern: StrokePattern.dashed(segments: [5, 5]),
+      ),
+    ];
+  }
+
+  List<CircleMarker> _buildClosingDistanceCircle() {
+    // Show for all flights with track points
+    if (_trackPoints.isEmpty) {
+      return [];
+    }
+    
+    final launchPoint = _trackPoints.first;
+    
+    return [
+      CircleMarker(
+        point: LatLng(launchPoint.latitude, launchPoint.longitude),
+        radius: _closingDistanceThreshold,  // Use preference value
+        useRadiusInMeter: true,
+        color: Colors.transparent,  // No fill
+        borderColor: Colors.purple,
+        borderStrokeWidth: 2.0,
       ),
     ];
   }
@@ -702,29 +787,81 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   }
 
   List<Marker> _buildTrackPointMarker() {
-    if (_selectedTrackPointIndex == null || _selectedTrackPointIndex! >= _trackPoints.length) {
+    if (_selectedTrackPointIndex == null || _selectedTrackPointIndex! >= _trackPoints.length || _trackPoints.isEmpty) {
       return [];
     }
     
     final point = _trackPoints[_selectedTrackPointIndex!];
+    final launchPoint = _trackPoints.first;
+    
+    // Calculate distance from launch using the same method as in the closing point detection
+    final distanceFromLaunch = _calculateSimpleDistance(
+      launchPoint.latitude, launchPoint.longitude,
+      point.latitude, point.longitude
+    );
     
     return [
       Marker(
         point: LatLng(point.latitude, point.longitude),
-        width: 16,
-        height: 16,
-        child: Container(
-          decoration: const BoxDecoration(
-            color: SiteMarkerUtils.selectedPointColor,
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black26,
-                blurRadius: 2,
-                offset: Offset(0, 1),
+        width: 80,
+        height: 50,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Yellow pilot circle
+            Container(
+              width: 16,
+              height: 16,
+              decoration: const BoxDecoration(
+                color: SiteMarkerUtils.selectedPointColor,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 2,
+                    offset: Offset(0, 1),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 2),
+            // Debug label with distance and index
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              decoration: BoxDecoration(
+                color: SiteMarkerUtils.selectedPointColor.withValues(alpha: 0.9),
+                borderRadius: BorderRadius.circular(3),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    blurRadius: 2,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${distanceFromLaunch.toStringAsFixed(0)}m',
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    '${_selectedTrackPointIndex! + 1}/${_trackPoints.length}',
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     ];
@@ -780,6 +917,64 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           ),
         ),
       ),
+      
+      // Closing point marker (debug feature)
+      if (widget.flight.isClosed && widget.flight.closingPointIndex != null && widget.flight.closingPointIndex! < _trackPoints.length)
+        DragMarker(
+          point: LatLng(_trackPoints[widget.flight.closingPointIndex!].latitude, _trackPoints[widget.flight.closingPointIndex!].longitude),
+          size: const Size(60, 40), // Wider to accommodate distance label
+          disableDrag: true,
+          builder: (ctx, point, isDragging) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Closing point marker icon
+              Container(
+                width: 24,
+                height: 24,
+                decoration: const BoxDecoration(
+                  color: Colors.purple,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 2,
+                      offset: Offset(0, 1),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.adjust,
+                  color: Colors.white,
+                  size: 14,
+                ),
+              ),
+              const SizedBox(height: 2),
+              // Distance label
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  color: Colors.purple.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(3),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      blurRadius: 2,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  '${widget.flight.closingDistance?.toStringAsFixed(0) ?? 'N/A'}m',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 8,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
     ];
   }
 
@@ -1348,6 +1543,9 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               ),
               PolylineLayer(
                 polylines: [..._buildColoredTrackLines(), ..._buildFaiTriangleLines()],
+              ),
+              CircleLayer(
+                circles: _buildClosingDistanceCircle(),
               ),
               DragMarkers(
                 markers: [..._buildSiteMarkers(), ..._buildFlightMarkers()],
