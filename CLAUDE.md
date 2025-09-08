@@ -183,6 +183,30 @@ Replace any `print()` statements with the appropriate LoggingService method base
 - **Cesium 3D**: Receives ISO8601 timestamps with timezone offset (e.g., "2025-07-11T11:03:56.000+02:00")
 - **Flutter UI**: Displays times in HH:MM format with optional timezone indicator
 
+## Database Development
+
+### Pre-Release Schema Strategy
+
+- **No Database Migrations**: Since the app is pre-release, we use a simplified approach
+- **Schema Changes**: Any database schema changes require clearing app data during development
+- **Clean v1.0**: The current schema in `database_helper.dart` represents the v1.0 release baseline
+- **Future Migrations**: Post-release migrations will start from v2 with the current schema as the baseline
+
+### Developer Workflow
+
+When pulling code changes that modify the database schema:
+1. Clear app data: Settings → Apps → Free Flight Log → Storage → Clear Data
+2. Or use the emulator wipe: `flutter_controller.sh clean` (if available)
+3. Hot restart the app to recreate the database with the new schema
+4. Re-import any test data as needed
+
+### Benefits
+
+- **Simplified codebase**: No complex migration logic during development
+- **Clean baseline**: Start v1.0 with optimized schema
+- **Fewer bugs**: No migration-related errors during development
+- **Performance**: Faster app startup without migration checks
+
 ## Development Reminders
 
 - Store documentation in the document directory
