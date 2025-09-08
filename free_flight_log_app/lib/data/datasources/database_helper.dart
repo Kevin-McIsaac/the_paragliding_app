@@ -5,7 +5,7 @@ import '../../services/logging_service.dart';
 
 class DatabaseHelper {
   static const _databaseName = "FlightLog.db";
-  static const _databaseVersion = 14; // Added triangle closing point fields
+  static const _databaseVersion = 1; // v1.0 Release Schema - Start migrations from v2
 
   // Singleton pattern
   DatabaseHelper._privateConstructor();
@@ -14,6 +14,13 @@ class DatabaseHelper {
   static Database? _database;
   Future<Database> get database async => _database ??= await _initDatabase();
 
+  /// Initialize database with v1.0 schema
+  /// 
+  /// PRE-RELEASE STRATEGY: No migrations needed since app hasn't been released.
+  /// All schema changes during development require clearing app data.
+  /// 
+  /// POST-RELEASE STRATEGY: Start migrations from v2 when app is released.
+  /// This ensures a clean baseline for production users.
   Future<Database> _initDatabase() async {
     String path = join(await getDatabasesPath(), _databaseName);
     LoggingService.database('INIT', 'Opening database at: $path');
@@ -22,7 +29,6 @@ class DatabaseHelper {
       path,
       version: _databaseVersion,
       onCreate: _onCreate,
-      onUpgrade: _onUpgrade,
     );
     
     return db;
@@ -154,153 +160,6 @@ class DatabaseHelper {
     }
   }
 
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    LoggingService.database('UPGRADE', 'Upgrading database from version $oldVersion to $newVersion');
-    
-    // SIMPLIFIED MIGRATION for v9: Just optimize indexes
-    // All previous migrations (v1-8) stay applied, we're just removing unnecessary indexes
-    if (oldVersion < 9) {
-      try {
-        LoggingService.database('MIGRATION', 'Optimizing database - reducing indexes from 18 to 3');
-        
-        // Drop all unnecessary indexes (data remains intact)
-        final indexesToDrop = [
-          'idx_flights_original_filename',
-          'idx_flights_date',
-          'idx_flights_created',
-          'idx_flights_updated',
-          'idx_flights_year',
-          'idx_flights_duration',
-          'idx_flights_altitude',
-          'idx_flights_distance',
-          'idx_sites_country',
-          'idx_sites_name',
-          'idx_wings_active',
-          'idx_wings_manufacturer',
-          'idx_wings_name',
-          'idx_flights_duplicate_check',
-        ];
-        
-        for (final index in indexesToDrop) {
-          try {
-            await db.execute('DROP INDEX IF EXISTS $index');
-          } catch (e) {
-            // Ignore if index doesn't exist
-          }
-        }
-        
-        // Ensure only essential indexes exist
-        await _createIndexes(db);
-        
-        LoggingService.database('MIGRATION', 'Successfully optimized database - reduced to 3 essential indexes');
-      } catch (e) {
-        LoggingService.error('DatabaseHelper: Index optimization failed', e);
-        // Non-critical - app can continue with existing indexes
-      }
-    }
-    
-    // Migration for v10: Add wing aliases support
-    if (oldVersion < 10) {
-      try {
-        LoggingService.database('MIGRATION', 'Adding wing aliases support');
-        
-        // Create wing_aliases table
-        await db.execute('''
-          CREATE TABLE IF NOT EXISTS wing_aliases (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            wing_id INTEGER NOT NULL,
-            alias_name TEXT NOT NULL,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (wing_id) REFERENCES wings (id) ON DELETE CASCADE,
-            UNIQUE(alias_name)
-          )
-        ''');
-        
-        // Create indexes for wing aliases
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_wing_aliases_wing_id ON wing_aliases(wing_id)');
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_wing_aliases_alias_name ON wing_aliases(alias_name)');
-        
-        LoggingService.database('MIGRATION', 'Successfully added wing aliases support');
-      } catch (e) {
-        LoggingService.error('DatabaseHelper: Failed to add wing aliases', e);
-        rethrow; // This is important for data integrity
-      }
-    }
-    
-    // Migration for v11: Add comprehensive IGC statistics
-    if (oldVersion < 11) {
-      try {
-        LoggingService.database('MIGRATION', 'Adding comprehensive IGC statistics columns');
-        
-        // Add new statistics columns to flights table
-        await db.execute('ALTER TABLE flights ADD COLUMN max_ground_speed REAL');
-        await db.execute('ALTER TABLE flights ADD COLUMN avg_ground_speed REAL');
-        await db.execute('ALTER TABLE flights ADD COLUMN thermal_count INTEGER');
-        await db.execute('ALTER TABLE flights ADD COLUMN avg_thermal_strength REAL');
-        await db.execute('ALTER TABLE flights ADD COLUMN total_time_in_thermals INTEGER');
-        await db.execute('ALTER TABLE flights ADD COLUMN best_thermal REAL');
-        await db.execute('ALTER TABLE flights ADD COLUMN best_ld REAL');
-        await db.execute('ALTER TABLE flights ADD COLUMN avg_ld REAL');
-        await db.execute('ALTER TABLE flights ADD COLUMN longest_glide REAL');
-        await db.execute('ALTER TABLE flights ADD COLUMN climb_percentage REAL');
-        await db.execute('ALTER TABLE flights ADD COLUMN gps_fix_quality REAL');
-        await db.execute('ALTER TABLE flights ADD COLUMN recording_interval REAL');
-        
-        LoggingService.database('MIGRATION', 'Successfully added comprehensive IGC statistics columns');
-      } catch (e) {
-        LoggingService.error('DatabaseHelper: Failed to add IGC statistics columns', e);
-        rethrow; // This is important for data integrity
-      }
-    }
-    
-    // Migration for v12: Add FAI triangle distance
-    if (oldVersion < 12) {
-      try {
-        LoggingService.database('MIGRATION', 'Adding FAI triangle distance column');
-        
-        await db.execute('ALTER TABLE flights ADD COLUMN fai_triangle_distance REAL');
-        
-        LoggingService.database('MIGRATION', 'Successfully added FAI triangle distance column');
-      } catch (e) {
-        LoggingService.error('DatabaseHelper: Failed to add FAI triangle distance column', e);
-        rethrow;
-      }
-    }
-    
-    // Migration for v13: Add takeoff/landing detection fields
-    if (oldVersion < 13) {
-      try {
-        LoggingService.database('MIGRATION', 'Adding takeoff/landing detection fields');
-        
-        await db.execute('ALTER TABLE flights ADD COLUMN takeoff_index INTEGER');
-        await db.execute('ALTER TABLE flights ADD COLUMN landing_index INTEGER');
-        await db.execute('ALTER TABLE flights ADD COLUMN detected_takeoff_time TEXT');
-        await db.execute('ALTER TABLE flights ADD COLUMN detected_landing_time TEXT');
-        
-        LoggingService.database('MIGRATION', 'Successfully added takeoff/landing detection fields');
-      } catch (e) {
-        LoggingService.error('DatabaseHelper: Failed to add takeoff/landing detection fields', e);
-        rethrow;
-      }
-    }
-    
-    // Migration for v14: Add triangle closing point fields
-    if (oldVersion < 14) {
-      try {
-        LoggingService.database('MIGRATION', 'Adding triangle closing point fields');
-        
-        await db.execute('ALTER TABLE flights ADD COLUMN closing_point_index INTEGER');
-        await db.execute('ALTER TABLE flights ADD COLUMN closing_distance REAL');
-        
-        LoggingService.database('MIGRATION', 'Successfully added triangle closing point fields');
-      } catch (e) {
-        LoggingService.error('DatabaseHelper: Failed to add triangle closing point fields', e);
-        rethrow;
-      }
-    }
-    
-    LoggingService.database('UPGRADE', 'Database upgrade complete');
-  }
 
   /// Force recreation of the database (use when migration fails)
   Future<void> recreateDatabase() async {
@@ -329,9 +188,12 @@ class DatabaseHelper {
       final flightColumns = await db.rawQuery("PRAGMA table_info(flights)");
       final expectedFlightColumns = {
         'id', 'date', 'launch_time', 'landing_time', 'duration',
-        'launch_site_id', 'landing_latitude', 'landing_longitude', 'landing_altitude', 'landing_description',
+        'launch_site_id', 'launch_latitude', 'launch_longitude', 'launch_altitude',
+        'landing_latitude', 'landing_longitude', 'landing_altitude', 'landing_description',
         'max_altitude', 'max_climb_rate', 'max_sink_rate', 'max_climb_rate_5_sec', 'max_sink_rate_5_sec',
-        'distance', 'straight_distance', 'wing_id', 'notes', 'created_at', 'updated_at', 'timezone',
+        'distance', 'straight_distance', 'fai_triangle_distance', 'fai_triangle_points',
+        'wing_id', 'notes', 'track_log_path', 'original_filename', 'source',
+        'timezone', 'created_at', 'updated_at',
         'max_ground_speed', 'avg_ground_speed', 'thermal_count', 'avg_thermal_strength',
         'total_time_in_thermals', 'best_thermal', 'best_ld', 'avg_ld', 'longest_glide',
         'climb_percentage', 'gps_fix_quality', 'recording_interval',
@@ -358,6 +220,34 @@ class DatabaseHelper {
       
       if (missingSiteColumns.isNotEmpty) {
         LoggingService.error('DatabaseHelper: Missing site columns: ${missingSiteColumns.join(', ')}');
+        return false;
+      }
+      
+      // Check wings table has all expected columns
+      final wingColumns = await db.rawQuery("PRAGMA table_info(wings)");
+      final expectedWingColumns = {
+        'id', 'name', 'manufacturer', 'model', 'size', 'color', 'purchase_date', 'active', 'notes', 'created_at'
+      };
+      
+      final actualWingColumns = wingColumns.map((col) => col['name'] as String).toSet();
+      final missingWingColumns = expectedWingColumns.difference(actualWingColumns);
+      
+      if (missingWingColumns.isNotEmpty) {
+        LoggingService.error('DatabaseHelper: Missing wing columns: ${missingWingColumns.join(', ')}');
+        return false;
+      }
+      
+      // Check wing_aliases table has all expected columns
+      final wingAliasColumns = await db.rawQuery("PRAGMA table_info(wing_aliases)");
+      final expectedWingAliasColumns = {
+        'id', 'wing_id', 'alias_name', 'created_at'
+      };
+      
+      final actualWingAliasColumns = wingAliasColumns.map((col) => col['name'] as String).toSet();
+      final missingWingAliasColumns = expectedWingAliasColumns.difference(actualWingAliasColumns);
+      
+      if (missingWingAliasColumns.isNotEmpty) {
+        LoggingService.error('DatabaseHelper: Missing wing_aliases columns: ${missingWingAliasColumns.join(', ')}');
         return false;
       }
       
