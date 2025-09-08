@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:path/path.dart' as path;
 import '../../utils/preferences_helper.dart';
 import 'dart:io';
 import '../../data/models/flight.dart';
@@ -314,8 +315,8 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
         
       } catch (e) {
         final result = ImportResult.failed(
-          fileName: filePath.split('/').last,
-          errorMessage: e.toString(),
+          fileName: path.basename(filePath),
+          rawErrorMessage: e.toString(),
         );
         setState(() {
           _importResults.add(result);
@@ -464,10 +465,35 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
                 ),
                 const SizedBox(height: 8),
                 ...summary.failed.map((result) => Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text(
-                    '• ${result.fileName}: ${result.errorMessage}',
-                    style: const TextStyle(fontSize: 12, color: Colors.red),
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          if (result.errorIcon != null) ...[
+                            Text(result.errorIcon!, style: const TextStyle(fontSize: 14)),
+                            const SizedBox(width: 4),
+                          ],
+                          Expanded(
+                            child: Text(
+                              '${result.fileName}${result.errorTitle != null ? ' - ${result.errorTitle}' : ''}',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (result.errorMessage != null) ...[
+                        const SizedBox(height: 2),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 18),
+                          child: Text(
+                            result.errorMessage!,
+                            style: TextStyle(fontSize: 11, color: Colors.red.shade600),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 )),
               ],

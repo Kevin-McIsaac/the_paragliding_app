@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:path/path.dart' as path;
 import '../../data/models/flight.dart';
 import '../../data/models/site.dart';
 import '../../data/models/wing.dart';
@@ -8,6 +9,7 @@ import '../../services/database_service.dart';
 import '../../services/logging_service.dart';
 import '../../services/igc_import_service.dart';
 import '../../data/models/import_result.dart';
+import '../../utils/import_error_helper.dart';
 import '../widgets/flight_track_2d_widget.dart';
 import '../widgets/flight_statistics_widget.dart';
 import '../widgets/site_selection_dialog.dart';
@@ -531,7 +533,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
             '• Update launch/landing sites based on current database\n'
             '• Preserve your manual edits (date, times, sites, wing, notes)\n'
             '• Use the latest parsing algorithms\n\n'
-            'Original IGC file: ${_flight.trackLogPath!.split('/').last}',
+            'Original IGC file: ${path.basename(_flight.trackLogPath!)}',
           ),
           actions: [
             TextButton(
@@ -563,7 +565,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
       // Check if IGC file exists
       final file = File(_flight.trackLogPath!);
       if (!await file.exists()) {
-        throw Exception('IGC file not found: ${_flight.trackLogPath}');
+        throw Exception('File not found: The original IGC file could not be found at ${_flight.trackLogPath}');
       }
       
       // Use IGC import service to reprocess the flight
@@ -596,10 +598,11 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
             );
           }
         } else {
-          throw Exception('Could not reload flight data after reprocessing');
+          throw Exception('Database error: Could not reload flight data after reprocessing. The import succeeded but the updated flight could not be retrieved from the database.');
         }
       } else {
-        throw Exception(importResult.errorMessage ?? 'Unknown import error');
+        // Use the error message from the import result which should now be user-friendly
+        throw Exception(importResult.errorMessage ?? 'Import failed with unknown error');
       }
     } catch (e) {
       LoggingService.error('FlightDetailScreen: Failed to reprocess flight', e);
@@ -609,11 +612,26 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
       });
       
       if (mounted) {
+        final errorResult = ImportErrorHelper.processError(e);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to reimport flight: $e'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Failed to reprocess flight: ${ImportErrorHelper.getErrorTitle(errorResult.category)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  errorResult.message,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
             backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
+            duration: const Duration(seconds: 8), // Longer duration for detailed message
           ),
         );
       }

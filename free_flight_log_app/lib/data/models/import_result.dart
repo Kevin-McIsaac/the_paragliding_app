@@ -1,3 +1,5 @@
+import '../../../utils/import_error_helper.dart';
+
 /// Enum representing the result of importing an IGC file
 enum ImportResultType {
   imported,  // Successfully imported as new flight
@@ -11,6 +13,7 @@ class ImportResult {
   final String fileName;
   final ImportResultType type;
   final String? errorMessage;
+  final ImportErrorCategory? errorCategory;
   final int? flightId;
   final DateTime? flightDate;
   final String? flightTime;
@@ -20,6 +23,7 @@ class ImportResult {
     required this.fileName,
     required this.type,
     this.errorMessage,
+    this.errorCategory,
     this.flightId,
     this.flightDate,
     this.flightTime,
@@ -34,7 +38,8 @@ class ImportResult {
     required this.flightTime,
     required this.duration,
   }) : type = ImportResultType.imported,
-       errorMessage = null;
+       errorMessage = null,
+       errorCategory = null;
 
   /// Create a replaced flight result
   ImportResult.replaced({
@@ -44,7 +49,8 @@ class ImportResult {
     required this.flightTime,
     required this.duration,
   }) : type = ImportResultType.replaced,
-       errorMessage = null;
+       errorMessage = null,
+       errorCategory = null;
 
   /// Create a skipped result
   ImportResult.skipped({
@@ -54,12 +60,26 @@ class ImportResult {
     required this.duration,
   }) : type = ImportResultType.skipped,
        errorMessage = null,
+       errorCategory = null,
        flightId = null;
 
   /// Create a failed import result
   ImportResult.failed({
     required this.fileName,
+    required String rawErrorMessage,
+  }) : type = ImportResultType.failed,
+       flightId = null,
+       flightDate = null,
+       flightTime = null,
+       duration = null,
+       errorCategory = ImportErrorHelper.categorizeError(rawErrorMessage),
+       errorMessage = ImportErrorHelper.getUserFriendlyMessage(rawErrorMessage, ImportErrorHelper.categorizeError(rawErrorMessage));
+       
+  /// Create a failed import result with explicit category and message
+  ImportResult.failedWithCategory({
+    required this.fileName,
     required this.errorMessage,
+    required this.errorCategory,
   }) : type = ImportResultType.failed,
        flightId = null,
        flightDate = null,
@@ -76,8 +96,24 @@ class ImportResult {
       case ImportResultType.skipped:
         return 'Skipped (already exists)';
       case ImportResultType.failed:
-        return 'Failed: ${errorMessage ?? 'Unknown error'}';
+        return errorMessage ?? 'Unknown error';
     }
+  }
+  
+  /// Get the error title for failed imports
+  String? get errorTitle {
+    if (type == ImportResultType.failed && errorCategory != null) {
+      return ImportErrorHelper.getErrorTitle(errorCategory!);
+    }
+    return null;
+  }
+  
+  /// Get the error icon for failed imports
+  String? get errorIcon {
+    if (type == ImportResultType.failed && errorCategory != null) {
+      return ImportErrorHelper.getErrorIcon(errorCategory!);
+    }
+    return null;
   }
 
   /// Format the flight info for display
