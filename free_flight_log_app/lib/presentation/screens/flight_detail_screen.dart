@@ -1,10 +1,15 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:path/path.dart' as path;
 import '../../data/models/flight.dart';
 import '../../data/models/site.dart';
 import '../../data/models/wing.dart';
 import '../../services/database_service.dart';
 import '../../services/logging_service.dart';
+import '../../services/igc_import_service.dart';
+import '../../data/models/import_result.dart';
+import '../../utils/import_error_helper.dart';
 import '../widgets/flight_track_2d_widget.dart';
 import '../widgets/flight_statistics_widget.dart';
 import '../widgets/site_selection_dialog.dart';
@@ -21,6 +26,7 @@ class FlightDetailScreen extends StatefulWidget {
 
 class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBindingObserver {
   final DatabaseService _databaseService = DatabaseService.instance;
+  final IgcImportService _igcImportService = IgcImportService.instance;
   
   late Flight _flight;
   Site? _launchSite;
@@ -511,6 +517,127 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
     });
   }
 
+  Future<void> _showReimportConfirmation() async {
+    final launchSiteName = _launchSite?.name ?? 'Unknown';
+    final flightDate = _formatDate(_flight.date);
+    
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Reimport Flight?'),
+          content: Text(
+            'Reimport the flight from $launchSiteName on $flightDate?\n\n'
+            'This will:\n'
+            '• Recalculate all flight statistics\n'
+            '• Update launch/landing sites based on current database\n'
+            '• Preserve your manual edits (date, times, sites, wing, notes)\n'
+            '• Use the latest parsing algorithms\n\n'
+            'Original IGC file: ${path.basename(_flight.trackLogPath!)}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Reimport'),
+            ),
+          ],
+        );
+      },
+    );
+    
+    if (confirmed == true) {
+      _reprocessFlight();
+    }
+  }
+
+  Future<void> _reprocessFlight() async {
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      LoggingService.info('FlightDetailScreen: Starting flight reprocessing for flight ${_flight.id}');
+      
+      // Check if IGC file exists
+      final file = File(_flight.trackLogPath!);
+      if (!await file.exists()) {
+        throw Exception('File not found: The original IGC file could not be found at ${_flight.trackLogPath}');
+      }
+      
+      // Use IGC import service to reprocess the flight
+      final importResult = await _igcImportService.importIgcFileWithDuplicateHandling(
+        _flight.trackLogPath!,
+        replace: true,
+      );
+      
+      if (importResult.type == ImportResultType.replaced) {
+        LoggingService.info('FlightDetailScreen: Flight reprocessing completed successfully');
+        
+        // Refresh flight data from database
+        final updatedFlight = await _databaseService.getFlight(_flight.id!);
+        if (updatedFlight != null) {
+          setState(() {
+            _flight = updatedFlight;
+            _flightModified = true;
+            _isSaving = false;
+          });
+          
+          // Reload flight details (sites, wing)
+          await _loadFlightDetails();
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Flight reimported successfully'),
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        } else {
+          throw Exception('Database error: Could not reload flight data after reprocessing. The import succeeded but the updated flight could not be retrieved from the database.');
+        }
+      } else {
+        // Use the error message from the import result which should now be user-friendly
+        throw Exception(importResult.errorMessage ?? 'Import failed with unknown error');
+      }
+    } catch (e) {
+      LoggingService.error('FlightDetailScreen: Failed to reprocess flight', e);
+      
+      setState(() {
+        _isSaving = false;
+      });
+      
+      if (mounted) {
+        final errorResult = ImportErrorHelper.processError(e);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Failed to reprocess flight: ${ImportErrorHelper.getErrorTitle(errorResult.category)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  errorResult.message,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 8), // Longer duration for detailed message
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _showDeleteConfirmation() async {
     final launchSiteName = _launchSite?.name ?? 'Unknown';
     final flightDate = _formatDate(_flight.date);
@@ -597,6 +724,13 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
           title: Text('Flight Details'),
           backgroundColor: Theme.of(context).colorScheme.inversePrimary,
           actions: [
+            // Show reimport button only for IGC-sourced flights
+            if (_flight.source == 'igc' && _flight.trackLogPath != null)
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                onPressed: _showReimportConfirmation,
+                tooltip: 'Reimport Flight',
+              ),
             IconButton(
               icon: const Icon(Icons.delete),
               onPressed: _showDeleteConfirmation,

@@ -73,7 +73,7 @@ class IgcImportService {
       if (igcData.trackPoints.isEmpty) {
         return ImportResult.failed(
           fileName: fileName,
-          errorMessage: 'No track points found in IGC file',
+          rawErrorMessage: 'No GPS track data found in IGC file. The file may be incomplete or corrupted.',
         );
       }
 
@@ -175,7 +175,7 @@ class IgcImportService {
     } catch (e) {
       return ImportResult.failed(
         fileName: fileName,
-        errorMessage: e.toString(),
+        rawErrorMessage: e.toString(),
       );
     }
   }
@@ -428,7 +428,7 @@ class IgcImportService {
     final igcData = await parser.parseFile(filePath);
     
     if (igcData.trackPoints.isEmpty) {
-      throw Exception('No track points found in IGC file');
+      throw Exception('No GPS track data found in IGC file. The file may be incomplete or corrupted.');
     }
 
     // Create flight record
@@ -492,7 +492,7 @@ class IgcImportService {
     final igcData = await parser.parseFile(filePath);
     
     if (igcData.trackPoints.isEmpty) {
-      throw Exception('No track points found in IGC file');
+      throw Exception('No GPS track data found in IGC file. The file may be incomplete or corrupted.');
     }
     
     // Create flight record using existing file path (no copying)
