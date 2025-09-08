@@ -96,7 +96,7 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
     
     setState(() {
       _isSelectingFiles = true;
-      _selectionStatus = "Loading list of selected files...";
+      _selectionStatus = "Opening file selector... This may take time for large folders.";
       _errorMessage = null; // Clear any previous errors
     });
     
@@ -115,10 +115,10 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
           withReadStream: false,
           initialDirectory: _lastFolder,
         ).timeout(
-          const Duration(seconds: 30),
+          const Duration(seconds: 90),
           onTimeout: () {
             setState(() {
-              _errorMessage = 'File selection timed out. Please try again with fewer files.';
+              _errorMessage = 'File selection timed out after 90 seconds. This can happen with large folders. Try selecting fewer files or a different folder.';
             });
             return null;
           },
@@ -132,10 +132,10 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
           withReadStream: false,
           initialDirectory: _lastFolder,
         ).timeout(
-          const Duration(seconds: 30),
+          const Duration(seconds: 90),
           onTimeout: () {
             setState(() {
-              _errorMessage = 'File selection timed out. Please try again with fewer files.';
+              _errorMessage = 'File selection timed out after 90 seconds. This can happen with large folders. Try selecting fewer files or a different folder.';
             });
             return null;
           },
@@ -163,7 +163,7 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
       if (result != null && result.files.isNotEmpty) {
         final fileCount = result.files.length;
         setState(() {
-          _selectionStatus = "Processing $fileCount files...";
+          _selectionStatus = "Processing $fileCount files... Please wait.";
         });
         
         final validPaths = result.files
@@ -680,16 +680,32 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
                 color: Colors.red.shade50,
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
-                  child: Row(
+                  child: Column(
                     children: [
-                      Icon(Icons.error, color: Colors.red.shade700),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          _errorMessage!,
-                          style: TextStyle(color: Colors.red.shade700),
-                        ),
+                      Row(
+                        children: [
+                          Icon(Icons.error, color: Colors.red.shade700),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _errorMessage!,
+                              style: TextStyle(color: Colors.red.shade700),
+                            ),
+                          ),
+                        ],
                       ),
+                      if (_errorMessage!.contains('timed out')) ...[
+                        const SizedBox(height: 12),
+                        ElevatedButton.icon(
+                          onPressed: _pickIgcFiles,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Try Again'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
