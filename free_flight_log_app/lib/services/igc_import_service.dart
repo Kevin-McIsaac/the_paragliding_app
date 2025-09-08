@@ -130,7 +130,9 @@ class IgcImportService {
           originalFilename: existingFlight.originalFilename ?? flight.originalFilename,
           source: flight.source,
           timezone: flight.timezone,
-          notes: flight.notes,
+          notes: existingFlight.originalFilename != null 
+              ? _buildNotesFromIgcData(igcData, existingFlight.originalFilename!)
+              : flight.notes,
           createdAt: existingFlight.createdAt, // Keep original creation time
           maxGroundSpeed: flight.maxGroundSpeed,
           avgGroundSpeed: flight.avgGroundSpeed,

@@ -530,10 +530,11 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
             'Reimport the flight from $launchSiteName on $flightDate?\n\n'
             'This will:\n'
             '• Recalculate all flight statistics\n'
+            '• Recalculate triangle detection\n'
             '• Update launch/landing sites based on current database\n'
             '• Preserve your manual edits (date, times, sites, wing, notes)\n'
             '• Use the latest parsing algorithms\n\n'
-            'Original IGC file: ${path.basename(_flight.trackLogPath!)}',
+            'Original IGC file: ${_flight.originalFilename ?? path.basename(_flight.trackLogPath!)}',
           ),
           actions: [
             TextButton(
