@@ -416,7 +416,8 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           final igcParser = IgcParser();
           final igcFile = await igcParser.parseFile(widget.flight.trackLogPath!);
           final triangleSamplingInterval = await PreferencesHelper.getTriangleSamplingInterval();
-          final faiTriangle = igcFile.calculateFaiTriangle(samplingIntervalSeconds: triangleSamplingInterval);
+          final closingDistance = await PreferencesHelper.getTriangleClosingDistance();
+          final faiTriangle = igcFile.calculateFaiTriangle(samplingIntervalSeconds: triangleSamplingInterval, closingDistanceMeters: closingDistance);
           final trianglePoints = faiTriangle['trianglePoints'] as List<dynamic>?;
           
           if (trianglePoints != null && trianglePoints.length == 3) {
