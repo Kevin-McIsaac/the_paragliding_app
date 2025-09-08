@@ -287,7 +287,7 @@ class IgcImportService {
     
     // Perform triangle closing point detection on trimmed data (after launch site is available)
     final closingDistance = await PreferencesHelper.getTriangleClosingDistance();
-    final closingPointIndex = dataForStats.getClosingPointIndex(maxDistanceMeters: closingDistance);
+    int? closingPointIndex = dataForStats.getClosingPointIndex(maxDistanceMeters: closingDistance);
     double? actualClosingDistance;
     
     // Create flight context for logging
@@ -336,6 +336,15 @@ class IgcImportService {
       final dataForTriangle = dataForStats.copyWithTrimmedPoints(0, closingPointIndex);
       faiTriangle = dataForTriangle.calculateFaiTriangle(samplingIntervalSeconds: triangleSamplingInterval, closingDistanceMeters: closingDistance);
       LoggingService.debug('IgcImportService: Triangle calculated${copyFile ? '' : ' (NO COPY)'} on ${dataForTriangle.trackPoints.length} points (launch to closing point)');
+      
+      // Check if triangle validation failed (empty points returned)
+      if (faiTriangle['trianglePoints'] != null && 
+          (faiTriangle['trianglePoints'] as List).isEmpty) {
+        // Triangle invalid - mark flight as open
+        closingPointIndex = null;
+        actualClosingDistance = null;
+        LoggingService.info('IgcImportService: Flight marked as OPEN${copyFile ? '' : ' (NO COPY)'} - triangle validation failed (vertices too close to launch)');
+      }
     } else {
       // No closing point, no triangle calculation for open flights
       faiTriangle = {
