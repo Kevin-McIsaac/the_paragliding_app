@@ -92,6 +92,27 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     _loadClosingDistanceThreshold();
   }
 
+  @override
+  void didUpdateWidget(FlightTrack2DWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    
+    // Check if flight data that affects the map display has changed
+    if (_shouldReloadTrackData(oldWidget.flight, widget.flight)) {
+      LoggingService.ui('FlightTrack2D', 'Flight data changed, reloading track data');
+      _loadTrackData();
+    }
+  }
+
+  /// Check if track data should be reloaded based on flight changes
+  bool _shouldReloadTrackData(Flight oldFlight, Flight newFlight) {
+    // Compare key fields that affect track/triangle display
+    return oldFlight.id != newFlight.id ||
+           oldFlight.trackLogPath != newFlight.trackLogPath ||
+           oldFlight.faiTrianglePoints != newFlight.faiTrianglePoints ||
+           oldFlight.isClosed != newFlight.isClosed ||
+           oldFlight.closingPointIndex != newFlight.closingPointIndex;
+  }
+
   Future<void> _loadMapProvider() async {
     try {
       final prefs = await SharedPreferences.getInstance();
