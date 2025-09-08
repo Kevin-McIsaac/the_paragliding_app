@@ -334,7 +334,7 @@ class IgcImportService {
     if (closingPointIndex != null) {
       // If there's a closing point, calculate triangle on track from launch to closing point
       final dataForTriangle = dataForStats.copyWithTrimmedPoints(0, closingPointIndex);
-      faiTriangle = dataForTriangle.calculateFaiTriangle(samplingIntervalSeconds: triangleSamplingInterval);
+      faiTriangle = dataForTriangle.calculateFaiTriangle(samplingIntervalSeconds: triangleSamplingInterval, closingDistanceMeters: closingDistance);
       LoggingService.debug('IgcImportService: Triangle calculated${copyFile ? '' : ' (NO COPY)'} on ${dataForTriangle.trackPoints.length} points (launch to closing point)');
     } else {
       // No closing point, no triangle calculation for open flights

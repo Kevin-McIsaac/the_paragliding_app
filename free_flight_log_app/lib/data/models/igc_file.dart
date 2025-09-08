@@ -625,7 +625,8 @@ class IgcFile {
   /// Calculate triangle using maximum perimeter approach
   /// Returns a map with triangle points and total distance
   /// Optional samplingIntervalSeconds for time-based sampling instead of point-based sampling
-  Map<String, dynamic> calculateFaiTriangle({int? samplingIntervalSeconds}) {
+  /// Optional closingDistanceMeters to validate triangle vertices are meaningful (default 100m)
+  Map<String, dynamic> calculateFaiTriangle({int? samplingIntervalSeconds, double closingDistanceMeters = 100.0}) {
     final stopwatch = Stopwatch()..start();
     
     if (trackPoints.length < 3) {
@@ -692,6 +693,35 @@ class IgcFile {
       };
     }
 
+    // Validate triangle vertices are outside closing detection threshold
+    final launchPoint = trackPoints.first;
+    int validVertices = 0;
+    final List<double> vertexDistances = [];
+    
+    for (int i = 0; i < bestTriangle.length; i++) {
+      final distance = calculateSimpleDistance(launchPoint, bestTriangle[i]);
+      vertexDistances.add(distance);
+      if (distance > closingDistanceMeters) {
+        validVertices++;
+      }
+    }
+    
+    // Check if at least 2 vertices are outside the closing threshold
+    if (validVertices < 2) {
+      LoggingService.info('Triangle calculation completed using $samplingMethod in ${stopwatch.elapsedMilliseconds}ms ($comparisons comparisons)');
+      LoggingService.info('Triangle INVALID: Only $validVertices vertices outside closing threshold of ${closingDistanceMeters.toStringAsFixed(0)}m');
+      LoggingService.info('Vertex distances from launch:');
+      LoggingService.info('  P1: ${vertexDistances[0].toStringAsFixed(1)}m');
+      LoggingService.info('  P2: ${vertexDistances[1].toStringAsFixed(1)}m');
+      LoggingService.info('  P3: ${vertexDistances[2].toStringAsFixed(1)}m');
+      LoggingService.info('Flight marked as OPEN - triangle vertices too close to launch');
+      
+      return {
+        'trianglePoints': <IgcPoint>[],
+        'triangleDistance': 0.0,
+      };
+    }
+
     // Calculate final triangle perimeter using Haversine for accuracy
     final distance1 = _haversineDistance(bestTriangle[0], bestTriangle[1]) * 1000; // Convert km to meters
     final distance2 = _haversineDistance(bestTriangle[1], bestTriangle[2]) * 1000;
@@ -700,10 +730,11 @@ class IgcFile {
 
     // Log detailed triangle information
     LoggingService.info('Triangle calculation completed using $samplingMethod in ${stopwatch.elapsedMilliseconds}ms ($comparisons comparisons)');
+    LoggingService.info('Triangle VALID: $validVertices vertices outside closing threshold of ${closingDistanceMeters.toStringAsFixed(0)}m');
     LoggingService.info('Triangle vertices:');
-    LoggingService.info('  P1: ${bestTriangle[0].latitude.toStringAsFixed(6)}, ${bestTriangle[0].longitude.toStringAsFixed(6)}');
-    LoggingService.info('  P2: ${bestTriangle[1].latitude.toStringAsFixed(6)}, ${bestTriangle[1].longitude.toStringAsFixed(6)}');
-    LoggingService.info('  P3: ${bestTriangle[2].latitude.toStringAsFixed(6)}, ${bestTriangle[2].longitude.toStringAsFixed(6)}');
+    LoggingService.info('  P1: ${bestTriangle[0].latitude.toStringAsFixed(6)}, ${bestTriangle[0].longitude.toStringAsFixed(6)} (${vertexDistances[0].toStringAsFixed(1)}m from launch)');
+    LoggingService.info('  P2: ${bestTriangle[1].latitude.toStringAsFixed(6)}, ${bestTriangle[1].longitude.toStringAsFixed(6)} (${vertexDistances[1].toStringAsFixed(1)}m from launch)');
+    LoggingService.info('  P3: ${bestTriangle[2].latitude.toStringAsFixed(6)}, ${bestTriangle[2].longitude.toStringAsFixed(6)} (${vertexDistances[2].toStringAsFixed(1)}m from launch)');
     LoggingService.info('Triangle side distances:');
     LoggingService.info('  P1-P2: ${(distance1 / 1000).toStringAsFixed(3)}km');
     LoggingService.info('  P2-P3: ${(distance2 / 1000).toStringAsFixed(3)}km');
