@@ -284,6 +284,52 @@ class PreferencesHelper {
     await prefs.setInt(triangleSamplingIntervalKey, value);
   }
   
+  // Flight Detail Card expansion states
+  static const String flightDetailsCardExpandedKey = 'flight_details_card_expanded';
+  static const String flightStatisticsCardExpandedKey = 'flight_statistics_card_expanded';
+  static const String flightTrackCardExpandedKey = 'flight_track_card_expanded';
+  static const String flightNotesCardExpandedKey = 'flight_notes_card_expanded';
+
+  static Future<bool> getFlightDetailsCardExpanded() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(flightDetailsCardExpandedKey) ?? true; // Default expanded
+  }
+
+  static Future<void> setFlightDetailsCardExpanded(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(flightDetailsCardExpandedKey, value);
+  }
+
+  static Future<bool> getFlightStatisticsCardExpanded() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(flightStatisticsCardExpandedKey) ?? true; // Default expanded
+  }
+
+  static Future<void> setFlightStatisticsCardExpanded(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(flightStatisticsCardExpandedKey, value);
+  }
+
+  static Future<bool> getFlightTrackCardExpanded() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(flightTrackCardExpandedKey) ?? true; // Default expanded
+  }
+
+  static Future<void> setFlightTrackCardExpanded(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(flightTrackCardExpandedKey, value);
+  }
+
+  static Future<bool> getFlightNotesCardExpanded() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(flightNotesCardExpandedKey) ?? true; // Default expanded
+  }
+
+  static Future<void> setFlightNotesCardExpanded(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(flightNotesCardExpandedKey, value);
+  }
+
   // Generic methods for direct access if needed
   static Future<String?> getString(String key) async {
     final prefs = await SharedPreferences.getInstance();

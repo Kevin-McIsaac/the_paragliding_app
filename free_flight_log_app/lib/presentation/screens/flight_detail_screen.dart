@@ -10,6 +10,7 @@ import '../../services/logging_service.dart';
 import '../../services/igc_import_service.dart';
 import '../../data/models/import_result.dart';
 import '../../utils/import_error_helper.dart';
+import '../../utils/preferences_helper.dart';
 import '../widgets/flight_track_2d_widget.dart';
 import '../widgets/flight_statistics_widget.dart';
 import '../widgets/site_selection_dialog.dart';
@@ -39,6 +40,12 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
   bool _isSaving = false;
   late TextEditingController _notesController;
   
+  // Card expansion states
+  bool _flightDetailsExpanded = true;
+  bool _flightStatisticsExpanded = true;
+  bool _flightTrackExpanded = true;
+  bool _flightNotesExpanded = true;
+  
 
   @override
   void initState() {
@@ -46,6 +53,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
     _flight = widget.flight;
     _notesController = TextEditingController(text: _flight.notes ?? '');
     _loadFlightDetails();
+    _loadCardExpansionStates();
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -63,6 +71,21 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
       setState(() {
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _loadCardExpansionStates() async {
+    try {
+      _flightDetailsExpanded = await PreferencesHelper.getFlightDetailsCardExpanded();
+      _flightStatisticsExpanded = await PreferencesHelper.getFlightStatisticsCardExpanded();
+      _flightTrackExpanded = await PreferencesHelper.getFlightTrackCardExpanded();
+      _flightNotesExpanded = await PreferencesHelper.getFlightNotesCardExpanded();
+      setState(() {
+        // Update UI with loaded expansion states
+      });
+    } catch (e) {
+      // Error loading preferences - use defaults
+      LoggingService.error('Failed to load card expansion states', e);
     }
   }
 
@@ -754,7 +777,11 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                           'Flight Details',
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
-                        initiallyExpanded: true,
+                        initiallyExpanded: _flightDetailsExpanded,
+                        onExpansionChanged: (expanded) {
+                          _flightDetailsExpanded = expanded;
+                          PreferencesHelper.setFlightDetailsCardExpanded(expanded);
+                        },
                         children: [
                           Padding(
                             padding: const EdgeInsets.all(16.0),
@@ -775,7 +802,11 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                             'Flight Statistics',
                             style: Theme.of(context).textTheme.titleLarge,
                           ),
-                          initiallyExpanded: true,
+                          initiallyExpanded: _flightStatisticsExpanded,
+                          onExpansionChanged: (expanded) {
+                            _flightStatisticsExpanded = expanded;
+                            PreferencesHelper.setFlightStatisticsCardExpanded(expanded);
+                          },
                           children: [
                             Padding(
                               padding: const EdgeInsets.all(16.0),
@@ -796,7 +827,11 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                             'Flight Track',
                             style: Theme.of(context).textTheme.titleLarge,
                           ),
-                          initiallyExpanded: true,
+                          initiallyExpanded: _flightTrackExpanded,
+                          onExpansionChanged: (expanded) {
+                            _flightTrackExpanded = expanded;
+                            PreferencesHelper.setFlightTrackCardExpanded(expanded);
+                          },
                           children: [
                             Padding(
                               padding: const EdgeInsets.all(16.0),
@@ -840,7 +875,11 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                         child: ExpansionTile(
                           key: const PageStorageKey('notes_edit'),
                           title: Text('Notes', style: Theme.of(context).textTheme.titleLarge),
-                          initiallyExpanded: true,
+                          initiallyExpanded: _flightNotesExpanded,
+                          onExpansionChanged: (expanded) {
+                            _flightNotesExpanded = expanded;
+                            PreferencesHelper.setFlightNotesCardExpanded(expanded);
+                          },
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -885,7 +924,11 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                           child: ExpansionTile(
                             key: const PageStorageKey('notes_display'),
                             title: Text('Notes', style: Theme.of(context).textTheme.titleLarge),
-                            initiallyExpanded: true,
+                            initiallyExpanded: _flightNotesExpanded,
+                            onExpansionChanged: (expanded) {
+                              _flightNotesExpanded = expanded;
+                              PreferencesHelper.setFlightNotesCardExpanded(expanded);
+                            },
                             trailing: IconButton(
                               onPressed: () {
                                 setState(() {
@@ -942,7 +985,11 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                           child: ExpansionTile(
                             key: const PageStorageKey('notes_add'),
                             title: Text('Notes', style: Theme.of(context).textTheme.titleLarge),
-                            initiallyExpanded: true,
+                            initiallyExpanded: _flightNotesExpanded,
+                            onExpansionChanged: (expanded) {
+                              _flightNotesExpanded = expanded;
+                              PreferencesHelper.setFlightNotesCardExpanded(expanded);
+                            },
                             trailing: IconButton(
                               onPressed: () {
                                 setState(() {
