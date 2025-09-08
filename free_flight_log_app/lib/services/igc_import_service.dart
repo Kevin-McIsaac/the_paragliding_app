@@ -97,7 +97,8 @@ class IgcImportService {
       }
 
       // Create flight record (either new or replacement)
-      final flight = await _createFlightFromIgcData(igcData, filePath, copyFile: true);
+      final isReimport = existingFlight != null && replace;
+      final flight = await _createFlightFromIgcData(igcData, filePath, copyFile: !isReimport);
       
       if (existingFlight != null && replace) {
         // Replace existing flight
@@ -108,6 +109,9 @@ class IgcImportService {
           landingTime: flight.landingTime,
           duration: flight.duration,
           launchSiteId: flight.launchSiteId,
+          launchLatitude: flight.launchLatitude,
+          launchLongitude: flight.launchLongitude,
+          launchAltitude: flight.launchAltitude,
           landingLatitude: flight.landingLatitude,
           landingLongitude: flight.landingLongitude,
           landingAltitude: flight.landingAltitude,
@@ -121,8 +125,9 @@ class IgcImportService {
           distance: flight.distance,
           straightDistance: flight.straightDistance,
           faiTriangleDistance: flight.faiTriangleDistance,
+          faiTrianglePoints: flight.faiTrianglePoints,
           trackLogPath: flight.trackLogPath,
-          originalFilename: flight.originalFilename,
+          originalFilename: existingFlight.originalFilename ?? flight.originalFilename,
           source: flight.source,
           timezone: flight.timezone,
           notes: flight.notes,
@@ -138,7 +143,13 @@ class IgcImportService {
           longestGlide: flight.longestGlide,
           climbPercentage: flight.climbPercentage,
           gpsFixQuality: flight.gpsFixQuality,
-          recordingInterval: flight.recordingInterval
+          recordingInterval: flight.recordingInterval,
+          takeoffIndex: flight.takeoffIndex,
+          landingIndex: flight.landingIndex,
+          detectedTakeoffTime: flight.detectedTakeoffTime,
+          detectedLandingTime: flight.detectedLandingTime,
+          closingPointIndex: flight.closingPointIndex,
+          closingDistance: flight.closingDistance
         );
         
         await _databaseService.updateFlight(updatedFlight);
