@@ -598,9 +598,34 @@ class IgcFile {
     };
   }
 
+  /// Select track points for triangle calculation using time-based sampling
+  /// Returns a list of points sampled at the specified interval in seconds
+  List<IgcPoint> _selectTimeBasedSamples(int intervalSeconds) {
+    if (trackPoints.isEmpty) return [];
+    
+    List<IgcPoint> samples = [trackPoints.first];
+    DateTime nextSampleTime = trackPoints.first.timestamp.add(Duration(seconds: intervalSeconds));
+    
+    for (final point in trackPoints) {
+      if (point.timestamp.isAfter(nextSampleTime) || 
+          point.timestamp.isAtSameMomentAs(nextSampleTime)) {
+        samples.add(point);
+        nextSampleTime = point.timestamp.add(Duration(seconds: intervalSeconds));
+      }
+    }
+    
+    // Ensure last point is included if not already
+    if (samples.isNotEmpty && samples.last != trackPoints.last) {
+      samples.add(trackPoints.last);
+    }
+    
+    return samples;
+  }
+
   /// Calculate triangle using maximum perimeter approach
   /// Returns a map with triangle points and total distance
-  Map<String, dynamic> calculateFaiTriangle() {
+  /// Optional samplingIntervalSeconds for time-based sampling instead of point-based sampling
+  Map<String, dynamic> calculateFaiTriangle({int? samplingIntervalSeconds}) {
     final stopwatch = Stopwatch()..start();
     
     if (trackPoints.length < 3) {
@@ -614,17 +639,34 @@ class IgcFile {
     double maxPerimeter = 0.0;
     List<IgcPoint> bestTriangle = [];
 
-    // For performance, sample every nth point for large tracks
-    int step = trackPoints.length > 1000 ? trackPoints.length ~/ 500 : 1;
-    int comparisons = 0;
+    // Select sample points based on time or point-based sampling
+    List<IgcPoint> samplePoints;
+    String samplingMethod;
     
-    for (int i = 0; i < trackPoints.length; i += step) {
-      for (int j = i + step; j < trackPoints.length; j += step) {
-        for (int k = j + step; k < trackPoints.length; k += step) {
+    if (samplingIntervalSeconds != null) {
+      // Use time-based sampling
+      samplePoints = _selectTimeBasedSamples(samplingIntervalSeconds);
+      samplingMethod = 'time-based (${samplingIntervalSeconds}s intervals)';
+    } else {
+      // Use legacy point-based sampling for backward compatibility
+      int step = trackPoints.length > 1000 ? trackPoints.length ~/ 500 : 1;
+      samplePoints = [];
+      for (int i = 0; i < trackPoints.length; i += step) {
+        samplePoints.add(trackPoints[i]);
+      }
+      samplingMethod = 'point-based (step=$step)';
+    }
+    
+    int comparisons = 0;
+    LoggingService.debug('Triangle calculation: Using $samplingMethod sampling - ${samplePoints.length} points selected from ${trackPoints.length} total');
+    
+    for (int i = 0; i < samplePoints.length; i++) {
+      for (int j = i + 1; j < samplePoints.length; j++) {
+        for (int k = j + 1; k < samplePoints.length; k++) {
           comparisons++;
-          final p1 = trackPoints[i];
-          final p2 = trackPoints[j];
-          final p3 = trackPoints[k];
+          final p1 = samplePoints[i];
+          final p2 = samplePoints[j];
+          final p3 = samplePoints[k];
           
           // Calculate perimeter using Pythagorean distance
           final distance1 = calculateSimpleDistance(p1, p2);
@@ -643,21 +685,21 @@ class IgcFile {
     stopwatch.stop();
 
     if (bestTriangle.length != 3) {
-      LoggingService.debug('Triangle calculation: No valid triangle found in ${stopwatch.elapsedMilliseconds}ms ($comparisons comparisons)');
+      LoggingService.debug('Triangle calculation: No valid triangle found using $samplingMethod in ${stopwatch.elapsedMilliseconds}ms ($comparisons comparisons)');
       return {
         'trianglePoints': <IgcPoint>[],
         'triangleDistance': 0.0, // Already in kilometers
       };
     }
 
-    // Calculate final triangle perimeter using Pythagorean distance
-    final distance1 = calculateSimpleDistance(bestTriangle[0], bestTriangle[1]);
-    final distance2 = calculateSimpleDistance(bestTriangle[1], bestTriangle[2]);
-    final distance3 = calculateSimpleDistance(bestTriangle[2], bestTriangle[0]);
+    // Calculate final triangle perimeter using Haversine for accuracy
+    final distance1 = _haversineDistance(bestTriangle[0], bestTriangle[1]) * 1000; // Convert km to meters
+    final distance2 = _haversineDistance(bestTriangle[1], bestTriangle[2]) * 1000;
+    final distance3 = _haversineDistance(bestTriangle[2], bestTriangle[0]) * 1000;
     final totalDistance = distance1 + distance2 + distance3;
 
     // Log detailed triangle information
-    LoggingService.info('Triangle calculation completed in ${stopwatch.elapsedMilliseconds}ms ($comparisons comparisons)');
+    LoggingService.info('Triangle calculation completed using $samplingMethod in ${stopwatch.elapsedMilliseconds}ms ($comparisons comparisons)');
     LoggingService.info('Triangle vertices:');
     LoggingService.info('  P1: ${bestTriangle[0].latitude.toStringAsFixed(6)}, ${bestTriangle[0].longitude.toStringAsFixed(6)}');
     LoggingService.info('  P2: ${bestTriangle[1].latitude.toStringAsFixed(6)}, ${bestTriangle[1].longitude.toStringAsFixed(6)}');
@@ -677,7 +719,8 @@ class IgcFile {
 
   /// Find the closing point index by scanning backwards from the end
   /// Returns the index of the first point within maxDistanceMeters of the launch point
-  /// Returns null if no point is found within the specified distance
+  /// Only returns a valid closing point if the track actually left the closing circle
+  /// Returns null if no point is found within the specified distance or if the track never left the circle
   int? getClosingPointIndex({double maxDistanceMeters = 100.0}) {
     final stopwatch = Stopwatch()..start();
     
@@ -688,6 +731,7 @@ class IgcFile {
     
     final launchPoint = trackPoints.first;
     int pointsChecked = 0;
+    int? potentialClosingIndex;
     
     // Scan backwards from the end of the flight
     for (int i = trackPoints.length - 1; i >= 1; i--) {
@@ -696,17 +740,53 @@ class IgcFile {
       final distance = calculateSimpleDistance(launchPoint, currentPoint);
       
       if (distance <= maxDistanceMeters) {
-        stopwatch.stop();
-        LoggingService.info('Closing point found in ${stopwatch.elapsedMilliseconds}ms ($pointsChecked points checked)');
-        LoggingService.info('Closing point: Index $i, ${currentPoint.latitude.toStringAsFixed(6)}, ${currentPoint.longitude.toStringAsFixed(6)}');
-        LoggingService.info('Actual closing distance: ${distance.toStringAsFixed(1)}m (threshold: ${maxDistanceMeters.toStringAsFixed(1)}m)');
-        return i;
+        potentialClosingIndex = i;
+        LoggingService.debug('Potential closing point found at index $i, distance: ${distance.toStringAsFixed(1)}m');
+        break; // Found potential closing point, now validate
+      }
+    }
+    
+    // If no potential closing point found, flight is definitely open
+    if (potentialClosingIndex == null) {
+      stopwatch.stop();
+      LoggingService.debug('Closing point detection: No point within ${maxDistanceMeters.toStringAsFixed(1)}m found in ${stopwatch.elapsedMilliseconds}ms ($pointsChecked points checked)');
+      return null;
+    }
+    
+    // Validate that the track actually left the closing circle
+    // Scan forward from launch to check if pilot flew away during flight
+    bool leftClosingCircle = false;
+    int validationPointsChecked = 0;
+    
+    for (int j = 1; j < potentialClosingIndex; j++) {
+      validationPointsChecked++;
+      final validationPoint = trackPoints[j];
+      final validationDistance = calculateSimpleDistance(launchPoint, validationPoint);
+      
+      if (validationDistance > maxDistanceMeters) {
+        leftClosingCircle = true;
+        LoggingService.debug('Validation: Found point outside circle during flight at index $j, distance: ${validationDistance.toStringAsFixed(1)}m');
+        break;
       }
     }
     
     stopwatch.stop();
-    LoggingService.debug('Closing point detection: No point within ${maxDistanceMeters.toStringAsFixed(1)}m found in ${stopwatch.elapsedMilliseconds}ms ($pointsChecked points checked)');
-    return null; // No closing point found
+    
+    if (leftClosingCircle) {
+      // Valid closing - track left the circle and returned
+      final closingPoint = trackPoints[potentialClosingIndex];
+      final closingDistance = calculateSimpleDistance(launchPoint, closingPoint);
+      LoggingService.info('Valid closing point found in ${stopwatch.elapsedMilliseconds}ms (${pointsChecked + validationPointsChecked} points total)');
+      LoggingService.info('Closing point: Index $potentialClosingIndex, ${closingPoint.latitude.toStringAsFixed(6)}, ${closingPoint.longitude.toStringAsFixed(6)}');
+      LoggingService.info('Actual closing distance: ${closingDistance.toStringAsFixed(1)}m (threshold: ${maxDistanceMeters.toStringAsFixed(1)}m)');
+      LoggingService.info('Track validation: Left closing circle during flight and returned (checked $validationPointsChecked points)');
+      return potentialClosingIndex;
+    } else {
+      // Invalid closing - track never left the closing circle
+      LoggingService.debug('Closing point detection: Track never left closing circle in ${stopwatch.elapsedMilliseconds}ms (${pointsChecked + validationPointsChecked} points total)');
+      LoggingService.debug('Potential closing at index $potentialClosingIndex rejected - flight stayed within ${maxDistanceMeters.toStringAsFixed(1)}m circle');
+      return null; // Not a valid closing - likely ground handling or very short flight
+    }
   }
 
   /// Calculate simple Pythagorean distance in meters (accurate for distances < 1km)
