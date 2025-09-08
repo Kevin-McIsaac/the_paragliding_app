@@ -748,19 +748,19 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                   children: [
                     // Flight Details Card (Combined Overview, Sites, and Equipment)
                     Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Flight Details',
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                            const SizedBox(height: 16),
-                            _buildFlightDetailsContent(),
-                          ],
+                      child: ExpansionTile(
+                        key: const PageStorageKey('flight_details'),
+                        title: Text(
+                          'Flight Details',
+                          style: Theme.of(context).textTheme.titleLarge,
                         ),
+                        initiallyExpanded: true,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: _buildFlightDetailsContent(),
+                          ),
+                        ],
                       ),
                     ),
 
@@ -769,19 +769,19 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                     // Flight Statistics Card (if track data available)
                     if (_flight.trackLogPath != null)
                       Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Flight Statistics',
-                                style: Theme.of(context).textTheme.titleLarge,
-                              ),
-                              const SizedBox(height: 16),
-                              FlightStatisticsWidget(flight: _flight),
-                            ],
+                        child: ExpansionTile(
+                          key: const PageStorageKey('flight_statistics'),
+                          title: Text(
+                            'Flight Statistics',
+                            style: Theme.of(context).textTheme.titleLarge,
                           ),
+                          initiallyExpanded: true,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: FlightStatisticsWidget(flight: _flight),
+                            ),
+                          ],
                         ),
                       ),
 
@@ -790,22 +790,22 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                     // Flight Track Map (if track data available)
                     if (_flight.trackLogPath != null)
                       Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Flight Track',
-                                style: Theme.of(context).textTheme.titleLarge,
-                              ),
-                              const SizedBox(height: 16),
-                              FlightTrack2DWidget(
+                        child: ExpansionTile(
+                          key: const PageStorageKey('flight_track'),
+                          title: Text(
+                            'Flight Track',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                          initiallyExpanded: true,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: FlightTrack2DWidget(
                                 flight: _flight,
                                 height: 732,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
 
@@ -837,41 +837,34 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                     // Notes Card (Notes editing or display)
                     if (_isEditingNotes)
                       Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                        child: ExpansionTile(
+                          key: const PageStorageKey('notes_edit'),
+                          title: Text('Notes', style: Theme.of(context).textTheme.titleLarge),
+                          initiallyExpanded: true,
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'Notes',
-                                    style: Theme.of(context).textTheme.titleLarge,
-                                  ),
-                                  Row(
-                                    children: [
-                                      TextButton(
-                                        onPressed: _isSaving ? null : _cancelNotesEdit,
-                                        child: const Text('Cancel'),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      FilledButton(
-                                        onPressed: _isSaving ? null : _saveNotes,
-                                        child: _isSaving 
-                                            ? const SizedBox(
-                                                width: 16,
-                                                height: 16,
-                                                child: CircularProgressIndicator(strokeWidth: 2),
-                                              )
-                                            : const Text('Save'),
-                                      ),
-                                    ],
-                                  ),
-                                ],
+                              TextButton(
+                                onPressed: _isSaving ? null : _cancelNotesEdit,
+                                child: const Text('Cancel'),
                               ),
-                              const SizedBox(height: 16),
-                              TextFormField(
+                              const SizedBox(width: 8),
+                              FilledButton(
+                                onPressed: _isSaving ? null : _saveNotes,
+                                child: _isSaving 
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                      )
+                                    : const Text('Save'),
+                              ),
+                            ],
+                          ),
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: TextFormField(
                                 controller: _notesController,
                                 decoration: const InputDecoration(
                                   hintText: 'Enter your flight notes here...',
@@ -881,39 +874,31 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                                 enabled: !_isSaving,
                                 autofocus: true,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       )
                     else ...[
                       // Notes Display Card (when not editing)
                       if (_flight.notes?.isNotEmpty == true)
                         Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      'Notes',
-                                      style: Theme.of(context).textTheme.titleLarge,
-                                    ),
-                                    IconButton(
-                                      onPressed: () {
-                                        setState(() {
-                                          _isEditingNotes = true;
-                                        });
-                                      },
-                                      icon: const Icon(Icons.edit, size: 20),
-                                      tooltip: 'Edit notes',
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 16),
-                                Column(
+                          child: ExpansionTile(
+                            key: const PageStorageKey('notes_display'),
+                            title: Text('Notes', style: Theme.of(context).textTheme.titleLarge),
+                            initiallyExpanded: true,
+                            trailing: IconButton(
+                              onPressed: () {
+                                setState(() {
+                                  _isEditingNotes = true;
+                                });
+                              },
+                              icon: const Icon(Icons.edit, size: 20),
+                              tooltip: 'Edit notes',
+                            ),
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     if (_flight.notes?.isNotEmpty == true) ...[
@@ -946,103 +931,96 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                                     ],
                                   ],
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         )
                       
                       // Add Notes Card (if no notes exist and not editing)
                       else if (_flight.notes?.isEmpty != false && !_isEditingNotes)
-                        SizedBox(
-                          width: double.infinity,
-                          child: Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        'Notes',
-                                        style: Theme.of(context).textTheme.titleLarge,
-                                      ),
-                                      IconButton(
-                                        onPressed: () {
-                                          setState(() {
-                                            _isEditingNotes = true;
-                                          });
-                                        },
-                                        icon: const Icon(Icons.add, size: 20),
-                                        tooltip: 'Add notes',
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  
-                                  // Show IGC source info if available, even without user notes
-                                  if (_flight.source == 'igc' && _flight.trackLogPath != null) ...[
-                                    Text(
-                                      'IGC Source:',
-                                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.grey[600],
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    SelectableText(
-                                      _flight.trackLogPath!,
-                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                        fontFamily: 'monospace',
-                                        color: Colors.grey[700],
-                                      ),
-                                    ),
-                                    const SizedBox(height: 12),
-                                  ],
-                                  
-                                  GestureDetector(
-                                    onTap: () {
-                                      setState(() {
-                                        _isEditingNotes = true;
-                                      });
-                                    },
-                                    child: Container(
-                                      width: double.infinity,
-                                      padding: const EdgeInsets.symmetric(vertical: 16),
-                                      decoration: BoxDecoration(
-                                        color: Colors.grey[100],
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                          color: Colors.grey[300]!,
-                                          style: BorderStyle.solid,
-                                        ),
-                                      ),
-                                      child: Center(
-                                        child: Row(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Icon(
-                                              Icons.add,
-                                              color: Colors.grey[600],
-                                              size: 20,
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              'Tap to add flight notes',
-                                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                                color: Colors.grey[600],
-                                                fontStyle: FontStyle.italic,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
+                        Card(
+                          child: ExpansionTile(
+                            key: const PageStorageKey('notes_add'),
+                            title: Text('Notes', style: Theme.of(context).textTheme.titleLarge),
+                            initiallyExpanded: true,
+                            trailing: IconButton(
+                              onPressed: () {
+                                setState(() {
+                                  _isEditingNotes = true;
+                                });
+                              },
+                              icon: const Icon(Icons.add, size: 20),
+                              tooltip: 'Add notes',
                             ),
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // Show IGC source info if available, even without user notes
+                                    if (_flight.source == 'igc' && _flight.trackLogPath != null) ...[
+                                      Text(
+                                        'IGC Source:',
+                                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      SelectableText(
+                                        _flight.trackLogPath!,
+                                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                          fontFamily: 'monospace',
+                                          color: Colors.grey[700],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                    ],
+                                    
+                                    GestureDetector(
+                                      onTap: () {
+                                        setState(() {
+                                          _isEditingNotes = true;
+                                        });
+                                      },
+                                      child: Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.symmetric(vertical: 16),
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey[100],
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(
+                                            color: Colors.grey[300]!,
+                                            style: BorderStyle.solid,
+                                          ),
+                                        ),
+                                        child: Center(
+                                          child: Row(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Icon(
+                                                Icons.add,
+                                                color: Colors.grey[600],
+                                                size: 20,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                'Tap to add flight notes',
+                                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                                  color: Colors.grey[600],
+                                                  fontStyle: FontStyle.italic,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                     ],
