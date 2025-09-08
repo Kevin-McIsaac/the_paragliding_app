@@ -683,24 +683,24 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     final p2 = LatLng(_faiTrianglePoints[1].latitude, _faiTrianglePoints[1].longitude);
     final p3 = LatLng(_faiTrianglePoints[2].latitude, _faiTrianglePoints[2].longitude);
     
-    // Create triangle as dashed grey lines
+    // Create triangle as dashed purple lines
     return [
       Polyline(
         points: [p1, p2],
         strokeWidth: 2.0,
-        color: Colors.grey,
+        color: Colors.purple,
         pattern: StrokePattern.dashed(segments: [5, 5]),
       ),
       Polyline(
         points: [p2, p3],
         strokeWidth: 2.0,
-        color: Colors.grey,
+        color: Colors.purple,
         pattern: StrokePattern.dashed(segments: [5, 5]),
       ),
       Polyline(
         points: [p3, p1],
         strokeWidth: 2.0,
-        color: Colors.grey,
+        color: Colors.purple,
         pattern: StrokePattern.dashed(segments: [5, 5]),
       ),
     ];

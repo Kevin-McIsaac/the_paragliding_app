@@ -692,10 +692,10 @@ class IgcFile {
       };
     }
 
-    // Calculate final triangle perimeter using Pythagorean distance
-    final distance1 = calculateSimpleDistance(bestTriangle[0], bestTriangle[1]);
-    final distance2 = calculateSimpleDistance(bestTriangle[1], bestTriangle[2]);
-    final distance3 = calculateSimpleDistance(bestTriangle[2], bestTriangle[0]);
+    // Calculate final triangle perimeter using Haversine for accuracy
+    final distance1 = _haversineDistance(bestTriangle[0], bestTriangle[1]) * 1000; // Convert km to meters
+    final distance2 = _haversineDistance(bestTriangle[1], bestTriangle[2]) * 1000;
+    final distance3 = _haversineDistance(bestTriangle[2], bestTriangle[0]) * 1000;
     final totalDistance = distance1 + distance2 + distance3;
 
     // Log detailed triangle information

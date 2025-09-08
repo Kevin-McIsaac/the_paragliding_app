@@ -324,9 +324,12 @@ class IgcImportService {
       faiTriangle = dataForTriangle.calculateFaiTriangle(samplingIntervalSeconds: triangleSamplingInterval);
       LoggingService.debug('IgcImportService: Triangle calculated${copyFile ? '' : ' (NO COPY)'} on ${dataForTriangle.trackPoints.length} points (launch to closing point)');
     } else {
-      // No closing point, use entire trimmed track
-      faiTriangle = dataForStats.calculateFaiTriangle(samplingIntervalSeconds: triangleSamplingInterval);
-      LoggingService.debug('IgcImportService: Triangle calculated${copyFile ? '' : ' (NO COPY)'} on ${dataForStats.trackPoints.length} points (full trimmed track)');
+      // No closing point, no triangle calculation for open flights
+      faiTriangle = {
+        'trianglePoints': null,
+        'triangleDistance': 0.0,
+      };
+      LoggingService.debug('IgcImportService: No triangle calculated${copyFile ? '' : ' (NO COPY)'} - flight does not close');
     }
     
     // Convert triangle points to JSON for storage
