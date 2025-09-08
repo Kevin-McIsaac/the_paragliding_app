@@ -188,9 +188,12 @@ class DatabaseHelper {
       final flightColumns = await db.rawQuery("PRAGMA table_info(flights)");
       final expectedFlightColumns = {
         'id', 'date', 'launch_time', 'landing_time', 'duration',
-        'launch_site_id', 'landing_latitude', 'landing_longitude', 'landing_altitude', 'landing_description',
+        'launch_site_id', 'launch_latitude', 'launch_longitude', 'launch_altitude',
+        'landing_latitude', 'landing_longitude', 'landing_altitude', 'landing_description',
         'max_altitude', 'max_climb_rate', 'max_sink_rate', 'max_climb_rate_5_sec', 'max_sink_rate_5_sec',
-        'distance', 'straight_distance', 'wing_id', 'notes', 'created_at', 'updated_at', 'timezone',
+        'distance', 'straight_distance', 'fai_triangle_distance', 'fai_triangle_points',
+        'wing_id', 'notes', 'track_log_path', 'original_filename', 'source',
+        'timezone', 'created_at', 'updated_at',
         'max_ground_speed', 'avg_ground_speed', 'thermal_count', 'avg_thermal_strength',
         'total_time_in_thermals', 'best_thermal', 'best_ld', 'avg_ld', 'longest_glide',
         'climb_percentage', 'gps_fix_quality', 'recording_interval',
@@ -217,6 +220,34 @@ class DatabaseHelper {
       
       if (missingSiteColumns.isNotEmpty) {
         LoggingService.error('DatabaseHelper: Missing site columns: ${missingSiteColumns.join(', ')}');
+        return false;
+      }
+      
+      // Check wings table has all expected columns
+      final wingColumns = await db.rawQuery("PRAGMA table_info(wings)");
+      final expectedWingColumns = {
+        'id', 'name', 'manufacturer', 'model', 'size', 'color', 'purchase_date', 'active', 'notes', 'created_at'
+      };
+      
+      final actualWingColumns = wingColumns.map((col) => col['name'] as String).toSet();
+      final missingWingColumns = expectedWingColumns.difference(actualWingColumns);
+      
+      if (missingWingColumns.isNotEmpty) {
+        LoggingService.error('DatabaseHelper: Missing wing columns: ${missingWingColumns.join(', ')}');
+        return false;
+      }
+      
+      // Check wing_aliases table has all expected columns
+      final wingAliasColumns = await db.rawQuery("PRAGMA table_info(wing_aliases)");
+      final expectedWingAliasColumns = {
+        'id', 'wing_id', 'alias_name', 'created_at'
+      };
+      
+      final actualWingAliasColumns = wingAliasColumns.map((col) => col['name'] as String).toSet();
+      final missingWingAliasColumns = expectedWingAliasColumns.difference(actualWingAliasColumns);
+      
+      if (missingWingAliasColumns.isNotEmpty) {
+        LoggingService.error('DatabaseHelper: Missing wing_aliases columns: ${missingWingAliasColumns.join(', ')}');
         return false;
       }
       
