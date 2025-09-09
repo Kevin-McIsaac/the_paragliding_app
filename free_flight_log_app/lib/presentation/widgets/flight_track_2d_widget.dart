@@ -1012,23 +1012,17 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   }
 
   List<DragMarker> _buildClosingPointMarker() {
-    // Adjust closing point index for trimmed track points
-    // The closingPointIndex is from the full IGC file, but _trackPoints may be trimmed
-    int adjustedIndex = widget.flight.closingPointIndex!;
+    // The closingPointIndex is already relative to trimmed data (since everything works off trimmed data)
+    int closingIndex = widget.flight.closingPointIndex!;
     
-    // If takeoff index exists, adjust for the offset  
-    if (widget.flight.takeoffIndex != null) {
-      adjustedIndex = widget.flight.closingPointIndex! - widget.flight.takeoffIndex!;
-    }
-    
-    // Ensure the adjusted index is within bounds
-    if (adjustedIndex < 0 || adjustedIndex >= _trackPoints.length) {
+    // Ensure the index is within bounds
+    if (closingIndex < 0 || closingIndex >= _trackPoints.length) {
       return [];
     }
     
     return [
       DragMarker(
-        point: LatLng(_trackPoints[adjustedIndex].latitude, _trackPoints[adjustedIndex].longitude),
+        point: LatLng(_trackPoints[closingIndex].latitude, _trackPoints[closingIndex].longitude),
         size: const Size(60, 40),
         disableDrag: true,
         builder: (ctx, point, isDragging) => Column(
