@@ -923,9 +923,10 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         size: const Size(60, 40),
         offset: const Offset(-30, -12), // Center the 24px circle on the closing point
         disableDrag: true,
-        builder: (ctx, point, isDragging) => Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+        builder: (ctx, point, isDragging) => IgnorePointer(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
             // Closing point marker icon
             Container(
               width: 24,
@@ -972,6 +973,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               ),
             ),
           ],
+        ),
         ),
       ),
     ];
