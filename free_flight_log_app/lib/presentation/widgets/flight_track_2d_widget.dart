@@ -899,55 +899,25 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     
     final point = _trackPoints[_selectedTrackPointIndex!];
     
-    // Calculate distance from launch point
-    final launchPoint = _trackPoints.first;
-    final distance = _calculateDistance(
-      LatLng(launchPoint.latitude, launchPoint.longitude),
-      LatLng(point.latitude, point.longitude)
-    );
-    
     return [
       Marker(
         point: LatLng(point.latitude, point.longitude),
-        width: 80,  // Increased to accommodate label
-        height: 40,  // Increased for label
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Distance label above the marker
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.7),
-                borderRadius: BorderRadius.circular(3),
+        width: 12,
+        height: 12,
+        child: Container(
+          width: 12,
+          height: 12,
+          decoration: const BoxDecoration(
+            color: SiteMarkerUtils.selectedPointColor,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 2,
+                offset: Offset(0, 1),
               ),
-              child: Text(
-                '${distance.toStringAsFixed(0)}m',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            const SizedBox(height: 2),
-            // Existing yellow/amber circle
-            Container(
-              width: 12,
-              height: 12,
-              decoration: const BoxDecoration(
-                color: SiteMarkerUtils.selectedPointColor,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black26,
-                    blurRadius: 2,
-                    offset: Offset(0, 1),
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     ];
@@ -1023,57 +993,27 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     return [
       Marker(
         point: LatLng(_trackPoints[closingIndex].latitude, _trackPoints[closingIndex].longitude),
-        width: 60,
-        height: 40,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Closing point marker icon
-            Container(
-              width: 24,
-              height: 24,
-              decoration: const BoxDecoration(
-                color: Colors.purple,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black26,
-                    blurRadius: 2,
-                    offset: Offset(0, 1),
-                  ),
-                ],
+        width: 24,
+        height: 24,
+        child: Container(
+          width: 24,
+          height: 24,
+          decoration: const BoxDecoration(
+            color: Colors.purple,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 2,
+                offset: Offset(0, 1),
               ),
-              child: const Icon(
-                Icons.change_history,
-                color: Colors.white,
-                size: 14,
-              ),
-            ),
-            const SizedBox(height: 2),
-            // Distance label
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-              decoration: BoxDecoration(
-                color: Colors.purple.withValues(alpha: 0.9),
-                borderRadius: BorderRadius.circular(3),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.3),
-                    blurRadius: 2,
-                    offset: const Offset(0, 1),
-                  ),
-                ],
-              ),
-              child: Text(
-                '${widget.flight.closingDistance?.toStringAsFixed(0) ?? 'N/A'}m',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 8,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
+            ],
+          ),
+          child: const Icon(
+            Icons.change_history,
+            color: Colors.white,
+            size: 14,
+          ),
         ),
       ),
     ];
