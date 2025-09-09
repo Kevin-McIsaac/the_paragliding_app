@@ -248,8 +248,8 @@ class PreferencesHelper {
   }
   
   static Future<void> setTriangleClosingDistance(double value) async {
-    if (value < 50.0 || value > 1000.0) {
-      throw ArgumentError('Triangle closing distance must be between 50-1000m');
+    if (value < 50.0 || value > 2000.0) {
+      throw ArgumentError('Triangle closing distance must be between 50-2000m');
     }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(triangleClosingDistanceKey, value);
