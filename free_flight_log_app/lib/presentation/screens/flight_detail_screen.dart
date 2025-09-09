@@ -999,6 +999,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                             Padding(
                               padding: const EdgeInsets.all(16.0),
                               child: FlightTrack2DWidget(
+                                key: ValueKey('flight_track_${_flight.id}_${_flight.trackLogPath}'),
                                 flight: _flight,
                                 height: 732,
                               ),

@@ -18,6 +18,10 @@ class FlightTrackLoader {
   static final DatabaseService _databaseService = DatabaseService.instance;
   static final IgcParser _parser = IgcParser();
   
+  // Simple memory cache for parsed IGC files
+  static final Map<String, IgcFile> _igcCache = {};
+  static const int _maxCacheSize = 10; // Limit cache to 10 files to prevent memory issues
+  
   /// Load flight track data in consistent trimmed format
   /// 
   /// Always returns track data from takeoff to landing (trimmed).
@@ -30,8 +34,28 @@ class FlightTrackLoader {
       throw Exception('Flight has no track log path');
     }
     
-    // Parse full IGC file first
-    final fullIgcFile = await _parser.parseFile(flight.trackLogPath!);
+    // Check cache first
+    final cacheKey = flight.trackLogPath!;
+    IgcFile? fullIgcFile = _igcCache[cacheKey];
+    
+    if (fullIgcFile == null) {
+      LoggingService.info('$logContext: Parsing IGC file from disk for flight ${flight.id}');
+      
+      // Parse full IGC file
+      fullIgcFile = await _parser.parseFile(flight.trackLogPath!);
+      
+      // Add to cache with size limit
+      if (_igcCache.length >= _maxCacheSize) {
+        // Remove oldest entry (first in map)
+        final oldestKey = _igcCache.keys.first;
+        _igcCache.remove(oldestKey);
+        LoggingService.debug('$logContext: Cache full, removed oldest entry: $oldestKey');
+      }
+      _igcCache[cacheKey] = fullIgcFile;
+      LoggingService.info('$logContext: Cached IGC file, cache size: ${_igcCache.length}');
+    } else {
+      LoggingService.debug('$logContext: Using cached IGC file for flight ${flight.id}');
+    }
     
     if (fullIgcFile.trackPoints.isEmpty) {
       throw Exception('No track points found in IGC file');
@@ -137,7 +161,14 @@ class FlightTrackLoader {
     }
     
     try {
-      final fullIgcFile = await _parser.parseFile(flight.trackLogPath!);
+      // Use cached version if available
+      final cacheKey = flight.trackLogPath!;
+      IgcFile? fullIgcFile = _igcCache[cacheKey];
+      
+      if (fullIgcFile == null) {
+        fullIgcFile = await _parser.parseFile(flight.trackLogPath!);
+      }
+      
       final totalPoints = fullIgcFile.trackPoints.length;
       
       if (flight.hasDetectionData) {
@@ -150,6 +181,25 @@ class FlightTrackLoader {
     } catch (e) {
       return 'Error: $e';
     }
+  }
+  
+  /// Clear the IGC file cache
+  /// Call this when memory is low or app goes to background
+  static void clearCache() {
+    final cacheSize = _igcCache.length;
+    _igcCache.clear();
+    if (cacheSize > 0) {
+      LoggingService.info('FlightTrackLoader: Cleared IGC cache, removed $cacheSize entries');
+    }
+  }
+  
+  /// Get current cache statistics
+  static Map<String, dynamic> getCacheStats() {
+    return {
+      'entries': _igcCache.length,
+      'maxSize': _maxCacheSize,
+      'files': _igcCache.keys.toList(),
+    };
   }
 }
 
