@@ -39,6 +39,11 @@ class FlightTrackLoader {
       throw Exception('No track points found in IGC file');
     }
     
+    // Log warning for large files that may impact performance
+    if (fullIgcFile.trackPoints.length > 10000) {
+      LoggingService.debug('$logContext: Large track file detected - ${fullIgcFile.trackPoints.length} points, monitoring performance');
+    }
+    
     // Check if we have detection data
     if (flight.hasDetectionData) {
       // Use existing detection data to trim
@@ -49,7 +54,8 @@ class FlightTrackLoader {
         flight.landingIndex!
       );
       
-      LoggingService.info('$logContext: Loaded ${trimmedFile.trackPoints.length}/${fullIgcFile.trackPoints.length} track points (trimmed: ${flight.hasDetectionData})');
+      final percentage = (trimmedFile.trackPoints.length / fullIgcFile.trackPoints.length * 100).toStringAsFixed(1);
+      LoggingService.info('$logContext: Loaded ${trimmedFile.trackPoints.length}/${fullIgcFile.trackPoints.length} track points ($percentage% retained after trimming)');
       return trimmedFile;
     }
     
@@ -66,17 +72,18 @@ class FlightTrackLoader {
             detectionResult.landingIndex!
           );
           
-          LoggingService.info('$logContext: Loaded ${trimmedFile.trackPoints.length}/${fullIgcFile.trackPoints.length} track points (trimmed after detection)');
+          final percentage = (trimmedFile.trackPoints.length / fullIgcFile.trackPoints.length * 100).toStringAsFixed(1);
+          LoggingService.info('$logContext: Loaded ${trimmedFile.trackPoints.length}/${fullIgcFile.trackPoints.length} track points ($percentage% retained after detection and trimming)');
           return trimmedFile;
         }
       } catch (e) {
-        LoggingService.error('$logContext: Detection failed for flight ${flight.id}', e);
+        LoggingService.warning('$logContext: Detection failed for flight ${flight.id}: $e - falling back to full track');
       }
     }
     
     // Fallback to full track (should be rare)
     LoggingService.warning('$logContext: Using full track for flight ${flight.id} - no detection data available');
-    LoggingService.info('$logContext: Loaded ${fullIgcFile.trackPoints.length} track points (full track fallback)');
+    LoggingService.info('$logContext: Loaded ${fullIgcFile.trackPoints.length}/${fullIgcFile.trackPoints.length} track points (100.0% - full track fallback)');
     return fullIgcFile;
   }
   
