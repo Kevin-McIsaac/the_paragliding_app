@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -9,11 +8,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/flight.dart';
 import '../../data/models/site.dart';
-import '../../data/models/paragliding_site.dart';
 import '../../data/models/igc_file.dart';
-import '../../services/igc_import_service.dart';
 import '../../services/database_service.dart';
-import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
 import '../../services/triangle_recalculation_service.dart';
 import '../../services/flight_track_loader.dart';
@@ -52,9 +48,7 @@ class FlightTrack2DWidget extends StatefulWidget {
 }
 
 class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
-  final IgcImportService _igcService = IgcImportService.instance;
   final DatabaseService _databaseService = DatabaseService.instance;
-  final ParaglidingEarthApi _apiService = ParaglidingEarthApi.instance;
   final MapController _mapController = MapController();
   
   // Constants
@@ -76,23 +70,16 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   bool _isLegendExpanded = false; // Default to collapsed for cleaner initial view
   double _closingDistanceThreshold = 500.0; // Default value
   
-  // Site display state
+  // Simplified site display state
   List<Site> _localSites = [];
-  List<ParaglidingSite> _apiSites = [];
-  Map<int, int> _siteFlightCounts = {};
-  Timer? _debounceTimer;
-  Timer? _loadingDelayTimer;
-  bool _isLoadingSites = false;
-  bool _showLoadingIndicator = false;
-  String? _lastLoadedBoundsKey;
   
   @override
   void initState() {
     super.initState();
     _loadMapProvider();
     _loadTrackData();
-    _loadSiteData();
     _loadClosingDistanceThreshold();
+    _loadAllSites(); // Simple one-time load
   }
 
   @override
@@ -378,15 +365,18 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     );
   }
 
-  Future<void> _loadSiteData() async {
-    if (widget.flight.launchSiteId != null) {
-      try {
-        await _databaseService.getSite(widget.flight.launchSiteId!);
+  /// Simple site loading - load all sites once
+  Future<void> _loadAllSites() async {
+    try {
+      final localSites = await _databaseService.getAllSites();
+      
+      if (mounted) {
         setState(() {
+          _localSites = localSites;
         });
-      } catch (e) {
-        LoggingService.error('FlightTrack2DWidget: Error loading site data', e);
       }
+    } catch (e) {
+      LoggingService.error('FlightTrack2DWidget: Error loading sites', e);
     }
   }
 
@@ -457,116 +447,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     }
   }
 
-  /// Load sites within the current map bounds
-  Future<void> _loadSitesForBounds(LatLngBounds bounds) async {
-    // Create a unique key for these bounds to prevent duplicate requests
-    final boundsKey = '${bounds.north.toStringAsFixed(6)}_${bounds.south.toStringAsFixed(6)}_${bounds.east.toStringAsFixed(6)}_${bounds.west.toStringAsFixed(6)}';
-    if (_lastLoadedBoundsKey == boundsKey) {
-      return; // Same bounds already loaded
-    }
-
-    setState(() => _isLoadingSites = true);
-    
-    // Show loading indicator after 500ms delay to prevent flashing
-    _loadingDelayTimer?.cancel();
-    _loadingDelayTimer = Timer(const Duration(milliseconds: 500), () {
-      if (mounted && _isLoadingSites) {
-        setState(() => _showLoadingIndicator = true);
-      }
-    });
-
-    try {
-      // Load local sites from database
-      final localSites = await _databaseService.getSitesInBounds(
-        north: bounds.north,
-        south: bounds.south,
-        east: bounds.east,
-        west: bounds.west,
-      );
-
-      // Load API sites from ParaglidingEarth
-      List<ParaglidingSite> apiSites = [];
-      try {
-        apiSites = await _apiService.getSitesInBounds(
-          bounds.north,
-          bounds.south,
-          bounds.east,
-          bounds.west,
-        );
-      } catch (apiError) {
-        LoggingService.error('FlightTrack2DWidget: Error loading API sites', apiError);
-        // Continue without API sites if they fail to load
-      }
-
-      if (mounted) {
-        setState(() {
-          _localSites = localSites;
-          _apiSites = apiSites;
-          _isLoadingSites = false;
-          _showLoadingIndicator = false;
-        });
-        _loadingDelayTimer?.cancel();
-        
-        _lastLoadedBoundsKey = boundsKey;
-        
-        // Load flight counts for the newly loaded sites
-        _loadFlightCounts();
-      }
-    } catch (e) {
-      LoggingService.error('FlightTrack2DWidget: Error loading sites', e);
-      if (mounted) {
-        setState(() {
-          _isLoadingSites = false;
-          _showLoadingIndicator = false;
-        });
-        _loadingDelayTimer?.cancel();
-      }
-    }
-  }
-
-  /// Load flight counts for local sites
-  Future<void> _loadFlightCounts() async {
-    try {
-      final Map<int, int> flightCounts = {};
-      
-      // Load flight counts for all local sites
-      for (final site in _localSites) {
-        if (site.id != null) {
-          final count = await _databaseService.getFlightCountForSite(site.id!);
-          flightCounts[site.id!] = count;
-        }
-      }
-      
-      if (mounted) {
-        setState(() {
-          _siteFlightCounts = flightCounts;
-        });
-      }
-    } catch (e) {
-      LoggingService.error('FlightTrack2DWidget: Error loading flight counts', e);
-    }
-  }
-
-  /// Check if an API site duplicates a local site (same coordinates)
-  bool _isDuplicateApiSite(ParaglidingSite apiSite) {
-    const double tolerance = 0.000001; // ~0.1 meter tolerance for floating point comparison
-    
-    return _localSites.any((localSite) =>
-      (localSite.latitude - apiSite.latitude).abs() < tolerance &&
-      (localSite.longitude - apiSite.longitude).abs() < tolerance
-    );
-  }
-
-  /// Debounced site loading when map bounds change
-  void _onMapPositionChanged() {
-    _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
-      if (mounted) {
-        final bounds = _mapController.camera.visibleBounds;
-        _loadSitesForBounds(bounds);
-      }
-    });
-  }
+  // Removed complex bounds-based site loading for simplicity
 
   double _calculateClimbRate(IgcPoint point1, IgcPoint point2) {
     final timeDiff = point2.timestamp.difference(point1.timestamp).inSeconds;
@@ -1085,63 +966,26 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     ];
   }
 
-  /// Build site markers using shared helper functions
+  /// Build simple site markers (local sites only for simplicity)
   List<DragMarker> _buildSiteMarkers() {
-    List<DragMarker> markers = [];
-    
-    // Add local sites (flown sites - blue)
-    for (final site in _localSites) {
-      final flightCount = site.id != null ? _siteFlightCounts[site.id] : null;
-      
-      markers.add(
-        DragMarker(
-          point: LatLng(site.latitude, site.longitude),
-          size: const Size(140, 80), // Fixed size to match Site Map
-          offset: const Offset(0, -SiteMarkerUtils.siteMarkerSize / 2), // Center the marker
-          disableDrag: true, // Disable drag functionality
-          builder: (ctx, point, isDragging) => Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SiteMarkerUtils.buildSiteMarkerIcon(
-                color: SiteMarkerUtils.flownSiteColor,
-              ),
-              SiteMarkerUtils.buildSiteLabel(
-                siteName: site.name,
-                flightCount: flightCount,
-              ),
-            ],
+    return _localSites.map((site) => DragMarker(
+      point: LatLng(site.latitude, site.longitude),
+      size: const Size(100, 60),
+      offset: const Offset(0, -SiteMarkerUtils.siteMarkerSize / 2),
+      disableDrag: true,
+      builder: (ctx, point, isDragging) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SiteMarkerUtils.buildSiteMarkerIcon(
+            color: SiteMarkerUtils.flownSiteColor,
           ),
-        ),
-      );
-    }
-    
-    // Add API sites (new sites - green), excluding duplicates
-    for (final site in _apiSites) {
-      if (!_isDuplicateApiSite(site)) {
-        markers.add(
-          DragMarker(
-            point: LatLng(site.latitude, site.longitude),
-            size: const Size(140, 80), // Fixed size to match Site Map
-            offset: const Offset(0, -SiteMarkerUtils.siteMarkerSize / 2), // Center the marker
-            disableDrag: true, // Disable drag functionality
-            builder: (ctx, point, isDragging) => Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SiteMarkerUtils.buildSiteMarkerIcon(
-                  color: SiteMarkerUtils.newSiteColor,
-                ),
-                SiteMarkerUtils.buildSiteLabel(
-                  siteName: site.name,
-                  flightCount: null, // API sites don't have local flight counts
-                ),
-              ],
-            ),
+          SiteMarkerUtils.buildSiteLabel(
+            siteName: site.name,
+            flightCount: null, // Simplified - no flight counts
           ),
-        );
-      }
-    }
-    
-    return markers;
+        ],
+      ),
+    )).toList();
   }
 
   LatLngBounds _calculateBounds() {
@@ -1175,9 +1019,6 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     if (_trackPoints.isNotEmpty) {
       final bounds = _calculateBounds();
       _mapController.fitCamera(CameraFit.bounds(bounds: bounds));
-      
-      // Load sites for the new bounds after fitting
-      _loadSitesForBounds(bounds);
     }
   }
 
@@ -1584,8 +1425,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
 
   @override
   void dispose() {
-    _debounceTimer?.cancel();
-    _loadingDelayTimer?.cancel();
+    // Simplified - no timers to cancel
     super.dispose();
   }
 
@@ -1636,11 +1476,6 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               maxZoom: _selectedMapProvider.maxZoom.toDouble(),
               onMapReady: _fitMapToBounds,
               onTap: (tapPosition, point) => _onMapTapped(point),
-              onPositionChanged: (position, hasGesture) {
-                if (hasGesture) {
-                  _onMapPositionChanged();
-                }
-              },
             ),
             children: [
               TileLayer(
@@ -1711,50 +1546,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               ),
             ),
           ),
-          // Bottom center loading indicator like Site Maps
-          if (_showLoadingIndicator)
-            Positioned(
-              bottom: 16,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.95),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.2),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Loading sites...',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+          // Removed loading indicator for simplicity
           // Time display overlay for selected point
           if (_selectedTrackPointIndex != null && _selectedTrackPointIndex! < _trackPoints.length)
             Positioned(

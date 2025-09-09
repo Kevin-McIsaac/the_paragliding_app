@@ -12,7 +12,6 @@ import 'igc_parser.dart';
 import 'site_matching_service.dart';
 import 'takeoff_landing_detector.dart';
 import '../utils/preferences_helper.dart';
-import 'flight_track_loader.dart';
 
 /// Service for importing IGC files into the flight log
 class IgcImportService {

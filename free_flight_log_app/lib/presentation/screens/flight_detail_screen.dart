@@ -89,9 +89,11 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
       _flightStatisticsExpanded = expansionStates[PreferencesHelper.cardTypeFlightStatistics] ?? true;
       _flightTrackExpanded = expansionStates[PreferencesHelper.cardTypeFlightTrack] ?? true;
       // Notes card is always expanded - no state needed
-      setState(() {
-        // Update UI with loaded expansion states
-      });
+      if (mounted) {
+        setState(() {
+          // Update UI with loaded expansion states
+        });
+      }
     } catch (e) {
       // Error loading preferences - use defaults
       LoggingService.error('Failed to load card expansion states', e);
@@ -245,9 +247,11 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
       // App returned to foreground, refresh map to pick up any config changes
-      setState(() {
-        // Force rebuild to pick up any config changes
-      });
+      if (mounted) {
+        setState(() {
+          // Force rebuild to pick up any config changes
+        });
+      }
     }
   }
 
@@ -374,39 +378,13 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
     }
   }
 
-  // Update methods
-  Future<void> _updateFlightDate(DateTime newDate) async {
+  // Centralized update method
+  Future<void> _updateFlight(String fieldName, Flight updatedFlight) async {
     setState(() {
       _isSaving = true;
     });
 
     try {
-      final updatedFlight = Flight(
-        id: _flight.id,
-        date: newDate,
-        launchTime: _flight.launchTime,
-        landingTime: _flight.landingTime,
-        duration: _flight.duration,
-        launchSiteId: _flight.launchSiteId,
-        landingLatitude: _flight.landingLatitude,
-        landingLongitude: _flight.landingLongitude,
-        landingAltitude: _flight.landingAltitude,
-        landingDescription: _flight.landingDescription,
-        wingId: _flight.wingId,
-        maxAltitude: _flight.maxAltitude,
-        maxClimbRate: _flight.maxClimbRate,
-        maxSinkRate: _flight.maxSinkRate,
-        maxClimbRate5Sec: _flight.maxClimbRate5Sec,
-        maxSinkRate5Sec: _flight.maxSinkRate5Sec,
-        distance: _flight.distance,
-        straightDistance: _flight.straightDistance,
-        trackLogPath: _flight.trackLogPath,
-        source: _flight.source,
-        timezone: _flight.timezone,
-        notes: _flight.notes,
-        createdAt: _flight.createdAt,
-      );
-
       await _databaseService.updateFlight(updatedFlight);
       
       setState(() {
@@ -417,7 +395,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Date updated successfully')),
+          SnackBar(content: Text('$fieldName updated successfully')),
         );
       }
     } catch (e) {
@@ -426,255 +404,62 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating date: $e')),
+          SnackBar(content: Text('Error updating $fieldName: $e')),
         );
       }
     }
+  }
+
+  // Update methods
+  Future<void> _updateFlightDate(DateTime newDate) async {
+    await _updateFlight('Date', _flight.copyWith(date: newDate));
   }
 
   Future<void> _updateFlightTimes(String newLaunchTime, String newLandingTime) async {
-    setState(() {
-      _isSaving = true;
-    });
+    // Calculate new duration from time strings
+    final launchParts = newLaunchTime.split(':');
+    final landingParts = newLandingTime.split(':');
+    
+    final launchMinutes = int.parse(launchParts[0]) * 60 + int.parse(launchParts[1]);
+    final landingMinutes = int.parse(landingParts[0]) * 60 + int.parse(landingParts[1]);
+    
+    int duration = landingMinutes - launchMinutes;
+    
+    // Handle midnight crossing (negative duration)
+    if (duration < 0) {
+      duration += 24 * 60; // Add 24 hours
+    }
 
-    try {
-      // Calculate new duration from time strings
-      final launchParts = newLaunchTime.split(':');
-      final landingParts = newLandingTime.split(':');
-      
-      final launchMinutes = int.parse(launchParts[0]) * 60 + int.parse(launchParts[1]);
-      final landingMinutes = int.parse(landingParts[0]) * 60 + int.parse(landingParts[1]);
-      
-      int duration = landingMinutes - launchMinutes;
-      
-      // Handle midnight crossing (negative duration)
-      if (duration < 0) {
-        duration += 24 * 60; // Add 24 hours
-      }
-
-      final updatedFlight = Flight(
-        id: _flight.id,
-        date: _flight.date,
+    await _updateFlight(
+      'Times',
+      _flight.copyWith(
         launchTime: newLaunchTime,
         landingTime: newLandingTime,
         duration: duration,
-        launchSiteId: _flight.launchSiteId,
-        landingLatitude: _flight.landingLatitude,
-        landingLongitude: _flight.landingLongitude,
-        landingAltitude: _flight.landingAltitude,
-        landingDescription: _flight.landingDescription,
-        wingId: _flight.wingId,
-        maxAltitude: _flight.maxAltitude,
-        maxClimbRate: _flight.maxClimbRate,
-        maxSinkRate: _flight.maxSinkRate,
-        maxClimbRate5Sec: _flight.maxClimbRate5Sec,
-        maxSinkRate5Sec: _flight.maxSinkRate5Sec,
-        distance: _flight.distance,
-        straightDistance: _flight.straightDistance,
-        trackLogPath: _flight.trackLogPath,
-        source: _flight.source,
-        timezone: _flight.timezone,
-        notes: _flight.notes,
-        createdAt: _flight.createdAt,
-      );
-
-      await _databaseService.updateFlight(updatedFlight);
-      
-      setState(() {
-        _flight = updatedFlight;
-        _flightModified = true;
-        _isSaving = false;
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Times updated successfully')),
-        );
-      }
-    } catch (e) {
-      setState(() {
-        _isSaving = false;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating times: $e')),
-        );
-      }
-    }
+      ),
+    );
   }
 
   Future<void> _updateLaunchSite(Site? newSite) async {
+    await _updateFlight('Launch site', _flight.copyWith(launchSiteId: newSite?.id));
     setState(() {
-      _isSaving = true;
+      _launchSite = newSite;
     });
-
-    try {
-      final updatedFlight = Flight(
-        id: _flight.id,
-        date: _flight.date,
-        launchTime: _flight.launchTime,
-        landingTime: _flight.landingTime,
-        duration: _flight.duration,
-        launchSiteId: newSite?.id,
-        landingLatitude: _flight.landingLatitude,
-        landingLongitude: _flight.landingLongitude,
-        landingAltitude: _flight.landingAltitude,
-        landingDescription: _flight.landingDescription,
-        wingId: _flight.wingId,
-        maxAltitude: _flight.maxAltitude,
-        maxClimbRate: _flight.maxClimbRate,
-        maxSinkRate: _flight.maxSinkRate,
-        maxClimbRate5Sec: _flight.maxClimbRate5Sec,
-        maxSinkRate5Sec: _flight.maxSinkRate5Sec,
-        distance: _flight.distance,
-        straightDistance: _flight.straightDistance,
-        trackLogPath: _flight.trackLogPath,
-        source: _flight.source,
-        timezone: _flight.timezone,
-        notes: _flight.notes,
-        createdAt: _flight.createdAt,
-      );
-
-      await _databaseService.updateFlight(updatedFlight);
-      
-      setState(() {
-        _flight = updatedFlight;
-        _launchSite = newSite;
-        _flightModified = true;
-        _isSaving = false;
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Launch site updated successfully')),
-        );
-      }
-    } catch (e) {
-      setState(() {
-        _isSaving = false;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating launch site: $e')),
-        );
-      }
-    }
   }
 
   Future<void> _updateWing(Wing? newWing) async {
+    await _updateFlight('Wing', _flight.copyWith(wingId: newWing?.id));
     setState(() {
-      _isSaving = true;
+      _wing = newWing;
     });
-
-    try {
-      final updatedFlight = Flight(
-        id: _flight.id,
-        date: _flight.date,
-        launchTime: _flight.launchTime,
-        landingTime: _flight.landingTime,
-        duration: _flight.duration,
-        launchSiteId: _flight.launchSiteId,
-        landingLatitude: _flight.landingLatitude,
-        landingLongitude: _flight.landingLongitude,
-        landingAltitude: _flight.landingAltitude,
-        landingDescription: _flight.landingDescription,
-        wingId: newWing?.id,
-        maxAltitude: _flight.maxAltitude,
-        maxClimbRate: _flight.maxClimbRate,
-        maxSinkRate: _flight.maxSinkRate,
-        maxClimbRate5Sec: _flight.maxClimbRate5Sec,
-        maxSinkRate5Sec: _flight.maxSinkRate5Sec,
-        distance: _flight.distance,
-        straightDistance: _flight.straightDistance,
-        trackLogPath: _flight.trackLogPath,
-        source: _flight.source,
-        timezone: _flight.timezone,
-        notes: _flight.notes,
-        createdAt: _flight.createdAt,
-      );
-
-      await _databaseService.updateFlight(updatedFlight);
-      
-      setState(() {
-        _flight = updatedFlight;
-        _wing = newWing;
-        _flightModified = true;
-        _isSaving = false;
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Wing updated successfully')),
-        );
-      }
-    } catch (e) {
-      setState(() {
-        _isSaving = false;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating wing: $e')),
-        );
-      }
-    }
   }
 
   Future<void> _saveNotes() async {
+    final notes = _notesController.text.isEmpty ? null : _notesController.text;
+    await _updateFlight('Notes', _flight.copyWith(notes: notes));
     setState(() {
-      _isSaving = true;
+      _isEditingNotes = false;
     });
-
-    try {
-      final updatedFlight = Flight(
-        id: _flight.id,
-        date: _flight.date,
-        launchTime: _flight.launchTime,
-        landingTime: _flight.landingTime,
-        duration: _flight.duration,
-        launchSiteId: _flight.launchSiteId,
-        landingLatitude: _flight.landingLatitude,
-        landingLongitude: _flight.landingLongitude,
-        landingAltitude: _flight.landingAltitude,
-        landingDescription: _flight.landingDescription,
-        wingId: _flight.wingId,
-        maxAltitude: _flight.maxAltitude,
-        maxClimbRate: _flight.maxClimbRate,
-        maxSinkRate: _flight.maxSinkRate,
-        maxClimbRate5Sec: _flight.maxClimbRate5Sec,
-        maxSinkRate5Sec: _flight.maxSinkRate5Sec,
-        distance: _flight.distance,
-        straightDistance: _flight.straightDistance,
-        trackLogPath: _flight.trackLogPath,
-        source: _flight.source,
-        timezone: _flight.timezone,
-        notes: _notesController.text.isEmpty ? null : _notesController.text,
-        createdAt: _flight.createdAt,
-      );
-
-      await _databaseService.updateFlight(updatedFlight);
-      
-      setState(() {
-        _flight = updatedFlight;
-        _flightModified = true;
-        _isEditingNotes = false;
-        _isSaving = false;
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Notes saved successfully')),
-        );
-      }
-    } catch (e) {
-      setState(() {
-        _isSaving = false;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving notes: $e')),
-        );
-      }
-    }
   }
 
   void _cancelNotesEdit() {
@@ -983,28 +768,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                         ),
                       ),
 
-                    // Hidden: Flight Track 3D Visualization (accessible via 2D map button)
-                    // if (_flight.trackLogPath != null)
-                    //   Card(
-                    //     child: Padding(
-                    //       padding: const EdgeInsets.all(16.0),
-                    //       child: Column(
-                    //         crossAxisAlignment: CrossAxisAlignment.start,
-                    //         children: [
-                    //           Text(
-                    //             'Flight Track',
-                    //             style: Theme.of(context).textTheme.titleLarge,
-                    //           ),
-                    //           const SizedBox(height: 16),
-                    //           FlightTrack3DWidget(
-                    //             flight: _flight,
-                    //             config: FlightTrack3DConfig.embedded(),
-                    //             showPlaybackPanel: true,
-                    //           ),
-                    //         ],
-                    //       ),
-                    //     ),
-                    //   ),
 
                     const SizedBox(height: 16),
 
@@ -1464,60 +1227,15 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
     double? altitude,
     String? description,
   ) async {
-    setState(() {
-      _isSaving = true;
-    });
-
-    try {
-      final updatedFlight = Flight(
-        id: _flight.id,
-        date: _flight.date,
-        launchTime: _flight.launchTime,
-        landingTime: _flight.landingTime,
-        duration: _flight.duration,
-        launchSiteId: _flight.launchSiteId,
+    await _updateFlight(
+      'Landing location',
+      _flight.copyWith(
         landingLatitude: latitude,
         landingLongitude: longitude,
         landingAltitude: altitude,
         landingDescription: description,
-        wingId: _flight.wingId,
-        maxAltitude: _flight.maxAltitude,
-        maxClimbRate: _flight.maxClimbRate,
-        maxSinkRate: _flight.maxSinkRate,
-        maxClimbRate5Sec: _flight.maxClimbRate5Sec,
-        maxSinkRate5Sec: _flight.maxSinkRate5Sec,
-        distance: _flight.distance,
-        straightDistance: _flight.straightDistance,
-        trackLogPath: _flight.trackLogPath,
-        source: _flight.source,
-        timezone: _flight.timezone,
-        notes: _flight.notes,
-        createdAt: _flight.createdAt,
-      );
-
-      await _databaseService.updateFlight(updatedFlight);
-      
-      setState(() {
-        _flight = updatedFlight;
-        _flightModified = true;
-        _isSaving = false;
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Landing location updated successfully')),
-        );
-      }
-    } catch (e) {
-      setState(() {
-        _isSaving = false;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating landing location: $e')),
-        );
-      }
-    }
+      ),
+    );
   }
 
 }

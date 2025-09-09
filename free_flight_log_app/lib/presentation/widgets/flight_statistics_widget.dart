@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../data/models/flight.dart';
 import '../../utils/date_time_utils.dart';
-import '../../services/triangle_recalculation_service.dart';
-import '../../services/logging_service.dart';
 
 class FlightStatisticsWidget extends StatefulWidget {
   final Flight flight;
@@ -19,50 +17,7 @@ class FlightStatisticsWidget extends StatefulWidget {
 }
 
 class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
-  Flight? _updatedFlight;
-  bool _isRecalculatingTriangle = false;
-  
-  @override
-  void initState() {
-    super.initState();
-    // Defer triangle recalculation until after first frame renders
-    // This prevents blocking the UI when opening FlightDetailScreen
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Run the check in a microtask to further defer execution
-      Future.microtask(() => _checkAndRecalculateTriangle());
-    });
-  }
-  
-  Future<void> _checkAndRecalculateTriangle() async {
-    try {
-      setState(() {
-        _isRecalculatingTriangle = true;
-      });
-      
-      final result = await TriangleRecalculationService.checkAndRecalculate(
-        widget.flight,
-        logContext: 'FlightStatisticsWidget',
-      );
-      
-      setState(() {
-        _updatedFlight = result.updatedFlight;
-        _isRecalculatingTriangle = false;
-      });
-      
-      // Notify parent to refresh flight data if recalculation was performed
-      if (result.recalculationPerformed) {
-        widget.onFlightUpdated?.call();
-      }
-      
-    } catch (e) {
-      LoggingService.error('FlightStatisticsWidget: Error in triangle recalculation', e);
-      setState(() {
-        _isRecalculatingTriangle = false;
-      });
-    }
-  }
-  
-  Flight get flight => _updatedFlight ?? widget.flight;
+  Flight get flight => widget.flight;
 
   @override
   Widget build(BuildContext context) {
@@ -111,18 +66,14 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
               Expanded(
                 child: _buildStatItem(
                   'Triangle',
-                  _isRecalculatingTriangle
-                      ? 'Recalculating...'
-                      : flight.isClosed 
-                          ? '${flight.faiTriangleDistance?.toStringAsFixed(1) ?? 'N/A'} km'
-                          : 'Open',
+                  flight.isClosed 
+                      ? '${flight.faiTriangleDistance?.toStringAsFixed(1) ?? 'N/A'} km'
+                      : 'Open',
                   Icons.change_history,
                   context,
-                  tooltip: _isRecalculatingTriangle
-                      ? 'Recalculating triangle with updated preferences...'
-                      : flight.isClosed 
-                          ? 'Flight returned within ${flight.closingDistance?.toStringAsFixed(0) ?? 'N/A'}m of launch point${flight.faiTriangleDistance != null ? '. Triangle distance shown.' : ''}'
-                          : 'Flight did not return close enough to launch point to be considered a closed triangle',
+                  tooltip: flight.isClosed 
+                      ? 'Flight returned within ${flight.closingDistance?.toStringAsFixed(0) ?? 'N/A'}m of launch point${flight.faiTriangleDistance != null ? '. Triangle distance shown.' : ''}'
+                      : 'Flight did not return close enough to launch point to be considered a closed triangle',
                 ),
               ),
               Expanded(
