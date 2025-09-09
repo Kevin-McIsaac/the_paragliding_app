@@ -1,13 +1,20 @@
 import 'package:flutter/material.dart';
 import '../../data/models/flight.dart';
+import '../../data/models/igc_file.dart';
 import '../../utils/date_time_utils.dart';
+import '../../utils/preferences_helper.dart';
+import '../../services/database_service.dart';
+import '../../services/igc_parser.dart';
+import '../../services/logging_service.dart';
 
 class FlightStatisticsWidget extends StatefulWidget {
   final Flight flight;
+  final VoidCallback? onFlightUpdated;
 
   const FlightStatisticsWidget({
     super.key,
     required this.flight,
+    this.onFlightUpdated,
   });
 
   @override
@@ -15,10 +22,124 @@ class FlightStatisticsWidget extends StatefulWidget {
 }
 
 class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
+  Flight? _updatedFlight;
+  bool _isRecalculatingTriangle = false;
+  final DatabaseService _databaseService = DatabaseService.instance;
+  
+  @override
+  void initState() {
+    super.initState();
+    // Defer triangle recalculation until after first frame renders
+    // This prevents blocking the UI when opening FlightDetailScreen
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Run the check in a microtask to further defer execution
+      Future.microtask(() => _checkAndRecalculateTriangle());
+    });
+  }
+  
+  Future<void> _checkAndRecalculateTriangle() async {
+    // Get current triangle calculation version
+    final currentVersion = await PreferencesHelper.getTriangleCalcVersion();
+    
+    LoggingService.info('FlightStatisticsWidget: Checking triangle recalculation for flight ${widget.flight.id} - currentVersion: $currentVersion, flightVersion: ${widget.flight.triangleCalcVersion}');
+    
+    // Check if recalculation is needed
+    if (widget.flight.needsTriangleRecalculation(currentVersion) && 
+        widget.flight.trackLogPath != null) {
+      
+      setState(() {
+        _isRecalculatingTriangle = true;
+      });
+      
+      try {
+        LoggingService.info('FlightStatisticsWidget: Recalculating triangle for flight ${widget.flight.id}');
+        
+        // Parse IGC file and recalculate triangle
+        final parser = IgcParser();
+        final igcFile = await parser.parseFile(widget.flight.trackLogPath!);
+        
+        // Get current preferences
+        final triangleSamplingInterval = await PreferencesHelper.getTriangleSamplingInterval();
+        final closingDistance = await PreferencesHelper.getTriangleClosingDistance();
+        
+        // Recalculate closing point with new closing distance preference
+        int? newClosingPointIndex = igcFile.getClosingPointIndex(maxDistanceMeters: closingDistance);
+        double? actualClosingDistance;
+        
+        if (newClosingPointIndex != null) {
+          final launchPoint = igcFile.trackPoints.first;
+          final closingPoint = igcFile.trackPoints[newClosingPointIndex];
+          actualClosingDistance = igcFile.calculateSimpleDistance(launchPoint, closingPoint);
+          LoggingService.info('FlightStatisticsWidget: New closing point at index $newClosingPointIndex, distance: ${actualClosingDistance?.toStringAsFixed(1)}m');
+        } else {
+          LoggingService.info('FlightStatisticsWidget: Flight is now OPEN with closing distance ${closingDistance}m');
+        }
+        
+        // Calculate triangle on trimmed data if closing point exists
+        Map<String, dynamic> faiTriangle;
+        if (newClosingPointIndex != null) {
+          final trimmedIgcFile = igcFile.copyWithTrimmedPoints(0, newClosingPointIndex);
+          faiTriangle = trimmedIgcFile.calculateFaiTriangle(
+            samplingIntervalSeconds: triangleSamplingInterval,
+            closingDistanceMeters: closingDistance,
+          );
+          
+          // Check if triangle validation failed
+          if (faiTriangle['trianglePoints'] != null && 
+              (faiTriangle['trianglePoints'] as List).isEmpty) {
+            // Triangle invalid - mark flight as open
+            newClosingPointIndex = null;
+            actualClosingDistance = null;
+            faiTriangle = {'trianglePoints': null, 'triangleDistance': 0.0};
+            LoggingService.info('FlightStatisticsWidget: Triangle validation failed - flight marked as OPEN');
+          }
+        } else {
+          faiTriangle = {'trianglePoints': null, 'triangleDistance': 0.0};
+        }
+        
+        // Convert triangle points to JSON
+        String? faiTrianglePointsJson;
+        if (faiTriangle['trianglePoints'] != null && 
+            (faiTriangle['trianglePoints'] as List).isNotEmpty) {
+          final trianglePoints = faiTriangle['trianglePoints'] as List<dynamic>;
+          faiTrianglePointsJson = Flight.encodeTrianglePointsToJson(trianglePoints);
+        }
+        
+        // Update flight with new closing point and triangle data
+        final updatedFlight = widget.flight.copyWith(
+          closingPointIndex: newClosingPointIndex,
+          closingDistance: actualClosingDistance,
+          faiTriangleDistance: faiTriangle['triangleDistance'],
+          faiTrianglePoints: faiTrianglePointsJson,
+          triangleCalcVersion: currentVersion,
+        );
+        
+        // Save to database
+        await _databaseService.updateFlight(updatedFlight);
+        
+        setState(() {
+          _updatedFlight = updatedFlight;
+          _isRecalculatingTriangle = false;
+        });
+        
+        // Notify parent to refresh flight data
+        widget.onFlightUpdated?.call();
+        
+        LoggingService.info('FlightStatisticsWidget: Triangle recalculated: ${faiTriangle['triangleDistance']} km, Closed: ${newClosingPointIndex != null}');
+      } catch (e) {
+        LoggingService.error('FlightStatisticsWidget: Error recalculating triangle', e);
+        setState(() {
+          _isRecalculatingTriangle = false;
+        });
+      }
+    }
+  }
+  
+  Flight get flight => _updatedFlight ?? widget.flight;
 
   @override
   Widget build(BuildContext context) {
-    final duration = DateTimeUtils.formatDurationCompact(widget.flight.effectiveDuration);
+    final duration = DateTimeUtils.formatDurationCompact(flight.effectiveDuration);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -52,8 +173,8 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
               Expanded(
                 child: _buildStatItem(
                   'Straight Distance',
-                  widget.flight.straightDistance != null 
-                      ? '${widget.flight.straightDistance!.toStringAsFixed(1)} km'
+                  flight.straightDistance != null 
+                      ? '${flight.straightDistance!.toStringAsFixed(1)} km'
                       : 'N/A',
                   Icons.straighten,
                   context,
@@ -63,21 +184,25 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
               Expanded(
                 child: _buildStatItem(
                   'Triangle',
-                  widget.flight.isClosed 
-                      ? '${widget.flight.faiTriangleDistance?.toStringAsFixed(1) ?? 'N/A'} km'
-                      : 'Open',
+                  _isRecalculatingTriangle
+                      ? 'Recalculating...'
+                      : flight.isClosed 
+                          ? '${flight.faiTriangleDistance?.toStringAsFixed(1) ?? 'N/A'} km'
+                          : 'Open',
                   Icons.change_history,
                   context,
-                  tooltip: widget.flight.isClosed 
-                      ? 'Flight returned within ${widget.flight.closingDistance?.toStringAsFixed(0) ?? 'N/A'}m of launch point${widget.flight.faiTriangleDistance != null ? '. Triangle distance shown.' : ''}'
-                      : 'Flight did not return close enough to launch point to be considered a closed triangle',
+                  tooltip: _isRecalculatingTriangle
+                      ? 'Recalculating triangle with updated preferences...'
+                      : flight.isClosed 
+                          ? 'Flight returned within ${flight.closingDistance?.toStringAsFixed(0) ?? 'N/A'}m of launch point${flight.faiTriangleDistance != null ? '. Triangle distance shown.' : ''}'
+                          : 'Flight did not return close enough to launch point to be considered a closed triangle',
                 ),
               ),
               Expanded(
                 child: _buildStatItem(
                   'Track Distance',
-                  widget.flight.distance != null 
-                      ? '${widget.flight.distance!.toStringAsFixed(1)} km'
+                  flight.distance != null 
+                      ? '${flight.distance!.toStringAsFixed(1)} km'
                       : 'N/A',
                   Icons.timeline,
                   context,
@@ -88,7 +213,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
           ),
           
           // Climb Rate Statistics
-          if (widget.flight.maxClimbRate != null || widget.flight.maxClimbRate5Sec != null) ...[
+          if (flight.maxClimbRate != null || flight.maxClimbRate5Sec != null) ...[
             const SizedBox(height: 12),
             const Divider(height: 1),
             const SizedBox(height: 8),
@@ -153,16 +278,16 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
   }
 
   bool _hasAdvancedStats() {
-    return widget.flight.maxAltitude != null ||
-           widget.flight.maxGroundSpeed != null ||
-           widget.flight.thermalCount != null ||
-           widget.flight.bestLD != null ||
-           widget.flight.avgLD != null ||
-           widget.flight.longestGlide != null ||
-           widget.flight.climbPercentage != null ||
-           widget.flight.avgThermalStrength != null ||
-           widget.flight.bestThermal != null ||
-           widget.flight.gpsFixQuality != null;
+    return flight.maxAltitude != null ||
+           flight.maxGroundSpeed != null ||
+           flight.thermalCount != null ||
+           flight.bestLD != null ||
+           flight.avgLD != null ||
+           flight.longestGlide != null ||
+           flight.climbPercentage != null ||
+           flight.avgThermalStrength != null ||
+           flight.bestThermal != null ||
+           flight.gpsFixQuality != null;
   }
 
   Widget _buildAdvancedStatistics() {
@@ -189,7 +314,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                 Expanded(
                   child: _buildStatItem(
                     'Best L/D',
-                    widget.flight.bestLD!.toStringAsFixed(1),
+                    flight.bestLD!.toStringAsFixed(1),
                     Icons.flight,
                     context,
                     tooltip: 'Best glide ratio achieved',
@@ -201,7 +326,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                 Expanded(
                   child: _buildStatItem(
                     'Avg L/D',
-                    widget.flight.avgLD!.toStringAsFixed(1),
+                    flight.avgLD!.toStringAsFixed(1),
                     Icons.flight,
                     context,
                     tooltip: 'Average glide ratio over the entire flight',
@@ -249,7 +374,7 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
                 Expanded(
                   child: _buildStatItem(
                     'Thermals',
-                    widget.flight.thermalCount.toString(),
+                    flight.thermalCount.toString(),
                     Icons.air,
                     context,
                     tooltip: 'Number of distinct thermal climbs. 15s Average climb rate > 0.5m/s for 30 seconds',

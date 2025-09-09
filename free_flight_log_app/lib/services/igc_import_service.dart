@@ -151,7 +151,8 @@ class IgcImportService {
           detectedTakeoffTime: flight.detectedTakeoffTime,
           detectedLandingTime: flight.detectedLandingTime,
           closingPointIndex: flight.closingPointIndex,
-          closingDistance: flight.closingDistance
+          closingDistance: flight.closingDistance,
+          triangleCalcVersion: flight.triangleCalcVersion
         );
         
         await _databaseService.updateFlight(updatedFlight);
@@ -391,6 +392,9 @@ class IgcImportService {
     
     // Get original filename
     final originalFilename = path.basename(filePath);
+    
+    // Get current triangle calculation version
+    final triangleCalcVersion = await PreferencesHelper.getTriangleCalcVersion();
 
     // Create flight record with detection data
     return Flight(
@@ -441,6 +445,8 @@ class IgcImportService {
       // Add closing point data
       closingPointIndex: closingPointIndex,
       closingDistance: actualClosingDistance,
+      // Store triangle calculation version
+      triangleCalcVersion: triangleCalcVersion,
     );
   }
 
@@ -504,6 +510,9 @@ class IgcImportService {
       landingIndex: flight.landingIndex,
       detectedTakeoffTime: flight.detectedTakeoffTime,
       detectedLandingTime: flight.detectedLandingTime,
+      closingPointIndex: flight.closingPointIndex,
+      closingDistance: flight.closingDistance,
+      triangleCalcVersion: flight.triangleCalcVersion,
     );
   }
 
@@ -564,6 +573,13 @@ class IgcImportService {
       climbPercentage: flight.climbPercentage,
       gpsFixQuality: flight.gpsFixQuality,
       recordingInterval: flight.recordingInterval,
+      takeoffIndex: flight.takeoffIndex,
+      landingIndex: flight.landingIndex,
+      detectedTakeoffTime: flight.detectedTakeoffTime,
+      detectedLandingTime: flight.detectedLandingTime,
+      closingPointIndex: flight.closingPointIndex,
+      closingDistance: flight.closingDistance,
+      triangleCalcVersion: flight.triangleCalcVersion,
     );
   }
 

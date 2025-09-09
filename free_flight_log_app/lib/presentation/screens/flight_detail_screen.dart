@@ -73,6 +73,15 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
     }
   }
 
+  Future<void> _refreshFlight() async {
+    final updatedFlight = await _databaseService.getFlight(_flight.id!);
+    if (updatedFlight != null && mounted) {
+      setState(() {
+        _flight = updatedFlight;
+      });
+    }
+  }
+
   Future<void> _loadCardExpansionStates() async {
     try {
       final expansionStates = await PreferencesHelper.getAllCardExpansionStates();
@@ -939,7 +948,10 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                           children: [
                             Padding(
                               padding: const EdgeInsets.all(16.0),
-                              child: FlightStatisticsWidget(flight: _flight),
+                              child: FlightStatisticsWidget(
+                                flight: _flight,
+                                onFlightUpdated: _refreshFlight,
+                              ),
                             ),
                           ],
                         ),
@@ -964,6 +976,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                               child: FlightTrack2DWidget(
                                 flight: _flight,
                                 height: 732,
+                                onFlightUpdated: _refreshFlight,
                               ),
                             ),
                           ],
