@@ -66,7 +66,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   bool _isLoading = true;
   String? _error;
   bool _mapReady = false;
-  bool _isInitialLoad = true;
+  bool _hasPerformedInitialFit = false;
   MapProvider _selectedMapProvider = MapProvider.openStreetMap;
   int? _selectedTrackPointIndex;
   bool _isLegendExpanded = false; // Default to collapsed for cleaner initial view
@@ -91,6 +91,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     // Check if flight data that affects the map display has changed
     if (_shouldReloadTrackData(oldWidget.flight, widget.flight)) {
       LoggingService.ui('FlightTrack2D', 'Flight data changed, reloading track data');
+      _hasPerformedInitialFit = false; // Reset fit flag for new flight data
       _loadTrackData();
     }
   }
@@ -1017,12 +1018,14 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
 
   void _onMapReady() {
     _mapReady = true;
-    if (_isInitialLoad && _trackPoints.isNotEmpty) {
+    LoggingService.debug('FlightTrack2D: Map ready, attempting bounds fit');
+    
+    // Always try to fit bounds when map becomes ready
+    if (_trackPoints.isNotEmpty && !_hasPerformedInitialFit) {
       // For initial load, delay fitCamera to allow tiles to load
       Future.delayed(const Duration(milliseconds: 500), () {
         if (mounted) {
-          _fitCameraToBounds();
-          _isInitialLoad = false;
+          _tryFitMapToBounds();
         }
       });
     } else {
@@ -1032,9 +1035,11 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
 
   void _tryFitMapToBounds() {
     // Only fit bounds when both map is ready AND track points are loaded
-    if (_mapReady && _trackPoints.isNotEmpty && !_isLoading) {
+    if (_mapReady && _trackPoints.isNotEmpty && !_isLoading && !_hasPerformedInitialFit) {
       _fitCameraToBounds();
-    } else {
+      _hasPerformedInitialFit = true;
+      LoggingService.debug('FlightTrack2D: Initial map bounds fit completed');
+    } else if (!_hasPerformedInitialFit) {
       LoggingService.debug('FlightTrack2D: Cannot fit bounds yet - mapReady: $_mapReady, trackPoints: ${_trackPoints.length}, loading: $_isLoading');
     }
   }
