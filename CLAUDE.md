@@ -10,24 +10,49 @@ logging, reporting, and visualising paraglider, hang glider, and microlight flig
   - [Functional requirements](documentation/FUNCTIONAL_SPECIFICATION.md)
   - [Technical architecture](documentation/TECHNICAL_DESIGN.md)
 
-## Flutter commands
+## Flutter Commands ( Recommended for Claude)
+
+Use the enhanced controller with comprehensive logging and monitoring capabilities:
 
 ```bash
-# Always run the app using flutter_controller.sh from project root directory
-# Script location: /home/kmcisaac/flutter/bin/flutter_controller.sh
-# IMPORTANT: Must be run from /home/kmcisaac/Projects/free_flight_log (project root), NOT from free_flight_log_app subdirectory
+# Always run from current location. 
+# Script location: /home/kmcisaac/flutter/bin/flutter_controller_enhanced.sh
 
-# Run app on Android emulator (emulator-5554 by default)
-/home/kmcisaac/flutter/bin/flutter_controller.sh run 
+# Start Flutter with full logging
+flutter_controller_enhanced.sh run [device]
 
-# Hot reload
-/home/kmcisaac/flutter/bin/flutter_controller.sh r
+# Control commands (send to running Flutter)
+flutter_controller_enhanced.sh r      # Hot reload
+flutter_controller_enhanced.sh R      # Hot restart
+flutter_controller_enhanced.sh q      # Quit
 
-# Hot restart
-/home/kmcisaac/flutter/bin/flutter_controller.sh R
+# Monitoring and debugging commands
+flutter_controller_enhanced.sh status          # Check app status
+flutter_controller_enhanced.sh logs [lines]    # Show recent logs
+flutter_controller_enhanced.sh monitor         # Watch logs real-time
+flutter_controller_enhanced.sh restart [device] # Force restart
+flutter_controller_enhanced.sh cleanup         # Clean up processes
+```
 
-# Quit app
-/home/kmcisaac/flutter/bin/flutter_controller.sh q
+### Log Files for Claude Integration
+
+The enhanced controller creates log files that Claude can read:
+- **Output Log**: `/tmp/flutter_output.log` - All Flutter output and app logs
+- **Status File**: `/tmp/flutter_status` - Current app status and timestamp
+- **PID File**: `/tmp/flutter.pid` - Process ID for monitoring
+
+### Example Claude Usage
+
+```bash
+# Start Flutter in background
+flutter_controller_enhanced.sh run
+
+# Check status and logs
+flutter_controller_enhanced.sh status
+flutter_controller_enhanced.sh logs 50
+
+# Send commands
+flutter_controller_enhanced.sh r  # Hot reload
 ```
 
 ## Key Files Structure

@@ -21,6 +21,20 @@ fun getGitCommitHash(): String {
     }
 }
 
+// Function to get git branch name
+fun getGitBranchName(): String {
+    return try {
+        val stdout = ByteArrayOutputStream()
+        exec {
+            commandLine("git", "rev-parse", "--abbrev-ref", "HEAD")
+            standardOutput = stdout
+        }
+        stdout.toString().trim()
+    } catch (e: Exception) {
+        "main"
+    }
+}
+
 android {
     namespace = "com.freeflightlog.free_flight_log_app"
     compileSdk = flutter.compileSdkVersion
@@ -49,8 +63,9 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         
-        // Pass git commit hash to Flutter
+        // Pass git commit hash and branch to Flutter
         buildConfigField("String", "GIT_COMMIT", "\"${getGitCommitHash()}\"")
+        buildConfigField("String", "GIT_BRANCH", "\"${getGitBranchName()}\"")
     }
 
     buildTypes {

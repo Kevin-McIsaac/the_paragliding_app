@@ -12,17 +12,20 @@ class AboutScreen extends StatefulWidget {
 
 class _AboutScreenState extends State<AboutScreen> {
   String _gitCommit = 'loading...';
+  String _gitBranch = 'loading...';
 
   @override
   void initState() {
     super.initState();
-    _loadGitCommit();
+    _loadGitInfo();
   }
 
-  Future<void> _loadGitCommit() async {
+  Future<void> _loadGitInfo() async {
     final commit = await BuildInfo.gitCommit;
+    final branch = await BuildInfo.gitBranch;
     setState(() {
       _gitCommit = commit;
+      _gitBranch = branch;
     });
   }
 
@@ -81,6 +84,14 @@ class _AboutScreenState extends State<AboutScreen> {
                               const SizedBox(height: 4),
                               Text(
                                 'Build: $_gitCommit',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  fontFamily: 'monospace',
+                                  color: Colors.grey[500],
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Branch: $_gitBranch',
                                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                   fontFamily: 'monospace',
                                   color: Colors.grey[500],
