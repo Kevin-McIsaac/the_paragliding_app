@@ -85,7 +85,6 @@ class DatabaseHelper {
         detected_landing_time TEXT,
         closing_point_index INTEGER,
         closing_distance REAL,
-        triangle_calc_version INTEGER DEFAULT 1,
         FOREIGN KEY (launch_site_id) REFERENCES sites (id),
         FOREIGN KEY (wing_id) REFERENCES wings (id)
       )

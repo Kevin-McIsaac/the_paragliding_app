@@ -976,7 +976,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                               padding: const EdgeInsets.all(16.0),
                               child: FlightStatisticsWidget(
                                 flight: _flight,
-                                onFlightUpdated: _refreshFlight,
                               ),
                             ),
                           ],
@@ -1002,7 +1001,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                               child: FlightTrack2DWidget(
                                 flight: _flight,
                                 height: 732,
-                                onFlightUpdated: _refreshFlight,
                               ),
                             ),
                           ],

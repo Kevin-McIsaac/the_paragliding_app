@@ -59,9 +59,6 @@ class Flight {
   // Triangle Closing fields
   final int? closingPointIndex; // Index of closing point in IGC track points (null if flight doesn't close)
   final double? closingDistance; // Distance from launch to closing point in meters
-  
-  // Triangle calculation tracking
-  final int? triangleCalcVersion; // Version of triangle calculation preferences used
 
   Flight({
     this.id,
@@ -113,7 +110,6 @@ class Flight {
     this.detectedLandingTime,
     this.closingPointIndex,
     this.closingDistance,
-    this.triangleCalcVersion,
   });
 
   /// Get the effective launch time - uses detected takeoff time if available, otherwise original launch time
@@ -148,10 +144,6 @@ class Flight {
   /// Returns true if the flight has a closing point (triangle is closed)
   bool get isClosed => closingPointIndex != null;
   
-  /// Returns true if the triangle needs recalculation based on current preferences version
-  bool needsTriangleRecalculation(int currentVersion) {
-    return triangleCalcVersion == null || triangleCalcVersion! < currentVersion;
-  }
 
   Map<String, dynamic> toMap() {
     return {
@@ -204,7 +196,6 @@ class Flight {
       'detected_landing_time': detectedLandingTime?.toIso8601String(),
       'closing_point_index': closingPointIndex,
       'closing_distance': closingDistance,
-      'triangle_calc_version': triangleCalcVersion,
     };
   }
 
@@ -259,7 +250,6 @@ class Flight {
       detectedLandingTime: map['detected_landing_time'] != null ? DateTime.parse(map['detected_landing_time']) : null,
       closingPointIndex: map['closing_point_index']?.toInt(),
       closingDistance: map['closing_distance']?.toDouble(),
-      triangleCalcVersion: map['triangle_calc_version']?.toInt(),
     );
   }
 
@@ -312,7 +302,6 @@ class Flight {
     DateTime? detectedLandingTime,
     int? closingPointIndex,
     double? closingDistance,
-    int? triangleCalcVersion,
   }) {
     return Flight(
       id: id ?? this.id,
@@ -363,7 +352,6 @@ class Flight {
       detectedLandingTime: detectedLandingTime ?? this.detectedLandingTime,
       closingPointIndex: closingPointIndex ?? this.closingPointIndex,
       closingDistance: closingDistance ?? this.closingDistance,
-      triangleCalcVersion: triangleCalcVersion ?? this.triangleCalcVersion,
     );
   }
   
