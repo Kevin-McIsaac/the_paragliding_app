@@ -15,6 +15,9 @@ class MainActivity : FlutterActivity() {
                 "getGitCommit" -> {
                     result.success(BuildConfig.GIT_COMMIT)
                 }
+                "getGitBranch" -> {
+                    result.success(BuildConfig.GIT_BRANCH)
+                }
                 else -> {
                     result.notImplemented()
                 }
