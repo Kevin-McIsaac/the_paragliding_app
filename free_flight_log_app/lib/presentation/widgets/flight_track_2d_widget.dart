@@ -921,6 +921,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
       DragMarker(
         point: LatLng(_trackPoints[adjustedIndex].latitude, _trackPoints[adjustedIndex].longitude),
         size: const Size(60, 40),
+        offset: const Offset(-30, -12), // Center the 24px circle on the closing point
         disableDrag: true,
         builder: (ctx, point, isDragging) => Column(
           mainAxisSize: MainAxisSize.min,
