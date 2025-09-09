@@ -12,6 +12,7 @@ import 'igc_parser.dart';
 import 'site_matching_service.dart';
 import 'takeoff_landing_detector.dart';
 import '../utils/preferences_helper.dart';
+import 'flight_track_loader.dart';
 
 /// Service for importing IGC files into the flight log
 class IgcImportService {
@@ -625,7 +626,9 @@ class IgcImportService {
   }
   
   /// Get track points with timezone information from saved IGC file
+  /// DEPRECATED: This method should not be used directly. Use FlightTrackLoader.loadFlightTrack() instead.
   /// Optional trimming: if takeoffIndex and landingIndex are provided, returns only the trimmed flight period
+  @Deprecated('Use FlightTrackLoader.loadFlightTrack() for consistent trimmed data')
   Future<({List<IgcPoint> points, String? timezone})> getTrackPointsWithTimezone(
     String trackLogPath, {
     int? takeoffIndex,

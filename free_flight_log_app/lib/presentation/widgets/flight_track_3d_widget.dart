@@ -2,9 +2,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../data/models/flight.dart';
 import '../../data/models/igc_file.dart';
-import '../../services/igc_import_service.dart';
+import '../../services/flight_track_loader.dart';
 import '../../services/logging_service.dart';
-import '../../utils/preferences_helper.dart';
 import 'cesium_3d_map_inappwebview.dart';
 
 /// Configuration for the 3D flight track visualization
@@ -52,8 +51,6 @@ class FlightTrack3DWidget extends StatefulWidget {
 }
 
 class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
-  final IgcImportService _igcService = IgcImportService.instance;
-  
   List<IgcPoint> _trackPoints = [];
   String? _timezone;
   bool _isLoading = true;
@@ -80,16 +77,15 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
     }
 
     try {
-      // Check if chart trimming is enabled in preferences
-      final chartTrimmingEnabled = await PreferencesHelper.getChartTrimmingEnabled();
+      LoggingService.info('FlightTrack3D: Loading trimmed track data for flight ${widget.flight.id}');
       
-      final trackData = await _igcService.getTrackPointsWithTimezone(
-        widget.flight.trackLogPath!,
-        takeoffIndex: chartTrimmingEnabled ? widget.flight.takeoffIndex : null,
-        landingIndex: chartTrimmingEnabled ? widget.flight.landingIndex : null,
+      // Load consistent trimmed flight track data 
+      final igcFile = await FlightTrackLoader.loadFlightTrack(
+        widget.flight,
+        logContext: 'FlightTrack3D',
       );
       
-      if (trackData.points.isEmpty) {
+      if (igcFile.trackPoints.isEmpty) {
         setState(() {
           _error = 'No track points found';
           _isLoading = false;
@@ -98,8 +94,8 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
       }
 
       setState(() {
-        _trackPoints = trackData.points;
-        _timezone = trackData.timezone;
+        _trackPoints = igcFile.trackPoints;
+        _timezone = igcFile.timezone;
         _isLoading = false;
       });
       
@@ -107,12 +103,14 @@ class _FlightTrack3DWidgetState extends State<FlightTrack3DWidget> {
       if (_trackPoints.isNotEmpty) {
         final firstPoint = _trackPoints.first;
         final formatted = _formatTimestampWithTimezone(firstPoint.timestamp, _timezone);
+        LoggingService.info('FlightTrack3D: Loaded ${_trackPoints.length} trimmed track points');
         LoggingService.info('FlightTrack3D: Timezone detected: $_timezone');
         LoggingService.info('FlightTrack3D: First point timestamp: ${firstPoint.timestamp.toIso8601String()}');
         LoggingService.info('FlightTrack3D: Formatted with TZ: $formatted');
       }
       
     } catch (e) {
+      LoggingService.error('FlightTrack3D: Error loading track data', e);
       setState(() {
         _error = 'Error loading track data: $e';
         _isLoading = false;
