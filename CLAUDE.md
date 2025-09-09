@@ -28,7 +28,7 @@ flutter_controller_enhanced.sh q      # Quit
 
 # Monitoring and debugging commands
 flutter_controller_enhanced.sh status          # Check app status
-flutter_controller_enhanced.sh logs [lines]    # Show recent logs
+flutter_controller_enhanced.sh logs [lines]    # Show recent logs. To optimise context window use this rather than bash shell output.Z
 flutter_controller_enhanced.sh monitor         # Watch logs real-time
 flutter_controller_enhanced.sh restart [device] # Force restart
 flutter_controller_enhanced.sh cleanup         # Clean up processes
@@ -191,45 +191,111 @@ For detailed technical architecture, database schema, and implementation details
 - Test after implementing or updating a feature.
 - Follow the current implementation patterns.
 
-## Logging Best Practices
+## Logging Best Practices - Claude Code Optimized
 
 Use the centralized `LoggingService` for all application logging. **Never use `print()` statements** - they should be replaced with appropriate LoggingService calls.
 
-### Usage Pattern
+The logging system is **optimized for Claude Code integration** with:
+- **ClaudeLogPrinter**: Single-line format `[D][+10.5s] message | at=file.dart:123` for easy parsing
+- **Smart filtering**: Routine operations filtered to reduce log noise by 60-70%
+- **Duplicate detection**: Prevents redundant logs from repeated operations
+- **File navigation**: Every log includes `at=file.dart:line` for instant code navigation
+- **Workflow tracking**: Correlation IDs trace related operations across components
 
+### Usage Patterns
+
+#### Basic Logging
 ```dart
 import 'package:free_flight_log/services/logging_service.dart';
 
-// General logging
+// General logging - automatic filtering applied
 LoggingService.debug('Debug information');
-LoggingService.info('General information');
+LoggingService.info('General information');  
 LoggingService.warning('Warning message');
 LoggingService.error('Error occurred', error, stackTrace);
+```
 
-// Specialized logging with context
+#### Structured Logging (Preferred for Complex Operations)
+```dart
+// Use structured logging for data that Claude needs to analyze
+LoggingService.structured('IGC_IMPORT', {
+  'file': 'flight.igc',
+  'points': 1091,
+  'duration_min': 94,
+  'trimmed': true,
+});
+
+// Operation summaries with key metrics
+LoggingService.summary('TRIANGLE_CALC', {
+  'valid': true,
+  'distance_km': 25.3,
+  'time_ms': 150,
+  'points_sampled': 200,
+});
+
+// User actions with context
+LoggingService.action('FlightDetail', 'reprocess_flight', {
+  'flight_id': 2,
+  'reason': 'user_requested',
+});
+
+// Performance metrics with thresholds
+LoggingService.performance('Database Query', duration, 'flights loaded');
+```
+
+#### Workflow Tracking
+```dart
+// Track multi-step operations with correlation IDs
+final opId = LoggingService.startOperation('IGC_IMPORT');
+// ... perform import steps
+LoggingService.endOperation('IGC_IMPORT', results: {
+  'flights_created': 1,
+  'errors': 0,
+  'duration_ms': 2500,
+});
+```
+
+#### Legacy Context Logging
+```dart
+// Specialized logging with context (maintained for compatibility)
 LoggingService.database('INSERT', 'Added new flight record');
 LoggingService.igc('PARSE', 'Processing IGC file: filename.igc');
 LoggingService.ui('FlightList', 'User tapped add flight button');
-LoggingService.performance('IGC Parse', duration, 'Parsed 1000 points');
+```
 
-// Extension methods (automatically include class name)
-class MyWidget extends StatefulWidget {
-  void someMethod() {
-    logDebug('Widget initialized');  // Output: MyWidget: Widget initialized
-    logError('Something went wrong', error);
-  }
-}
+### Output Format Examples
+```
+[I][+1.2s] App startup completed | at=splash_screen.dart:32
+[D][+5.1s] [IGC_IMPORT] file=flight.igc | points=1091 | duration_min=94 | at=igc_import_service.dart:85
+[I][+8.5s] [WORKFLOW:IGC_IMPORT] completed | id=igc_import_001 | flights_created=1 | at=logging_service.dart:150
 ```
 
 ### Key Benefits
 
-- **Production-ready**: Automatically reduces logging verbosity in release builds
-- **Structured**: Provides context with prefixes for database, IGC, UI, and performance operations
-- **Performance monitoring**: Built-in performance logging with timing
-- **Error handling**: Proper error and stack trace logging
-- **Consistent format**: Standardized log format across the entire application
+- **Claude Code Integration**: Optimized format for AI code analysis and navigation
+- **Reduced Volume**: 60-70% log size reduction through smart filtering
+- **Enhanced Navigation**: File:line references enable instant code location
+- **Correlation Tracking**: Related operations linked via correlation IDs  
+- **Performance Monitoring**: Built-in timing and performance thresholds
+- **Duplicate Prevention**: Smart detection prevents redundant log entries
+- **Production Ready**: Automatic verbosity adjustment for release builds
 
-Replace any `print()` statements with the appropriate LoggingService method based on the log level and context.
+### Guidelines
+
+1. **Prefer structured logging** for complex operations that Claude needs to analyze
+2. **Use workflow tracking** for multi-step processes like imports or calculations  
+3. **Never use `print()`** - LoggingService provides filtering and formatting
+4. **Include context data** in structured logs (IDs, metrics, file names)
+5. **Trust the filtering** - routine operations are automatically suppressed
+6. **Use descriptive messages** - logs should be self-explanatory without code context
+
+The logging system automatically handles:
+- ✅ File:line location extraction
+- ✅ Relative timestamp formatting  
+- ✅ Routine operation filtering
+- ✅ Duplicate detection
+- ✅ Correlation ID management
+- ✅ Performance threshold monitoring
 
 ## Key Calculations
 

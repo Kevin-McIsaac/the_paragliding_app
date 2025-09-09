@@ -65,6 +65,7 @@ class IgcImportService {
     bool replace = false,
   }) async {
     final fileName = path.basename(filePath);
+    LoggingService.startOperation('IGC_IMPORT');
     
     try {
       // Parse IGC file
@@ -207,14 +208,19 @@ class IgcImportService {
       climbRateThresholdMs: climbRateThreshold,
     );
     
-    LoggingService.info('IgcImportService: Detection result${copyFile ? '' : ' (no copy)'} - ${detectionResult.message}');
+    LoggingService.structured('IGC_DETECTION', {
+      'success': detectionResult.isComplete,
+      'takeoff_idx': detectionResult.takeoffIndex,
+      'landing_idx': detectionResult.landingIndex,
+      'copy_file': copyFile,
+    });
     
     // Calculate flight statistics on trimmed data if detection successful
     final dataForStats = detectionResult.isComplete
         ? igcData.copyWithTrimmedPoints(detectionResult.takeoffIndex!, detectionResult.landingIndex!)
         : igcData;
         
-    LoggingService.debug('IgcImportService: Calculating statistics${copyFile ? '' : ' (no copy)'} on ${dataForStats.trackPoints.length}/${igcData.trackPoints.length} points (trimmed: ${detectionResult.isComplete})');
+    // Statistics calculation on trimmed data
     
     final groundTrackDistance = dataForStats.calculateGroundTrackDistance();
     final straightDistance = dataForStats.calculateLaunchToLandingDistance();
@@ -260,9 +266,11 @@ class IgcImportService {
         siteAltitude = matchedSite.altitude?.toDouble() ?? launchPoint.gpsAltitude.toDouble();
         
         // Debug output to see what the API returned
-        LoggingService.info('IgcImportService: API found site "$siteName" at ${siteLatitude.toStringAsFixed(4)}, ${siteLongitude.toStringAsFixed(4)}');
-        LoggingService.info('IgcImportService: GPS launch was at ${launchPoint.latitude.toStringAsFixed(4)}, ${launchPoint.longitude.toStringAsFixed(4)}');
-        LoggingService.debug('IgcImportService: Site details - Country: "${country ?? 'null'}", Altitude: $siteAltitude');
+        LoggingService.structured('SITE_MATCH', {
+          'name': siteName,
+          'country': country ?? 'Unknown',
+          'alt_m': siteAltitude.toStringAsFixed(0),
+        });
       } else {
         // No ParaglidingEarth match - use GPS coordinates
         siteName = 'Unknown';
@@ -270,7 +278,7 @@ class IgcImportService {
         siteLatitude = launchPoint.latitude;
         siteLongitude = launchPoint.longitude;
         siteAltitude = launchPoint.gpsAltitude.toDouble();
-        LoggingService.info('IgcImportService: No API site found for GPS launch at ${launchPoint.latitude.toStringAsFixed(4)}, ${launchPoint.longitude.toStringAsFixed(4)}');
+        LoggingService.debug('IgcImportService: No API site found at ${launchPoint.latitude.toStringAsFixed(4)},${launchPoint.longitude.toStringAsFixed(4)}');
       }
       
       launchSite = await _databaseService.findOrCreateSite(
@@ -282,7 +290,7 @@ class IgcImportService {
       );
       
       // Debug output to see what was actually stored
-      LoggingService.info('IgcImportService: Created/found site in database with ID ${launchSite.id}, name "${launchSite.name}", country "${launchSite.country ?? 'null'}"');
+      LoggingService.debug('IgcImportService: Site DB id=${launchSite.id} name="${launchSite.name}" country="${launchSite.country ?? 'Unknown'}"');
     }
     
     // Perform triangle closing point detection on trimmed data (after launch site is available)
@@ -298,16 +306,14 @@ class IgcImportService {
       final closingPoint = dataForStats.trackPoints[closingPointIndex];
       actualClosingDistance = dataForStats.calculateSimpleDistance(launchPoint, closingPoint);
       
-      LoggingService.info('IgcImportService: CLOSING POINT DETAILS for $flightContext${copyFile ? '' : ' (NO COPY)'}:');
-      LoggingService.info('  Index: $closingPointIndex of ${dataForStats.trackPoints.length} points (${(closingPointIndex / dataForStats.trackPoints.length * 100).toStringAsFixed(1)}% of flight)');
-      LoggingService.info('  Time: ${closingPoint.timestamp.toLocal().toIso8601String().substring(11, 16)} (flight time: ${closingPoint.timestamp.difference(launchPoint.timestamp).inMinutes}m)');
-      LoggingService.info('  Coordinates: ${closingPoint.latitude.toStringAsFixed(6)}, ${closingPoint.longitude.toStringAsFixed(6)}');
-      LoggingService.info('  Distance to Launch: ${actualClosingDistance.toStringAsFixed(1)}m');
-      LoggingService.info('  Status: CLOSED');
+      LoggingService.structured('CLOSING_POINT', {
+        'found': true,
+        'index': closingPointIndex,
+        'percent': '${(closingPointIndex / dataForStats.trackPoints.length * 100).toStringAsFixed(0)}%',
+        'flight_time_min': closingPoint.timestamp.difference(launchPoint.timestamp).inMinutes,
+        'distance_m': actualClosingDistance.toStringAsFixed(0),
+      });
     } else {
-      LoggingService.info('IgcImportService: CLOSING POINT DETAILS for $flightContext${copyFile ? '' : ' (NO COPY)'}:');
-      LoggingService.info('  Status: OPEN (no point within ${closingDistance.toStringAsFixed(0)}m of launch)');
-      
       // Find minimum distance for debugging
       double minDistance = double.infinity;
       int minDistanceIndex = -1;
@@ -322,9 +328,7 @@ class IgcImportService {
         }
       }
       
-      if (minDistanceIndex >= 0) {
-        LoggingService.info('  Minimum distance: ${minDistance.toStringAsFixed(1)}m at point $minDistanceIndex');
-      }
+      LoggingService.info('IgcImportService: $flightContext${copyFile ? '' : ' (NO COPY)'} OPEN - no point <${closingDistance.toStringAsFixed(0)}m (min:${minDistance.toStringAsFixed(0)}m at idx:$minDistanceIndex)');
     }
 
     // Calculate FAI triangle on appropriate data subset
@@ -343,7 +347,7 @@ class IgcImportService {
         // Triangle invalid - mark flight as open
         closingPointIndex = null;
         actualClosingDistance = null;
-        LoggingService.info('IgcImportService: Flight marked as OPEN${copyFile ? '' : ' (NO COPY)'} - triangle validation failed (vertices too close to launch)');
+        LoggingService.debug('IgcImportService: Flight marked OPEN${copyFile ? '' : ' (NO COPY)'} - triangle vertices too close to launch');
       }
     } else {
       // No closing point, no triangle calculation for open flights

@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
+import '../services/logging_service.dart';
 
 /// Mobile implementation for handling shared files
 Future<List<String>?> getInitialSharedFiles() async {
@@ -29,10 +29,7 @@ StreamSubscription? listenForSharedFiles(Function(List<String>) onFilesReceived)
       }
     },
     onError: (err) {
-      // Use debug logging for receiving shared files errors
-      if (kDebugMode) {
-        print("Error receiving shared files: $err");
-      }
+      LoggingService.error('Error receiving shared files', err);
     },
   );
 }
