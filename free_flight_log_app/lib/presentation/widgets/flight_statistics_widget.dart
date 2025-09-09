@@ -9,10 +9,12 @@ import '../../services/logging_service.dart';
 
 class FlightStatisticsWidget extends StatefulWidget {
   final Flight flight;
+  final VoidCallback? onFlightUpdated;
 
   const FlightStatisticsWidget({
     super.key,
     required this.flight,
+    this.onFlightUpdated,
   });
 
   @override
@@ -27,12 +29,19 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
   @override
   void initState() {
     super.initState();
-    _checkAndRecalculateTriangle();
+    // Defer triangle recalculation until after first frame renders
+    // This prevents blocking the UI when opening FlightDetailScreen
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Run the check in a microtask to further defer execution
+      Future.microtask(() => _checkAndRecalculateTriangle());
+    });
   }
   
   Future<void> _checkAndRecalculateTriangle() async {
     // Get current triangle calculation version
     final currentVersion = await PreferencesHelper.getTriangleCalcVersion();
+    
+    LoggingService.info('FlightStatisticsWidget: Checking triangle recalculation for flight ${widget.flight.id} - currentVersion: $currentVersion, flightVersion: ${widget.flight.triangleCalcVersion}');
     
     // Check if recalculation is needed
     if (widget.flight.needsTriangleRecalculation(currentVersion) && 
@@ -112,6 +121,9 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
           _updatedFlight = updatedFlight;
           _isRecalculatingTriangle = false;
         });
+        
+        // Notify parent to refresh flight data
+        widget.onFlightUpdated?.call();
         
         LoggingService.info('FlightStatisticsWidget: Triangle recalculated: ${faiTriangle['triangleDistance']} km, Closed: ${newClosingPointIndex != null}');
       } catch (e) {

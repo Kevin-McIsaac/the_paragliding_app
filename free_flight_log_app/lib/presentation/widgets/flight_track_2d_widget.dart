@@ -37,11 +37,13 @@ enum MapProvider {
 class FlightTrack2DWidget extends StatefulWidget {
   final Flight flight;
   final double? height;
+  final VoidCallback? onFlightUpdated;
   
   const FlightTrack2DWidget({
     super.key,
     required this.flight,
     this.height = 400,
+    this.onFlightUpdated,
   });
 
   @override
@@ -480,6 +482,9 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           );
           await _databaseService.updateFlight(updatedFlight);
           LoggingService.info('FlightTrack2D: Triangle and closing point recalculated and saved');
+          
+          // Notify parent to refresh flight data
+          widget.onFlightUpdated?.call();
         } catch (e) {
           LoggingService.ui('FlightTrack2D', 'Failed to recalculate triangle: $e');
         }
@@ -975,23 +980,55 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     
     final point = _trackPoints[_selectedTrackPointIndex!];
     
+    // Calculate distance from launch point
+    final launchPoint = _trackPoints.first;
+    final distance = _calculateDistance(
+      LatLng(launchPoint.latitude, launchPoint.longitude),
+      LatLng(point.latitude, point.longitude)
+    );
+    
     return [
       Marker(
         point: LatLng(point.latitude, point.longitude),
-        width: 12,
-        height: 12,
-        child: Container(
-          decoration: const BoxDecoration(
-            color: SiteMarkerUtils.selectedPointColor,
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black26,
-                blurRadius: 2,
-                offset: Offset(0, 1),
+        width: 80,  // Increased to accommodate label
+        height: 40,  // Increased for label
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Distance label above the marker
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(3),
               ),
-            ],
-          ),
+              child: Text(
+                '${distance.toStringAsFixed(0)}m',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            const SizedBox(height: 2),
+            // Existing yellow/amber circle
+            Container(
+              width: 12,
+              height: 12,
+              decoration: const BoxDecoration(
+                color: SiteMarkerUtils.selectedPointColor,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 2,
+                    offset: Offset(0, 1),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     ];
@@ -1049,62 +1086,83 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
       ),
       
       // Closing point marker (debug feature)
-      if (widget.flight.isClosed && widget.flight.closingPointIndex != null && widget.flight.closingPointIndex! < _trackPoints.length)
-        DragMarker(
-          point: LatLng(_trackPoints[widget.flight.closingPointIndex!].latitude, _trackPoints[widget.flight.closingPointIndex!].longitude),
-          size: const Size(60, 40), // Wider to accommodate distance label
-          disableDrag: true,
-          builder: (ctx, point, isDragging) => Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Closing point marker icon
-              Container(
-                width: 24,
-                height: 24,
-                decoration: const BoxDecoration(
-                  color: Colors.purple,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black26,
-                      blurRadius: 2,
-                      offset: Offset(0, 1),
-                    ),
-                  ],
-                ),
-                child: const Icon(
-                  Icons.change_history,
-                  color: Colors.white,
-                  size: 14,
-                ),
-              ),
-              const SizedBox(height: 2),
-              // Distance label
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                decoration: BoxDecoration(
-                  color: Colors.purple.withValues(alpha: 0.9),
-                  borderRadius: BorderRadius.circular(3),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.3),
-                      blurRadius: 2,
-                      offset: const Offset(0, 1),
-                    ),
-                  ],
-                ),
-                child: Text(
-                  '${widget.flight.closingDistance?.toStringAsFixed(0) ?? 'N/A'}m',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 8,
-                    fontWeight: FontWeight.bold,
+      if (widget.flight.isClosed && 
+          widget.flight.closingPointIndex != null &&
+          _trackPoints.isNotEmpty) ..._buildClosingPointMarker(),
+    ];
+  }
+
+  List<DragMarker> _buildClosingPointMarker() {
+    // Adjust closing point index for trimmed track points
+    // The closingPointIndex is from the full IGC file, but _trackPoints may be trimmed
+    int adjustedIndex = widget.flight.closingPointIndex!;
+    
+    // If takeoff index exists, adjust for the offset  
+    if (widget.flight.takeoffIndex != null) {
+      adjustedIndex = widget.flight.closingPointIndex! - widget.flight.takeoffIndex!;
+    }
+    
+    // Ensure the adjusted index is within bounds
+    if (adjustedIndex < 0 || adjustedIndex >= _trackPoints.length) {
+      return [];
+    }
+    
+    return [
+      DragMarker(
+        point: LatLng(_trackPoints[adjustedIndex].latitude, _trackPoints[adjustedIndex].longitude),
+        size: const Size(60, 40),
+        disableDrag: true,
+        builder: (ctx, point, isDragging) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Closing point marker icon
+            Container(
+              width: 24,
+              height: 24,
+              decoration: const BoxDecoration(
+                color: Colors.purple,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 2,
+                    offset: Offset(0, 1),
                   ),
+                ],
+              ),
+              child: const Icon(
+                Icons.change_history,
+                color: Colors.white,
+                size: 14,
+              ),
+            ),
+            const SizedBox(height: 2),
+            // Distance label
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              decoration: BoxDecoration(
+                color: Colors.purple.withValues(alpha: 0.9),
+                borderRadius: BorderRadius.circular(3),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    blurRadius: 2,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
+              ),
+              child: Text(
+                '${widget.flight.closingDistance?.toStringAsFixed(0) ?? 'N/A'}m',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 8,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
+      ),
     ];
   }
 
