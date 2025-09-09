@@ -12,7 +12,6 @@ import 'igc_parser.dart';
 import 'site_matching_service.dart';
 import 'takeoff_landing_detector.dart';
 import '../utils/preferences_helper.dart';
-import 'flight_track_loader.dart';
 
 /// Service for importing IGC files into the flight log
 class IgcImportService {
@@ -152,8 +151,7 @@ class IgcImportService {
           detectedTakeoffTime: flight.detectedTakeoffTime,
           detectedLandingTime: flight.detectedLandingTime,
           closingPointIndex: flight.closingPointIndex,
-          closingDistance: flight.closingDistance,
-          triangleCalcVersion: flight.triangleCalcVersion
+          closingDistance: flight.closingDistance
         );
         
         await _databaseService.updateFlight(updatedFlight);
@@ -393,9 +391,6 @@ class IgcImportService {
     
     // Get original filename
     final originalFilename = path.basename(filePath);
-    
-    // Get current triangle calculation version
-    final triangleCalcVersion = await PreferencesHelper.getTriangleCalcVersion();
 
     // Create flight record with detection data
     return Flight(
@@ -446,8 +441,6 @@ class IgcImportService {
       // Add closing point data
       closingPointIndex: closingPointIndex,
       closingDistance: actualClosingDistance,
-      // Store triangle calculation version
-      triangleCalcVersion: triangleCalcVersion,
     );
   }
 
@@ -513,7 +506,6 @@ class IgcImportService {
       detectedLandingTime: flight.detectedLandingTime,
       closingPointIndex: flight.closingPointIndex,
       closingDistance: flight.closingDistance,
-      triangleCalcVersion: flight.triangleCalcVersion,
     );
   }
 
@@ -580,7 +572,6 @@ class IgcImportService {
       detectedLandingTime: flight.detectedLandingTime,
       closingPointIndex: flight.closingPointIndex,
       closingDistance: flight.closingDistance,
-      triangleCalcVersion: flight.triangleCalcVersion,
     );
   }
 

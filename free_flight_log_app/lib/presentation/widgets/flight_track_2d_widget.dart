@@ -15,7 +15,6 @@ import '../../services/igc_import_service.dart';
 import '../../services/database_service.dart';
 import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
-import '../../services/triangle_recalculation_service.dart';
 import '../../services/flight_track_loader.dart';
 import '../../utils/preferences_helper.dart';
 import '../../utils/site_marker_utils.dart';
@@ -38,13 +37,11 @@ enum MapProvider {
 class FlightTrack2DWidget extends StatefulWidget {
   final Flight flight;
   final double? height;
-  final VoidCallback? onFlightUpdated;
   
   const FlightTrack2DWidget({
     super.key,
     required this.flight,
     this.height = 400,
-    this.onFlightUpdated,
   });
 
   @override
@@ -420,23 +417,37 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         timezone: igcFile.timezone,
       );
 
-      // Get triangle points (with lazy recalculation if needed)
+      // Get triangle points from stored data or calculate if needed
       List<IgcPoint> faiTrianglePoints = [];
       
       try {
-        final result = await TriangleRecalculationService.checkAndRecalculate(
-          widget.flight,
-          logContext: 'FlightTrack2D',
-        );
-        
-        // Use triangle points from result
-        faiTrianglePoints = result.trianglePoints ?? [];
-        
-        // Notify parent to refresh flight data if recalculation was performed
-        if (result.recalculationPerformed) {
-          widget.onFlightUpdated?.call();
+        // Try to use pre-calculated triangle points from database
+        final storedTrianglePoints = widget.flight.getParsedTrianglePoints();
+        if (storedTrianglePoints != null && storedTrianglePoints.length == 3) {
+          // Convert stored coordinate maps to IgcPoint objects
+          faiTrianglePoints = storedTrianglePoints.map((point) => IgcPoint(
+            latitude: point['lat']!,
+            longitude: point['lng']!,
+            gpsAltitude: point['alt']!.toInt(),
+            pressureAltitude: 0,
+            timestamp: DateTime.now(), // Timestamp not needed for triangle display
+            isValid: true, // Stored points are assumed valid
+          )).toList();
+        } else if (widget.flight.isClosed && widget.flight.closingPointIndex != null) {
+          // Fallback: calculate from IGC file if no stored points
+          final triangleSamplingInterval = await PreferencesHelper.getTriangleSamplingInterval();
+          final closingDistance = await PreferencesHelper.getTriangleClosingDistance();
+          final trimmedIgcFile = igcFile.copyWithTrimmedPoints(0, widget.flight.closingPointIndex!);
+          final faiTriangle = trimmedIgcFile.calculateFaiTriangle(
+            samplingIntervalSeconds: triangleSamplingInterval,
+            closingDistanceMeters: closingDistance,
+          );
+          final rawTrianglePoints = faiTriangle['trianglePoints'] as List<dynamic>?;
+          
+          if (rawTrianglePoints != null && rawTrianglePoints.length == 3) {
+            faiTrianglePoints = rawTrianglePoints.cast<IgcPoint>();
+          }
         }
-        
       } catch (e) {
         LoggingService.error('FlightTrack2D: Failed to get triangle points', e);
       }
