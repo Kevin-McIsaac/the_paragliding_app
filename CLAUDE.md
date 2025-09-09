@@ -28,7 +28,7 @@ flutter_controller_enhanced.sh q      # Quit
 
 # Monitoring and debugging commands
 flutter_controller_enhanced.sh status          # Check app status
-flutter_controller_enhanced.sh logs [lines]    # Show recent logs
+flutter_controller_enhanced.sh logs [lines]    # Show recent logs. To optimise context window use this rather than bash shell output.Z
 flutter_controller_enhanced.sh monitor         # Watch logs real-time
 flutter_controller_enhanced.sh restart [device] # Force restart
 flutter_controller_enhanced.sh cleanup         # Clean up processes

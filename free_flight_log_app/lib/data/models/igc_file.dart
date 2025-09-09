@@ -630,7 +630,6 @@ class IgcFile {
     final stopwatch = Stopwatch()..start();
     
     if (trackPoints.length < 3) {
-      LoggingService.debug('Triangle calculation: Insufficient points (${trackPoints.length} < 3)');
       return {
         'trianglePoints': <IgcPoint>[],
         'triangleDistance': 0.0, // Already in kilometers
@@ -644,7 +643,6 @@ class IgcFile {
     final samplePoints = _selectTimeBasedSamples(samplingIntervalSeconds);
     
     int comparisons = 0;
-    LoggingService.debug('Triangle calculation: Using time-based sampling (${samplingIntervalSeconds}s intervals) - ${samplePoints.length} points selected from ${trackPoints.length} total');
     
     for (int i = 0; i < samplePoints.length; i++) {
       for (int j = i + 1; j < samplePoints.length; j++) {
@@ -671,7 +669,7 @@ class IgcFile {
     stopwatch.stop();
 
     if (bestTriangle.length != 3) {
-      LoggingService.debug('Triangle calculation: No valid triangle found in ${stopwatch.elapsedMilliseconds}ms ($comparisons comparisons)');
+      LoggingService.metric('triangle_calc_time', stopwatch.elapsedMilliseconds, 'ms', 'TRIANGLE');
       return {
         'trianglePoints': <IgcPoint>[],
         'triangleDistance': 0.0, // Already in kilometers
@@ -693,14 +691,7 @@ class IgcFile {
     
     // Check if at least 2 vertices are outside the closing threshold
     if (validVertices < 2) {
-      LoggingService.info('Triangle calculation completed in ${stopwatch.elapsedMilliseconds}ms ($comparisons comparisons)');
-      LoggingService.info('Triangle INVALID: Only $validVertices vertices outside closing threshold of ${closingDistanceMeters.toStringAsFixed(0)}m');
-      LoggingService.info('Vertex distances from launch:');
-      LoggingService.info('  P1: ${vertexDistances[0].toStringAsFixed(1)}m');
-      LoggingService.info('  P2: ${vertexDistances[1].toStringAsFixed(1)}m');
-      LoggingService.info('  P3: ${vertexDistances[2].toStringAsFixed(1)}m');
-      LoggingService.info('Flight marked as OPEN - triangle vertices too close to launch');
-      
+      // Triangle is invalid - not enough vertices outside closing distance
       return {
         'trianglePoints': <IgcPoint>[],
         'triangleDistance': 0.0,
@@ -713,18 +704,16 @@ class IgcFile {
     final distance3 = _haversineDistance(bestTriangle[2], bestTriangle[0]) * 1000;
     final totalDistance = distance1 + distance2 + distance3;
 
-    // Log detailed triangle information
-    LoggingService.info('Triangle calculation completed in ${stopwatch.elapsedMilliseconds}ms ($comparisons comparisons)');
-    LoggingService.info('Triangle VALID: $validVertices vertices outside closing threshold of ${closingDistanceMeters.toStringAsFixed(0)}m');
-    LoggingService.info('Triangle vertices:');
-    LoggingService.info('  P1: ${bestTriangle[0].latitude.toStringAsFixed(6)}, ${bestTriangle[0].longitude.toStringAsFixed(6)} (${vertexDistances[0].toStringAsFixed(1)}m from launch)');
-    LoggingService.info('  P2: ${bestTriangle[1].latitude.toStringAsFixed(6)}, ${bestTriangle[1].longitude.toStringAsFixed(6)} (${vertexDistances[1].toStringAsFixed(1)}m from launch)');
-    LoggingService.info('  P3: ${bestTriangle[2].latitude.toStringAsFixed(6)}, ${bestTriangle[2].longitude.toStringAsFixed(6)} (${vertexDistances[2].toStringAsFixed(1)}m from launch)');
-    LoggingService.info('Triangle side distances:');
-    LoggingService.info('  P1-P2: ${(distance1 / 1000).toStringAsFixed(3)}km');
-    LoggingService.info('  P2-P3: ${(distance2 / 1000).toStringAsFixed(3)}km');
-    LoggingService.info('  P3-P1: ${(distance3 / 1000).toStringAsFixed(3)}km');
-    LoggingService.info('Triangle perimeter: ${(totalDistance / 1000).toStringAsFixed(3)}km');
+    // Log structured triangle summary
+    LoggingService.summary('TRIANGLE_CALC', {
+      'valid': true,
+      'distance_km': (totalDistance / 1000).toStringAsFixed(1),
+      'vertices_valid': validVertices,
+      'time_ms': stopwatch.elapsedMilliseconds,
+      'comparisons': comparisons,
+      'points_sampled': samplePoints.length,
+      'points_total': trackPoints.length,
+    });
 
     return {
       'trianglePoints': bestTriangle,
@@ -757,7 +746,7 @@ class IgcFile {
       
       if (distance <= maxDistanceMeters) {
         potentialClosingIndex = i;
-        LoggingService.debug('Potential closing point found at index $i, distance: ${distance.toStringAsFixed(1)}m');
+        // Found potential closing point - will validate below
         break; // Found potential closing point, now validate
       }
     }
@@ -765,7 +754,13 @@ class IgcFile {
     // If no potential closing point found, flight is definitely open
     if (potentialClosingIndex == null) {
       stopwatch.stop();
-      LoggingService.debug('Closing point detection: No point within ${maxDistanceMeters.toStringAsFixed(1)}m found in ${stopwatch.elapsedMilliseconds}ms ($pointsChecked points checked)');
+      LoggingService.structured('CLOSING_DETECTION', {
+        'found': false,
+        'reason': 'no_point_in_range',
+        'threshold_m': maxDistanceMeters.toStringAsFixed(1),
+        'time_ms': stopwatch.elapsedMilliseconds,
+        'points_checked': pointsChecked,
+      });
       return null;
     }
     
@@ -781,7 +776,7 @@ class IgcFile {
       
       if (validationDistance > maxDistanceMeters) {
         leftClosingCircle = true;
-        LoggingService.debug('Validation: Found point outside circle during flight at index $j, distance: ${validationDistance.toStringAsFixed(1)}m');
+        // Found point outside circle - valid closing
         break;
       }
     }
@@ -792,15 +787,27 @@ class IgcFile {
       // Valid closing - track left the circle and returned
       final closingPoint = trackPoints[potentialClosingIndex];
       final closingDistance = calculateSimpleDistance(launchPoint, closingPoint);
-      LoggingService.info('Valid closing point found in ${stopwatch.elapsedMilliseconds}ms (${pointsChecked + validationPointsChecked} points total)');
-      LoggingService.info('Closing point: Index $potentialClosingIndex, ${closingPoint.latitude.toStringAsFixed(6)}, ${closingPoint.longitude.toStringAsFixed(6)}');
-      LoggingService.info('Actual closing distance: ${closingDistance.toStringAsFixed(1)}m (threshold: ${maxDistanceMeters.toStringAsFixed(1)}m)');
-      LoggingService.info('Track validation: Left closing circle during flight and returned (checked $validationPointsChecked points)');
+      LoggingService.structured('CLOSING_VALIDATION', {
+        'valid': true,
+        'index': potentialClosingIndex,
+        'lat': closingPoint.latitude.toStringAsFixed(6),
+        'lon': closingPoint.longitude.toStringAsFixed(6),
+        'distance_m': closingDistance.toStringAsFixed(1),
+        'threshold_m': maxDistanceMeters.toStringAsFixed(1),
+        'time_ms': stopwatch.elapsedMilliseconds,
+        'points_checked': pointsChecked + validationPointsChecked,
+      });
       return potentialClosingIndex;
     } else {
       // Invalid closing - track never left the closing circle
-      LoggingService.debug('Closing point detection: Track never left closing circle in ${stopwatch.elapsedMilliseconds}ms (${pointsChecked + validationPointsChecked} points total)');
-      LoggingService.debug('Potential closing at index $potentialClosingIndex rejected - flight stayed within ${maxDistanceMeters.toStringAsFixed(1)}m circle');
+      LoggingService.structured('CLOSING_DETECTION', {
+        'found': false,
+        'reason': 'stayed_in_circle',
+        'potential_index': potentialClosingIndex,
+        'threshold_m': maxDistanceMeters.toStringAsFixed(1),
+        'time_ms': stopwatch.elapsedMilliseconds,
+        'points_checked': pointsChecked + validationPointsChecked,
+      });
       return null; // Not a valid closing - likely ground handling or very short flight
     }
   }
