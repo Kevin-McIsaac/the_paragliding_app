@@ -289,6 +289,19 @@ class PreferencesHelper {
   static const String flightStatisticsCardExpandedKey = 'flight_statistics_card_expanded';
   static const String flightTrackCardExpandedKey = 'flight_track_card_expanded';
   static const String flightNotesCardExpandedKey = 'flight_notes_card_expanded';
+  
+  // Card type constants for generic methods
+  static const String cardTypeFlightDetails = 'flight_details';
+  static const String cardTypeFlightStatistics = 'flight_statistics';
+  static const String cardTypeFlightTrack = 'flight_track';
+  static const String cardTypeFlightNotes = 'flight_notes';
+  
+  static const Map<String, String> _cardTypeToKeyMap = {
+    cardTypeFlightDetails: flightDetailsCardExpandedKey,
+    cardTypeFlightStatistics: flightStatisticsCardExpandedKey,
+    cardTypeFlightTrack: flightTrackCardExpandedKey,
+    cardTypeFlightNotes: flightNotesCardExpandedKey,
+  };
 
   static Future<bool> getFlightDetailsCardExpanded() async {
     final prefs = await SharedPreferences.getInstance();
@@ -328,6 +341,36 @@ class PreferencesHelper {
   static Future<void> setFlightNotesCardExpanded(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(flightNotesCardExpandedKey, value);
+  }
+  
+  // Optimized batched loading method
+  static Future<Map<String, bool>> getAllCardExpansionStates() async {
+    final prefs = await SharedPreferences.getInstance();
+    return {
+      cardTypeFlightDetails: prefs.getBool(flightDetailsCardExpandedKey) ?? true,
+      cardTypeFlightStatistics: prefs.getBool(flightStatisticsCardExpandedKey) ?? true,
+      cardTypeFlightTrack: prefs.getBool(flightTrackCardExpandedKey) ?? true,
+      cardTypeFlightNotes: prefs.getBool(flightNotesCardExpandedKey) ?? true,
+    };
+  }
+  
+  // Generic method for setting card expansion state
+  static Future<void> setCardExpansionState(String cardType, bool value) async {
+    final key = _cardTypeToKeyMap[cardType];
+    if (key != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(key, value);
+    }
+  }
+  
+  // Generic method for getting card expansion state
+  static Future<bool> getCardExpansionState(String cardType) async {
+    final key = _cardTypeToKeyMap[cardType];
+    if (key != null) {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(key) ?? true; // Default expanded
+    }
+    return true; // Default expanded
   }
 
   // Generic methods for direct access if needed
