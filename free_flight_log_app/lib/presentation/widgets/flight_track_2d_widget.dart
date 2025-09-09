@@ -1721,7 +1721,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.95),
+                    color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.95),
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
@@ -1731,7 +1731,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                       ),
                     ],
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       SizedBox(
@@ -1739,12 +1739,16 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                         height: 16,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
+                          color: Theme.of(context).colorScheme.primary,
                         ),
                       ),
-                      SizedBox(width: 8),
+                      const SizedBox(width: 8),
                       Text(
                         'Loading sites...',
-                        style: TextStyle(fontSize: 12),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
                       ),
                     ],
                   ),
