@@ -49,7 +49,6 @@ class FlightTrack2DWidget extends StatefulWidget {
 }
 
 class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
-  final IgcImportService _igcService = IgcImportService.instance;
   final DatabaseService _databaseService = DatabaseService.instance;
   final ParaglidingEarthApi _apiService = ParaglidingEarthApi.instance;
   final MapController _mapController = MapController();
@@ -86,6 +85,10 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   @override
   void initState() {
     super.initState();
+    LoggingService.action('FlightTrack2D', 'Widget initialization started', {
+      'flight_id': widget.flight.id,
+      'has_track': widget.flight.trackLogPath != null,
+    });
     _loadMapProvider();
     _loadTrackData();
     _loadSiteData();
@@ -458,7 +461,11 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         _isLoading = false;
       });
       
-      LoggingService.info('FlightTrack2DWidget: Loaded ${_trackPoints.length} track points, triangle: ${_faiTrianglePoints.length} points');
+      LoggingService.structured('TRACK_LOAD', {
+        'track_points': _trackPoints.length,
+        'triangle_points': _faiTrianglePoints.length,
+        'flight_id': widget.flight.id,
+      });
     } catch (e) {
       LoggingService.error('FlightTrack2DWidget: Error loading track data', e);
       setState(() {
@@ -1119,10 +1126,24 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   void _fitMapToBounds() {
     if (_trackPoints.isNotEmpty) {
       final bounds = _calculateBounds();
-      _mapController.fitCamera(CameraFit.bounds(bounds: bounds));
+      LoggingService.action('FlightTrack2D', 'Fitting map to bounds', {
+        'bounds': '${bounds.south.toStringAsFixed(4)},${bounds.west.toStringAsFixed(4)} - ${bounds.north.toStringAsFixed(4)},${bounds.east.toStringAsFixed(4)}'
+      });
       
-      // Load sites for the new bounds after fitting
-      _loadSitesForBounds(bounds);
+      // Delay camera fit to ensure proper tile loading
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _mapController.fitCamera(CameraFit.bounds(bounds: bounds));
+          
+          // Force a rebuild to ensure tiles are properly rendered
+          setState(() {});
+          
+          // Load sites for the new bounds after fitting
+          _loadSitesForBounds(bounds);
+          
+          LoggingService.ui('FlightTrack2D', 'Map fitted to bounds');
+        }
+      });
     }
   }
 
@@ -1531,6 +1552,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   void dispose() {
     _debounceTimer?.cancel();
     _loadingDelayTimer?.cancel();
+    _mapController.dispose();
     super.dispose();
   }
 
