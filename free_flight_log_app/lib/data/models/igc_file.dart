@@ -624,9 +624,9 @@ class IgcFile {
 
   /// Calculate triangle using maximum perimeter approach
   /// Returns a map with triangle points and total distance
-  /// Optional samplingIntervalSeconds for time-based sampling instead of point-based sampling
-  /// Optional closingDistanceMeters to validate triangle vertices are meaningful (default 100m)
-  Map<String, dynamic> calculateFaiTriangle({int? samplingIntervalSeconds, double closingDistanceMeters = 100.0}) {
+  /// samplingIntervalSeconds: Time interval in seconds between sample points for triangle optimization
+  /// closingDistanceMeters: Distance threshold to validate triangle vertices are meaningful (default 100m)
+  Map<String, dynamic> calculateFaiTriangle({required int samplingIntervalSeconds, double closingDistanceMeters = 100.0}) {
     final stopwatch = Stopwatch()..start();
     
     if (trackPoints.length < 3) {
@@ -640,26 +640,11 @@ class IgcFile {
     double maxPerimeter = 0.0;
     List<IgcPoint> bestTriangle = [];
 
-    // Select sample points based on time or point-based sampling
-    List<IgcPoint> samplePoints;
-    String samplingMethod;
-    
-    if (samplingIntervalSeconds != null) {
-      // Use time-based sampling
-      samplePoints = _selectTimeBasedSamples(samplingIntervalSeconds);
-      samplingMethod = 'time-based (${samplingIntervalSeconds}s intervals)';
-    } else {
-      // Use legacy point-based sampling for backward compatibility
-      int step = trackPoints.length > 1000 ? trackPoints.length ~/ 500 : 1;
-      samplePoints = [];
-      for (int i = 0; i < trackPoints.length; i += step) {
-        samplePoints.add(trackPoints[i]);
-      }
-      samplingMethod = 'point-based (step=$step)';
-    }
+    // Use time-based sampling
+    final samplePoints = _selectTimeBasedSamples(samplingIntervalSeconds);
     
     int comparisons = 0;
-    LoggingService.debug('Triangle calculation: Using $samplingMethod sampling - ${samplePoints.length} points selected from ${trackPoints.length} total');
+    LoggingService.debug('Triangle calculation: Using time-based sampling (${samplingIntervalSeconds}s intervals) - ${samplePoints.length} points selected from ${trackPoints.length} total');
     
     for (int i = 0; i < samplePoints.length; i++) {
       for (int j = i + 1; j < samplePoints.length; j++) {
@@ -686,7 +671,7 @@ class IgcFile {
     stopwatch.stop();
 
     if (bestTriangle.length != 3) {
-      LoggingService.debug('Triangle calculation: No valid triangle found using $samplingMethod in ${stopwatch.elapsedMilliseconds}ms ($comparisons comparisons)');
+      LoggingService.debug('Triangle calculation: No valid triangle found in ${stopwatch.elapsedMilliseconds}ms ($comparisons comparisons)');
       return {
         'trianglePoints': <IgcPoint>[],
         'triangleDistance': 0.0, // Already in kilometers
@@ -708,7 +693,7 @@ class IgcFile {
     
     // Check if at least 2 vertices are outside the closing threshold
     if (validVertices < 2) {
-      LoggingService.info('Triangle calculation completed using $samplingMethod in ${stopwatch.elapsedMilliseconds}ms ($comparisons comparisons)');
+      LoggingService.info('Triangle calculation completed in ${stopwatch.elapsedMilliseconds}ms ($comparisons comparisons)');
       LoggingService.info('Triangle INVALID: Only $validVertices vertices outside closing threshold of ${closingDistanceMeters.toStringAsFixed(0)}m');
       LoggingService.info('Vertex distances from launch:');
       LoggingService.info('  P1: ${vertexDistances[0].toStringAsFixed(1)}m');
@@ -729,7 +714,7 @@ class IgcFile {
     final totalDistance = distance1 + distance2 + distance3;
 
     // Log detailed triangle information
-    LoggingService.info('Triangle calculation completed using $samplingMethod in ${stopwatch.elapsedMilliseconds}ms ($comparisons comparisons)');
+    LoggingService.info('Triangle calculation completed in ${stopwatch.elapsedMilliseconds}ms ($comparisons comparisons)');
     LoggingService.info('Triangle VALID: $validVertices vertices outside closing threshold of ${closingDistanceMeters.toStringAsFixed(0)}m');
     LoggingService.info('Triangle vertices:');
     LoggingService.info('  P1: ${bestTriangle[0].latitude.toStringAsFixed(6)}, ${bestTriangle[0].longitude.toStringAsFixed(6)} (${vertexDistances[0].toStringAsFixed(1)}m from launch)');

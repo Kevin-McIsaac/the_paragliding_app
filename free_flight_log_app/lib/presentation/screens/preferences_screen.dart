@@ -317,7 +317,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
               _buildSection('Flight Detection', [
                 _buildDropdownRow<double>(
                   'Speed Threshold',
-                  'Minimum 5-second ground speed for takeoff/landing detection',
+                  'Minimum 5-second average ground speed for takeoff/landing detection',
                   _detectionSpeedThreshold,
                   PreferencesHelper.validSpeedThresholds.map((speed) => 
                     DropdownMenuItem(
@@ -336,7 +336,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 ),
                 _buildDropdownRow<double>(
                   'Climb Rate Threshold',
-                  'Minimum absolute 5-second climb rate for takeoff/landing detection',
+                  'Minimum absolute 5-second average climb rate for takeoff/landing detection',
                   _detectionClimbRateThreshold,
                   PreferencesHelper.validClimbRateThresholds.map((rate) => 
                     DropdownMenuItem(
@@ -366,7 +366,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 ),
                 _buildDropdownRow<double>(
                   'Triangle Closing Distance',
-                  'Maximum distance from launch to consider a flight as closed triangle',
+                  'Maximum distance of return to launch to consider a flight as closed triangle',
                   _triangleClosingDistance,
                   PreferencesHelper.validTriangleClosingDistances.map((distance) => 
                     DropdownMenuItem(
@@ -385,7 +385,10 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 ),
                 _buildDropdownRow<int>(
                   'Triangle Calculation Sampling',
-                  'Time interval between sample points for triangle optimization (shorter = more precise but slower)',
+                  'Time interval between sample points for triangle optimization (shorter = more precise but slower)\n\n'
+                  '• 15s - Maximum precision, best for short flights\n'
+                  '• 30s - High precision, good balance for most flights (recommended)\n'
+                  '• 60s - Standard precision, recommended for long flights',
                   _triangleSamplingInterval,
                   PreferencesHelper.validTriangleSamplingIntervals.map((interval) => 
                     DropdownMenuItem(
@@ -420,17 +423,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   
   /// Get user-friendly description for triangle sampling intervals
   String _getTriangleSamplingDescription(int interval) {
-    switch (interval) {
-      case 15:
-        return '15s - Maximum precision (slow for long flights)';
-      case 30:
-        return '30s - High precision (balanced)';
-      case 60:
-        return '60s - Standard precision (recommended)';
-      case 120:
-        return '2m - Fast processing (may miss optimal triangle)';
-      default:
-        return '${interval}s';
-    }
+    return '${interval}s';
   }
 }
