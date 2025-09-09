@@ -24,6 +24,10 @@ class PreferencesHelper {
   // IGC Import preferences
   static const String igcLastFolderKey = 'igc_last_folder';
   
+  // Triangle calculation version tracking
+  static const String triangleCalcVersionKey = 'triangle_calc_version';
+  static const int currentTriangleCalcVersion = 1; // Increment when preferences change
+  
   // Takeoff/Landing Detection preferences
   static const String detectionSpeedThresholdKey = 'detection_speed_threshold';
   static const String detectionClimbRateThresholdKey = 'detection_climb_rate_threshold';
@@ -266,6 +270,8 @@ class PreferencesHelper {
     }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(triangleClosingDistanceKey, value);
+    // Increment version when triangle preferences change
+    await _incrementTriangleCalcVersion();
   }
   
   static Future<int> getTriangleSamplingInterval() async {
@@ -282,6 +288,20 @@ class PreferencesHelper {
   static Future<void> setTriangleSamplingInterval(int value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(triangleSamplingIntervalKey, value);
+    // Increment version when triangle preferences change
+    await _incrementTriangleCalcVersion();
+  }
+  
+  // Triangle calculation version methods
+  static Future<int> getTriangleCalcVersion() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(triangleCalcVersionKey) ?? currentTriangleCalcVersion;
+  }
+  
+  static Future<void> _incrementTriangleCalcVersion() async {
+    final prefs = await SharedPreferences.getInstance();
+    final currentVersion = prefs.getInt(triangleCalcVersionKey) ?? currentTriangleCalcVersion;
+    await prefs.setInt(triangleCalcVersionKey, currentVersion + 1);
   }
   
   // Flight Detail Card expansion states

@@ -414,38 +414,106 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         return;
       }
 
-      // Get triangle points (optimized to use stored data first)
+      // Get triangle points (with lazy recalculation if needed)
       List<IgcPoint> faiTrianglePoints = [];
       
-      // Try to use pre-calculated triangle points from database (fast!)
-      final storedTrianglePoints = widget.flight.getParsedTrianglePoints();
-      if (storedTrianglePoints != null && storedTrianglePoints.length == 3) {
-        LoggingService.ui('FlightTrack2D', 'Using stored triangle points (fast)');
-        // Convert stored coordinate maps to IgcPoint objects
-        faiTrianglePoints = storedTrianglePoints.map((point) => IgcPoint(
-          latitude: point['lat']!,
-          longitude: point['lng']!,
-          gpsAltitude: point['alt']!.toInt(),
-          pressureAltitude: 0,
-          timestamp: DateTime.now(), // Timestamp not needed for triangle display
-          isValid: true, // Stored points are assumed valid
-        )).toList();
-      } else {
-        // Fallback: calculate from IGC file if no stored points (should be rare after reimport)
-        LoggingService.ui('FlightTrack2D', 'No stored triangle points, calculating from IGC file (slow)');
+      // Check if recalculation is needed based on version
+      final currentVersion = await PreferencesHelper.getTriangleCalcVersion();
+      
+      if (widget.flight.needsTriangleRecalculation(currentVersion)) {
+        // Triangle needs recalculation with current preferences
+        LoggingService.ui('FlightTrack2D', 'Triangle needs recalculation (version mismatch)');
         try {
           final igcParser = IgcParser();
           final igcFile = await igcParser.parseFile(widget.flight.trackLogPath!);
           final triangleSamplingInterval = await PreferencesHelper.getTriangleSamplingInterval();
           final closingDistance = await PreferencesHelper.getTriangleClosingDistance();
-          final faiTriangle = igcFile.calculateFaiTriangle(samplingIntervalSeconds: triangleSamplingInterval, closingDistanceMeters: closingDistance);
-          final trianglePoints = faiTriangle['trianglePoints'] as List<dynamic>?;
           
+          // Recalculate closing point with new closing distance preference
+          int? newClosingPointIndex = igcFile.getClosingPointIndex(maxDistanceMeters: closingDistance);
+          double? actualClosingDistance;
+          
+          if (newClosingPointIndex != null) {
+            final launchPoint = igcFile.trackPoints.first;
+            final closingPoint = igcFile.trackPoints[newClosingPointIndex];
+            actualClosingDistance = igcFile.calculateSimpleDistance(launchPoint, closingPoint);
+            LoggingService.info('FlightTrack2D: New closing point at index $newClosingPointIndex, distance: ${actualClosingDistance?.toStringAsFixed(1)}m');
+          } else {
+            LoggingService.info('FlightTrack2D: Flight is now OPEN with closing distance ${closingDistance}m');
+          }
+          
+          // Calculate triangle on trimmed data if closing point exists
+          Map<String, dynamic> faiTriangle;
+          if (newClosingPointIndex != null) {
+            final trimmedIgcFile = igcFile.copyWithTrimmedPoints(0, newClosingPointIndex);
+            faiTriangle = trimmedIgcFile.calculateFaiTriangle(
+              samplingIntervalSeconds: triangleSamplingInterval,
+              closingDistanceMeters: closingDistance,
+            );
+            
+            // Check if triangle validation failed
+            if (faiTriangle['trianglePoints'] != null && 
+                (faiTriangle['trianglePoints'] as List).isEmpty) {
+              // Triangle invalid - mark flight as open
+              newClosingPointIndex = null;
+              actualClosingDistance = null;
+              faiTriangle = {'trianglePoints': null, 'triangleDistance': 0.0};
+              LoggingService.info('FlightTrack2D: Triangle validation failed - flight marked as OPEN');
+            }
+          } else {
+            faiTriangle = {'trianglePoints': null, 'triangleDistance': 0.0};
+          }
+          
+          final trianglePoints = faiTriangle['trianglePoints'] as List<dynamic>?;
           if (trianglePoints != null && trianglePoints.length == 3) {
             faiTrianglePoints = trianglePoints.cast<IgcPoint>();
           }
+          
+          // Update flight in database with new closing point and triangle data
+          final faiTrianglePointsJson = trianglePoints != null ? Flight.encodeTrianglePointsToJson(trianglePoints) : null;
+          final updatedFlight = widget.flight.copyWith(
+            closingPointIndex: newClosingPointIndex,
+            closingDistance: actualClosingDistance,
+            faiTriangleDistance: faiTriangle['triangleDistance'],
+            faiTrianglePoints: faiTrianglePointsJson,
+            triangleCalcVersion: currentVersion,
+          );
+          await _databaseService.updateFlight(updatedFlight);
+          LoggingService.info('FlightTrack2D: Triangle and closing point recalculated and saved');
         } catch (e) {
-          LoggingService.ui('FlightTrack2D', 'Failed to calculate triangle from IGC: $e');
+          LoggingService.ui('FlightTrack2D', 'Failed to recalculate triangle: $e');
+        }
+      } else {
+        // Try to use pre-calculated triangle points from database (fast!)
+        final storedTrianglePoints = widget.flight.getParsedTrianglePoints();
+        if (storedTrianglePoints != null && storedTrianglePoints.length == 3) {
+          LoggingService.ui('FlightTrack2D', 'Using stored triangle points (fast)');
+          // Convert stored coordinate maps to IgcPoint objects
+          faiTrianglePoints = storedTrianglePoints.map((point) => IgcPoint(
+            latitude: point['lat']!,
+            longitude: point['lng']!,
+            gpsAltitude: point['alt']!.toInt(),
+            pressureAltitude: 0,
+            timestamp: DateTime.now(), // Timestamp not needed for triangle display
+            isValid: true, // Stored points are assumed valid
+          )).toList();
+        } else if (widget.flight.isClosed) {
+          // Fallback: calculate from IGC file if no stored points (should be rare after reimport)
+          LoggingService.ui('FlightTrack2D', 'No stored triangle points, calculating from IGC file (slow)');
+          try {
+            final igcParser = IgcParser();
+            final igcFile = await igcParser.parseFile(widget.flight.trackLogPath!);
+            final triangleSamplingInterval = await PreferencesHelper.getTriangleSamplingInterval();
+            final closingDistance = await PreferencesHelper.getTriangleClosingDistance();
+            final faiTriangle = igcFile.calculateFaiTriangle(samplingIntervalSeconds: triangleSamplingInterval, closingDistanceMeters: closingDistance);
+            final trianglePoints = faiTriangle['trianglePoints'] as List<dynamic>?;
+            
+            if (trianglePoints != null && trianglePoints.length == 3) {
+              faiTrianglePoints = trianglePoints.cast<IgcPoint>();
+            }
+          } catch (e) {
+            LoggingService.ui('FlightTrack2D', 'Failed to calculate triangle from IGC: $e');
+          }
         }
       }
 
