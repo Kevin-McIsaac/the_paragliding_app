@@ -379,7 +379,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
   }
 
   // Centralized update method
-  Future<void> _updateFlight(String fieldName, Flight updatedFlight) async {
+  Future<void> _updateFlight(String fieldName, Flight updatedFlight, {VoidCallback? onUIUpdate}) async {
     setState(() {
       _isSaving = true;
     });
@@ -393,9 +393,16 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
         _isSaving = false;
       });
 
+      // Apply any additional UI state updates
+      if (onUIUpdate != null) {
+        setState(() {
+          onUIUpdate();
+        });
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$fieldName updated successfully')),
+          SnackBar(content: Text('$fieldName updated successfully for flight #${_flight.id}')),
         );
       }
     } catch (e) {
@@ -404,7 +411,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating $fieldName: $e')),
+          SnackBar(content: Text('Error updating $fieldName for flight #${_flight.id}: $e')),
         );
       }
     }
@@ -441,25 +448,19 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
   }
 
   Future<void> _updateLaunchSite(Site? newSite) async {
-    await _updateFlight('Launch site', _flight.copyWith(launchSiteId: newSite?.id));
-    setState(() {
-      _launchSite = newSite;
-    });
+    await _updateFlight('Launch site', _flight.copyWith(launchSiteId: newSite?.id), 
+      onUIUpdate: () => _launchSite = newSite);
   }
 
   Future<void> _updateWing(Wing? newWing) async {
-    await _updateFlight('Wing', _flight.copyWith(wingId: newWing?.id));
-    setState(() {
-      _wing = newWing;
-    });
+    await _updateFlight('Wing', _flight.copyWith(wingId: newWing?.id), 
+      onUIUpdate: () => _wing = newWing);
   }
 
   Future<void> _saveNotes() async {
     final notes = _notesController.text.isEmpty ? null : _notesController.text;
-    await _updateFlight('Notes', _flight.copyWith(notes: notes));
-    setState(() {
-      _isEditingNotes = false;
-    });
+    await _updateFlight('Notes', _flight.copyWith(notes: notes), 
+      onUIUpdate: () => _isEditingNotes = false);
   }
 
   void _cancelNotesEdit() {

@@ -95,10 +95,10 @@ class DuplicateFlightDialog extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.green.shade50,
+                color: Theme.of(context).colorScheme.secondaryContainer,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: Colors.green.shade200,
+                  color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
                 ),
               ),
               child: Column(
@@ -108,7 +108,7 @@ class DuplicateFlightDialog extends StatelessWidget {
                     'New IGC File:',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      color: Colors.green.shade700,
+                      color: Theme.of(context).colorScheme.onSecondaryContainer,
                     ),
                   ),
                   const SizedBox(height: 8),
