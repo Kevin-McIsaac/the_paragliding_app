@@ -11,11 +11,11 @@ import '../../data/models/flight.dart';
 import '../../data/models/site.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/igc_file.dart';
-import '../../services/igc_import_service.dart';
 import '../../services/database_service.dart';
 import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
 import '../../services/flight_track_loader.dart';
+import '../../utils/performance_monitor.dart';
 import '../../utils/preferences_helper.dart';
 import '../../utils/site_marker_utils.dart';
 import '../../utils/ui_utils.dart';
@@ -85,6 +85,8 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   @override
   void initState() {
     super.initState();
+    PerformanceMonitor.startOperation('FlightTrack2D_initState');
+    
     LoggingService.action('FlightTrack2D', 'Widget initialization started', {
       'flight_id': widget.flight.id,
       'has_track': widget.flight.trackLogPath != null,
@@ -93,6 +95,11 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     _loadTrackData();
     _loadSiteData();
     _loadClosingDistanceThreshold();
+    
+    PerformanceMonitor.endOperation('FlightTrack2D_initState', metadata: {
+      'flight_id': widget.flight.id,
+      'has_track': widget.flight.trackLogPath != null,
+    });
   }
 
   @override
@@ -1558,6 +1565,8 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
 
   @override
   Widget build(BuildContext context) {
+    PerformanceMonitor.trackWidgetRebuild('FlightTrack2D');
+    
     if (_isLoading) {
       return SizedBox(
         height: widget.height,

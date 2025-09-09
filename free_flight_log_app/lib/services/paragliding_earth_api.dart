@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../data/models/paragliding_site.dart';
 import '../services/logging_service.dart';
+import '../utils/performance_monitor.dart';
 
 /// Service for interacting with ParaglidingEarth.com API
 /// Provides real-time site lookups with caching and fallback support
@@ -38,6 +39,12 @@ class ParaglidingEarthApi {
   // In-memory cache for API responses (could be enhanced with persistent storage)
   final Map<String, _CachedResponse> _cache = {};
   static const Duration _cacheExpiry = Duration(hours: 24);
+  
+  // Offline status tracking
+  static bool _isOfflineMode = false;
+  static DateTime? _lastSuccessfulRequest;
+  static int _consecutiveFailures = 0;
+  static const int _maxConsecutiveFailures = 3;
 
   /// Get sites around given coordinates
   /// Returns sites within [radiusKm] of the coordinates, ordered by distance
@@ -48,13 +55,41 @@ class ParaglidingEarthApi {
     int limit = _defaultLimit,
     bool detailed = true,
   }) async {
+    PerformanceMonitor.startOperation('ParaglidingEarthApi_getSitesAroundCoordinates');
+    
     // Create cache key
     final cacheKey = '${latitude.toStringAsFixed(4)}_${longitude.toStringAsFixed(4)}_${radiusKm}_$limit';
     
     // Check cache first
     final cached = _getCachedResponse(cacheKey);
     if (cached != null) {
+      PerformanceMonitor.endOperation('ParaglidingEarthApi_getSitesAroundCoordinates', metadata: {
+        'cache_hit': true,
+        'sites_count': cached.length,
+      });
       return cached;
+    }
+    
+    // Check if we're in offline mode and return stale cache if available
+    if (_isOfflineMode) {
+      final staleCache = _cache[cacheKey];
+      if (staleCache != null) {
+        LoggingService.info('ParaglidingEarthApi: Using stale cache (offline mode)');
+        PerformanceMonitor.endOperation('ParaglidingEarthApi_getSitesAroundCoordinates', metadata: {
+          'offline_mode': true,
+          'stale_cache': true,
+          'sites_count': staleCache.sites.length,
+        });
+        return staleCache.sites;
+      }
+      
+      LoggingService.warning('ParaglidingEarthApi: No cached data available in offline mode');
+      PerformanceMonitor.endOperation('ParaglidingEarthApi_getSitesAroundCoordinates', metadata: {
+        'offline_mode': true,
+        'no_cache': true,
+        'sites_count': 0,
+      });
+      return [];
     }
 
     // Retry logic with exponential backoff
@@ -89,10 +124,24 @@ class ParaglidingEarthApi {
           // Cache the response
           _cacheResponse(cacheKey, sites);
           
+          // Mark successful request
+          _markRequestSuccess();
+          
           LoggingService.info('ParaglidingEarthApi: Found ${sites.length} sites');
+          PerformanceMonitor.endOperation('ParaglidingEarthApi_getSitesAroundCoordinates', metadata: {
+            'cache_miss': true,
+            'api_success': true,
+            'sites_count': sites.length,
+            'retries': retries,
+          });
           return sites;
         } else {
           LoggingService.warning('ParaglidingEarthApi: HTTP ${response.statusCode} - ${response.reasonPhrase}');
+          _markRequestFailure();
+          PerformanceMonitor.endOperation('ParaglidingEarthApi_getSitesAroundCoordinates', metadata: {
+            'api_error': response.statusCode,
+            'sites_count': 0,
+          });
           return [];
         }
       } on SocketException catch (e) {
@@ -108,14 +157,27 @@ class ParaglidingEarthApi {
         
         if (retries >= 3) {
           LoggingService.error('ParaglidingEarthApi: Failed after 3 attempts', e);
+          _markRequestFailure();
           
           // Check for cached data fallback
           final staleCache = _cache[cacheKey];
           if (staleCache != null) {
             LoggingService.info('ParaglidingEarthApi: Using stale cache due to network error');
+            PerformanceMonitor.endOperation('ParaglidingEarthApi_getSitesAroundCoordinates', metadata: {
+              'network_error': true,
+              'stale_cache_fallback': true,
+              'sites_count': staleCache.sites.length,
+              'retries': retries,
+            });
             return staleCache.sites;
           }
           
+          PerformanceMonitor.endOperation('ParaglidingEarthApi_getSitesAroundCoordinates', metadata: {
+            'network_error': true,
+            'no_cache_fallback': true,
+            'sites_count': 0,
+            'retries': retries,
+          });
           return [];
         }
         
@@ -442,6 +504,40 @@ class ParaglidingEarthApi {
     return countryMap[lowerCode] ?? countryCode.toUpperCase(); // Fallback to uppercase code
   }
 
+  /// Mark successful API request
+  static void _markRequestSuccess() {
+    _consecutiveFailures = 0;
+    _lastSuccessfulRequest = DateTime.now();
+    if (_isOfflineMode) {
+      _isOfflineMode = false;
+      LoggingService.info('ParaglidingEarthApi: Back online after successful request');
+    }
+  }
+  
+  /// Mark failed API request and check if we should enter offline mode
+  static void _markRequestFailure() {
+    _consecutiveFailures++;
+    if (_consecutiveFailures >= _maxConsecutiveFailures && !_isOfflineMode) {
+      _isOfflineMode = true;
+      LoggingService.warning('ParaglidingEarthApi: Entering offline mode after $_consecutiveFailures consecutive failures');
+    }
+  }
+  
+  /// Check if API is currently in offline mode
+  static bool get isOfflineMode => _isOfflineMode;
+  
+  /// Get offline status information
+  static Map<String, dynamic> getOfflineStatus() {
+    return {
+      'is_offline_mode': _isOfflineMode,
+      'consecutive_failures': _consecutiveFailures,
+      'last_successful_request': _lastSuccessfulRequest?.toIso8601String(),
+      'time_since_last_success_hours': _lastSuccessfulRequest != null 
+          ? DateTime.now().difference(_lastSuccessfulRequest!).inHours 
+          : null,
+    };
+  }
+
   /// Get cache statistics
   Map<String, dynamic> getCacheStats() {
     final now = DateTime.now();
@@ -451,6 +547,7 @@ class ParaglidingEarthApi {
       'total_entries': _cache.length,
       'valid_entries': validEntries,
       'expired_entries': _cache.length - validEntries,
+      ...getOfflineStatus(),
     };
   }
   
