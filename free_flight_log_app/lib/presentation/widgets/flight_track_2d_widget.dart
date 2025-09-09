@@ -953,7 +953,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     ];
   }
 
-  List<DragMarker> _buildFlightMarkers() {
+  List<Marker> _buildFlightMarkers() {
     if (_trackPoints.isEmpty) return [];
     
     final firstPoint = _trackPoints.first;
@@ -961,11 +961,11 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     
     return [
       // Launch marker
-      DragMarker(
+      Marker(
         point: LatLng(firstPoint.latitude, firstPoint.longitude),
-        size: const Size(32, 32),
-        disableDrag: true, // Disable drag functionality
-        builder: (ctx, point, isDragging) => Stack(
+        width: 32,
+        height: 32,
+        child: Stack(
           alignment: Alignment.center,
           children: [
             SiteMarkerUtils.buildLaunchMarkerIcon(
@@ -981,11 +981,11 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         ),
       ),
       // Landing marker
-      DragMarker(
+      Marker(
         point: LatLng(lastPoint.latitude, lastPoint.longitude),
-        size: const Size(32, 32),
-        disableDrag: true, // Disable drag functionality
-        builder: (ctx, point, isDragging) => AppTooltip(
+        width: 32,
+        height: 32,
+        child: AppTooltip(
           message: widget.flight.landingDescription ?? 'Landing Site',
           child: Stack(
             alignment: Alignment.center,
@@ -1011,7 +1011,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     ];
   }
 
-  List<DragMarker> _buildClosingPointMarker() {
+  List<Marker> _buildClosingPointMarker() {
     // The closingPointIndex is already relative to trimmed data (since everything works off trimmed data)
     int closingIndex = widget.flight.closingPointIndex!;
     
@@ -1021,11 +1021,11 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     }
     
     return [
-      DragMarker(
+      Marker(
         point: LatLng(_trackPoints[closingIndex].latitude, _trackPoints[closingIndex].longitude),
-        size: const Size(60, 40),
-        disableDrag: true,
-        builder: (ctx, point, isDragging) => Column(
+        width: 60,
+        height: 40,
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             // Closing point marker icon
@@ -1649,7 +1649,12 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                 circles: _buildClosingDistanceCircle(),
               ),
               DragMarkers(
-                markers: [..._buildSiteMarkers(), ..._buildFlightMarkers()],
+                markers: _buildSiteMarkers(),
+              ),
+              // Flight markers (launch, landing, closing point) as regular MarkerLayer to allow track clicks
+              MarkerLayer(
+                markers: _buildFlightMarkers(),
+                rotate: false,
               ),
               // Keep track point marker as regular MarkerLayer since it's just a selection indicator
               MarkerLayer(
