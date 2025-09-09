@@ -65,6 +65,8 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   List<IgcPoint> _faiTrianglePoints = [];
   bool _isLoading = true;
   String? _error;
+  bool _mapReady = false;
+  bool _isInitialLoad = true;
   MapProvider _selectedMapProvider = MapProvider.openStreetMap;
   int? _selectedTrackPointIndex;
   bool _isLegendExpanded = false; // Default to collapsed for cleaner initial view
@@ -438,6 +440,9 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
       });
       
       LoggingService.info('FlightTrack2DWidget: Loaded ${_trackPoints.length} track points, triangle: ${_faiTrianglePoints.length} points');
+      
+      // Try to fit map bounds now that track data is loaded
+      _tryFitMapToBounds();
     } catch (e) {
       LoggingService.error('FlightTrack2DWidget: Error loading track data', e);
       setState(() {
@@ -1015,11 +1020,34 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     );
   }
 
-  void _fitMapToBounds() {
-    if (_trackPoints.isNotEmpty) {
-      final bounds = _calculateBounds();
-      _mapController.fitCamera(CameraFit.bounds(bounds: bounds));
+  void _onMapReady() {
+    _mapReady = true;
+    if (_isInitialLoad && _trackPoints.isNotEmpty) {
+      // For initial load, delay fitCamera to allow tiles to load
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          _fitCameraToBounds();
+          _isInitialLoad = false;
+        }
+      });
+    } else {
+      _tryFitMapToBounds();
     }
+  }
+
+  void _tryFitMapToBounds() {
+    // Only fit bounds when both map is ready AND track points are loaded
+    if (_mapReady && _trackPoints.isNotEmpty && !_isLoading) {
+      _fitCameraToBounds();
+    } else {
+      LoggingService.debug('FlightTrack2D: Cannot fit bounds yet - mapReady: $_mapReady, trackPoints: ${_trackPoints.length}, loading: $_isLoading');
+    }
+  }
+
+  void _fitCameraToBounds() {
+    final bounds = _calculateBounds();
+    _mapController.fitCamera(CameraFit.bounds(bounds: bounds));
+    LoggingService.debug('FlightTrack2D: Fitted map to bounds with ${_trackPoints.length} track points');
   }
 
   void _openFullscreen3D() {
@@ -1431,13 +1459,6 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return SizedBox(
-        height: widget.height,
-        child: const Center(child: CircularProgressIndicator()),
-      );
-    }
-    
     if (_error != null) {
       return SizedBox(
         height: widget.height,
@@ -1474,7 +1495,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               initialZoom: 13.0,
               minZoom: 1.0,
               maxZoom: _selectedMapProvider.maxZoom.toDouble(),
-              onMapReady: _fitMapToBounds,
+              onMapReady: _onMapReady,
               onTap: (tapPosition, point) => _onMapTapped(point),
             ),
             children: [
@@ -1575,6 +1596,16 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                 ),
               ),
             ),
+            // Loading overlay
+            if (_isLoading)
+              Positioned.fill(
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.7),
+                  child: const Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
