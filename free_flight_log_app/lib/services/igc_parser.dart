@@ -210,9 +210,7 @@ class IgcParser {
         }
       }
       
-      if (timestampsValid) {
-        LoggingService.debug('IgcParser: All ${trackPoints.length} timestamps are in chronological order');
-      } else {
+      if (!timestampsValid) {
         LoggingService.error('IgcParser: Timestamps are not in chronological order - midnight crossing may not be handled correctly');
       }
     }
@@ -242,6 +240,12 @@ class IgcParser {
         pointIndex: i,
       );
     }
+    
+    // Log parsing summary
+    final duration = trackPoints.isNotEmpty 
+        ? trackPoints.last.timestamp.difference(trackPoints.first.timestamp)
+        : Duration.zero;
+    LoggingService.info('IgcParser: Parsed ${trackPoints.length} track points, duration: ${duration.inMinutes}min, pilot: ${pilot.isEmpty ? "Unknown" : pilot}');
     
     return igcFile;
   }
@@ -277,8 +281,6 @@ class IgcParser {
     // HFDTEDDMMYY where DD is day, MM is month, YY is year
     // Handle both "HFDTE120725" and "HFDTEDATE:120725,01" formats
     
-    LoggingService.debug('IgcParser: Parsing date line: $line');
-    
     try {
       // Find the 6-digit date pattern (DDMMYY)
       final dateMatch = RegExp(r'(\d{6})').firstMatch(line);
@@ -288,7 +290,6 @@ class IgcParser {
       }
       
       final dateStr = dateMatch.group(1)!; // DDMMYY
-      LoggingService.debug('IgcParser: Extracted date string: $dateStr');
       
       final day = int.parse(dateStr.substring(0, 2));
       final month = int.parse(dateStr.substring(2, 4));

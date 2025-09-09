@@ -50,8 +50,6 @@ class DatabaseService {
 
   /// Get all flights ordered by date (most recent first) with launch site names
   Future<List<Flight>> getAllFlights() async {
-    LoggingService.debug('DatabaseService: Getting all flights');
-    
     Database db = await _databaseHelper.database;
     List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT f.*, 
@@ -69,8 +67,6 @@ class DatabaseService {
   
   /// Get all flights as raw maps for isolate processing
   Future<List<Map<String, dynamic>>> getAllFlightsRaw() async {
-    LoggingService.debug('DatabaseService: Getting all flights (raw)');
-    
     Database db = await _databaseHelper.database;
     List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT f.*, 
@@ -86,20 +82,16 @@ class DatabaseService {
   
   /// Get total number of flights
   Future<int> getFlightCount() async {
-    LoggingService.debug('DatabaseService: Getting flight count');
     
     Database db = await _databaseHelper.database;
     final result = await db.rawQuery('SELECT COUNT(*) as count FROM flights');
     final count = result.first['count'] as int;
     
-    LoggingService.debug('DatabaseService: Total flights: $count');
     return count;
   }
 
   /// Get a specific flight by ID
   Future<Flight?> getFlight(int id) async {
-    LoggingService.debug('DatabaseService: Getting flight $id');
-    
     Database db = await _databaseHelper.database;
     List<Map<String, dynamic>> maps = await db.rawQuery('''
       SELECT f.*, 
@@ -110,17 +102,14 @@ class DatabaseService {
     ''', [id]);
     
     if (maps.isNotEmpty) {
-      LoggingService.debug('DatabaseService: Found flight $id');
       return Flight.fromMap(maps.first);
     }
     
-    LoggingService.debug('DatabaseService: Flight $id not found');
     return null;
   }
 
   /// Update an existing flight
   Future<int> updateFlight(Flight flight) async {
-    LoggingService.debug('DatabaseService: Updating flight ${flight.id}');
     
     Database db = await _databaseHelper.database;
     var map = flight.toMap();
@@ -139,7 +128,6 @@ class DatabaseService {
 
   /// Delete a flight by ID
   Future<int> deleteFlight(int id) async {
-    LoggingService.debug('DatabaseService: Deleting flight $id');
     
     Database db = await _databaseHelper.database;
     final result = await db.delete(
@@ -158,7 +146,6 @@ class DatabaseService {
   
   /// Get flights within a date range
   Future<List<Flight>> getFlightsByDateRange(DateTime start, DateTime end) async {
-    LoggingService.debug('DatabaseService: Getting flights by date range');
     
     Database db = await _databaseHelper.database;
     List<Map<String, dynamic>> maps = await db.rawQuery('''

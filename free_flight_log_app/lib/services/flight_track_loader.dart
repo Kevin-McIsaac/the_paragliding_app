@@ -26,8 +26,6 @@ class FlightTrackLoader {
   static Future<IgcFile> loadFlightTrack(Flight flight, {
     String logContext = 'FlightTrackLoader',
   }) async {
-    LoggingService.debug('$logContext: Loading track for flight ${flight.id}');
-    
     if (flight.trackLogPath == null) {
       throw Exception('Flight has no track log path');
     }
@@ -41,21 +39,17 @@ class FlightTrackLoader {
     
     // Log warning for large files that may impact performance
     if (fullIgcFile.trackPoints.length > 10000) {
-      LoggingService.debug('$logContext: Large track file detected - ${fullIgcFile.trackPoints.length} points, monitoring performance');
+      LoggingService.warning('$logContext: Large track file detected - ${fullIgcFile.trackPoints.length} points, may impact performance');
     }
     
     // Check if we have detection data
     if (flight.hasDetectionData) {
-      // Use existing detection data to trim
-      LoggingService.debug('$logContext: Using existing detection data (takeoff: ${flight.takeoffIndex}, landing: ${flight.landingIndex})');
-      
       final trimmedFile = fullIgcFile.copyWithTrimmedPoints(
         flight.takeoffIndex!,
         flight.landingIndex!
       );
       
-      final percentage = (trimmedFile.trackPoints.length / fullIgcFile.trackPoints.length * 100).toStringAsFixed(1);
-      LoggingService.info('$logContext: Loaded ${trimmedFile.trackPoints.length}/${fullIgcFile.trackPoints.length} track points ($percentage% retained after trimming)');
+      LoggingService.info('$logContext: Loaded ${trimmedFile.trackPoints.length}/${fullIgcFile.trackPoints.length} track points (trimmed: true)');
       return trimmedFile;
     }
     
@@ -72,8 +66,7 @@ class FlightTrackLoader {
             detectionResult.landingIndex!
           );
           
-          final percentage = (trimmedFile.trackPoints.length / fullIgcFile.trackPoints.length * 100).toStringAsFixed(1);
-          LoggingService.info('$logContext: Loaded ${trimmedFile.trackPoints.length}/${fullIgcFile.trackPoints.length} track points ($percentage% retained after detection and trimming)');
+          LoggingService.info('$logContext: Loaded ${trimmedFile.trackPoints.length}/${fullIgcFile.trackPoints.length} track points (trimmed: true)');
           return trimmedFile;
         }
       } catch (e) {
@@ -83,7 +76,7 @@ class FlightTrackLoader {
     
     // Fallback to full track (should be rare)
     LoggingService.warning('$logContext: Using full track for flight ${flight.id} - no detection data available');
-    LoggingService.info('$logContext: Loaded ${fullIgcFile.trackPoints.length}/${fullIgcFile.trackPoints.length} track points (100.0% - full track fallback)');
+    LoggingService.info('$logContext: Loaded ${fullIgcFile.trackPoints.length}/${fullIgcFile.trackPoints.length} track points (trimmed: false)');
     return fullIgcFile;
   }
   
@@ -96,8 +89,6 @@ class FlightTrackLoader {
     // Get detection thresholds from preferences
     final speedThreshold = await PreferencesHelper.getDetectionSpeedThreshold();
     final climbRateThreshold = await PreferencesHelper.getDetectionClimbRateThreshold();
-    
-    LoggingService.debug('$logContext: Running detection with speed=${speedThreshold}km/h, climbRate=${climbRateThreshold}m/s');
     
     // Perform detection
     final detectionResult = TakeoffLandingDetector.detectTakeoffLanding(
@@ -119,7 +110,6 @@ class FlightTrackLoader {
         );
         
         await _databaseService.updateFlight(updatedFlight);
-        LoggingService.debug('$logContext: Cached detection results in database');
       } catch (e) {
         LoggingService.error('$logContext: Failed to cache detection results', e);
         // Don't throw - detection worked, just caching failed

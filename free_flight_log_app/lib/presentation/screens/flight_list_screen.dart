@@ -47,9 +47,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
     // The splash screen already handled initialization
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (mounted) {
-        LoggingService.debug('Loading initial flight data');
         await _loadFlights();
-        LoggingService.debug('Initial flight data loaded');
       }
     });
   }
@@ -67,7 +65,6 @@ class _FlightListScreenState extends State<FlightListScreen> {
     });
     
     try {
-      LoggingService.debug('FlightListScreen: Loading flights from database');
       final startTime = DateTime.now();
       
       // Load flights with all joined data

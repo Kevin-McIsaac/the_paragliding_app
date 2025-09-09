@@ -54,9 +54,6 @@ class TriangleRecalculationService {
           final launchPoint = igcFile.trackPoints.first;
           final closingPoint = igcFile.trackPoints[newClosingPointIndex];
           actualClosingDistance = igcFile.calculateSimpleDistance(launchPoint, closingPoint);
-          LoggingService.info('$logContext: New closing point at index $newClosingPointIndex, distance: ${actualClosingDistance?.toStringAsFixed(1)}m');
-        } else {
-          LoggingService.info('$logContext: Flight is now OPEN with closing distance ${closingDistance}m');
         }
         
         // Calculate triangle on trimmed data if closing point exists
@@ -77,7 +74,6 @@ class TriangleRecalculationService {
             newClosingPointIndex = null;
             actualClosingDistance = null;
             faiTriangle = {'trianglePoints': null, 'triangleDistance': 0.0};
-            LoggingService.info('$logContext: Triangle validation failed - flight marked as OPEN');
           } else {
             // Extract triangle points for display
             final rawTrianglePoints = faiTriangle['trianglePoints'] as List<dynamic>?;
