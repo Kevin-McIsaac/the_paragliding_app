@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../utils/preferences_helper.dart';
 import '../../services/logging_service.dart';
-import '../../services/batch_triangle_recalculation_service.dart';
 
 class PreferencesScreen extends StatefulWidget {
   const PreferencesScreen({super.key});
@@ -361,13 +360,12 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                       child: Text('${distance.toStringAsFixed(0)} m'),
                     )
                   ).toList(),
-                  (value) async {
-                    if (value != null && value != _triangleClosingDistance) {
+                  (value) {
+                    if (value != null) {
                       setState(() {
                         _triangleClosingDistance = value;
                       });
-                      await _savePreference('triangle closing distance', value, PreferencesHelper.setTriangleClosingDistance);
-                      await _askToRecalculateTriangles('closing distance');
+                      _savePreference('triangle closing distance', value, PreferencesHelper.setTriangleClosingDistance);
                     }
                   },
                 ),
@@ -384,13 +382,12 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                       child: Text(_getTriangleSamplingDescription(interval)),
                     )
                   ).toList(),
-                  (value) async {
-                    if (value != null && value != _triangleSamplingInterval) {
+                  (value) {
+                    if (value != null) {
                       setState(() {
                         _triangleSamplingInterval = value;
                       });
-                      await _savePreference('triangle sampling interval', value, PreferencesHelper.setTriangleSamplingInterval);
-                      await _askToRecalculateTriangles('sampling interval');
+                      _savePreference('triangle sampling interval', value, PreferencesHelper.setTriangleSamplingInterval);
                     }
                   },
                 ),
@@ -413,147 +410,5 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   /// Get user-friendly description for triangle sampling intervals
   String _getTriangleSamplingDescription(int interval) {
     return '${interval}s';
-  }
-  
-  /// Ask user if they want to recalculate all flight triangles
-  Future<void> _askToRecalculateTriangles(String changedSetting) async {
-    final shouldRecalculate = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Recalculate Flight Triangles?'),
-          content: Text(
-            'The triangle $changedSetting has changed. '
-            'Would you like to recalculate all flight triangles with the new settings?\n\n'
-            'This may take a few minutes depending on the number of flights.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Later'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Recalculate Now'),
-            ),
-          ],
-        );
-      },
-    );
-    
-    if (shouldRecalculate == true) {
-      await _performBatchRecalculation();
-    }
-  }
-  
-  /// Perform batch recalculation with progress dialog
-  Future<void> _performBatchRecalculation() async {
-    bool isCancelled = false;
-    
-    // Show progress dialog
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            String progressText = 'Starting recalculation...';
-            double? progressValue;
-            
-            // Start the recalculation
-            BatchTriangleRecalculationService.recalculateAllFlights(
-              onProgress: (current, total, description) {
-                if (!isCancelled && mounted) {
-                  setDialogState(() {
-                    progressText = 'Processing flight $current of $total';
-                    progressValue = current / total;
-                  });
-                }
-              },
-            ).then((result) {
-              // Close progress dialog
-              if (mounted && Navigator.canPop(dialogContext)) {
-                Navigator.of(dialogContext).pop();
-              }
-              
-              // Show results
-              if (mounted && !isCancelled) {
-                _showRecalculationResults(result);
-              }
-            }).catchError((error) {
-              // Close progress dialog
-              if (mounted && Navigator.canPop(dialogContext)) {
-                Navigator.of(dialogContext).pop();
-              }
-              
-              // Show error
-              if (mounted && !isCancelled) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Error recalculating triangles: $error'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              }
-            });
-            
-            return AlertDialog(
-              title: const Text('Recalculating Triangles'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(progressText),
-                  const SizedBox(height: 16),
-                  LinearProgressIndicator(value: progressValue),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    isCancelled = true;
-                    BatchTriangleRecalculationService.cancel();
-                    Navigator.of(dialogContext).pop();
-                  },
-                  child: const Text('Cancel'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-  
-  /// Show results of batch recalculation
-  void _showRecalculationResults(BatchRecalculationResult result) {
-    showDialog<void>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Recalculation Complete'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Processed: ${result.processedFlights} flights'),
-              Text('Successful: ${result.successfulFlights} flights'),
-              if (result.failedFlights > 0)
-                Text('Failed: ${result.failedFlights} flights', style: const TextStyle(color: Colors.red)),
-              if (result.changedFlights > 0)
-                Text('Changed: ${result.changedFlights} flights', style: const TextStyle(fontWeight: FontWeight.bold)),
-              if (result.changedFlights == 0)
-                const Text('No flights were affected by the preference change.'),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('OK'),
-            ),
-          ],
-        );
-      },
-    );
   }
 }
