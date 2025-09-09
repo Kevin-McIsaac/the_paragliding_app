@@ -983,28 +983,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                         ),
                       ),
 
-                    // Hidden: Flight Track 3D Visualization (accessible via 2D map button)
-                    // if (_flight.trackLogPath != null)
-                    //   Card(
-                    //     child: Padding(
-                    //       padding: const EdgeInsets.all(16.0),
-                    //       child: Column(
-                    //         crossAxisAlignment: CrossAxisAlignment.start,
-                    //         children: [
-                    //           Text(
-                    //             'Flight Track',
-                    //             style: Theme.of(context).textTheme.titleLarge,
-                    //           ),
-                    //           const SizedBox(height: 16),
-                    //           FlightTrack3DWidget(
-                    //             flight: _flight,
-                    //             config: FlightTrack3DConfig.embedded(),
-                    //             showPlaybackPanel: true,
-                    //           ),
-                    //         ],
-                    //       ),
-                    //     ),
-                    //   ),
 
                     const SizedBox(height: 16),
 
