@@ -165,11 +165,21 @@ class UiUtils {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
+        backgroundColor: Theme.of(context).colorScheme.surface,
         content: Row(
           children: [
-            const CircularProgressIndicator(),
+            CircularProgressIndicator(
+              color: Theme.of(context).colorScheme.primary,
+            ),
             const SizedBox(width: 16),
-            Expanded(child: Text(message)),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+            ),
           ],
         ),
       ),

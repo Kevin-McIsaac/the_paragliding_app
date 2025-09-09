@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../data/models/flight.dart';
-import '../../data/models/igc_file.dart';
 import '../../utils/date_time_utils.dart';
-import '../../utils/preferences_helper.dart';
-import '../../services/database_service.dart';
-import '../../services/igc_parser.dart';
+import '../../services/triangle_recalculation_service.dart';
 import '../../services/logging_service.dart';
 
 class FlightStatisticsWidget extends StatefulWidget {
@@ -24,7 +21,6 @@ class FlightStatisticsWidget extends StatefulWidget {
 class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
   Flight? _updatedFlight;
   bool _isRecalculatingTriangle = false;
-  final DatabaseService _databaseService = DatabaseService.instance;
   
   @override
   void initState() {
@@ -38,100 +34,31 @@ class _FlightStatisticsWidgetState extends State<FlightStatisticsWidget> {
   }
   
   Future<void> _checkAndRecalculateTriangle() async {
-    // Get current triangle calculation version
-    final currentVersion = await PreferencesHelper.getTriangleCalcVersion();
-    
-    LoggingService.info('FlightStatisticsWidget: Checking triangle recalculation for flight ${widget.flight.id} - currentVersion: $currentVersion, flightVersion: ${widget.flight.triangleCalcVersion}');
-    
-    // Check if recalculation is needed
-    if (widget.flight.needsTriangleRecalculation(currentVersion) && 
-        widget.flight.trackLogPath != null) {
-      
+    try {
       setState(() {
         _isRecalculatingTriangle = true;
       });
       
-      try {
-        LoggingService.info('FlightStatisticsWidget: Recalculating triangle for flight ${widget.flight.id}');
-        
-        // Parse IGC file and recalculate triangle
-        final parser = IgcParser();
-        final igcFile = await parser.parseFile(widget.flight.trackLogPath!);
-        
-        // Get current preferences
-        final triangleSamplingInterval = await PreferencesHelper.getTriangleSamplingInterval();
-        final closingDistance = await PreferencesHelper.getTriangleClosingDistance();
-        
-        // Recalculate closing point with new closing distance preference
-        int? newClosingPointIndex = igcFile.getClosingPointIndex(maxDistanceMeters: closingDistance);
-        double? actualClosingDistance;
-        
-        if (newClosingPointIndex != null) {
-          final launchPoint = igcFile.trackPoints.first;
-          final closingPoint = igcFile.trackPoints[newClosingPointIndex];
-          actualClosingDistance = igcFile.calculateSimpleDistance(launchPoint, closingPoint);
-          LoggingService.info('FlightStatisticsWidget: New closing point at index $newClosingPointIndex, distance: ${actualClosingDistance?.toStringAsFixed(1)}m');
-        } else {
-          LoggingService.info('FlightStatisticsWidget: Flight is now OPEN with closing distance ${closingDistance}m');
-        }
-        
-        // Calculate triangle on trimmed data if closing point exists
-        Map<String, dynamic> faiTriangle;
-        if (newClosingPointIndex != null) {
-          final trimmedIgcFile = igcFile.copyWithTrimmedPoints(0, newClosingPointIndex);
-          faiTriangle = trimmedIgcFile.calculateFaiTriangle(
-            samplingIntervalSeconds: triangleSamplingInterval,
-            closingDistanceMeters: closingDistance,
-          );
-          
-          // Check if triangle validation failed
-          if (faiTriangle['trianglePoints'] != null && 
-              (faiTriangle['trianglePoints'] as List).isEmpty) {
-            // Triangle invalid - mark flight as open
-            newClosingPointIndex = null;
-            actualClosingDistance = null;
-            faiTriangle = {'trianglePoints': null, 'triangleDistance': 0.0};
-            LoggingService.info('FlightStatisticsWidget: Triangle validation failed - flight marked as OPEN');
-          }
-        } else {
-          faiTriangle = {'trianglePoints': null, 'triangleDistance': 0.0};
-        }
-        
-        // Convert triangle points to JSON
-        String? faiTrianglePointsJson;
-        if (faiTriangle['trianglePoints'] != null && 
-            (faiTriangle['trianglePoints'] as List).isNotEmpty) {
-          final trianglePoints = faiTriangle['trianglePoints'] as List<dynamic>;
-          faiTrianglePointsJson = Flight.encodeTrianglePointsToJson(trianglePoints);
-        }
-        
-        // Update flight with new closing point and triangle data
-        final updatedFlight = widget.flight.copyWith(
-          closingPointIndex: newClosingPointIndex,
-          closingDistance: actualClosingDistance,
-          faiTriangleDistance: faiTriangle['triangleDistance'],
-          faiTrianglePoints: faiTrianglePointsJson,
-          triangleCalcVersion: currentVersion,
-        );
-        
-        // Save to database
-        await _databaseService.updateFlight(updatedFlight);
-        
-        setState(() {
-          _updatedFlight = updatedFlight;
-          _isRecalculatingTriangle = false;
-        });
-        
-        // Notify parent to refresh flight data
+      final result = await TriangleRecalculationService.checkAndRecalculate(
+        widget.flight,
+        logContext: 'FlightStatisticsWidget',
+      );
+      
+      setState(() {
+        _updatedFlight = result.updatedFlight;
+        _isRecalculatingTriangle = false;
+      });
+      
+      // Notify parent to refresh flight data if recalculation was performed
+      if (result.recalculationPerformed) {
         widget.onFlightUpdated?.call();
-        
-        LoggingService.info('FlightStatisticsWidget: Triangle recalculated: ${faiTriangle['triangleDistance']} km, Closed: ${newClosingPointIndex != null}');
-      } catch (e) {
-        LoggingService.error('FlightStatisticsWidget: Error recalculating triangle', e);
-        setState(() {
-          _isRecalculatingTriangle = false;
-        });
       }
+      
+    } catch (e) {
+      LoggingService.error('FlightStatisticsWidget: Error in triangle recalculation', e);
+      setState(() {
+        _isRecalculatingTriangle = false;
+      });
     }
   }
   

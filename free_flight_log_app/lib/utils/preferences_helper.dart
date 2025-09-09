@@ -31,14 +31,12 @@ class PreferencesHelper {
   // Takeoff/Landing Detection preferences
   static const String detectionSpeedThresholdKey = 'detection_speed_threshold';
   static const String detectionClimbRateThresholdKey = 'detection_climb_rate_threshold';
-  static const String chartTrimmingEnabledKey = 'chart_trimming_enabled';
   static const String triangleClosingDistanceKey = 'triangle_closing_distance';
   static const String triangleSamplingIntervalKey = 'triangle_sampling_interval';
   
   // Default values for detection
   static const double defaultDetectionSpeedThreshold = 9.0; // km/h
   static const double defaultDetectionClimbRateThreshold = 0.2; // m/s
-  static const bool defaultChartTrimmingEnabled = true; // Default to trimmed charts
   static const double defaultTriangleClosingDistance = 1000.0; // meters
   static const int defaultTriangleSamplingInterval = 30; // seconds
   static const List<double> validSpeedThresholds = [5.0, 7.0, 9.0, 11.0, 15.0]; // km/h
@@ -237,21 +235,6 @@ class PreferencesHelper {
     await prefs.setDouble(detectionClimbRateThresholdKey, value);
   }
 
-  static Future<bool> getChartTrimmingEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
-    // Check if the preference has been set before
-    if (!prefs.containsKey(chartTrimmingEnabledKey)) {
-      // First time - set default
-      await prefs.setBool(chartTrimmingEnabledKey, defaultChartTrimmingEnabled);
-      return defaultChartTrimmingEnabled;
-    }
-    return prefs.getBool(chartTrimmingEnabledKey) ?? defaultChartTrimmingEnabled;
-  }
-
-  static Future<void> setChartTrimmingEnabled(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(chartTrimmingEnabledKey, value);
-  }
 
   static Future<double> getTriangleClosingDistance() async {
     final prefs = await SharedPreferences.getInstance();
@@ -265,8 +248,8 @@ class PreferencesHelper {
   }
   
   static Future<void> setTriangleClosingDistance(double value) async {
-    if (value < 50.0 || value > 1000.0) {
-      throw ArgumentError('Triangle closing distance must be between 50-1000m');
+    if (value < 50.0 || value > 2000.0) {
+      throw ArgumentError('Triangle closing distance must be between 50-2000m');
     }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(triangleClosingDistanceKey, value);
