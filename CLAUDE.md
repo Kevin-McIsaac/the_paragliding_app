@@ -98,6 +98,56 @@ flutter_controller_enhanced.sh r  # Hot reload
 - `lib/presentation/widgets/flight_statistics_widget.dart` - Statistics display
 - `lib/utils/site_marker_utils.dart` - Site marker utilities
 
+## UI Cards and Key Functionality Locations
+
+### **Flight List Screen** (`lib/presentation/screens/flight_list_screen.dart`)
+- **Statistics Cards**: `_buildStatCard()` - Shows flight count and total time (top of screen)
+- **Skeleton Loading**: `_buildSkeletonStatCard()` - Loading placeholders for stats
+- **Flight Items**: Individual flight entries in ListView (main content area)
+
+### **Flight Detail Screen** (`lib/presentation/screens/flight_detail_screen.dart`)
+- **Flight Details Card**: Main expandable card with overview, sites, and equipment info
+- **Flight Statistics Card**: Expandable card with performance statistics (if track log exists)
+- **Flight Track Card**: Expandable card with 2D/3D visualization (if track log exists)
+- **Notes Card**: `_buildNotesCard()` - Flight notes and comments
+
+### **Statistics Screen** (`lib/presentation/screens/statistics_screen.dart`)
+- **Multiple Statistics Cards**: Three main cards showing various flight statistics and charts
+
+### **Wing Management Screen** (`lib/presentation/screens/wing_management_screen.dart`)
+- **Wing Cards**: `_buildWingCard()` - Individual wing information cards
+- **Active Wings Section**: Cards for currently active wings
+- **Inactive Wings Section**: Grayed-out cards for inactive wings
+
+### **Sites Management Screen** (`lib/presentation/screens/manage_sites_screen.dart`)
+- **Site Cards**: Individual site information cards with ListTile layout
+
+### **Preferences Screen** (`lib/presentation/screens/preferences_screen.dart`)
+- **Settings Sections**: `_buildSection()` - Expandable cards for different preference categories
+
+### **Data Management Screen** (`lib/presentation/screens/data_management_screen.dart`)
+- **Map Cache Statistics Card**: Expandable card showing cache info
+- **Android Backup Status Card**: Expandable card for backup management
+- **IGC File Cleanup Card**: Expandable card for file management
+- **ParaglidingEarth API Card**: Expandable card for API integration
+- **Free Premium Maps Card**: Expandable card for map provider settings
+- **Database Management Card**: Expandable card for database operations
+
+### **IGC Import Screen** (`lib/presentation/screens/igc_import_screen.dart`)
+- **File Selection Card**: Upload and file picker interface
+- **Import Progress Card**: Shows import status and progress
+- **Error Display Card**: Red-themed card for import errors
+- **Import Results Card**: Summary of imported flights
+
+### **Edit Wing Screen** (`lib/presentation/screens/edit_wing_screen.dart`)
+- **Basic Information Card**: Wing details (manufacturer, model, size, etc.)
+- **Purchase Information Card**: Purchase date, price, seller details
+- **Status and Notes Card**: Active status and additional notes
+
+### **About Screen** (`lib/presentation/screens/about_screen.dart`)
+- **App Info Card**: Version, description, and app details
+- **Contact Information Card**: Developer contact and OSM compliance info
+
 ### **Utils/Helpers** (utility functions)
 
 - `lib/utils/date_time_utils.dart` - Date/time utilities
