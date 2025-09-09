@@ -11,29 +11,63 @@ class LoggingService {
   // Operation tracking
   static String? _currentOperationId;
   static final Map<String, int> _operationCounters = {};
+  
+  // Duplicate operation detection
+  static final Set<String> _recentOperations = <String>{};
 
   // Claude-optimized logger with enhanced readability and navigation
   static final Logger _logger = Logger(
     level: kDebugMode ? Level.debug : Level.warning,
-    printer: kDebugMode 
-      ? ClaudeLogPrinter() // Custom printer for Claude Code
-      : PrettyPrinter(
-          methodCount: 0,
-          errorMethodCount: 8,
-          lineLength: 120,
-          colors: false,
-          printEmojis: false,
-          dateTimeFormat: DateTimeFormat.onlyTimeAndSinceStart,
-        ),
+    printer: ClaudeLogPrinter(), // Always use Claude-optimized format
   );
 
-  /// Log debug information
+  /// Log debug information with smart filtering for routine operations
   static void debug(String message, [dynamic error, StackTrace? stackTrace]) {
+    // Skip routine debug messages that add noise without value
+    if (_isRoutineDebugMessage(message)) return;
     _logger.d(message, error: error, stackTrace: stackTrace);
   }
+  
+  /// Check if debug message is routine and should be filtered
+  static bool _isRoutineDebugMessage(String message) {
+    // Filter out routine database queries and site lookups
+    if (message.contains('Found ') && message.contains(' sites in bounds')) return true;
+    if (message.contains('Retrieved ') && message.contains(' flights')) return true;
+    if (message.contains('Getting overall statistics')) return true;
+    
+    return false;
+  }
+  
+  /// Check if this operation has been logged recently to avoid duplicates
+  static bool _isRecentDuplicateOperation(String operation) {
+    if (_recentOperations.contains(operation)) {
+      return true;
+    }
+    
+    // Add to recent operations and clean up old ones
+    _recentOperations.add(operation);
+    
+    // Keep set size manageable (last 10 operations)
+    if (_recentOperations.length > 10) {
+      _recentOperations.clear();
+      _recentOperations.add(operation);
+    }
+    
+    return false;
+  }
 
-  /// Log general information
+  /// Log general information with duplicate detection for IGC parsing
   static void info(String message, [dynamic error, StackTrace? stackTrace]) {
+    // Suppress duplicate IGC parsing operations  
+    if (message.contains('Successfully parsed date:') || 
+        message.contains('Parsed ') && message.contains('track points')) {
+      final operationKey = 'igc_parse_${message.hashCode % 1000}';
+      if (_isRecentDuplicateOperation(operationKey)) {
+        _logger.d('[IGC_DUPLICATE_SUPPRESSED] $message | at=logging_service.dart:${StackTrace.current.toString().split('\n')[1].split(':')[2]}');
+        return;
+      }
+    }
+    
     _logger.i(message, error: error, stackTrace: stackTrace);
   }
 
