@@ -685,6 +685,19 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
   }
 
   Future<void> _showReimportConfirmation() async {
+    // Verify trackLogPath is available
+    if (_flight.trackLogPath == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cannot reimport: No IGC file path found for this flight'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+    
     final launchSiteName = _launchSite?.name ?? 'Unknown';
     final flightDate = _formatDate(_flight.date);
     
@@ -723,6 +736,19 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
   }
 
   Future<void> _reprocessFlight() async {
+    // Verify trackLogPath is available
+    if (_flight.trackLogPath == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cannot reimport: No IGC file path found for this flight'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+    
     setState(() {
       _isSaving = true;
     });
