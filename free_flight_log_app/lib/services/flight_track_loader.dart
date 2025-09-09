@@ -1,3 +1,4 @@
+import 'dart:io';
 import '../data/models/flight.dart';
 import '../data/models/igc_file.dart';
 import '../services/igc_parser.dart';
@@ -5,6 +6,19 @@ import '../services/database_service.dart';
 import '../services/takeoff_landing_detector.dart';
 import '../utils/preferences_helper.dart';
 import '../services/logging_service.dart';
+
+// Cache entry with file metadata for validation
+class _CacheEntry {
+  final IgcFile file;
+  final DateTime fileModified;
+  final int fileSize;
+  
+  _CacheEntry({
+    required this.file,
+    required this.fileModified,
+    required this.fileSize,
+  });
+}
 
 /// Centralized service for loading flight track data in a consistent format.
 /// 
@@ -18,8 +32,9 @@ class FlightTrackLoader {
   static final DatabaseService _databaseService = DatabaseService.instance;
   static final IgcParser _parser = IgcParser();
   
-  // Simple memory cache for parsed IGC files
-  static final Map<String, IgcFile> _igcCache = {};
+  // LRU cache with proper access tracking
+  static final Map<String, _CacheEntry> _igcCache = {};
+  static final List<String> _accessOrder = []; // Track access order for LRU
   static const int _maxCacheSize = 10; // Limit cache to 10 files to prevent memory issues
   
   /// Load flight track data in consistent trimmed format
@@ -34,27 +49,58 @@ class FlightTrackLoader {
       throw Exception('Flight has no track log path');
     }
     
-    // Check cache first
     final cacheKey = flight.trackLogPath!;
-    IgcFile? fullIgcFile = _igcCache[cacheKey];
+    final file = File(cacheKey);
     
-    if (fullIgcFile == null) {
-      LoggingService.info('$logContext: Parsing IGC file from disk for flight ${flight.id}');
+    // Get current file stats for validation
+    final fileStat = await file.stat();
+    final fileModified = fileStat.modified;
+    final fileSize = fileStat.size;
+    
+    // Check cache and validate
+    final cachedEntry = _igcCache[cacheKey];
+    IgcFile? fullIgcFile;
+    
+    if (cachedEntry != null && 
+        cachedEntry.fileModified == fileModified && 
+        cachedEntry.fileSize == fileSize) {
+      // Cache hit with valid file
+      fullIgcFile = cachedEntry.file;
+      
+      // Update LRU access order
+      _accessOrder.remove(cacheKey);
+      _accessOrder.add(cacheKey); // Move to end (most recent)
+      
+      LoggingService.debug('$logContext: Using cached IGC file for flight ${flight.id}');
+    } else {
+      // Cache miss or stale entry
+      if (cachedEntry != null) {
+        LoggingService.info('$logContext: File modified, invalidating cache for flight ${flight.id}');
+        _igcCache.remove(cacheKey);
+        _accessOrder.remove(cacheKey);
+      } else {
+        LoggingService.info('$logContext: Parsing IGC file from disk for flight ${flight.id}');
+      }
       
       // Parse full IGC file
       fullIgcFile = await _parser.parseFile(flight.trackLogPath!);
       
-      // Add to cache with size limit
-      if (_igcCache.length >= _maxCacheSize) {
-        // Remove oldest entry (first in map)
-        final oldestKey = _igcCache.keys.first;
-        _igcCache.remove(oldestKey);
-        LoggingService.debug('$logContext: Cache full, removed oldest entry: $oldestKey');
+      // Evict LRU entry if cache is full
+      if (_igcCache.length >= _maxCacheSize && _accessOrder.isNotEmpty) {
+        final lruKey = _accessOrder.removeAt(0); // Remove least recently used
+        _igcCache.remove(lruKey);
+        LoggingService.debug('$logContext: Cache full, evicted LRU entry: $lruKey');
       }
-      _igcCache[cacheKey] = fullIgcFile;
+      
+      // Add to cache
+      _igcCache[cacheKey] = _CacheEntry(
+        file: fullIgcFile,
+        fileModified: fileModified,
+        fileSize: fileSize,
+      );
+      _accessOrder.add(cacheKey);
+      
       LoggingService.info('$logContext: Cached IGC file, cache size: ${_igcCache.length}');
-    } else {
-      LoggingService.debug('$logContext: Using cached IGC file for flight ${flight.id}');
     }
     
     if (fullIgcFile.trackPoints.isEmpty) {
@@ -161,9 +207,19 @@ class FlightTrackLoader {
     }
     
     try {
-      // Use cached version if available
+      // Use cached version if available and valid
       final cacheKey = flight.trackLogPath!;
-      IgcFile? fullIgcFile = _igcCache[cacheKey];
+      final cachedEntry = _igcCache[cacheKey];
+      IgcFile? fullIgcFile;
+      
+      if (cachedEntry != null) {
+        final file = File(cacheKey);
+        final fileStat = await file.stat();
+        if (cachedEntry.fileModified == fileStat.modified && 
+            cachedEntry.fileSize == fileStat.size) {
+          fullIgcFile = cachedEntry.file;
+        }
+      }
       
       if (fullIgcFile == null) {
         fullIgcFile = await _parser.parseFile(flight.trackLogPath!);
@@ -188,6 +244,7 @@ class FlightTrackLoader {
   static void clearCache() {
     final cacheSize = _igcCache.length;
     _igcCache.clear();
+    _accessOrder.clear();
     if (cacheSize > 0) {
       LoggingService.info('FlightTrackLoader: Cleared IGC cache, removed $cacheSize entries');
     }
@@ -199,7 +256,17 @@ class FlightTrackLoader {
       'entries': _igcCache.length,
       'maxSize': _maxCacheSize,
       'files': _igcCache.keys.toList(),
+      'lruOrder': List<String>.from(_accessOrder),
     };
+  }
+  
+  /// Invalidate a specific cache entry (e.g., when file is updated)
+  static void invalidateCacheEntry(String filePath) {
+    if (_igcCache.containsKey(filePath)) {
+      _igcCache.remove(filePath);
+      _accessOrder.remove(filePath);
+      LoggingService.info('FlightTrackLoader: Invalidated cache entry for $filePath');
+    }
   }
 }
 
