@@ -74,6 +74,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   
   // Simplified site display state
   List<Site> _localSites = [];
+  bool _isLoadingSites = true;
   
   @override
   void initState() {
@@ -371,15 +372,23 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   /// Simple site loading - load all sites once
   Future<void> _loadAllSites() async {
     try {
+      LoggingService.debug('FlightTrack2D: Loading sites...');
       final localSites = await _databaseService.getAllSites();
       
       if (mounted) {
         setState(() {
           _localSites = localSites;
+          _isLoadingSites = false;
         });
+        LoggingService.debug('FlightTrack2D: Loaded ${localSites.length} sites');
       }
     } catch (e) {
       LoggingService.error('FlightTrack2DWidget: Error loading sites', e);
+      if (mounted) {
+        setState(() {
+          _isLoadingSites = false;
+        });
+      }
     }
   }
 
@@ -1596,6 +1605,46 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                 ),
               ),
             ),
+            // Sites loading indicator
+            if (_isLoadingSites && !_isLoading)
+              Positioned(
+                top: _isLegendExpanded ? 180 : 50,
+                left: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Loading sites...',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
             // Loading overlay
             if (_isLoading)
               Positioned.fill(
