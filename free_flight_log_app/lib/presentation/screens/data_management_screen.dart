@@ -925,7 +925,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                       leading: const Icon(Icons.cleaning_services),
                       title: const Text('IGC File Cleanup'),
                       subtitle: _cleanupStats != null 
-                        ? Text('${_cleanupStats!.totalIgcFiles} total • ${_cleanupStats!.orphanedFiles} orphaned')
+                        ? Text('${_cleanupStats!.totalIgcFiles} (${_cleanupStats!.formattedTotalSize}) • ${_cleanupStats!.orphanedFiles} orphaned')
                         : const Text('Analyzing files...'),
                       initiallyExpanded: _cleanupExpanded,
                       onExpansionChanged: (expanded) {
