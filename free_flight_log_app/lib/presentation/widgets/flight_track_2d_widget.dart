@@ -807,6 +807,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         point: LatLng(point.latitude, point.longitude),
         width: 80,  // Increased to accommodate label
         height: 40,  // Increased for label
+        anchor: const AnchorPos.align(AnchorAlign.bottom), // Center the yellow circle on the track point
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
