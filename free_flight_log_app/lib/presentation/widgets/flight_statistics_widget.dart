@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../data/models/flight.dart';
 import '../../utils/date_time_utils.dart';
-import '../../services/logging_service.dart';
 
 class FlightStatisticsWidget extends StatelessWidget {
   final Flight flight;

@@ -5,6 +5,7 @@ import 'dart:async';
 import 'presentation/screens/splash_screen.dart';
 import 'presentation/screens/igc_import_screen.dart';
 import 'utils/file_sharing_handler.dart';
+import 'utils/performance_monitor.dart';
 import 'data/datasources/database_helper.dart';
 
 void main() {
@@ -19,7 +20,9 @@ void main() {
   
   // OPTIMIZATION: Lazy load timezone data - only needed for IGC imports  
   // TimezoneService.initialize() will be called lazily in TimezoneService
-  // Hot reload test comment
+  
+  // Initialize performance monitoring
+  PerformanceMonitor.initializeFrameRateMonitoring();
   
   runApp(const FreeFlightLogApp());
 }

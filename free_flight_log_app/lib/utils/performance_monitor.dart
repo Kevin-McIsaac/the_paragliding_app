@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import '../services/logging_service.dart';
 
 /// Utility class for monitoring app performance metrics
@@ -20,6 +21,10 @@ class PerformanceMonitor {
   
   // Track operation timings
   static final Map<String, DateTime> _operationStarts = {};
+  
+  // Frame rate tracking
+  static final List<double> _frameTimes = <double>[];
+  static bool _frameMonitoringInitialized = false;
   
   // Cleanup tracking
   static DateTime _lastCleanup = DateTime.now();
@@ -137,6 +142,77 @@ class PerformanceMonitor {
       
       final top3 = sortedWidgets.take(3).map((e) => '${e.key}:${e.value}').join(', ');
       LoggingService.info('[PERF_REBUILDS] Top widgets: $top3');
+    }
+  }
+  
+  /// Initialize frame rate monitoring
+  static void initializeFrameRateMonitoring() {
+    if (!kDebugMode || _frameMonitoringInitialized) return;
+    
+    _frameMonitoringInitialized = true;
+    
+    SchedulerBinding.instance.addTimingsCallback(_onFrameTimings);
+    LoggingService.info('[FRAME_MONITOR] Frame rate monitoring initialized');
+  }
+  
+  /// Handle frame timing data
+  static void _onFrameTimings(List<FrameTiming> timings) {
+    if (!kDebugMode) return;
+    
+    for (final timing in timings) {
+      final frameDuration = timing.totalSpan.inMicroseconds / 1000.0; // Convert to ms
+      _frameTimes.add(frameDuration);
+      
+      // Keep only recent frame times (last 120 frames ~2 seconds at 60fps)
+      if (_frameTimes.length > 120) {
+        _frameTimes.removeAt(0);
+      }
+      
+      // Collect frame data for statistics (individual warnings suppressed to reduce log noise)
+      // Individual slow frames are tracked but not logged to prevent spam
+      // Use logFrameRatePerformance() for periodic summaries
+    }
+  }
+  
+  /// Get current frame rate statistics
+  static Map<String, dynamic> getFrameRateStats() {
+    if (!kDebugMode || _frameTimes.isEmpty) {
+      return {'fps': 0.0, 'avg_frame_time_ms': 0.0, 'dropped_frames': 0};
+    }
+    
+    final avgFrameTime = _frameTimes.reduce((a, b) => a + b) / _frameTimes.length;
+    final fps = 1000.0 / avgFrameTime; // Convert ms to FPS
+    final droppedFrames = _frameTimes.where((time) => time > 16.67).length; // Slower than 60 FPS
+    
+    return {
+      'fps': fps,
+      'avg_frame_time_ms': avgFrameTime,
+      'dropped_frames': droppedFrames,
+      'total_frames': _frameTimes.length,
+    };
+  }
+  
+  /// Log frame rate performance summary
+  static void logFrameRatePerformance() {
+    if (!kDebugMode || _frameTimes.isEmpty) return;
+    
+    final stats = getFrameRateStats();
+    final fps = stats['fps'] as double;
+    final avgFrameTime = stats['avg_frame_time_ms'] as double;
+    final droppedFrames = stats['dropped_frames'] as int;
+    final totalFrames = stats['total_frames'] as int;
+    
+    LoggingService.structured('FRAME_PERF', {
+      'fps': fps.toStringAsFixed(1),
+      'avg_frame_ms': avgFrameTime.toStringAsFixed(1),
+      'dropped_frames': droppedFrames,
+      'total_frames': totalFrames,
+      'dropped_percent': totalFrames > 0 ? (droppedFrames / totalFrames * 100).toStringAsFixed(1) : '0.0',
+    });
+    
+    // Warn if frame rate is consistently low
+    if (fps < 30.0) {
+      LoggingService.warning('[FRAME_PERF] Low frame rate: ${fps.toStringAsFixed(1)} FPS (target: 60 FPS)');
     }
   }
   

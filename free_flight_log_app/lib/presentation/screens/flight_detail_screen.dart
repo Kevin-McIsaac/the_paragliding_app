@@ -73,15 +73,6 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
     }
   }
 
-  Future<void> _refreshFlight() async {
-    final updatedFlight = await _databaseService.getFlight(_flight.id!);
-    if (updatedFlight != null && mounted) {
-      setState(() {
-        _flight = updatedFlight;
-      });
-    }
-  }
-
   Future<void> _loadCardExpansionStates() async {
     try {
       final expansionStates = await PreferencesHelper.getAllCardExpansionStates();
