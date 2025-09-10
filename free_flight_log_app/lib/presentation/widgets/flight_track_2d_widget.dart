@@ -68,7 +68,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   bool _isLoading = true;
   String? _error;
   MapProvider _selectedMapProvider = MapProvider.openStreetMap;
-  int? _selectedTrackPointIndex;
+  final ValueNotifier<int?> _selectedTrackPointIndex = ValueNotifier<int?>(null);
   bool _isLegendExpanded = false; // Default to collapsed for cleaner initial view
   double _closingDistanceThreshold = 500.0; // Default value
   
@@ -861,9 +861,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     final closestIndex = _findClosestTrackPointByPosition(position);
     if (closestIndex == -1) return;
     
-    setState(() {
-      _selectedTrackPointIndex = closestIndex;
-    });
+    _selectedTrackPointIndex.value = closestIndex;
   }
   
   double _calculateDistance(LatLng point1, LatLng point2) {
@@ -917,35 +915,44 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     return closestIndex;
   }
 
-  List<Marker> _buildTrackPointMarker() {
-    if (_selectedTrackPointIndex == null || _selectedTrackPointIndex! >= _trackPoints.length || _trackPoints.isEmpty) {
-      return [];
-    }
+  Widget _buildTrackPointMarker() {
+    return ValueListenableBuilder<int?>(
+      valueListenable: _selectedTrackPointIndex,
+      builder: (context, selectedIndex, child) {
+        if (selectedIndex == null || selectedIndex >= _trackPoints.length || _trackPoints.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        
+        final point = _trackPoints[selectedIndex];
+        
+        return MarkerLayer(
+          markers: [
     
-    final point = _trackPoints[_selectedTrackPointIndex!];
-    
-    return [
-      Marker(
-        point: LatLng(point.latitude, point.longitude),
-        width: 12,
-        height: 12,
-        child: Container(
-          width: 12,
-          height: 12,
-          decoration: const BoxDecoration(
-            color: SiteMarkerUtils.selectedPointColor,
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black26,
-                blurRadius: 2,
-                offset: Offset(0, 1),
+            Marker(
+              point: LatLng(point.latitude, point.longitude),
+              width: 12,
+              height: 12,
+              child: Container(
+                width: 12,
+                height: 12,
+                decoration: const BoxDecoration(
+                  color: SiteMarkerUtils.selectedPointColor,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 2,
+                      offset: Offset(0, 1),
+                    ),
+                  ],
+                ),
               ),
-            ],
-          ),
-        ),
-      ),
-    ];
+            ),
+          ],
+          rotate: false,
+        );
+      },
+    );
   }
 
   List<Marker> _buildFlightMarkers() {
@@ -1289,39 +1296,31 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     final valRange = maxVal - minVal;
     final padding = valRange * _altitudePaddingFactor;
 
-    // Create the line bar data
-    final lineBarData = LineChartBarData(
-      spots: spots,
-      isCurved: false,
-      color: color,
-      barWidth: 1,
-      dotData: const FlDotData(show: false),
-      belowBarData: BarAreaData(
-        show: true,
-        color: color.withValues(alpha: 0.15),
-      ),
-      showingIndicators: _selectedTrackPointIndex != null 
-        ? [_selectedTrackPointIndex!] 
-        : [],
-    );
-
     return Container(
       height: _chartHeight,
       padding: const EdgeInsets.all(8),
       decoration: const BoxDecoration(
         color: Colors.white,
       ),
-      child: LineChart(
-        LineChartData(
-          showingTooltipIndicators: _selectedTrackPointIndex != null ? [
-            ShowingTooltipIndicators([
-              LineBarSpot(
-                lineBarData,
-                0,
-                spots[_selectedTrackPointIndex!],
-              ),
-            ])
-          ] : [],
+      child: ValueListenableBuilder<int?>(
+        valueListenable: _selectedTrackPointIndex,
+        builder: (context, selectedIndex, child) {
+          // Create the line bar data inside the builder for proper spot references
+          final lineBarData = LineChartBarData(
+            spots: spots,
+            isCurved: false,
+            color: color,
+            barWidth: 1,
+            dotData: const FlDotData(show: false),
+            belowBarData: BarAreaData(
+              show: true,
+              color: color.withValues(alpha: 0.15),
+            ),
+            showingIndicators: selectedIndex != null && selectedIndex < spots.length ? [selectedIndex] : [],
+          );
+          
+          return LineChart(
+            LineChartData(
           lineTouchData: LineTouchData(
             enabled: true,
             handleBuiltInTouches: false,
@@ -1332,9 +1331,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                 final closestIndex = _findClosestTrackPointByTimestamp(targetTimestamp);
                 
                 if (closestIndex != -1) {
-                  setState(() {
-                    _selectedTrackPointIndex = closestIndex;
-                  });
+                  _selectedTrackPointIndex.value = closestIndex;
                 }
               }
             },
@@ -1433,7 +1430,9 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           lineBarsData: [
             lineBarData,
           ],
-        ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -1559,6 +1558,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   void dispose() {
     _debounceTimer?.cancel();
     _loadingDelayTimer?.cancel();
+    _selectedTrackPointIndex.dispose();
     _mapController.dispose();
     super.dispose();
   }
@@ -1638,11 +1638,8 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                 markers: _buildFlightMarkers(),
                 rotate: false,
               ),
-              // Keep track point marker as regular MarkerLayer since it's just a selection indicator
-              MarkerLayer(
-                markers: _buildTrackPointMarker(),
-                rotate: false,
-              ),
+              // Keep track point marker as ValueListenableBuilder since it's just a selection indicator
+              _buildTrackPointMarker(),
               // Triangle distance labels
               MarkerLayer(
                 markers: _buildTriangleDistanceMarkers(),
@@ -1737,33 +1734,41 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               ),
             ),
           // Time display overlay for selected point
-          if (_selectedTrackPointIndex != null && _selectedTrackPointIndex! < _trackPoints.length)
-            Positioned(
-              bottom: 8,
-              left: 8,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.8),
-                  borderRadius: BorderRadius.circular(4),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.3),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
+          ValueListenableBuilder<int?>(
+            valueListenable: _selectedTrackPointIndex,
+            builder: (context, selectedIndex, child) {
+              if (selectedIndex == null || selectedIndex >= _trackPoints.length) {
+                return const SizedBox.shrink();
+              }
+              
+              return Positioned(
+                bottom: 8,
+                left: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.8),
+                    borderRadius: BorderRadius.circular(4),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.3),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Text(
+                    'Time: ${_formatTimeHMS(_trackPoints[selectedIndex].timestamp)}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w500,
                     ),
-                  ],
-                ),
-                child: Text(
-                  'Time: ${_formatTimeHMS(_trackPoints[_selectedTrackPointIndex!].timestamp)}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Colors.white,
-                    fontWeight: FontWeight.w500,
                   ),
                 ),
-              ),
-            ),
+              );
+            },
+          ),
             ],
           ),
         ),
