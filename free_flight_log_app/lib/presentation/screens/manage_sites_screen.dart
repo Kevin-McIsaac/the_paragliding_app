@@ -46,8 +46,41 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
     });
     
     try {
-      LoggingService.debug('ManageSitesScreen: Loading sites with flight counts');
+      final stopwatch = Stopwatch()..start();
+      final opId = LoggingService.startOperation('SITES_LOAD');
+      
+      // Log structured data about the sites query
+      LoggingService.structured('SITES_QUERY', {
+        'operation_id': opId,
+        'include_flight_counts': true,
+        'current_search': _searchQuery.isEmpty ? null : _searchQuery,
+        'current_sort': _sortBy,
+        'group_by_country': _groupByCountry,
+      });
+      
       final sites = await _databaseService.getSitesWithFlightCounts();
+      
+      stopwatch.stop();
+      
+      // Calculate site statistics
+      final countryCounts = <String, int>{};
+      int totalFlights = 0;
+      int sitesWithFlights = 0;
+      for (final site in sites) {
+        final country = site.country ?? 'Unknown';
+        countryCounts[country] = (countryCounts[country] ?? 0) + 1;
+        
+        final flightCount = site.flightCount ?? 0;
+        totalFlights += flightCount;
+        if (flightCount > 0) sitesWithFlights++;
+      }
+      
+      // Log performance with threshold monitoring
+      LoggingService.performance(
+        'Sites Load',
+        Duration(milliseconds: stopwatch.elapsedMilliseconds),
+        'sites loaded with flight counts',
+      );
       
       if (mounted) {
         setState(() {
@@ -55,10 +88,18 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
           _filterSites(sites);
           _isLoading = false;
         });
-        LoggingService.info('ManageSitesScreen: Loaded ${sites.length} sites');
+        
+        // End operation with summary
+        LoggingService.endOperation('SITES_LOAD', results: {
+          'total_sites': sites.length,
+          'unique_countries': countryCounts.length,
+          'sites_with_flights': sitesWithFlights,
+          'total_flights': totalFlights,
+          'duration_ms': stopwatch.elapsedMilliseconds,
+        });
       }
-    } catch (e) {
-      LoggingService.error('ManageSitesScreen: Failed to load sites', e);
+    } catch (e, stackTrace) {
+      LoggingService.error('Failed to load sites', e, stackTrace);
       if (mounted) {
         setState(() {
           _errorMessage = 'Failed to load sites: $e';
@@ -69,13 +110,27 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
   }
 
   void _onSearchChanged() {
+    final newQuery = _searchController.text.toLowerCase();
+    final queryChanged = newQuery != _searchQuery;
+    
+    if (queryChanged) {
+      // Log user search behavior
+      LoggingService.action('SiteManagement', 'search_query_changed', {
+        'query_length': newQuery.length,
+        'has_query': newQuery.isNotEmpty,
+        'total_sites': _sites.length,
+      });
+    }
+    
     setState(() {
-      _searchQuery = _searchController.text.toLowerCase();
+      _searchQuery = newQuery;
       _filterSites(_sites);
     });
   }
 
   void _filterSites(List<Site> sites) {
+    final stopwatch = Stopwatch()..start();
+    
     if (_searchQuery.isEmpty) {
       _filteredSites = List.from(sites);
     } else {
@@ -91,6 +146,21 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
     // Group sites by country if enabled
     if (_groupByCountry) {
       _groupSitesByCountry();
+    }
+    
+    stopwatch.stop();
+    
+    // Log filtering performance if it takes significant time or for search operations
+    if (stopwatch.elapsedMilliseconds > 50 || _searchQuery.isNotEmpty) {
+      LoggingService.structured('SITES_FILTERED', {
+        'total_sites': sites.length,
+        'filtered_sites': _filteredSites.length,
+        'has_search_query': _searchQuery.isNotEmpty,
+        'query_length': _searchQuery.length,
+        'sort_by': _sortBy,
+        'grouped': _groupByCountry,
+        'filter_time_ms': stopwatch.elapsedMilliseconds,
+      });
     }
   }
   
@@ -163,6 +233,11 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
 
 
   Future<void> _addNewSite() async {
+    // Log user action
+    LoggingService.action('SiteManagement', 'add_site_initiated', {
+      'current_site_count': _sites.length,
+    });
+    
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => SiteCreationDialog(
@@ -188,7 +263,13 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
         );
         
         await _databaseService.insertSite(newSite);
-        LoggingService.info('ManageSitesScreen: Created new site "${result['name']}"');
+        
+        // Log successful site creation
+        LoggingService.summary('SITE_CREATED', {
+          'site_name': result['name'],
+          'country': result['country'],
+          'has_altitude': result['altitude'] != null,
+        });
         
         // Mark sites as modified
         _sitesModified = true;
@@ -199,12 +280,17 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
         if (mounted) {
           UiUtils.showSuccessMessage(context, 'Site "${result['name']}" created successfully');
         }
-      } catch (e) {
-        LoggingService.error('ManageSitesScreen: Error creating site', e);
+      } catch (e, stackTrace) {
+        LoggingService.error('Error creating site', e, stackTrace);
+        LoggingService.action('SiteManagement', 'add_site_failed', {
+          'error_type': e.runtimeType.toString(),
+        });
         if (mounted) {
           UiUtils.showErrorDialog(context, 'Error', 'Failed to create site: $e');
         }
       }
+    } else {
+      LoggingService.action('SiteManagement', 'add_site_cancelled', {});
     }
   }
 
@@ -230,18 +316,30 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
       if (!canDelete) {
         errorMessage = 'Cannot delete site - it is used in flight records';
       } else {
-        LoggingService.debug('ManageSitesScreen: Deleting site ${site.id}');
+        // Log user action with rich context
+        LoggingService.action('SiteManagement', 'delete_site_confirmed', {
+          'site_id': site.id,
+          'site_name': site.name,
+          'flight_count': site.flightCount ?? 0,
+          'country': site.country,
+        });
+        
         await _databaseService.deleteSite(site.id!);
         success = true;
-        LoggingService.info('ManageSitesScreen: Deleted site ${site.id}');
+        
+        LoggingService.summary('SITE_DELETED', {
+          'site_id': site.id,
+          'site_name': site.name,
+          'had_flights': (site.flightCount ?? 0) > 0,
+        });
         
         // Mark sites as modified
         _sitesModified = true;
         
         await _loadSites(); // Reload the list
       }
-    } catch (e) {
-      LoggingService.error('ManageSitesScreen: Failed to delete site', e);
+    } catch (e, stackTrace) {
+      LoggingService.error('Failed to delete site', e, stackTrace);
       errorMessage = 'Failed to delete site: $e';
     }
     
@@ -266,7 +364,15 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
   }
 
   Future<void> _editSite(Site site) async {
-    await Navigator.of(context).push<bool>(
+    // Log user action with context
+    LoggingService.action('SiteManagement', 'edit_site_initiated', {
+      'site_id': site.id,
+      'site_name': site.name,
+      'flight_count': site.flightCount ?? 0,
+      'country': site.country,
+    });
+    
+    final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (context) => EditSiteScreen(
           initialCoordinates: (latitude: site.latitude, longitude: site.longitude),
@@ -281,6 +387,11 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
       // EditSiteScreen should return true when changes are made, but we'll be
       // conservative and assume changes were made since we navigated to edit
       _sitesModified = true;
+      
+      LoggingService.action('SiteManagement', 'edit_site_completed', {
+        'site_id': site.id,
+        'changes_made': result == true,
+      });
       
       await _loadSites();
     }
@@ -306,6 +417,15 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
             icon: const Icon(Icons.sort),
             tooltip: 'Sort sites',
             onSelected: (value) {
+              // Log user sort preference change
+              LoggingService.action('SiteManagement', 'sort_changed', {
+                'old_sort': _sortBy,
+                'new_sort': value,
+                'was_grouped': _groupByCountry,
+                'will_be_grouped': (value == 'country'),
+                'site_count': _sites.length,
+              });
+              
               setState(() {
                 _sortBy = value;
                 _groupByCountry = (value == 'country');
