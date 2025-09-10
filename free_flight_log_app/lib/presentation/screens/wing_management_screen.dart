@@ -22,10 +22,10 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
   @override
   void initState() {
     super.initState();
-    _loadWings();
+    _loadData();
   }
 
-  Future<void> _loadWings() async {
+  Future<void> _loadData() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -111,7 +111,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
       LoggingService.action('WingManagement', 'add_wing_completed', {
         'wing_added': true,
       });
-      _loadWings();
+      _loadData();
     } else {
       LoggingService.action('WingManagement', 'add_wing_cancelled', {});
     }
@@ -136,7 +136,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
         'wing_id': wing.id,
         'wing_edited': true,
       });
-      _loadWings();
+      _loadData();
     } else {
       LoggingService.action('WingManagement', 'edit_wing_cancelled', {
         'wing_id': wing.id,
@@ -193,7 +193,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
             'wing_name': wing.displayName,
             'was_active': wing.active,
           });
-          _loadWings();
+          _loadData();
         }
       } catch (e, stackTrace) {
         LoggingService.error('Failed to delete wing', e, stackTrace);
@@ -234,7 +234,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
         'wing_name': wing.displayName,
         'new_status': !wing.active ? 'active' : 'inactive',
       });
-      _loadWings();
+      _loadData();
     } catch (e, stackTrace) {
       LoggingService.error('Failed to update wing status', e, stackTrace);
     }
@@ -270,7 +270,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
       LoggingService.action('WingManagement', 'merge_wings_completed', {
         'wings_merged': true,
       });
-      _loadWings();
+      _loadData();
     } else {
       LoggingService.action('WingManagement', 'merge_wings_cancelled', {});
     }
@@ -314,7 +314,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
                       ElevatedButton(
                         onPressed: () {
                           setState(() => _errorMessage = null);
-                          _loadWings();
+                          _loadData();
                         },
                         child: const Text('Retry'),
                       ),

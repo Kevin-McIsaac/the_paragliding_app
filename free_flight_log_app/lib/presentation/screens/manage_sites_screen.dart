@@ -28,7 +28,7 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
   @override
   void initState() {
     super.initState();
-    _loadSites();
+    _loadData();
     _searchController.addListener(_onSearchChanged);
   }
 
@@ -39,7 +39,7 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
     super.dispose();
   }
 
-  Future<void> _loadSites() async {
+  Future<void> _loadData() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -275,7 +275,7 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
         _sitesModified = true;
         
         // Refresh the sites list
-        await _loadSites();
+        await _loadData();
         
         if (mounted) {
           UiUtils.showSuccessMessage(context, 'Site "${result['name']}" created successfully');
@@ -336,7 +336,7 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
         // Mark sites as modified
         _sitesModified = true;
         
-        await _loadSites(); // Reload the list
+        await _loadData(); // Reload the list
       }
     } catch (e, stackTrace) {
       LoggingService.error('Failed to delete site', e, stackTrace);
@@ -393,7 +393,7 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
         'changes_made': result == true,
       });
       
-      await _loadSites();
+      await _loadData();
     }
   }
 
@@ -557,7 +557,7 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
                       ElevatedButton(
                         onPressed: () {
                           setState(() => _errorMessage = null);
-                          _loadSites();
+                          _loadData();
                         },
                         child: const Text('Retry'),
                       ),

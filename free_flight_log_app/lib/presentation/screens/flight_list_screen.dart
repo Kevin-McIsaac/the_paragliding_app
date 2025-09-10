@@ -47,7 +47,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
     // The splash screen already handled initialization
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (mounted) {
-        await _loadFlights();
+        await _loadData();
       }
     });
   }
@@ -58,7 +58,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
   }
 
   // Load flights from database
-  Future<void> _loadFlights() async {
+  Future<void> _loadData() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -275,7 +275,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
             ),
           );
           // Reload flights
-          await _loadFlights();
+          await _loadData();
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -358,7 +358,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                     );
                     
                     if (result == true) {
-                      _loadFlights();
+                      _loadData();
                     }
                   } else if (value == 'select') {
                     _toggleSelectionMode();
@@ -376,7 +376,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                     );
                     // Reload flights if sites were modified
                     if (result == true && mounted) {
-                      await _loadFlights();
+                      await _loadData();
                     }
                   } else if (value == 'statistics') {
                     Navigator.of(context).push(
@@ -392,7 +392,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                     );
                     
                     if (result == true) {
-                      _loadFlights(); // Reload flights if database was modified
+                      _loadData(); // Reload flights if database was modified
                     }
                   } else if (value == 'about') {
                     Navigator.of(context).push(
@@ -519,7 +519,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                       ElevatedButton(
                         onPressed: () {
                           _clearError();
-                          _loadFlights();
+                          _loadData();
                         },
                         child: const Text('Retry'),
                       ),
@@ -538,7 +538,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
           );
           
           if (result == true) {
-            _loadFlights();
+            _loadData();
           }
         },
         tooltip: 'Add Flight',
@@ -798,7 +798,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                             ),
                           );
                           if (result == true) {
-                            _loadFlights(); // Reload if flight was deleted or modified
+                            _loadData(); // Reload if flight was deleted or modified
                           }
                         },
                 ),
@@ -817,7 +817,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                             ),
                           );
                           if (result == true) {
-                            _loadFlights(); // Reload if flight was deleted or modified
+                            _loadData(); // Reload if flight was deleted or modified
                           }
                         },
                 ),
@@ -832,7 +832,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                             ),
                           );
                           if (result == true) {
-                            _loadFlights(); // Reload if flight was deleted or modified
+                            _loadData(); // Reload if flight was deleted or modified
                           }
                         },
                 ),
@@ -851,7 +851,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                             ),
                           );
                           if (result == true) {
-                            _loadFlights(); // Reload if flight was deleted or modified
+                            _loadData(); // Reload if flight was deleted or modified
                           }
                         },
                 ),
@@ -870,7 +870,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                             ),
                           );
                           if (result == true) {
-                            _loadFlights(); // Reload if flight was deleted or modified
+                            _loadData(); // Reload if flight was deleted or modified
                           }
                         },
                 ),
@@ -889,7 +889,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                             ),
                           );
                           if (result == true) {
-                            _loadFlights(); // Reload if flight was deleted or modified
+                            _loadData(); // Reload if flight was deleted or modified
                           }
                         },
                 ),

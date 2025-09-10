@@ -25,10 +25,10 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
   @override
   void initState() {
     super.initState();
-    _loadSitesAndWings();
+    _loadData();
   }
 
-  Future<void> _loadSitesAndWings() async {
+  Future<void> _loadData() async {
     try {
       final sites = await _databaseService.getAllSites();
       final wings = await _databaseService.getAllWings();
@@ -54,7 +54,7 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
 
   void _onWingsChanged() async {
     // Reload wings after a new wing was added
-    await _loadSitesAndWings();
+    await _loadData();
   }
 
   Future<void> _saveFlight(Flight flight) async {

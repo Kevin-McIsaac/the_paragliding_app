@@ -35,10 +35,10 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadAllStatistics();
+    _loadData();
   }
   
-  Future<void> _loadAllStatistics() async {
+  Future<void> _loadData() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -267,7 +267,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
           _selectedPreset = 'custom';
           _selectedDateRange = picked;
         });
-        _loadAllStatistics();
+        _loadData();
       } else {
         LoggingService.debug('Statistics: Date picker cancelled by user');
       }
@@ -284,7 +284,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         _selectedPreset = preset;
         _selectedDateRange = newRange;
       });
-      _loadAllStatistics();
+      _loadData();
     }
   }
 
@@ -404,7 +404,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                             ElevatedButton(
                               onPressed: () {
                                 setState(() => _errorMessage = null);
-                                _loadAllStatistics();
+                                _loadData();
                               },
                               child: const Text('Retry'),
                             ),
