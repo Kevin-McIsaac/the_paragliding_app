@@ -191,6 +191,8 @@ class IgcImportService {
         fileName: fileName,
         rawErrorMessage: e.toString(),
       );
+    } finally {
+      LoggingService.endOperation('IGC_IMPORT');
     }
   }
 
