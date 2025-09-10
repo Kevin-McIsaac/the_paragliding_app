@@ -42,6 +42,10 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
   @override
   void initState() {
     super.initState();
+    LoggingService.action('DataManagement', 'screen_opened', {
+      'expand_premium_maps': widget.expandPremiumMaps,
+    });
+    
     // Set initial Premium Maps expansion state based on parameter
     _premiumMapsExpanded = widget.expandPremiumMaps;
     _loadDatabaseStats();
@@ -51,7 +55,22 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
 
   Future<void> _loadDatabaseStats() async {
     setState(() => _isLoading = true);
+    
+    LoggingService.action('DataManagement', 'load_database_stats');
+    final stopwatch = Stopwatch()..start();
+    
     final stats = await DatabaseResetHelper.getDatabaseStats();
+    
+    LoggingService.performance('Load database stats', stopwatch.elapsed, 'database statistics loaded');
+    LoggingService.structured('DB_STATS_LOADED', {
+      'flights': stats['flights'] ?? 0,
+      'sites': stats['sites'] ?? 0,
+      'wings': stats['wings'] ?? 0,
+      'total_records': stats['total_records'] ?? 0,
+      'size_kb': stats['size_kb'] ?? 0,
+      'duration_ms': stopwatch.elapsedMilliseconds,
+    });
+    
     setState(() {
       _dbStats = stats;
       _isLoading = false;
@@ -59,25 +78,52 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
   }
 
   Future<void> _loadBackupDiagnostics() async {
+    LoggingService.action('DataManagement', 'load_backup_diagnostics');
+    final stopwatch = Stopwatch()..start();
+    
     try {
       final backupStatus = await BackupDiagnosticService.getBackupStatus();
       final igcStats = await BackupDiagnosticService.calculateIGCCompressionStats();
       final cleanupStats = await IGCCleanupService.analyzeIGCFiles();
+      
+      LoggingService.performance('Load backup diagnostics', stopwatch.elapsed, 'backup diagnostics loaded');
+      LoggingService.structured('BACKUP_DIAGNOSTICS_LOADED', {
+        'backup_enabled': backupStatus['backupEnabled'] ?? false,
+        'backup_type': backupStatus['backupType'] ?? 'unknown',
+        'igc_files': igcStats?.fileCount ?? 0,
+        'original_size_mb': igcStats != null ? (igcStats.originalSizeBytes / 1024 / 1024).toStringAsFixed(1) : '0.0',
+        'compressed_size_mb': igcStats != null ? (igcStats.compressedSizeBytes / 1024 / 1024).toStringAsFixed(1) : '0.0',
+        'compression_ratio': igcStats?.compressionRatio ?? 0.0,
+        'orphaned_files': cleanupStats?.orphanedFiles ?? 0,
+        'duration_ms': stopwatch.elapsedMilliseconds,
+      });
       
       setState(() {
         _backupStatus = backupStatus;
         _igcStats = igcStats;
         _cleanupStats = cleanupStats;
       });
-    } catch (e) {
-      LoggingService.error('DataManagementScreen', 'Error loading backup diagnostics: $e');
+    } catch (e, stackTrace) {
+      LoggingService.structured('BACKUP_DIAGNOSTICS_ERROR', {
+        'error': e.toString(),
+        'duration_ms': stopwatch.elapsedMilliseconds,
+      });
+      LoggingService.error('DataManagementScreen: Error loading backup diagnostics', e, stackTrace);
     }
   }
 
   Future<void> _loadCesiumToken() async {
+    LoggingService.action('DataManagement', 'load_cesium_token');
+    
     try {
       final token = await PreferencesHelper.getCesiumUserToken();
       final validated = await PreferencesHelper.getCesiumTokenValidated() ?? false;
+      
+      LoggingService.structured('CESIUM_TOKEN_STATUS', {
+        'has_token': token != null,
+        'is_validated': validated,
+        'token_length': token?.length ?? 0,
+      });
       
       if (mounted) {
         setState(() {
@@ -85,13 +131,19 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
           _isCesiumTokenValidated = validated;
         });
       }
-    } catch (e) {
-      LoggingService.error('DataManagementScreen', 'Error loading Cesium token: $e');
+    } catch (e, stackTrace) {
+      LoggingService.structured('CESIUM_TOKEN_LOAD_ERROR', {
+        'error': e.toString(),
+      });
+      LoggingService.error('DataManagementScreen: Error loading Cesium token', e, stackTrace);
     }
   }
 
   Future<void> _testCesiumToken() async {
     if (_cesiumToken == null) return;
+    
+    LoggingService.action('DataManagement', 'test_cesium_token', {'token_length': _cesiumToken!.length});
+    final stopwatch = Stopwatch()..start();
     
     setState(() {
       _isValidatingCesium = true;
@@ -99,6 +151,13 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
 
     try {
       final isValid = await CesiumTokenValidator.validateToken(_cesiumToken!);
+      
+      LoggingService.performance('Test Cesium token', stopwatch.elapsed, 'token validation completed');
+      LoggingService.structured('CESIUM_TOKEN_TEST', {
+        'is_valid': isValid,
+        'token_length': _cesiumToken!.length,
+        'duration_ms': stopwatch.elapsedMilliseconds,
+      });
       
       if (mounted) {
         final message = isValid 
@@ -120,7 +179,13 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
           });
         }
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      LoggingService.structured('CESIUM_TOKEN_TEST_ERROR', {
+        'error': e.toString(),
+        'duration_ms': stopwatch.elapsedMilliseconds,
+      });
+      LoggingService.error('DataManagementScreen: Error testing Cesium token', e, stackTrace);
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -143,9 +208,14 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
     try {
       if (await canLaunchUrl(Uri.parse(url))) {
         await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+        LoggingService.action('DataManagement', 'launch_cesium_signup', {'url': url});
       }
-    } catch (e) {
-      LoggingService.error('DataManagementScreen', 'Failed to launch signup URL: $e');
+    } catch (e, stackTrace) {
+      LoggingService.structured('URL_LAUNCH_ERROR', {
+        'url': url,
+        'error': e.toString(),
+      });
+      LoggingService.error('DataManagementScreen: Failed to launch signup URL', e, stackTrace);
     }
   }
 
@@ -154,9 +224,14 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
     try {
       if (await canLaunchUrl(Uri.parse(url))) {
         await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+        LoggingService.action('DataManagement', 'launch_cesium_tokens', {'url': url});
       }
-    } catch (e) {
-      LoggingService.error('DataManagementScreen', 'Failed to launch tokens URL: $e');
+    } catch (e, stackTrace) {
+      LoggingService.structured('URL_LAUNCH_ERROR', {
+        'url': url,
+        'error': e.toString(),
+      });
+      LoggingService.error('DataManagementScreen: Failed to launch tokens URL', e, stackTrace);
     }
   }
 
@@ -309,11 +384,21 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
   }
 
   void _removeToken() {
+    LoggingService.action('DataManagement', 'remove_cesium_token', {
+      'had_token': _cesiumToken != null,
+      'was_validated': _isCesiumTokenValidated,
+    });
+    
     setState(() {
       _cesiumToken = null;
       _isCesiumTokenValidated = false;
     });
     PreferencesHelper.removeCesiumUserToken();
+    
+    LoggingService.structured('CESIUM_TOKEN_REMOVED', {
+      'success': true,
+    });
+    
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Cesium Ion token removed'),
@@ -335,7 +420,13 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
       'Are you sure you want to continue?',
     );
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      LoggingService.action('DataManagement', 'delete_all_data_cancelled');
+      return;
+    }
+
+    LoggingService.action('DataManagement', 'delete_all_data_confirmed');
+    final stopwatch = Stopwatch()..start();
 
     // Show loading
     _showLoadingDialog('Deleting all flight data...');
@@ -347,6 +438,13 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
       if (mounted) Navigator.of(context).pop();
 
       if (result['success']) {
+        LoggingService.performance('Delete all flight data', stopwatch.elapsed, 'deletion completed successfully');
+        LoggingService.summary('DELETE_ALL_DATA', {
+          'success': true,
+          'message': result['message'],
+          'duration_ms': stopwatch.elapsedMilliseconds,
+        });
+        
         setState(() {
           _dataModified = true; // Mark data as modified
         });
@@ -365,11 +463,22 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
           _cleanupStats = newCleanupStats;
         });
       } else {
+        LoggingService.structured('DELETE_ALL_DATA_FAILED', {
+          'success': false,
+          'error': result['message'],
+          'duration_ms': stopwatch.elapsedMilliseconds,
+        });
         _showErrorDialog('Deletion Failed', result['message']);
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       // Close loading dialog
       if (mounted) Navigator.of(context).pop();
+      
+      LoggingService.structured('DELETE_ALL_DATA_ERROR', {
+        'error': e.toString(),
+        'duration_ms': stopwatch.elapsedMilliseconds,
+      });
+      LoggingService.error('DataManagementScreen: Failed to delete all flight data', e, stackTrace);
       _showErrorDialog('Error', 'Failed to delete all flight data: $e');
     }
   }
@@ -386,17 +495,25 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
       confirmButtonText: 'Recreate Database',
     );
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      LoggingService.action('DataManagement', 'recreate_db_cancelled');
+      return;
+    }
+
+    LoggingService.action('DataManagement', 'recreate_db_confirmed');
+    final stopwatch = Stopwatch()..start();
 
     // Show progress dialog initially
     _showProgressDialog('Finding IGC files...', '', 0, 0);
 
     try {
       String currentFile = '';
+      int processedFiles = 0;
       
       final result = await DatabaseResetHelper.recreateDatabaseFromIGCFiles(
         onProgress: (filename, current, totalFiles) {
           currentFile = filename;
+          processedFiles = current;
           
           // Update progress dialog
           if (mounted) {
@@ -410,12 +527,23 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
       if (mounted) Navigator.of(context).pop();
 
       if (result['success']) {
+        final imported = result['imported'] ?? 0;
+        final failed = result['failed'] ?? 0;
+        final errors = result['errors'] as List<String>? ?? [];
+        
+        LoggingService.performance('Recreate database from IGC', stopwatch.elapsed, 'database recreation completed');
+        LoggingService.summary('RECREATE_DATABASE', {
+          'success': true,
+          'files_processed': processedFiles,
+          'flights_imported': imported,
+          'failures': failed,
+          'error_count': errors.length,
+          'duration_ms': stopwatch.elapsedMilliseconds,
+        });
+        
         setState(() {
           _dataModified = true; // Mark data as modified
         });
-        
-        final failed = result['failed'] ?? 0;
-        final errors = result['errors'] as List<String>? ?? [];
         
         String message = result['message'] ?? 'Database recreated successfully!';
         
@@ -441,29 +569,65 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
           _cleanupStats = newCleanupStats;
         });
       } else {
+        LoggingService.structured('RECREATE_DATABASE_FAILED', {
+          'success': false,
+          'error': result['message'],
+          'duration_ms': stopwatch.elapsedMilliseconds,
+        });
         _showErrorDialog('Recreation Failed', result['message']);
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       // Close progress dialog
       if (mounted) Navigator.of(context).pop();
+      
+      LoggingService.structured('RECREATE_DATABASE_ERROR', {
+        'error': e.toString(),
+        'duration_ms': stopwatch.elapsedMilliseconds,
+      });
+      LoggingService.error('DataManagementScreen: Failed to recreate database from IGC files', e, stackTrace);
       _showErrorDialog('Error', 'Failed to recreate database from IGC files: $e');
     }
   }
 
 
   Future<void> _clearMapCache() async {
+    final initialTiles = CacheUtils.getCurrentCacheCount();
+    final initialSize = CacheUtils.getCurrentCacheSize();
+    
     final confirmed = await _showConfirmationDialog(
       'Clear Map Cache',
       'This will clear all cached map tiles.\n\n'
       'Maps will need to re-download tiles when viewed.',
     );
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      LoggingService.action('DataManagement', 'clear_map_cache_cancelled');
+      return;
+    }
+
+    LoggingService.action('DataManagement', 'clear_map_cache_confirmed', {
+      'initial_tiles': initialTiles,
+      'initial_size_bytes': initialSize,
+    });
+    final stopwatch = Stopwatch()..start();
 
     CacheUtils.clearMapCache();
 
     // Give the system a moment to update cache stats
     await Future.delayed(const Duration(milliseconds: 100));
+    
+    final finalTiles = CacheUtils.getCurrentCacheCount();
+    final finalSize = CacheUtils.getCurrentCacheSize();
+    final freedBytes = initialSize - finalSize;
+    
+    LoggingService.performance('Clear map cache', stopwatch.elapsed, 'cache clearing completed');
+    LoggingService.summary('CLEAR_MAP_CACHE', {
+      'tiles_cleared': initialTiles - finalTiles,
+      'bytes_freed': freedBytes,
+      'initial_tiles': initialTiles,
+      'final_tiles': finalTiles,
+      'duration_ms': stopwatch.elapsedMilliseconds,
+    });
     
     if (mounted) {
       setState(() {}); // Refresh display
@@ -618,6 +782,9 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
   }
 
   Future<void> _testApiConnection() async {
+    LoggingService.action('DataManagement', 'test_paragliding_earth_api');
+    final stopwatch = Stopwatch()..start();
+    
     // Show loading
     _showLoadingDialog('Testing ParaglidingEarth API connection...');
 
@@ -627,6 +794,12 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
       
       // Close loading dialog
       if (mounted) Navigator.of(context).pop();
+      
+      LoggingService.performance('Test ParaglidingEarth API', stopwatch.elapsed, 'API connection test completed');
+      LoggingService.structured('API_CONNECTION_TEST', {
+        'is_connected': isConnected,
+        'duration_ms': stopwatch.elapsedMilliseconds,
+      });
       
       // Show result
       if (mounted) {
@@ -644,9 +817,15 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
           );
         }
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       // Close loading dialog
       if (mounted) Navigator.of(context).pop();
+      
+      LoggingService.structured('API_CONNECTION_TEST_ERROR', {
+        'error': e.toString(),
+        'duration_ms': stopwatch.elapsedMilliseconds,
+      });
+      LoggingService.error('DataManagementScreen: Error testing API connection', e, stackTrace);
       
       // Show error
       if (mounted) {
@@ -700,17 +879,32 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
   }
 
   Future<void> _analyzeIGCFiles() async {
+    LoggingService.action('DataManagement', 'analyze_igc_files');
+    final stopwatch = Stopwatch()..start();
+    
     _showLoadingDialog('Analyzing IGC files...');
     try {
       final cleanupStats = await IGCCleanupService.analyzeIGCFiles();
       
       if (mounted) Navigator.of(context).pop(); // Close loading
       
+      LoggingService.performance('Analyze IGC files', stopwatch.elapsed, 'IGC file analysis completed');
+      
       setState(() {
         _cleanupStats = cleanupStats;
       });
       
       if (cleanupStats != null) {
+        LoggingService.summary('IGC_ANALYSIS', {
+          'total_files': cleanupStats.totalIgcFiles,
+          'referenced_files': cleanupStats.referencedFiles,
+          'orphaned_files': cleanupStats.orphanedFiles,
+          'total_size_bytes': cleanupStats.totalSizeBytes,
+          'orphaned_size_bytes': cleanupStats.orphanedSizeBytes,
+          'orphaned_percentage': cleanupStats.orphanedPercentage,
+          'duration_ms': stopwatch.elapsedMilliseconds,
+        });
+        
         _showSuccessDialog(
           'IGC File Analysis',
           'Analysis completed!\n\n'
@@ -722,17 +916,28 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
           'Orphaned Percentage: ${cleanupStats.orphanedPercentage.toStringAsFixed(1)}%'
         );
       } else {
+        LoggingService.structured('IGC_ANALYSIS_FAILED', {
+          'error': 'null result',
+          'duration_ms': stopwatch.elapsedMilliseconds,
+        });
         _showErrorDialog('Analysis Failed', 'Failed to analyze IGC files.');
       }
       
-    } catch (e) {
+    } catch (e, stackTrace) {
       if (mounted) Navigator.of(context).pop(); // Close loading
+      
+      LoggingService.structured('IGC_ANALYSIS_ERROR', {
+        'error': e.toString(),
+        'duration_ms': stopwatch.elapsedMilliseconds,
+      });
+      LoggingService.error('DataManagementScreen: Failed to analyze IGC files', e, stackTrace);
       _showErrorDialog('Error', 'Failed to analyze IGC files: $e');
     }
   }
 
   Future<void> _cleanupOrphanedFiles() async {
     if (_cleanupStats == null || _cleanupStats!.orphanedFiles == 0) {
+      LoggingService.action('DataManagement', 'cleanup_orphaned_files_none_found');
       _showInfoDialog('No Cleanup Needed', 'No orphaned IGC files found.');
       return;
     }
@@ -745,7 +950,16 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
       'This action cannot be undone.',
     );
     
-    if (!confirmed) return;
+    if (!confirmed) {
+      LoggingService.action('DataManagement', 'cleanup_orphaned_files_cancelled');
+      return;
+    }
+    
+    LoggingService.action('DataManagement', 'cleanup_orphaned_files_confirmed', {
+      'orphaned_count': _cleanupStats!.orphanedFiles,
+      'orphaned_size_bytes': _cleanupStats!.orphanedSizeBytes,
+    });
+    final stopwatch = Stopwatch()..start();
     
     _showLoadingDialog('Cleaning up orphaned IGC files...');
     try {
@@ -756,7 +970,17 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
       if (result['success'] == true) {
         final filesDeleted = result['filesDeleted'] ?? 0;
         final sizeFreed = result['formattedSizeFreed'] ?? '0B';
+        final bytesFreed = result['bytesFreed'] ?? 0;
         final errors = result['errors'] as List<String>? ?? [];
+        
+        LoggingService.performance('Cleanup orphaned IGC files', stopwatch.elapsed, 'cleanup completed successfully');
+        LoggingService.summary('IGC_CLEANUP', {
+          'files_deleted': filesDeleted,
+          'bytes_freed': bytesFreed,
+          'errors': errors.length,
+          'success': true,
+          'duration_ms': stopwatch.elapsedMilliseconds,
+        });
         
         setState(() {
           _dataModified = true;
@@ -778,11 +1002,22 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
         
         _showSuccessDialog('Cleanup Complete', message);
       } else {
+        LoggingService.structured('IGC_CLEANUP_FAILED', {
+          'success': false,
+          'error': result['error'] ?? 'Unknown error',
+          'duration_ms': stopwatch.elapsedMilliseconds,
+        });
         _showErrorDialog('Cleanup Failed', result['error'] ?? 'Unknown error');
       }
       
-    } catch (e) {
+    } catch (e, stackTrace) {
       if (mounted) Navigator.of(context).pop(); // Close loading
+      
+      LoggingService.structured('IGC_CLEANUP_ERROR', {
+        'error': e.toString(),
+        'duration_ms': stopwatch.elapsedMilliseconds,
+      });
+      LoggingService.error('DataManagementScreen: Failed to cleanup IGC files', e, stackTrace);
       _showErrorDialog('Error', 'Failed to cleanup IGC files: $e');
     }
   }
