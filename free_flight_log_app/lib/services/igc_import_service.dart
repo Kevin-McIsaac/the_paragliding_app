@@ -298,6 +298,7 @@ class IgcImportService {
     int? closingPointIndex = dataForStats.getClosingPointIndex(maxDistanceMeters: closingDistance);
     double? actualClosingDistance;
     
+    
     // Create flight context for logging
     final flightContext = '[${igcData.date.toIso8601String().substring(0, 10)} ${launchSite?.name ?? 'Unknown'} ${igcData.launchTime.toLocal().toIso8601String().substring(11, 16)}]';
     
@@ -620,32 +621,6 @@ class IgcImportService {
     }
   }
   
-  /// Get track points with timezone information from saved IGC file
-  /// DEPRECATED: This method should not be used directly. Use FlightTrackLoader.loadFlightTrack() instead.
-  /// Optional trimming: if takeoffIndex and landingIndex are provided, returns only the trimmed flight period
-  @Deprecated('Use FlightTrackLoader.loadFlightTrack() for consistent trimmed data')
-  Future<({List<IgcPoint> points, String? timezone})> getTrackPointsWithTimezone(
-    String trackLogPath, {
-    int? takeoffIndex,
-    int? landingIndex,
-  }) async {
-    try {
-      // Use isolate parsing for better performance
-      final igcData = await parser.parseFile(trackLogPath);
-      
-      // Apply trimming if both indices are provided
-      final points = (takeoffIndex != null && landingIndex != null)
-          ? igcData.trackPoints.sublist(takeoffIndex, landingIndex + 1)
-          : igcData.trackPoints;
-          
-      LoggingService.debug('IgcImportService: Loaded ${points.length}/${igcData.trackPoints.length} track points (trimmed: ${takeoffIndex != null && landingIndex != null})');
-      
-      return (points: points, timezone: igcData.timezone);
-    } catch (e) {
-      LoggingService.error('IgcImportService: Error reading track points with timezone', e);
-      return (points: <IgcPoint>[], timezone: null);
-    }
-  }
 
   /// Get full IGC file data from saved file
   Future<IgcFile> getIgcFile(String trackLogPath) async {
