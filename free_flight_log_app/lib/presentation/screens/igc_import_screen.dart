@@ -218,13 +218,31 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
       _replaceAllDuplicates = false;
     });
     
+    // Start batch import logging
+    final batchStartTime = DateTime.now();
+    LoggingService.action('IgcImport', 'batch_import_started', {
+      'total_files': _selectedFilePaths.length,
+      'timestamp': batchStartTime.toIso8601String(),
+    });
+    
     final importService = IgcImportService.instance;
     
     int processedCount = 0;
+    int successCount = 0;
+    int skipCount = 0;
+    int failCount = 0;
+    final List<String> errorMessages = [];
 
     for (final filePath in _selectedFilePaths) {
       setState(() {
         _currentlyProcessingFile = filePath.split('/').last;
+      });
+      
+      // Log progress
+      LoggingService.structured('IGC_IMPORT_PROGRESS', {
+        'current_file': path.basename(filePath),
+        'progress': '${processedCount + 1}/${_selectedFilePaths.length}',
+        'percent': ((processedCount + 1) * 100 / _selectedFilePaths.length).toStringAsFixed(1),
       });
       
       try {
@@ -257,6 +275,7 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
             setState(() {
               _importResults.add(result);
             });
+            skipCount++;
             continue;
           } else if (_replaceAllDuplicates) {
             shouldReplace = true;
@@ -313,6 +332,15 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
           _importResults.add(result);
         });
         
+        // Track result counts
+        if (result.type == ImportResultType.imported || result.type == ImportResultType.replaced) {
+          successCount++;
+        } else if (result.type == ImportResultType.skipped) {
+          skipCount++;
+        } else if (result.type == ImportResultType.failed) {
+          failCount++;
+        }
+        
       } catch (e) {
         final result = ImportResult.failed(
           fileName: path.basename(filePath),
@@ -321,6 +349,9 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
         setState(() {
           _importResults.add(result);
         });
+        failCount++;
+        errorMessages.add('${path.basename(filePath)}: ${e.toString()}');
+        LoggingService.error('IgcImportScreen: Import failed for ${path.basename(filePath)}', e);
       }
       
       // Increment processed count and cleanup periodically
@@ -340,6 +371,35 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
     
     // Clean up API resources after batch import
     ParaglidingEarthApi.cleanup();
+    
+    // Calculate batch import duration
+    final batchEndTime = DateTime.now();
+    final batchDuration = batchEndTime.difference(batchStartTime);
+    
+    // Log batch import summary
+    LoggingService.summary('IGC_BATCH_IMPORT', {
+      'total_files': _selectedFilePaths.length,
+      'processed': processedCount,
+      'success': successCount,
+      'skipped': skipCount,
+      'failed': failCount,
+      'duration_sec': batchDuration.inSeconds,
+      'avg_time_per_file_ms': processedCount > 0 
+          ? (batchDuration.inMilliseconds / processedCount).toStringAsFixed(0)
+          : '0',
+    });
+    
+    // Log error summary if any failures
+    if (errorMessages.isNotEmpty) {
+      LoggingService.structured('IGC_IMPORT_ERRORS', {
+        'error_count': errorMessages.length,
+        'errors': errorMessages.take(5).join(' | '), // Log first 5 errors
+      });
+    }
+    
+    // Log performance metrics
+    LoggingService.performance('IGC batch import', batchDuration, 
+        'files=$processedCount, success=$successCount, skip=$skipCount, fail=$failCount');
 
     // Show results dialog
     if (mounted) {

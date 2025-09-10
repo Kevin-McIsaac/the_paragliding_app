@@ -41,27 +41,25 @@ class IGCCleanupService {
   /// Analyze IGC files and identify orphans
   static Future<IGCCleanupStats?> analyzeIGCFiles() async {
     try {
-      LoggingService.debug(_tag, 'Starting IGC file analysis');
+      LoggingService.debug('Starting IGC file analysis');
       
       // Get all flights with their track paths
       final flights = await DatabaseService.instance.getAllFlightsRaw();
       final referencedFilenames = <String>{};
       
-      LoggingService.debug(_tag, 'Retrieved ${flights.length} flight records from database');
+      LoggingService.structured('IGC_ANALYSIS_START', {
+        'flight_records': flights.length,
+      });
       
       for (final flight in flights) {
         final trackPath = flight['track_log_path'] as String?;
-        LoggingService.debug(_tag, 'Flight ${flight['id']}: track_log_path = "$trackPath"');
         
         if (trackPath != null && trackPath.isNotEmpty) {
           // Extract just the filename from the path (handles both absolute and relative paths)
           final filename = path.basename(trackPath);
           referencedFilenames.add(filename);
-          LoggingService.debug(_tag, 'Referenced path: $trackPath -> filename: $filename');
         }
       }
-      
-      LoggingService.debug(_tag, 'Found ${flights.length} flights with ${referencedFilenames.length} unique filenames');
       
       // Find all IGC files
       final allIgcFiles = await _findAllIGCFiles();
@@ -76,15 +74,12 @@ class IGCCleanupService {
         
         // Extract filename for comparison
         final filename = path.basename(file.path);
-        LoggingService.debug(_tag, 'File: ${file.path} -> filename: $filename');
         
         if (referencedFilenames.contains(filename)) {
           referencedCount++;
-          LoggingService.debug(_tag, 'MATCHED: $filename');
         } else {
           orphanedFiles.add(file.path);
           orphanedSize += size;
-          LoggingService.debug(_tag, 'ORPHANED: $filename');
         }
       }
       
@@ -97,13 +92,18 @@ class IGCCleanupService {
         orphanedFilePaths: orphanedFiles,
       );
       
-      LoggingService.info(_tag, 'Analysis complete: ${stats.totalIgcFiles} total files, '
-          '${stats.referencedFiles} referenced, ${stats.orphanedFiles} orphaned '
-          '(${stats.orphanedPercentage.toStringAsFixed(1)}%)');
+      LoggingService.structured('IGC_ANALYSIS_COMPLETE', {
+        'total_files': stats.totalIgcFiles,
+        'referenced_files': stats.referencedFiles, 
+        'orphaned_files': stats.orphanedFiles,
+        'orphaned_percentage': stats.orphanedPercentage.toStringAsFixed(1),
+        'total_size_mb': (stats.totalSizeBytes / 1024 / 1024).toStringAsFixed(1),
+        'orphaned_size_mb': (stats.orphanedSizeBytes / 1024 / 1024).toStringAsFixed(1),
+      });
       
       return stats;
     } catch (e) {
-      LoggingService.error(_tag, 'Failed to analyze IGC files: $e');
+      LoggingService.error('Failed to analyze IGC files: $e');
       return null;
     }
   }
@@ -111,7 +111,7 @@ class IGCCleanupService {
   /// Clean up orphaned IGC files
   static Future<Map<String, dynamic>> cleanupOrphanedFiles({bool dryRun = true}) async {
     try {
-      LoggingService.debug(_tag, 'Starting IGC cleanup (dry run: $dryRun)');
+      LoggingService.action('IGCCleanup', 'start_cleanup', {'dry_run': dryRun});
       
       final stats = await analyzeIGCFiles();
       if (stats == null) {
@@ -143,10 +143,13 @@ class IGCCleanupService {
               await file.delete();
               deletedCount++;
               freedSize += size;
-              LoggingService.debug(_tag, 'Deleted orphaned file: $filePath (${_formatBytes(size)})');
+              // Individual file deletion logged only for actual deletions (not dry run)
+              if (deletedCount % 10 == 0 || deletedCount == stats.orphanedFiles) {
+                LoggingService.debug('Deleted orphaned files: $deletedCount/${stats.orphanedFiles}');
+              }
             }
           } catch (e) {
-            LoggingService.warning(_tag, 'Failed to delete file $filePath: $e');
+            LoggingService.warning('Failed to delete IGC file: $e');
             errors.add('$filePath: $e');
           }
         }
@@ -162,7 +165,7 @@ class IGCCleanupService {
       };
       
     } catch (e) {
-      LoggingService.error(_tag, 'IGC cleanup failed: $e');
+      LoggingService.error('IGC cleanup failed: $e');
       return {
         'success': false,
         'error': e.toString(),
@@ -210,7 +213,7 @@ class IGCCleanupService {
       }
       
     } catch (e) {
-      LoggingService.error(_tag, 'Error finding IGC files: $e');
+      LoggingService.error('Error finding IGC files: $e');
     }
     
     return igcFiles;

@@ -50,7 +50,7 @@ class BackupDiagnosticService {
   /// Get backup configuration status
   static Future<Map<String, dynamic>> getBackupStatus() async {
     try {
-      LoggingService.debug(_tag, 'Getting backup configuration status');
+      LoggingService.debug('Getting backup configuration status');
       
       // Check if backup is explicitly configured in AndroidManifest.xml
       final isExplicitlyEnabled = true; // Our implementation has explicit backup
@@ -66,7 +66,7 @@ class BackupDiagnosticService {
         'maxBackupSize': '25MB (Android limit)',
       };
     } catch (e) {
-      LoggingService.error(_tag, 'Failed to get backup status: $e');
+      LoggingService.error('Failed to get backup status: $e');
       return {
         'success': false,
         'error': e.toString(),
@@ -77,12 +77,12 @@ class BackupDiagnosticService {
   /// Calculate IGC compression statistics for all IGC files
   static Future<IGCBackupStats?> calculateIGCCompressionStats() async {
     try {
-      LoggingService.debug(_tag, 'Calculating IGC compression statistics');
+      LoggingService.action('BackupDiagnostic', 'calculate_igc_compression');
       
       final igcFiles = await _findIGCFiles();
       
       if (igcFiles.isEmpty) {
-        LoggingService.info(_tag, 'No IGC files found for compression analysis');
+        LoggingService.debug('No IGC files found for compression analysis');
         return IGCBackupStats(
           fileCount: 0,
           originalSizeBytes: 0,
@@ -109,7 +109,7 @@ class BackupDiagnosticService {
           processedFiles++;
           
         } catch (e) {
-          LoggingService.warning(_tag, 'Failed to process IGC file: ${file.path} - $e');
+          LoggingService.warning('Failed to process IGC file: $e');
         }
       }
 
@@ -127,13 +127,17 @@ class BackupDiagnosticService {
         estimatedBackupSizeMB: estimatedBackupSizeMB,
       );
 
-      LoggingService.info(_tag, 'Compression stats: $processedFiles files, '
-          '${stats.formattedOriginalSize} → ${stats.formattedCompressedSize} '
-          '(${compressionRatio.toStringAsFixed(1)}x compression)');
+      LoggingService.structured('BACKUP_COMPRESSION_COMPLETE', {
+        'file_count': processedFiles,
+        'original_size_mb': (totalOriginalSize / 1024 / 1024).toStringAsFixed(1),
+        'compressed_size_mb': (totalCompressedSize / 1024 / 1024).toStringAsFixed(1),
+        'compression_ratio': compressionRatio.toStringAsFixed(1),
+        'backup_size_mb': estimatedBackupSizeMB.toStringAsFixed(1),
+      });
 
       return stats;
     } catch (e) {
-      LoggingService.error(_tag, 'Failed to calculate IGC compression stats: $e');
+      LoggingService.error('Failed to calculate IGC compression stats: $e');
       return null;
     }
   }
@@ -141,7 +145,7 @@ class BackupDiagnosticService {
   /// Test compression and decompression of a sample IGC file
   static Future<Map<String, dynamic>> testCompressionIntegrity() async {
     try {
-      LoggingService.debug(_tag, 'Testing IGC compression integrity');
+      LoggingService.action('BackupDiagnostic', 'test_compression_integrity');
       
       final igcFiles = await _findIGCFiles();
       
@@ -189,7 +193,9 @@ class BackupDiagnosticService {
     
     try {
       final appDir = await getApplicationDocumentsDirectory();
-      LoggingService.debug(_tag, 'App documents directory: ${appDir.path}');
+      LoggingService.structured('BACKUP_IGC_SEARCH_START', {
+        'app_directory': appDir.path,
+      });
       
       // First, check what track_log_path values are in the database
       await _logDatabaseTrackPaths();
@@ -203,7 +209,6 @@ class BackupDiagnosticService {
       ];
       
       // Also check the root documents directory
-      LoggingService.debug(_tag, 'Checking root documents directory for .igc files');
       final rootFiles = await appDir
           .list()
           .where((entity) => entity is File && 
@@ -211,12 +216,11 @@ class BackupDiagnosticService {
           .cast<File>()
           .toList();
       igcFiles.addAll(rootFiles);
-      LoggingService.debug(_tag, 'Found ${rootFiles.length} IGC files in root documents');
+      
+      int totalFilesFound = rootFiles.length;
       
       for (final dirName in igcDirectories) {
         final dir = Directory('${appDir.path}/$dirName');
-        
-        LoggingService.debug(_tag, 'Checking directory: ${dir.path} (exists: ${await dir.exists()})');
         
         if (await dir.exists()) {
           final files = await dir
@@ -227,15 +231,22 @@ class BackupDiagnosticService {
               .toList();
           
           igcFiles.addAll(files);
-          LoggingService.debug(_tag, 'Found ${files.length} IGC files in $dirName');
+          totalFilesFound += files.length;
         }
       }
       
-      // Also check if any track_log_path from database points to actual files
-      await _checkDatabaseTrackFiles(igcFiles);
+      LoggingService.structured('BACKUP_IGC_SEARCH_COMPLETE', {
+        'total_files_found': totalFilesFound,
+        'directories_checked': igcDirectories.length + 1,
+      });
+      
+      // Sample file check for diagnostic purposes
+      if (igcFiles.isNotEmpty) {
+        await _checkDatabaseTrackFiles(igcFiles);
+      }
       
     } catch (e) {
-      LoggingService.error(_tag, 'Error finding IGC files: $e');
+      LoggingService.error('Error finding IGC files: $e');
     }
     
     return igcFiles;
@@ -245,22 +256,34 @@ class BackupDiagnosticService {
   static Future<void> _logDatabaseTrackPaths() async {
     try {
       // This would require database access - for now just log that we're checking
-      LoggingService.debug(_tag, 'Would check database for track_log_path values (149 flights expected)');
+      LoggingService.debug('Checking database track_log_path values (149 flights expected)');
     } catch (e) {
-      LoggingService.debug(_tag, 'Cannot access database directly: $e');
+      LoggingService.debug('Cannot access database directly: $e');
     }
   }
 
   /// Check if database track_log_path files exist
   static Future<void> _checkDatabaseTrackFiles(List<File> igcFiles) async {
     try {
-      LoggingService.debug(_tag, 'Total IGC files found through directory search: ${igcFiles.length}');
-      for (final file in igcFiles.take(5)) { // Log first 5 files
+      // Sample a few files for size analysis
+      int totalSize = 0;
+      int sampleCount = 0;
+      for (final file in igcFiles.take(5)) {
         final size = await file.length();
-        LoggingService.debug(_tag, 'IGC file: ${file.path} ($size bytes)');
+        totalSize += size;
+        sampleCount++;
+      }
+      
+      if (sampleCount > 0) {
+        final avgSize = (totalSize / sampleCount / 1024).round(); // KB
+        LoggingService.structured('BACKUP_FILE_SAMPLE', {
+          'sample_files': sampleCount,
+          'avg_size_kb': avgSize,
+          'total_files': igcFiles.length,
+        });
       }
     } catch (e) {
-      LoggingService.debug(_tag, 'Error checking IGC file details: $e');
+      LoggingService.debug('Error sampling IGC file sizes: $e');
     }
   }
 
