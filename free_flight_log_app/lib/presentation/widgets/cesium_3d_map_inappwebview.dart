@@ -416,7 +416,6 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                       final frameDrops = data['frameDrops'] as num?;
                       final avgFrameRate = data['avgFrameRate'] as num?;
                       final memoryDeltaMB = data['memoryDeltaMB'] as num?;
-                      final finalCachedTiles = data['finalCachedTiles'] as num?;
                       final networkRequests = data['networkRequests'] as num?;
                       
                       // Log performance metrics in single line
