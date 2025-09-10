@@ -32,16 +32,41 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
     });
     
     try {
-      LoggingService.debug('WingManagementScreen: Loading wings');
+      final stopwatch = Stopwatch()..start();
+      final opId = LoggingService.startOperation('WINGS_LOAD');
+      
+      // Log structured data about the wings query
+      LoggingService.structured('WINGS_QUERY', {
+        'operation_id': opId,
+        'include_flight_counts': true,
+      });
+      
       final wings = await _databaseService.getAllWings();
       
+      // Load flight counts for each wing
       Map<int, int> flightCounts = {};
+      int totalFlights = 0;
       for (final wing in wings) {
         if (wing.id != null) {
           final stats = await _databaseService.getWingStatisticsById(wing.id!);
-          flightCounts[wing.id!] = stats['totalFlights'] as int;
+          final flights = stats['totalFlights'] as int;
+          flightCounts[wing.id!] = flights;
+          totalFlights += flights;
         }
       }
+      
+      stopwatch.stop();
+      
+      // Calculate active vs inactive wings
+      final activeCount = wings.where((w) => w.active).length;
+      final inactiveCount = wings.length - activeCount;
+      
+      // Log performance with threshold monitoring
+      LoggingService.performance(
+        'Wings Load',
+        Duration(milliseconds: stopwatch.elapsedMilliseconds),
+        'wings loaded with flight counts',
+      );
       
       if (mounted) {
         setState(() {
@@ -49,10 +74,18 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
           _flightCounts = flightCounts;
           _isLoading = false;
         });
-        LoggingService.info('WingManagementScreen: Loaded ${wings.length} wings with flight counts');
+        
+        // End operation with summary
+        LoggingService.endOperation('WINGS_LOAD', results: {
+          'total_wings': wings.length,
+          'active_wings': activeCount,
+          'inactive_wings': inactiveCount,
+          'total_flights': totalFlights,
+          'duration_ms': stopwatch.elapsedMilliseconds,
+        });
       }
-    } catch (e) {
-      LoggingService.error('WingManagementScreen: Failed to load wings', e);
+    } catch (e, stackTrace) {
+      LoggingService.error('Failed to load wings', e, stackTrace);
       if (mounted) {
         setState(() {
           _errorMessage = 'Failed to load wings: $e';
@@ -63,6 +96,11 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
   }
 
   Future<void> _addNewWing() async {
+    // Log user action
+    LoggingService.action('WingManagement', 'add_wing_initiated', {
+      'current_wing_count': _wings.length,
+    });
+    
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (context) => const EditWingScreen(),
@@ -70,11 +108,23 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
     );
 
     if (result == true && mounted) {
+      LoggingService.action('WingManagement', 'add_wing_completed', {
+        'wing_added': true,
+      });
       _loadWings();
+    } else {
+      LoggingService.action('WingManagement', 'add_wing_cancelled', {});
     }
   }
 
   Future<void> _editWing(Wing wing) async {
+    // Log user action with context
+    LoggingService.action('WingManagement', 'edit_wing_initiated', {
+      'wing_id': wing.id,
+      'wing_name': wing.displayName,
+      'is_active': wing.active,
+    });
+    
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (context) => EditWingScreen(wing: wing),
@@ -82,7 +132,15 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
     );
 
     if (result == true && mounted) {
+      LoggingService.action('WingManagement', 'edit_wing_completed', {
+        'wing_id': wing.id,
+        'wing_edited': true,
+      });
       _loadWings();
+    } else {
+      LoggingService.action('WingManagement', 'edit_wing_cancelled', {
+        'wing_id': wing.id,
+      });
     }
   }
 
@@ -111,19 +169,34 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
       bool success = false;
       String? errorMessage;
       
+      // Log user action with rich context
+      LoggingService.action('WingManagement', 'delete_wing_confirmed', {
+        'wing_id': wing.id,
+        'wing_name': wing.displayName,
+        'flight_count': _flightCounts[wing.id!] ?? 0,
+      });
+      
       try {
         final canDelete = await _databaseService.canDeleteWing(wing.id!);
         if (!canDelete) {
           errorMessage = 'Cannot delete wing - it is used in flight records';
+          LoggingService.structured('WING_DELETE_BLOCKED', {
+            'wing_id': wing.id,
+            'reason': 'has_flight_records',
+            'flight_count': _flightCounts[wing.id!] ?? 0,
+          });
         } else {
-          LoggingService.debug('WingManagementScreen: Deleting wing ${wing.id}');
           await _databaseService.deleteWing(wing.id!);
           success = true;
-          LoggingService.info('WingManagementScreen: Deleted wing ${wing.id}');
+          LoggingService.summary('WING_DELETED', {
+            'wing_id': wing.id,
+            'wing_name': wing.displayName,
+            'was_active': wing.active,
+          });
           _loadWings();
         }
-      } catch (e) {
-        LoggingService.error('WingManagementScreen: Failed to delete wing', e);
+      } catch (e, stackTrace) {
+        LoggingService.error('Failed to delete wing', e, stackTrace);
         errorMessage = 'Failed to delete wing: $e';
       }
       
@@ -143,15 +216,27 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
   Future<void> _toggleWingStatus(Wing wing) async {
     final updatedWing = wing.copyWith(active: !wing.active);
 
+    // Log user action
+    LoggingService.action('WingManagement', 'toggle_wing_status', {
+      'wing_id': wing.id,
+      'wing_name': wing.displayName,
+      'from_active': wing.active,
+      'to_active': !wing.active,
+      'flight_count': _flightCounts[wing.id!] ?? 0,
+    });
+
     bool success = false;
     try {
-      LoggingService.debug('WingManagementScreen: Toggling wing ${wing.id} status');
       await _databaseService.updateWing(updatedWing);
       success = true;
-      LoggingService.info('WingManagementScreen: Updated wing ${wing.id} status');
+      LoggingService.structured('WING_STATUS_CHANGED', {
+        'wing_id': wing.id,
+        'wing_name': wing.displayName,
+        'new_status': !wing.active ? 'active' : 'inactive',
+      });
       _loadWings();
-    } catch (e) {
-      LoggingService.error('WingManagementScreen: Failed to update wing status', e);
+    } catch (e, stackTrace) {
+      LoggingService.error('Failed to update wing status', e, stackTrace);
     }
     
     if (mounted) {
@@ -167,6 +252,12 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
   }
 
   Future<void> _showMergeDialog() async {
+    // Log user action with context
+    LoggingService.action('WingManagement', 'merge_wings_initiated', {
+      'total_wings': _wings.length,
+      'active_wings': _wings.where((w) => w.active).length,
+    });
+    
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => WingMergeDialog(
@@ -176,7 +267,12 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
     );
 
     if (result == true && mounted) {
+      LoggingService.action('WingManagement', 'merge_wings_completed', {
+        'wings_merged': true,
+      });
       _loadWings();
+    } else {
+      LoggingService.action('WingManagement', 'merge_wings_cancelled', {});
     }
   }
 
