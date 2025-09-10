@@ -151,7 +151,7 @@ class LoggingService {
   /// Log metric value with unit
   static void metric(String name, num value, String unit, [String? category]) {
     final cat = category != null ? '[$category] ' : '';
-    _logger.d('${cat}[METRIC] $name=$value$unit');
+    _logger.d('$cat[METRIC] $name=$value$unit');
   }
 
   /// Helper to format values for structured logging
