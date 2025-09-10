@@ -46,17 +46,21 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     
     try {
       final stopwatch = Stopwatch()..start();
-      LoggingService.debug('StatisticsScreen: Loading all statistics');
+      final opId = LoggingService.startOperation('STATS_LOAD');
       
       // Get date range for filtering
       DateTime? startDate = _selectedDateRange?.start;
       DateTime? endDate = _selectedDateRange?.end;
       
-      if (startDate != null || endDate != null) {
-        LoggingService.debug('StatisticsScreen: Filtering statistics from '
-            '${startDate?.toIso8601String().split('T')[0] ?? 'beginning'} to '
-            '${endDate?.toIso8601String().split('T')[0] ?? 'end'}');
-      }
+      // Log structured data about the statistics query
+      LoggingService.structured('STATS_QUERY', {
+        'operation_id': opId,
+        'date_range_preset': _selectedPreset,
+        'start_date': startDate?.toIso8601String().split('T')[0],
+        'end_date': endDate?.toIso8601String().split('T')[0],
+        'filter_type': _selectedPreset == 'custom' ? 'custom' : 'preset',
+        'has_date_filter': startDate != null || endDate != null,
+      });
       
       // Load all statistics in parallel
       final results = await Future.wait([
@@ -66,7 +70,21 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       ]);
       
       stopwatch.stop();
-      LoggingService.debug('StatisticsScreen: Statistics loaded in ${stopwatch.elapsedMilliseconds}ms');
+      
+      // Calculate total flights for performance context
+      int totalFlights = 0;
+      double totalHours = 0.0;
+      for (final stat in results[0]) {
+        totalFlights += stat['flight_count'] as int;
+        totalHours += (stat['total_hours'] as num?)?.toDouble() ?? 0.0;
+      }
+      
+      // Log performance with threshold monitoring
+      LoggingService.performance(
+        'Statistics Load',
+        Duration(milliseconds: stopwatch.elapsedMilliseconds),
+        'statistics loaded',
+      );
       
       if (mounted) {
         setState(() {
@@ -76,11 +94,30 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
           _isLoading = false;
         });
         
-        LoggingService.info('StatisticsScreen: Loaded statistics - '
-            '${_yearlyStats.length} years, ${_wingStats.length} wings, ${_siteStats.length} sites');
+        // End operation with summary
+        LoggingService.endOperation('STATS_LOAD', results: {
+          'total_years': _yearlyStats.length,
+          'total_wings': _wingStats.length,
+          'total_sites': _siteStats.length,
+          'total_flights': totalFlights,
+          'total_hours': totalHours.toStringAsFixed(1),
+          'duration_ms': stopwatch.elapsedMilliseconds,
+          'filter_applied': startDate != null || endDate != null,
+        });
       }
-    } catch (e) {
-      LoggingService.error('StatisticsScreen: Failed to load statistics', e);
+    } catch (e, stackTrace) {
+      // Enhanced error logging with structured data
+      LoggingService.structured('STATS_ERROR', {
+        'error_type': e.runtimeType.toString(),
+        'message': e.toString(),
+        'date_range_preset': _selectedPreset,
+        'filter_type': _selectedPreset == 'custom' ? 'custom' : 'preset',
+        'recovery_action': 'user_retry_available',
+        'stack_trace_length': stackTrace.toString().split('\n').length,
+      });
+      
+      LoggingService.error('StatisticsScreen: Failed to load statistics', e, stackTrace);
+      
       if (mounted) {
         setState(() {
           // Provide more specific error messages for different failure types
@@ -188,6 +225,14 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   }
 
   Future<void> _selectPreset(String preset) async {
+    // Log user action with context
+    LoggingService.action('Statistics', 'select_date_preset', {
+      'new_preset': preset,
+      'previous_preset': _selectedPreset,
+      'current_range': _formatDateRange(_selectedDateRange),
+      'interaction_type': preset == 'custom' ? 'date_picker' : 'preset_chip',
+    });
+    
     if (preset == 'custom') {
       // Always show date picker when custom is tapped
       final DateTimeRange? picked = await showDateRangePicker(
@@ -200,6 +245,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       if (picked != null) {
         // Validate that end date is not before start date
         if (picked.end.isBefore(picked.start)) {
+          LoggingService.warning('Statistics: Invalid date range selected - end before start');
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -210,16 +256,33 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
           }
           return;
         }
+        
+        LoggingService.structured('STATS_CUSTOM_RANGE', {
+          'start_date': picked.start.toIso8601String().split('T')[0],
+          'end_date': picked.end.toIso8601String().split('T')[0],
+          'duration_days': picked.end.difference(picked.start).inDays,
+        });
+        
         setState(() {
           _selectedPreset = 'custom';
           _selectedDateRange = picked;
         });
         _loadAllStatistics();
+      } else {
+        LoggingService.debug('Statistics: Date picker cancelled by user');
       }
     } else {
+      final newRange = _getDateRangeForPreset(preset);
+      LoggingService.structured('STATS_PRESET_SELECTED', {
+        'preset': preset,
+        'range_start': newRange?.start.toIso8601String().split('T')[0],
+        'range_end': newRange?.end.toIso8601String().split('T')[0],
+        'duration_days': newRange?.end.difference(newRange.start).inDays,
+      });
+      
       setState(() {
         _selectedPreset = preset;
-        _selectedDateRange = _getDateRangeForPreset(preset);
+        _selectedDateRange = newRange;
       });
       _loadAllStatistics();
     }
