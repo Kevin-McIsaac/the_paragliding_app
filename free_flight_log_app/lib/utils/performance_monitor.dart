@@ -168,10 +168,9 @@ class PerformanceMonitor {
         _frameTimes.removeAt(0);
       }
       
-      // Warn about individual slow frames
-      if (frameDuration > 32.0) { // Slower than 30 FPS
-        LoggingService.warning('[FRAME_JANK] Slow frame: ${frameDuration.toStringAsFixed(1)}ms (>${32}ms threshold)');
-      }
+      // Collect frame data for statistics (individual warnings suppressed to reduce log noise)
+      // Individual slow frames are tracked but not logged to prevent spam
+      // Use logFrameRatePerformance() for periodic summaries
     }
   }
   
