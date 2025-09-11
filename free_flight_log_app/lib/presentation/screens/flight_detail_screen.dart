@@ -10,7 +10,7 @@ import '../../services/logging_service.dart';
 import '../../services/igc_import_service.dart';
 import '../../data/models/import_result.dart';
 import '../../utils/import_error_helper.dart';
-import '../../utils/preferences_helper.dart';
+import '../../utils/card_expansion_manager.dart';
 import '../widgets/flight_track_2d_widget.dart';
 import '../widgets/flight_statistics_widget.dart';
 import '../widgets/site_selection_dialog.dart';
@@ -40,10 +40,8 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
   bool _isSaving = false;
   late TextEditingController _notesController;
   
-  // Card expansion states (Notes card is always expanded - no state needed)
-  bool _flightDetailsExpanded = true;
-  bool _flightStatisticsExpanded = true;
-  bool _flightTrackExpanded = true;
+  // Card expansion state manager
+  late CardExpansionManager _expansionManager;
   
 
   @override
@@ -51,6 +49,7 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
     super.initState();
     _flight = widget.flight;
     _notesController = TextEditingController(text: _flight.notes ?? '');
+    _expansionManager = CardExpansionManagers.createFlightDetailManager();
     _loadFlightDetails();
     _loadCardExpansionStates();
     WidgetsBinding.instance.addObserver(this);
@@ -74,35 +73,17 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
   }
 
   Future<void> _loadCardExpansionStates() async {
-    try {
-      final expansionStates = await PreferencesHelper.getAllCardExpansionStates();
-      _flightDetailsExpanded = expansionStates[PreferencesHelper.cardTypeFlightDetails] ?? true;
-      _flightStatisticsExpanded = expansionStates[PreferencesHelper.cardTypeFlightStatistics] ?? true;
-      _flightTrackExpanded = expansionStates[PreferencesHelper.cardTypeFlightTrack] ?? true;
-      // Notes card is always expanded - no state needed
-      setState(() {
-        // Update UI with loaded expansion states
-      });
-    } catch (e) {
-      // Error loading preferences - use defaults
-      LoggingService.error('Failed to load card expansion states', e);
-    }
+    await _expansionManager.loadStates();
+    setState(() {
+      // Update UI with loaded expansion states
+    });
   }
 
   void _handleExpansionChanged(String cardType, bool expanded) {
-    switch (cardType) {
-      case PreferencesHelper.cardTypeFlightDetails:
-        _flightDetailsExpanded = expanded;
-        break;
-      case PreferencesHelper.cardTypeFlightStatistics:
-        _flightStatisticsExpanded = expanded;
-        break;
-      case PreferencesHelper.cardTypeFlightTrack:
-        _flightTrackExpanded = expanded;
-        break;
-      // Notes card is always expanded - no case needed
-    }
-    PreferencesHelper.setCardExpansionState(cardType, expanded);
+    _expansionManager.setState(cardType, expanded);
+    setState(() {
+      // Update UI with new expansion state
+    });
   }
 
   Widget _buildNotesCard() {
@@ -938,8 +919,8 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                           'Flight Details',
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
-                        initiallyExpanded: _flightDetailsExpanded,
-                        onExpansionChanged: (expanded) => _handleExpansionChanged(PreferencesHelper.cardTypeFlightDetails, expanded),
+                        initiallyExpanded: _expansionManager.getState('flight_details'),
+                        onExpansionChanged: (expanded) => _handleExpansionChanged('flight_details', expanded),
                         children: [
                           Padding(
                             padding: const EdgeInsets.all(16.0),
@@ -960,8 +941,8 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                             'Flight Statistics',
                             style: Theme.of(context).textTheme.titleLarge,
                           ),
-                          initiallyExpanded: _flightStatisticsExpanded,
-                          onExpansionChanged: (expanded) => _handleExpansionChanged(PreferencesHelper.cardTypeFlightStatistics, expanded),
+                          initiallyExpanded: _expansionManager.getState('flight_statistics'),
+                          onExpansionChanged: (expanded) => _handleExpansionChanged('flight_statistics', expanded),
                           children: [
                             Padding(
                               padding: const EdgeInsets.all(16.0),
@@ -984,8 +965,8 @@ class _FlightDetailScreenState extends State<FlightDetailScreen> with WidgetsBin
                             'Flight Track',
                             style: Theme.of(context).textTheme.titleLarge,
                           ),
-                          initiallyExpanded: _flightTrackExpanded,
-                          onExpansionChanged: (expanded) => _handleExpansionChanged(PreferencesHelper.cardTypeFlightTrack, expanded),
+                          initiallyExpanded: _expansionManager.getState('flight_track'),
+                          onExpansionChanged: (expanded) => _handleExpansionChanged('flight_track', expanded),
                           children: [
                             Padding(
                               padding: const EdgeInsets.all(16.0),

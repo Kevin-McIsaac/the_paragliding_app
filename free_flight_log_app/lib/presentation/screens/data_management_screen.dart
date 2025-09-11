@@ -8,6 +8,7 @@ import '../../utils/preferences_helper.dart';
 import '../../services/backup_diagnostic_service.dart';
 import '../../services/igc_cleanup_service.dart';
 import '../../services/logging_service.dart';
+import '../../utils/card_expansion_manager.dart';
 
 class DataManagementScreen extends StatefulWidget {
   final bool expandPremiumMaps;
@@ -26,13 +27,8 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
   bool _isLoading = true;
   bool _dataModified = false; // Track if any data was modified
   
-  // Expansion state for collapsible cards - all start collapsed
-  bool _dbStatsExpanded = false;
-  bool _backupExpanded = false;
-  bool _mapCacheExpanded = false;
-  bool _cleanupExpanded = false;
-  bool _apiTestExpanded = false;
-  bool _premiumMapsExpanded = false;
+  // Card expansion state manager (session-only for this screen)
+  late CardExpansionManager _expansionManager;
   
   // Cesium token state
   String? _cesiumToken;
@@ -46,8 +42,14 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
       'expand_premium_maps': widget.expandPremiumMaps,
     });
     
+    // Initialize expansion manager
+    _expansionManager = CardExpansionManagers.createDataManagementManager();
+    
     // Set initial Premium Maps expansion state based on parameter
-    _premiumMapsExpanded = widget.expandPremiumMaps;
+    if (widget.expandPremiumMaps) {
+      _expansionManager.setState('premium_maps', true);
+    }
+    
     _loadDatabaseStats();
     _loadBackupDiagnostics();
     _loadCesiumToken();
@@ -1057,10 +1059,10 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                       leading: const Icon(Icons.map),
                       title: const Text('Map Tile Cache'),
                       subtitle: Text('${CacheUtils.getCurrentCacheCount()} tiles • ${CacheUtils.formatBytes(CacheUtils.getCurrentCacheSize())}'),
-                      initiallyExpanded: _mapCacheExpanded,
+                      initiallyExpanded: _expansionManager.getState('map_cache'),
                       onExpansionChanged: (expanded) {
                         setState(() {
-                          _mapCacheExpanded = expanded;
+                          _expansionManager.setState('map_cache', expanded);
                         });
                       },
                       children: [
@@ -1100,10 +1102,10 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                       subtitle: _backupStatus?['success'] == true 
                         ? Text('${_backupStatus!['backupEnabled'] ? '✓ Enabled' : '✗ Disabled'} • ${_igcStats?.fileCount ?? 0} IGC files')
                         : const Text('Loading...'),
-                      initiallyExpanded: _backupExpanded,
+                      initiallyExpanded: _expansionManager.getState('backup_status'),
                       onExpansionChanged: (expanded) {
                         setState(() {
-                          _backupExpanded = expanded;
+                          _expansionManager.setState('backup_status', expanded);
                         });
                       },
                       children: [
@@ -1162,10 +1164,10 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                       subtitle: _cleanupStats != null 
                         ? Text('${_cleanupStats!.totalIgcFiles} (${_cleanupStats!.formattedTotalSize}) • ${_cleanupStats!.orphanedFiles} orphaned')
                         : const Text('Analyzing files...'),
-                      initiallyExpanded: _cleanupExpanded,
+                      initiallyExpanded: _expansionManager.getState('igc_cleanup'),
                       onExpansionChanged: (expanded) {
                         setState(() {
-                          _cleanupExpanded = expanded;
+                          _expansionManager.setState('igc_cleanup', expanded);
                         });
                       },
                       children: [
@@ -1229,10 +1231,10 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                       leading: const Icon(Icons.cloud_sync),
                       title: const Text('ParaglidingEarth API'),
                       subtitle: const Text('Lookup site details, eg., name, latitude/longitude, country'),
-                      initiallyExpanded: _apiTestExpanded,
+                      initiallyExpanded: _expansionManager.getState('api_test'),
                       onExpansionChanged: (expanded) {
                         setState(() {
-                          _apiTestExpanded = expanded;
+                          _expansionManager.setState('api_test', expanded);
                         });
                       },
                       children: [
@@ -1274,10 +1276,10 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                       subtitle: Text(_cesiumToken != null 
                         ? (_isCesiumTokenValidated ? 'Active' : 'Not validated') 
                         : 'No token configured'),
-                      initiallyExpanded: _premiumMapsExpanded,
+                      initiallyExpanded: _expansionManager.getState('premium_maps'),
                       onExpansionChanged: (expanded) {
                         setState(() {
-                          _premiumMapsExpanded = expanded;
+                          _expansionManager.setState('premium_maps', expanded);
                         });
                       },
                       children: [
@@ -1449,10 +1451,10 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                       subtitle: _dbStats != null 
                         ? Text('${_dbStats!['flights'] ?? 0} flights • ${_dbStats!['sites'] ?? 0} sites • ${_dbStats!['wings'] ?? 0} wings')
                         : const Text('Loading...'),
-                      initiallyExpanded: _dbStatsExpanded,
+                      initiallyExpanded: _expansionManager.getState('database_stats'),
                       onExpansionChanged: (expanded) {
                         setState(() {
-                          _dbStatsExpanded = expanded;
+                          _expansionManager.setState('database_stats', expanded);
                         });
                       },
                       children: [
