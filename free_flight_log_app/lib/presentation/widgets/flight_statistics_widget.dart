@@ -31,10 +31,11 @@ class FlightStatisticsWidget extends StatelessWidget {
       child: Column(
         children: [
           // Basic Statistics
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+          IntrinsicHeight(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               Expanded(
                 child: _buildStatItem(
                   'Duration',
@@ -80,16 +81,18 @@ class FlightStatisticsWidget extends StatelessWidget {
                 ),
               ),
             ],
+            ),
           ),
           
           // Climb Rate Statistics
           const SizedBox(height: 12),
           const Divider(height: 1),
           const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+          IntrinsicHeight(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               Expanded(
                 child: _buildStatItem(
                   'Max Climb (Inst)',
@@ -135,6 +138,7 @@ class FlightStatisticsWidget extends StatelessWidget {
                 ),
               ),
             ],
+            ),
           ),
           
           // All Additional Statistics
@@ -200,35 +204,38 @@ class FlightStatisticsWidget extends StatelessWidget {
     }
     paddedStats.length = 4; // Trim to exactly 4
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceAround,
-      children: paddedStats.map((stat) {
-        if (stat == null) {
-          return const Expanded(child: SizedBox());
-        }
-        return Expanded(
-          child: _buildStatItem(
-            stat['label'] as String,
-            stat['value'] as String,
-            stat['icon'] as IconData,
-            context,
-            tooltip: stat['tooltip'] as String,
-          ),
-        );
-      }).toList(),
+    return IntrinsicHeight(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: paddedStats.map((stat) {
+          if (stat == null) {
+            return const Expanded(child: SizedBox());
+          }
+          return Expanded(
+            child: _buildStatItem(
+              stat['label'] as String,
+              stat['value'] as String,
+              stat['icon'] as IconData,
+              context,
+              tooltip: stat['tooltip'] as String,
+            ),
+          );
+        }).toList(),
+      ),
     );
   }
 
 
   Widget _buildStatItem(String label, String value, IconData icon, BuildContext context, {String? tooltip}) {
     Widget statWidget = Column(
-      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.start,
       children: [
         Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
         const SizedBox(height: 4),
         Text(
           value,
           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          textAlign: TextAlign.center,
         ),
         Text(
           label,
@@ -236,6 +243,9 @@ class FlightStatisticsWidget extends StatelessWidget {
             fontSize: 10,
             color: Colors.grey[600],
           ),
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
         ),
       ],
     );
