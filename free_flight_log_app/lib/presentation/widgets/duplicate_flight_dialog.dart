@@ -95,10 +95,17 @@ class DuplicateFlightDialog extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.green.shade50,
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? Color.alphaBlend(
+                        Colors.green.withValues(alpha: 0.15),
+                        Theme.of(context).colorScheme.surface,
+                      )
+                    : Colors.green.shade50,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: Colors.green.shade200,
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? Colors.green.withValues(alpha: 0.3)
+                      : Colors.green.shade200,
                 ),
               ),
               child: Column(
@@ -108,7 +115,9 @@ class DuplicateFlightDialog extends StatelessWidget {
                     'New IGC File:',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      color: Colors.green.shade700,
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Colors.green.shade400
+                          : Colors.green.shade700,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -179,33 +188,37 @@ class DuplicateFlightDialog extends StatelessWidget {
   }
 
   Widget _buildFlightDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 80,
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: Colors.grey,
+    return Builder(
+      builder: (BuildContext context) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 80,
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                  ),
+                ),
               ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w400,
+              Expanded(
+                child: Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
