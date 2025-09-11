@@ -36,7 +36,6 @@ class IGCCleanupStats {
 }
 
 class IGCCleanupService {
-  static const String _tag = 'IGCCleanupService';
 
   /// Analyze IGC files and identify orphans
   static Future<IGCCleanupStats?> analyzeIGCFiles() async {

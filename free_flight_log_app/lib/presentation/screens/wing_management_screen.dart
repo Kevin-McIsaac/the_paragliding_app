@@ -4,6 +4,8 @@ import '../../services/database_service.dart';
 import '../../services/logging_service.dart';
 import 'edit_wing_screen.dart';
 import '../widgets/wing_merge_dialog.dart';
+import '../widgets/common/app_error_state.dart';
+import '../widgets/common/app_empty_state.dart';
 
 class WingManagementScreen extends StatefulWidget {
   const WingManagementScreen({super.key});
@@ -22,10 +24,10 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
   @override
   void initState() {
     super.initState();
-    _loadWings();
+    _loadData();
   }
 
-  Future<void> _loadWings() async {
+  Future<void> _loadData() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -95,6 +97,12 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
     }
   }
 
+  void _clearError() {
+    setState(() {
+      _errorMessage = null;
+    });
+  }
+
   Future<void> _addNewWing() async {
     // Log user action
     LoggingService.action('WingManagement', 'add_wing_initiated', {
@@ -111,7 +119,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
       LoggingService.action('WingManagement', 'add_wing_completed', {
         'wing_added': true,
       });
-      _loadWings();
+      _loadData();
     } else {
       LoggingService.action('WingManagement', 'add_wing_cancelled', {});
     }
@@ -136,7 +144,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
         'wing_id': wing.id,
         'wing_edited': true,
       });
-      _loadWings();
+      _loadData();
     } else {
       LoggingService.action('WingManagement', 'edit_wing_cancelled', {
         'wing_id': wing.id,
@@ -193,7 +201,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
             'wing_name': wing.displayName,
             'was_active': wing.active,
           });
-          _loadWings();
+          _loadData();
         }
       } catch (e, stackTrace) {
         LoggingService.error('Failed to delete wing', e, stackTrace);
@@ -234,7 +242,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
         'wing_name': wing.displayName,
         'new_status': !wing.active ? 'active' : 'inactive',
       });
-      _loadWings();
+      _loadData();
     } catch (e, stackTrace) {
       LoggingService.error('Failed to update wing status', e, stackTrace);
     }
@@ -270,7 +278,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
       LoggingService.action('WingManagement', 'merge_wings_completed', {
         'wings_merged': true,
       });
-      _loadWings();
+      _loadData();
     } else {
       LoggingService.action('WingManagement', 'merge_wings_cancelled', {});
     }
@@ -294,35 +302,17 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.error, size: 64, color: Colors.red[400]),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Error loading wings',
-                        style: Theme.of(context).textTheme.headlineSmall,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _errorMessage!,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () {
-                          setState(() => _errorMessage = null);
-                          _loadWings();
-                        },
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
+              ? AppErrorState.loading(
+                  message: _errorMessage!,
+                  onRetry: () {
+                    _clearError();
+                    _loadData();
+                  },
                 )
               : _wings.isEmpty
-                  ? _buildEmptyState()
+                  ? AppEmptyState.wings(
+                      onAddWing: _addNewWing,
+                    )
                   : _buildWingList(_wings),
       floatingActionButton: FloatingActionButton(
         onPressed: _addNewWing,
@@ -332,40 +322,6 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
     );
   }
 
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.paragliding,
-            size: 64,
-            color: Colors.grey[400],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'No wings found',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: Colors.grey[600],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Add your first wing to get started',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Colors.grey[600],
-            ),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: _addNewWing,
-            icon: const Icon(Icons.add),
-            label: const Text('Add Wing'),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildWingList(List<Wing> wings) {
     final activeWings = wings.where((wing) => wing.active).toList();

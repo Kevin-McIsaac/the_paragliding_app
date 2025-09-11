@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../utils/preferences_helper.dart';
+import '../../utils/ui_utils.dart';
 import '../../services/logging_service.dart';
 
 class PreferencesScreen extends StatefulWidget {
@@ -71,12 +72,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
         setState(() {
           _isLoading = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to load preferences: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        UiUtils.showErrorMessage(context, 'Failed to load preferences: $e');
       }
     }
   }
@@ -111,22 +107,12 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       LoggingService.info('PreferencesScreen: Saved $prefName = $value');
       
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Saved $prefName'),
-            duration: const Duration(seconds: 1),
-          ),
-        );
+        UiUtils.showSuccessMessage(context, 'Saved $prefName');
       }
     } catch (e) {
       LoggingService.error('PreferencesScreen: Failed to save $prefName: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to save $prefName: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        UiUtils.showErrorMessage(context, 'Failed to save $prefName: $e');
       }
     } finally {
       if (mounted) {

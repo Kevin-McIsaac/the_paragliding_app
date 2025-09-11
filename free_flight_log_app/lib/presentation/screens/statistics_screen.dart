@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import '../../utils/date_time_utils.dart';
 import '../../services/database_service.dart';
 import '../../services/logging_service.dart';
+import '../widgets/common/app_stat_card.dart';
+import '../widgets/common/app_error_state.dart';
+import '../widgets/common/app_empty_state.dart';
 
 class StatisticsScreen extends StatefulWidget {
   const StatisticsScreen({super.key});
@@ -35,10 +38,10 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadAllStatistics();
+    _loadData();
   }
   
-  Future<void> _loadAllStatistics() async {
+  Future<void> _loadData() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -132,6 +135,12 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         });
       }
     }
+  }
+
+  void _clearError() {
+    setState(() {
+      _errorMessage = null;
+    });
   }
 
   DateTimeRange? _getDateRangeForPreset(String preset) {
@@ -267,7 +276,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
           _selectedPreset = 'custom';
           _selectedDateRange = picked;
         });
-        _loadAllStatistics();
+        _loadData();
       } else {
         LoggingService.debug('Statistics: Date picker cancelled by user');
       }
@@ -284,7 +293,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         _selectedPreset = preset;
         _selectedDateRange = newRange;
       });
-      _loadAllStatistics();
+      _loadData();
     }
   }
 
@@ -378,38 +387,12 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                     // Always show date range selector
                     _buildDateRangeSelector(),
                     Expanded(
-                      child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(
-                              Icons.error_outline,
-                              size: 64,
-                              color: Colors.red,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'Error loading statistics',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              _errorMessage!,
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: Colors.grey,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 16),
-                            ElevatedButton(
-                              onPressed: () {
-                                setState(() => _errorMessage = null);
-                                _loadAllStatistics();
-                              },
-                              child: const Text('Retry'),
-                            ),
-                          ],
-                        ),
+                      child: AppErrorState.loading(
+                        message: _errorMessage!,
+                        onRetry: () {
+                          _clearError();
+                          _loadData();
+                        },
                       ),
                     ),
                   ],
@@ -422,7 +405,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                       child: _yearlyStats.isEmpty && 
                               _wingStats.isEmpty && 
                               _siteStats.isEmpty
-                          ? _buildEmptyState()
+                          ? AppEmptyState.statistics()
                           : SingleChildScrollView(
                               padding: _scrollPadding,
                               child: Column(
@@ -458,35 +441,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                 );
   }
   
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.bar_chart,
-            size: 64,
-            color: Colors.grey[400],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'No flight data yet',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: Colors.grey[600],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Statistics will appear once you log some flights',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Colors.grey[500],
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
   
   Widget _buildSectionHeader(String title, IconData icon) {
     return Row(

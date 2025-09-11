@@ -2,7 +2,13 @@ import 'package:flutter/material.dart';
 import '../../data/models/flight.dart';
 import '../../services/database_service.dart';
 import '../../utils/date_time_utils.dart';
+import '../../utils/ui_utils.dart';
+import '../../utils/flight_sorting_utils.dart';
 import '../../services/logging_service.dart';
+import '../widgets/common/app_stat_card.dart';
+import '../widgets/common/app_error_state.dart';
+import '../widgets/common/app_empty_state.dart';
+import '../widgets/common/app_loading_skeleton.dart';
 import 'add_flight_screen.dart';
 import 'igc_import_screen.dart';
 import 'flight_detail_screen.dart';
@@ -47,7 +53,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
     // The splash screen already handled initialization
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (mounted) {
-        await _loadFlights();
+        await _loadData();
       }
     });
   }
@@ -58,7 +64,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
   }
 
   // Load flights from database
-  Future<void> _loadFlights() async {
+  Future<void> _loadData() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -100,69 +106,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
   // Sort flights based on current column and direction
   void _sortFlights() {
     _sortedFlights = List.from(_flights);
-    
-    switch (_sortColumn) {
-      case 'launch_site':
-        _sortedFlights.sort((a, b) {
-          final aName = a.launchSiteName ?? 'ZZZ';
-          final bName = b.launchSiteName ?? 'ZZZ';
-          return _sortAscending 
-              ? aName.compareTo(bName)
-              : bName.compareTo(aName);
-        });
-        break;
-      case 'datetime':
-        _sortedFlights.sort((a, b) {
-          final aDateTime = DateTime(
-            a.date.year, a.date.month, a.date.day,
-            int.parse(a.effectiveLaunchTime.split(':')[0]),
-            int.parse(a.effectiveLaunchTime.split(':')[1]),
-          );
-          final bDateTime = DateTime(
-            b.date.year, b.date.month, b.date.day,
-            int.parse(b.effectiveLaunchTime.split(':')[0]),
-            int.parse(b.effectiveLaunchTime.split(':')[1]),
-          );
-          return _sortAscending 
-              ? aDateTime.compareTo(bDateTime)
-              : bDateTime.compareTo(aDateTime);
-        });
-        break;
-      case 'duration':
-        _sortedFlights.sort((a, b) {
-          return _sortAscending 
-              ? a.effectiveDuration.compareTo(b.effectiveDuration)
-              : b.effectiveDuration.compareTo(a.effectiveDuration);
-        });
-        break;
-      case 'track_distance':
-        _sortedFlights.sort((a, b) {
-          final aDistance = a.distance ?? 0;
-          final bDistance = b.distance ?? 0;
-          return _sortAscending 
-              ? aDistance.compareTo(bDistance)
-              : bDistance.compareTo(aDistance);
-        });
-        break;
-      case 'distance':
-        _sortedFlights.sort((a, b) {
-          final aDistance = a.straightDistance ?? 0;
-          final bDistance = b.straightDistance ?? 0;
-          return _sortAscending 
-              ? aDistance.compareTo(bDistance)
-              : bDistance.compareTo(aDistance);
-        });
-        break;
-      case 'altitude':
-        _sortedFlights.sort((a, b) {
-          final aAltitude = a.maxAltitude ?? 0;
-          final bAltitude = b.maxAltitude ?? 0;
-          return _sortAscending 
-              ? aAltitude.compareTo(bAltitude)
-              : bAltitude.compareTo(aAltitude);
-        });
-        break;
-    }
+    FlightSortingUtils.sortFlights(_sortedFlights, _sortColumn, _sortAscending);
   }
   
   void _sort(String column) {
@@ -269,20 +213,11 @@ class _FlightListScreenState extends State<FlightListScreen> {
         });
         
         if (allDeleted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('$flightCount flight${flightCount != 1 ? 's' : ''} deleted successfully'),
-            ),
-          );
+          UiUtils.showSuccessMessage(context, '$flightCount flight${flightCount != 1 ? 's' : ''} deleted successfully');
           // Reload flights
-          await _loadFlights();
+          await _loadData();
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Some flights could not be deleted'),
-              backgroundColor: Colors.red,
-            ),
-          );
+          UiUtils.showErrorMessage(context, 'Some flights could not be deleted');
         }
       }
     } catch (e) {
@@ -358,7 +293,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                     );
                     
                     if (result == true) {
-                      _loadFlights();
+                      _loadData();
                     }
                   } else if (value == 'select') {
                     _toggleSelectionMode();
@@ -376,7 +311,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                     );
                     // Reload flights if sites were modified
                     if (result == true && mounted) {
-                      await _loadFlights();
+                      await _loadData();
                     }
                   } else if (value == 'statistics') {
                     Navigator.of(context).push(
@@ -392,7 +327,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                     );
                     
                     if (result == true) {
-                      _loadFlights(); // Reload flights if database was modified
+                      _loadData(); // Reload flights if database was modified
                     }
                   } else if (value == 'about') {
                     Navigator.of(context).push(
@@ -497,37 +432,31 @@ class _FlightListScreenState extends State<FlightListScreen> {
             ],
       ),
       body: _isLoading && _flights.isEmpty
-          ? _buildLoadingSkeleton()
+          ? AppPageLoadingSkeleton.flightList()
           : _errorMessage != null
               ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.error, size: 64, color: Colors.red[400]),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Error loading flights',
-                        style: Theme.of(context).textTheme.headlineSmall,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _errorMessage!,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () {
-                          _clearError();
-                          _loadFlights();
-                        },
-                        child: const Text('Retry'),
-                      ),
-                    ],
+                  child: AppErrorState.loading(
+                    message: _errorMessage!,
+                    onRetry: () {
+                      _clearError();
+                      _loadData();
+                    },
                   ),
                 )
               : _flights.isEmpty
-                  ? _buildEmptyState()
+                  ? AppEmptyState.flights(
+                      onAddFlight: () async {
+                        final result = await Navigator.of(context).push<bool>(
+                          MaterialPageRoute(
+                            builder: (context) => const AddFlightScreen(),
+                          ),
+                        );
+                        
+                        if (result == true) {
+                          _loadData();
+                        }
+                      },
+                    )
                   : _buildFlightList(_sortedFlights),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
@@ -538,7 +467,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
           );
           
           if (result == true) {
-            _loadFlights();
+            _loadData();
           }
         },
         tooltip: 'Add Flight',
@@ -547,137 +476,6 @@ class _FlightListScreenState extends State<FlightListScreen> {
     );
   }
 
-  Widget _buildLoadingSkeleton() {
-    return Column(
-      children: [
-        // Stats skeleton
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          color: Theme.of(context).colorScheme.surface,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildSkeletonStatCard(),
-              _buildSkeletonStatCard(),
-            ],
-          ),
-        ),
-        // List skeleton
-        Expanded(
-          child: ListView.builder(
-            itemCount: 10,
-            itemBuilder: (context, index) => _buildSkeletonRow(),
-          ),
-        ),
-      ],
-    );
-  }
-  
-  Widget _buildSkeletonStatCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          Container(
-            width: 60,
-            height: 12,
-            decoration: BoxDecoration(
-              color: Colors.grey[300],
-              borderRadius: BorderRadius.circular(6),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            width: 40,
-            height: 20,
-            decoration: BoxDecoration(
-              color: Colors.grey[300],
-              borderRadius: BorderRadius.circular(6),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  Widget _buildSkeletonRow() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 2,
-            child: Container(
-              height: 16,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            flex: 2,
-            child: Container(
-              height: 16,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Container(
-              height: 16,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Container(
-            width: 40,
-            height: 16,
-            decoration: BoxDecoration(
-              color: Colors.grey[300],
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.flight_takeoff,
-            size: 64,
-            color: Colors.grey[400],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'No flights recorded yet',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: Colors.grey[600],
-                ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Tap the + button to log your first flight',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey[500],
-                ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildFlightList(List<Flight> flights) {
     // Calculate stats based on selection mode
@@ -697,26 +495,22 @@ class _FlightListScreenState extends State<FlightListScreen> {
     
     return Column(
       children: [
-        Container(
-          padding: const EdgeInsets.only(top: 16, bottom: 16),
-          color: Theme.of(context).colorScheme.surface,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildStatCard(
-                _isSelectionMode && _selectedFlightIds.isNotEmpty 
-                    ? 'Selected Flights' 
-                    : 'Total Flights', 
-                totalFlights.toString(),
-              ),
-              _buildStatCard(
-                _isSelectionMode && _selectedFlightIds.isNotEmpty 
-                    ? 'Selected Time' 
-                    : 'Total Time',
-                DateTimeUtils.formatDuration(totalTime),
-              ),
-            ],
-          ),
+        AppStatCardGroup.flightList(
+          cards: [
+            AppStatCard.flightList(
+              label: _isSelectionMode && _selectedFlightIds.isNotEmpty 
+                  ? 'Selected Flights' 
+                  : 'Total Flights',
+              value: totalFlights.toString(),
+            ),
+            AppStatCard.flightList(
+              label: _isSelectionMode && _selectedFlightIds.isNotEmpty 
+                  ? 'Selected Time' 
+                  : 'Total Time',
+              value: DateTimeUtils.formatDuration(totalTime),
+            ),
+          ],
+          backgroundColor: Theme.of(context).colorScheme.surface,
         ),
         Expanded(
           child: _buildFlightTable(flights),
@@ -798,7 +592,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                             ),
                           );
                           if (result == true) {
-                            _loadFlights(); // Reload if flight was deleted or modified
+                            _loadData(); // Reload if flight was deleted or modified
                           }
                         },
                 ),
@@ -817,7 +611,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                             ),
                           );
                           if (result == true) {
-                            _loadFlights(); // Reload if flight was deleted or modified
+                            _loadData(); // Reload if flight was deleted or modified
                           }
                         },
                 ),
@@ -832,7 +626,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                             ),
                           );
                           if (result == true) {
-                            _loadFlights(); // Reload if flight was deleted or modified
+                            _loadData(); // Reload if flight was deleted or modified
                           }
                         },
                 ),
@@ -851,7 +645,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                             ),
                           );
                           if (result == true) {
-                            _loadFlights(); // Reload if flight was deleted or modified
+                            _loadData(); // Reload if flight was deleted or modified
                           }
                         },
                 ),
@@ -870,7 +664,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                             ),
                           );
                           if (result == true) {
-                            _loadFlights(); // Reload if flight was deleted or modified
+                            _loadData(); // Reload if flight was deleted or modified
                           }
                         },
                 ),
@@ -889,7 +683,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                             ),
                           );
                           if (result == true) {
-                            _loadFlights(); // Reload if flight was deleted or modified
+                            _loadData(); // Reload if flight was deleted or modified
                           }
                         },
                 ),
@@ -903,30 +697,4 @@ class _FlightListScreenState extends State<FlightListScreen> {
     );
   }
 
-  Widget _buildStatCard(String label, String value) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Text(
-            value,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-          ),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.grey[600],
-                ),
-          ),
-        ],
-      ),
-    );
-  }
 }
