@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../data/models/flight.dart';
 import '../../services/database_service.dart';
 import '../../utils/date_time_utils.dart';
+import '../../utils/ui_utils.dart';
+import '../../utils/flight_sorting_utils.dart';
 import '../../services/logging_service.dart';
 import 'add_flight_screen.dart';
 import 'igc_import_screen.dart';
@@ -100,69 +102,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
   // Sort flights based on current column and direction
   void _sortFlights() {
     _sortedFlights = List.from(_flights);
-    
-    switch (_sortColumn) {
-      case 'launch_site':
-        _sortedFlights.sort((a, b) {
-          final aName = a.launchSiteName ?? 'ZZZ';
-          final bName = b.launchSiteName ?? 'ZZZ';
-          return _sortAscending 
-              ? aName.compareTo(bName)
-              : bName.compareTo(aName);
-        });
-        break;
-      case 'datetime':
-        _sortedFlights.sort((a, b) {
-          final aDateTime = DateTime(
-            a.date.year, a.date.month, a.date.day,
-            int.parse(a.effectiveLaunchTime.split(':')[0]),
-            int.parse(a.effectiveLaunchTime.split(':')[1]),
-          );
-          final bDateTime = DateTime(
-            b.date.year, b.date.month, b.date.day,
-            int.parse(b.effectiveLaunchTime.split(':')[0]),
-            int.parse(b.effectiveLaunchTime.split(':')[1]),
-          );
-          return _sortAscending 
-              ? aDateTime.compareTo(bDateTime)
-              : bDateTime.compareTo(aDateTime);
-        });
-        break;
-      case 'duration':
-        _sortedFlights.sort((a, b) {
-          return _sortAscending 
-              ? a.effectiveDuration.compareTo(b.effectiveDuration)
-              : b.effectiveDuration.compareTo(a.effectiveDuration);
-        });
-        break;
-      case 'track_distance':
-        _sortedFlights.sort((a, b) {
-          final aDistance = a.distance ?? 0;
-          final bDistance = b.distance ?? 0;
-          return _sortAscending 
-              ? aDistance.compareTo(bDistance)
-              : bDistance.compareTo(aDistance);
-        });
-        break;
-      case 'distance':
-        _sortedFlights.sort((a, b) {
-          final aDistance = a.straightDistance ?? 0;
-          final bDistance = b.straightDistance ?? 0;
-          return _sortAscending 
-              ? aDistance.compareTo(bDistance)
-              : bDistance.compareTo(aDistance);
-        });
-        break;
-      case 'altitude':
-        _sortedFlights.sort((a, b) {
-          final aAltitude = a.maxAltitude ?? 0;
-          final bAltitude = b.maxAltitude ?? 0;
-          return _sortAscending 
-              ? aAltitude.compareTo(bAltitude)
-              : bAltitude.compareTo(aAltitude);
-        });
-        break;
-    }
+    FlightSortingUtils.sortFlights(_sortedFlights, _sortColumn, _sortAscending);
   }
   
   void _sort(String column) {
@@ -269,20 +209,11 @@ class _FlightListScreenState extends State<FlightListScreen> {
         });
         
         if (allDeleted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('$flightCount flight${flightCount != 1 ? 's' : ''} deleted successfully'),
-            ),
-          );
+          UiUtils.showSuccessMessage(context, '$flightCount flight${flightCount != 1 ? 's' : ''} deleted successfully');
           // Reload flights
           await _loadData();
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Some flights could not be deleted'),
-              backgroundColor: Colors.red,
-            ),
-          );
+          UiUtils.showErrorMessage(context, 'Some flights could not be deleted');
         }
       }
     } catch (e) {

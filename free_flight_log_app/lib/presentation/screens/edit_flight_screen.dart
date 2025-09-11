@@ -3,6 +3,7 @@ import '../../data/models/flight.dart';
 import '../../data/models/site.dart';
 import '../../data/models/wing.dart';
 import '../../services/database_service.dart';
+import '../../utils/ui_utils.dart';
 import '../widgets/flight_form_widget.dart';
 
 class EditFlightScreen extends StatefulWidget {
@@ -45,9 +46,7 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
         setState(() {
           _isLoading = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading data: $e')),
-        );
+        UiUtils.showErrorMessage(context, 'Error loading data: $e');
       }
     }
   }
@@ -70,9 +69,7 @@ class _EditFlightScreenState extends State<EditFlightScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving flight: $e')),
-        );
+        UiUtils.showErrorMessage(context, 'Error saving flight: $e');
       }
     } finally {
       if (mounted) {

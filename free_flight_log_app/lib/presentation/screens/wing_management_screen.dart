@@ -95,6 +95,12 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
     }
   }
 
+  void _clearError() {
+    setState(() {
+      _errorMessage = null;
+    });
+  }
+
   Future<void> _addNewWing() async {
     // Log user action
     LoggingService.action('WingManagement', 'add_wing_initiated', {
@@ -313,7 +319,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
                       const SizedBox(height: 16),
                       ElevatedButton(
                         onPressed: () {
-                          setState(() => _errorMessage = null);
+                          _clearError();
                           _loadData();
                         },
                         child: const Text('Retry'),

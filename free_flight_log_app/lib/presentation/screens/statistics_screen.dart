@@ -134,6 +134,12 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     }
   }
 
+  void _clearError() {
+    setState(() {
+      _errorMessage = null;
+    });
+  }
+
   DateTimeRange? _getDateRangeForPreset(String preset) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -403,7 +409,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                             const SizedBox(height: 16),
                             ElevatedButton(
                               onPressed: () {
-                                setState(() => _errorMessage = null);
+                                _clearError();
                                 _loadData();
                               },
                               child: const Text('Retry'),

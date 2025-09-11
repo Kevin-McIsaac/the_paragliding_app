@@ -109,6 +109,12 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
     }
   }
 
+  void _clearError() {
+    setState(() {
+      _errorMessage = null;
+    });
+  }
+
   void _onSearchChanged() {
     final newQuery = _searchController.text.toLowerCase();
     final queryChanged = newQuery != _searchQuery;
@@ -556,7 +562,7 @@ class _ManageSitesScreenState extends State<ManageSitesScreen> {
                       const SizedBox(height: 16),
                       ElevatedButton(
                         onPressed: () {
-                          setState(() => _errorMessage = null);
+                          _clearError();
                           _loadData();
                         },
                         child: const Text('Retry'),
