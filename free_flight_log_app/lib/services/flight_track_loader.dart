@@ -39,14 +39,43 @@ class FlightTrackLoader {
   
   /// Load flight track data in consistent trimmed format
   /// 
-  /// Always returns track data from takeoff to landing (trimmed).
-  /// If detection data is missing, runs detection and caches results.
-  /// Falls back to full track only if detection completely fails.
+  /// **Single Source of Truth for Flight Data**
+  /// 
+  /// This method ensures ALL app code works with trimmed data (takeoff to landing).
+  /// Returns an [IgcFile] with track points trimmed to the actual flight period.
+  /// 
+  /// **Data Flow:**
+  /// 1. Load full IGC file from disk (with caching)
+  /// 2. Apply trimming using stored detection indices 
+  /// 3. Return zero-based trimmed track points
+  /// 
+  /// **Index Coordinates:**
+  /// - Input: [flight] contains indices relative to full IGC file
+  /// - Output: [IgcFile] with zero-based trimmed track points
+  /// 
+  /// **Fallback Behavior:**
+  /// - If detection data missing: runs detection and caches results
+  /// - If detection fails: returns full track (logged as warning)
+  /// 
+  /// **Performance:**
+  /// - LRU cache prevents repeated file parsing
+  /// - File modification detection invalidates stale cache entries
+  /// 
+  /// [flight] Flight record containing track log path and detection indices
+  /// [logContext] Context string for logging (defaults to 'FlightTrackLoader')
+  /// 
+  /// Returns trimmed [IgcFile] with zero-based track points
+  /// Throws [Exception] if flight has no track log path or file cannot be parsed
   static Future<IgcFile> loadFlightTrack(Flight flight, {
     String logContext = 'FlightTrackLoader',
   }) async {
-    if (flight.trackLogPath == null) {
-      throw Exception('Flight has no track log path');
+    // Validate input
+    if (flight.trackLogPath == null || flight.trackLogPath!.isEmpty) {
+      throw ArgumentError('Flight has no track log path');
+    }
+    
+    if (flight.id == null) {
+      throw ArgumentError('Flight must have an ID for logging context');
     }
     
     final cacheKey = flight.trackLogPath!;
@@ -114,12 +143,27 @@ class FlightTrackLoader {
     
     // Check if we have detection data
     if (flight.hasDetectionData) {
-      final trimmedFile = fullIgcFile.copyWithTrimmedPoints(
-        flight.takeoffIndex!,
-        flight.landingIndex!
-      );
+      // Validate detection indices before trimming
+      final takeoffIndex = flight.takeoffIndex!;
+      final landingIndex = flight.landingIndex!;
+      final totalPoints = fullIgcFile.trackPoints.length;
       
-      LoggingService.info('$logContext: Loaded ${trimmedFile.trackPoints.length}/${fullIgcFile.trackPoints.length} track points (trimmed: true)');
+      if (takeoffIndex < 0 || landingIndex >= totalPoints || takeoffIndex > landingIndex) {
+        LoggingService.error('$logContext: Invalid detection indices for flight ${flight.id} - takeoff:$takeoffIndex, landing:$landingIndex, total:$totalPoints');
+        throw ArgumentError('Invalid detection indices: takeoff=$takeoffIndex, landing=$landingIndex, total=$totalPoints');
+      }
+      
+      final trimmedFile = fullIgcFile.copyWithTrimmedPoints(takeoffIndex, landingIndex);
+      
+      LoggingService.structured('TRACK_LOAD', {
+        'flight_id': flight.id,
+        'trimmed_points': trimmedFile.trackPoints.length,
+        'total_points': totalPoints,
+        'takeoff_idx': takeoffIndex,
+        'landing_idx': landingIndex,
+        'source': 'detection_data',
+      });
+      
       return trimmedFile;
     }
     
@@ -131,12 +175,27 @@ class FlightTrackLoader {
         final detectionResult = await _runDetectionAndCache(flight, fullIgcFile, logContext);
         
         if (detectionResult.isComplete) {
-          final trimmedFile = fullIgcFile.copyWithTrimmedPoints(
-            detectionResult.takeoffIndex!,
-            detectionResult.landingIndex!
-          );
+          // Validate fresh detection indices before trimming
+          final takeoffIndex = detectionResult.takeoffIndex!;
+          final landingIndex = detectionResult.landingIndex!;
+          final totalPoints = fullIgcFile.trackPoints.length;
           
-          LoggingService.info('$logContext: Loaded ${trimmedFile.trackPoints.length}/${fullIgcFile.trackPoints.length} track points (trimmed: true)');
+          if (takeoffIndex < 0 || landingIndex >= totalPoints || takeoffIndex > landingIndex) {
+            LoggingService.error('$logContext: Invalid fresh detection indices for flight ${flight.id} - takeoff:$takeoffIndex, landing:$landingIndex, total:$totalPoints');
+            throw ArgumentError('Invalid fresh detection indices: takeoff=$takeoffIndex, landing=$landingIndex, total=$totalPoints');
+          }
+          
+          final trimmedFile = fullIgcFile.copyWithTrimmedPoints(takeoffIndex, landingIndex);
+          
+          LoggingService.structured('TRACK_LOAD', {
+            'flight_id': flight.id,
+            'trimmed_points': trimmedFile.trackPoints.length,
+            'total_points': totalPoints,
+            'takeoff_idx': takeoffIndex,
+            'landing_idx': landingIndex,
+            'source': 'fresh_detection',
+          });
+          
           return trimmedFile;
         }
       } catch (e) {
@@ -146,7 +205,16 @@ class FlightTrackLoader {
     
     // Fallback to full track (should be rare)
     LoggingService.warning('$logContext: Using full track for flight ${flight.id} - no detection data available');
-    LoggingService.info('$logContext: Loaded ${fullIgcFile.trackPoints.length}/${fullIgcFile.trackPoints.length} track points (trimmed: false)');
+    
+    LoggingService.structured('TRACK_LOAD', {
+      'flight_id': flight.id,
+      'trimmed_points': fullIgcFile.trackPoints.length,
+      'total_points': fullIgcFile.trackPoints.length,
+      'takeoff_idx': null,
+      'landing_idx': null,
+      'source': 'fallback_full',
+    });
+    
     return fullIgcFile;
   }
   
@@ -221,9 +289,7 @@ class FlightTrackLoader {
         }
       }
       
-      if (fullIgcFile == null) {
-        fullIgcFile = await _parser.parseFile(flight.trackLogPath!);
-      }
+      fullIgcFile ??= await _parser.parseFile(flight.trackLogPath!);
       
       final totalPoints = fullIgcFile.trackPoints.length;
       

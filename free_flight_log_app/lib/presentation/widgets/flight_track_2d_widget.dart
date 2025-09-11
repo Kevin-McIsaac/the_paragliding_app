@@ -1014,7 +1014,9 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   }
 
   List<Marker> _buildClosingPointMarker() {
-    // The closingPointIndex is already relative to trimmed data (since everything works off trimmed data)
+    // IMPORTANT: The closingPointIndex is stored relative to trimmed data (zero-based)
+    // This aligns with the principle that all app code works with trimmed data
+    // The index can be used directly with _trackPoints (which are also trimmed)
     int closingIndex = widget.flight.closingPointIndex!;
     
     // Ensure the index is within bounds
