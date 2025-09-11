@@ -1323,6 +1323,15 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
           
           return LineChart(
             LineChartData(
+          showingTooltipIndicators: selectedIndex != null && selectedIndex < spots.length ? [
+            ShowingTooltipIndicators([
+              LineBarSpot(
+                lineBarData,
+                0,
+                spots[selectedIndex],
+              ),
+            ])
+          ] : [],
           lineTouchData: LineTouchData(
             enabled: true,
             handleBuiltInTouches: false,
