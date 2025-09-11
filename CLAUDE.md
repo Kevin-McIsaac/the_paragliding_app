@@ -28,7 +28,7 @@ flutter_controller_enhanced.sh q      # Quit
 
 # Monitoring and debugging commands
 flutter_controller_enhanced.sh status          # Check app status
-flutter_controller_enhanced.sh logs [lines]    # Show recent logs. To optimise context window use this rather than bash shell output.Z
+flutter_controller_enhanced.sh logs [lines]    # Show recent logs. To optimise context window use this rather than bash shell output.
 flutter_controller_enhanced.sh monitor         # Watch logs real-time
 flutter_controller_enhanced.sh restart [device] # Force restart
 flutter_controller_enhanced.sh cleanup         # Clean up processes
@@ -37,9 +37,9 @@ flutter_controller_enhanced.sh cleanup         # Clean up processes
 ### Log Files for Claude Integration
 
 The enhanced controller creates log files that Claude can read:
-- **Output Log**: `/tmp/flutter_output.log` - All Flutter output and app logs
-- **Status File**: `/tmp/flutter_status` - Current app status and timestamp
-- **PID File**: `/tmp/flutter.pid` - Process ID for monitoring
+- **Output Log**: `/tmp/flutter_controller/flutter_output.log` - All Flutter output and app logs
+- **Status File**: `/tmp/flutter_controller/flutter_status` - Current app status and timestamp
+- **PID File**: `/tmp/flutter_controller/flutter.pid` - Process ID for monitoring
 
 ### Example Claude Usage
 
@@ -74,6 +74,12 @@ flutter_controller_enhanced.sh r  # Hot reload
 - `lib/presentation/screens/manage_sites_screen.dart` / `edit_site_screen.dart` - Site management
 - `lib/presentation/screens/wing_management_screen.dart` / `edit_wing_screen.dart` - Wing management
 - `lib/presentation/screens/preferences_screen.dart` - App settings
+- `lib/presentation/screens/data_management_screen.dart` - Data management and backup settings
+- `lib/presentation/screens/about_screen.dart` - App information and credits
+- `lib/presentation/screens/flight_track_3d_fullscreen.dart` - 3D flight track fullscreen view
+- `lib/presentation/screens/flight_track_3d_screen.dart` - 3D flight track display
+- `lib/presentation/screens/cesium_settings_demo_screen.dart` - Cesium settings demonstration
+- `lib/presentation/screens/splash_screen.dart` - App startup screen
 
 ### **Services** (core business logic)
 
@@ -83,6 +89,12 @@ flutter_controller_enhanced.sh r  # Hot reload
 - `lib/services/site_matching_service.dart` / `site_merge_service.dart` - Site management logic
 - `lib/services/timezone_service.dart` - Timezone handling
 - `lib/services/logging_service.dart` - App logging
+- `lib/services/backup_diagnostic_service.dart` - Backup diagnostics and file analysis
+- `lib/services/cesium_token_validator.dart` - Cesium token validation and management
+- `lib/services/claude_log_printer.dart` - Claude-optimized log formatting
+- `lib/services/flight_track_loader.dart` - Central flight track loading and caching
+- `lib/services/igc_cleanup_service.dart` - IGC file cleanup and orphan detection
+- `lib/services/takeoff_landing_detector.dart` - Automatic flight phase detection
 
 ### **Models** (data structures)
 
@@ -98,12 +110,26 @@ flutter_controller_enhanced.sh r  # Hot reload
 - `lib/presentation/widgets/flight_statistics_widget.dart` - Statistics display
 - `lib/utils/site_marker_utils.dart` - Site marker utilities
 
+### **Common Widget Components** (shared UI elements)
+
+- `lib/presentation/widgets/common/app_empty_state.dart` - Empty state displays with consistent styling
+- `lib/presentation/widgets/common/app_error_state.dart` - Error state displays with retry functionality
+- `lib/presentation/widgets/common/app_expansion_card.dart` - Reusable expansion cards with state management
+- `lib/presentation/widgets/common/app_loading_skeleton.dart` - Loading skeleton placeholders
+- `lib/presentation/widgets/common/app_stat_card.dart` - Statistics card displays with consistent theming
+- `lib/presentation/widgets/common/app_stat_row.dart` - Statistics row displays for data presentation
+
+### **Theme System**
+
+- `lib/presentation/theme/app_card_theme.dart` - Centralized card theming and styling consistency
+
 ## UI Cards and Key Functionality Locations
 
 ### **Flight List Screen** (`lib/presentation/screens/flight_list_screen.dart`)
-- **Statistics Cards**: `_buildStatCard()` - Shows flight count and total time (top of screen)
-- **Skeleton Loading**: `_buildSkeletonStatCard()` - Loading placeholders for stats
-- **Flight Items**: Individual flight entries in ListView (main content area)
+- **Statistics Cards**: Uses `AppStatCard.flightList()` and `AppStatCardGroup.flightList()` - Shows flight count and total time (top of screen)
+- **Empty State**: Uses `AppEmptyState.flights()` - When no flights are present
+- **Loading State**: Uses skeleton loading for better UX
+- **Flight Items**: Individual flight entries in ListView with sorting capabilities via `FlightSortingUtils`
 
 ### **Flight Detail Screen** (`lib/presentation/screens/flight_detail_screen.dart`)
 - **Flight Details Card**: Main expandable card with overview, sites, and equipment info
@@ -126,9 +152,10 @@ flutter_controller_enhanced.sh r  # Hot reload
 - **Settings Sections**: `_buildSection()` - Expandable cards for different preference categories
 
 ### **Data Management Screen** (`lib/presentation/screens/data_management_screen.dart`)
-- **Map Cache Statistics Card**: Expandable card showing cache info
-- **Android Backup Status Card**: Expandable card for backup management
-- **IGC File Cleanup Card**: Expandable card for file management
+- **Uses `AppExpansionCard.dataManagement()` Pattern**: All cards follow consistent expansion pattern with state management
+- **Map Cache Statistics Card**: Expandable card showing cache info with `CardExpansionManager`
+- **Android Backup Status Card**: Expandable card for backup management using `BackupDiagnosticService`
+- **IGC File Cleanup Card**: Expandable card for file management using `IgcCleanupService`
 - **ParaglidingEarth API Card**: Expandable card for API integration
 - **Free Premium Maps Card**: Expandable card for map provider settings
 - **Database Management Card**: Expandable card for database operations
@@ -153,6 +180,12 @@ flutter_controller_enhanced.sh r  # Hot reload
 - `lib/utils/date_time_utils.dart` - Date/time utilities
 - `lib/utils/ui_utils.dart` - UI helper functions
 - `lib/utils/file_sharing_handler.dart` - File sharing logic
+- `lib/utils/build_info.dart` - Build information and version utilities
+- `lib/utils/card_expansion_manager.dart` - Card expansion state management across screens
+- `lib/utils/flight_sorting_utils.dart` - Flight list sorting utilities with multiple criteria
+- `lib/utils/import_error_helper.dart` - Import error handling and user-friendly messaging
+- `lib/utils/performance_monitor.dart` - Performance monitoring and metrics collection
+- `lib/utils/cache_utils.dart` - Caching utilities for performance optimization
 
 ## Core Principles
 
