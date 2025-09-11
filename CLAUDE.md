@@ -9,6 +9,7 @@ flutter_controller_enhanced.sh run        # Start app with logging
 flutter_controller_enhanced.sh r          # Hot reload
 flutter_controller_enhanced.sh status     # Check status
 flutter_controller_enhanced.sh logs 50    # Recent logs (prefer over bash output)
+flutter_controller_enhanced.sh screenshot # Take screenshot (alias: ss)
 ```
 
 ### Key Files (Most Accessed)
@@ -49,12 +50,15 @@ flutter_controller_enhanced.sh q                # Quit
 flutter_controller_enhanced.sh monitor          # Watch logs real-time
 flutter_controller_enhanced.sh restart [device] # Force restart
 flutter_controller_enhanced.sh cleanup          # Clean up processes
+flutter_controller_enhanced.sh screenshot [name] [device] # Take screenshot
+flutter_controller_enhanced.sh ss               # Screenshot (short alias)
 ```
 
 ### Log Files for Claude Integration
 - **Output**: `/tmp/flutter_controller/flutter_output.log`
 - **Status**: `/tmp/flutter_controller/flutter_status`
 - **PID**: `/tmp/flutter_controller/flutter.pid`
+- **Screenshots**: `/tmp/flutter_controller/screenshots/` (also copied to `/tmp/`)
 
 ## Code Structure
 
@@ -203,7 +207,7 @@ IGC File (Full/Archival) → Detection → Store Full Indices → Load Trimmed �
 - Use `flutter_controller_enhanced.sh logs` instead of bash output
 
 ### Testing
-- Use `adb screenshot` for debugging
+- Use `flutter_controller_enhanced.sh screenshot` for debugging
 - Don't use `cd` with flutter controller
 - Add logging for performance analysis
 

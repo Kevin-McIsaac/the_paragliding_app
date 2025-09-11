@@ -43,7 +43,6 @@ class Flight {
   final double? avgThermalStrength; // m/s
   final int? totalTimeInThermals; // seconds
   final double? bestThermal; // m/s
-  final double? bestLD; // glide ratio
   final double? avgLD; // glide ratio
   final double? longestGlide; // km
   final double? climbPercentage; // percentage
@@ -98,7 +97,6 @@ class Flight {
     this.avgThermalStrength,
     this.totalTimeInThermals,
     this.bestThermal,
-    this.bestLD,
     this.avgLD,
     this.longestGlide,
     this.climbPercentage,
@@ -184,7 +182,6 @@ class Flight {
       'avg_thermal_strength': avgThermalStrength,
       'total_time_in_thermals': totalTimeInThermals,
       'best_thermal': bestThermal,
-      'best_ld': bestLD,
       'avg_ld': avgLD,
       'longest_glide': longestGlide,
       'climb_percentage': climbPercentage,
@@ -238,7 +235,6 @@ class Flight {
       avgThermalStrength: map['avg_thermal_strength']?.toDouble(),
       totalTimeInThermals: map['total_time_in_thermals']?.toInt(),
       bestThermal: map['best_thermal']?.toDouble(),
-      bestLD: map['best_ld']?.toDouble(),
       avgLD: map['avg_ld']?.toDouble(),
       longestGlide: map['longest_glide']?.toDouble(),
       climbPercentage: map['climb_percentage']?.toDouble(),
@@ -290,7 +286,6 @@ class Flight {
     double? avgThermalStrength,
     int? totalTimeInThermals,
     double? bestThermal,
-    double? bestLD,
     double? avgLD,
     double? longestGlide,
     double? climbPercentage,
@@ -340,7 +335,6 @@ class Flight {
       avgThermalStrength: avgThermalStrength ?? this.avgThermalStrength,
       totalTimeInThermals: totalTimeInThermals ?? this.totalTimeInThermals,
       bestThermal: bestThermal ?? this.bestThermal,
-      bestLD: bestLD ?? this.bestLD,
       avgLD: avgLD ?? this.avgLD,
       longestGlide: longestGlide ?? this.longestGlide,
       climbPercentage: climbPercentage ?? this.climbPercentage,

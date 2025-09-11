@@ -505,7 +505,6 @@ class IgcFile {
   Map<String, double> calculateGlidePerformance() {
     if (trackPoints.length < 2) {
       return {
-        'bestLD': 0,
         'avgLD': 0,
         'longestGlide': 0,
         'climbPercentage': 0,
@@ -530,8 +529,8 @@ class IgcFile {
         }
         currentGlideDistance = 0;
       } else if (climbRate < -0.1 && speed > 5) { // Gliding (min 5 km/h to filter out stops)
-        // Calculate L/D ratio
-        final sinkRate = -climbRate; // Make positive for L/D calculation
+        // Calculate glide ratio
+        final sinkRate = -climbRate; // Make positive for glide ratio calculation
         final glideSpeed = speed / 3.6; // Convert km/h to m/s
         final glideRatio = glideSpeed / sinkRate;
         
@@ -551,12 +550,10 @@ class IgcFile {
       longestGlideDistance = currentGlideDistance;
     }
 
-    final bestLD = glideRatios.isNotEmpty ? glideRatios.reduce(max) : 0.0;
     final avgLD = glideRatios.isNotEmpty ? glideRatios.reduce((a, b) => a + b) / glideRatios.length : 0.0;
     final climbPercentage = trackPoints.length > 1 ? (climbingPoints / (trackPoints.length - 1)) * 100 : 0.0;
 
     return {
-      'bestLD': bestLD,
       'avgLD': avgLD,
       'longestGlide': longestGlideDistance,
       'climbPercentage': climbPercentage,

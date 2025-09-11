@@ -73,7 +73,6 @@ class DatabaseHelper {
         avg_thermal_strength REAL,
         total_time_in_thermals INTEGER,
         best_thermal REAL,
-        best_ld REAL,
         avg_ld REAL,
         longest_glide REAL,
         climb_percentage REAL,
@@ -195,7 +194,7 @@ class DatabaseHelper {
         'wing_id', 'notes', 'track_log_path', 'original_filename', 'source',
         'timezone', 'created_at', 'updated_at',
         'max_ground_speed', 'avg_ground_speed', 'thermal_count', 'avg_thermal_strength',
-        'total_time_in_thermals', 'best_thermal', 'best_ld', 'avg_ld', 'longest_glide',
+        'total_time_in_thermals', 'best_thermal', 'avg_ld', 'longest_glide',
         'climb_percentage', 'gps_fix_quality', 'recording_interval',
         'takeoff_index', 'landing_index', 'detected_takeoff_time', 'detected_landing_time',
         'closing_point_index', 'closing_distance'

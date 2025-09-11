@@ -83,263 +83,139 @@ class FlightStatisticsWidget extends StatelessWidget {
           ),
           
           // Climb Rate Statistics
-          if (flight.maxClimbRate != null || flight.maxClimbRate5Sec != null) ...[
-            const SizedBox(height: 12),
-            const Divider(height: 1),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (flight.maxClimbRate != null)
-                  Expanded(
-                    child: _buildStatItem(
-                      'Max Climb (Inst)',
-                      '${flight.maxClimbRate!.toStringAsFixed(1)} m/s',
-                      Icons.trending_up,
-                      context,
-                      tooltip: 'Peak instantaneous climb rate',
-                    ),
-                  ),
-                if (flight.maxSinkRate != null)
-                  Expanded(
-                    child: _buildStatItem(
-                      'Max Sink (Inst)',
-                      '${flight.maxSinkRate!.toStringAsFixed(1)} m/s',
-                      Icons.trending_down,
-                      context,
-                      tooltip: 'Peak instantaneous sink rate',
-                    ),
-                  ),
-                if (flight.maxClimbRate5Sec != null)
-                  Expanded(
-                    child: _buildStatItem(
-                      'Max Climb (5s)',
-                      '${flight.maxClimbRate5Sec!.toStringAsFixed(1)} m/s',
-                      Icons.trending_up,
-                      context,
-                      tooltip: 'Maximum 5-second average climb rate.',
-                    ),
-                  ),
-                if (flight.maxSinkRate5Sec != null)
-                  Expanded(
-                    child: _buildStatItem(
-                      'Max Sink (5s)',
-                      '${flight.maxSinkRate5Sec!.toStringAsFixed(1)} m/s',
-                      Icons.trending_down,
-                      context,
-                      tooltip: 'Maximum 5-second average sink rate',
-                    ),
-                  ),
-              ],
-            ),
-          ],
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildStatItem(
+                  'Max Climb (Inst)',
+                  flight.maxClimbRate != null 
+                      ? '${flight.maxClimbRate!.toStringAsFixed(1)} m/s'
+                      : 'N/A',
+                  Icons.trending_up,
+                  context,
+                  tooltip: 'Peak instantaneous climb rate',
+                ),
+              ),
+              Expanded(
+                child: _buildStatItem(
+                  'Max Sink (Inst)',
+                  flight.maxSinkRate != null
+                      ? '${flight.maxSinkRate!.toStringAsFixed(1)} m/s'
+                      : 'N/A',
+                  Icons.trending_down,
+                  context,
+                  tooltip: 'Peak instantaneous sink rate',
+                ),
+              ),
+              Expanded(
+                child: _buildStatItem(
+                  'Max Climb (5s)',
+                  flight.maxClimbRate5Sec != null
+                      ? '${flight.maxClimbRate5Sec!.toStringAsFixed(1)} m/s'
+                      : 'N/A',
+                  Icons.trending_up,
+                  context,
+                  tooltip: 'Maximum 5-second average climb rate',
+                ),
+              ),
+              Expanded(
+                child: _buildStatItem(
+                  'Max Sink (5s)',
+                  flight.maxSinkRate5Sec != null
+                      ? '${flight.maxSinkRate5Sec!.toStringAsFixed(1)} m/s'
+                      : 'N/A',
+                  Icons.trending_down,
+                  context,
+                  tooltip: 'Maximum 5-second average sink rate',
+                ),
+              ),
+            ],
+          ),
           
-          // Advanced Statistics
-          if (_hasAdvancedStats()) ...[
-            const SizedBox(height: 12),
-            const Divider(height: 1),
-            const SizedBox(height: 8),
-            _buildAdvancedStatistics(context),
-          ],
+          // All Additional Statistics
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          const SizedBox(height: 8),
+          _buildAllStatistics(context),
         ],
       ),
     );
   }
 
-  bool _hasAdvancedStats() {
-    return flight.maxAltitude != null ||
-           flight.maxGroundSpeed != null ||
-           flight.thermalCount != null ||
-           flight.bestLD != null ||
-           flight.avgLD != null ||
-           flight.longestGlide != null ||
-           flight.climbPercentage != null ||
-           flight.avgThermalStrength != null ||
-           flight.bestThermal != null ||
-           flight.gpsFixQuality != null;
-  }
 
-  Widget _buildAdvancedStatistics(BuildContext context) {
+  Widget _buildAllStatistics(BuildContext context) {
+    // Collect statistics into logical groups - always show all stats
+    final altitudePerformanceStats = <Map<String, dynamic>>[
+      {'label': 'Max Alt', 'value': flight.maxAltitude != null ? '${flight.maxAltitude!.toInt()} m' : 'N/A', 'icon': Icons.height, 'tooltip': 'Maximum GPS altitude above sea level'},
+      {'label': 'Climb %', 'value': flight.climbPercentage != null ? '${flight.climbPercentage!.toStringAsFixed(0)}%' : 'N/A', 'icon': Icons.trending_up, 'tooltip': 'Percentage of flight time spent climbing'},
+      {'label': 'Avg Glide Ratio', 'value': flight.avgLD != null ? '${flight.avgLD!.toStringAsFixed(1)}:1' : 'N/A', 'icon': Icons.flight, 'tooltip': 'Average glide ratio over the entire flight'},
+      {'label': 'Longest Glide', 'value': flight.longestGlide != null ? '${flight.longestGlide!.toStringAsFixed(1)} km' : 'N/A', 'icon': Icons.trending_flat, 'tooltip': 'Maximum distance covered in a single glide without thermaling or climbing'},
+    ];
+
+    final thermalStats = <Map<String, dynamic>>[
+      {'label': 'Thermals', 'value': flight.thermalCount != null ? flight.thermalCount.toString() : 'N/A', 'icon': Icons.air, 'tooltip': 'Number of distinct thermal climbs. 15s Average climb rate > 0.5m/s for 30 seconds'},
+      {'label': 'Time in Thermals', 'value': flight.totalTimeInThermals != null ? '${(flight.totalTimeInThermals! / 60).toStringAsFixed(0)} min' : 'N/A', 'icon': Icons.timer, 'tooltip': 'Total time spent in thermal climbs during the flight'},
+      {'label': 'Avg Thermal', 'value': flight.avgThermalStrength != null ? '${flight.avgThermalStrength!.toStringAsFixed(1)} m/s' : 'N/A', 'icon': Icons.trending_up, 'tooltip': 'Average climb rate across all thermals. Indicates typical thermal strength for the day'},
+      {'label': 'Best Thermal', 'value': flight.bestThermal != null ? '${flight.bestThermal!.toStringAsFixed(1)} m/s' : 'N/A', 'icon': Icons.trending_up, 'tooltip': 'Strongest average climb rate achieved in a single thermal'},
+    ];
+
+    final glideSpeedStats = <Map<String, dynamic>>[
+      {'label': 'Max Speed', 'value': flight.maxGroundSpeed != null ? '${flight.maxGroundSpeed!.toStringAsFixed(1)} km/h' : 'N/A', 'icon': Icons.speed, 'tooltip': 'Maximum GPS ground speed recorded during the flight'},
+      {'label': 'Avg Speed', 'value': flight.avgGroundSpeed != null ? '${flight.avgGroundSpeed!.toStringAsFixed(1)} km/h' : 'N/A', 'icon': Icons.speed, 'tooltip': 'Average GPS ground speed over the entire flight'},
+      {'label': 'GPS Quality', 'value': flight.gpsFixQuality != null ? '${flight.gpsFixQuality!.toStringAsFixed(0)}%' : 'N/A', 'icon': Icons.gps_fixed, 'tooltip': 'Percentage of GPS fixes with good satellite reception (>4 satellites)'},
+      {'label': 'Recording', 'value': flight.recordingInterval != null ? '${flight.recordingInterval!.toStringAsFixed(0)}s' : 'N/A', 'icon': Icons.schedule, 'tooltip': 'Time interval between GPS track points in the IGC file'},
+    ];
+
+
     return Column(
       children: [
-        // Row 1: Max Alt, Best L/D, Avg L/D, Climb % (4 items)
-        if (flight.maxAltitude != null || flight.bestLD != null || flight.avgLD != null || flight.climbPercentage != null) ...[
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              if (flight.maxAltitude != null)
-                Expanded(
-                  child: _buildStatItem(
-                    'Max Alt',
-                    '${flight.maxAltitude!.toInt()} m',
-                    Icons.height,
-                    context,
-                    tooltip: 'Maximum GPS altitude above sea level',
-                  ),
-                )
-              else
-                const Expanded(child: SizedBox()),
-              if (flight.bestLD != null)
-                Expanded(
-                  child: _buildStatItem(
-                    'Best L/D',
-                    flight.bestLD!.toStringAsFixed(1),
-                    Icons.flight,
-                    context,
-                    tooltip: 'Best glide ratio achieved',
-                  ),
-                )
-              else
-                const Expanded(child: SizedBox()),
-              if (flight.avgLD != null)
-                Expanded(
-                  child: _buildStatItem(
-                    'Avg L/D',
-                    flight.avgLD!.toStringAsFixed(1),
-                    Icons.flight,
-                    context,
-                    tooltip: 'Average glide ratio over the entire flight',
-                  ),
-                )
-              else
-                const Expanded(child: SizedBox()),
-              if (flight.climbPercentage != null)
-                Expanded(
-                  child: _buildStatItem(
-                    'Climb %',
-                    '${flight.climbPercentage!.toStringAsFixed(0)}%',
-                    Icons.trending_up,
-                    context,
-                    tooltip: 'Percentage of flight time spent climbing',
-                  ),
-                )
-              else
-                const Expanded(child: SizedBox()),
-            ],
-          ),
-        ],
+        // Altitude & Performance Stats Row
+        _buildStatsRow(altitudePerformanceStats, context),
         
-        // Row 2: Longest Glide, Thermals, Avg Thermal, Best Thermal (4 items)  
-        if (flight.longestGlide != null || flight.thermalCount != null || flight.avgThermalStrength != null || flight.bestThermal != null) ...[
-          const SizedBox(height: 12),
-          const Divider(height: 1),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              if (flight.longestGlide != null)
-                Expanded(
-                  child: _buildStatItem(
-                    'Longest Glide',
-                    '${flight.longestGlide!.toStringAsFixed(1)} km',
-                    Icons.trending_flat,
-                    context,
-                    tooltip: 'Maximum distance covered in a single glide without thermaling or climbing',
-                  ),
-                )
-              else
-                const Expanded(child: SizedBox()),
-              if (flight.thermalCount != null)
-                Expanded(
-                  child: _buildStatItem(
-                    'Thermals',
-                    flight.thermalCount.toString(),
-                    Icons.air,
-                    context,
-                    tooltip: 'Number of distinct thermal climbs. 15s Average climb rate > 0.5m/s for 30 seconds',
-                  ),
-                )
-              else
-                const Expanded(child: SizedBox()),
-              if (flight.avgThermalStrength != null)
-                Expanded(
-                  child: _buildStatItem(
-                    'Avg Thermal',
-                    '${flight.avgThermalStrength!.toStringAsFixed(1)} m/s',
-                    Icons.trending_up,
-                    context,
-                    tooltip: 'Average climb rate across all thermals. Indicates typical thermal strength for the day',
-                  ),
-                )
-              else
-                const Expanded(child: SizedBox()),
-              if (flight.bestThermal != null)
-                Expanded(
-                  child: _buildStatItem(
-                    'Best Thermal',
-                    '${flight.bestThermal!.toStringAsFixed(1)} m/s',
-                    Icons.trending_up,
-                    context,
-                    tooltip: 'Strongest average climb rate achieved in a single thermal',
-                  ),
-                )
-              else
-                const Expanded(child: SizedBox()),
-            ],
-          ),
-        ],
+        // Thermal Stats Row
+        const SizedBox(height: 12),
+        const Divider(height: 1),
+        const SizedBox(height: 8),
+        _buildStatsRow(thermalStats, context),
         
-        // Row 3: Max Speed, Avg Speed, GPS Quality, Recording (4 items)
-        if (flight.maxGroundSpeed != null || flight.avgGroundSpeed != null || flight.gpsFixQuality != null || flight.recordingInterval != null) ...[
-          const SizedBox(height: 12),
-          const Divider(height: 1),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              if (flight.maxGroundSpeed != null)
-                Expanded(
-                  child: _buildStatItem(
-                    'Max Speed',
-                    '${flight.maxGroundSpeed!.toStringAsFixed(1)} km/h',
-                    Icons.speed,
-                    context,
-                    tooltip: 'Maximum GPS ground speed recorded during the flight',
-                  ),
-                )
-              else
-                const Expanded(child: SizedBox()),
-              if (flight.avgGroundSpeed != null)
-                Expanded(
-                  child: _buildStatItem(
-                    'Avg Speed',
-                    '${flight.avgGroundSpeed!.toStringAsFixed(1)} km/h',
-                    Icons.speed,
-                    context,
-                    tooltip: 'Average GPS ground speed over the entire flight',
-                  ),
-                )
-              else
-                const Expanded(child: SizedBox()),
-              if (flight.gpsFixQuality != null)
-                Expanded(
-                  child: _buildStatItem(
-                    'GPS Quality',
-                    '${flight.gpsFixQuality!.toStringAsFixed(0)}%',
-                    Icons.gps_fixed,
-                    context,
-                    tooltip: 'Percentage of GPS fixes with good satellite reception (>4 satellites)',
-                  ),
-                )
-              else
-                const Expanded(child: SizedBox()),
-              if (flight.recordingInterval != null)
-                Expanded(
-                  child: _buildStatItem(
-                    'Recording',
-                    '${flight.recordingInterval!.toStringAsFixed(0)}s',
-                    Icons.schedule,
-                    context,
-                    tooltip: 'Time interval between GPS track points in the IGC file',
-                  ),
-                )
-              else
-                const Expanded(child: SizedBox()),
-            ],
-          ),
-        ],
+        // Speed & Recording Stats Row
+        const SizedBox(height: 12),
+        const Divider(height: 1),
+        const SizedBox(height: 8),
+        _buildStatsRow(glideSpeedStats, context),
       ],
+    );
+  }
+
+  Widget _buildStatsRow(List<Map<String, dynamic>?> stats, BuildContext context) {
+    // Ensure exactly 4 items (padding with nulls if needed)
+    final paddedStats = List<Map<String, dynamic>?>.from(stats);
+    while (paddedStats.length < 4) {
+      paddedStats.add(null);
+    }
+    paddedStats.length = 4; // Trim to exactly 4
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceAround,
+      children: paddedStats.map((stat) {
+        if (stat == null) {
+          return const Expanded(child: SizedBox());
+        }
+        return Expanded(
+          child: _buildStatItem(
+            stat['label'] as String,
+            stat['value'] as String,
+            stat['icon'] as IconData,
+            context,
+            tooltip: stat['tooltip'] as String,
+          ),
+        );
+      }).toList(),
     );
   }
 
