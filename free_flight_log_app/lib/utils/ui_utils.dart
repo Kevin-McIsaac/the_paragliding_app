@@ -193,12 +193,12 @@ class UiUtils {
   }
 }
 
-/// AppTooltip provides consistent Material Design tooltip styling across the app
+/// AppTooltip provides consistent Material Design 3 tooltip styling across the app
 /// 
 /// Features:
-/// - Mobile-friendly long-press activation
-/// - Consistent width constraints (max 200px)
-/// - Material Design styling (11px font, grey background)
+/// - Material Design 3 styling with proper theming
+/// - Maximum width constraint (200dp) for readability
+/// - Positioned above by default for better visibility
 /// - Support for both simple and rich content
 /// 
 /// Example usage:
@@ -233,15 +233,20 @@ class AppTooltip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (message != null) {
-      // Simple tooltip using theme defaults
+      // Simple tooltip with Material Design 3 constraints
       return Tooltip(
         message: message!,
         child: child,
       );
     } else if (richMessage != null) {
-      // Rich tooltip using default theme
+      // Rich tooltip with Material Design 3 constraints
       return Tooltip(
-        richMessage: WidgetSpan(child: richMessage!),
+        richMessage: WidgetSpan(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 200),
+            child: richMessage!,
+          ),
+        ),
         child: child,
       );
     }
