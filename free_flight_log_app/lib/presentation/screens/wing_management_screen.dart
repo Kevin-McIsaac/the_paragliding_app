@@ -4,6 +4,8 @@ import '../../services/database_service.dart';
 import '../../services/logging_service.dart';
 import 'edit_wing_screen.dart';
 import '../widgets/wing_merge_dialog.dart';
+import '../widgets/common/app_error_state.dart';
+import '../widgets/common/app_empty_state.dart';
 
 class WingManagementScreen extends StatefulWidget {
   const WingManagementScreen({super.key});
@@ -300,35 +302,17 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.error, size: 64, color: Colors.red[400]),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Error loading wings',
-                        style: Theme.of(context).textTheme.headlineSmall,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _errorMessage!,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () {
-                          _clearError();
-                          _loadData();
-                        },
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
+              ? AppErrorState.loading(
+                  message: _errorMessage!,
+                  onRetry: () {
+                    _clearError();
+                    _loadData();
+                  },
                 )
               : _wings.isEmpty
-                  ? _buildEmptyState()
+                  ? AppEmptyState.wings(
+                      onAddWing: _addNewWing,
+                    )
                   : _buildWingList(_wings),
       floatingActionButton: FloatingActionButton(
         onPressed: _addNewWing,
@@ -338,40 +322,6 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
     );
   }
 
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.paragliding,
-            size: 64,
-            color: Colors.grey[400],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'No wings found',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: Colors.grey[600],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Add your first wing to get started',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Colors.grey[600],
-            ),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: _addNewWing,
-            icon: const Icon(Icons.add),
-            label: const Text('Add Wing'),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildWingList(List<Wing> wings) {
     final activeWings = wings.where((wing) => wing.active).toList();

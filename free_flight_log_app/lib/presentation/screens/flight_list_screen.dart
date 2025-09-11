@@ -5,6 +5,10 @@ import '../../utils/date_time_utils.dart';
 import '../../utils/ui_utils.dart';
 import '../../utils/flight_sorting_utils.dart';
 import '../../services/logging_service.dart';
+import '../widgets/common/app_stat_card.dart';
+import '../widgets/common/app_error_state.dart';
+import '../widgets/common/app_empty_state.dart';
+import '../widgets/common/app_loading_skeleton.dart';
 import 'add_flight_screen.dart';
 import 'igc_import_screen.dart';
 import 'flight_detail_screen.dart';
@@ -428,37 +432,31 @@ class _FlightListScreenState extends State<FlightListScreen> {
             ],
       ),
       body: _isLoading && _flights.isEmpty
-          ? _buildLoadingSkeleton()
+          ? AppPageLoadingSkeleton.flightList()
           : _errorMessage != null
               ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.error, size: 64, color: Colors.red[400]),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Error loading flights',
-                        style: Theme.of(context).textTheme.headlineSmall,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _errorMessage!,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () {
-                          _clearError();
-                          _loadData();
-                        },
-                        child: const Text('Retry'),
-                      ),
-                    ],
+                  child: AppErrorState.loading(
+                    message: _errorMessage!,
+                    onRetry: () {
+                      _clearError();
+                      _loadData();
+                    },
                   ),
                 )
               : _flights.isEmpty
-                  ? _buildEmptyState()
+                  ? AppEmptyState.flights(
+                      onAddFlight: () async {
+                        final result = await Navigator.of(context).push<bool>(
+                          MaterialPageRoute(
+                            builder: (context) => const AddFlightScreen(),
+                          ),
+                        );
+                        
+                        if (result == true) {
+                          _loadData();
+                        }
+                      },
+                    )
                   : _buildFlightList(_sortedFlights),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
@@ -478,137 +476,6 @@ class _FlightListScreenState extends State<FlightListScreen> {
     );
   }
 
-  Widget _buildLoadingSkeleton() {
-    return Column(
-      children: [
-        // Stats skeleton
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          color: Theme.of(context).colorScheme.surface,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildSkeletonStatCard(),
-              _buildSkeletonStatCard(),
-            ],
-          ),
-        ),
-        // List skeleton
-        Expanded(
-          child: ListView.builder(
-            itemCount: 10,
-            itemBuilder: (context, index) => _buildSkeletonRow(),
-          ),
-        ),
-      ],
-    );
-  }
-  
-  Widget _buildSkeletonStatCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          Container(
-            width: 60,
-            height: 12,
-            decoration: BoxDecoration(
-              color: Colors.grey[300],
-              borderRadius: BorderRadius.circular(6),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            width: 40,
-            height: 20,
-            decoration: BoxDecoration(
-              color: Colors.grey[300],
-              borderRadius: BorderRadius.circular(6),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  Widget _buildSkeletonRow() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 2,
-            child: Container(
-              height: 16,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            flex: 2,
-            child: Container(
-              height: 16,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Container(
-              height: 16,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Container(
-            width: 40,
-            height: 16,
-            decoration: BoxDecoration(
-              color: Colors.grey[300],
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.flight_takeoff,
-            size: 64,
-            color: Colors.grey[400],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'No flights recorded yet',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: Colors.grey[600],
-                ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Tap the + button to log your first flight',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey[500],
-                ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildFlightList(List<Flight> flights) {
     // Calculate stats based on selection mode
@@ -628,26 +495,22 @@ class _FlightListScreenState extends State<FlightListScreen> {
     
     return Column(
       children: [
-        Container(
-          padding: const EdgeInsets.only(top: 16, bottom: 16),
-          color: Theme.of(context).colorScheme.surface,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildStatCard(
-                _isSelectionMode && _selectedFlightIds.isNotEmpty 
-                    ? 'Selected Flights' 
-                    : 'Total Flights', 
-                totalFlights.toString(),
-              ),
-              _buildStatCard(
-                _isSelectionMode && _selectedFlightIds.isNotEmpty 
-                    ? 'Selected Time' 
-                    : 'Total Time',
-                DateTimeUtils.formatDuration(totalTime),
-              ),
-            ],
-          ),
+        AppStatCardGroup.flightList(
+          cards: [
+            AppStatCard.flightList(
+              label: _isSelectionMode && _selectedFlightIds.isNotEmpty 
+                  ? 'Selected Flights' 
+                  : 'Total Flights',
+              value: totalFlights.toString(),
+            ),
+            AppStatCard.flightList(
+              label: _isSelectionMode && _selectedFlightIds.isNotEmpty 
+                  ? 'Selected Time' 
+                  : 'Total Time',
+              value: DateTimeUtils.formatDuration(totalTime),
+            ),
+          ],
+          backgroundColor: Theme.of(context).colorScheme.surface,
         ),
         Expanded(
           child: _buildFlightTable(flights),
@@ -834,30 +697,4 @@ class _FlightListScreenState extends State<FlightListScreen> {
     );
   }
 
-  Widget _buildStatCard(String label, String value) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Text(
-            value,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-          ),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.grey[600],
-                ),
-          ),
-        ],
-      ),
-    );
-  }
 }
