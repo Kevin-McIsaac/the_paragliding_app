@@ -3,15 +3,14 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../data/models/site.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../services/logging_service.dart';
 import '../../utils/site_marker_utils.dart';
 import '../../presentation/screens/nearby_sites_screen.dart';
 
 class NearbySitesMapWidget extends StatefulWidget {
-  final List<Site> localSites;
-  final List<ParaglidingSite> apiSites;
+  final List<ParaglidingSite> sites;
+  final Map<String, bool> siteFlightStatus;
   final Position? userPosition;
   final LatLng? centerPosition;
   final double initialZoom;
@@ -19,14 +18,13 @@ class NearbySitesMapWidget extends StatefulWidget {
   final bool isLegendExpanded;
   final VoidCallback onToggleLegend;
   final Function(MapProvider) onMapProviderChanged;
-  final Function(Site)? onSiteSelected;
-  final Function(ParaglidingSite)? onApiSiteSelected;
+  final Function(ParaglidingSite)? onSiteSelected;
   final Function(LatLngBounds)? onBoundsChanged;
   
   const NearbySitesMapWidget({
     super.key,
-    required this.localSites,
-    required this.apiSites,
+    required this.sites,
+    required this.siteFlightStatus,
     this.userPosition,
     this.centerPosition,
     this.initialZoom = 10.0,
@@ -35,7 +33,6 @@ class NearbySitesMapWidget extends StatefulWidget {
     required this.onToggleLegend,
     required this.onMapProviderChanged,
     this.onSiteSelected,
-    this.onApiSiteSelected,
     this.onBoundsChanged,
   });
 
@@ -103,9 +100,9 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     }
     
     // Default to center of all sites if available
-    if (widget.localSites.isNotEmpty) {
-      double avgLat = widget.localSites.map((s) => s.latitude).reduce((a, b) => a + b) / widget.localSites.length;
-      double avgLng = widget.localSites.map((s) => s.longitude).reduce((a, b) => a + b) / widget.localSites.length;
+    if (widget.sites.isNotEmpty) {
+      double avgLat = widget.sites.map((s) => s.latitude).reduce((a, b) => a + b) / widget.sites.length;
+      double avgLng = widget.sites.map((s) => s.longitude).reduce((a, b) => a + b) / widget.sites.length;
       return LatLng(avgLat, avgLng);
     }
     
@@ -113,9 +110,15 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     return const LatLng(47.0, 8.0);
   }
 
-  List<Marker> _buildLocalSiteMarkers() {
-    return widget.localSites.map((site) {
-      final bool hasFlights = site.flightCount != null && site.flightCount! > 0;
+  /// Create a unique key for site flight status lookup
+  String _createSiteKey(double latitude, double longitude) {
+    return '${latitude.toStringAsFixed(6)},${longitude.toStringAsFixed(6)}';
+  }
+
+  List<Marker> _buildSiteMarkers() {
+    return widget.sites.map((site) {
+      final siteKey = _createSiteKey(site.latitude, site.longitude);
+      final hasFlights = widget.siteFlightStatus[siteKey] ?? false;
       
       return Marker(
         point: LatLng(site.latitude, site.longitude),
@@ -123,38 +126,14 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         height: 80,
         child: GestureDetector(
           onTap: () {
-            _showLocalSiteDetails(site);
             widget.onSiteSelected?.call(site);
           },
           child: SiteMarkerUtils.buildDisplaySiteMarker(
             position: LatLng(site.latitude, site.longitude),
             siteName: site.name,
-            isFlownSite: hasFlights,
-            flightCount: site.flightCount,
-            tooltip: '${site.name}${site.flightCount != null ? ' (${site.flightCount} flights)' : ''}',
-          ).child,
-        ),
-      );
-    }).toList();
-  }
-
-  List<Marker> _buildApiSiteMarkers() {
-    return widget.apiSites.map((site) {
-      return Marker(
-        point: LatLng(site.latitude, site.longitude),
-        width: 140,
-        height: 80,
-        child: GestureDetector(
-          onTap: () {
-            _showApiSiteDetails(site);
-            widget.onApiSiteSelected?.call(site);
-          },
-          child: SiteMarkerUtils.buildDisplaySiteMarker(
-            position: LatLng(site.latitude, site.longitude),
-            siteName: site.name,
-            isFlownSite: false, // API sites are always "new"
-            flightCount: null,
-            tooltip: site.name,
+            isFlownSite: hasFlights, // Blue for flown sites, purple for new sites
+            flightCount: hasFlights ? 1 : null, // Show indicator if flown
+            tooltip: hasFlights ? '${site.name} (Flown)' : site.name,
           ).child,
         ),
       );
@@ -194,14 +173,6 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         ),
       ),
     ];
-  }
-
-  void _showLocalSiteDetails(Site site) {
-    widget.onSiteSelected?.call(site);
-  }
-
-  void _showApiSiteDetails(ParaglidingSite site) {
-    widget.onApiSiteSelected?.call(site);
   }
 
 
@@ -281,9 +252,9 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
   Widget _buildLegend() {
     final legendItems = <Widget>[
-      SiteMarkerUtils.buildLegendItem(context, Icons.location_on, SiteMarkerUtils.flownSiteColor, 'Flown Sites'),
+      SiteMarkerUtils.buildLegendItem(context, Icons.location_on, SiteMarkerUtils.flownSiteColor, 'Local Sites (DB)'),
       const SizedBox(height: 4),
-      SiteMarkerUtils.buildLegendItem(context, Icons.location_on, SiteMarkerUtils.newSiteColor, 'New Sites'),
+      SiteMarkerUtils.buildLegendItem(context, Icons.location_on, SiteMarkerUtils.newSiteColor, 'API Sites'),
     ];
     
     return Positioned(
@@ -348,9 +319,16 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
   @override
   Widget build(BuildContext context) {
+    // Count flown vs new sites for logging
+    final flownSites = widget.sites.where((site) {
+      final siteKey = _createSiteKey(site.latitude, site.longitude);
+      return widget.siteFlightStatus[siteKey] ?? false;
+    }).length;
+    final newSites = widget.sites.length - flownSites;
+    
     LoggingService.structured('NEARBY_SITES_MAP_RENDER', {
-      'local_site_count': widget.localSites.length,
-      'api_site_count': widget.apiSites.length,
+      'local_site_count': flownSites,
+      'api_site_count': newSites,
       'has_user_position': widget.userPosition != null,
       'has_center_position': widget.centerPosition != null,
       'initial_zoom': widget.initialZoom,
@@ -388,8 +366,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
             MarkerLayer(
               markers: [
                 ..._buildUserLocationMarker(),
-                ..._buildLocalSiteMarkers(),
-                ..._buildApiSiteMarkers(),
+                ..._buildSiteMarkers(),
               ],
             ),
           ],

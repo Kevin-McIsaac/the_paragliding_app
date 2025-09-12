@@ -46,11 +46,10 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   static const double _boundsThreshold = 0.001;
   static const int _debounceDurationMs = 500;
   
-  // State variables
-  List<Site> _localSites = [];
-  List<ParaglidingSite> _apiSites = [];
-  List<Site> _displayedSites = [];
-  List<ParaglidingSite> _displayedApiSites = [];
+  // Unified state variables - all sites are ParaglidingSite objects from API
+  List<ParaglidingSite> _allSites = [];
+  List<ParaglidingSite> _displayedSites = [];
+  Map<String, bool> _siteFlightStatus = {}; // Key: "lat,lng", Value: hasFlights
   Position? _userPosition;
   bool _isLoading = false;
   bool _isLocationLoading = false;
@@ -89,6 +88,11 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     super.dispose();
   }
 
+  /// Create a unique key for site flight status lookup
+  String _createSiteKey(double latitude, double longitude) {
+    return '${latitude.toStringAsFixed(6)},${longitude.toStringAsFixed(6)}';
+  }
+
   Future<void> _loadPreferences() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -115,28 +119,26 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     try {
       final stopwatch = Stopwatch()..start();
       
-      // Load local sites from database
-      final localSites = await _databaseService.getSitesWithFlightCounts();
-      
       // Get user location
       await _updateUserLocation();
       
-      // API sites will be loaded dynamically via bounds-based loading
+      // Sites will be loaded dynamically via bounds-based loading
+      // Initialize empty unified structure
+      _allSites = [];
+      _displayedSites = [];
+      _siteFlightStatus = {};
       
       stopwatch.stop();
       
       if (mounted) {
         setState(() {
-          _localSites = localSites;
-          _apiSites = []; // Will be loaded via bounds-based loading
-          _updateDisplayedSites();
           _isLoading = false;
         });
         
         LoggingService.performance(
           'Load Nearby Sites Data',
           Duration(milliseconds: stopwatch.elapsedMilliseconds),
-          '${localSites.length} local sites loaded (API sites via bounds-based loading)',
+          'Initialized for bounds-based loading',
         );
       }
     } catch (e, stackTrace) {
@@ -187,47 +189,24 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   void _updateDisplayedSites() {
     final stopwatch = Stopwatch()..start();
     
-    List<Site> filteredLocalSites = _localSites;
-    List<ParaglidingSite> filteredApiSites = _apiSites;
+    List<ParaglidingSite> filteredSites = _allSites;
     
     // Apply search filter
     if (_searchQuery.isNotEmpty) {
-      filteredLocalSites = filteredLocalSites.where((site) =>
-        site.name.toLowerCase().contains(_searchQuery) ||
-        (site.country?.toLowerCase().contains(_searchQuery) ?? false)
-      ).toList();
-      
-      filteredApiSites = filteredApiSites.where((site) =>
+      filteredSites = filteredSites.where((site) =>
         site.name.toLowerCase().contains(_searchQuery) ||
         (site.country?.toLowerCase().contains(_searchQuery) ?? false)
       ).toList();
       
       // If search found specific sites, center map on them
-      final totalResults = filteredLocalSites.length + filteredApiSites.length;
-      if (totalResults == 1) {
-        if (filteredLocalSites.isNotEmpty) {
-          final site = filteredLocalSites.first;
-          _mapCenterPosition = LatLng(site.latitude, site.longitude);
-        } else {
-          final site = filteredApiSites.first;
-          _mapCenterPosition = LatLng(site.latitude, site.longitude);
-        }
-      } else if (totalResults > 1 && totalResults < 20) {
+      if (filteredSites.length == 1) {
+        final site = filteredSites.first;
+        _mapCenterPosition = LatLng(site.latitude, site.longitude);
+      } else if (filteredSites.length > 1 && filteredSites.length < 20) {
         // Center on average position of found sites
-        final allLats = [
-          ...filteredLocalSites.map((s) => s.latitude),
-          ...filteredApiSites.map((s) => s.latitude)
-        ];
-        final allLngs = [
-          ...filteredLocalSites.map((s) => s.longitude),
-          ...filteredApiSites.map((s) => s.longitude)
-        ];
-        
-        if (allLats.isNotEmpty) {
-          double avgLat = allLats.reduce((a, b) => a + b) / allLats.length;
-          double avgLng = allLngs.reduce((a, b) => a + b) / allLngs.length;
-          _mapCenterPosition = LatLng(avgLat, avgLng);
-        }
+        final avgLat = filteredSites.map((s) => s.latitude).reduce((a, b) => a + b) / filteredSites.length;
+        final avgLng = filteredSites.map((s) => s.longitude).reduce((a, b) => a + b) / filteredSites.length;
+        _mapCenterPosition = LatLng(avgLat, avgLng);
       }
     } else {
       // Reset map center to user position when clearing search
@@ -241,15 +220,21 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     stopwatch.stop();
     
     setState(() {
-      _displayedSites = filteredLocalSites;
-      _displayedApiSites = filteredApiSites;
+      _displayedSites = filteredSites;
     });
     
+    // Count flown vs new sites for logging
+    final flownSites = filteredSites.where((site) {
+      final siteKey = _createSiteKey(site.latitude, site.longitude);
+      return _siteFlightStatus[siteKey] ?? false;
+    }).length;
+    final newSites = filteredSites.length - flownSites;
+    
     LoggingService.structured('NEARBY_SITES_FILTERED', {
-      'total_local_sites': _localSites.length,
-      'total_api_sites': _apiSites.length,
-      'displayed_local_sites': _displayedSites.length,
-      'displayed_api_sites': _displayedApiSites.length,
+      'total_local_sites': flownSites,
+      'total_api_sites': newSites,
+      'displayed_local_sites': flownSites,
+      'displayed_api_sites': newSites,
       'search_query': _searchQuery.isEmpty ? null : _searchQuery,
       'has_user_position': _userPosition != null,
       'filter_time_ms': stopwatch.elapsedMilliseconds,
@@ -266,21 +251,16 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     _updateDisplayedSites();
   }
 
-  void _onSiteSelected(Site site) {
-    LoggingService.action('NearbySites', 'site_selected', {
-      'site_id': site.id,
-      'site_name': site.name,
-      'flight_count': site.flightCount ?? 0,
-    });
-    _showSiteDetailsDialog(site: site);
-  }
-
-  void _onApiSiteSelected(ParaglidingSite site) {
-    LoggingService.action('NearbySites', 'api_site_selected', {
+  void _onSiteSelected(ParaglidingSite site) {
+    final siteKey = _createSiteKey(site.latitude, site.longitude);
+    final hasFlights = _siteFlightStatus[siteKey] ?? false;
+    
+    LoggingService.action('NearbySites', hasFlights ? 'flown_site_selected' : 'new_site_selected', {
       'site_id': site.id,
       'site_name': site.name,
       'site_type': site.siteType,
       'rating': site.rating,
+      'has_flights': hasFlights,
     });
     _showSiteDetailsDialog(paraglidingSite: site);
   }
@@ -354,16 +334,16 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     });
     
     try {
-      // Load local sites
-      final localSitesFuture = _databaseService.getSitesInBounds(
+      // 1. Load local sites from DB to check flight status
+      final localSites = await _databaseService.getSitesInBounds(
         north: bounds.north,
         south: bounds.south,
         east: bounds.east,
         west: bounds.west,
       );
       
-      // Load API sites with basic data only for map display
-      final apiSitesFuture = _paraglidingEarthApi.getSitesInBounds(
+      // 2. Load API sites within bounds
+      final apiSites = await _paraglidingEarthApi.getSitesInBounds(
         bounds.north,
         bounds.south,
         bounds.east,
@@ -372,16 +352,65 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         detailed: false,
       );
       
-      // Wait for both to complete
-      final results = await Future.wait([
-        localSitesFuture,
-        apiSitesFuture,
-      ]);
+      // 3. For each local site, try to find its corresponding API data
+      final unifiedSites = <ParaglidingSite>[];
+      final siteFlightStatus = <String, bool>{};
+      
+      // Add API sites with flight status checking
+      for (final apiSite in apiSites) {
+        final siteKey = _createSiteKey(apiSite.latitude, apiSite.longitude);
+        
+        // Check if this API site matches any local site (has been flown)
+        final hasFlights = localSites.any((localSite) =>
+          (localSite.latitude - apiSite.latitude).abs() < 0.000001 &&
+          (localSite.longitude - apiSite.longitude).abs() < 0.000001);
+          
+        siteFlightStatus[siteKey] = hasFlights;
+        unifiedSites.add(apiSite);
+      }
+      
+      // 4. For local sites not found in API, try to look them up individually
+      for (final localSite in localSites) {
+        final siteKey = _createSiteKey(localSite.latitude, localSite.longitude);
+        
+        // Skip if already found in API sites
+        if (siteFlightStatus.containsKey(siteKey)) continue;
+        
+        try {
+          // Try to find API data for this local site
+          final nearestSite = await _paraglidingEarthApi.findNearestSite(
+            localSite.latitude,
+            localSite.longitude,
+            maxDistanceKm: 0.1, // Very close match required
+          );
+          
+          if (nearestSite != null) {
+            siteFlightStatus[siteKey] = true; // Local site has flights
+            unifiedSites.add(nearestSite);
+          } else {
+            // Create a minimal ParaglidingSite from local data if no API match
+            final minimalApiSite = ParaglidingSite(
+              name: localSite.name,
+              latitude: localSite.latitude,
+              longitude: localSite.longitude,
+              altitude: localSite.altitude?.toInt(),
+              siteType: 'launch', // Default to launch for local sites
+              country: localSite.country ?? '',
+              // Other fields will be null/empty
+            );
+            siteFlightStatus[siteKey] = true; // Local site has flights
+            unifiedSites.add(minimalApiSite);
+          }
+        } catch (e) {
+          LoggingService.error('Error looking up API data for local site: ${localSite.name}', e);
+          // Continue with other sites, don't fail the whole operation
+        }
+      }
       
       if (mounted) {
         setState(() {
-          _localSites = results[0] as List<Site>;
-          _apiSites = results[1] as List<ParaglidingSite>;
+          _allSites = unifiedSites;
+          _siteFlightStatus = siteFlightStatus;
           
           // Filter displayed sites based on search query
           _updateDisplayedSites();
@@ -393,8 +422,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         _lastLoadedBoundsKey = boundsKey;
         
         LoggingService.structured('BOUNDS_SITES_LOADED', {
-          'local_sites_count': _localSites.length,
-          'api_sites_count': _apiSites.length,
+          'local_sites_count': localSites.length,
+          'api_sites_count': apiSites.length,
+          'unified_sites_count': unifiedSites.length,
           'bounds_key': boundsKey,
         });
       }
@@ -409,13 +439,13 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   }
 
 
-  void _showSiteDetailsDialog({Site? site, ParaglidingSite? paraglidingSite}) {
+  void _showSiteDetailsDialog({required ParaglidingSite paraglidingSite}) {
     showDialog(
       context: context,
       barrierColor: Colors.transparent,
       barrierDismissible: true,
       builder: (context) => _SiteDetailsDialog(
-        site: site,
+        site: null,
         paraglidingSite: paraglidingSite,
         userPosition: _userPosition,
       ),
@@ -435,18 +465,18 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                   message: _errorMessage!,
                   onRetry: _loadData,
                 )
-              : (_localSites.isEmpty && _apiSites.isEmpty)
+              : (_allSites.isEmpty && _lastLoadedBoundsKey != null)
                   ? const AppEmptyState(
                       title: 'No sites found',
-                      message: 'Import flights to add sites to your collection',
+                      message: 'No sites found in this area',
                       icon: Icons.location_on,
                     )
                   : Stack(
                       children: [
                         // Map
                         NearbySitesMapWidget(
-                          localSites: _displayedSites,
-                          apiSites: _displayedApiSites,
+                          sites: _displayedSites,
+                          siteFlightStatus: _siteFlightStatus,
                           userPosition: _userPosition,
                           centerPosition: _mapCenterPosition,
                           initialZoom: _searchQuery.isNotEmpty ? 12.0 : 10.0,
@@ -455,7 +485,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                           onToggleLegend: _toggleLegend,
                           onMapProviderChanged: _selectMapProvider,
                           onSiteSelected: _onSiteSelected,
-                          onApiSiteSelected: _onApiSiteSelected,
                           onBoundsChanged: _onBoundsChanged,
                         ),
                         
@@ -560,10 +589,8 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
   @override
   void initState() {
     super.initState();
-    // Only create tab controller for API sites with potential detailed data
-    if (widget.paraglidingSite != null) {
-      _tabController = TabController(length: 5, vsync: this); // 5 tabs: Takeoff, Rules, Access, Weather, Comments
-    }
+    // Create tab controller for both local and API sites - both can have detailed data
+    _tabController = TabController(length: 5, vsync: this); // 5 tabs: Takeoff, Rules, Access, Weather, Comments
     _loadSiteDetails();
   }
 
@@ -574,8 +601,21 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
   }
 
   Future<void> _loadSiteDetails() async {
-    // Only load detailed data for API sites (ParaglidingSite)
-    if (widget.paraglidingSite == null) return;
+    // Load detailed data from API for both local sites and API sites
+    double latitude;
+    double longitude;
+    
+    if (widget.paraglidingSite != null) {
+      // API site - use its coordinates
+      latitude = widget.paraglidingSite!.latitude;
+      longitude = widget.paraglidingSite!.longitude;
+    } else if (widget.site != null) {
+      // Local site - use its coordinates to fetch API data
+      latitude = widget.site!.latitude;
+      longitude = widget.site!.longitude;
+    } else {
+      return; // No site data available
+    }
     
     setState(() {
       _isLoadingDetails = true;
@@ -584,8 +624,8 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
 
     try {
       final details = await ParaglidingEarthApi.instance.getSiteDetails(
-        widget.paraglidingSite!.latitude,
-        widget.paraglidingSite!.longitude,
+        latitude,
+        longitude,
       );
       
       if (mounted) {
@@ -611,13 +651,15 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     final String name = widget.site?.name ?? widget.paraglidingSite?.name ?? 'Unknown Site';
     final double latitude = widget.site?.latitude ?? widget.paraglidingSite?.latitude ?? 0.0;
     final double longitude = widget.site?.longitude ?? widget.paraglidingSite?.longitude ?? 0.0;
-    final int? altitude = widget.site?.altitude?.toInt() ?? widget.paraglidingSite?.altitude;
-    final String? country = widget.site?.country ?? widget.paraglidingSite?.country;
-    final String? region = widget.paraglidingSite?.region; // Only API sites have region
-    final String? description = widget.paraglidingSite?.description; // Only API sites have description
-    final int? rating = widget.paraglidingSite?.rating;
-    final List<String> windDirections = widget.paraglidingSite?.windDirections ?? [];
-    final String? siteType = widget.paraglidingSite?.siteType;
+    final int? altitude = widget.site?.altitude?.toInt() ?? widget.paraglidingSite?.altitude ?? _detailedData?['altitude'];
+    final String? country = widget.site?.country ?? widget.paraglidingSite?.country ?? _detailedData?['country'];
+    // Extract data from ParaglidingSite OR from fetched API data for local sites
+    final String? region = widget.paraglidingSite?.region ?? _detailedData?['region'];
+    final String? description = widget.paraglidingSite?.description ?? _detailedData?['description'];
+    final int? rating = widget.paraglidingSite?.rating ?? _detailedData?['rating'];
+    final List<String> windDirections = widget.paraglidingSite?.windDirections ?? 
+        (_detailedData?['wind_directions'] as List<dynamic>?)?.cast<String>() ?? [];
+    final String? siteType = widget.paraglidingSite?.siteType ?? _detailedData?['site_type'];
     final int? flightCount = widget.site?.flightCount;
     
     // Calculate distance if user position is available
@@ -680,8 +722,8 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
             
             const SizedBox(height: 8),
             
-            // Show overview content first (always visible)
-            if (widget.paraglidingSite != null) ...[
+            // Show detailed view if we have a tab controller and either ParaglidingSite or fetched API data
+            if (_tabController != null && (_detailedData != null || widget.paraglidingSite != null)) ...[
               // Overview content (always visible)
               ..._buildOverviewContent(name, latitude, longitude, altitude, country, region, rating, siteType, windDirections, flightCount, distanceText),
               
@@ -1036,31 +1078,16 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
   Widget _buildActionButtons(String name, double latitude, double longitude) {
     return Column(
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  _launchNavigation(latitude, longitude);
-                },
-                icon: const Icon(Icons.navigation),
-                label: const Text('Navigate'),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  // TODO: Implement add to favorites functionality
-                  LoggingService.info('Add to favorites: $name');
-                },
-                icon: const Icon(Icons.favorite_border),
-                label: const Text('Favorite'),
-              ),
-            ),
-          ],
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _launchNavigation(latitude, longitude);
+            },
+            icon: const Icon(Icons.navigation),
+            label: const Text('Navigate'),
+          ),
         ),
         // View on PGE button for API sites
         if (widget.paraglidingSite != null && _detailedData != null && _detailedData!['pgeid'] != null) ...[
