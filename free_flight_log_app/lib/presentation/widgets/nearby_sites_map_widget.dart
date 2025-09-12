@@ -293,50 +293,261 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                   ),
                 ),
                 
-                // Search results dropdown
+                // Search results dropdown with enhanced UX
                 if (widget.searchResults.isNotEmpty)
-                  Container(
-                    constraints: const BoxConstraints(maxHeight: 200),
-                    margin: const EdgeInsets.only(top: 4),
-                    decoration: const BoxDecoration(
-                      color: Color(0xCC000000), // More transparent for better map visibility
-                      borderRadius: BorderRadius.all(Radius.circular(4)),
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOutQuad,
+                    constraints: const BoxConstraints(maxHeight: 300),
+                    margin: const EdgeInsets.only(top: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.85),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.1),
+                        width: 1,
+                      ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black26,
-                          blurRadius: 8,
-                          offset: Offset(0, 4),
+                          color: Colors.black.withValues(alpha: 0.4),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
                         ),
                       ],
                     ),
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: widget.searchResults.length,
-                      itemBuilder: (context, index) {
-                        final site = widget.searchResults[index];
-                        return ListTile(
-                          dense: true,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                          title: Text(
-                            site.name,
-                            style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Results header
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.05),
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: Colors.white.withValues(alpha: 0.1),
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Text(
+                                  '${widget.searchResults.length} site${widget.searchResults.length == 1 ? '' : 's'} found',
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.7),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                const Spacer(),
+                                if (widget.isSearching)
+                                  const SizedBox(
+                                    width: 12,
+                                    height: 12,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white70,
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
-                          subtitle: site.country != null
-                              ? Text(
-                                  site.country!.toUpperCase(),
-                                  style: const TextStyle(color: Colors.white70, fontSize: 13),
-                                )
-                              : null,
-                          trailing: const Icon(
-                            Icons.location_on,
-                            color: Colors.white70,
-                            size: 16,
+                          // Results list
+                          Flexible(
+                            child: ListView.separated(
+                              shrinkWrap: true,
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              itemCount: widget.searchResults.length,
+                              separatorBuilder: (context, index) => Container(
+                                height: 1,
+                                margin: const EdgeInsets.symmetric(horizontal: 16),
+                                color: Colors.white.withValues(alpha: 0.05),
+                              ),
+                              itemBuilder: (context, index) {
+                                final site = widget.searchResults[index];
+                                // Calculate distance if user position is available
+                                String? distanceText;
+                                if (widget.userPosition != null) {
+                                  final distance = Geolocator.distanceBetween(
+                                    widget.userPosition!.latitude,
+                                    widget.userPosition!.longitude,
+                                    site.latitude,
+                                    site.longitude,
+                                  );
+                                  if (distance < 1000) {
+                                    distanceText = '${distance.toStringAsFixed(0)}m';
+                                  } else {
+                                    distanceText = '${(distance / 1000).toStringAsFixed(1)}km';
+                                  }
+                                }
+                                
+                                // Get country flag emoji
+                                String countryFlag = '';
+                                if (site.country != null) {
+                                  // Simple country code to flag emoji mapping
+                                  final countryCode = site.country!.toUpperCase();
+                                  final flagMap = {
+                                    'AU': '🇦🇺', 'AUSTRALIA': '🇦🇺',
+                                    'NZ': '🇳🇿', 'NEW ZEALAND': '🇳🇿',
+                                    'US': '🇺🇸', 'USA': '🇺🇸', 'UNITED STATES': '🇺🇸',
+                                    'CA': '🇨🇦', 'CANADA': '🇨🇦',
+                                    'GB': '🇬🇧', 'UK': '🇬🇧', 'UNITED KINGDOM': '🇬🇧',
+                                    'FR': '🇫🇷', 'FRANCE': '🇫🇷',
+                                    'DE': '🇩🇪', 'GERMANY': '🇩🇪',
+                                    'ES': '🇪🇸', 'SPAIN': '🇪🇸',
+                                    'IT': '🇮🇹', 'ITALY': '🇮🇹',
+                                    'CH': '🇨🇭', 'SWITZERLAND': '🇨🇭',
+                                    'AT': '🇦🇹', 'AUSTRIA': '🇦🇹',
+                                    'JP': '🇯🇵', 'JAPAN': '🇯🇵',
+                                    'CN': '🇨🇳', 'CHINA': '🇨🇳',
+                                    'IN': '🇮🇳', 'INDIA': '🇮🇳',
+                                    'BR': '🇧🇷', 'BRAZIL': '🇧🇷',
+                                    'MX': '🇲🇽', 'MEXICO': '🇲🇽',
+                                    'ZA': '🇿🇦', 'SOUTH AFRICA': '🇿🇦',
+                                  };
+                                  countryFlag = flagMap[countryCode] ?? '';
+                                }
+                                
+                                return Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    onTap: () {
+                                      widget.onSearchResultSelected(site);
+                                      // Maintain focus on search bar after selecting result
+                                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                                        _searchFocusNode.requestFocus();
+                                      });
+                                    },
+                                    highlightColor: Colors.white.withValues(alpha: 0.1),
+                                    splashColor: Colors.white.withValues(alpha: 0.05),
+                                    canRequestFocus: false, // Prevent stealing focus from search bar
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                      child: Row(
+                                        children: [
+                                          // Site icon with color coding
+                                          Container(
+                                            width: 36,
+                                            height: 36,
+                                            decoration: BoxDecoration(
+                                              color: Colors.deepPurple.withValues(alpha: 0.2),
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: const Icon(
+                                              Icons.paragliding,
+                                              color: Colors.deepPurple,
+                                              size: 20,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          // Site info
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  site.name,
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Row(
+                                                  children: [
+                                                    if (countryFlag.isNotEmpty) ...[
+                                                      Text(
+                                                        countryFlag,
+                                                        style: const TextStyle(fontSize: 14),
+                                                      ),
+                                                      const SizedBox(width: 6),
+                                                    ],
+                                                    if (site.country != null)
+                                                      Text(
+                                                        site.country!,
+                                                        style: TextStyle(
+                                                          color: Colors.white.withValues(alpha: 0.6),
+                                                          fontSize: 12,
+                                                        ),
+                                                      ),
+                                                    if (distanceText != null) ...[
+                                                      const SizedBox(width: 8),
+                                                      Text(
+                                                        '• $distanceText',
+                                                        style: TextStyle(
+                                                          color: Colors.white.withValues(alpha: 0.5),
+                                                          fontSize: 12,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          // Arrow indicator
+                                          Icon(
+                                            Icons.arrow_forward_ios,
+                                            color: Colors.white.withValues(alpha: 0.3),
+                                            size: 14,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
                           ),
-                          onTap: () => widget.onSearchResultSelected(site),
-                        );
-                      },
+                        ],
+                      ),
+                    ),
+                  ),
+                
+                // Empty search state
+                if (widget.searchQuery.isNotEmpty && widget.searchResults.isEmpty && !widget.isSearching)
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOutQuad,
+                    margin: const EdgeInsets.only(top: 2),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.85),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.1),
+                        width: 1,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.4),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.search_off,
+                          color: Colors.white.withValues(alpha: 0.5),
+                          size: 20,
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          'No sites found for "${widget.searchQuery}"',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.7),
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
               ],
@@ -427,8 +638,10 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               flags: InteractiveFlag.all,
             ),
             onTap: (tapPosition, point) {
-              // Dismiss any open bottom sheets when tapping the map
-              Navigator.of(context).popUntil((route) => route.isFirst);
+              // Clear search when tapping the map
+              if (widget.searchQuery.isNotEmpty) {
+                widget.onSearchChanged('');
+              }
             },
           ),
           children: [

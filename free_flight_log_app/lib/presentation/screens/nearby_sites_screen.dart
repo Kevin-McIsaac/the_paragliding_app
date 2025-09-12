@@ -33,7 +33,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   
   // Constants for bounds-based loading (copied from EditSiteScreen)
   static const double _boundsThreshold = 0.001;
-  static const int _debounceDurationMs = 500;
+  static const int _debounceDurationMs = 750; // Increased debounce to reduce API calls
   
   // Unified state variables - all sites are ParaglidingSite objects from API
   List<ParaglidingSite> _allSites = [];
@@ -66,6 +66,10 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   bool _isSearching = false;
   Timer? _searchDebounce;
   static const Duration _searchDebounceDelay = Duration(milliseconds: 300);
+  
+  // Smooth transition state management
+  ParaglidingSite? _pinnedSite;
+  bool _pinnedSiteIsFromAutoJump = false;
   
 
   @override
@@ -212,27 +216,34 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     if (_searchQuery.isNotEmpty && _searchResults.isNotEmpty) {
       filteredSites = _searchResults;
       
-      // Center map on search results
-      if (filteredSites.length == 1) {
-        final site = filteredSites.first;
-        _mapCenterPosition = LatLng(site.latitude, site.longitude);
-      } else if (filteredSites.length > 1 && filteredSites.length < 20) {
-        // Center on average position of found sites
-        final avgLat = filteredSites.map((s) => s.latitude).reduce((a, b) => a + b) / filteredSites.length;
-        final avgLng = filteredSites.map((s) => s.longitude).reduce((a, b) => a + b) / filteredSites.length;
-        _mapCenterPosition = LatLng(avgLat, avgLng);
-      }
+      // Don't auto-center map during search to prevent jumping
+      // Map will only center when user explicitly selects a result
     } else if (_searchQuery.isEmpty) {
       // No search - show bounds-based sites
-      filteredSites = _allSites;
+      filteredSites = _allSites.toList(); // Create a copy to allow modifications
       
-      // Reset map center to user position when clearing search
-      if (_userPosition != null) {
-        _mapCenterPosition = LatLng(_userPosition!.latitude, _userPosition!.longitude);
+      // Add pinned site if we have one and it's not already in the list
+      if (_pinnedSite != null) {
+        final pinnedSiteKey = SiteUtils.createSiteKey(_pinnedSite!.latitude, _pinnedSite!.longitude);
+        final alreadyExists = filteredSites.any((site) => 
+          SiteUtils.createSiteKey(site.latitude, site.longitude) == pinnedSiteKey);
+        
+        if (!alreadyExists) {
+          filteredSites.insert(0, _pinnedSite!); // Add at beginning for prominence
+        }
       }
+      
+      // Don't reset map center automatically when clearing search
+      // Let the user maintain their current view
     } else {
-      // Search in progress or no results
-      filteredSites = [];
+      // Search in progress or no results - always keep showing current sites
+      // This prevents sites from disappearing while typing in search
+      if (_displayedSites.isNotEmpty) {
+        filteredSites = _displayedSites; // Keep showing current sites
+      } else {
+        // Fallback to all sites if no sites are currently displayed
+        filteredSites = _allSites.toList();
+      }
     }
     
     // Sites are loaded via bounds-based filtering, no distance filtering needed
@@ -322,13 +333,23 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     });
   }
   
-  void _exitSearchMode() {
+  void _exitSearchMode({bool preserveDisplayedSites = false}) {
     _searchController.clear();
     _searchDebounce?.cancel();
     setState(() {
       _isSearchMode = false;
+      _searchQuery = '';  // Clear the search query to prevent "No sites found" message
       _searchResults.clear();
       _isSearching = false;
+      
+      // Clear auto-jump flag when exiting search mode
+      _pinnedSiteIsFromAutoJump = false;
+      
+      // Don't automatically update displayed sites if we want to preserve them
+      // This prevents the jarring site disappearance during transitions
+      if (!preserveDisplayedSites) {
+        _updateDisplayedSites();
+      }
     });
   }
   
@@ -378,29 +399,56 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     }
   }
   
-  void _selectSearchResult(ParaglidingSite site) {
-    // Center map on selected site and zoom
-    _mapCenterPosition = LatLng(site.latitude, site.longitude);
-    _exitSearchMode();
+  /// Jump to a location without dismissing search results
+  void _jumpToLocation(ParaglidingSite site, {bool keepSearchActive = false}) {
+    // Pin the selected site to keep it visible during transition
+    _pinnedSite = site;
+    _pinnedSiteIsFromAutoJump = keepSearchActive; // Track if this is from auto-jump
     
-    // Force bounds-based loading after a short delay to allow map to update
-    Future.delayed(const Duration(milliseconds: 500), () {
+    // Center map on selected site
+    _mapCenterPosition = LatLng(site.latitude, site.longitude);
+    
+    // Immediately trigger bounds-based loading without delay for responsiveness
+    final newCenter = LatLng(site.latitude, site.longitude);
+    final bounds = LatLngBounds(
+      LatLng(newCenter.latitude - 0.05, newCenter.longitude - 0.05),
+      LatLng(newCenter.latitude + 0.05, newCenter.longitude + 0.05),
+    );
+    
+    // Use a very short delay just to allow the map to update its center
+    Future.delayed(const Duration(milliseconds: 100), () {
       if (mounted) {
-        // Trigger bounds-based loading by simulating a map bounds change
-        // This will load sites around the new location
-        final newCenter = LatLng(site.latitude, site.longitude);
-        // Create bounds around the selected site location
-        final bounds = LatLngBounds(
-          LatLng(newCenter.latitude - 0.05, newCenter.longitude - 0.05),
-          LatLng(newCenter.latitude + 0.05, newCenter.longitude + 0.05),
-        );
         _onBoundsChanged(bounds);
       }
     });
     
+    LoggingService.action('NearbySites', 'location_jumped', {
+      'site_name': site.name,
+      'country': site.country,
+      'keep_search_active': keepSearchActive,
+    });
+  }
+
+  void _selectSearchResult(ParaglidingSite site) {
+    // Check if this is the same site that was auto-jumped to
+    bool isDuplicateJump = _pinnedSite != null && 
+                          _pinnedSite!.name == site.name &&
+                          _pinnedSite!.latitude == site.latitude &&
+                          _pinnedSite!.longitude == site.longitude &&
+                          _pinnedSiteIsFromAutoJump;
+    
+    if (!isDuplicateJump) {
+      // Jump to location if not already there
+      _jumpToLocation(site);
+    }
+    
+    // Exit search mode but preserve displayed sites for smooth transition
+    _exitSearchMode(preserveDisplayedSites: true);
+    
     LoggingService.action('NearbySites', 'search_result_selected', {
       'site_name': site.name,
       'country': site.country,
+      'was_duplicate_jump': isDuplicateJump,
     });
   }
 
@@ -427,9 +475,15 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
             _updateDisplayedSites();
           });
           
+          // If exactly one result, automatically jump to it but keep search results visible
+          if (results.length == 1) {
+            _jumpToLocation(results.first, keepSearchActive: true);
+          }
+          
           LoggingService.action('NearbySites', 'api_search_performed', {
             'query': query,
             'results_count': results.length,
+            'auto_selected': results.length == 1,
           });
         }
       } catch (e) {
@@ -545,11 +599,16 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         setState(() {
           _allSites = unifiedSites;
           _siteFlightStatus = siteFlightStatus;
-          
-          // Filter displayed sites based on search query
-          _updateDisplayedSites();
-          
           _isLoadingSites = false;
+          
+          // Clear pinned site only if not from auto-jump or search is no longer active
+          if (!_pinnedSiteIsFromAutoJump || _searchQuery.isEmpty) {
+            _pinnedSite = null;
+            _pinnedSiteIsFromAutoJump = false;
+          }
+          
+          // Update displayed sites with the new bounds data
+          _updateDisplayedSites();
         });
         
         // Mark these bounds as loaded to prevent duplicate requests
@@ -567,6 +626,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       if (mounted) {
         setState(() {
           _isLoadingSites = false;
+          // Clear pinned site even on error to prevent UI from getting stuck
+          _pinnedSite = null;
+          _pinnedSiteIsFromAutoJump = false;
         });
       }
     }
@@ -670,53 +732,109 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                           searchResults: _searchResults,
                           isSearching: _isSearching,
                           onSearchResultSelected: (site) {
-                            setState(() {
-                              _searchQuery = '';
-                              _searchResults.clear();
-                              _isSearching = false;
-                              _mapCenterPosition = LatLng(site.latitude, site.longitude);
-                            });
-                            
-                            // Force bounds-based loading after a short delay to allow map to update
-                            Future.delayed(const Duration(milliseconds: 500), () {
-                              if (mounted) {
-                                // Trigger bounds-based loading by simulating a map bounds change
-                                // This will load sites around the new location
-                                final newCenter = LatLng(site.latitude, site.longitude);
-                                // Create bounds around the selected site location
-                                final bounds = LatLngBounds(
-                                  LatLng(newCenter.latitude - 0.05, newCenter.longitude - 0.05),
-                                  LatLng(newCenter.latitude + 0.05, newCenter.longitude + 0.05),
-                                );
-                                _onBoundsChanged(bounds);
-                              }
-                            });
+                            _selectSearchResult(site);
                           },
                         ),
                         
                         // Loading overlay for dynamic site loading
                         if (_isLoadingSites)
                           Positioned(
-                            top: 8,
-                            left: 8,
+                            top: 60, // Moved down to avoid controls
+                            right: 16, // Positioned on right for better visibility
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                               decoration: BoxDecoration(
-                                color: Colors.black87,
-                                borderRadius: BorderRadius.circular(16),
+                                color: Colors.black.withValues(alpha: 0.85),
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.3),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.5,
+                                      color: Colors.white,
+                                      strokeCap: StrokeCap.round,
+                                    ),
                                   ),
-                                  const SizedBox(width: 8),
+                                  const SizedBox(width: 10),
                                   const Text(
                                     'Loading nearby sites...',
-                                    style: TextStyle(color: Colors.white, fontSize: 12),
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        
+                        // Location unavailable message
+                        if (_userPosition == null && !_isLocationLoading)
+                          Positioned(
+                            bottom: 100,
+                            left: 16,
+                            right: 16,
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade900.withValues(alpha: 0.9),
+                                borderRadius: BorderRadius.circular(8),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.3),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.location_off,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  const Expanded(
+                                    child: Text(
+                                      'Location unavailable. Using last known position.',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: _onRefreshLocation,
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                      minimumSize: Size.zero,
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                      backgroundColor: Colors.white.withValues(alpha: 0.2),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      'Retry',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                                   ),
                                 ],
                               ),
