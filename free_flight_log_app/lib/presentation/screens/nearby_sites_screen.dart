@@ -11,23 +11,12 @@ import '../../services/database_service.dart';
 import '../../services/location_service.dart';
 import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
+import '../../utils/map_provider.dart';
+import '../../utils/site_utils.dart';
 import '../widgets/nearby_sites_map_widget.dart';
 import '../widgets/common/app_error_state.dart';
 import '../widgets/common/app_empty_state.dart';
 
-enum MapProvider {
-  openStreetMap('Street Map', 'OSM', 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', 18, '© OpenStreetMap contributors'),
-  googleSatellite('Google Satellite', 'Google', 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', 18, '© Google'),
-  esriWorldImagery('Esri Satellite', 'Esri', 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', 18, '© Esri');
-
-  const MapProvider(this.displayName, this.shortName, this.urlTemplate, this.maxZoom, this.attribution);
-  
-  final String displayName;
-  final String shortName;
-  final String urlTemplate;
-  final int maxZoom;
-  final String attribution;
-}
 
 class NearbySitesScreen extends StatefulWidget {
   const NearbySitesScreen({super.key});
@@ -88,10 +77,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     super.dispose();
   }
 
-  /// Create a unique key for site flight status lookup
-  String _createSiteKey(double latitude, double longitude) {
-    return '${latitude.toStringAsFixed(6)},${longitude.toStringAsFixed(6)}';
-  }
 
   Future<void> _loadPreferences() async {
     try {
@@ -225,7 +210,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     
     // Count flown vs new sites for logging
     final flownSites = filteredSites.where((site) {
-      final siteKey = _createSiteKey(site.latitude, site.longitude);
+      final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
       return _siteFlightStatus[siteKey] ?? false;
     }).length;
     final newSites = filteredSites.length - flownSites;
@@ -252,7 +237,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   }
 
   void _onSiteSelected(ParaglidingSite site) {
-    final siteKey = _createSiteKey(site.latitude, site.longitude);
+    final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
     final hasFlights = _siteFlightStatus[siteKey] ?? false;
     
     LoggingService.action('NearbySites', hasFlights ? 'flown_site_selected' : 'new_site_selected', {
@@ -358,7 +343,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       
       // Add API sites with flight status checking
       for (final apiSite in apiSites) {
-        final siteKey = _createSiteKey(apiSite.latitude, apiSite.longitude);
+        final siteKey = SiteUtils.createSiteKey(apiSite.latitude, apiSite.longitude);
         
         // Check if this API site matches any local site (has been flown)
         final hasFlights = localSites.any((localSite) =>
@@ -371,7 +356,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       
       // 4. For local sites not found in API, try to look them up individually
       for (final localSite in localSites) {
-        final siteKey = _createSiteKey(localSite.latitude, localSite.longitude);
+        final siteKey = SiteUtils.createSiteKey(localSite.latitude, localSite.longitude);
         
         // Skip if already found in API sites
         if (siteFlightStatus.containsKey(siteKey)) continue;

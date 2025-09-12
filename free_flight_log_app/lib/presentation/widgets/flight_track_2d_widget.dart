@@ -19,20 +19,10 @@ import '../../utils/performance_monitor.dart';
 import '../../utils/preferences_helper.dart';
 import '../../utils/site_marker_utils.dart';
 import '../../utils/ui_utils.dart';
+import '../../utils/map_provider.dart';
+import '../../utils/site_utils.dart';
 import '../screens/flight_track_3d_fullscreen.dart';
 
-enum MapProvider {
-  openStreetMap('Street Map', 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', 18, '© OpenStreetMap contributors'),
-  googleSatellite('Google Satellite', 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', 18, '© Google'),
-  esriWorldImagery('Esri Satellite', 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', 18, '© Esri');
-
-  const MapProvider(this.displayName, this.urlTemplate, this.maxZoom, this.attribution);
-  
-  final String displayName;
-  final String urlTemplate;
-  final int maxZoom;
-  final String attribution;
-}
 
 class FlightTrack2DWidget extends StatefulWidget {
   final Flight flight;
@@ -572,15 +562,6 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     }
   }
 
-  /// Check if an API site duplicates a local site (same coordinates)
-  bool _isDuplicateApiSite(ParaglidingSite apiSite) {
-    const double tolerance = 0.000001; // ~0.1 meter tolerance for floating point comparison
-    
-    return _localSites.any((localSite) =>
-      (localSite.latitude - apiSite.latitude).abs() < tolerance &&
-      (localSite.longitude - apiSite.longitude).abs() < tolerance
-    );
-  }
 
   /// Debounced site loading when map bounds change
   void _onMapPositionChanged() {
@@ -1085,7 +1066,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     
     // Add API sites (new sites - green), excluding duplicates
     for (final site in _apiSites) {
-      if (!_isDuplicateApiSite(site)) {
+      if (!SiteUtils.isDuplicateApiSite(site, _localSites)) {
         markers.add(
           DragMarker(
             point: LatLng(site.latitude, site.longitude),

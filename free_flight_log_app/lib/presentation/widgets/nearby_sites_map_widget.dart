@@ -6,7 +6,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../services/logging_service.dart';
 import '../../utils/site_marker_utils.dart';
-import '../../presentation/screens/nearby_sites_screen.dart';
+import '../../utils/map_provider.dart';
+import '../../utils/site_utils.dart';
+import '../../utils/map_controls.dart';
 
 class NearbySitesMapWidget extends StatefulWidget {
   final List<ParaglidingSite> sites;
@@ -110,14 +112,10 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     return const LatLng(47.0, 8.0);
   }
 
-  /// Create a unique key for site flight status lookup
-  String _createSiteKey(double latitude, double longitude) {
-    return '${latitude.toStringAsFixed(6)},${longitude.toStringAsFixed(6)}';
-  }
 
   List<Marker> _buildSiteMarkers() {
     return widget.sites.map((site) {
-      final siteKey = _createSiteKey(site.latitude, site.longitude);
+      final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
       final hasFlights = widget.siteFlightStatus[siteKey] ?? false;
       
       return Marker(
@@ -179,76 +177,12 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
   // Add methods for map controls, legend, and attribution
   Widget _buildMapControls() {
-    return Column(
-      children: [
-        // Map provider selector
-        Container(
-          decoration: const BoxDecoration(
-            color: Color(0x80000000),
-            borderRadius: BorderRadius.all(Radius.circular(4)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black26,
-                blurRadius: 4,
-                offset: Offset(0, 2),
-              ),
-            ],
-          ),
-          child: PopupMenuButton<MapProvider>(
-            tooltip: 'Change Maps',
-            onSelected: widget.onMapProviderChanged,
-            initialValue: widget.mapProvider,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    _getProviderIcon(widget.mapProvider),
-                    size: 16,
-                    color: Colors.white,
-                  ),
-                  const Icon(
-                    Icons.arrow_drop_down, 
-                    size: 16,
-                    color: Colors.white,
-                  ),
-                ],
-              ),
-            ),
-            itemBuilder: (context) => MapProvider.values.map((provider) => 
-              PopupMenuItem<MapProvider>(
-                value: provider,
-                child: Row(
-                  children: [
-                    Icon(
-                      _getProviderIcon(provider),
-                      size: 16,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(provider.displayName),
-                    ),
-                  ],
-                ),
-              )
-            ).toList(),
-          ),
-        ),
-      ],
+    return MapControls.buildMapControls(
+      currentProvider: widget.mapProvider,
+      onProviderChanged: widget.onMapProviderChanged,
     );
   }
 
-  IconData _getProviderIcon(MapProvider provider) {
-    switch (provider) {
-      case MapProvider.openStreetMap:
-        return Icons.map;
-      case MapProvider.googleSatellite:
-        return Icons.satellite_alt;
-      case MapProvider.esriWorldImagery:
-        return Icons.terrain;
-    }
-  }
 
   Widget _buildLegend() {
     final legendItems = <Widget>[
@@ -270,58 +204,14 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   }
 
   Widget _buildAttribution() {
-    return Positioned(
-      bottom: 8,
-      right: 8,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.grey[900]!.withValues(alpha: 0.8),
-          borderRadius: BorderRadius.circular(4),
-          boxShadow: const [
-            BoxShadow(
-              color: Colors.black26,
-              blurRadius: 4,
-              offset: Offset(0, 2),
-            ),
-          ],
-        ),
-        child: GestureDetector(
-          onTap: () async {
-            // Open appropriate copyright page based on provider
-            String url;
-            switch (widget.mapProvider) {
-              case MapProvider.openStreetMap:
-                url = 'https://www.openstreetmap.org/copyright';
-                break;
-              case MapProvider.googleSatellite:
-                url = 'https://www.google.com/permissions/geoguidelines/';
-                break;
-              case MapProvider.esriWorldImagery:
-                url = 'https://www.esri.com/en-us/legal/terms/full-master-agreement';
-                break;
-            }
-            final uri = Uri.parse(url);
-            try {
-              await launchUrl(uri, mode: LaunchMode.platformDefault);
-            } catch (e) {
-              LoggingService.error('NearbySitesMapWidget: Could not launch URL', e);
-            }
-          },
-          child: Text(
-            widget.mapProvider.attribution,
-            style: const TextStyle(fontSize: 8, color: Colors.white70),
-          ),
-        ),
-      ),
-    );
+    return MapControls.buildAttribution(provider: widget.mapProvider);
   }
 
   @override
   Widget build(BuildContext context) {
     // Count flown vs new sites for logging
     final flownSites = widget.sites.where((site) {
-      final siteKey = _createSiteKey(site.latitude, site.longitude);
+      final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
       return widget.siteFlightStatus[siteKey] ?? false;
     }).length;
     final newSites = widget.sites.length - flownSites;

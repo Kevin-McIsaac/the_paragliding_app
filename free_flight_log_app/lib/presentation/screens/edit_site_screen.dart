@@ -14,20 +14,9 @@ import '../../services/database_service.dart';
 import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
 import '../../utils/site_marker_utils.dart';
+import '../../utils/map_provider.dart';
+import '../../utils/site_utils.dart';
 
-enum MapProvider {
-  openStreetMap('Street Map', 'OSM', 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', 18, '© OpenStreetMap contributors'),
-  googleSatellite('Google Satellite', 'Google', 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', 18, '© Google'),
-  esriWorldImagery('Esri Satellite', 'Esri', 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', 18, '© Esri');
-
-  const MapProvider(this.displayName, this.shortName, this.urlTemplate, this.maxZoom, this.attribution);
-  
-  final String displayName;
-  final String shortName;
-  final String urlTemplate;
-  final int maxZoom;
-  final String attribution;
-}
 
 class EditSiteScreen extends StatefulWidget {
   final ({double latitude, double longitude})? initialCoordinates;
@@ -766,15 +755,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     }
   }
 
-  /// Check if an API site duplicates a local site (same coordinates)
-  bool _isDuplicateApiSite(ParaglidingSite apiSite) {
-    const double tolerance = 0.000001; // ~0.1 meter tolerance for floating point comparison
-    
-    return _localSites.any((localSite) =>
-      (localSite.latitude - apiSite.latitude).abs() < tolerance &&
-      (localSite.longitude - apiSite.longitude).abs() < tolerance
-    );
-  }
 
   /// Clear cache keys to force refresh of map data
   void _clearMapDataCache() {
@@ -1331,7 +1311,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     
     // Add API sites markers (excluding duplicates)
     dragMarkers.addAll(_apiSites
-        .where((site) => !_isDuplicateApiSite(site))
+        .where((site) => !SiteUtils.isDuplicateApiSite(site, _localSites))
         .map(_buildApiSiteDragMarker));
     
     return DragMarkers(markers: dragMarkers);
@@ -1568,7 +1548,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     
     // Check API sites (new sites) 
     for (final site in _apiSites) {
-      if (_isDuplicateApiSite(site)) continue; // Skip duplicates
+      if (SiteUtils.isDuplicateApiSite(site, _localSites)) continue; // Skip duplicates
       
       final sitePixel = camera.projectAtZoom(LatLng(site.latitude, site.longitude), camera.zoom);
       final distance = (dropPixel - sitePixel).distance;
