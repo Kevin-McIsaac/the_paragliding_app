@@ -449,9 +449,15 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
             _updateDisplayedSites();
           });
           
+          // If exactly one result, automatically jump to it
+          if (results.length == 1) {
+            _selectSearchResult(results.first);
+          }
+          
           LoggingService.action('NearbySites', 'api_search_performed', {
             'query': query,
             'results_count': results.length,
+            'auto_selected': results.length == 1,
           });
         }
       } catch (e) {

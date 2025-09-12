@@ -414,9 +414,16 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                                 return Material(
                                   color: Colors.transparent,
                                   child: InkWell(
-                                    onTap: () => widget.onSearchResultSelected(site),
+                                    onTap: () {
+                                      widget.onSearchResultSelected(site);
+                                      // Maintain focus on search bar after selecting result
+                                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                                        _searchFocusNode.requestFocus();
+                                      });
+                                    },
                                     highlightColor: Colors.white.withValues(alpha: 0.1),
                                     splashColor: Colors.white.withValues(alpha: 0.05),
+                                    canRequestFocus: false, // Prevent stealing focus from search bar
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                                       child: Row(
