@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:xml/xml.dart';
 import '../data/models/paragliding_site.dart';
 import '../services/logging_service.dart';
 import '../utils/performance_monitor.dart';
@@ -371,7 +372,8 @@ class ParaglidingEarthApi {
     PerformanceMonitor.startOperation('ParaglidingEarthApi_getSiteDetails');
     
     try {
-      final url = Uri.parse('$_baseUrl/getAroundLatLngSites.php').replace(
+      // Use the XML API endpoint for detailed site data
+      final url = Uri.parse('https://www.paragliding.earth/api/getAroundLatLngSites.php').replace(
         queryParameters: {
           'lat': latitude.toString(),
           'lng': longitude.toString(),
@@ -387,22 +389,38 @@ class ParaglidingEarthApi {
       _requestCount++;
       
       if (response.statusCode == 200) {
-        final json = jsonDecode(response.body);
+        // Parse XML response
+        final document = XmlDocument.parse(response.body);
+        final takeoffElement = document.findAllElements('takeoff').firstOrNull;
         
-        if (json['type'] == 'FeatureCollection' && 
-            json['features'] != null && 
-            json['features'].isNotEmpty) {
+        if (takeoffElement != null) {
+          final Map<String, dynamic> properties = {};
           
-          final feature = json['features'][0];
-          final properties = feature['properties'];
-          
-          if (properties != null) {
-            LoggingService.info('ParaglidingEarthApi: Found detailed data for site');
-            PerformanceMonitor.endOperation('ParaglidingEarthApi_getSiteDetails', metadata: {
-              'success': true,
-            });
-            return properties;
+          // Extract all child elements
+          for (final element in takeoffElement.children.whereType<XmlElement>()) {
+            final text = element.innerText.trim();
+            if (text.isNotEmpty) {
+              properties[element.name.local] = text;
+            }
           }
+          
+          // Also extract orientations
+          final orientationsElement = takeoffElement.findElements('orientations').firstOrNull;
+          if (orientationsElement != null) {
+            final Map<String, dynamic> orientations = {};
+            for (final element in orientationsElement.children.whereType<XmlElement>()) {
+              orientations[element.name.local] = element.innerText;
+            }
+            properties['orientations'] = orientations;
+          }
+          
+          LoggingService.info('ParaglidingEarthApi: Found detailed data for site');
+          LoggingService.info('ParaglidingEarthApi: Parsed fields: ${properties.keys.toList()}');
+          
+          PerformanceMonitor.endOperation('ParaglidingEarthApi_getSiteDetails', metadata: {
+            'success': true,
+          });
+          return properties;
         }
         
         LoggingService.warning('ParaglidingEarthApi: No detailed data found for site');

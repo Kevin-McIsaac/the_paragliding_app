@@ -550,15 +550,26 @@ class _SiteDetailsDialog extends StatefulWidget {
   State<_SiteDetailsDialog> createState() => _SiteDetailsDialogState();
 }
 
-class _SiteDetailsDialogState extends State<_SiteDetailsDialog> {
+class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTickerProviderStateMixin {
   Map<String, dynamic>? _detailedData;
   bool _isLoadingDetails = false;
   String? _loadingError;
+  TabController? _tabController;
 
   @override
   void initState() {
     super.initState();
+    // Only create tab controller for API sites with potential detailed data
+    if (widget.paraglidingSite != null) {
+      _tabController = TabController(length: 5, vsync: this); // 5 tabs: Takeoff, Rules, Access, Weather, Comments
+    }
     _loadSiteDetails();
+  }
+
+  @override
+  void dispose() {
+    _tabController?.dispose();
+    super.dispose();
   }
 
   Future<void> _loadSiteDetails() async {
@@ -624,7 +635,7 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> {
       elevation: 16,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
-        constraints: const BoxConstraints(maxWidth: 400),
+        constraints: const BoxConstraints(maxWidth: 400, maxHeight: 500),
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
@@ -642,15 +653,34 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header with name and close button
+            // Header with name, rating, and close button
             Row(
               children: [
                 Expanded(
-                  child: Text(
-                    name,
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (rating != null && rating > 0) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            ...List.generate(5, (index) => Icon(
+                              index < rating ? Icons.star : Icons.star_border,
+                              color: Colors.amber,
+                              size: 16,
+                            )),
+                            const SizedBox(width: 6),
+                            Text('($rating.0)', style: Theme.of(context).textTheme.bodySmall),
+                          ],
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 IconButton(
@@ -661,393 +691,513 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> {
               ],
             ),
             
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
             
-            // Rating (for API sites)
-            if (rating != null && rating > 0) ...[
-              Row(
-                children: [
-                  ...List.generate(5, (index) => Icon(
-                    index < rating ? Icons.star : Icons.star_border,
-                    color: Colors.amber,
-                    size: 20,
-                  )),
-                  const SizedBox(width: 8),
-                  Text('($rating.0)', style: Theme.of(context).textTheme.bodyMedium),
-                ],
-              ),
-              const SizedBox(height: 12),
-            ],
-            
-            // Location info
-            if (region != null || country != null) ...[
-              Row(
-                children: [
-                  const Icon(Icons.location_on, size: 20, color: Colors.grey),
-                  const SizedBox(width: 8),
-                  Expanded(
+            // Show overview content first (always visible)
+            if (widget.paraglidingSite != null) ...[
+              // Overview content (always visible)
+              ..._buildOverviewContent(name, latitude, longitude, altitude, country, region, rating, siteType, windDirections, flightCount, distanceText),
+              
+              const SizedBox(height: 8),
+              
+              // Tabs for detailed information
+              if (_tabController != null)
+                Expanded(
+                  child: Column(
+                    children: [
+                      TabBar(
+                        controller: _tabController,
+                        isScrollable: false,
+                        tabAlignment: TabAlignment.fill,
+                        labelStyle: TextStyle(fontSize: 9),
+                        unselectedLabelStyle: TextStyle(fontSize: 9),
+                        labelPadding: EdgeInsets.symmetric(horizontal: 8),
+                        tabs: const [
+                          Tab(icon: Icon(Icons.flight_takeoff, size: 16), text: 'Takeoff'),
+                          Tab(icon: Icon(Icons.rule, size: 16), text: 'Rules'),
+                          Tab(icon: Icon(Icons.directions, size: 16), text: 'Access'),
+                          Tab(icon: Icon(Icons.cloud, size: 16), text: 'Weather'),
+                          Tab(icon: Icon(Icons.comment, size: 16), text: 'Comments'),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Expanded(
+                        child: TabBarView(
+                          controller: _tabController,
+                          children: [
+                            _buildTakeoffTab(),
+                            _buildRulesTab(),
+                            _buildAccessTab(),
+                            _buildWeatherTab(),
+                            _buildCommentsTab(),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _buildActionButtons(name),
+                    ],
+                  ),
+                ),
+            ] else
+              ..._buildSimpleContent(name, latitude, longitude, altitude, country, region, rating, siteType, windDirections, flightCount, distanceText, description),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildOverviewContent(String name, double latitude, double longitude, int? altitude, String? country, String? region, int? rating, String? siteType, List<String> windDirections, int? flightCount, String? distanceText) {
+    return [
+            // Row 1: Location + Distance + Rating (moved to header)
+            Row(
+              children: [
+                // Location info
+                if (region != null || country != null) ...[
+                  const Icon(Icons.location_on, size: 16, color: Colors.grey),
+                  const SizedBox(width: 6),
+                  Flexible(
                     child: Text(
                       [region, country].where((s) => s != null && s.isNotEmpty).join(', '),
-                      style: Theme.of(context).textTheme.bodyMedium,
+                      style: Theme.of(context).textTheme.bodySmall,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
-              ),
-              const SizedBox(height: 8),
-            ],
-            
-            // Altitude
-            if (altitude != null) ...[
-              Row(
-                children: [
-                  const Icon(Icons.terrain, size: 20, color: Colors.grey),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${altitude}m altitude',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-            ],
-            
-            // Distance
-            if (distanceText != null) ...[
-              Row(
-                children: [
-                  const Icon(Icons.straighten, size: 20, color: Colors.grey),
-                  const SizedBox(width: 8),
+                // Distance
+                if (distanceText != null) ...[
+                  const SizedBox(width: 12),
+                  const Icon(Icons.straighten, size: 16, color: Colors.grey),
+                  const SizedBox(width: 4),
                   Text(
                     '$distanceText away',
-                    style: Theme.of(context).textTheme.bodyMedium,
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
-              ),
-              const SizedBox(height: 8),
-            ],
-            
-            // Flight count (for local sites)
-            if (flightCount != null && flightCount > 0) ...[
-              Row(
-                children: [
-                  const Icon(Icons.flight, size: 20, color: Colors.grey),
-                  const SizedBox(width: 8),
-                  Text(
-                    '$flightCount ${flightCount == 1 ? 'flight' : 'flights'} logged',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-            ],
-            
-            // Site type (for API sites)
-            if (siteType != null) ...[
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(Icons.info_outline, size: 20, color: Colors.grey),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Type: ${_formatSiteType(siteType)}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-            
-            // Wind directions (for API sites)
-            if (windDirections.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.air, size: 20, color: Colors.grey),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Wind: ${windDirections.join(', ')}',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-            
-            // Loading state for detailed data
-            if (_isLoadingDetails) ...[
-              const SizedBox(height: 16),
-              const Center(
-                child: Column(
-                  children: [
-                    SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    SizedBox(height: 8),
-                    Text(
-                      'Loading detailed information...',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            
-            // Error state
-            if (_loadingError != null) ...[
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.red.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.error_outline, color: Colors.red, size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _loadingError!,
-                        style: const TextStyle(color: Colors.red, fontSize: 12),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            
-            // Site characteristics (for API sites with detailed data)
-            if (_detailedData != null) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  if (_detailedData!['thermals']?.toString() == '1') 
-                    Chip(
-                      label: Text('Thermals', style: TextStyle(fontSize: 12)),
-                      backgroundColor: Colors.orange.withValues(alpha: 0.2),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  if (_detailedData!['soaring']?.toString() == '1')
-                    Chip(
-                      label: Text('Soaring', style: TextStyle(fontSize: 12)),
-                      backgroundColor: Colors.blue.withValues(alpha: 0.2),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  if (_detailedData!['xc']?.toString() == '1')
-                    Chip(
-                      label: Text('XC', style: TextStyle(fontSize: 12)),
-                      backgroundColor: Colors.green.withValues(alpha: 0.2),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  if (_detailedData!['winch']?.toString() == '1')
-                    Chip(
-                      label: Text('Winch', style: TextStyle(fontSize: 12)),
-                      backgroundColor: Colors.purple.withValues(alpha: 0.2),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  if (_detailedData!['flatland']?.toString() == '1')
-                    Chip(
-                      label: Text('Flatland', style: TextStyle(fontSize: 12)),
-                      backgroundColor: Colors.amber.withValues(alpha: 0.2),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                ],
-              ),
-            ],
-            
-            // Detailed information sections (loaded on demand)
-            if (_detailedData != null) ...[
-              // Takeoff instructions
-              if (_detailedData!['takeoff_description'] != null && _detailedData!['takeoff_description']!.toString().isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Text(
-                  'Takeoff Instructions',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  constraints: const BoxConstraints(maxHeight: 100),
-                  child: SingleChildScrollView(
-                    child: Text(
-                      _detailedData!['takeoff_description']!.toString(),
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ),
-                ),
               ],
-              
-              // Flight rules
-              if (_detailedData!['flight_rules'] != null && _detailedData!['flight_rules']!.toString().isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Text(
-                  'Flight Rules',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  constraints: const BoxConstraints(maxHeight: 80),
-                  child: SingleChildScrollView(
-                    child: Text(
-                      _detailedData!['flight_rules']!.toString(),
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ),
-                ),
-              ],
-              
-              // Access information
-              if (_detailedData!['going_there'] != null && _detailedData!['going_there']!.toString().isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Text(
-                  'Getting There',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  constraints: const BoxConstraints(maxHeight: 80),
-                  child: SingleChildScrollView(
-                    child: Text(
-                      _detailedData!['going_there']!.toString(),
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ),
-                ),
-              ],
-              
-              // Pilot comments
-              if (_detailedData!['comments'] != null && _detailedData!['comments']!.toString().isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Text(
-                  'Pilot Comments',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  constraints: const BoxConstraints(maxHeight: 120),
-                  child: SingleChildScrollView(
-                    child: Text(
-                      _detailedData!['comments']!.toString(),
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ),
-                ),
-              ],
-              
-              // Weather notes
-              if (_detailedData!['weather'] != null && _detailedData!['weather']!.toString().isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Text(
-                  'Weather Information',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  constraints: const BoxConstraints(maxHeight: 80),
-                  child: SingleChildScrollView(
-                    child: Text(
-                      _detailedData!['weather']!.toString(),
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ),
-                ),
-              ],
-            ],
+            ),
+            const SizedBox(height: 6),
             
-            // Description (fallback for local sites)
-            if (description != null && description.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              Text(
-                'Description',
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                constraints: const BoxConstraints(maxHeight: 120),
-                child: SingleChildScrollView(
-                  child: Text(
-                    description,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ),
-              ),
-            ],
-            
-            const SizedBox(height: 20),
-            
-            // Action buttons
-            Column(
+            // Row 2: Site Type + Altitude + Wind
+            Row(
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          // Open in maps app
-                          Navigator.of(context).pop();
-                          // TODO: Implement navigation functionality
-                          LoggingService.info('Navigate to site: $name');
-                        },
-                        icon: const Icon(Icons.navigation),
-                        label: const Text('Navigate'),
+                // Site type with characteristics tooltip
+                if (siteType != null) ...[
+                  Icon(
+                    _getSiteTypeIcon(siteType), 
+                    size: 16, 
+                    color: Colors.grey,
+                  ),
+                  const SizedBox(width: 6),
+                  Tooltip(
+                    message: _buildSiteCharacteristicsTooltip(),
+                    child: Text(
+                      _formatSiteType(siteType),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w500,
+                        decoration: TextDecoration.underline,
+                        decorationStyle: TextDecorationStyle.dotted,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                          // TODO: Implement add to favorites functionality
-                          LoggingService.info('Add to favorites: $name');
-                        },
-                        icon: const Icon(Icons.favorite_border),
-                        label: const Text('Favorite'),
-                      ),
+                  ),
+                  // Takeoff altitude from API data (if available)
+                  if (_detailedData?['takeoff_altitude'] != null) ...[
+                    const SizedBox(width: 6),
+                    Icon(Icons.height, size: 14, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${_detailedData!['takeoff_altitude']}m',
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
-                ),
-                // View on PGE button for API sites
-                if (widget.paraglidingSite != null && _detailedData != null && _detailedData!['pgeid'] != null) ...[
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: TextButton.icon(
-                      onPressed: () {
-                        final pgeUrl = 'https://www.paraglidingearth.com/pgearth/index.php?site=${_detailedData!['pgeid']}';
-                        // TODO: Launch URL
-                        LoggingService.info('Open PGE link: $pgeUrl');
-                      },
-                      icon: const Icon(Icons.open_in_new, size: 18),
-                      label: const Text('View Full Details on ParaglidingEarth'),
+                ],
+                // Altitude (existing site data)
+                if (altitude != null) ...[
+                  const SizedBox(width: 12),
+                  const Icon(Icons.terrain, size: 16, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${altitude}m',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+                // Wind directions (compact)
+                if (windDirections.isNotEmpty) ...[
+                  const SizedBox(width: 12),
+                  const Icon(Icons.air, size: 16, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      windDirections.join(', '),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
               ],
             ),
+            
+            // Flight count (for local sites) - only show if present
+            if (flightCount != null && flightCount > 0) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  const Icon(Icons.flight, size: 16, color: Colors.grey),
+                  const SizedBox(width: 6),
+                  Text(
+                    '$flightCount ${flightCount == 1 ? 'flight' : 'flights'} logged',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
+    ];
+  }
+
+  Widget _buildTakeoffTab() {
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+          if (_isLoadingDetails)
+            const Center(child: CircularProgressIndicator())
+          else if (_loadingError != null)
+            Center(child: Text(_loadingError!, style: TextStyle(color: Colors.red)))
+          else if (_detailedData != null) ...[
+            // Takeoff instructions
+            if (_detailedData!['takeoff_description'] != null && _detailedData!['takeoff_description']!.toString().isNotEmpty) ...[
+              Text(
+                _detailedData!['takeoff_description']!.toString(),
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 16),
+            ],
+            
+            // Landing information
+            if (_detailedData!['landing_description'] != null && _detailedData!['landing_description']!.toString().isNotEmpty) ...[
+              Text(
+                _detailedData!['landing_description']!.toString(),
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 16),
+            ],
+            
+            // Parking information
+            if (_detailedData!['takeoff_parking_description'] != null && _detailedData!['takeoff_parking_description']!.toString().isNotEmpty) ...[
+              Text(
+                _detailedData!['takeoff_parking_description']!.toString(),
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 16),
+            ],
+            
+            // Altitude information
+            if (widget.paraglidingSite?.altitude != null) ...[
+              Text(
+                '${widget.paraglidingSite!.altitude}m above sea level',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 16),
+            ],
+          ] else
+            const Center(child: Text('No takeoff information available')),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildRulesTab() {
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_isLoadingDetails)
+              const Center(child: CircularProgressIndicator())
+            else if (_loadingError != null)
+              Center(child: Text(_loadingError!, style: TextStyle(color: Colors.red)))
+            else if (_detailedData != null && _detailedData!['flight_rules'] != null && _detailedData!['flight_rules']!.toString().isNotEmpty) ...[
+              Text(
+                _detailedData!['flight_rules']!.toString(),
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ] else
+              const Center(child: Text('No flight rules available')),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAccessTab() {
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_isLoadingDetails)
+              const Center(child: CircularProgressIndicator())
+            else if (_loadingError != null)
+              Center(child: Text(_loadingError!, style: TextStyle(color: Colors.red)))
+            else if (_detailedData != null && _detailedData!['going_there'] != null && _detailedData!['going_there']!.toString().isNotEmpty) ...[
+              Text(
+                _detailedData!['going_there']!.toString(),
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ] else
+              const Center(child: Text('No access information available')),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWeatherTab() {
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_isLoadingDetails)
+              const Center(child: CircularProgressIndicator())
+            else if (_loadingError != null)
+              Center(child: Text(_loadingError!, style: TextStyle(color: Colors.red)))
+            else if (_detailedData != null && _detailedData!['weather'] != null && _detailedData!['weather']!.toString().isNotEmpty) ...[
+              Text(
+                _detailedData!['weather']!.toString(),
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ] else
+              const Center(child: Text('No weather information available')),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCommentsTab() {
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_isLoadingDetails)
+              const Center(child: CircularProgressIndicator())
+            else if (_loadingError != null)
+              Center(child: Text(_loadingError!, style: TextStyle(color: Colors.red)))
+            else if (_detailedData != null) ...[
+            // Pilot comments
+            if (_detailedData!['comments'] != null && _detailedData!['comments']!.toString().isNotEmpty) ...[
+              Text(
+                _detailedData!['comments']!.toString(),
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ] else
+              const Center(child: Text('No pilot comments available')),
+            ] else
+              const Center(child: Text('No pilot comments available')),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButtons(String name) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  // Open in maps app
+                  Navigator.of(context).pop();
+                  // TODO: Implement navigation functionality
+                  LoggingService.info('Navigate to site: $name');
+                },
+                icon: const Icon(Icons.navigation),
+                label: const Text('Navigate'),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  // TODO: Implement add to favorites functionality
+                  LoggingService.info('Add to favorites: $name');
+                },
+                icon: const Icon(Icons.favorite_border),
+                label: const Text('Favorite'),
+              ),
+            ),
+          ],
+        ),
+        // View on PGE button for API sites
+        if (widget.paraglidingSite != null && _detailedData != null && _detailedData!['pgeid'] != null) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: TextButton.icon(
+              onPressed: () {
+                final pgeUrl = 'https://www.paraglidingearth.com/pgearth/index.php?site=${_detailedData!['pgeid']}';
+                // TODO: Launch URL
+                LoggingService.info('Open PGE link: $pgeUrl');
+              },
+              icon: const Icon(Icons.open_in_new, size: 18),
+              label: const Text('View Full Details on ParaglidingEarth'),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  List<Widget> _buildSimpleContent(String name, double latitude, double longitude, int? altitude, String? country, String? region, int? rating, String? siteType, List<String> windDirections, int? flightCount, String? distanceText, String? description) {
+    return [
+      // Simple layout for local sites or sites without detailed data
+      if (rating != null && rating > 0) ...[
+        Row(
+          children: [
+            ...List.generate(5, (index) => Icon(
+              index < rating ? Icons.star : Icons.star_border,
+              color: Colors.amber,
+              size: 20,
+            )),
+            const SizedBox(width: 8),
+            Text('($rating.0)', style: Theme.of(context).textTheme.bodyMedium),
+          ],
+        ),
+        const SizedBox(height: 12),
+      ],
+      
+      // Location info
+      if (region != null || country != null) ...[
+        Row(
+          children: [
+            const Icon(Icons.location_on, size: 20, color: Colors.grey),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                [region, country].where((s) => s != null && s.isNotEmpty).join(', '),
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+      ],
+      
+      // Altitude
+      if (altitude != null) ...[
+        Row(
+          children: [
+            const Icon(Icons.terrain, size: 20, color: Colors.grey),
+            const SizedBox(width: 8),
+            Text(
+              '${altitude}m altitude',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+      ],
+      
+      // Distance
+      if (distanceText != null) ...[
+        Row(
+          children: [
+            const Icon(Icons.straighten, size: 20, color: Colors.grey),
+            const SizedBox(width: 8),
+            Text(
+              '$distanceText away',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+      ],
+      
+      // Flight count (for local sites)
+      if (flightCount != null && flightCount > 0) ...[
+        Row(
+          children: [
+            const Icon(Icons.flight, size: 20, color: Colors.grey),
+            const SizedBox(width: 8),
+            Text(
+              '$flightCount ${flightCount == 1 ? 'flight' : 'flights'} logged',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+      ],
+      
+      // Site type (for API sites)
+      if (siteType != null) ...[
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            const Icon(Icons.info_outline, size: 20, color: Colors.grey),
+            const SizedBox(width: 8),
+            Text(
+              'Type: ${_formatSiteType(siteType)}',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ],
+      
+      // Wind directions (for API sites)
+      if (windDirections.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.air, size: 20, color: Colors.grey),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Wind: ${windDirections.join(', ')}',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+      
+      // Description (fallback for local sites)
+      if (description != null && description.isNotEmpty) ...[
+        const SizedBox(height: 16),
+        Text(
+          'Description',
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          description,
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      ],
+      
+      const SizedBox(height: 20),
+      
+      // Action buttons
+      _buildActionButtons(name),
+    ];
   }
   
   String _formatSiteType(String siteType) {
@@ -1061,5 +1211,46 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> {
       default:
         return siteType;
     }
+  }
+
+  IconData _getSiteTypeIcon(String siteType) {
+    switch (siteType.toLowerCase()) {
+      case 'launch':
+        return Icons.flight_takeoff;
+      case 'landing':
+        return Icons.flight_land;
+      case 'both':
+        return Icons.flight;
+      default:
+        return Icons.location_on;
+    }
+  }
+
+  String _buildSiteCharacteristicsTooltip() {
+    if (_detailedData == null) return 'Site information';
+    
+    List<String> characteristics = [];
+    
+    // Check all possible characteristics that can have value "1"
+    final characteristicMap = {
+      'paragliding': 'Paragliding',
+      'hanggliding': 'Hanggliding', 
+      'hike': 'Hike',
+      'thermals': 'Thermals',
+      'soaring': 'Soaring',
+      'xc': 'XC',
+      'flatland': 'Flatland',
+      'winch': 'Winch',
+    };
+    
+    characteristicMap.forEach((key, label) {
+      if (_detailedData![key]?.toString() == '1') {
+        characteristics.add(label);
+      }
+    });
+    
+    return characteristics.isNotEmpty 
+        ? characteristics.join(', ')
+        : 'Site information';
   }
 }
