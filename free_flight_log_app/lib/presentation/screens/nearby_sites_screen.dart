@@ -361,13 +361,14 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         west: bounds.west,
       );
       
-      // Load API sites
+      // Load API sites with basic data only for map display
       final apiSitesFuture = _paraglidingEarthApi.getSitesInBounds(
         bounds.north,
         bounds.south,
         bounds.east,
         bounds.west,
         limit: 50,
+        detailed: false,
       );
       
       // Wait for both to complete
@@ -406,15 +407,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     }
   }
 
-  /// Check if an API site duplicates a local site (same coordinates)
-  bool _isDuplicateApiSite(ParaglidingSite apiSite) {
-    const double tolerance = 0.000001; // ~0.1 meter tolerance for floating point comparison
-    
-    return _localSites.any((localSite) =>
-      (localSite.latitude - apiSite.latitude).abs() < tolerance &&
-      (localSite.longitude - apiSite.longitude).abs() < tolerance
-    );
-  }
 
   void _showSiteDetailsDialog({Site? site, ParaglidingSite? paraglidingSite}) {
     showDialog(
@@ -543,7 +535,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   }
 }
 
-class _SiteDetailsDialog extends StatelessWidget {
+class _SiteDetailsDialog extends StatefulWidget {
   final Site? site;
   final ParaglidingSite? paraglidingSite;
   final Position? userPosition;
@@ -555,26 +547,73 @@ class _SiteDetailsDialog extends StatelessWidget {
   });
 
   @override
+  State<_SiteDetailsDialog> createState() => _SiteDetailsDialogState();
+}
+
+class _SiteDetailsDialogState extends State<_SiteDetailsDialog> {
+  Map<String, dynamic>? _detailedData;
+  bool _isLoadingDetails = false;
+  String? _loadingError;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSiteDetails();
+  }
+
+  Future<void> _loadSiteDetails() async {
+    // Only load detailed data for API sites (ParaglidingSite)
+    if (widget.paraglidingSite == null) return;
+    
+    setState(() {
+      _isLoadingDetails = true;
+      _loadingError = null;
+    });
+
+    try {
+      final details = await ParaglidingEarthApi.instance.getSiteDetails(
+        widget.paraglidingSite!.latitude,
+        widget.paraglidingSite!.longitude,
+      );
+      
+      if (mounted) {
+        setState(() {
+          _detailedData = details;
+          _isLoadingDetails = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingDetails = false;
+          _loadingError = 'Failed to load detailed information';
+        });
+        LoggingService.error('Error loading site details', e);
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     // Determine which site data to use
-    final String name = site?.name ?? paraglidingSite?.name ?? 'Unknown Site';
-    final double latitude = site?.latitude ?? paraglidingSite?.latitude ?? 0.0;
-    final double longitude = site?.longitude ?? paraglidingSite?.longitude ?? 0.0;
-    final int? altitude = site?.altitude?.toInt() ?? paraglidingSite?.altitude;
-    final String? country = site?.country ?? paraglidingSite?.country;
-    final String? region = paraglidingSite?.region; // Only API sites have region
-    final String? description = paraglidingSite?.description; // Only API sites have description
-    final int? rating = paraglidingSite?.rating;
-    final List<String> windDirections = paraglidingSite?.windDirections ?? [];
-    final String? siteType = paraglidingSite?.siteType;
-    final int? flightCount = site?.flightCount;
+    final String name = widget.site?.name ?? widget.paraglidingSite?.name ?? 'Unknown Site';
+    final double latitude = widget.site?.latitude ?? widget.paraglidingSite?.latitude ?? 0.0;
+    final double longitude = widget.site?.longitude ?? widget.paraglidingSite?.longitude ?? 0.0;
+    final int? altitude = widget.site?.altitude?.toInt() ?? widget.paraglidingSite?.altitude;
+    final String? country = widget.site?.country ?? widget.paraglidingSite?.country;
+    final String? region = widget.paraglidingSite?.region; // Only API sites have region
+    final String? description = widget.paraglidingSite?.description; // Only API sites have description
+    final int? rating = widget.paraglidingSite?.rating;
+    final List<String> windDirections = widget.paraglidingSite?.windDirections ?? [];
+    final String? siteType = widget.paraglidingSite?.siteType;
+    final int? flightCount = widget.site?.flightCount;
     
     // Calculate distance if user position is available
     String? distanceText;
-    if (userPosition != null) {
+    if (widget.userPosition != null) {
       final distance = LocationService.instance.calculateDistance(
-        userPosition!.latitude,
-        userPosition!.longitude,
+        widget.userPosition!.latitude,
+        widget.userPosition!.longitude,
         latitude,
         longitude,
       );
@@ -739,7 +778,201 @@ class _SiteDetailsDialog extends StatelessWidget {
               ),
             ],
             
-            // Description
+            // Loading state for detailed data
+            if (_isLoadingDetails) ...[
+              const SizedBox(height: 16),
+              const Center(
+                child: Column(
+                  children: [
+                    SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Loading detailed information...',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            
+            // Error state
+            if (_loadingError != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.red, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _loadingError!,
+                        style: const TextStyle(color: Colors.red, fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            
+            // Site characteristics (for API sites with detailed data)
+            if (_detailedData != null) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  if (_detailedData!['thermals']?.toString() == '1') 
+                    Chip(
+                      label: Text('Thermals', style: TextStyle(fontSize: 12)),
+                      backgroundColor: Colors.orange.withValues(alpha: 0.2),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  if (_detailedData!['soaring']?.toString() == '1')
+                    Chip(
+                      label: Text('Soaring', style: TextStyle(fontSize: 12)),
+                      backgroundColor: Colors.blue.withValues(alpha: 0.2),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  if (_detailedData!['xc']?.toString() == '1')
+                    Chip(
+                      label: Text('XC', style: TextStyle(fontSize: 12)),
+                      backgroundColor: Colors.green.withValues(alpha: 0.2),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  if (_detailedData!['winch']?.toString() == '1')
+                    Chip(
+                      label: Text('Winch', style: TextStyle(fontSize: 12)),
+                      backgroundColor: Colors.purple.withValues(alpha: 0.2),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  if (_detailedData!['flatland']?.toString() == '1')
+                    Chip(
+                      label: Text('Flatland', style: TextStyle(fontSize: 12)),
+                      backgroundColor: Colors.amber.withValues(alpha: 0.2),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                ],
+              ),
+            ],
+            
+            // Detailed information sections (loaded on demand)
+            if (_detailedData != null) ...[
+              // Takeoff instructions
+              if (_detailedData!['takeoff_description'] != null && _detailedData!['takeoff_description']!.toString().isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Takeoff Instructions',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 100),
+                  child: SingleChildScrollView(
+                    child: Text(
+                      _detailedData!['takeoff_description']!.toString(),
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                ),
+              ],
+              
+              // Flight rules
+              if (_detailedData!['flight_rules'] != null && _detailedData!['flight_rules']!.toString().isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Flight Rules',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 80),
+                  child: SingleChildScrollView(
+                    child: Text(
+                      _detailedData!['flight_rules']!.toString(),
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                ),
+              ],
+              
+              // Access information
+              if (_detailedData!['going_there'] != null && _detailedData!['going_there']!.toString().isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Getting There',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 80),
+                  child: SingleChildScrollView(
+                    child: Text(
+                      _detailedData!['going_there']!.toString(),
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                ),
+              ],
+              
+              // Pilot comments
+              if (_detailedData!['comments'] != null && _detailedData!['comments']!.toString().isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Pilot Comments',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 120),
+                  child: SingleChildScrollView(
+                    child: Text(
+                      _detailedData!['comments']!.toString(),
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                ),
+              ],
+              
+              // Weather notes
+              if (_detailedData!['weather'] != null && _detailedData!['weather']!.toString().isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Weather Information',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 80),
+                  child: SingleChildScrollView(
+                    child: Text(
+                      _detailedData!['weather']!.toString(),
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+            
+            // Description (fallback for local sites)
             if (description != null && description.isNotEmpty) ...[
               const SizedBox(height: 16),
               Text(
@@ -763,32 +996,52 @@ class _SiteDetailsDialog extends StatelessWidget {
             const SizedBox(height: 20),
             
             // Action buttons
-            Row(
+            Column(
               children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      // Open in maps app
-                      Navigator.of(context).pop();
-                      // TODO: Implement navigation functionality
-                      LoggingService.info('Navigate to site: $name');
-                    },
-                    icon: const Icon(Icons.navigation),
-                    label: const Text('Navigate'),
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          // Open in maps app
+                          Navigator.of(context).pop();
+                          // TODO: Implement navigation functionality
+                          LoggingService.info('Navigate to site: $name');
+                        },
+                        icon: const Icon(Icons.navigation),
+                        label: const Text('Navigate'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          // TODO: Implement add to favorites functionality
+                          LoggingService.info('Add to favorites: $name');
+                        },
+                        icon: const Icon(Icons.favorite_border),
+                        label: const Text('Favorite'),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      // TODO: Implement add to favorites functionality
-                      LoggingService.info('Add to favorites: $name');
-                    },
-                    icon: const Icon(Icons.favorite_border),
-                    label: const Text('Favorite'),
+                // View on PGE button for API sites
+                if (widget.paraglidingSite != null && _detailedData != null && _detailedData!['pgeid'] != null) ...[
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: TextButton.icon(
+                      onPressed: () {
+                        final pgeUrl = 'https://www.paraglidingearth.com/pgearth/index.php?site=${_detailedData!['pgeid']}';
+                        // TODO: Launch URL
+                        LoggingService.info('Open PGE link: $pgeUrl');
+                      },
+                      icon: const Icon(Icons.open_in_new, size: 18),
+                      label: const Text('View Full Details on ParaglidingEarth'),
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ],

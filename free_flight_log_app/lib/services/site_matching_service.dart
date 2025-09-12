@@ -327,9 +327,9 @@ class SiteMatchingService {
     return ParaglidingEarthApi.instance.getCacheStats();
   }
 
-  /// Clear API cache
+  /// Clear API cache (no-op since caching was removed)
   void clearApiCache() {
-    ParaglidingEarthApi.instance.clearCache();
+    // No-op: HTTP client caching handles this automatically
   }
 
   /// Convert a Site object (from database) to ParaglidingSite object (for compatibility)

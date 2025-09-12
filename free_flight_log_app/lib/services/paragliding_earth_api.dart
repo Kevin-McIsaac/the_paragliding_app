@@ -36,9 +36,7 @@ class ParaglidingEarthApi {
     return _httpClient!;
   }
   
-  // In-memory cache for API responses (could be enhanced with persistent storage)
-  final Map<String, _CachedResponse> _cache = {};
-  static const Duration _cacheExpiry = Duration(hours: 24);
+  // No custom caching - rely on HTTP client caching
   
   // Offline status tracking
   static bool _isOfflineMode = false;
@@ -53,40 +51,15 @@ class ParaglidingEarthApi {
     double longitude, {
     double radiusKm = 0.5, // 500m default - typical launch site search radius
     int limit = _defaultLimit,
-    bool detailed = true,
+    bool detailed = false, // Default to basic data for faster loading
   }) async {
     PerformanceMonitor.startOperation('ParaglidingEarthApi_getSitesAroundCoordinates');
     
-    // Create cache key
-    final cacheKey = '${latitude.toStringAsFixed(4)}_${longitude.toStringAsFixed(4)}_${radiusKm}_$limit';
-    
-    // Check cache first
-    final cached = _getCachedResponse(cacheKey);
-    if (cached != null) {
-      PerformanceMonitor.endOperation('ParaglidingEarthApi_getSitesAroundCoordinates', metadata: {
-        'cache_hit': true,
-        'sites_count': cached.length,
-      });
-      return cached;
-    }
-    
-    // Check if we're in offline mode and return stale cache if available
+    // Check if we're in offline mode
     if (_isOfflineMode) {
-      final staleCache = _cache[cacheKey];
-      if (staleCache != null) {
-        LoggingService.info('ParaglidingEarthApi: Using stale cache (offline mode)');
-        PerformanceMonitor.endOperation('ParaglidingEarthApi_getSitesAroundCoordinates', metadata: {
-          'offline_mode': true,
-          'stale_cache': true,
-          'sites_count': staleCache.sites.length,
-        });
-        return staleCache.sites;
-      }
-      
-      LoggingService.warning('ParaglidingEarthApi: No cached data available in offline mode');
+      LoggingService.warning('ParaglidingEarthApi: No data available in offline mode');
       PerformanceMonitor.endOperation('ParaglidingEarthApi_getSitesAroundCoordinates', metadata: {
         'offline_mode': true,
-        'no_cache': true,
         'sites_count': 0,
       });
       return [];
@@ -121,15 +94,11 @@ class ParaglidingEarthApi {
         if (response.statusCode == 200) {
           final sites = _parseGeoJsonResponse(response.body);
           
-          // Cache the response
-          _cacheResponse(cacheKey, sites);
-          
           // Mark successful request
           _markRequestSuccess();
           
           LoggingService.info('ParaglidingEarthApi: Found ${sites.length} sites');
           PerformanceMonitor.endOperation('ParaglidingEarthApi_getSitesAroundCoordinates', metadata: {
-            'cache_miss': true,
             'api_success': true,
             'sites_count': sites.length,
             'retries': retries,
@@ -159,22 +128,8 @@ class ParaglidingEarthApi {
           LoggingService.error('ParaglidingEarthApi: Failed after 3 attempts', e);
           _markRequestFailure();
           
-          // Check for cached data fallback
-          final staleCache = _cache[cacheKey];
-          if (staleCache != null) {
-            LoggingService.info('ParaglidingEarthApi: Using stale cache due to network error');
-            PerformanceMonitor.endOperation('ParaglidingEarthApi_getSitesAroundCoordinates', metadata: {
-              'network_error': true,
-              'stale_cache_fallback': true,
-              'sites_count': staleCache.sites.length,
-              'retries': retries,
-            });
-            return staleCache.sites;
-          }
-          
           PerformanceMonitor.endOperation('ParaglidingEarthApi_getSitesAroundCoordinates', metadata: {
             'network_error': true,
-            'no_cache_fallback': true,
             'sites_count': 0,
             'retries': retries,
           });
@@ -347,7 +302,7 @@ class ParaglidingEarthApi {
     final latitude = (coordinates[1] as num).toDouble();
     final altitude = coordinates.length > 2 ? (coordinates[2] as num?)?.toDouble() : null;
 
-    // Map ParaglidingEarth properties to our model
+    // Map ParaglidingEarth properties to our model (basic fields only)
     final name = properties['name']?.toString() ?? 'Unknown Site';
     final description = properties['description']?.toString() ?? '';
     
@@ -358,29 +313,41 @@ class ParaglidingEarthApi {
     // ParaglidingEarth API doesn't provide region/state information
     final region = null;
     
-    // Debug output for country parsing
-    if (countryCode != null) {
-      LoggingService.info('ParaglidingEarthApi: Site "$name" - countryCode "$countryCode" → country "$country"');
-    }
+    // Parse wind directions from flags (0=no, 1=good, 2=excellent) for basic info
+    final windDirections = <String>[];
+    final windMap = {
+      'N': properties['N']?.toString(),
+      'NE': properties['NE']?.toString(),
+      'E': properties['E']?.toString(),
+      'SE': properties['SE']?.toString(),
+      'S': properties['S']?.toString(),
+      'SW': properties['SW']?.toString(),
+      'W': properties['W']?.toString(),
+      'NW': properties['NW']?.toString(),
+    };
+    
+    windMap.forEach((direction, value) {
+      if (value == '1' || value == '2') {
+        windDirections.add(direction);
+      }
+    });
     
     // Determine site type based on API data
-    // Note: We primarily use launch sites since paragliders typically
-    // land in random fields rather than designated landing sites
     String siteType = 'launch'; // Default to launch
     
     // ParaglidingEarth doesn't explicitly separate launch/landing, 
-    // but we can detect landing sites from name patterns (rarely used)
+    // but we can detect landing sites from name patterns
     if (name.toLowerCase().contains('landing') || 
         name.toLowerCase().contains('atterrissage') ||
         name.toLowerCase().contains('landeplatz')) {
       siteType = 'landing';
     }
 
-    // Estimate rating based on available data (ParaglidingEarth doesn't provide ratings)
+    // Simple rating (basic data mode doesn't have detailed content for rating)
     int rating = 3; // Default middle rating
-    if (description.isNotEmpty) rating = 4; // Sites with descriptions are likely better documented
+    if (description.isNotEmpty) rating = 4; // Sites with descriptions get higher rating
     
-    // Estimate popularity (not available in API, so we'll use a default)
+    // Estimate popularity (not available in API)
     double popularity = 50.0;
 
     return ParaglidingSite(
@@ -389,7 +356,7 @@ class ParaglidingEarthApi {
       longitude: longitude,
       altitude: altitude?.toInt(), // Convert double to int for altitude
       description: description,
-      windDirections: [], // Not provided by API
+      windDirections: windDirections,
       siteType: siteType,
       rating: rating,
       country: country,
@@ -398,37 +365,72 @@ class ParaglidingEarthApi {
     );
   }
 
-  /// Get cached response if valid
-  List<ParaglidingSite>? _getCachedResponse(String key) {
-    final cached = _cache[key];
-    if (cached != null && DateTime.now().isBefore(cached.expiry)) {
-      LoggingService.info('ParaglidingEarthApi: Using cached response for $key');
-      return cached.sites;
-    }
-    return null;
-  }
-
-  /// Cache a response
-  void _cacheResponse(String key, List<ParaglidingSite> sites) {
-    _cache[key] = _CachedResponse(
-      sites: sites,
-      expiry: DateTime.now().add(_cacheExpiry),
-    );
+  /// Get detailed information for a specific site
+  /// Returns detailed site data for display in dialog
+  Future<Map<String, dynamic>?> getSiteDetails(double latitude, double longitude) async {
+    PerformanceMonitor.startOperation('ParaglidingEarthApi_getSiteDetails');
     
-    // Clean up old cache entries
-    _cleanupCache();
+    try {
+      final url = Uri.parse('$_baseUrl/getAroundLatLngSites.php').replace(
+        queryParameters: {
+          'lat': latitude.toString(),
+          'lng': longitude.toString(),
+          'distance': '0.01', // Very small radius to get just this site
+          'limit': '1',
+          'style': 'detailled', // Get detailed data
+        },
+      );
+
+      LoggingService.info('ParaglidingEarthApi: Fetching detailed data for site at $latitude, $longitude');
+
+      final response = await httpClient.get(url).timeout(_timeout);
+      _requestCount++;
+      
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body);
+        
+        if (json['type'] == 'FeatureCollection' && 
+            json['features'] != null && 
+            json['features'].isNotEmpty) {
+          
+          final feature = json['features'][0];
+          final properties = feature['properties'];
+          
+          if (properties != null) {
+            LoggingService.info('ParaglidingEarthApi: Found detailed data for site');
+            PerformanceMonitor.endOperation('ParaglidingEarthApi_getSiteDetails', metadata: {
+              'success': true,
+            });
+            return properties;
+          }
+        }
+        
+        LoggingService.warning('ParaglidingEarthApi: No detailed data found for site');
+        PerformanceMonitor.endOperation('ParaglidingEarthApi_getSiteDetails', metadata: {
+          'success': false,
+          'reason': 'no_data',
+        });
+        return null;
+      } else {
+        LoggingService.warning('ParaglidingEarthApi: HTTP ${response.statusCode} for site details');
+        PerformanceMonitor.endOperation('ParaglidingEarthApi_getSiteDetails', metadata: {
+          'success': false,
+          'reason': 'http_error',
+          'status_code': response.statusCode,
+        });
+        return null;
+      }
+    } catch (e) {
+      LoggingService.error('ParaglidingEarthApi: Error getting site details', e);
+      PerformanceMonitor.endOperation('ParaglidingEarthApi_getSiteDetails', metadata: {
+        'success': false,
+        'reason': 'exception',
+      });
+      return null;
+    }
   }
 
-  /// Remove expired cache entries
-  void _cleanupCache() {
-    final now = DateTime.now();
-    _cache.removeWhere((key, cached) => now.isAfter(cached.expiry));
-  }
-
-  /// Clear all cached data
-  void clearCache() {
-    _cache.clear();
-  }
+  // Cache methods removed - relying on HTTP client caching
 
   /// Convert ISO country code to full country name
   String _countryCodeToName(String countryCode) {
@@ -540,13 +542,10 @@ class ParaglidingEarthApi {
 
   /// Get cache statistics
   Map<String, dynamic> getCacheStats() {
-    final now = DateTime.now();
-    final validEntries = _cache.values.where((cached) => now.isBefore(cached.expiry)).length;
-    
     return {
-      'total_entries': _cache.length,
-      'valid_entries': validEntries,
-      'expired_entries': _cache.length - validEntries,
+      'total_entries': 0,
+      'valid_entries': 0,
+      'expired_entries': 0,
       ...getOfflineStatus(),
     };
   }
@@ -561,12 +560,3 @@ class ParaglidingEarthApi {
 }
 
 /// Cached API response
-class _CachedResponse {
-  final List<ParaglidingSite> sites;
-  final DateTime expiry;
-
-  _CachedResponse({
-    required this.sites,
-    required this.expiry,
-  });
-}
