@@ -288,7 +288,7 @@ class SiteMarkerUtils {
             onTap: onToggle,
             borderRadius: BorderRadius.circular(4),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [

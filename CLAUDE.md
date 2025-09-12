@@ -12,21 +12,23 @@
 ```bash
 # WORKING DIRECTORY: /home/kmcisaac/Projects/free_flight_log/free_flight_log_app
 flutter_controller_enhanced run        # Start app with logging
-flutter_controller_enhanced r          # Hot reload (most used)
-flutter_controller_enhanced R          # Hot restart (for state issues)
-flutter_controller_enhanced status     # Check app status
+flutter_controller_enhanced r          # Hot reload with readiness check (most used)
+flutter_controller_enhanced R          # Hot restart with readiness check (for state issues)
+flutter_controller_enhanced status     # Check app status with enhanced health info
 flutter_controller_enhanced logs 50    # Recent logs (prefer over bash output)
 flutter_controller_enhanced screenshot # Take screenshot (alias: ss)
 flutter_controller_enhanced q          # Quit app
 ```
 
-### Command Shortcuts
-| Command | Shortcut | Use When |
-|---------|----------|----------|
-| `screenshot` | `ss` | Debugging UI issues |
-| `r` | - | Code changes (most common) |
-| `R` | - | State corruption or dependency changes |
-| `logs 50` | - | Checking recent app behavior |
+### Enhanced Commands (v2.1+)
+| Command | Shortcut | Description | Use When |
+|---------|----------|-------------|----------|
+| `screenshot [device]` | `ss` | Take adb screenshot | Debugging UI issues |
+| `health` | - | Comprehensive health check | Troubleshooting connection issues |
+| `wait-ready [timeout]` | - | Wait for Flutter readiness | Before critical operations |
+| `r` | - | Hot reload with validation | Code changes (most common) |
+| `R` | - | Hot restart with validation | State corruption or dependency changes |
+| `logs 50` | - | Show recent logs | Checking recent app behavior |
 
 ### Test & Quality Commands
 ```bash
@@ -34,6 +36,7 @@ flutter analyze                        # Check for errors (run before commits)
 flutter test                          # Run all tests
 flutter test test/specific_test.dart  # Run specific test
 flutter_controller_enhanced cleanup   # Clean up processes if stuck
+flutter_controller_enhanced health    # Check process/pipe/readiness status
 ```
 
 ## 📁 Key Files (Most Accessed)
@@ -87,13 +90,20 @@ lib/
 | Database locked | Concurrent operations | Use `DatabaseService` methods |
 | Hot reload fails | State corruption | Use `R` (hot restart) instead of `r` |
 | App won't start | Process still running | Run `flutter_controller_enhanced cleanup` |
+| Commands unresponsive | Pipe/readiness issues | Run `flutter_controller_enhanced health` |
+| Race conditions | Commands sent too early | Commands now auto-wait for readiness |
 
-## 🔧 Troubleshooting Commands
+## 🔧 Enhanced Troubleshooting (v2.1+)
 ```bash
+# Enhanced diagnostics
+flutter_controller_enhanced health    # Comprehensive health check (PID/pipe/readiness)  
+flutter_controller_enhanced status    # Enhanced status with process/pipe validation
+flutter_controller_enhanced wait-ready 30  # Wait for Flutter to be ready (30s timeout)
+
 # App issues
-flutter_controller_enhanced cleanup   # Kill stuck processes
+flutter_controller_enhanced cleanup   # Kill stuck processes + clean stale state
 flutter_controller_enhanced restart   # Force full restart
-flutter_controller_enhanced status    # Check if app is running
+flutter_controller_enhanced screenshot # Visual debugging
 
 # Development issues  
 flutter clean && flutter pub get     # Reset dependencies
@@ -103,6 +113,16 @@ flutter doctor                       # Check Flutter setup
 # Database issues (DEV ONLY)
 # Clear app data: Android Settings → Apps → Free Flight Log → Storage → Clear Data
 ```
+
+### Health Check Indicators
+```
+Health Check Results:
+  PID alive: ✓        # Process is running
+  Pipe responsive: ✓   # Commands can be sent
+  Flutter ready: ✓     # App accepts commands
+```
+- **All ✓**: System healthy, commands will work
+- **Any ✗**: Issue detected, see status for details
 
 ## Project Overview
 
@@ -363,6 +383,29 @@ setState(() {}); // In build() method - causes infinite rebuilds
 4. **Hot reload**: `flutter_controller_enhanced r` (most common)
 5. **Monitor logs**: `flutter_controller_enhanced logs 50`
 
+### Enhanced State Management (v2.1+)
+The flutter_controller_enhanced now provides robust state checking and automatic recovery:
+
+#### State Validation Layers
+1. **PID Check**: Verifies process is alive
+2. **Pipe Responsiveness**: Tests command delivery capability  
+3. **Flutter Readiness**: Confirms app accepts commands
+4. **Automatic Recovery**: Cleans stale state files
+
+#### Command Safety Features
+- **Pre-validation**: `r` and `R` commands check readiness before sending
+- **Timeout Protection**: Commands fail gracefully if system unresponsive
+- **Race Condition Prevention**: Auto-wait for Flutter startup completion
+- **Error Recovery**: Stale state cleanup on crash detection
+
+#### Screenshot Integration
+```bash
+flutter_controller_enhanced screenshot        # Default emulator
+flutter_controller_enhanced ss emulator-5556 # Specific device
+# Files saved to: /tmp/flutter_controller/screenshots/
+# Latest copy: /tmp/screenshot.png (for easy Claude access)
+```
+
 ## Database Development
 
 ### Pre-Release Strategy
@@ -407,10 +450,12 @@ setState(() {}); // In build() method - causes infinite rebuilds
 ### Common Task Patterns
 | Task | Commands | Notes |
 |------|----------|-------|
-| Fix hot reload issues | `cleanup` → `restart` | Process conflicts |
+| Fix hot reload issues | `health` → `cleanup` → `restart` | Enhanced diagnostics first |
 | Debug UI | `screenshot` → analyze | Visual debugging |
 | Performance check | `logs 50` → filter `[P]` | Performance logs |
 | Schema change | Clear data → restart → reimport | Dev workflow |
+| Troubleshoot unresponsive commands | `health` → `status` | Check all health indicators |
+| Force readiness wait | `wait-ready 30` | Before critical operations |
 
 ### File Navigation for Claude
 Use format `file_path:line_number` in logs:

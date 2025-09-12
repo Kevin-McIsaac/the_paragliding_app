@@ -21,6 +21,7 @@ import '../../utils/site_marker_utils.dart';
 import '../../utils/ui_utils.dart';
 import '../../utils/map_provider.dart';
 import '../../utils/site_utils.dart';
+import '../../utils/map_tile_provider.dart';
 import '../screens/flight_track_3d_fullscreen.dart';
 
 
@@ -1615,6 +1616,8 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
                 urlTemplate: _selectedMapProvider.urlTemplate,
                 maxZoom: _selectedMapProvider.maxZoom.toDouble(),
                 userAgentPackageName: 'com.example.free_flight_log_app',
+                tileProvider: MapTileProvider.createInstance(),
+                errorTileCallback: MapTileProvider.getErrorCallback(),
               ),
               PolylineLayer(
                 polylines: [..._buildColoredTrackLines(), ..._buildFaiTriangleLines()],

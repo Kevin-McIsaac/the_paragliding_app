@@ -60,6 +60,13 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   bool _isLoadingSites = false;
   String? _lastLoadedBoundsKey;
   
+  // Search state management
+  bool _isSearchMode = false;
+  List<ParaglidingSite> _searchResults = [];
+  bool _isSearching = false;
+  Timer? _searchDebounce;
+  static const Duration _searchDebounceDelay = Duration(milliseconds: 300);
+  
 
   @override
   void initState() {
@@ -74,6 +81,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     _debounceTimer?.cancel(); // Clean up timer
+    _searchDebounce?.cancel(); // Clean up search debounce timer
     super.dispose();
   }
 
@@ -104,8 +112,11 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     try {
       final stopwatch = Stopwatch()..start();
       
-      // Get user location
-      await _updateUserLocation();
+      // Start location request in background - don't wait for it
+      _updateUserLocation();
+      
+      // Set initial map center based on user's flight sites
+      _mapCenterPosition = await _getInitialMapCenter();
       
       // Sites will be loaded dynamically via bounds-based loading
       // Initialize empty unified structure
@@ -149,6 +160,12 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           _userPosition = position;
           _isLocationLoading = false;
         });
+        
+        // Update map center to user position when location is acquired
+        if (position != null) {
+          _mapCenterPosition = LatLng(position.latitude, position.longitude);
+        }
+        _updateDisplayedSites();
       }
     } catch (e, stackTrace) {
       LoggingService.error('Failed to get user location', e, stackTrace);
@@ -157,6 +174,21 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           _isLocationLoading = false;
         });
       }
+    }
+  }
+
+  /// Get initial map center based on last known location or fallback
+  Future<LatLng> _getInitialMapCenter() async {
+    try {
+      // Use location service fallback hierarchy
+      final position = await LocationService.instance.getLastKnownOrDefault();
+      LoggingService.info('Using position from LocationService fallback hierarchy');
+      return LatLng(position.latitude, position.longitude);
+    } catch (e) {
+      LoggingService.error('Failed to get position from LocationService', e);
+      // Final fallback to Perth if everything fails
+      LoggingService.info('Using final Perth fallback');
+      return const LatLng(-31.9505, 115.8605);
     }
   }
 
@@ -174,16 +206,13 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   void _updateDisplayedSites() {
     final stopwatch = Stopwatch()..start();
     
-    List<ParaglidingSite> filteredSites = _allSites;
+    List<ParaglidingSite> filteredSites;
     
-    // Apply search filter
-    if (_searchQuery.isNotEmpty) {
-      filteredSites = filteredSites.where((site) =>
-        site.name.toLowerCase().contains(_searchQuery) ||
-        (site.country?.toLowerCase().contains(_searchQuery) ?? false)
-      ).toList();
+    // Use search results if we have them and are in search mode
+    if (_searchQuery.isNotEmpty && _searchResults.isNotEmpty) {
+      filteredSites = _searchResults;
       
-      // If search found specific sites, center map on them
+      // Center map on search results
       if (filteredSites.length == 1) {
         final site = filteredSites.first;
         _mapCenterPosition = LatLng(site.latitude, site.longitude);
@@ -193,11 +222,17 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         final avgLng = filteredSites.map((s) => s.longitude).reduce((a, b) => a + b) / filteredSites.length;
         _mapCenterPosition = LatLng(avgLat, avgLng);
       }
-    } else {
+    } else if (_searchQuery.isEmpty) {
+      // No search - show bounds-based sites
+      filteredSites = _allSites;
+      
       // Reset map center to user position when clearing search
       if (_userPosition != null) {
         _mapCenterPosition = LatLng(_userPosition!.latitude, _userPosition!.longitude);
       }
+    } else {
+      // Search in progress or no results
+      filteredSites = [];
     }
     
     // Sites are loaded via bounds-based filtering, no distance filtering needed
@@ -280,6 +315,137 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     });
   }
 
+  // Search methods
+  void _enterSearchMode() {
+    setState(() {
+      _isSearchMode = true;
+    });
+  }
+  
+  void _exitSearchMode() {
+    _searchController.clear();
+    _searchDebounce?.cancel();
+    setState(() {
+      _isSearchMode = false;
+      _searchResults.clear();
+      _isSearching = false;
+    });
+  }
+  
+  void _onSearchTextChanged(String query) {
+    _searchDebounce?.cancel();
+    if (query.isEmpty) {
+      setState(() {
+        _searchResults.clear();
+        _isSearching = false;
+      });
+      return;
+    }
+    
+    if (query.length < 2) return;
+    
+    setState(() {
+      _isSearching = true;
+    });
+    
+    _searchDebounce = Timer(_searchDebounceDelay, () {
+      _performSearch(query);
+    });
+  }
+  
+  Future<void> _performSearch(String query) async {
+    try {
+      final results = await _paraglidingEarthApi.searchSitesByName(query);
+      if (mounted) {
+        setState(() {
+          _searchResults = results.take(15).toList(); // Limit to 15 results for better selection
+          _isSearching = false;
+        });
+        
+        LoggingService.action('NearbySites', 'search_performed', {
+          'query': query,
+          'results_count': results.length,
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _searchResults.clear();
+          _isSearching = false;
+        });
+      }
+      LoggingService.error('Search failed', e);
+    }
+  }
+  
+  void _selectSearchResult(ParaglidingSite site) {
+    // Center map on selected site and zoom
+    _mapCenterPosition = LatLng(site.latitude, site.longitude);
+    _exitSearchMode();
+    
+    // Force bounds-based loading after a short delay to allow map to update
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) {
+        // Trigger bounds-based loading by simulating a map bounds change
+        // This will load sites around the new location
+        final newCenter = LatLng(site.latitude, site.longitude);
+        // Create bounds around the selected site location
+        final bounds = LatLngBounds(
+          LatLng(newCenter.latitude - 0.05, newCenter.longitude - 0.05),
+          LatLng(newCenter.latitude + 0.05, newCenter.longitude + 0.05),
+        );
+        _onBoundsChanged(bounds);
+      }
+    });
+    
+    LoggingService.action('NearbySites', 'search_result_selected', {
+      'site_name': site.name,
+      'country': site.country,
+    });
+  }
+
+  /// Perform API search using Paragliding Earth search endpoint
+  Future<void> _performAPISearch(String query) async {
+    if (query.length < 2) return; // Don't search for very short queries
+    
+    // Cancel any existing search
+    _searchDebounce?.cancel();
+    
+    setState(() {
+      _isSearching = true;
+    });
+    
+    // Debounce the search to avoid too many API calls
+    _searchDebounce = Timer(_searchDebounceDelay, () async {
+      try {
+        final results = await _paraglidingEarthApi.searchSitesByName(query);
+        
+        if (mounted) {
+          setState(() {
+            _searchResults = results;
+            _isSearching = false;
+            _updateDisplayedSites();
+          });
+          
+          LoggingService.action('NearbySites', 'api_search_performed', {
+            'query': query,
+            'results_count': results.length,
+          });
+        }
+      } catch (e) {
+        LoggingService.error('API search failed', e);
+        
+        if (mounted) {
+          setState(() {
+            _searchResults.clear();
+            _isSearching = false;
+            _updateDisplayedSites();
+          });
+        }
+      }
+    });
+  }
+
 
   // Bounds-based loading methods (copied from EditSiteScreen)
   void _onBoundsChanged(LatLngBounds bounds) {
@@ -354,42 +520,25 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         unifiedSites.add(apiSite);
       }
       
-      // 4. For local sites not found in API, try to look them up individually
+      // 4. For local sites not found in API, create minimal representations
       for (final localSite in localSites) {
         final siteKey = SiteUtils.createSiteKey(localSite.latitude, localSite.longitude);
         
         // Skip if already found in API sites
         if (siteFlightStatus.containsKey(siteKey)) continue;
         
-        try {
-          // Try to find API data for this local site
-          final nearestSite = await _paraglidingEarthApi.findNearestSite(
-            localSite.latitude,
-            localSite.longitude,
-            maxDistanceKm: 0.1, // Very close match required
-          );
-          
-          if (nearestSite != null) {
-            siteFlightStatus[siteKey] = true; // Local site has flights
-            unifiedSites.add(nearestSite);
-          } else {
-            // Create a minimal ParaglidingSite from local data if no API match
-            final minimalApiSite = ParaglidingSite(
-              name: localSite.name,
-              latitude: localSite.latitude,
-              longitude: localSite.longitude,
-              altitude: localSite.altitude?.toInt(),
-              siteType: 'launch', // Default to launch for local sites
-              country: localSite.country ?? '',
-              // Other fields will be null/empty
-            );
-            siteFlightStatus[siteKey] = true; // Local site has flights
-            unifiedSites.add(minimalApiSite);
-          }
-        } catch (e) {
-          LoggingService.error('Error looking up API data for local site: ${localSite.name}', e);
-          // Continue with other sites, don't fail the whole operation
-        }
+        // Create a minimal ParaglidingSite from local data without API lookup
+        final minimalApiSite = ParaglidingSite(
+          name: localSite.name,
+          latitude: localSite.latitude,
+          longitude: localSite.longitude,
+          altitude: localSite.altitude?.toInt(),
+          siteType: 'launch', // Default to launch for local sites
+          country: localSite.country ?? '',
+          // Other fields will be null/empty
+        );
+        siteFlightStatus[siteKey] = true; // Local site has flights
+        unifiedSites.add(minimalApiSite);
       }
       
       if (mounted) {
@@ -441,22 +590,48 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Nearby Sites'),
+        title: _isSearchMode 
+          ? TextField(
+              controller: _searchController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: 'Search sites worldwide...',
+                border: InputBorder.none,
+                hintStyle: TextStyle(color: Colors.grey),
+              ),
+              style: const TextStyle(color: Colors.white),
+              onChanged: _onSearchTextChanged,
+            )
+          : const Text('Nearby Sites'),
+        actions: [
+          _isSearchMode 
+            ? IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: _exitSearchMode,
+              )
+            : IconButton(
+                icon: const Icon(Icons.search),
+                onPressed: _enterSearchMode,
+              ),
+        ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _errorMessage != null
-              ? AppErrorState(
-                  message: _errorMessage!,
-                  onRetry: _loadData,
-                )
-              : (_allSites.isEmpty && _lastLoadedBoundsKey != null)
-                  ? const AppEmptyState(
-                      title: 'No sites found',
-                      message: 'No sites found in this area',
-                      icon: Icons.location_on,
-                    )
-                  : Stack(
+      body: Stack(
+        children: [
+          // Main content
+          _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _errorMessage != null
+                ? AppErrorState(
+                    message: _errorMessage!,
+                    onRetry: _loadData,
+                  )
+                : (_allSites.isEmpty && _lastLoadedBoundsKey != null)
+                    ? const AppEmptyState(
+                        title: 'No sites found',
+                        message: 'No sites found in this area',
+                        icon: Icons.location_on,
+                      )
+                    : Stack(
                       children: [
                         // Map
                         NearbySitesMapWidget(
@@ -471,49 +646,52 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                           onMapProviderChanged: _selectMapProvider,
                           onSiteSelected: _onSiteSelected,
                           onBoundsChanged: _onBoundsChanged,
-                        ),
-                        
-                        // Search overlay
-                        Positioned(
-                          top: 16,
-                          left: 16,
-                          right: 80,
-                          child: Card(
-                            child: TextField(
-                              controller: _searchController,
-                              decoration: InputDecoration(
-                                hintText: 'Search sites by name or country...',
-                                prefixIcon: const Icon(Icons.search),
-                                suffixIcon: _searchQuery.isNotEmpty
-                                    ? IconButton(
-                                        onPressed: () {
-                                          _searchController.clear();
-                                        },
-                                        icon: const Icon(Icons.clear),
-                                      )
-                                    : null,
-                                border: InputBorder.none,
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              ),
-                            ),
-                          ),
-                        ),
-                        
-                        // Location button
-                        Positioned(
-                          top: 16,
-                          right: 16,
-                          child: FloatingActionButton.small(
-                            heroTag: "location",
-                            onPressed: _isLocationLoading ? null : _onRefreshLocation,
-                            child: _isLocationLoading 
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.my_location),
-                          ),
+                          searchQuery: _searchQuery,
+                          onSearchChanged: (query) {
+                            final trimmedQuery = query.trim();
+                            setState(() {
+                              _searchQuery = trimmedQuery;
+                            });
+                            
+                            // Trigger API search if query is not empty
+                            if (trimmedQuery.isNotEmpty && trimmedQuery.length >= 2) {
+                              _performAPISearch(trimmedQuery);
+                            } else {
+                              // Clear search results and show normal bounds-based sites
+                              setState(() {
+                                _searchResults.clear();
+                                _isSearching = false;
+                                _updateDisplayedSites();
+                              });
+                            }
+                          },
+                          onRefreshLocation: _onRefreshLocation,
+                          isLocationLoading: _isLocationLoading,
+                          searchResults: _searchResults,
+                          isSearching: _isSearching,
+                          onSearchResultSelected: (site) {
+                            setState(() {
+                              _searchQuery = '';
+                              _searchResults.clear();
+                              _isSearching = false;
+                              _mapCenterPosition = LatLng(site.latitude, site.longitude);
+                            });
+                            
+                            // Force bounds-based loading after a short delay to allow map to update
+                            Future.delayed(const Duration(milliseconds: 500), () {
+                              if (mounted) {
+                                // Trigger bounds-based loading by simulating a map bounds change
+                                // This will load sites around the new location
+                                final newCenter = LatLng(site.latitude, site.longitude);
+                                // Create bounds around the selected site location
+                                final bounds = LatLngBounds(
+                                  LatLng(newCenter.latitude - 0.05, newCenter.longitude - 0.05),
+                                  LatLng(newCenter.latitude + 0.05, newCenter.longitude + 0.05),
+                                );
+                                _onBoundsChanged(bounds);
+                              }
+                            });
+                          },
                         ),
                         
                         // Loading overlay for dynamic site loading
@@ -546,6 +724,75 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                           ),
                       ],
                     ),
+          
+          // Search dropdown overlay
+          if (_isSearchMode && (_searchResults.isNotEmpty || _isSearching))
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Material(
+                elevation: 8,
+                child: Container(
+                  constraints: const BoxConstraints(maxHeight: 300),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 8,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: _isSearching
+                    ? const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            SizedBox(width: 12),
+                            Text('Searching sites...'),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: _searchResults.length,
+                        itemBuilder: (context, index) {
+                          final site = _searchResults[index];
+                          return ListTile(
+                            leading: CircleAvatar(
+                              radius: 16,
+                              backgroundColor: Theme.of(context).primaryColor.withValues(alpha: 0.1),
+                              child: Text(
+                                site.country?.toUpperCase().substring(0, 2) ?? '??',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Theme.of(context).primaryColor,
+                                ),
+                              ),
+                            ),
+                            title: Text(
+                              site.name,
+                              style: const TextStyle(fontWeight: FontWeight.w500),
+                            ),
+                            subtitle: Text(site.country ?? 'Unknown'),
+                            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                            onTap: () => _selectSearchResult(site),
+                          );
+                        },
+                      ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

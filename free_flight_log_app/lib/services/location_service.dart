@@ -1,7 +1,9 @@
 import 'dart:math' as math;
 import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../data/models/site.dart';
 import 'logging_service.dart';
+import 'database_service.dart';
 
 class LocationService {
   static LocationService? _instance;
@@ -12,6 +14,15 @@ class LocationService {
   Position? _lastKnownPosition;
   DateTime? _lastPositionTime;
   static const Duration _positionCacheTimeout = Duration(minutes: 5);
+  
+  // Perth, Western Australia coordinates as fallback
+  static const double _perthLatitude = -31.9505;
+  static const double _perthLongitude = 115.8605;
+  
+  // SharedPreferences keys for persistent location storage
+  static const String _lastLatKey = 'last_known_latitude';
+  static const String _lastLngKey = 'last_known_longitude';
+  static const String _lastTimeKey = 'last_known_time';
   
   /// Check if location services are enabled and permissions are granted
   Future<bool> isLocationAvailable() async {
@@ -73,13 +84,16 @@ class LocationService {
       
       final position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 10),
+        timeLimit: const Duration(seconds: 3),
       );
       
       stopwatch.stop();
       
       _lastKnownPosition = position;
       _lastPositionTime = DateTime.now();
+      
+      // Save position to persistent storage
+      await _savePositionToPersistentStorage(position);
       
       LoggingService.performance(
         'Get Current Position',
@@ -192,6 +206,109 @@ class LocationService {
     _lastKnownPosition = null;
     _lastPositionTime = null;
     LoggingService.info('Location cache cleared');
+  }
+
+  /// Save position to persistent storage
+  Future<void> _savePositionToPersistentStorage(Position position) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble(_lastLatKey, position.latitude);
+      await prefs.setDouble(_lastLngKey, position.longitude);
+      await prefs.setInt(_lastTimeKey, DateTime.now().millisecondsSinceEpoch);
+      LoggingService.info('Position saved to persistent storage');
+    } catch (e) {
+      LoggingService.error('Failed to save position to persistent storage', e);
+    }
+  }
+
+  /// Load position from persistent storage
+  Future<Position?> _loadPositionFromPersistentStorage() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lat = prefs.getDouble(_lastLatKey);
+      final lng = prefs.getDouble(_lastLngKey);
+      final timeMs = prefs.getInt(_lastTimeKey);
+      
+      if (lat != null && lng != null && timeMs != null) {
+        final savedTime = DateTime.fromMillisecondsSinceEpoch(timeMs);
+        final age = DateTime.now().difference(savedTime);
+        
+        // Only use persistent location if it's less than 7 days old
+        if (age.inDays < 7) {
+          LoggingService.info('Loaded position from persistent storage (${age.inHours}h old)');
+          return Position(
+            latitude: lat,
+            longitude: lng,
+            timestamp: savedTime,
+            accuracy: 100.0, // Default accuracy for persistent position
+            altitude: 0.0,
+            altitudeAccuracy: 0.0,
+            heading: 0.0,
+            headingAccuracy: 0.0,
+            speed: 0.0,
+            speedAccuracy: 0.0,
+          );
+        }
+      }
+    } catch (e) {
+      LoggingService.error('Failed to load position from persistent storage', e);
+    }
+    return null;
+  }
+
+  /// Get last known position or Perth fallback (synchronous)
+  Future<Position> getLastKnownOrDefault() async {
+    // Try memory cache first
+    if (_lastKnownPosition != null && 
+        _lastPositionTime != null &&
+        DateTime.now().difference(_lastPositionTime!) < _positionCacheTimeout) {
+      LoggingService.info('Using cached position from memory');
+      return _lastKnownPosition!;
+    }
+    
+    // Try persistent storage
+    final persistentPosition = await _loadPositionFromPersistentStorage();
+    if (persistentPosition != null) {
+      return persistentPosition;
+    }
+    
+    // Try first site in database
+    try {
+      final sites = await DatabaseService.instance.getAllSites();
+      if (sites.isNotEmpty) {
+        final firstSite = sites.first;
+        LoggingService.info('Using first site from database: ${firstSite.name}');
+        return Position(
+          latitude: firstSite.latitude,
+          longitude: firstSite.longitude,
+          timestamp: DateTime.now(),
+          accuracy: 500.0, // Moderate accuracy to indicate this is from database
+          altitude: 0.0,
+          altitudeAccuracy: 0.0,
+          heading: 0.0,
+          headingAccuracy: 0.0,
+          speed: 0.0,
+          speedAccuracy: 0.0,
+        );
+      }
+    } catch (e) {
+      LoggingService.error('Failed to get first site from database', e);
+    }
+    
+    // Final fallback to Perth, Western Australia
+    LoggingService.info('Using Perth fallback coordinates');
+    return Position(
+      latitude: _perthLatitude,
+      longitude: _perthLongitude,
+      timestamp: DateTime.now(),
+      accuracy: 1000.0, // Large accuracy to indicate this is a fallback
+      altitude: 0.0,
+      altitudeAccuracy: 0.0,
+      heading: 0.0,
+      headingAccuracy: 0.0,
+      speed: 0.0,
+      speedAccuracy: 0.0,
+    );
   }
 }
 
