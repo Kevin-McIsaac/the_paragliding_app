@@ -22,6 +22,13 @@ class NearbySitesMapWidget extends StatefulWidget {
   final Function(MapProvider) onMapProviderChanged;
   final Function(ParaglidingSite)? onSiteSelected;
   final Function(LatLngBounds)? onBoundsChanged;
+  final String searchQuery;
+  final Function(String) onSearchChanged;
+  final VoidCallback onRefreshLocation;
+  final bool isLocationLoading;
+  final List<ParaglidingSite> searchResults;
+  final bool isSearching;
+  final Function(ParaglidingSite) onSearchResultSelected;
   
   const NearbySitesMapWidget({
     super.key,
@@ -36,6 +43,13 @@ class NearbySitesMapWidget extends StatefulWidget {
     required this.onMapProviderChanged,
     this.onSiteSelected,
     this.onBoundsChanged,
+    required this.searchQuery,
+    required this.onSearchChanged,
+    required this.onRefreshLocation,
+    required this.isLocationLoading,
+    required this.searchResults,
+    required this.isSearching,
+    required this.onSearchResultSelected,
   });
 
   @override
@@ -44,6 +58,7 @@ class NearbySitesMapWidget extends StatefulWidget {
 
 class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   final MapController _mapController = MapController();
+  final FocusNode _searchFocusNode = FocusNode();
   
   @override
   void initState() {
@@ -65,6 +80,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
   @override
   void dispose() {
+    _searchFocusNode.dispose();
     _mapController.dispose();
     super.dispose();
   }
@@ -184,21 +200,192 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   }
 
 
-  Widget _buildLegend() {
-    final legendItems = <Widget>[
-      SiteMarkerUtils.buildLegendItem(context, Icons.location_on, SiteMarkerUtils.flownSiteColor, 'Local Sites (DB)'),
-      const SizedBox(height: 4),
-      SiteMarkerUtils.buildLegendItem(context, Icons.location_on, SiteMarkerUtils.newSiteColor, 'API Sites'),
-    ];
-    
+
+  Widget _buildTopControlBar() {
     return Positioned(
       top: 8,
       left: 8,
-      child: SiteMarkerUtils.buildCollapsibleMapLegend(
-        context: context,
-        isExpanded: widget.isLegendExpanded,
-        onToggle: widget.onToggleLegend,
-        legendItems: legendItems,
+      right: 8,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Legend (existing) - aligned to top
+          Align(
+            alignment: Alignment.topCenter,
+            child: SiteMarkerUtils.buildCollapsibleMapLegend(
+              context: context,
+              isExpanded: widget.isLegendExpanded,
+              onToggle: widget.onToggleLegend,
+              legendItems: [
+                SiteMarkerUtils.buildLegendItem(context, Icons.location_on, SiteMarkerUtils.flownSiteColor, 'Local Sites (DB)'),
+                const SizedBox(height: 4),
+                SiteMarkerUtils.buildLegendItem(context, Icons.location_on, SiteMarkerUtils.newSiteColor, 'API Sites'),
+              ],
+            ),
+          ),
+          
+          const SizedBox(width: 8),
+          
+          // Search bar with dropdown
+          Expanded(
+            child: Column(
+              children: [
+                Container(
+                  height: 40,
+                  decoration: const BoxDecoration(
+                    color: Color(0x80000000),
+                    borderRadius: BorderRadius.all(Radius.circular(4)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 4,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  child: Row(
+                    children: [
+                      if (widget.isSearching)
+                        const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white70,
+                          ),
+                        )
+                      else
+                        const Icon(Icons.search, size: 20, color: Colors.white70),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextFormField(
+                          focusNode: _searchFocusNode,
+                          initialValue: widget.searchQuery,
+                          onChanged: widget.onSearchChanged,
+                          onFieldSubmitted: widget.onSearchChanged, // Trigger search on Enter
+                          style: const TextStyle(color: Colors.white, fontSize: 14),
+                          decoration: const InputDecoration(
+                            hintText: 'Search sites worldwide...',
+                            hintStyle: TextStyle(color: Colors.white70, fontSize: 14),
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.zero,
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      // Clear search button
+                      if (widget.searchQuery.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () => widget.onSearchChanged(''),
+                          child: Container(
+                            padding: const EdgeInsets.all(2),
+                            child: const Icon(
+                              Icons.clear,
+                              size: 18,
+                              color: Colors.white70,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                
+                // Search results dropdown
+                if (widget.searchResults.isNotEmpty)
+                  Container(
+                    constraints: const BoxConstraints(maxHeight: 200),
+                    margin: const EdgeInsets.only(top: 4),
+                    decoration: const BoxDecoration(
+                      color: Color(0xCC000000), // More transparent for better map visibility
+                      borderRadius: BorderRadius.all(Radius.circular(4)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black26,
+                          blurRadius: 8,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: widget.searchResults.length,
+                      itemBuilder: (context, index) {
+                        final site = widget.searchResults[index];
+                        return ListTile(
+                          dense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                          title: Text(
+                            site.name,
+                            style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: site.country != null
+                              ? Text(
+                                  site.country!.toUpperCase(),
+                                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                                )
+                              : null,
+                          trailing: const Icon(
+                            Icons.location_on,
+                            color: Colors.white70,
+                            size: 16,
+                          ),
+                          onTap: () => widget.onSearchResultSelected(site),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          
+          const SizedBox(width: 12),
+          
+          // Location button
+          GestureDetector(
+            onTap: widget.isLocationLoading ? null : widget.onRefreshLocation,
+            child: Container(
+              height: 40,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: const BoxDecoration(
+                color: Color(0x80000000),
+                borderRadius: BorderRadius.all(Radius.circular(4)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 4,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Center(
+                child: widget.isLocationLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.my_location,
+                        size: 20,
+                        color: Colors.white,
+                      ),
+              ),
+            ),
+          ),
+          
+          const SizedBox(width: 12),
+          
+          // Map controls (existing)
+          _buildMapControls(),
+        ],
       ),
     );
   }
@@ -266,12 +453,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         
         // Map overlays
         _buildAttribution(),
-        Positioned(
-          top: 8,
-          right: 8,
-          child: _buildMapControls(),
-        ),
-        _buildLegend(),
+        _buildTopControlBar(),
       ],
     );
   }
