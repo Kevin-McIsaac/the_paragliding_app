@@ -705,19 +705,23 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                 Expanded(
                   child: Column(
                     children: [
-                      TabBar(
-                        controller: _tabController,
-                        isScrollable: false,
-                        tabAlignment: TabAlignment.fill,
-                        labelPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                        indicatorWeight: 1.0,
+                      SizedBox(
+                        height: 40,
+                        child: TabBar(
+                          controller: _tabController,
+                          isScrollable: false,
+                          tabAlignment: TabAlignment.fill,
+                          labelPadding: EdgeInsets.symmetric(horizontal: 8),
+                          indicatorWeight: 1.0,
+                          indicatorPadding: EdgeInsets.zero,
                         tabs: const [
                           Tab(icon: Tooltip(message: 'Takeoff', child: Icon(Icons.flight_takeoff, size: 18))),
-                          Tab(icon: Tooltip(message: 'Rules', child: Icon(Icons.rule, size: 18))),
-                          Tab(icon: Tooltip(message: 'Access', child: Icon(Icons.directions, size: 18))),
+                          Tab(icon: Tooltip(message: 'Rules', child: Icon(Icons.policy, size: 18))),
+                          Tab(icon: Tooltip(message: 'Access', child: Icon(Icons.location_on, size: 18))),
                           Tab(icon: Tooltip(message: 'Weather', child: Icon(Icons.cloud, size: 18))),
                           Tab(icon: Tooltip(message: 'Comments', child: Icon(Icons.comment, size: 18))),
                         ],
+                        ),
                       ),
                       Expanded(
                         child: TabBarView(
