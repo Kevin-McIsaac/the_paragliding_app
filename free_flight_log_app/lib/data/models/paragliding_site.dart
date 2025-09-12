@@ -9,7 +9,7 @@ class ParaglidingSite {
   final String? description;
   final List<String> windDirections;
   final String siteType; // 'launch', 'landing', 'both'
-  final int rating; // 1-5 stars, or 0 if no rating
+  final int? rating; // 1-5 stars if available from API
   final String? country;
   final String? region;
   final double? popularity; // Calculated popularity score
@@ -23,7 +23,7 @@ class ParaglidingSite {
     this.description,
     this.windDirections = const [],
     required this.siteType,
-    this.rating = 0,
+    this.rating,
     this.country,
     this.region,
     this.popularity,
@@ -42,7 +42,7 @@ class ParaglidingSite {
           ? List<String>.from(json['wind_directions'] as List)
           : [],
       siteType: json['site_type'] as String? ?? 'launch',
-      rating: json['rating'] as int? ?? 0,
+      rating: json['rating'] as int?,
       country: json['country'] as String?,
       region: json['region'] as String?,
       popularity: json['popularity'] != null
@@ -62,7 +62,7 @@ class ParaglidingSite {
       if (description != null) 'description': description,
       if (windDirections.isNotEmpty) 'wind_directions': windDirections,
       'site_type': siteType,
-      if (rating > 0) 'rating': rating,
+      if (rating != null) 'rating': rating,
       if (country != null) 'country': country,
       if (region != null) 'region': region,
       if (popularity != null) 'popularity': popularity,
@@ -82,7 +82,7 @@ class ParaglidingSite {
           ? List<String>.from(map['wind_directions'].split(','))
           : [],
       siteType: map['site_type'] as String? ?? 'launch',
-      rating: map['rating'] as int? ?? 0,
+      rating: map['rating'] as int?,
       country: map['country'] as String?,
       region: map['region'] as String?,
       popularity: map['popularity'] != null

@@ -424,3 +424,5 @@ Use format `file_path:line_number` in logs:
 - [IGC Data Trimming](docs/IGC_TRIMMING.md) - Track data processing
 - [Database Schema](docs/DATABASE.md) - Complete table definitions
 - [Timestamp Processing](docs/TIMESTAMPS.md) - UTC/local conversion
+- at the end of complex set of changes use flutter analyze to find errors
+- use adb screenshots on emulator
