@@ -709,18 +709,16 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                         controller: _tabController,
                         isScrollable: false,
                         tabAlignment: TabAlignment.fill,
-                        labelStyle: TextStyle(fontSize: 9),
-                        unselectedLabelStyle: TextStyle(fontSize: 9),
-                        labelPadding: EdgeInsets.symmetric(horizontal: 8),
+                        labelPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                        indicatorWeight: 1.0,
                         tabs: const [
-                          Tab(icon: Icon(Icons.flight_takeoff, size: 16), text: 'Takeoff'),
-                          Tab(icon: Icon(Icons.rule, size: 16), text: 'Rules'),
-                          Tab(icon: Icon(Icons.directions, size: 16), text: 'Access'),
-                          Tab(icon: Icon(Icons.cloud, size: 16), text: 'Weather'),
-                          Tab(icon: Icon(Icons.comment, size: 16), text: 'Comments'),
+                          Tab(icon: Tooltip(message: 'Takeoff', child: Icon(Icons.flight_takeoff, size: 18))),
+                          Tab(icon: Tooltip(message: 'Rules', child: Icon(Icons.rule, size: 18))),
+                          Tab(icon: Tooltip(message: 'Access', child: Icon(Icons.directions, size: 18))),
+                          Tab(icon: Tooltip(message: 'Weather', child: Icon(Icons.cloud, size: 18))),
+                          Tab(icon: Tooltip(message: 'Comments', child: Icon(Icons.comment, size: 18))),
                         ],
                       ),
-                      const SizedBox(height: 4),
                       Expanded(
                         child: TabBarView(
                           controller: _tabController,
@@ -803,7 +801,7 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                   if (_detailedData?['takeoff_altitude'] != null) ...[
                     const SizedBox(width: 6),
                     Icon(Icons.height, size: 14, color: Colors.grey),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 2),
                     Text(
                       '${_detailedData!['takeoff_altitude']}m',
                       style: Theme.of(context).textTheme.bodySmall,
