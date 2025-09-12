@@ -101,6 +101,9 @@ class NearbySitesSearchManager {
       'site_name': site.name,
       'country': site.country,
     });
+
+    // Exit search mode to dismiss the results dropdown
+    exitSearchMode();
   }
 
   /// Perform the actual API search
