@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../services/logging_service.dart';
 import '../../utils/site_marker_utils.dart';
 import '../../utils/map_provider.dart';
 import '../../utils/site_utils.dart';
 import '../../utils/map_controls.dart';
+import '../../utils/map_tile_provider.dart';
 
 class NearbySitesMapWidget extends StatefulWidget {
   final List<ParaglidingSite> sites;
@@ -250,6 +250,8 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               urlTemplate: widget.mapProvider.urlTemplate,
               userAgentPackageName: 'com.example.free_flight_log_app',
               maxZoom: widget.mapProvider.maxZoom.toDouble(),
+              tileProvider: MapTileProvider.createInstance(),
+              errorTileCallback: MapTileProvider.getErrorCallback(),
             ),
             
             // Site markers layer

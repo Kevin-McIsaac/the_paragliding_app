@@ -16,6 +16,7 @@ import '../../services/logging_service.dart';
 import '../../utils/site_marker_utils.dart';
 import '../../utils/map_provider.dart';
 import '../../utils/site_utils.dart';
+import '../../utils/map_tile_provider.dart';
 
 
 class EditSiteScreen extends StatefulWidget {
@@ -386,23 +387,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       userAgentPackageName: 'com.freeflightlog.free_flight_log_app',
       maxNativeZoom: _selectedMapProvider.maxZoom,
       maxZoom: _selectedMapProvider.maxZoom.toDouble(),
-      tileProvider: kDebugMode 
-        ? _DebugNetworkTileProvider(
-            headers: {
-              'User-Agent': 'FreeFlightLog/1.0',
-              'Cache-Control': 'max-age=31536000', // 12 months cache
-            },
-          )
-        : NetworkTileProvider(
-            headers: {
-              'User-Agent': 'FreeFlightLog/1.0',
-              'Cache-Control': 'max-age=31536000', // 12 months cache
-            },
-          ),
-      // Add debug logging in debug mode only
-      errorTileCallback: kDebugMode ? (tile, error, stackTrace) {
-        LoggingService.debug('Tile error: ${tile.coordinates} - $error');
-      } : null,
+      tileProvider: MapTileProvider.createInstance(),
+      errorTileCallback: MapTileProvider.getErrorCallback(),
     );
   }
 
@@ -2049,13 +2035,3 @@ class _HelpItem extends StatelessWidget {
   }
 }
 
-/// Debug tile provider that logs actual network requests (not cached tiles)
-class _DebugNetworkTileProvider extends NetworkTileProvider {
-  _DebugNetworkTileProvider({super.headers});
-
-  @override
-  ImageProvider getImage(TileCoordinates coordinates, TileLayer options) {
-    LoggingService.debug('Network tile request: z${coordinates.z}/${coordinates.x}/${coordinates.y}');
-    return super.getImage(coordinates, options);
-  }
-}
