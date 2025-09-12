@@ -5,13 +5,16 @@
 
 # Create log directory if it doesn't exist
 LOG_DIR="/tmp/flutter_controller"
-mkdir -p "$LOG_DIR"
+SCREENSHOT_DIR="$LOG_DIR/screenshots"
+mkdir -p "$LOG_DIR" "$SCREENSHOT_DIR"
 
 PIPE="$LOG_DIR/flutter_cmd"
 LOG_FILE="$LOG_DIR/flutter_output.log"
 PID_FILE="$LOG_DIR/flutter.pid"
 STATUS_FILE="$LOG_DIR/flutter_status"
 MAX_LOG_SIZE=10485760  # 10MB
+READINESS_TIMEOUT=30   # seconds
+PIPE_CHECK_TIMEOUT=5   # seconds
 
 # Utility functions
 log_message() {
@@ -20,6 +23,142 @@ log_message() {
 
 update_status() {
     echo "$1|$(date '+%Y-%m-%d %H:%M:%S')" > "$STATUS_FILE"
+}
+
+# Screenshot functionality
+take_screenshot() {
+    local device=${1:-"emulator-5554"}
+    local timestamp=$(date '+%Y%m%d_%H%M%S')
+    local screenshot_path="$SCREENSHOT_DIR/screenshot_${timestamp}.png"
+    local latest_screenshot="/tmp/screenshot.png"
+    
+    log_message "Taking screenshot from $device"
+    
+    # Take screenshot using adb
+    if adb -s "$device" shell screencap -p > "$screenshot_path" 2>/dev/null; then
+        # Copy to /tmp for easy access
+        cp "$screenshot_path" "$latest_screenshot"
+        log_message "Screenshot saved: $screenshot_path"
+        echo "Screenshot saved to: $screenshot_path"
+        echo "Latest screenshot: $latest_screenshot"
+        return 0
+    else
+        log_message "ERROR: Failed to take screenshot from $device"
+        echo "ERROR: Failed to take screenshot. Is the device connected?"
+        return 1
+    fi
+}
+
+# Check if pipe is responsive
+check_pipe_responsiveness() {
+    if [[ ! -p "$PIPE" ]]; then
+        return 1
+    fi
+    
+    # Try to write to pipe with timeout
+    if timeout "$PIPE_CHECK_TIMEOUT" bash -c "echo 'h' > '$PIPE'" 2>/dev/null; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Wait for Flutter to be ready to accept commands
+wait_for_flutter_ready() {
+    local timeout=${1:-$READINESS_TIMEOUT}
+    local start_time=$(date +%s)
+    
+    echo "Waiting for Flutter to be ready (timeout: ${timeout}s)..."
+    
+    while [[ $(($(date +%s) - start_time)) -lt $timeout ]]; do
+        # First check if pipe is responsive - this is the most reliable indicator
+        if check_pipe_responsiveness; then
+            # Additionally check status file for running state
+            local current_status=""
+            if [[ -f "$STATUS_FILE" ]]; then
+                IFS='|' read -r current_status _ < "$STATUS_FILE"
+            fi
+            
+            case "$current_status" in
+                "RUNNING"|"HOT_RELOAD"|"HOT_RESTART"|"HOT_RELOAD_REQUESTED"|"HOT_RESTART_REQUESTED")
+                    echo "✓ Flutter is ready to accept commands"
+                    return 0
+                    ;;
+            esac
+        fi
+        
+        # Also check for readiness markers in recent logs
+        if [[ -f "$LOG_FILE" ]] && tail -n 50 "$LOG_FILE" | grep -q "Flutter run key commands"; then
+            if check_pipe_responsiveness; then
+                echo "✓ Flutter is ready to accept commands"
+                return 0
+            fi
+        fi
+        
+        echo -n "."
+        sleep 1
+    done
+    
+    echo ""
+    echo "⚠ Timeout waiting for Flutter to be ready"
+    return 1
+}
+
+# Enhanced health check
+flutter_health_check() {
+    local pid_check=false
+    local pipe_check=false
+    local ready_check=false
+    
+    # Check PID
+    if [[ -f "$PID_FILE" ]]; then
+        local pid=$(cat "$PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            pid_check=true
+        fi
+    fi
+    
+    # Check pipe responsiveness
+    if check_pipe_responsiveness; then
+        pipe_check=true
+    fi
+    
+    # Check for ready state in logs
+    if [[ -f "$LOG_FILE" ]] && tail -n 20 "$LOG_FILE" | grep -q "Flutter run key commands"; then
+        ready_check=true
+    fi
+    
+    echo "Health Check Results:"
+    echo "  PID alive: $([ "$pid_check" = true ] && echo "✓" || echo "✗")"
+    echo "  Pipe responsive: $([ "$pipe_check" = true ] && echo "✓" || echo "✗")"
+    echo "  Flutter ready: $([ "$ready_check" = true ] && echo "✓" || echo "✗")"
+    
+    # Return 0 only if all checks pass
+    [ "$pid_check" = true ] && [ "$pipe_check" = true ] && [ "$ready_check" = true ]
+}
+
+# Clean stale state files when detecting issues
+clean_stale_state() {
+    local reason="$1"
+    log_message "Cleaning stale state files: $reason"
+    
+    # Remove stale PID file if process doesn't exist
+    if [[ -f "$PID_FILE" ]]; then
+        local pid=$(cat "$PID_FILE")
+        if ! kill -0 "$pid" 2>/dev/null; then
+            rm -f "$PID_FILE"
+            log_message "Removed stale PID file"
+        fi
+    fi
+    
+    # Update status to reflect reality
+    if [[ -f "$STATUS_FILE" ]]; then
+        local current_status
+        IFS='|' read -r current_status _ < "$STATUS_FILE"
+        if [[ "$current_status" == "RUNNING" ]]; then
+            update_status "CRASHED"
+        fi
+    fi
 }
 
 rotate_logs() {
@@ -123,17 +262,39 @@ check_flutter_status() {
         IFS='|' read -r status timestamp < "$STATUS_FILE"
     fi
     
-    # Verify process is actually running
+    # Enhanced state verification
+    local pid_exists=false
+    local pipe_responsive=false
+    
+    # Check PID
     if [[ -f "$PID_FILE" ]]; then
         local pid=$(cat "$PID_FILE")
-        if ! kill -0 "$pid" 2>/dev/null; then
+        if kill -0 "$pid" 2>/dev/null; then
+            pid_exists=true
+        else
+            clean_stale_state "Dead process detected"
             status="CRASHED"
             update_status "CRASHED"
         fi
     else
         if [[ "$status" == "RUNNING" ]]; then
+            clean_stale_state "Missing PID file"
             status="STOPPED"
             update_status "STOPPED"
+        fi
+    fi
+    
+    # Check pipe responsiveness if PID exists
+    if [[ "$pid_exists" == true ]]; then
+        if check_pipe_responsiveness; then
+            pipe_responsive=true
+        else
+            # PID exists but pipe unresponsive - potential issue
+            if [[ "$status" == "RUNNING" ]]; then
+                log_message "WARNING: Process alive but pipe unresponsive"
+                status="UNRESPONSIVE"
+                update_status "UNRESPONSIVE"
+            fi
         fi
     fi
     
@@ -142,6 +303,10 @@ check_flutter_status() {
         echo "Last Update: $timestamp"
     fi
     
+    # Show process and pipe status
+    echo "Process Status: $([ "$pid_exists" = true ] && echo "✓ Running" || echo "✗ Not running")"
+    echo "Pipe Status: $([ "$pipe_responsive" = true ] && echo "✓ Responsive" || echo "✗ Unresponsive")"
+    
     # Show recent activity from logs
     if [[ -f "$LOG_FILE" ]]; then
         echo "Recent Activity:"
@@ -149,7 +314,14 @@ check_flutter_status() {
     fi
     
     case "$status" in
-        "RUNNING") return 0 ;;
+        "RUNNING") 
+            # Additional validation for RUNNING status
+            if [[ "$pid_exists" == true ]] && [[ "$pipe_responsive" == true ]]; then
+                return 0
+            else
+                return 1
+            fi
+            ;;
         "STARTING") return 0 ;;
         "HOT_RELOAD") return 0 ;;
         "HOT_RESTART") return 0 ;;
@@ -161,13 +333,34 @@ check_flutter_status() {
 
 send_flutter_command() {
     local cmd="$1"
+    local validate_ready=${2:-true}
+    
     if [[ ! -p "$PIPE" ]]; then
         echo "ERROR: Flutter pipe not found. Is Flutter running?"
         return 1
     fi
     
+    # Validate readiness for critical commands
+    if [[ "$validate_ready" == true ]] && [[ "$cmd" =~ ^[rR]$ ]]; then
+        if ! check_pipe_responsiveness; then
+            echo "ERROR: Flutter pipe is unresponsive. Command not sent."
+            return 1
+        fi
+        
+        # For hot reload/restart, ensure Flutter is ready
+        if ! wait_for_flutter_ready 10; then
+            echo "WARNING: Flutter may not be ready. Sending command anyway..."
+        fi
+    fi
+    
     log_message "Sending command: $cmd"
-    echo "$cmd" > "$PIPE"
+    
+    # Send command with error handling
+    if ! echo "$cmd" > "$PIPE" 2>/dev/null; then
+        log_message "ERROR: Failed to send command to pipe"
+        echo "ERROR: Failed to send command. Pipe may be broken."
+        return 1
+    fi
     
     case "$cmd" in
         "r") update_status "HOT_RELOAD_REQUESTED" ;;
@@ -178,6 +371,8 @@ send_flutter_command() {
             cleanup_flutter_process
             ;;
     esac
+    
+    return 0
 }
 
 show_logs() {
@@ -268,14 +463,23 @@ case "$1" in
     "cleanup")
         cleanup_flutter_process
         ;;
+    "screenshot"|"ss")
+        take_screenshot "$2"
+        ;;
+    "health")
+        flutter_health_check
+        ;;
+    "wait-ready")
+        wait_for_flutter_ready "$2"
+        ;;
     *)
-        echo "Enhanced Flutter Controller v2.0"
+        echo "Enhanced Flutter Controller v2.1"
         echo "Usage: $0 {command} [options]"
         echo ""
         echo "Commands:"
         echo "  run [device]     - Start Flutter with logging (default: emulator-5554)"
-        echo "  r                - Hot reload"
-        echo "  R                - Hot restart"
+        echo "  r                - Hot reload (with readiness check)"
+        echo "  R                - Hot restart (with readiness check)"
         echo "  q, quit          - Quit Flutter"
         echo "  status           - Check Flutter status and health"
         echo "  logs [lines]     - Show recent logs (default: 50 lines)"
@@ -283,6 +487,11 @@ case "$1" in
         echo "  monitor          - Monitor logs in real-time"
         echo "  restart [device] - Force restart Flutter"
         echo "  cleanup          - Clean up crashed processes"
+        echo ""
+        echo "Enhanced Commands:"
+        echo "  screenshot, ss [device] - Take screenshot via adb (default: emulator-5554)"
+        echo "  health           - Comprehensive health check (PID, pipe, readiness)"
+        echo "  wait-ready [timeout] - Wait for Flutter to be ready (default: 30s)"
         echo ""
         echo "Log Files:"
         echo "  Directory: $LOG_DIR"
@@ -294,7 +503,10 @@ case "$1" in
         echo "  $0 run                    # Start Flutter on default emulator"
         echo "  $0 run chrome             # Start Flutter on Chrome"
         echo "  $0 status                 # Check if Flutter is running"
+        echo "  $0 health                 # Comprehensive health check"
         echo "  $0 logs 100               # Show last 100 log lines"
         echo "  $0 monitor                # Watch logs in real-time"
+        echo "  $0 screenshot             # Take screenshot from emulator"
+        echo "  $0 ss emulator-5556       # Take screenshot from specific device"
         ;;
 esac
