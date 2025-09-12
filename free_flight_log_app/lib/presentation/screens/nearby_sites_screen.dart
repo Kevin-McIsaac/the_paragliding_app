@@ -11,6 +11,8 @@ import '../../services/database_service.dart';
 import '../../services/location_service.dart';
 import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
+import '../../services/nearby_sites_search_state.dart';
+import '../../services/nearby_sites_search_manager.dart';
 import '../../utils/map_provider.dart';
 import '../../utils/site_utils.dart';
 import '../widgets/nearby_sites_map_widget.dart';
@@ -43,7 +45,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   bool _isLoading = false;
   bool _isLocationLoading = false;
   String? _errorMessage;
-  String _searchQuery = '';
   LatLng? _mapCenterPosition;
   
   // Map provider state
@@ -60,35 +61,43 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   bool _isLoadingSites = false;
   String? _lastLoadedBoundsKey;
   
-  // Search state management
-  bool _isSearchMode = false;
-  List<ParaglidingSite> _searchResults = [];
-  bool _isSearching = false;
-  Timer? _searchDebounce;
-  static const Duration _searchDebounceDelay = Duration(milliseconds: 300);
-  
-  // Smooth transition state management
-  ParaglidingSite? _pinnedSite;
-  bool _pinnedSiteIsFromAutoJump = false;
+  // Search management - consolidated into SearchManager
+  late final NearbySitesSearchManager _searchManager;
   
 
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(_onSearchChanged);
+    _initializeSearchManager();
     _loadPreferences();
     _loadData();
   }
 
   @override
   void dispose() {
-    _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     _debounceTimer?.cancel(); // Clean up timer
-    _searchDebounce?.cancel(); // Clean up search debounce timer
+    _searchManager.dispose(); // Clean up search manager
     super.dispose();
   }
 
+  void _initializeSearchManager() {
+    _searchManager = NearbySitesSearchManager(
+      onStateChanged: (SearchState state) {
+        setState(() {
+          // Update search query in controller if different
+          if (_searchController.text != state.query) {
+            _searchController.text = state.query;
+          }
+          // Update displayed sites
+          _updateDisplayedSites();
+        });
+      },
+      onAutoJump: (ParaglidingSite site) {
+        _jumpToLocation(site, keepSearchActive: true);
+      },
+    );
+  }
 
   Future<void> _loadPreferences() async {
     try {
@@ -197,52 +206,22 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   }
 
 
-  void _onSearchChanged() {
-    final newQuery = _searchController.text.toLowerCase().trim();
-    if (newQuery != _searchQuery) {
-      setState(() {
-        _searchQuery = newQuery;
-        _updateDisplayedSites();
-      });
-    }
-  }
-
   void _updateDisplayedSites() {
     final stopwatch = Stopwatch()..start();
     
-    List<ParaglidingSite> filteredSites;
+    // Use SearchManager's computed property for cleaner logic
+    List<ParaglidingSite> filteredSites = _searchManager.getDisplayedSites(_allSites);
     
-    // Use search results if we have them and are in search mode
-    if (_searchQuery.isNotEmpty && _searchResults.isNotEmpty) {
-      filteredSites = _searchResults;
+    // Add pinned site if we have one and it's not already in the list
+    final pinnedSite = _searchManager.state.pinnedSite;
+    if (pinnedSite != null && _searchManager.state.query.isEmpty) {
+      final pinnedSiteKey = SiteUtils.createSiteKey(pinnedSite.latitude, pinnedSite.longitude);
+      final alreadyExists = filteredSites.any((site) => 
+        SiteUtils.createSiteKey(site.latitude, site.longitude) == pinnedSiteKey);
       
-      // Don't auto-center map during search to prevent jumping
-      // Map will only center when user explicitly selects a result
-    } else if (_searchQuery.isEmpty) {
-      // No search - show bounds-based sites
-      filteredSites = _allSites.toList(); // Create a copy to allow modifications
-      
-      // Add pinned site if we have one and it's not already in the list
-      if (_pinnedSite != null) {
-        final pinnedSiteKey = SiteUtils.createSiteKey(_pinnedSite!.latitude, _pinnedSite!.longitude);
-        final alreadyExists = filteredSites.any((site) => 
-          SiteUtils.createSiteKey(site.latitude, site.longitude) == pinnedSiteKey);
-        
-        if (!alreadyExists) {
-          filteredSites.insert(0, _pinnedSite!); // Add at beginning for prominence
-        }
-      }
-      
-      // Don't reset map center automatically when clearing search
-      // Let the user maintain their current view
-    } else {
-      // Search in progress or no results - always keep showing current sites
-      // This prevents sites from disappearing while typing in search
-      if (_displayedSites.isNotEmpty) {
-        filteredSites = _displayedSites; // Keep showing current sites
-      } else {
-        // Fallback to all sites if no sites are currently displayed
-        filteredSites = _allSites.toList();
+      if (!alreadyExists) {
+        filteredSites = List.from(filteredSites);
+        filteredSites.insert(0, pinnedSite); // Add at beginning for prominence
       }
     }
     
@@ -266,7 +245,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       'total_api_sites': newSites,
       'displayed_local_sites': flownSites,
       'displayed_api_sites': newSites,
-      'search_query': _searchQuery.isEmpty ? null : _searchQuery,
+      'search_query': _searchManager.state.query.isEmpty ? null : _searchManager.state.query,
       'has_user_position': _userPosition != null,
       'filter_time_ms': stopwatch.elapsedMilliseconds,
     });
@@ -326,85 +305,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     });
   }
 
-  // Search methods
-  void _enterSearchMode() {
-    setState(() {
-      _isSearchMode = true;
-    });
-  }
-  
-  void _exitSearchMode({bool preserveDisplayedSites = false}) {
-    _searchController.clear();
-    _searchDebounce?.cancel();
-    setState(() {
-      _isSearchMode = false;
-      _searchQuery = '';  // Clear the search query to prevent "No sites found" message
-      _searchResults.clear();
-      _isSearching = false;
-      
-      // Clear auto-jump flag when exiting search mode
-      _pinnedSiteIsFromAutoJump = false;
-      
-      // Don't automatically update displayed sites if we want to preserve them
-      // This prevents the jarring site disappearance during transitions
-      if (!preserveDisplayedSites) {
-        _updateDisplayedSites();
-      }
-    });
-  }
-  
-  void _onSearchTextChanged(String query) {
-    _searchDebounce?.cancel();
-    if (query.isEmpty) {
-      setState(() {
-        _searchResults.clear();
-        _isSearching = false;
-      });
-      return;
-    }
-    
-    if (query.length < 2) return;
-    
-    setState(() {
-      _isSearching = true;
-    });
-    
-    _searchDebounce = Timer(_searchDebounceDelay, () {
-      _performSearch(query);
-    });
-  }
-  
-  Future<void> _performSearch(String query) async {
-    try {
-      final results = await _paraglidingEarthApi.searchSitesByName(query);
-      if (mounted) {
-        setState(() {
-          _searchResults = results.take(15).toList(); // Limit to 15 results for better selection
-          _isSearching = false;
-        });
-        
-        LoggingService.action('NearbySites', 'search_performed', {
-          'query': query,
-          'results_count': results.length,
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _searchResults.clear();
-          _isSearching = false;
-        });
-      }
-      LoggingService.error('Search failed', e);
-    }
-  }
-  
   /// Jump to a location without dismissing search results
   void _jumpToLocation(ParaglidingSite site, {bool keepSearchActive = false}) {
-    // Pin the selected site to keep it visible during transition
-    _pinnedSite = site;
-    _pinnedSiteIsFromAutoJump = keepSearchActive; // Track if this is from auto-jump
-    
     // Center map on selected site
     _mapCenterPosition = LatLng(site.latitude, site.longitude);
     
@@ -426,77 +328,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       'site_name': site.name,
       'country': site.country,
       'keep_search_active': keepSearchActive,
-    });
-  }
-
-  void _selectSearchResult(ParaglidingSite site) {
-    // Check if this is the same site that was auto-jumped to
-    bool isDuplicateJump = _pinnedSite != null && 
-                          _pinnedSite!.name == site.name &&
-                          _pinnedSite!.latitude == site.latitude &&
-                          _pinnedSite!.longitude == site.longitude &&
-                          _pinnedSiteIsFromAutoJump;
-    
-    if (!isDuplicateJump) {
-      // Jump to location if not already there
-      _jumpToLocation(site);
-    }
-    
-    // Exit search mode but preserve displayed sites for smooth transition
-    _exitSearchMode(preserveDisplayedSites: true);
-    
-    LoggingService.action('NearbySites', 'search_result_selected', {
-      'site_name': site.name,
-      'country': site.country,
-      'was_duplicate_jump': isDuplicateJump,
-    });
-  }
-
-  /// Perform API search using Paragliding Earth search endpoint
-  Future<void> _performAPISearch(String query) async {
-    if (query.length < 2) return; // Don't search for very short queries
-    
-    // Cancel any existing search
-    _searchDebounce?.cancel();
-    
-    setState(() {
-      _isSearching = true;
-    });
-    
-    // Debounce the search to avoid too many API calls
-    _searchDebounce = Timer(_searchDebounceDelay, () async {
-      try {
-        final results = await _paraglidingEarthApi.searchSitesByName(query);
-        
-        if (mounted) {
-          setState(() {
-            _searchResults = results;
-            _isSearching = false;
-            _updateDisplayedSites();
-          });
-          
-          // If exactly one result, automatically jump to it but keep search results visible
-          if (results.length == 1) {
-            _jumpToLocation(results.first, keepSearchActive: true);
-          }
-          
-          LoggingService.action('NearbySites', 'api_search_performed', {
-            'query': query,
-            'results_count': results.length,
-            'auto_selected': results.length == 1,
-          });
-        }
-      } catch (e) {
-        LoggingService.error('API search failed', e);
-        
-        if (mounted) {
-          setState(() {
-            _searchResults.clear();
-            _isSearching = false;
-            _updateDisplayedSites();
-          });
-        }
-      }
     });
   }
 
@@ -602,9 +433,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           _isLoadingSites = false;
           
           // Clear pinned site only if not from auto-jump or search is no longer active
-          if (!_pinnedSiteIsFromAutoJump || _searchQuery.isEmpty) {
-            _pinnedSite = null;
-            _pinnedSiteIsFromAutoJump = false;
+          if (!_searchManager.state.pinnedSiteIsFromAutoJump || _searchManager.state.query.isEmpty) {
+            // Note: SearchManager handles pinned site clearing internally
+            // No need to manually clear here anymore
           }
           
           // Update displayed sites with the new bounds data
@@ -626,9 +457,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       if (mounted) {
         setState(() {
           _isLoadingSites = false;
-          // Clear pinned site even on error to prevent UI from getting stuck
-          _pinnedSite = null;
-          _pinnedSiteIsFromAutoJump = false;
+          // Note: SearchManager handles pinned site state internally
         });
       }
     }
@@ -652,7 +481,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: _isSearchMode 
+        title: _searchManager.state.isSearchMode 
           ? TextField(
               controller: _searchController,
               autofocus: true,
@@ -662,18 +491,18 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                 hintStyle: TextStyle(color: Colors.grey),
               ),
               style: const TextStyle(color: Colors.white),
-              onChanged: _onSearchTextChanged,
+              onChanged: _searchManager.onSearchQueryChanged,
             )
           : const Text('Nearby Sites'),
         actions: [
-          _isSearchMode 
+          _searchManager.state.isSearchMode 
             ? IconButton(
                 icon: const Icon(Icons.close),
-                onPressed: _exitSearchMode,
+                onPressed: _searchManager.exitSearchMode,
               )
             : IconButton(
                 icon: const Icon(Icons.search),
-                onPressed: _enterSearchMode,
+                onPressed: _searchManager.enterSearchMode,
               ),
         ],
       ),
@@ -701,38 +530,23 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                           siteFlightStatus: _siteFlightStatus,
                           userPosition: _userPosition,
                           centerPosition: _mapCenterPosition,
-                          initialZoom: _searchQuery.isNotEmpty ? 12.0 : 10.0,
+                          initialZoom: _searchManager.state.query.isNotEmpty ? 12.0 : 10.0,
                           mapProvider: _selectedMapProvider,
                           isLegendExpanded: _isLegendExpanded,
                           onToggleLegend: _toggleLegend,
                           onMapProviderChanged: _selectMapProvider,
                           onSiteSelected: _onSiteSelected,
                           onBoundsChanged: _onBoundsChanged,
-                          searchQuery: _searchQuery,
-                          onSearchChanged: (query) {
-                            final trimmedQuery = query.trim();
-                            setState(() {
-                              _searchQuery = trimmedQuery;
-                            });
-                            
-                            // Trigger API search if query is not empty
-                            if (trimmedQuery.isNotEmpty && trimmedQuery.length >= 2) {
-                              _performAPISearch(trimmedQuery);
-                            } else {
-                              // Clear search results and show normal bounds-based sites
-                              setState(() {
-                                _searchResults.clear();
-                                _isSearching = false;
-                                _updateDisplayedSites();
-                              });
-                            }
-                          },
+                          searchQuery: _searchManager.state.query,
+                          onSearchChanged: _searchManager.onSearchQueryChanged,
                           onRefreshLocation: _onRefreshLocation,
                           isLocationLoading: _isLocationLoading,
-                          searchResults: _searchResults,
-                          isSearching: _isSearching,
+                          searchResults: _searchManager.state.results,
+                          isSearching: _searchManager.state.isSearching,
                           onSearchResultSelected: (site) {
-                            _selectSearchResult(site);
+                            _searchManager.selectSearchResult(site);
+                            // Also jump to location for smooth UX
+                            _jumpToLocation(site);
                           },
                         ),
                         
@@ -844,7 +658,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                     ),
           
           // Search dropdown overlay
-          if (_isSearchMode && (_searchResults.isNotEmpty || _isSearching))
+          if (_searchManager.shouldShowSearchDropdown())
             Positioned(
               top: 0,
               left: 0,
@@ -863,7 +677,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                       ),
                     ],
                   ),
-                  child: _isSearching
+                  child: _searchManager.state.isSearching
                     ? const Padding(
                         padding: EdgeInsets.all(16),
                         child: Row(
@@ -880,9 +694,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                       )
                     : ListView.builder(
                         shrinkWrap: true,
-                        itemCount: _searchResults.length,
+                        itemCount: _searchManager.state.results.length,
                         itemBuilder: (context, index) {
-                          final site = _searchResults[index];
+                          final site = _searchManager.state.results[index];
                           return ListTile(
                             leading: CircleAvatar(
                               radius: 16,
@@ -902,7 +716,10 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                             ),
                             subtitle: Text(site.country ?? 'Unknown'),
                             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                            onTap: () => _selectSearchResult(site),
+                            onTap: () {
+                              _searchManager.selectSearchResult(site);
+                              _jumpToLocation(site);
+                            },
                           );
                         },
                       ),
