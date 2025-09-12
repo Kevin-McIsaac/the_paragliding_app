@@ -33,7 +33,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   
   // Constants for bounds-based loading (copied from EditSiteScreen)
   static const double _boundsThreshold = 0.001;
-  static const int _debounceDurationMs = 500;
+  static const int _debounceDurationMs = 750; // Increased debounce to reduce API calls
   
   // Unified state variables - all sites are ParaglidingSite objects from API
   List<ParaglidingSite> _allSites = [];
@@ -68,7 +68,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   static const Duration _searchDebounceDelay = Duration(milliseconds: 300);
   
   // Smooth transition state management
-  bool _pendingBoundsLoad = false;
   ParaglidingSite? _pinnedSite;
   
 
@@ -236,11 +235,13 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       // Don't reset map center automatically when clearing search
       // Let the user maintain their current view
     } else {
-      // Search in progress or no results - keep current sites if we're pending a bounds load
-      if (_pendingBoundsLoad && _displayedSites.isNotEmpty) {
+      // Search in progress or no results - always keep showing current sites
+      // This prevents sites from disappearing while typing in search
+      if (_displayedSites.isNotEmpty) {
         filteredSites = _displayedSites; // Keep showing current sites
       } else {
-        filteredSites = [];
+        // Fallback to all sites if no sites are currently displayed
+        filteredSites = _allSites.toList();
       }
     }
     
@@ -336,6 +337,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     _searchDebounce?.cancel();
     setState(() {
       _isSearchMode = false;
+      _searchQuery = '';  // Clear the search query to prevent "No sites found" message
       _searchResults.clear();
       _isSearching = false;
       
@@ -400,10 +402,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     // Center map on selected site
     _mapCenterPosition = LatLng(site.latitude, site.longitude);
     
-    // Mark that we're starting a bounds load for smooth transition
-    setState(() {
-      _pendingBoundsLoad = true;
-    });
     
     // Exit search mode but preserve displayed sites for smooth transition
     _exitSearchMode(preserveDisplayedSites: true);
@@ -571,8 +569,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           _siteFlightStatus = siteFlightStatus;
           _isLoadingSites = false;
           
-          // Clear pending bounds load state and pinned site now that new data is loaded
-          _pendingBoundsLoad = false;
+          // Clear pinned site now that new data is loaded
           _pinnedSite = null;
           
           // Update displayed sites with the new bounds data
@@ -594,8 +591,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       if (mounted) {
         setState(() {
           _isLoadingSites = false;
-          // Clear pending state even on error to prevent UI from getting stuck
-          _pendingBoundsLoad = false;
+          // Clear pinned site even on error to prevent UI from getting stuck
           _pinnedSite = null;
         });
       }
@@ -707,26 +703,102 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                         // Loading overlay for dynamic site loading
                         if (_isLoadingSites)
                           Positioned(
-                            top: 8,
-                            left: 8,
+                            top: 60, // Moved down to avoid controls
+                            right: 16, // Positioned on right for better visibility
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                               decoration: BoxDecoration(
-                                color: Colors.black87,
-                                borderRadius: BorderRadius.circular(16),
+                                color: Colors.black.withValues(alpha: 0.85),
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.3),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.5,
+                                      color: Colors.white,
+                                      strokeCap: StrokeCap.round,
+                                    ),
                                   ),
-                                  const SizedBox(width: 8),
+                                  const SizedBox(width: 10),
                                   const Text(
                                     'Loading nearby sites...',
-                                    style: TextStyle(color: Colors.white, fontSize: 12),
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        
+                        // Location unavailable message
+                        if (_userPosition == null && !_isLocationLoading)
+                          Positioned(
+                            bottom: 100,
+                            left: 16,
+                            right: 16,
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade900.withValues(alpha: 0.9),
+                                borderRadius: BorderRadius.circular(8),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.3),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.location_off,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  const Expanded(
+                                    child: Text(
+                                      'Location unavailable. Using last known position.',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: _onRefreshLocation,
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                      minimumSize: Size.zero,
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                      backgroundColor: Colors.white.withValues(alpha: 0.2),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      'Retry',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                                   ),
                                 ],
                               ),
