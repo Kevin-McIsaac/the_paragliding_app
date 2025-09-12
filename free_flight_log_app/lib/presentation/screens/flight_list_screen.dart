@@ -15,6 +15,7 @@ import 'flight_detail_screen.dart';
 import 'wing_management_screen.dart';
 import 'manage_sites_screen.dart';
 import 'statistics_screen.dart';
+import 'nearby_sites_screen.dart';
 import 'data_management_screen.dart';
 import 'about_screen.dart';
 import 'preferences_screen.dart';
@@ -319,6 +320,12 @@ class _FlightListScreenState extends State<FlightListScreen> {
                         builder: (context) => const StatisticsScreen(),
                       ),
                     );
+                  } else if (value == 'nearby_sites') {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const NearbySitesScreen(),
+                      ),
+                    );
                   } else if (value == 'database') {
                     final result = await Navigator.of(context).push<bool>(
                       MaterialPageRoute(
@@ -351,6 +358,16 @@ class _FlightListScreenState extends State<FlightListScreen> {
                         Icon(Icons.bar_chart),
                         SizedBox(width: 8),
                         Text('Statistics'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'nearby_sites',
+                    child: Row(
+                      children: [
+                        Icon(Icons.map),
+                        SizedBox(width: 8),
+                        Text('Nearby Sites'),
                       ],
                     ),
                   ),
