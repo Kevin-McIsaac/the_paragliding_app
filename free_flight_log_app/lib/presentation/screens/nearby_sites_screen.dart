@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../data/models/site.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../services/database_service.dart';
@@ -722,7 +723,7 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                         ),
                       ),
                       const SizedBox(height: 8),
-                      _buildActionButtons(name),
+                      _buildActionButtons(name, latitude, longitude),
                     ],
                   ),
                 ),
@@ -1007,7 +1008,32 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     );
   }
 
-  Widget _buildActionButtons(String name) {
+  /// Launch navigation to coordinates
+  Future<void> _launchNavigation(double latitude, double longitude) async {
+    final uri = Uri.parse('https://maps.google.com/?daddr=$latitude,$longitude');
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      LoggingService.action('NearbySites', 'launch_navigation', {
+        'latitude': latitude,
+        'longitude': longitude,
+      });
+    } catch (e) {
+      LoggingService.error('NearbySites: Could not launch navigation', e);
+    }
+  }
+
+  /// Launch URL in external browser
+  Future<void> _launchUrl(String url) async {
+    final uri = Uri.parse(url);
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      LoggingService.action('NearbySites', 'launch_url', {'url': url});
+    } catch (e) {
+      LoggingService.error('NearbySites: Could not launch URL', e);
+    }
+  }
+
+  Widget _buildActionButtons(String name, double latitude, double longitude) {
     return Column(
       children: [
         Row(
@@ -1015,10 +1041,8 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
             Expanded(
               child: OutlinedButton.icon(
                 onPressed: () {
-                  // Open in maps app
                   Navigator.of(context).pop();
-                  // TODO: Implement navigation functionality
-                  LoggingService.info('Navigate to site: $name');
+                  _launchNavigation(latitude, longitude);
                 },
                 icon: const Icon(Icons.navigation),
                 label: const Text('Navigate'),
@@ -1046,8 +1070,7 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
             child: TextButton.icon(
               onPressed: () {
                 final pgeUrl = 'https://www.paraglidingearth.com/pgearth/index.php?site=${_detailedData!['pgeid']}';
-                // TODO: Launch URL
-                LoggingService.info('Open PGE link: $pgeUrl');
+                _launchUrl(pgeUrl);
               },
               icon: const Icon(Icons.open_in_new, size: 18),
               label: const Text('View Full Details on ParaglidingEarth'),
@@ -1180,7 +1203,7 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
       const SizedBox(height: 20),
       
       // Action buttons
-      _buildActionButtons(name),
+      _buildActionButtons(name, latitude, longitude),
     ];
   }
   
