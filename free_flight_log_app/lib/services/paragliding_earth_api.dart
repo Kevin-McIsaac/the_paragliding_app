@@ -566,6 +566,103 @@ class ParaglidingEarthApi {
     };
   }
   
+  /// Search sites by name using PGE search API
+  Future<List<ParaglidingSite>> searchSitesByName(String query) async {
+    if (query.isEmpty || query.length < 2) return [];
+    
+    PerformanceMonitor.startOperation('ParaglidingEarthApi_searchSitesByName');
+    LoggingService.info('ParaglidingEarthApi: Searching sites by name: $query');
+    
+    try {
+      final encodedQuery = Uri.encodeComponent(query);
+      final url = Uri.parse('https://paraglidingearth.com/assets/ajax/searchSitesJSON.php?name=$encodedQuery');
+      
+      final response = await httpClient.get(url).timeout(_timeout);
+      _requestCount++;
+      
+      if (response.statusCode == 200) {
+        final List<ParaglidingSite> sites = [];
+        final json = jsonDecode(response.body);
+        
+        if (json['features'] != null && json['features'] is List) {
+          for (final feature in json['features']) {
+            try {
+              final site = _parseSearchResult(feature);
+              if (site != null) {
+                sites.add(site);
+              }
+            } catch (e) {
+              LoggingService.error('ParaglidingEarthApi: Error parsing search result', e);
+            }
+          }
+        }
+        
+        LoggingService.info('ParaglidingEarthApi: Found ${sites.length} sites for query: $query');
+        _markRequestSuccess();
+        
+        PerformanceMonitor.endOperation('ParaglidingEarthApi_searchSitesByName', metadata: {
+          'sites_count': sites.length,
+          'query_length': query.length,
+        });
+        
+        return sites;
+      } else {
+        LoggingService.warning('ParaglidingEarthApi: Search HTTP ${response.statusCode} - ${response.reasonPhrase}');
+        _markRequestFailure();
+        
+        PerformanceMonitor.endOperation('ParaglidingEarthApi_searchSitesByName', metadata: {
+          'api_error': response.statusCode,
+          'sites_count': 0,
+        });
+        
+        return [];
+      }
+    } catch (e) {
+      LoggingService.error('ParaglidingEarthApi: Search API error for query: $query', e);
+      _markRequestFailure();
+      
+      PerformanceMonitor.endOperation('ParaglidingEarthApi_searchSitesByName', metadata: {
+        'network_error': true,
+        'sites_count': 0,
+      });
+      
+      return [];
+    }
+  }
+
+  /// Parse search result from PGE search API
+  ParaglidingSite? _parseSearchResult(Map<String, dynamic> feature) {
+    try {
+      final id = feature['id']?.toString();
+      final name = feature['name']?.toString() ?? 'Unknown Site';
+      final countryCode = feature['countryCode']?.toString();
+      final latitude = (feature['lat'] as num?)?.toDouble();
+      final longitude = (feature['lng'] as num?)?.toDouble();
+      
+      if (latitude == null || longitude == null) return null;
+      
+      final country = countryCode != null ? _countryCodeToName(countryCode) : null;
+      
+      return ParaglidingSite(
+        id: id != null ? int.tryParse(id) : null,
+        name: name,
+        latitude: latitude,
+        longitude: longitude,
+        altitude: null,
+        description: '',
+        windDirections: [],
+        siteType: 'launch', // Default for search results
+        rating: null,
+        country: country,
+        region: null,
+        popularity: null,
+      );
+    } catch (e) {
+      LoggingService.error('ParaglidingEarthApi: Error parsing search result', e);
+      return null;
+    }
+  }
+
   /// Clean up resources - call this after batch operations or when app suspends
   static void cleanup() {
     _httpClient?.close();
