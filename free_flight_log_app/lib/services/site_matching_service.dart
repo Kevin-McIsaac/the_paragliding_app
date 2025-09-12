@@ -203,7 +203,13 @@ class SiteMatchingService {
       final bScore = b.popularity ?? 0;
       if (aScore != bScore) return bScore.compareTo(aScore);
 
-      if (a.rating != b.rating) return b.rating.compareTo(a.rating);
+      // Secondary: Rating (if both have ratings)
+      if (a.rating != null && b.rating != null && a.rating != b.rating) {
+        return b.rating!.compareTo(a.rating!);
+      }
+      // Prioritize sites with ratings over those without
+      if (a.rating != null && b.rating == null) return -1;
+      if (a.rating == null && b.rating != null) return 1;
 
       return a.name.compareTo(b.name);
     });
@@ -232,7 +238,7 @@ class SiteMatchingService {
       'total': _sites!.length,
       'launch_sites': _sites!.where((s) => s.siteType == 'launch' || s.siteType == 'both').length,
       'countries': _sites!.map((s) => s.country).where((c) => c != null).toSet().length,
-      'rated_sites': _sites!.where((s) => s.rating > 0).length,
+      'rated_sites': _sites!.where((s) => s.rating != null && s.rating! > 0).length,
     };
 
     // Top countries by site count

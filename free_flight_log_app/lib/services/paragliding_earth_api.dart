@@ -344,9 +344,7 @@ class ParaglidingEarthApi {
       siteType = 'landing';
     }
 
-    // Simple rating (basic data mode doesn't have detailed content for rating)
-    int rating = 3; // Default middle rating
-    if (description.isNotEmpty) rating = 4; // Sites with descriptions get higher rating
+    // API doesn't provide rating data
     
     // Estimate popularity (not available in API)
     double popularity = 50.0;
@@ -359,7 +357,7 @@ class ParaglidingEarthApi {
       description: description,
       windDirections: windDirections,
       siteType: siteType,
-      rating: rating,
+      rating: null,
       country: country,
       region: region,
       popularity: popularity,

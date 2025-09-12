@@ -85,8 +85,8 @@ class AppExpansionCard extends StatelessWidget {
   }) {
     return AppExpansionCard(
       title: Text(title),
-      subtitle: subtitle != null ? Text(subtitle!) : null,
-      leading: icon != null ? Icon(icon!) : null,
+      subtitle: subtitle != null ? Text(subtitle) : null,
+      leading: icon != null ? Icon(icon) : null,
       expansionKey: expansionKey,
       expansionManager: expansionManager,
       onExpansionChanged: onExpansionChanged,
@@ -166,12 +166,12 @@ class AppSectionCard extends StatelessWidget {
       title: Text(title),
       subtitle: subtitle != null ? Text(subtitle!) : null,
       leading: icon != null ? Icon(icon) : null,
-      children: [content],
       initiallyExpanded: initiallyExpanded,
       onExpansionChanged: onExpansionChanged,
       expansionKey: expansionKey,
       expansionManager: expansionManager,
       padding: contentPadding ?? const EdgeInsets.all(16),
+      children: [content],
     );
   }
 }

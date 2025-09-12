@@ -666,20 +666,6 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      if (rating != null && rating > 0) ...[
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            ...List.generate(5, (index) => Icon(
-                              index < rating ? Icons.star : Icons.star_border,
-                              color: Colors.amber,
-                              size: 16,
-                            )),
-                            const SizedBox(width: 6),
-                            Text('($rating.0)', style: Theme.of(context).textTheme.bodySmall),
-                          ],
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -857,7 +843,8 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
   }
 
   Widget _buildTakeoffTab() {
-    return SingleChildScrollView(
+    return Scrollbar(
+      child: SingleChildScrollView(
       child: Padding(
         padding: const EdgeInsets.all(8.0),
         child: Column(
@@ -908,11 +895,13 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
           ],
         ),
       ),
+      ),
     );
   }
 
   Widget _buildRulesTab() {
-    return SingleChildScrollView(
+    return Scrollbar(
+      child: SingleChildScrollView(
       child: Padding(
         padding: const EdgeInsets.all(8.0),
         child: Column(
@@ -932,11 +921,13 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
           ],
         ),
       ),
+      ),
     );
   }
 
   Widget _buildAccessTab() {
-    return SingleChildScrollView(
+    return Scrollbar(
+      child: SingleChildScrollView(
       child: Padding(
         padding: const EdgeInsets.all(8.0),
         child: Column(
@@ -956,11 +947,13 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
           ],
         ),
       ),
+      ),
     );
   }
 
   Widget _buildWeatherTab() {
-    return SingleChildScrollView(
+    return Scrollbar(
+      child: SingleChildScrollView(
       child: Padding(
         padding: const EdgeInsets.all(8.0),
         child: Column(
@@ -980,11 +973,13 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
           ],
         ),
       ),
+      ),
     );
   }
 
   Widget _buildCommentsTab() {
-    return SingleChildScrollView(
+    return Scrollbar(
+      child: SingleChildScrollView(
       child: Padding(
         padding: const EdgeInsets.all(8.0),
         child: Column(
@@ -1007,6 +1002,7 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
               const Center(child: Text('No pilot comments available')),
           ],
         ),
+      ),
       ),
     );
   }
@@ -1065,20 +1061,6 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
   List<Widget> _buildSimpleContent(String name, double latitude, double longitude, int? altitude, String? country, String? region, int? rating, String? siteType, List<String> windDirections, int? flightCount, String? distanceText, String? description) {
     return [
       // Simple layout for local sites or sites without detailed data
-      if (rating != null && rating > 0) ...[
-        Row(
-          children: [
-            ...List.generate(5, (index) => Icon(
-              index < rating ? Icons.star : Icons.star_border,
-              color: Colors.amber,
-              size: 20,
-            )),
-            const SizedBox(width: 8),
-            Text('($rating.0)', style: Theme.of(context).textTheme.bodyMedium),
-          ],
-        ),
-        const SizedBox(height: 12),
-      ],
       
       // Location info
       if (region != null || country != null) ...[

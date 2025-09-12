@@ -318,8 +318,13 @@ class KmlParser {
       final bScore = b.popularity ?? 0;
       if (aScore != bScore) return bScore.compareTo(aScore);
 
-      // Secondary: Rating
-      if (a.rating != b.rating) return b.rating.compareTo(a.rating);
+      // Secondary: Rating (if both have ratings)
+      if (a.rating != null && b.rating != null && a.rating != b.rating) {
+        return b.rating!.compareTo(a.rating!);
+      }
+      // Prioritize sites with ratings over those without
+      if (a.rating != null && b.rating == null) return -1;
+      if (a.rating == null && b.rating != null) return 1;
 
       // Tertiary: Name (alphabetical)
       return a.name.compareTo(b.name);
