@@ -638,8 +638,10 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               flags: InteractiveFlag.all,
             ),
             onTap: (tapPosition, point) {
-              // Dismiss any open bottom sheets when tapping the map
-              Navigator.of(context).popUntil((route) => route.isFirst);
+              // Clear search when tapping the map
+              if (widget.searchQuery.isNotEmpty) {
+                widget.onSearchChanged('');
+              }
             },
           ),
           children: [

@@ -69,6 +69,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   
   // Smooth transition state management
   ParaglidingSite? _pinnedSite;
+  bool _pinnedSiteIsFromAutoJump = false;
   
 
   @override
@@ -341,6 +342,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       _searchResults.clear();
       _isSearching = false;
       
+      // Clear auto-jump flag when exiting search mode
+      _pinnedSiteIsFromAutoJump = false;
+      
       // Don't automatically update displayed sites if we want to preserve them
       // This prevents the jarring site disappearance during transitions
       if (!preserveDisplayedSites) {
@@ -395,16 +399,14 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     }
   }
   
-  void _selectSearchResult(ParaglidingSite site) {
+  /// Jump to a location without dismissing search results
+  void _jumpToLocation(ParaglidingSite site, {bool keepSearchActive = false}) {
     // Pin the selected site to keep it visible during transition
     _pinnedSite = site;
+    _pinnedSiteIsFromAutoJump = keepSearchActive; // Track if this is from auto-jump
     
     // Center map on selected site
     _mapCenterPosition = LatLng(site.latitude, site.longitude);
-    
-    
-    // Exit search mode but preserve displayed sites for smooth transition
-    _exitSearchMode(preserveDisplayedSites: true);
     
     // Immediately trigger bounds-based loading without delay for responsiveness
     final newCenter = LatLng(site.latitude, site.longitude);
@@ -420,9 +422,33 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       }
     });
     
+    LoggingService.action('NearbySites', 'location_jumped', {
+      'site_name': site.name,
+      'country': site.country,
+      'keep_search_active': keepSearchActive,
+    });
+  }
+
+  void _selectSearchResult(ParaglidingSite site) {
+    // Check if this is the same site that was auto-jumped to
+    bool isDuplicateJump = _pinnedSite != null && 
+                          _pinnedSite!.name == site.name &&
+                          _pinnedSite!.latitude == site.latitude &&
+                          _pinnedSite!.longitude == site.longitude &&
+                          _pinnedSiteIsFromAutoJump;
+    
+    if (!isDuplicateJump) {
+      // Jump to location if not already there
+      _jumpToLocation(site);
+    }
+    
+    // Exit search mode but preserve displayed sites for smooth transition
+    _exitSearchMode(preserveDisplayedSites: true);
+    
     LoggingService.action('NearbySites', 'search_result_selected', {
       'site_name': site.name,
       'country': site.country,
+      'was_duplicate_jump': isDuplicateJump,
     });
   }
 
@@ -449,9 +475,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
             _updateDisplayedSites();
           });
           
-          // If exactly one result, automatically jump to it
+          // If exactly one result, automatically jump to it but keep search results visible
           if (results.length == 1) {
-            _selectSearchResult(results.first);
+            _jumpToLocation(results.first, keepSearchActive: true);
           }
           
           LoggingService.action('NearbySites', 'api_search_performed', {
@@ -575,8 +601,11 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           _siteFlightStatus = siteFlightStatus;
           _isLoadingSites = false;
           
-          // Clear pinned site now that new data is loaded
-          _pinnedSite = null;
+          // Clear pinned site only if not from auto-jump or search is no longer active
+          if (!_pinnedSiteIsFromAutoJump || _searchQuery.isEmpty) {
+            _pinnedSite = null;
+            _pinnedSiteIsFromAutoJump = false;
+          }
           
           // Update displayed sites with the new bounds data
           _updateDisplayedSites();
@@ -599,6 +628,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           _isLoadingSites = false;
           // Clear pinned site even on error to prevent UI from getting stuck
           _pinnedSite = null;
+          _pinnedSiteIsFromAutoJump = false;
         });
       }
     }
