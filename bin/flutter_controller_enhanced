@@ -12,6 +12,7 @@ PIPE="$LOG_DIR/flutter_cmd"
 LOG_FILE="$LOG_DIR/flutter_output.log"
 PID_FILE="$LOG_DIR/flutter.pid"
 STATUS_FILE="$LOG_DIR/flutter_status"
+WORKDIR_FILE="$LOG_DIR/flutter_workdir"
 MAX_LOG_SIZE=10485760  # 10MB
 READINESS_TIMEOUT=30   # seconds
 PIPE_CHECK_TIMEOUT=5   # seconds
@@ -201,6 +202,9 @@ setup_flutter_pipe() {
         return 1
     }
     
+    # Save the working directory for status display
+    echo "$PWD" > "$WORKDIR_FILE"
+    
     log_message "Starting Flutter on $device in $PWD"
     update_status "STARTING"
     
@@ -301,6 +305,12 @@ check_flutter_status() {
     echo "Flutter Status: $status"
     if [[ -n "$timestamp" ]]; then
         echo "Last Update: $timestamp"
+    fi
+    
+    # Show working directory if available
+    if [[ -f "$WORKDIR_FILE" ]]; then
+        local workdir=$(cat "$WORKDIR_FILE")
+        echo "Working Directory: $workdir"
     fi
     
     # Show process and pipe status
