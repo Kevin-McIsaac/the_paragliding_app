@@ -87,12 +87,17 @@ class AirspaceOverlayManager {
       // Fetch GeoJSON data from OpenAIP
       final geoJsonString = await _geoJsonService.fetchAirspaceGeoJson(bounds);
 
-      // Parse GeoJSON and convert to styled polygons
-      final polygons = await _geoJsonService.parseAirspaceGeoJson(geoJsonString, opacity);
+      // Get enabled airspace types for filtering
+      final enabledTypes = await _openAipService.getEnabledAirspaceTypes();
+
+      // Parse GeoJSON and convert to styled polygons (filtered by enabled types)
+      final polygons = await _geoJsonService.parseAirspaceGeoJson(geoJsonString, opacity, enabledTypes);
 
       LoggingService.structured('AIRSPACE_FETCH_SUCCESS', {
         'polygon_count': polygons.length,
         'geojson_size': geoJsonString.length,
+        'enabled_types_count': enabledTypes.values.where((enabled) => enabled).length,
+        'total_types_count': enabledTypes.length,
       });
 
       return polygons;

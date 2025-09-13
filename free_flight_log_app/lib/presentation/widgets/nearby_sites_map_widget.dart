@@ -232,11 +232,15 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   }
 
   /// Handle click for airspace identification
-  void _handleAirspaceInteraction(Offset screenPosition, LatLng mapPoint) {
+  void _handleAirspaceInteraction(Offset screenPosition, LatLng mapPoint) async {
     if (!_airspaceEnabled) return;
 
     // Identify airspaces at the point (using map coordinates from FlutterMap)
-    final airspaces = AirspaceIdentificationService.instance.identifyAirspacesAtPoint(mapPoint);
+    final allAirspaces = AirspaceIdentificationService.instance.identifyAirspacesAtPoint(mapPoint);
+
+    // Filter airspaces by enabled types only
+    final enabledTypes = await OpenAipService.instance.getEnabledAirspaceTypes();
+    final airspaces = allAirspaces.where((airspace) => enabledTypes[airspace.type] ?? false).toList();
 
     if (airspaces.isNotEmpty) {
       // Check if clicking near the same position (toggle behavior)

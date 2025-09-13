@@ -434,13 +434,19 @@ class AirspaceGeoJsonService {
 
   /// Parse GeoJSON string and return styled polygons for flutter_map
   /// Also populates the AirspaceIdentificationService with polygon data
-  Future<List<fm.Polygon>> parseAirspaceGeoJson(String geoJsonString, double opacity) async {
+  /// Filters polygons based on user-enabled airspace types
+  Future<List<fm.Polygon>> parseAirspaceGeoJson(
+    String geoJsonString,
+    double opacity,
+    Map<String, bool> enabledTypes,
+  ) async {
     try {
       // Use geobase to parse the GeoJSON data
       final featureCollection = geo.FeatureCollection.parse(geoJsonString);
 
       final polygons = <fm.Polygon>[];
       final identificationPolygons = <AirspacePolygonData>[];
+      final Set<String> visibleEnabledTypes = <String>{}; // Track visible enabled types
 
       for (final feature in featureCollection.features) {
         final geometry = feature.geometry;
@@ -456,6 +462,14 @@ class AirspaceGeoJsonService {
             lowerLimit: properties != null ? properties['lowerLimit'] as Map<String, dynamic>? : null,
             country: properties != null ? properties['country']?.toString() : null,
           );
+
+          // Filter based on enabled airspace types - skip if type not enabled
+          if (!(enabledTypes[airspaceData.type] ?? false)) {
+            continue; // Skip this airspace if its type is not enabled
+          }
+
+          // Track this type as visible and enabled
+          visibleEnabledTypes.add(airspaceData.type);
 
           // Handle different geometry types
           if (geometry is geo.GeometryCollection) {
@@ -494,8 +508,18 @@ class AirspaceGeoJsonService {
         'geojson_size': geoJsonString.length,
       });
 
-      // Add airspace statistics logging
+      // Update visible types with only enabled types that are present
+      _currentVisibleTypes = visibleEnabledTypes;
+
+      // Add airspace statistics logging (for debugging)
       _logAirspaceStatistics(featureCollection);
+
+      LoggingService.structured('AIRSPACE_FILTERING_RESULTS', {
+        'total_features': featureCollection.features.length,
+        'filtered_polygons': polygons.length,
+        'visible_enabled_types_count': visibleEnabledTypes.length,
+        'visible_enabled_types': visibleEnabledTypes.toList(),
+      });
 
       return polygons;
 
