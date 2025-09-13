@@ -17,7 +17,7 @@ class AviationDataService {
 
   final OpenAipService _openAipService = OpenAipService.instance;
 
-  // OpenAIP Core API configuration
+  // OpenAIP Core API configuration (v1 endpoints with full names)
   static const String _coreApiBase = 'https://api.core.openaip.net/api';
   static const int _defaultLimit = 500;
   static const Duration _requestTimeout = Duration(seconds: 30);
@@ -33,17 +33,26 @@ class AviationDataService {
            '${bounds.north.toStringAsFixed(2)},${bounds.east.toStringAsFixed(2)}';
   }
 
-  /// Build API URL with bounding box and optional API key
-  String _buildApiUrl(String endpoint, fm.LatLngBounds bounds, {String? apiKey}) {
+  /// Build API URL with bounding box and optional API key (matching airspace service pattern)
+  String _buildApiUrl(String endpoint, fm.LatLngBounds bounds, String? apiKey) {
     var url = '$_coreApiBase/$endpoint'
         '?bbox=${bounds.west},${bounds.south},${bounds.east},${bounds.north}'
         '&limit=$_defaultLimit';
 
+    // Add API key as query parameter if available (same as airspace service)
     if (apiKey != null && apiKey.isNotEmpty) {
       url += '&apiKey=$apiKey';
     }
 
     return url;
+  }
+
+  /// Build standard headers (same as airspace service)
+  Map<String, String> _buildHeaders() {
+    return {
+      'Accept': 'application/json',
+      'User-Agent': 'FreeFlightLog/1.0',
+    };
   }
 
   /// Fetch airports from OpenAIP Core API
@@ -60,17 +69,19 @@ class AviationDataService {
     }
 
     final apiKey = await _openAipService.getApiKey();
-    final url = _buildApiUrl('airports', bounds, apiKey: apiKey);
+    final url = _buildApiUrl('airports', bounds, apiKey);
+    final headers = _buildHeaders();
 
     LoggingService.structured('AIRPORTS_API_REQUEST', {
       'url': url.replaceAll(RegExp(r'apiKey=[^&]*'), 'apiKey=***'),
       'bounds': '${bounds.south},${bounds.west},${bounds.north},${bounds.east}',
+      'has_api_key': apiKey != null && apiKey.isNotEmpty,
     });
 
     try {
       final response = await http.get(
         Uri.parse(url),
-        headers: {'Accept': 'application/json'},
+        headers: headers,
       ).timeout(_requestTimeout);
 
       if (response.statusCode == 200) {
@@ -115,17 +126,19 @@ class AviationDataService {
     }
 
     final apiKey = await _openAipService.getApiKey();
-    final url = _buildApiUrl('navaids', bounds, apiKey: apiKey);
+    final url = _buildApiUrl('navaids', bounds, apiKey);
+    final headers = _buildHeaders();
 
     LoggingService.structured('NAVAIDS_API_REQUEST', {
       'url': url.replaceAll(RegExp(r'apiKey=[^&]*'), 'apiKey=***'),
       'bounds': '${bounds.south},${bounds.west},${bounds.north},${bounds.east}',
+      'has_api_key': apiKey != null && apiKey.isNotEmpty,
     });
 
     try {
       final response = await http.get(
         Uri.parse(url),
-        headers: {'Accept': 'application/json'},
+        headers: headers,
       ).timeout(_requestTimeout);
 
       if (response.statusCode == 200) {
@@ -170,17 +183,19 @@ class AviationDataService {
     }
 
     final apiKey = await _openAipService.getApiKey();
-    final url = _buildApiUrl('reporting-points', bounds, apiKey: apiKey);
+    final url = _buildApiUrl('reporting-points', bounds, apiKey);
+    final headers = _buildHeaders();
 
     LoggingService.structured('REPORTING_POINTS_API_REQUEST', {
       'url': url.replaceAll(RegExp(r'apiKey=[^&]*'), 'apiKey=***'),
       'bounds': '${bounds.south},${bounds.west},${bounds.north},${bounds.east}',
+      'has_api_key': apiKey != null && apiKey.isNotEmpty,
     });
 
     try {
       final response = await http.get(
         Uri.parse(url),
-        headers: {'Accept': 'application/json'},
+        headers: headers,
       ).timeout(_requestTimeout);
 
       if (response.statusCode == 200) {
