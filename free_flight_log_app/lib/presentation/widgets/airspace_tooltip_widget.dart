@@ -210,29 +210,26 @@ class AirspaceTooltipWidget extends StatelessWidget {
     );
   }
 
-  /// Build individual airspace information item
+  /// Build individual airspace information item (compact 2-line format)
   Widget _buildAirspaceItem(AirspaceData airspace) {
     // Get type-specific styling
     final style = AirspaceGeoJsonService.instance.getStyleForType(airspace.type);
 
-    // Format altitude range
-    final String altitudeRange = _formatAltitudeRange(airspace);
-
-    // Get type description
-    final String typeDescription = _getTypeDescription(airspace.type, airspace.class_);
+    // Format compact details line (type, altitude, country)
+    final String compactDetails = _formatCompactDetails(airspace);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: 1),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Airspace name and type indicator
+          // Line 1: Airspace name with type indicator
           Row(
             children: [
               // Type color indicator
               Container(
-                width: 12,
-                height: 8,
+                width: 10,
+                height: 6,
                 decoration: BoxDecoration(
                   color: style.fillColor,
                   border: Border.all(
@@ -242,7 +239,7 @@ class AirspaceTooltipWidget extends StatelessWidget {
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
 
               // Airspace name
               Expanded(
@@ -250,55 +247,27 @@ class AirspaceTooltipWidget extends StatelessWidget {
                   airspace.name,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 13,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
-                  maxLines: 2,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
 
-          const SizedBox(height: 4),
-
-          // Type and class information
+          // Line 2: Type, altitude, country (compact format)
           Padding(
-            padding: const EdgeInsets.only(left: 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  typeDescription,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.9),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-
-                if (altitudeRange.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    altitudeRange,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.8),
-                      fontSize: 10,
-                    ),
-                  ),
-                ],
-
-                if (airspace.country != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    'Country: ${airspace.country}',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.7),
-                      fontSize: 10,
-                    ),
-                  ),
-                ],
-              ],
+            padding: const EdgeInsets.only(left: 16, top: 1),
+            child: Text(
+              compactDetails,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.85),
+                fontSize: 10,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
@@ -320,6 +289,100 @@ class AirspaceTooltipWidget extends StatelessWidget {
     }
 
     return '$lower - $upper';
+  }
+
+  /// Format altitude range with proper aviation units for compact display
+  String _formatAltitudeRangeWithUnits(AirspaceData airspace) {
+    final lower = _formatAltitudeWithUnits(airspace.lowerLimit);
+    final upper = _formatAltitudeWithUnits(airspace.upperLimit);
+
+    if (lower.isEmpty && upper.isEmpty) {
+      return '';
+    }
+
+    if (lower == upper) {
+      return lower;
+    }
+
+    return '$lower-$upper';
+  }
+
+  /// Format individual altitude with proper aviation units
+  String _formatAltitudeWithUnits(Map<String, dynamic>? limit) {
+    if (limit == null) return '';
+
+    final value = limit['value'];
+    final unit = limit['unit'] ?? '';
+    final reference = limit['reference'] ?? '';
+
+    if (value == null) return '';
+
+    // Handle special values
+    if (value is String) {
+      final lowerValue = value.toLowerCase();
+      if (lowerValue == 'gnd' || lowerValue == 'sfc') {
+        return 'GND';
+      }
+      if (lowerValue == 'unlimited' || lowerValue == 'unl') {
+        return 'UNL';
+      }
+    }
+
+    // Format numeric values with aviation units
+    final valueStr = value is num ? value.round().toString() : value.toString();
+
+    // Handle flight levels
+    final unitLower = unit.toString().toLowerCase();
+    if (unitLower == 'fl' || unitLower.contains('flight')) {
+      return 'FL$valueStr';
+    }
+
+    // Handle standard altitude units
+    String unitStr = '';
+    String refStr = '';
+
+    if (unitLower.contains('ft') || unitLower.contains('feet')) {
+      unitStr = ' ft';
+    } else if (unitLower.contains('m') && !unitLower.contains('ft')) {
+      unitStr = ' m';
+    }
+
+    // Handle reference (AGL, AMSL, etc.)
+    if (reference.isNotEmpty) {
+      final refLower = reference.toString().toLowerCase();
+      if (refLower.contains('agl') || refLower.contains('above ground')) {
+        refStr = ' AGL';
+      } else if (refLower.contains('amsl') || refLower.contains('above mean sea')) {
+        refStr = ' AMSL';
+      } else if (refLower.contains('msl') || refLower.contains('mean sea')) {
+        refStr = ' MSL';
+      }
+    }
+
+    return '$valueStr$unitStr$refStr';
+  }
+
+  /// Format compact details line (type, altitude, country)
+  String _formatCompactDetails(AirspaceData airspace) {
+    final parts = <String>[];
+
+    // Add type abbreviation
+    final typeAbbrev = _getTypeAbbreviation(airspace.type, airspace.class_);
+    parts.add(typeAbbrev);
+
+    // Add altitude range with units
+    final altitudeRange = _formatAltitudeRangeWithUnits(airspace);
+    if (altitudeRange.isNotEmpty) {
+      parts.add(altitudeRange);
+    }
+
+    // Add country name
+    final countryName = _getCountryName(airspace.country);
+    if (countryName.isNotEmpty) {
+      parts.add(countryName);
+    }
+
+    return parts.join(', ');
   }
 
   /// Get human-readable type description
@@ -346,6 +409,84 @@ class AirspaceTooltipWidget extends StatelessWidget {
     }
 
     return description;
+  }
+
+  /// Get abbreviated type code for compact display
+  String _getTypeAbbreviation(String type, String? class_) {
+    // Return the type code directly for most cases
+    final typeUpper = type.toUpperCase();
+
+    // Handle class-specific airspace types
+    if (typeUpper == 'A' || typeUpper == 'B' || typeUpper == 'C' ||
+        typeUpper == 'E' || typeUpper == 'F' || typeUpper == 'G') {
+      return typeUpper; // Already abbreviated
+    }
+
+    // Return standard abbreviations
+    final abbreviations = {
+      'CTR': 'CTR',
+      'TMA': 'TMA',
+      'CTA': 'CTA',
+      'D': 'D',
+      'R': 'R',
+      'P': 'P',
+    };
+
+    return abbreviations[typeUpper] ?? typeUpper;
+  }
+
+  /// Get country name from country code
+  String _getCountryName(String? countryCode) {
+    if (countryCode == null || countryCode.isEmpty) return '';
+
+    final countryNames = {
+      'AU': 'Australia',
+      'US': 'USA',
+      'CA': 'Canada',
+      'GB': 'UK',
+      'NZ': 'New Zealand',
+      'FR': 'France',
+      'DE': 'Germany',
+      'IT': 'Italy',
+      'ES': 'Spain',
+      'CH': 'Switzerland',
+      'AT': 'Austria',
+      'NL': 'Netherlands',
+      'BE': 'Belgium',
+      'NO': 'Norway',
+      'SE': 'Sweden',
+      'DK': 'Denmark',
+      'FI': 'Finland',
+      'PL': 'Poland',
+      'CZ': 'Czech Republic',
+      'HU': 'Hungary',
+      'SK': 'Slovakia',
+      'SI': 'Slovenia',
+      'HR': 'Croatia',
+      'BA': 'Bosnia',
+      'RS': 'Serbia',
+      'ME': 'Montenegro',
+      'MK': 'Macedonia',
+      'BG': 'Bulgaria',
+      'RO': 'Romania',
+      'GR': 'Greece',
+      'TR': 'Turkey',
+      'JP': 'Japan',
+      'KR': 'South Korea',
+      'CN': 'China',
+      'IN': 'India',
+      'BR': 'Brazil',
+      'AR': 'Argentina',
+      'CL': 'Chile',
+      'MX': 'Mexico',
+      'ZA': 'South Africa',
+      'EG': 'Egypt',
+      'IL': 'Israel',
+      'AE': 'UAE',
+      'SA': 'Saudi Arabia',
+    };
+
+    return countryNames[countryCode.toUpperCase()] ?? countryCode;
   }
 
   /// Calculate optimal position for tooltip to avoid screen edges
