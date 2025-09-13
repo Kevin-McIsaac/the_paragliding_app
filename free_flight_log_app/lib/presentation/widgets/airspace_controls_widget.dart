@@ -623,7 +623,7 @@ class _AirspaceControlsWidgetState extends State<AirspaceControlsWidget> {
           // Control zones section
           _buildAirspaceTypeGroup('Control Zones', {
             'CTR': 'Control Zone',
-            'TMA': 'Terminal Area',
+            'TMA': 'Terminal Control Area',
             'CTA': 'Control Area',
           }, Colors.red),
 
