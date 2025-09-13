@@ -184,10 +184,22 @@ class NearbySitesSearchManager {
 
       // Auto-jump to single result for normal search (not Enter key)
       if (limitedResults.length == 1) {
-        newState = newState.withAutoJumpPinnedSite(limitedResults.first);
+        // Exit search mode and preserve the pinned site for single results
+        // This provides consistent behavior with Enter key search
+        final site = limitedResults.first;
         
         // Notify callback for map centering
-        _onAutoJump?.call(limitedResults.first);
+        _onAutoJump?.call(site);
+        
+        // Exit search mode while preserving the selected site
+        exitSearchMode(preservePinnedSite: site, pinnedSiteIsFromAutoJump: true);
+        
+        LoggingService.action('NearbySites', 'live_search_single_result_auto_exit', {
+          'site_name': site.name,
+          'country': site.country,
+        });
+        
+        return; // Exit early since we've already updated state via exitSearchMode
       }
 
       _updateState(newState);
