@@ -161,7 +161,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     }
   }
 
-  Future<void> _updateUserLocation() async {
+  Future<Position?> _updateUserLocation() async {
     setState(() {
       _isLocationLoading = true;
     });
@@ -179,6 +179,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           _mapCenterPosition = LatLng(position.latitude, position.longitude);
         }
         _updateDisplayedSites();
+        return position;
       }
     } catch (e, stackTrace) {
       LoggingService.error('Failed to get user location', e, stackTrace);
@@ -187,6 +188,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           _isLocationLoading = false;
         });
       }
+      return null;
     }
   }
 
@@ -255,10 +257,26 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   void _onRefreshLocation() async {
     LoggingService.action('NearbySites', 'refresh_location', {});
     _locationService.clearCache();
-    await _updateUserLocation();
+    final position = await _updateUserLocation();
     
-    // Refresh sites via bounds-based loading when position updates
-    _updateDisplayedSites();
+    // Trigger bounds loading for the user's location area
+    if (position != null) {
+      final userLocation = LatLng(position.latitude, position.longitude);
+      final bounds = LatLngBounds(
+        LatLng(userLocation.latitude - 0.5, userLocation.longitude - 0.5),
+        LatLng(userLocation.latitude + 0.5, userLocation.longitude + 0.5),
+      );
+      
+      // Use a short delay to allow the map to update its center
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) {
+          _onBoundsChanged(bounds);
+        }
+      });
+    } else {
+      // Fallback if location couldn't be obtained
+      _updateDisplayedSites();
+    }
   }
 
   void _onSiteSelected(ParaglidingSite site) {
