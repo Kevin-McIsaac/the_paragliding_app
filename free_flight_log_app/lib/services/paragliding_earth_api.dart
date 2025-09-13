@@ -37,13 +37,65 @@ class ParaglidingEarthApi {
     return _httpClient!;
   }
   
-  // No custom caching - rely on HTTP client caching
+  // Simple in-memory caching for site details and search results
+  final Map<String, Map<String, dynamic>?> _siteDetailsCache = {};
+  final Map<String, DateTime> _siteDetailsCacheExpiry = {};
+  final Map<String, List<ParaglidingSite>> _searchResultsCache = {};
+  final Map<String, DateTime> _searchResultsCacheExpiry = {};
+  static const Duration _cacheTimeout = Duration(minutes: 15);
+  static const int _maxCacheEntries = 50; // Prevent unlimited growth
   
   // Offline status tracking
   static bool _isOfflineMode = false;
   static DateTime? _lastSuccessfulRequest;
   static int _consecutiveFailures = 0;
   static const int _maxConsecutiveFailures = 3;
+
+  // Simple cache management methods
+  void _cleanupCache() {
+    final now = DateTime.now();
+    
+    // Clean expired site details cache
+    final expiredSiteKeys = _siteDetailsCacheExpiry.entries
+        .where((entry) => entry.value.isBefore(now))
+        .map((entry) => entry.key)
+        .toList();
+    for (final key in expiredSiteKeys) {
+      _siteDetailsCache.remove(key);
+      _siteDetailsCacheExpiry.remove(key);
+    }
+    
+    // Clean expired search results cache  
+    final expiredSearchKeys = _searchResultsCacheExpiry.entries
+        .where((entry) => entry.value.isBefore(now))
+        .map((entry) => entry.key)
+        .toList();
+    for (final key in expiredSearchKeys) {
+      _searchResultsCache.remove(key);
+      _searchResultsCacheExpiry.remove(key);
+    }
+    
+    // If still too many entries, remove oldest ones
+    if (_siteDetailsCache.length > _maxCacheEntries) {
+      final sortedEntries = _siteDetailsCacheExpiry.entries.toList()
+        ..sort((a, b) => a.value.compareTo(b.value));
+      final keysToRemove = sortedEntries.take(_siteDetailsCache.length - _maxCacheEntries);
+      for (final entry in keysToRemove) {
+        _siteDetailsCache.remove(entry.key);
+        _siteDetailsCacheExpiry.remove(entry.key);
+      }
+    }
+    
+    if (_searchResultsCache.length > _maxCacheEntries) {
+      final sortedEntries = _searchResultsCacheExpiry.entries.toList()
+        ..sort((a, b) => a.value.compareTo(b.value));
+      final keysToRemove = sortedEntries.take(_searchResultsCache.length - _maxCacheEntries);
+      for (final entry in keysToRemove) {
+        _searchResultsCache.remove(entry.key);
+        _searchResultsCacheExpiry.remove(entry.key);
+      }
+    }
+  }
 
   /// Get sites around given coordinates
   /// Returns sites within [radiusKm] of the coordinates, ordered by distance
@@ -369,6 +421,26 @@ class ParaglidingEarthApi {
   Future<Map<String, dynamic>?> getSiteDetails(double latitude, double longitude) async {
     PerformanceMonitor.startOperation('ParaglidingEarthApi_getSiteDetails');
     
+    // Check cache first
+    final cacheKey = '${latitude.toStringAsFixed(4)},${longitude.toStringAsFixed(4)}';
+    final now = DateTime.now();
+    
+    if (_siteDetailsCache.containsKey(cacheKey) && 
+        _siteDetailsCacheExpiry.containsKey(cacheKey) &&
+        _siteDetailsCacheExpiry[cacheKey]!.isAfter(now)) {
+      LoggingService.info('ParaglidingEarthApi: Using cached site details');
+      PerformanceMonitor.endOperation('ParaglidingEarthApi_getSiteDetails', metadata: {
+        'success': true,
+        'cache_hit': true,
+      });
+      return _siteDetailsCache[cacheKey];
+    }
+    
+    // Clean up expired cache entries occasionally
+    if (_siteDetailsCache.length > 10) {
+      _cleanupCache();
+    }
+    
     try {
       // Use the XML API endpoint for detailed site data
       final url = Uri.parse('https://www.paragliding.earth/api/getAroundLatLngSites.php').replace(
@@ -415,8 +487,13 @@ class ParaglidingEarthApi {
           LoggingService.info('ParaglidingEarthApi: Found detailed data for site');
           LoggingService.info('ParaglidingEarthApi: Parsed fields: ${properties.keys.toList()}');
           
+          // Store in cache for future use
+          _siteDetailsCache[cacheKey] = properties;
+          _siteDetailsCacheExpiry[cacheKey] = now.add(_cacheTimeout);
+          
           PerformanceMonitor.endOperation('ParaglidingEarthApi_getSiteDetails', metadata: {
             'success': true,
+            'cache_hit': false,
           });
           return properties;
         }
@@ -571,6 +648,28 @@ class ParaglidingEarthApi {
     if (query.isEmpty || query.length < 2) return [];
     
     PerformanceMonitor.startOperation('ParaglidingEarthApi_searchSitesByName');
+    
+    // Check cache first
+    final cacheKey = query.toLowerCase().trim();
+    final now = DateTime.now();
+    
+    if (_searchResultsCache.containsKey(cacheKey) && 
+        _searchResultsCacheExpiry.containsKey(cacheKey) &&
+        _searchResultsCacheExpiry[cacheKey]!.isAfter(now)) {
+      LoggingService.info('ParaglidingEarthApi: Using cached search results for: $query');
+      PerformanceMonitor.endOperation('ParaglidingEarthApi_searchSitesByName', metadata: {
+        'sites_count': _searchResultsCache[cacheKey]!.length,
+        'query_length': query.length,
+        'cache_hit': true,
+      });
+      return _searchResultsCache[cacheKey]!;
+    }
+    
+    // Clean up expired cache entries occasionally
+    if (_searchResultsCache.length > 10) {
+      _cleanupCache();
+    }
+    
     LoggingService.info('ParaglidingEarthApi: Searching sites by name: $query');
     
     try {
@@ -600,9 +699,14 @@ class ParaglidingEarthApi {
         LoggingService.info('ParaglidingEarthApi: Found ${sites.length} sites for query: $query');
         _markRequestSuccess();
         
+        // Store in cache for future use
+        _searchResultsCache[cacheKey] = sites;
+        _searchResultsCacheExpiry[cacheKey] = now.add(_cacheTimeout);
+        
         PerformanceMonitor.endOperation('ParaglidingEarthApi_searchSitesByName', metadata: {
           'sites_count': sites.length,
           'query_length': query.length,
+          'cache_hit': false,
         });
         
         return sites;
