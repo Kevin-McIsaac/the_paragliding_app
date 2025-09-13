@@ -10,6 +10,8 @@ import '../../utils/site_utils.dart';
 import '../../utils/map_controls.dart';
 import '../../utils/map_tile_provider.dart';
 import '../../utils/airspace_overlay_manager.dart';
+import '../../services/openaip_service.dart';
+import '../../services/airspace_geojson_service.dart';
 
 class NearbySitesMapWidget extends StatefulWidget {
   final List<ParaglidingSite> sites;
@@ -67,11 +69,14 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   // Airspace overlay state
   List<Widget> _airspaceLayers = [];
   bool _airspaceLoading = false;
+  bool _airspaceEnabled = false;
+  Set<String> _visibleAirspaceTypes = {};
 
   
   @override
   void initState() {
     super.initState();
+    _loadAirspaceStatus();
     // Delay airspace loading until after the first frame to ensure MapController is ready
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadAirspaceLayers();
@@ -167,13 +172,19 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
       );
 
       if (mounted) {
+        // Get the visible airspace types from the service for legend filtering
+        final visibleTypes = AirspaceGeoJsonService.instance.visibleAirspaceTypes;
+
         setState(() {
           _airspaceLayers = layers;
           _airspaceLoading = false;
+          _visibleAirspaceTypes = visibleTypes;
         });
 
         LoggingService.structured('AIRSPACE_LAYERS_LOADED', {
           'layer_count': layers.length,
+          'visible_types_count': visibleTypes.length,
+          'visible_types': visibleTypes.toList(),
           'widget_mounted': mounted,
           'center': '${center.latitude},${center.longitude}',
           'zoom': zoom,
@@ -191,8 +202,23 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     }
   }
   
+  /// Load airspace status for legend display
+  Future<void> _loadAirspaceStatus() async {
+    try {
+      final enabled = await OpenAipService.instance.isAirspaceEnabled();
+      if (mounted) {
+        setState(() {
+          _airspaceEnabled = enabled;
+        });
+      }
+    } catch (error, stackTrace) {
+      LoggingService.error('Failed to load airspace status', error, stackTrace);
+    }
+  }
+
   /// Refresh airspace layers when settings change
   void refreshAirspaceLayers() {
+    _loadAirspaceStatus(); // Also refresh the status for legend
     _loadAirspaceLayers();
   }
 
@@ -308,9 +334,27 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               isExpanded: widget.isLegendExpanded,
               onToggle: widget.onToggleLegend,
               legendItems: [
+                // Site legend items
                 SiteMarkerUtils.buildLegendItem(context, Icons.location_on, SiteMarkerUtils.flownSiteColor, 'Local Sites (DB)'),
                 const SizedBox(height: 4),
                 SiteMarkerUtils.buildLegendItem(context, Icons.location_on, SiteMarkerUtils.newSiteColor, 'API Sites'),
+
+                // Airspace legend items (only when airspace is enabled)
+                if (_airspaceEnabled) ...[
+                  const SizedBox(height: 8),
+                  // Airspace section title
+                  const Text(
+                    'Airspace Types',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  // Airspace type legend items with tooltips (filtered by visible types)
+                  ...SiteMarkerUtils.buildAirspaceLegendItems(visibleTypes: _visibleAirspaceTypes),
+                ],
               ],
             ),
           ),

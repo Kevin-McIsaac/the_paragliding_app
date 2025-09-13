@@ -86,6 +86,12 @@ class AirspaceGeoJsonService {
   static const int _defaultLimit = 500;
   static const Duration _requestTimeout = Duration(seconds: 30);
 
+  // Track currently visible airspace types
+  Set<String> _currentVisibleTypes = <String>{};
+
+  /// Get the currently visible airspace types in the loaded data
+  Set<String> get visibleAirspaceTypes => Set.from(_currentVisibleTypes);
+
   // Airspace type to style mapping
   static const Map<String, AirspaceStyle> _airspaceStyles = {
     'CTR': AirspaceStyle(
@@ -466,6 +472,7 @@ class AirspaceGeoJsonService {
   void _logAirspaceStatistics(geo.FeatureCollection featureCollection) {
     final Map<String, int> typeStats = {};
     final Map<String, int> originalTypeStats = {};
+    final Set<String> visibleTypes = <String>{};
     double minLat = 90.0, maxLat = -90.0, minLon = 180.0, maxLon = -180.0;
 
     for (final feature in featureCollection.features) {
@@ -477,6 +484,9 @@ class AirspaceGeoJsonService {
 
         typeStats[mappedType] = (typeStats[mappedType] ?? 0) + 1;
         originalTypeStats[originalType] = (originalTypeStats[originalType] ?? 0) + 1;
+
+        // Track visible types for legend filtering
+        visibleTypes.add(mappedType);
 
         // Calculate bounds for coverage area
         final geometry = feature.geometry;
@@ -493,9 +503,14 @@ class AirspaceGeoJsonService {
       }
     }
 
+    // Update the visible types for legend filtering
+    _currentVisibleTypes = visibleTypes;
+
     LoggingService.structured('AIRSPACE_STATISTICS', {
       'mapped_types': typeStats,
       'original_types': originalTypeStats,
+      'visible_types_count': visibleTypes.length,
+      'visible_types': visibleTypes.toList(),
       'coverage_bounds': {
         'min_lat': minLat.toStringAsFixed(3),
         'max_lat': maxLat.toStringAsFixed(3),

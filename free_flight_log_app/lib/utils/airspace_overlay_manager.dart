@@ -3,9 +3,14 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../services/openaip_service.dart';
 import '../services/airspace_geojson_service.dart';
+import '../services/aviation_data_service.dart';
 import '../services/logging_service.dart';
+import '../data/models/airport.dart';
+import '../data/models/navaid.dart';
+import '../data/models/reporting_point.dart';
+import '../utils/aviation_marker_utils.dart';
 
-/// Manages OpenAIP airspace overlay layers using GeoJSON data for flutter_map
+/// Manages all OpenAIP aviation data overlay layers for flutter_map
 class AirspaceOverlayManager {
   static AirspaceOverlayManager? _instance;
   static AirspaceOverlayManager get instance => _instance ??= AirspaceOverlayManager._();
@@ -14,46 +19,56 @@ class AirspaceOverlayManager {
 
   final OpenAipService _openAipService = OpenAipService.instance;
   final AirspaceGeoJsonService _geoJsonService = AirspaceGeoJsonService.instance;
+  final AviationDataService _aviationDataService = AviationDataService.instance;
 
-  /// Build PolygonLayer with airspace data for all enabled OpenAIP layers
+  // Cache for aviation data markers
+  List<Airport> _cachedAirports = [];
+  List<Navaid> _cachedNavaids = [];
+  List<ReportingPoint> _cachedReportingPoints = [];
+  String? _lastBoundsKey;
+
+  /// Build all overlay layers for enabled OpenAIP data types
   Future<List<Widget>> buildEnabledOverlayLayers({
     required LatLng center,
     required double zoom,
   }) async {
     final List<Widget> layers = [];
-    final enabledLayers = await _openAipService.getEnabledLayers();
-    final opacity = await _openAipService.getOverlayOpacity();
+    final bounds = _geoJsonService.calculateBoundingBox(center, zoom);
+    final boundsKey = '${bounds.south},${bounds.west},${bounds.north},${bounds.east}';
 
-    LoggingService.structured('AIRSPACE_OVERLAY_BUILD', {
-      'enabled_layers': enabledLayers.map((l) => l.urlPath).toList(),
-      'opacity': opacity,
+    LoggingService.structured('AVIATION_OVERLAY_BUILD', {
       'center': '${center.latitude},${center.longitude}',
       'zoom': zoom,
+      'bounds_key': boundsKey,
     });
 
-    // Only build polygons if any layers are enabled
-    if (enabledLayers.isNotEmpty) {
+    // Build airspace polygons (bottom layer)
+    if (await _openAipService.getAirspaceEnabled()) {
       try {
+        final opacity = await _openAipService.getOverlayOpacity();
         final polygons = await _buildAirspacePolygons(center, zoom, opacity);
 
         if (polygons.isNotEmpty) {
           final polygonLayer = PolygonLayer(
             polygons: polygons,
-            polygonCulling: true, // Performance optimization for off-screen polygons
+            polygonCulling: true,
           );
           layers.add(polygonLayer);
-
-          LoggingService.structured('AIRSPACE_POLYGON_LAYER', {
-            'polygon_count': polygons.length,
-            'enabled_ui_layers': enabledLayers.map((l) => l.displayName).toList(),
-            'opacity': opacity,
-          });
         }
       } catch (error, stackTrace) {
-        LoggingService.error('Failed to build airspace polygon layer', error, stackTrace);
-        // Continue without airspace layer rather than failing completely
+        LoggingService.error('Failed to build airspace layer', error, stackTrace);
       }
     }
+
+    // Update aviation data cache if bounds changed
+    if (_lastBoundsKey != boundsKey) {
+      await _updateAviationDataCache(bounds);
+      _lastBoundsKey = boundsKey;
+    }
+
+    // Build marker layers (on top of polygons)
+    final markerLayers = await _buildMarkerLayers();
+    layers.addAll(markerLayers);
 
     return layers;
   }
@@ -89,28 +104,181 @@ class AirspaceOverlayManager {
     }
   }
   
+  /// Update cached aviation data for the given bounds
+  Future<void> _updateAviationDataCache(LatLngBounds bounds) async {
+    final futures = <Future>[];
+
+    if (await _openAipService.getAirportsEnabled()) {
+      futures.add(_aviationDataService.fetchAirports(bounds).then((airports) {
+        _cachedAirports = airports;
+      }));
+    } else {
+      _cachedAirports = [];
+    }
+
+    if (await _openAipService.getNavaidsEnabled()) {
+      futures.add(_aviationDataService.fetchNavaids(bounds).then((navaids) {
+        _cachedNavaids = navaids;
+      }));
+    } else {
+      _cachedNavaids = [];
+    }
+
+    if (await _openAipService.getReportingPointsEnabled()) {
+      futures.add(_aviationDataService.fetchReportingPoints(bounds).then((points) {
+        _cachedReportingPoints = points;
+      }));
+    } else {
+      _cachedReportingPoints = [];
+    }
+
+    // Wait for all enabled data types to load
+    if (futures.isNotEmpty) {
+      await Future.wait(futures);
+    }
+
+    LoggingService.structured('AVIATION_DATA_CACHE_UPDATE', {
+      'airports': _cachedAirports.length,
+      'navaids': _cachedNavaids.length,
+      'reporting_points': _cachedReportingPoints.length,
+    });
+  }
+
+  /// Build marker layers for aviation data
+  Future<List<Widget>> _buildMarkerLayers() async {
+    final List<Widget> layers = [];
+    final List<Marker> allMarkers = [];
+
+    // Add airport markers
+    for (final airport in _cachedAirports) {
+      allMarkers.add(AviationMarkerUtils.buildAirportMarker(
+        airport: airport,
+        onTap: () => _onAirportTap(airport),
+      ));
+    }
+
+    // Add navaid markers
+    for (final navaid in _cachedNavaids) {
+      allMarkers.add(AviationMarkerUtils.buildNavaidMarker(
+        navaid: navaid,
+        onTap: () => _onNavaidTap(navaid),
+      ));
+    }
+
+    // Add reporting point markers
+    for (final point in _cachedReportingPoints) {
+      allMarkers.add(AviationMarkerUtils.buildReportingPointMarker(
+        reportingPoint: point,
+        onTap: () => _onReportingPointTap(point),
+      ));
+    }
+
+    if (allMarkers.isNotEmpty) {
+      layers.add(MarkerLayer(markers: allMarkers));
+
+      LoggingService.structured('AVIATION_MARKERS_BUILT', {
+        'total_markers': allMarkers.length,
+        'airports': _cachedAirports.length,
+        'navaids': _cachedNavaids.length,
+        'reporting_points': _cachedReportingPoints.length,
+      });
+    }
+
+    return layers;
+  }
+
+  /// Handle airport marker tap
+  void _onAirportTap(Airport airport) {
+    LoggingService.structured('AIRPORT_MARKER_TAP', {
+      'airport_id': airport.id,
+      'airport_name': airport.name,
+      'icao': airport.icaoCode,
+    });
+    // Additional tap handling can be added here
+  }
+
+  /// Handle navaid marker tap
+  void _onNavaidTap(Navaid navaid) {
+    LoggingService.structured('NAVAID_MARKER_TAP', {
+      'navaid_id': navaid.id,
+      'navaid_name': navaid.name,
+      'type': navaid.type.code,
+    });
+    // Additional tap handling can be added here
+  }
+
+  /// Handle reporting point marker tap
+  void _onReportingPointTap(ReportingPoint point) {
+    LoggingService.structured('REPORTING_POINT_MARKER_TAP', {
+      'point_id': point.id,
+      'point_name': point.name,
+      'type': point.type.code,
+    });
+    // Additional tap handling can be added here
+  }
+
   /// Check if any overlay layers are enabled
   Future<bool> hasEnabledLayers() async {
-    final enabledLayers = await _openAipService.getEnabledLayers();
-    return enabledLayers.isNotEmpty;
+    final airspaceEnabled = await _openAipService.getAirspaceEnabled();
+    final airportsEnabled = await _openAipService.getAirportsEnabled();
+    final navaidsEnabled = await _openAipService.getNavaidsEnabled();
+    final reportingPointsEnabled = await _openAipService.getReportingPointsEnabled();
+
+    return airspaceEnabled || airportsEnabled || navaidsEnabled || reportingPointsEnabled;
   }
-  
+
   /// Get count of enabled layers
   Future<int> getEnabledLayerCount() async {
-    final enabledLayers = await _openAipService.getEnabledLayers();
-    return enabledLayers.length;
+    int count = 0;
+    if (await _openAipService.getAirspaceEnabled()) count++;
+    if (await _openAipService.getAirportsEnabled()) count++;
+    if (await _openAipService.getNavaidsEnabled()) count++;
+    if (await _openAipService.getReportingPointsEnabled()) count++;
+    return count;
   }
   
-  /// Build a simple legend widget for enabled layers with airspace types
+  /// Build a comprehensive legend widget for all enabled aviation layers
   Future<Widget?> buildLayerLegend(BuildContext context) async {
-    final enabledLayers = await _openAipService.getEnabledLayers();
+    final hasEnabledData = await hasEnabledLayers();
 
-    if (enabledLayers.isEmpty) {
+    if (!hasEnabledData) {
       return null;
     }
 
-    final opacity = await _openAipService.getOverlayOpacity();
-    final airspaceStyles = _geoJsonService.allAirspaceStyles;
+    final List<Widget> legendItems = [];
+
+    // Add airspace legend if enabled
+    if (await _openAipService.getAirspaceEnabled()) {
+      final visibleAirspaceTypes = _geoJsonService.visibleAirspaceTypes;
+
+      if (visibleAirspaceTypes.isNotEmpty) {
+        final airspaceLegendItems = await Future.value(
+          // Use the existing airspace legend from SiteMarkerUtils
+          _geoJsonService.allAirspaceStyles.entries
+              .where((entry) => visibleAirspaceTypes.contains(entry.key))
+              .map((entry) => _buildAirspaceLegendItem(entry.key, entry.value))
+              .toList(),
+        );
+
+        if (airspaceLegendItems.isNotEmpty) {
+          legendItems.addAll(airspaceLegendItems);
+          legendItems.add(const SizedBox(height: 4));
+        }
+      }
+    }
+
+    // Add aviation data legends
+    final aviationLegendItems = AviationMarkerUtils.buildAviationLegendItems(
+      showAirports: await _openAipService.getAirportsEnabled() && _cachedAirports.isNotEmpty,
+      showNavaids: await _openAipService.getNavaidsEnabled() && _cachedNavaids.isNotEmpty,
+      showReportingPoints: await _openAipService.getReportingPointsEnabled() && _cachedReportingPoints.isNotEmpty,
+    );
+
+    legendItems.addAll(aviationLegendItems);
+
+    if (legendItems.isEmpty) {
+      return null;
+    }
 
     return Container(
       padding: const EdgeInsets.all(8),
@@ -122,8 +290,8 @@ class AirspaceOverlayManager {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Airspace Types',
+          const Text(
+            'Aviation Data',
             style: TextStyle(
               color: Colors.white,
               fontSize: 12,
@@ -131,18 +299,8 @@ class AirspaceOverlayManager {
             ),
           ),
           const SizedBox(height: 4),
-          // Show main airspace types with their colors
-          ...airspaceStyles.entries
-              .where((entry) => ['CTR', 'TMA', 'CTA', 'D', 'R', 'P'].contains(entry.key))
-              .map((entry) => _buildLegendItem(entry.key, entry.value)),
-          const SizedBox(height: 4),
-          Text(
-            'Opacity: ${(opacity * 100).round()}%',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.7),
-              fontSize: 10,
-            ),
-          ),
+          ...legendItems,
+          const SizedBox(height: 2),
           Text(
             'Source: OpenAIP',
             style: TextStyle(
@@ -156,7 +314,7 @@ class AirspaceOverlayManager {
   }
 
   /// Build a single legend item for an airspace type
-  Widget _buildLegendItem(String type, AirspaceStyle style) {
+  Widget _buildAirspaceLegendItem(String type, AirspaceStyle style) {
     final typeNames = {
       'CTR': 'Control Zone',
       'TMA': 'Terminal Area',
@@ -172,19 +330,24 @@ class AirspaceOverlayManager {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 8,
-            height: 8,
+            width: 12,
+            height: 6,
             decoration: BoxDecoration(
-              color: style.borderColor,
-              shape: BoxShape.circle,
+              color: style.fillColor,
+              border: Border.all(
+                color: style.borderColor,
+                width: 0.5,
+              ),
+              borderRadius: BorderRadius.circular(1),
             ),
           ),
           const SizedBox(width: 6),
           Text(
-            typeNames[type] ?? type,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.9),
-              fontSize: 10,
+            '$type - ${typeNames[type] ?? type}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 9,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ],
@@ -204,15 +367,33 @@ class AirspaceOverlayManager {
     }
   }
   
+  /// Clear cached aviation data
+  void clearCache() {
+    _cachedAirports = [];
+    _cachedNavaids = [];
+    _cachedReportingPoints = [];
+    _lastBoundsKey = null;
+    _aviationDataService.clearCaches();
+    LoggingService.info('Aviation overlay cache cleared');
+  }
+
   /// Get overlay status for logging/debugging
   Future<Map<String, dynamic>> getOverlayStatus() async {
-    final enabledLayers = await _openAipService.getEnabledLayers();
+    final airspaceEnabled = await _openAipService.getAirspaceEnabled();
+    final airportsEnabled = await _openAipService.getAirportsEnabled();
+    final navaidsEnabled = await _openAipService.getNavaidsEnabled();
+    final reportingPointsEnabled = await _openAipService.getReportingPointsEnabled();
     final opacity = await _openAipService.getOverlayOpacity();
     final hasApiKey = await _openAipService.hasApiKey();
-    
+
     return {
-      'enabled_layers': enabledLayers.map((l) => l.urlPath).toList(),
-      'layer_count': enabledLayers.length,
+      'airspace_enabled': airspaceEnabled,
+      'airports_enabled': airportsEnabled,
+      'navaids_enabled': navaidsEnabled,
+      'reporting_points_enabled': reportingPointsEnabled,
+      'cached_airports': _cachedAirports.length,
+      'cached_navaids': _cachedNavaids.length,
+      'cached_reporting_points': _cachedReportingPoints.length,
       'opacity': opacity,
       'has_api_key': hasApiKey,
       'dependencies_valid': validateDependencies(),

@@ -67,6 +67,10 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   String? _lastLoadedBoundsKey;
   
   // Search management - consolidated into SearchManager
+
+  // Location notification state
+  bool _showLocationNotification = false;
+  Timer? _locationNotificationTimer;
   late final NearbySitesSearchManager _searchManager;
   
 
@@ -81,6 +85,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   @override
   void dispose() {
     _debounceTimer?.cancel(); // Clean up timer
+    _locationNotificationTimer?.cancel(); // Clean up location notification timer
     _searchManager.dispose(); // Clean up search manager
     super.dispose();
   }
@@ -173,10 +178,12 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           _userPosition = position;
           _isLocationLoading = false;
         });
-        
+
         // Update map center to user position when location is acquired
         if (position != null) {
           _mapCenterPosition = LatLng(position.latitude, position.longitude);
+          // Hide location notification if location was successfully obtained
+          _hideLocationNotification();
         }
         _updateDisplayedSites();
         return position;
@@ -188,8 +195,39 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         setState(() {
           _isLocationLoading = false;
         });
+        // Show auto-dismissing notification when location fails
+        _showLocationNotificationBriefly();
       }
       return null;
+    }
+  }
+
+  /// Show location notification briefly and auto-dismiss after 4 seconds
+  void _showLocationNotificationBriefly() {
+    // Cancel any existing timer
+    _locationNotificationTimer?.cancel();
+
+    if (mounted) {
+      setState(() {
+        _showLocationNotification = true;
+      });
+
+      // Auto-dismiss after 4 seconds
+      _locationNotificationTimer = Timer(const Duration(seconds: 4), () {
+        _hideLocationNotification();
+      });
+    }
+  }
+
+  /// Hide location notification
+  void _hideLocationNotification() {
+    _locationNotificationTimer?.cancel();
+    _locationNotificationTimer = null;
+
+    if (mounted) {
+      setState(() {
+        _showLocationNotification = false;
+      });
     }
   }
 
@@ -600,13 +638,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                     message: _errorMessage!,
                     onRetry: _loadData,
                   )
-                : (_allSites.isEmpty && _lastLoadedBoundsKey != null)
-                    ? const AppEmptyState(
-                        title: 'No sites found',
-                        message: 'No sites found in this area',
-                        icon: Icons.location_on,
-                      )
-                    : Stack(
+                : Stack(
                       children: [
                         // Map
                         NearbySitesMapWidget(
@@ -680,63 +712,49 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                             ),
                           ),
                         
-                        // Location unavailable message
-                        if (_userPosition == null && !_isLocationLoading)
+                        // Auto-dismissing location notification
+                        if (_showLocationNotification)
                           Positioned(
-                            bottom: 100,
+                            bottom: 120,
                             left: 16,
                             right: 16,
-                            child: Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.shade900.withValues(alpha: 0.9),
-                                borderRadius: BorderRadius.circular(8),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.3),
-                                    blurRadius: 4,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.location_off,
-                                    color: Colors.white,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  const Expanded(
-                                    child: Text(
-                                      'Location unavailable. Using last known position.',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 13,
+                            child: AnimatedOpacity(
+                              opacity: _showLocationNotification ? 1.0 : 0.0,
+                              duration: const Duration(milliseconds: 300),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.85),
+                                  borderRadius: BorderRadius.circular(8),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.3),
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.location_off,
+                                      color: Colors.white.withValues(alpha: 0.9),
+                                      size: 18,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    const Expanded(
+                                      child: Text(
+                                        'Location unavailable',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  TextButton(
-                                    onPressed: _onRefreshLocation,
-                                    style: TextButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                      minimumSize: Size.zero,
-                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                      backgroundColor: Colors.white.withValues(alpha: 0.2),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                    ),
-                                    child: const Text(
-                                      'Retry',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           ),

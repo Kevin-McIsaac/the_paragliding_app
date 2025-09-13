@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/openaip_service.dart';
 import '../../services/logging_service.dart';
-import '../../services/airspace_geojson_service.dart';
 
 /// Widget for controlling OpenAIP airspace overlay layers
 class AirspaceControlsWidget extends StatefulWidget {
@@ -30,7 +29,11 @@ class _AirspaceControlsWidgetState extends State<AirspaceControlsWidget> {
   bool _reportingPointsEnabled = false;
   double _opacity = 0.6;
   bool _hasApiKey = false;
-  
+
+  // Individual airspace type states
+  Map<String, bool> _airspaceTypes = {};
+  bool _airspaceTypesExpanded = false;
+
   bool _loading = true;
 
   @override
@@ -42,7 +45,8 @@ class _AirspaceControlsWidgetState extends State<AirspaceControlsWidget> {
   Future<void> _loadSettings() async {
     try {
       final settings = await _openAipService.getSettingsSummary();
-      
+      final airspaceTypes = await _openAipService.getEnabledAirspaceTypes();
+
       if (mounted) {
         setState(() {
           _airspaceEnabled = settings['airspace_enabled'] ?? false;
@@ -51,6 +55,7 @@ class _AirspaceControlsWidgetState extends State<AirspaceControlsWidget> {
           _reportingPointsEnabled = settings['reporting_points_enabled'] ?? false;
           _opacity = settings['overlay_opacity'] ?? 0.6;
           _hasApiKey = settings['has_api_key'] ?? false;
+          _airspaceTypes = airspaceTypes;
           _loading = false;
         });
       }
@@ -64,57 +69,74 @@ class _AirspaceControlsWidgetState extends State<AirspaceControlsWidget> {
     }
   }
 
-  Future<void> _updateLayerEnabled(OpenAipLayer layer, bool enabled) async {
+  Future<void> _updateAirspaceEnabled(bool enabled) async {
     try {
-      await _openAipService.setLayerEnabled(layer, enabled);
-      
-      // Update local state - defer to avoid mouse tracker conflicts
+      await _openAipService.setAirspaceEnabled(enabled);
+
       if (mounted) {
-        setState(() {
-          switch (layer) {
-            case OpenAipLayer.openaip:
-              // For consolidated layer, enable/disable all UI toggles
-              _airspaceEnabled = enabled;
-              _airportsEnabled = enabled;
-              _navaidsEnabled = enabled;
-              _reportingPointsEnabled = enabled;
-              break;
-            case OpenAipLayer.airspaces:
-              _airspaceEnabled = enabled;
-              break;
-            case OpenAipLayer.airports:
-              _airportsEnabled = enabled;
-              break;
-            case OpenAipLayer.navaids:
-              _navaidsEnabled = enabled;
-              break;
-            case OpenAipLayer.reportingPoints:
-              _reportingPointsEnabled = enabled;
-              break;
-          }
-        });
-        
-        // Defer parent callback to avoid re-entrancy during gesture handling
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            widget.onLayersChanged?.call();
-          }
-        });
+        setState(() => _airspaceEnabled = enabled);
+        _deferCallback();
       }
-      
     } catch (error, stackTrace) {
-      LoggingService.error('Failed to update layer enabled state', error, stackTrace);
+      LoggingService.error('Failed to update airspace enabled state', error, stackTrace);
     }
+  }
+
+  Future<void> _updateAirportsEnabled(bool enabled) async {
+    try {
+      await _openAipService.setAirportsEnabled(enabled);
+
+      if (mounted) {
+        setState(() => _airportsEnabled = enabled);
+        _deferCallback();
+      }
+    } catch (error, stackTrace) {
+      LoggingService.error('Failed to update airports enabled state', error, stackTrace);
+    }
+  }
+
+  Future<void> _updateNavaidsEnabled(bool enabled) async {
+    try {
+      await _openAipService.setNavaidsEnabled(enabled);
+
+      if (mounted) {
+        setState(() => _navaidsEnabled = enabled);
+        _deferCallback();
+      }
+    } catch (error, stackTrace) {
+      LoggingService.error('Failed to update navaids enabled state', error, stackTrace);
+    }
+  }
+
+  Future<void> _updateReportingPointsEnabled(bool enabled) async {
+    try {
+      await _openAipService.setReportingPointsEnabled(enabled);
+
+      if (mounted) {
+        setState(() => _reportingPointsEnabled = enabled);
+        _deferCallback();
+      }
+    } catch (error, stackTrace) {
+      LoggingService.error('Failed to update reporting points enabled state', error, stackTrace);
+    }
+  }
+
+  void _deferCallback() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        widget.onLayersChanged?.call();
+      }
+    });
   }
 
   Future<void> _updateOpacity(double opacity) async {
     try {
       await _openAipService.setOverlayOpacity(opacity);
-      
+
       // Update local state safely
       if (mounted) {
         setState(() => _opacity = opacity);
-        
+
         // Defer parent callback to avoid re-entrancy during gesture handling
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
@@ -122,9 +144,32 @@ class _AirspaceControlsWidgetState extends State<AirspaceControlsWidget> {
           }
         });
       }
-      
+
     } catch (error, stackTrace) {
       LoggingService.error('Failed to update overlay opacity', error, stackTrace);
+    }
+  }
+
+  Future<void> _updateAirspaceTypeEnabled(String type, bool enabled) async {
+    try {
+      await _openAipService.setAirspaceTypeEnabled(type, enabled);
+
+      // Update local state
+      if (mounted) {
+        setState(() {
+          _airspaceTypes[type] = enabled;
+        });
+
+        // Defer parent callback to avoid re-entrancy during gesture handling
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            widget.onLayersChanged?.call();
+          }
+        });
+      }
+
+    } catch (error, stackTrace) {
+      LoggingService.error('Failed to update airspace type enabled state', error, stackTrace);
     }
   }
 
@@ -260,33 +305,29 @@ class _AirspaceControlsWidgetState extends State<AirspaceControlsWidget> {
                   ),
                   
                   // Layer toggles
-                  _buildLayerToggle(
-                    'Airspaces',
-                    _airspaceEnabled,
-                    Colors.red,
-                    (value) => _updateLayerEnabled(OpenAipLayer.airspaces, value),
-                  ),
+                  _buildHierarchicalAirspaceToggle(),
                   _buildLayerToggle(
                     'Airports',
                     _airportsEnabled,
                     Colors.blue,
-                    (value) => _updateLayerEnabled(OpenAipLayer.airports, value),
+                    (value) => _updateAirportsEnabled(value),
                   ),
                   _buildLayerToggle(
                     'Navigation Aids',
                     _navaidsEnabled,
                     Colors.green,
-                    (value) => _updateLayerEnabled(OpenAipLayer.navaids, value),
+                    (value) => _updateNavaidsEnabled(value),
                   ),
                   _buildLayerToggle(
                     'Reporting Points',
                     _reportingPointsEnabled,
                     Colors.purple,
-                    (value) => _updateLayerEnabled(OpenAipLayer.reportingPoints, value),
+                    (value) => _updateReportingPointsEnabled(value),
                   ),
 
-                  // Airspace type legend (only when airspaces enabled)
-                  if (_airspaceEnabled) ...[
+
+                  // Opacity controls (optimized for airspace visibility)
+                  if (_hasEnabledLayers()) ...[
                     const SizedBox(height: 8),
                     Container(
                       height: 1,
@@ -294,64 +335,74 @@ class _AirspaceControlsWidgetState extends State<AirspaceControlsWidget> {
                       color: Colors.white.withValues(alpha: 0.2),
                     ),
                     const SizedBox(height: 6),
-                    Text(
-                      'Airspace Types',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.8),
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    ..._buildAirspaceTypeLegend(),
-                  ],
-
-                  // Opacity slider
-                  if (_hasEnabledLayers()) ...[
-                    const SizedBox(height: 8),
                     Row(
-                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
                           'Opacity',
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.8),
                             fontSize: 10,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: SliderTheme(
-                            data: SliderThemeData(
-                              trackHeight: 2,
-                              thumbShape: const RoundSliderThumbShape(
-                                enabledThumbRadius: 6,
-                              ),
-                              overlayShape: const RoundSliderOverlayShape(
-                                overlayRadius: 12,
-                              ),
-                              activeTrackColor: Colors.blue,
-                              inactiveTrackColor: Colors.white.withValues(alpha: 0.3),
-                              thumbColor: Colors.blue,
-                              overlayColor: Colors.blue.withValues(alpha: 0.2),
-                            ),
-                            child: Slider(
-                              value: _opacity,
-                              min: 0.2,
-                              max: 1.0,
-                              divisions: 8,
-                              onChanged: _updateOpacity,
-                            ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(3),
                           ),
-                        ),
-                        Text(
-                          '${(_opacity * 100).round()}%',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.8),
-                            fontSize: 10,
+                          child: Text(
+                            '${(_opacity * 100).round()}%',
+                            style: TextStyle(
+                              color: Colors.blue.withValues(alpha: 0.9),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 4),
+                    // Quick preset buttons
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _buildOpacityPreset('0%', 0.0),
+                        _buildOpacityPreset('10%', 0.10),
+                        _buildOpacityPreset('15%', 0.15),
+                        _buildOpacityPreset('20%', 0.20),
+                        _buildOpacityPreset('30%', 0.30),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    // Precision slider for 0-30% range
+                    SliderTheme(
+                      data: SliderThemeData(
+                        trackHeight: 3,
+                        thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 7,
+                        ),
+                        overlayShape: const RoundSliderOverlayShape(
+                          overlayRadius: 14,
+                        ),
+                        activeTrackColor: Colors.blue,
+                        inactiveTrackColor: Colors.white.withValues(alpha: 0.3),
+                        thumbColor: Colors.blue,
+                        overlayColor: Colors.blue.withValues(alpha: 0.2),
+                        tickMarkShape: const RoundSliderTickMarkShape(
+                          tickMarkRadius: 2,
+                        ),
+                        activeTickMarkColor: Colors.blue.withValues(alpha: 0.7),
+                        inactiveTickMarkColor: Colors.white.withValues(alpha: 0.3),
+                      ),
+                      child: Slider(
+                        value: _opacity.clamp(0.0, 0.3),
+                        min: 0.0,
+                        max: 0.3,
+                        divisions: 6, // 0%, 5%, 10%, 15%, 20%, 25%, 30%
+                        onChanged: _updateOpacity,
+                      ),
                     ),
                   ],
                 ],
@@ -433,71 +484,315 @@ class _AirspaceControlsWidgetState extends State<AirspaceControlsWidget> {
     );
   }
 
-  List<Widget> _buildAirspaceTypeLegend() {
-    final airspaceService = AirspaceGeoJsonService.instance;
-    final styles = airspaceService.allAirspaceStyles;
-
-    // Define airspace type descriptions
-    final typeDescriptions = {
-      'CTR': 'Control Zone',
-      'TMA': 'Terminal Area',
-      'CTA': 'Control Area',
-      'D': 'Danger Area',
-      'R': 'Restricted',
-      'P': 'Prohibited',
-      'A': 'Class A',
-      'B': 'Class B',
-      'C': 'Class C',
-      'E': 'Class E',
-      'F': 'Class F',
-      'G': 'Class G',
-    };
-
-    // Show most common/important types first
-    final priorityOrder = ['CTR', 'TMA', 'D', 'R', 'P', 'C', 'A', 'B', 'E', 'F', 'G'];
-
-    final List<Widget> legendItems = [];
-
-    for (final type in priorityOrder) {
-      if (styles.containsKey(type)) {
-        final style = styles[type]!;
-        final description = typeDescriptions[type] ?? type;
-
-        legendItems.add(
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 1),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 12,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: style.fillColor,
-                    border: Border.all(
-                      color: style.borderColor,
-                      width: 0.5,
-                    ),
-                    borderRadius: BorderRadius.circular(1),
+  /// Build hierarchical airspace toggle with expandable type controls
+  Widget _buildHierarchicalAirspaceToggle() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Main airspace toggle with expand button
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: _airspaceEnabled ? Colors.red : Colors.red.withValues(alpha: 0.3),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Airspaces',
+                  style: TextStyle(
+                    color: _airspaceEnabled ? Colors.white : Colors.white.withValues(alpha: 0.6),
+                    fontSize: 11,
                   ),
                 ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    '$type - $description',
-                    style: TextStyle(
+              ),
+              // Expand/collapse button for types (only when airspace is enabled)
+              if (_airspaceEnabled) ...[
+                InkWell(
+                  onTap: () => setState(() => _airspaceTypesExpanded = !_airspaceTypesExpanded),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(
+                      _airspaceTypesExpanded ? Icons.expand_less : Icons.expand_more,
+                      size: 16,
                       color: Colors.white.withValues(alpha: 0.7),
-                      fontSize: 9,
                     ),
                   ),
                 ),
+                const SizedBox(width: 4),
               ],
+              // Main airspace toggle
+              InkWell(
+                onTap: () => _updateAirspaceEnabled(!_airspaceEnabled),
+                borderRadius: BorderRadius.circular(9),
+                child: Container(
+                  width: 32,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(9),
+                    color: _airspaceEnabled ? Colors.red : Colors.white.withValues(alpha: 0.2),
+                    border: Border.all(
+                      color: _airspaceEnabled ? Colors.red : Colors.white.withValues(alpha: 0.4),
+                      width: 1,
+                    ),
+                  ),
+                  child: AnimatedAlign(
+                    duration: const Duration(milliseconds: 150),
+                    alignment: _airspaceEnabled ? Alignment.centerRight : Alignment.centerLeft,
+                    child: Container(
+                      width: 14,
+                      height: 14,
+                      margin: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.2),
+                            blurRadius: 2,
+                            offset: const Offset(0, 1),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Expandable individual airspace types section
+        AnimatedCrossFade(
+          firstChild: const SizedBox.shrink(),
+          secondChild: _buildAirspaceTypesSection(),
+          crossFadeState: (_airspaceEnabled && _airspaceTypesExpanded)
+              ? CrossFadeState.showSecond
+              : CrossFadeState.showFirst,
+          duration: const Duration(milliseconds: 300),
+        ),
+      ],
+    );
+  }
+
+  /// Build the individual airspace types section
+  Widget _buildAirspaceTypesSection() {
+    return Container(
+      margin: const EdgeInsets.only(left: 16, top: 4),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.1),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Quick presets row
+          Text(
+            'Quick Presets',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.8),
+              fontSize: 9,
+              fontWeight: FontWeight.w600,
             ),
           ),
-        );
-      }
-    }
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildAirspacePreset('VFR', 'vfr'),
+              _buildAirspacePreset('IFR', 'ifr'),
+              _buildAirspacePreset('Hazards', 'hazards'),
+              _buildAirspacePreset('Training', 'training'),
+            ],
+          ),
+          const SizedBox(height: 8),
 
-    return legendItems;
+          // Control zones section
+          _buildAirspaceTypeGroup('Control Zones', {
+            'CTR': 'Control Zone',
+            'TMA': 'Terminal Area',
+            'CTA': 'Control Area',
+          }, Colors.red),
+
+          const SizedBox(height: 6),
+
+          // Restricted areas section
+          _buildAirspaceTypeGroup('Restricted Areas', {
+            'D': 'Danger Area',
+            'R': 'Restricted',
+            'P': 'Prohibited',
+          }, Colors.orange),
+
+          const SizedBox(height: 6),
+
+          // Airspace classes section
+          _buildAirspaceTypeGroup('Airspace Classes', {
+            'A': 'Class A (IFR only)',
+            'B': 'Class B (ATC required)',
+            'C': 'Class C (ATC/contact)',
+            'E': 'Class E (IFR clearance)',
+            'F': 'Class F (Info service)',
+            'G': 'Class G (Uncontrolled)',
+          }, Colors.blue),
+        ],
+      ),
+    );
+  }
+
+  /// Build a group of airspace types with a title
+  Widget _buildAirspaceTypeGroup(String title, Map<String, String> types, Color accentColor) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            color: accentColor.withValues(alpha: 0.9),
+            fontSize: 9,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 2),
+        ...types.entries.map((entry) => _buildAirspaceTypeToggle(
+          entry.key,
+          entry.value,
+          accentColor,
+        )),
+      ],
+    );
+  }
+
+  /// Build individual airspace type toggle
+  Widget _buildAirspaceTypeToggle(String type, String description, Color color) {
+    final isEnabled = _airspaceTypes[type] ?? false;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: isEnabled ? color : color.withValues(alpha: 0.3),
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              '$type - $description',
+              style: TextStyle(
+                color: isEnabled ? Colors.white : Colors.white.withValues(alpha: 0.6),
+                fontSize: 9,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          InkWell(
+            onTap: () => _updateAirspaceTypeEnabled(type, !isEnabled),
+            borderRadius: BorderRadius.circular(6),
+            child: Container(
+              width: 24,
+              height: 12,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(6),
+                color: isEnabled ? color.withValues(alpha: 0.8) : Colors.white.withValues(alpha: 0.2),
+                border: Border.all(
+                  color: isEnabled ? color : Colors.white.withValues(alpha: 0.4),
+                  width: 0.5,
+                ),
+              ),
+              child: AnimatedAlign(
+                duration: const Duration(milliseconds: 150),
+                alignment: isEnabled ? Alignment.centerRight : Alignment.centerLeft,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  margin: const EdgeInsets.all(2),
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build airspace preset button
+  Widget _buildAirspacePreset(String label, String preset) {
+    return InkWell(
+      onTap: () async {
+        await _openAipService.setAirspacePreset(preset);
+        await _loadSettings(); // Reload to update UI
+      },
+      borderRadius: BorderRadius.circular(4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: BoxDecoration(
+          color: Colors.blue.withValues(alpha: 0.2),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(
+            color: Colors.blue.withValues(alpha: 0.4),
+            width: 0.5,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: Colors.blue.withValues(alpha: 0.9),
+            fontSize: 8,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Build quick opacity preset button
+  Widget _buildOpacityPreset(String label, double value) {
+    final isSelected = (_opacity - value).abs() < 0.01; // Allow small floating point differences
+
+    return InkWell(
+      onTap: () => _updateOpacity(value),
+      borderRadius: BorderRadius.circular(4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.blue : Colors.white.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(
+            color: isSelected ? Colors.blue : Colors.white.withValues(alpha: 0.3),
+            width: 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.8),
+            fontSize: 9,
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+          ),
+        ),
+      ),
+    );
   }
 }

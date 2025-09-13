@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/logging_service.dart';
 
@@ -41,13 +42,32 @@ class OpenAipService {
   static const String _navaidsEnabledKey = 'openaip_navaids_enabled';
   static const String _reportingPointsEnabledKey = 'openaip_reporting_points_enabled';
   static const String _overlayOpacityKey = 'openaip_overlay_opacity';
+
+  // Individual airspace type preferences
+  static const String _airspaceTypesEnabledKey = 'openaip_airspace_types_enabled';
   
   // Default values
-  static const double _defaultOpacity = 0.6;
+  static const double _defaultOpacity = 0.15; // 15% optimal for airspace visibility
   static const bool _defaultAirspaceEnabled = false;
   static const bool _defaultAirportsEnabled = false;
   static const bool _defaultNavaidsEnabled = false;
   static const bool _defaultReportingPointsEnabled = false;
+
+  // Default enabled airspace types (VFR-focused: critical for safety)
+  static const Map<String, bool> _defaultAirspaceTypes = {
+    'CTR': true,  // Control Zone - critical
+    'TMA': true,  // Terminal Area - critical
+    'CTA': true,  // Control Area - important
+    'D': true,    // Danger Area - critical for safety
+    'R': true,    // Restricted - critical for safety
+    'P': true,    // Prohibited - critical for safety
+    'A': false,   // Class A - less relevant for VFR
+    'B': true,    // Class B - important for VFR
+    'C': true,    // Class C - important for VFR
+    'E': false,   // Class E - less critical
+    'F': false,   // Class F - less critical
+    'G': false,   // Class G - uncontrolled, less critical
+  };
   
   /// Get the tile URL template for a specific layer
   String getTileUrlTemplate(OpenAipLayer layer, {String? apiKey}) {
@@ -204,6 +224,12 @@ class OpenAipService {
         return isReportingPointsEnabled();
     }
   }
+
+  // Convenience methods for individual layer state access
+  Future<bool> getAirspaceEnabled() => isAirspaceEnabled();
+  Future<bool> getAirportsEnabled() => isAirportsEnabled();
+  Future<bool> getNavaidsEnabled() => isNavaidsEnabled();
+  Future<bool> getReportingPointsEnabled() => isReportingPointsEnabled();
   
   /// Set enabled state for a specific layer
   Future<void> setLayerEnabled(OpenAipLayer layer, bool enabled) async {
@@ -270,7 +296,7 @@ class OpenAipService {
   /// Reset all settings to defaults
   Future<void> resetToDefaults() async {
     final prefs = await SharedPreferences.getInstance();
-    
+
     // Remove all OpenAIP preferences
     await prefs.remove(_apiKeyKey);
     await prefs.remove(_airspaceEnabledKey);
@@ -278,12 +304,109 @@ class OpenAipService {
     await prefs.remove(_navaidsEnabledKey);
     await prefs.remove(_reportingPointsEnabledKey);
     await prefs.remove(_overlayOpacityKey);
-    
+    await prefs.remove(_airspaceTypesEnabledKey);
+
     LoggingService.info('OpenAIP settings reset to defaults');
   }
   
+  /// Get enabled airspace types
+  Future<Map<String, bool>> getEnabledAirspaceTypes() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = prefs.getString(_airspaceTypesEnabledKey);
+
+    if (jsonString == null) {
+      // First time - use defaults
+      await setEnabledAirspaceTypes(_defaultAirspaceTypes);
+      return _defaultAirspaceTypes;
+    }
+
+    try {
+      final Map<String, dynamic> decoded = json.decode(jsonString);
+      return decoded.cast<String, bool>();
+    } catch (e) {
+      LoggingService.error('Failed to decode airspace types preferences', e, StackTrace.current);
+      return _defaultAirspaceTypes;
+    }
+  }
+
+  /// Set enabled state for multiple airspace types
+  Future<void> setEnabledAirspaceTypes(Map<String, bool> types) async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = json.encode(types);
+    await prefs.setString(_airspaceTypesEnabledKey, jsonString);
+
+    LoggingService.structured('AIRSPACE_TYPES_UPDATE', {
+      'enabled_count': types.values.where((v) => v).length,
+      'total_count': types.length,
+      'enabled_types': types.entries.where((e) => e.value).map((e) => e.key).toList(),
+    });
+  }
+
+  /// Set enabled state for a specific airspace type
+  Future<void> setAirspaceTypeEnabled(String type, bool enabled) async {
+    final currentTypes = await getEnabledAirspaceTypes();
+    currentTypes[type] = enabled;
+    await setEnabledAirspaceTypes(currentTypes);
+  }
+
+  /// Check if a specific airspace type is enabled
+  Future<bool> isAirspaceTypeEnabled(String type) async {
+    final enabledTypes = await getEnabledAirspaceTypes();
+    return enabledTypes[type] ?? _defaultAirspaceTypes[type] ?? false;
+  }
+
+  /// Set airspace preset (quick configurations)
+  Future<void> setAirspacePreset(String presetName) async {
+    Map<String, bool> preset;
+
+    switch (presetName) {
+      case 'vfr':
+        preset = {
+          'CTR': true, 'TMA': true, 'CTA': true,
+          'D': true, 'R': true, 'P': true,
+          'A': false, 'B': true, 'C': true,
+          'E': false, 'F': false, 'G': false,
+        };
+        break;
+      case 'ifr':
+        preset = {
+          'CTR': true, 'TMA': true, 'CTA': true,
+          'D': true, 'R': true, 'P': true,
+          'A': true, 'B': true, 'C': true,
+          'E': true, 'F': true, 'G': false,
+        };
+        break;
+      case 'hazards':
+        preset = {
+          'CTR': false, 'TMA': false, 'CTA': false,
+          'D': true, 'R': true, 'P': true,
+          'A': false, 'B': false, 'C': false,
+          'E': false, 'F': false, 'G': false,
+        };
+        break;
+      case 'training':
+        preset = {
+          'CTR': true, 'TMA': true, 'CTA': false,
+          'D': true, 'R': true, 'P': true,
+          'A': false, 'B': false, 'C': true,
+          'E': false, 'F': false, 'G': false,
+        };
+        break;
+      default:
+        preset = _defaultAirspaceTypes;
+    }
+
+    await setEnabledAirspaceTypes(preset);
+
+    LoggingService.structured('AIRSPACE_PRESET_APPLIED', {
+      'preset': presetName,
+      'enabled_count': preset.values.where((v) => v).length,
+    });
+  }
+
   /// Get a summary of current settings
   Future<Map<String, dynamic>> getSettingsSummary() async {
+    final enabledTypes = await getEnabledAirspaceTypes();
     return {
       'has_api_key': await hasApiKey(),
       'airspace_enabled': await isAirspaceEnabled(),
@@ -291,6 +414,8 @@ class OpenAipService {
       'navaids_enabled': await isNavaidsEnabled(),
       'reporting_points_enabled': await isReportingPointsEnabled(),
       'overlay_opacity': await getOverlayOpacity(),
+      'enabled_airspace_types': enabledTypes,
+      'enabled_airspace_count': enabledTypes.values.where((v) => v).length,
     };
   }
 }

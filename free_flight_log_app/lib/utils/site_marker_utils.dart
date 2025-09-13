@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import '../services/airspace_geojson_service.dart';
 
 /// Shared utilities for creating consistent site markers across different map views
 class SiteMarkerUtils {
@@ -218,12 +219,88 @@ class SiteMarkerUtils {
       ],
     );
   }
-  
+
+  /// Build airspace legend items with tooltips, optionally filtered by visible types
+  static List<Widget> buildAirspaceLegendItems({Set<String>? visibleTypes}) {
+    final airspaceService = AirspaceGeoJsonService.instance;
+    final styles = airspaceService.allAirspaceStyles;
+
+    // If visibleTypes is not provided, get from service (for backwards compatibility)
+    final typesToShow = visibleTypes ?? airspaceService.visibleAirspaceTypes;
+
+    // Define airspace type descriptions with detailed tooltips
+    final typeDescriptions = {
+      'CTR': {'name': 'Control Zone', 'tooltip': 'CTR - Control Zone: Controlled airspace around airports'},
+      'TMA': {'name': 'Terminal Area', 'tooltip': 'TMA - Terminal Area: Controlled airspace in terminal areas'},
+      'CTA': {'name': 'Control Area', 'tooltip': 'CTA - Control Area: General controlled airspace'},
+      'D': {'name': 'Danger Area', 'tooltip': 'D - Danger Area: Areas with potential hazards to aircraft'},
+      'R': {'name': 'Restricted', 'tooltip': 'R - Restricted: Areas with restrictions on aircraft operations'},
+      'P': {'name': 'Prohibited', 'tooltip': 'P - Prohibited: Areas where flight is completely prohibited'},
+      'A': {'name': 'Class A', 'tooltip': 'Class A: IFR only, ATC clearance required'},
+      'B': {'name': 'Class B', 'tooltip': 'Class B: IFR and VFR, ATC clearance required'},
+      'C': {'name': 'Class C', 'tooltip': 'Class C: IFR and VFR, ATC clearance for IFR, contact for VFR'},
+      'E': {'name': 'Class E', 'tooltip': 'Class E: IFR and VFR, ATC clearance for IFR only'},
+      'F': {'name': 'Class F', 'tooltip': 'Class F: IFR and VFR, flight information service'},
+      'G': {'name': 'Class G', 'tooltip': 'Class G: IFR and VFR, uncontrolled airspace'},
+    };
+
+    // Show most common/important types first, but only if they're visible
+    final priorityOrder = ['CTR', 'TMA', 'D', 'R', 'P', 'C', 'A', 'B', 'E', 'F', 'G'];
+
+    final List<Widget> legendItems = [];
+
+    for (final type in priorityOrder) {
+      // Only show types that are both in styles and visible in current area
+      if (styles.containsKey(type) && typesToShow.contains(type)) {
+        final style = styles[type]!;
+        final typeInfo = typeDescriptions[type]!;
+
+        legendItems.add(
+          Tooltip(
+            message: typeInfo['tooltip']!,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 1),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 12,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: style.fillColor,
+                      border: Border.all(
+                        color: style.borderColor,
+                        width: 0.5,
+                      ),
+                      borderRadius: BorderRadius.circular(1),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '$type - ${typeInfo['name']}',
+                    style: const TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
+    return legendItems;
+  }
+
   /// Build a legend widget with consistent styling
   static Widget buildMapLegend({
     required BuildContext context,
     bool showLaunches = false,
     bool showSites = true,
+    List<Widget>? additionalLegendItems,
   }) {
     return Positioned(
       top: 8,
@@ -253,6 +330,11 @@ class SiteMarkerUtils {
               buildLegendItem(context, Icons.location_on, flownSiteColor, 'Flown Sites'),
               const SizedBox(height: 4),
               buildLegendItem(context, Icons.location_on, newSiteColor, 'New Sites'),
+            ],
+            // Add additional legend items if provided
+            if (additionalLegendItems != null && additionalLegendItems.isNotEmpty) ...[
+              if (showSites || showLaunches) const SizedBox(height: 4),
+              ...additionalLegendItems,
             ],
           ],
         ),
