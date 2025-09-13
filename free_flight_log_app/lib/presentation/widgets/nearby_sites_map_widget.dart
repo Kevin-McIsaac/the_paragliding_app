@@ -9,6 +9,8 @@ import '../../utils/map_provider.dart';
 import '../../utils/site_utils.dart';
 import '../../utils/map_controls.dart';
 import '../../utils/map_tile_provider.dart';
+import '../../utils/airspace_overlay_manager.dart';
+import 'airspace_controls_widget.dart';
 
 class NearbySitesMapWidget extends StatefulWidget {
   final List<ParaglidingSite> sites;
@@ -61,10 +63,17 @@ class NearbySitesMapWidget extends StatefulWidget {
 class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   final MapController _mapController = MapController();
   final FocusNode _searchFocusNode = FocusNode();
+  final AirspaceOverlayManager _airspaceManager = AirspaceOverlayManager.instance;
+  
+  // Airspace overlay state
+  List<TileLayer> _airspaceLayers = [];
+  bool _airspaceLoading = false;
+  bool _airspaceControlsExpanded = false;
   
   @override
   void initState() {
     super.initState();
+    _loadAirspaceLayers();
   }
 
   @override
@@ -119,6 +128,52 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         widget.onBoundsChanged!(bounds);
       }
     }
+  }
+  
+  /// Load airspace overlay layers based on user preferences
+  Future<void> _loadAirspaceLayers() async {
+    if (_airspaceLoading) return;
+    
+    setState(() {
+      _airspaceLoading = true;
+    });
+    
+    try {
+      final layers = await _airspaceManager.buildEnabledOverlayLayers();
+      
+      if (mounted) {
+        setState(() {
+          _airspaceLayers = layers;
+          _airspaceLoading = false;
+        });
+        
+        LoggingService.structured('AIRSPACE_LAYERS_LOADED', {
+          'layer_count': layers.length,
+          'widget_mounted': mounted,
+        });
+      }
+    } catch (error, stackTrace) {
+      LoggingService.error('Failed to load airspace layers', error, stackTrace);
+      
+      if (mounted) {
+        setState(() {
+          _airspaceLayers = [];
+          _airspaceLoading = false;
+        });
+      }
+    }
+  }
+  
+  /// Refresh airspace layers when settings change
+  void refreshAirspaceLayers() {
+    _loadAirspaceLayers();
+  }
+  
+  /// Toggle airspace controls expanded state
+  void _toggleAirspaceControls() {
+    setState(() {
+      _airspaceControlsExpanded = !_airspaceControlsExpanded;
+    });
   }
 
   LatLng _getInitialCenter() {
@@ -237,6 +292,19 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               ],
             ),
           ),
+          
+          const SizedBox(width: 8),
+          
+          // Airspace controls - still causing mouse tracker issues despite fixes
+          // TODO: Investigate widget hierarchy and layout constraints causing the issue
+          // Align(
+          //   alignment: Alignment.topCenter,
+          //   child: AirspaceControlsWidget(
+          //     isExpanded: _airspaceControlsExpanded,
+          //     onToggleExpanded: _toggleAirspaceControls,
+          //     onLayersChanged: refreshAirspaceLayers,
+          //   ),
+          // ),
           
           const SizedBox(width: 8),
           
@@ -635,6 +703,8 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
       'has_center_position': widget.centerPosition != null,
       'initial_zoom': widget.initialZoom,
       'map_provider': widget.mapProvider.shortName,
+      'airspace_layer_count': _airspaceLayers.length,
+      'airspace_loading': _airspaceLoading,
     });
 
     return Stack(
@@ -667,6 +737,9 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               tileProvider: MapTileProvider.createInstance(),
               errorTileCallback: MapTileProvider.getErrorCallback(),
             ),
+            
+            // Airspace overlay layers (between base map and markers)
+            ..._airspaceLayers,
             
             // Site markers layer
             MarkerLayer(

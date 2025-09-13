@@ -16,6 +16,7 @@ import '../../services/nearby_sites_search_manager.dart';
 import '../../utils/map_provider.dart';
 import '../../utils/site_utils.dart';
 import '../widgets/nearby_sites_map_widget.dart';
+import '../widgets/airspace_controls_widget.dart';
 import '../widgets/common/app_error_state.dart';
 import '../widgets/common/app_empty_state.dart';
 
@@ -51,6 +52,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   
   // Map provider state
   MapProvider _selectedMapProvider = MapProvider.openStreetMap;
+  
+  // Key to force map widget refresh when airspace settings change
+  Key _mapWidgetKey = UniqueKey();
   static const String _mapProviderKey = 'nearby_sites_map_provider';
   
   // Legend state
@@ -510,6 +514,74 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     );
   }
 
+  /// Show airspace controls in a bottom sheet to avoid map gesture conflicts
+  void _showAirspaceControls() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              children: [
+                const Icon(Icons.airplanemode_active, color: Colors.blue),
+                const SizedBox(width: 8),
+                const Text(
+                  'Airspace Overlays',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            // Airspace controls widget in a container with dark background
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.grey[900],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.all(16),
+              child: AirspaceControlsWidget(
+                isExpanded: true, // Always expanded in bottom sheet
+                onToggleExpanded: () {}, // No-op since always expanded
+                onLayersChanged: () {
+                  // Refresh map layers when airspace settings change
+                  setState(() {
+                    // Generate new key to force map widget rebuild and reload airspace layers
+                    _mapWidgetKey = UniqueKey();
+                  });
+                  LoggingService.action('NearbySites', 'airspace_settings_changed', {
+                    'triggered_map_refresh': true,
+                  });
+                },
+              ),
+            ),
+            
+            // Bottom padding for safe area
+            SizedBox(height: MediaQuery.of(context).padding.bottom),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -529,6 +601,12 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
             )
           : const Text('Nearby Sites'),
         actions: [
+          // Airspace controls - moved to app bar to avoid map gesture conflicts
+          IconButton(
+            icon: const Icon(Icons.airplanemode_active),
+            onPressed: _showAirspaceControls,
+            tooltip: 'Airspace overlays',
+          ),
           _searchManager.state.isSearchMode 
             ? IconButton(
                 icon: const Icon(Icons.close),
@@ -560,6 +638,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                       children: [
                         // Map
                         NearbySitesMapWidget(
+                          key: _mapWidgetKey, // Force rebuild when airspace settings change
                           sites: _displayedSites,
                           siteFlightStatus: _siteFlightStatus,
                           userPosition: _userPosition,
