@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/openaip_service.dart';
 import '../../services/logging_service.dart';
+import '../../services/airspace_geojson_service.dart';
 
 /// Widget for controlling OpenAIP airspace overlay layers
 class AirspaceControlsWidget extends StatefulWidget {
@@ -224,34 +225,39 @@ class _AirspaceControlsWidgetState extends State<AirspaceControlsWidget> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // API Key status
-                  if (!_hasApiKey)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                      margin: const EdgeInsets.only(bottom: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.info_outline,
-                            size: 12,
-                            color: Colors.orange.withValues(alpha: 0.8),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Free tier (rate limited)',
-                            style: TextStyle(
-                              color: Colors.orange.withValues(alpha: 0.9),
-                              fontSize: 10,
-                            ),
-                          ),
-                        ],
-                      ),
+                  // API Key / Demo Data status
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: _hasApiKey ?
+                        Colors.green.withValues(alpha: 0.2) :
+                        Colors.blue.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(3),
                     ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _hasApiKey ? Icons.cloud_done : Icons.science,
+                          size: 12,
+                          color: _hasApiKey ?
+                            Colors.green.withValues(alpha: 0.8) :
+                            Colors.blue.withValues(alpha: 0.8),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _hasApiKey ? 'Live OpenAIP Data' : 'Demo Airspace Data',
+                          style: TextStyle(
+                            color: _hasApiKey ?
+                              Colors.green.withValues(alpha: 0.9) :
+                              Colors.blue.withValues(alpha: 0.9),
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   
                   // Layer toggles
                   _buildLayerToggle(
@@ -278,7 +284,28 @@ class _AirspaceControlsWidgetState extends State<AirspaceControlsWidget> {
                     Colors.purple,
                     (value) => _updateLayerEnabled(OpenAipLayer.reportingPoints, value),
                   ),
-                  
+
+                  // Airspace type legend (only when airspaces enabled)
+                  if (_airspaceEnabled) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      height: 1,
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      color: Colors.white.withValues(alpha: 0.2),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Airspace Types',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.8),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    ..._buildAirspaceTypeLegend(),
+                  ],
+
                   // Opacity slider
                   if (_hasEnabledLayers()) ...[
                     const SizedBox(height: 8),
@@ -404,5 +431,73 @@ class _AirspaceControlsWidgetState extends State<AirspaceControlsWidget> {
         ],
       ),
     );
+  }
+
+  List<Widget> _buildAirspaceTypeLegend() {
+    final airspaceService = AirspaceGeoJsonService.instance;
+    final styles = airspaceService.allAirspaceStyles;
+
+    // Define airspace type descriptions
+    final typeDescriptions = {
+      'CTR': 'Control Zone',
+      'TMA': 'Terminal Area',
+      'CTA': 'Control Area',
+      'D': 'Danger Area',
+      'R': 'Restricted',
+      'P': 'Prohibited',
+      'A': 'Class A',
+      'B': 'Class B',
+      'C': 'Class C',
+      'E': 'Class E',
+      'F': 'Class F',
+      'G': 'Class G',
+    };
+
+    // Show most common/important types first
+    final priorityOrder = ['CTR', 'TMA', 'D', 'R', 'P', 'C', 'A', 'B', 'E', 'F', 'G'];
+
+    final List<Widget> legendItems = [];
+
+    for (final type in priorityOrder) {
+      if (styles.containsKey(type)) {
+        final style = styles[type]!;
+        final description = typeDescriptions[type] ?? type;
+
+        legendItems.add(
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 1),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 12,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: style.fillColor,
+                    border: Border.all(
+                      color: style.borderColor,
+                      width: 0.5,
+                    ),
+                    borderRadius: BorderRadius.circular(1),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '$type - $description',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.7),
+                      fontSize: 9,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+    }
+
+    return legendItems;
   }
 }

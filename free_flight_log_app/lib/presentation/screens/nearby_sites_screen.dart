@@ -32,7 +32,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   final DatabaseService _databaseService = DatabaseService.instance;
   final LocationService _locationService = LocationService.instance;
   final ParaglidingEarthApi _paraglidingEarthApi = ParaglidingEarthApi.instance;
-  final TextEditingController _searchController = TextEditingController();
   
   // Constants for bounds-based loading (copied from EditSiteScreen)
   static const double _boundsThreshold = 0.001;
@@ -81,7 +80,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
   @override
   void dispose() {
-    _searchController.dispose();
     _debounceTimer?.cancel(); // Clean up timer
     _searchManager.dispose(); // Clean up search manager
     super.dispose();
@@ -91,11 +89,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     _searchManager = NearbySitesSearchManager(
       onStateChanged: (SearchState state) {
         setState(() {
-          // Update search query in controller if different
-          if (_searchController.text != state.query) {
-            _searchController.text = state.query;
-          }
-          // Update displayed sites
+          // Update displayed sites when search state changes
           _updateDisplayedSites();
         });
       },
@@ -586,20 +580,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: _searchManager.state.isSearchMode 
-          ? TextField(
-              controller: _searchController,
-              autofocus: true,
-              decoration: const InputDecoration(
-                hintText: 'Search sites worldwide...',
-                border: InputBorder.none,
-                hintStyle: TextStyle(color: Colors.grey),
-              ),
-              style: const TextStyle(color: Colors.white),
-              onChanged: _searchManager.onSearchQueryChanged,
-              onSubmitted: (value) => _searchManager.performImmediateSearch(value),
-            )
-          : const Text('Nearby Sites'),
+        title: const Text('Nearby Sites'),
         actions: [
           // Airspace controls - moved to app bar to avoid map gesture conflicts
           IconButton(
@@ -607,15 +588,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
             onPressed: _showAirspaceControls,
             tooltip: 'Airspace overlays',
           ),
-          _searchManager.state.isSearchMode 
-            ? IconButton(
-                icon: const Icon(Icons.close),
-                onPressed: _searchManager.exitSearchMode,
-              )
-            : IconButton(
-                icon: const Icon(Icons.search),
-                onPressed: _searchManager.enterSearchMode,
-              ),
         ],
       ),
       body: Stack(

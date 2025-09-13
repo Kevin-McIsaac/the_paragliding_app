@@ -78,9 +78,9 @@ class OpenAipService {
   
   /// Get stored OpenAIP API key
   Future<String?> getApiKey() async {
-    // Use hardcoded app-wide API key for now
+    // Restore the API key with simplified authentication method
     return 'a75461fcd8a0e9cbca91058d23c78f4c';
-    
+
     // TODO: Later implement user-configurable API keys
     // final prefs = await SharedPreferences.getInstance();
     // return prefs.getString(_apiKeyKey);

@@ -42,6 +42,7 @@ dependencies:
   shared_preferences: ^2.5.3 # Settings storage - new async APIs
   flutter_map: ^8.2.1         # Cross-platform map visualization with OpenStreetMap
   flutter_map_dragmarker: ^8.0.3  # Draggable markers for flutter_map
+  geobase: ^1.1.0  # Modern GeoJSON parsing and geospatial data handling for airspace data
   latlong2: ^0.9.1            # Coordinate handling for flutter_map
   file_picker: ^10.3.1      # IGC file import - minor improvements
   receive_sharing_intent: ^1.8.1  # Handle IGC files shared from other apps
