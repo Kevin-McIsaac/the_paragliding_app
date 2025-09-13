@@ -46,6 +46,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   bool _isLocationLoading = false;
   String? _errorMessage;
   LatLng? _mapCenterPosition;
+  double _mapZoom = 10.0; // Dynamic zoom level for map
+  LatLngBounds? _boundsToFit; // Exact bounds for map fitting after site jump
   
   // Map provider state
   MapProvider _selectedMapProvider = MapProvider.openStreetMap;
@@ -326,20 +328,32 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
   /// Jump to a location without dismissing search results
   void _jumpToLocation(ParaglidingSite site, {bool keepSearchActive = false}) {
-    // Center map on selected site
-    _mapCenterPosition = LatLng(site.latitude, site.longitude);
-    
-    // Immediately trigger bounds-based loading without delay for responsiveness
+    // Create exact bounds for API search (±0.05 degrees)
     final newCenter = LatLng(site.latitude, site.longitude);
     final bounds = LatLngBounds(
       LatLng(newCenter.latitude - 0.05, newCenter.longitude - 0.05),
       LatLng(newCenter.latitude + 0.05, newCenter.longitude + 0.05),
     );
     
+    setState(() {
+      // Set map to fit exactly the bounds used for API search
+      _mapCenterPosition = newCenter;
+      _boundsToFit = bounds; // This will trigger exact bounds fitting in map widget
+    });
+    
     // Use a very short delay just to allow the map to update its center
     Future.delayed(const Duration(milliseconds: 100), () {
       if (mounted) {
         _onBoundsChanged(bounds);
+      }
+    });
+    
+    // Clear bounds after map has fitted to allow normal navigation
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) {
+        setState(() {
+          _boundsToFit = null; // Clear bounds to allow normal map navigation
+        });
       }
     });
     
@@ -550,7 +564,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                           siteFlightStatus: _siteFlightStatus,
                           userPosition: _userPosition,
                           centerPosition: _mapCenterPosition,
-                          initialZoom: _searchManager.state.query.isNotEmpty ? 12.0 : 10.0,
+                          boundsToFit: _boundsToFit,
+                          initialZoom: _mapZoom,
                           mapProvider: _selectedMapProvider,
                           isLegendExpanded: _isLegendExpanded,
                           onToggleLegend: _toggleLegend,

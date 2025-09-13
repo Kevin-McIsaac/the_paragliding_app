@@ -15,6 +15,7 @@ class NearbySitesMapWidget extends StatefulWidget {
   final Map<String, bool> siteFlightStatus;
   final Position? userPosition;
   final LatLng? centerPosition;
+  final LatLngBounds? boundsToFit; // Optional bounds for exact map fitting
   final double initialZoom;
   final MapProvider mapProvider;
   final bool isLegendExpanded;
@@ -36,6 +37,7 @@ class NearbySitesMapWidget extends StatefulWidget {
     required this.siteFlightStatus,
     this.userPosition,
     this.centerPosition,
+    this.boundsToFit,
     this.initialZoom = 10.0,
     required this.mapProvider,
     required this.isLegendExpanded,
@@ -69,9 +71,21 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   void didUpdateWidget(NearbySitesMapWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     
-    // If center position changed, move map to new location
-    if (widget.centerPosition != null && 
-        oldWidget.centerPosition != widget.centerPosition) {
+    // Priority 1: Check if we should fit to exact bounds (for precise area display)
+    if (widget.boundsToFit != null && 
+        oldWidget.boundsToFit != widget.boundsToFit) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _mapController.fitCamera(
+          CameraFit.bounds(
+            bounds: widget.boundsToFit!,
+            padding: const EdgeInsets.all(20), // Small padding for visibility
+          ),
+        );
+      });
+    }
+    // Priority 2: Fallback to center/zoom for normal navigation
+    else if (widget.centerPosition != null && 
+             oldWidget.centerPosition != widget.centerPosition) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _mapController.move(widget.centerPosition!, widget.initialZoom);
       });
