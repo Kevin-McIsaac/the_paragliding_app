@@ -49,9 +49,17 @@ class NearbySitesSearchManager {
   }
 
   /// Exit search mode and clear all state
-  void exitSearchMode() {
+  /// If [preservePinnedSite] is provided, keep that site pinned after exiting
+  void exitSearchMode({ParaglidingSite? preservePinnedSite, bool pinnedSiteIsFromAutoJump = false}) {
     _searchDebounce?.cancel();
-    _updateState(SearchState.initial);
+    if (preservePinnedSite != null) {
+      _updateState(SearchState.initial.copyWith(
+        pinnedSite: preservePinnedSite,
+        pinnedSiteIsFromAutoJump: pinnedSiteIsFromAutoJump,
+      ));
+    } else {
+      _updateState(SearchState.initial);
+    }
   }
 
   /// Handle search query change with debouncing
@@ -91,19 +99,73 @@ class NearbySitesSearchManager {
 
   /// Select a search result (called when user taps on result)
   void selectSearchResult(ParaglidingSite site) {
-    // Clear auto-jump flag when user explicitly selects
-    _updateState(_state.copyWith(
-      pinnedSite: site,
-      pinnedSiteIsFromAutoJump: false,
-    ));
-
     LoggingService.action('NearbySites', 'search_result_selected', {
       'site_name': site.name,
       'country': site.country,
     });
 
-    // Exit search mode to dismiss the results dropdown
-    exitSearchMode();
+    // Exit search mode while preserving the selected site
+    exitSearchMode(preservePinnedSite: site, pinnedSiteIsFromAutoJump: false);
+  }
+
+  /// Perform immediate search (triggered by Enter key)
+  /// Bypasses debounce and auto-selects single results
+  Future<void> performImmediateSearch(String query) async {
+    final trimmedQuery = query.trim();
+    
+    // Cancel any existing search
+    _searchDebounce?.cancel();
+    
+    // Don't search for empty or very short queries
+    if (trimmedQuery.isEmpty || trimmedQuery.length < _minQueryLength) {
+      return;
+    }
+    
+    // Update state to show we're searching
+    _updateState(_state.copyWith(
+      query: trimmedQuery,
+      isSearchMode: true,
+      isSearching: true,
+    ));
+    
+    try {
+      final results = await _api.searchSitesByName(trimmedQuery);
+      final limitedResults = results.take(_maxResults).toList();
+      
+      if (limitedResults.length == 1) {
+        // Single result - jump to it and exit search mode
+        final site = limitedResults.first;
+        
+        // Notify callback for map centering
+        _onAutoJump?.call(site);
+        
+        // Exit search mode and pin the site
+        exitSearchMode(preservePinnedSite: site, pinnedSiteIsFromAutoJump: false);
+        
+        LoggingService.action('NearbySites', 'enter_key_single_result', {
+          'site_name': site.name,
+          'country': site.country,
+        });
+      } else {
+        // Multiple or no results - show normal search results
+        _updateState(_state.copyWith(
+          results: limitedResults,
+          isSearching: false,
+        ));
+        
+        LoggingService.action('NearbySites', 'enter_key_search', {
+          'query': trimmedQuery,
+          'results_count': limitedResults.length,
+        });
+      }
+    } catch (e) {
+      LoggingService.error('Enter key search failed', e);
+      
+      _updateState(_state.copyWith(
+        results: [],
+        isSearching: false,
+      ));
+    }
   }
 
   /// Perform the actual API search
@@ -120,7 +182,7 @@ class NearbySitesSearchManager {
         isSearching: false,
       );
 
-      // Auto-jump to single result but keep search active
+      // Auto-jump to single result for normal search (not Enter key)
       if (limitedResults.length == 1) {
         newState = newState.withAutoJumpPinnedSite(limitedResults.first);
         

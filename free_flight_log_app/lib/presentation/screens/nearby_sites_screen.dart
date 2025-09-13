@@ -181,6 +181,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         _updateDisplayedSites();
         return position;
       }
+      return null;
     } catch (e, stackTrace) {
       LoggingService.error('Failed to get user location', e, stackTrace);
       if (mounted) {
@@ -510,6 +511,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
               ),
               style: const TextStyle(color: Colors.white),
               onChanged: _searchManager.onSearchQueryChanged,
+              onSubmitted: (value) => _searchManager.performImmediateSearch(value),
             )
           : const Text('Nearby Sites'),
         actions: [
