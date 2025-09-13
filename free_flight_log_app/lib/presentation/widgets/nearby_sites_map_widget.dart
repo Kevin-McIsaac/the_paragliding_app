@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -12,6 +13,8 @@ import '../../utils/map_tile_provider.dart';
 import '../../utils/airspace_overlay_manager.dart';
 import '../../services/openaip_service.dart';
 import '../../services/airspace_geojson_service.dart';
+import '../../services/airspace_identification_service.dart';
+import '../widgets/airspace_tooltip_widget.dart';
 
 class NearbySitesMapWidget extends StatefulWidget {
   final List<ParaglidingSite> sites;
@@ -72,6 +75,11 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   bool _airspaceEnabled = false;
   Set<String> _visibleAirspaceTypes = {};
 
+  // Airspace tooltip state
+  List<AirspaceData> _tooltipAirspaces = [];
+  Offset? _tooltipPosition;
+  bool _showTooltip = false;
+
   
   @override
   void initState() {
@@ -82,6 +90,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
       _loadAirspaceLayers();
     });
   }
+
 
   @override
   void didUpdateWidget(NearbySitesMapWidget oldWidget) {
@@ -221,6 +230,51 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     _loadAirspaceStatus(); // Also refresh the status for legend
     _loadAirspaceLayers();
   }
+
+  /// Handle click for airspace identification
+  void _handleAirspaceInteraction(Offset screenPosition, LatLng mapPoint) {
+    if (!_airspaceEnabled) return;
+
+    // Identify airspaces at the point (using map coordinates from FlutterMap)
+    final airspaces = AirspaceIdentificationService.instance.identifyAirspacesAtPoint(mapPoint);
+
+    if (airspaces.isNotEmpty) {
+      // Check if clicking near the same position (toggle behavior)
+      if (_showTooltip && _tooltipPosition != null && _isSimilarPosition(screenPosition, _tooltipPosition!)) {
+        // Toggle: hide tooltip if clicking the same area
+        _hideTooltip();
+      } else {
+        // Show tooltip immediately
+        setState(() {
+          _tooltipAirspaces = airspaces;
+          _tooltipPosition = screenPosition;
+          _showTooltip = true;
+        });
+      }
+    } else {
+      // No airspaces found, hide tooltip
+      _hideTooltip();
+    }
+  }
+
+  /// Check if two positions are similar (within 50 pixels)
+  bool _isSimilarPosition(Offset pos1, Offset pos2) {
+    const double threshold = 50.0;
+    return (pos1 - pos2).distance < threshold;
+  }
+
+
+  /// Hide the airspace tooltip immediately
+  void _hideTooltip() {
+    if (_showTooltip) {
+      setState(() {
+        _showTooltip = false;
+        _tooltipAirspaces = [];
+        _tooltipPosition = null;
+      });
+    }
+  }
+
 
 
 
@@ -766,6 +820,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
     return Stack(
       children: [
+        // FlutterMap with native click handling for airspace tooltip
         FlutterMap(
           mapController: _mapController,
           options: MapOptions(
@@ -779,38 +834,50 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               flags: InteractiveFlag.all,
             ),
             onTap: (tapPosition, point) {
+              // Handle airspace tooltip on click with proper coordinates
+              _handleAirspaceInteraction(tapPosition.global, point);
+
               // Clear search when tapping the map
               if (widget.searchQuery.isNotEmpty) {
                 widget.onSearchChanged('');
               }
             },
           ),
-          children: [
-            // Map tiles layer
-            TileLayer(
-              urlTemplate: widget.mapProvider.urlTemplate,
-              userAgentPackageName: 'com.example.free_flight_log_app',
-              maxZoom: widget.mapProvider.maxZoom.toDouble(),
-              tileProvider: MapTileProvider.createInstance(),
-              errorTileCallback: MapTileProvider.getErrorCallback(),
-            ),
+              children: [
+                // Map tiles layer
+                TileLayer(
+                  urlTemplate: widget.mapProvider.urlTemplate,
+                  userAgentPackageName: 'com.example.free_flight_log_app',
+                  maxZoom: widget.mapProvider.maxZoom.toDouble(),
+                  tileProvider: MapTileProvider.createInstance(),
+                  errorTileCallback: MapTileProvider.getErrorCallback(),
+                ),
 
-            // Airspace overlay layers (between base map and markers)
-            ..._airspaceLayers,
-            
-            // Site markers layer
-            MarkerLayer(
-              markers: [
-                ..._buildUserLocationMarker(),
-                ..._buildSiteMarkers(),
+                // Airspace overlay layers (between base map and markers)
+                ..._airspaceLayers,
+
+                // Site markers layer
+                MarkerLayer(
+                  markers: [
+                    ..._buildUserLocationMarker(),
+                    ..._buildSiteMarkers(),
+                  ],
+                ),
               ],
             ),
-          ],
-        ),
-        
+
         // Map overlays
         _buildAttribution(),
         _buildTopControlBar(),
+
+        // Airspace tooltip
+        if (_showTooltip && _tooltipPosition != null)
+          AirspaceTooltipWidget(
+            airspaces: _tooltipAirspaces,
+            position: _tooltipPosition!,
+            screenSize: MediaQuery.of(context).size,
+            onClose: _hideTooltip,
+          ),
       ],
     );
   }

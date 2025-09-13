@@ -7,6 +7,7 @@ import 'package:flutter_map/flutter_map.dart' as fm;
 import 'package:geobase/geobase.dart' as geo;
 import '../services/logging_service.dart';
 import '../services/openaip_service.dart';
+import '../services/airspace_identification_service.dart';
 
 /// Data structure for airspace information
 class AirspaceData {
@@ -70,6 +71,14 @@ class AirspaceStyle {
     this.borderWidth = 1.5,
     this.isDotted = false,
   });
+}
+
+/// Result container for polygon creation
+class _PolygonResult {
+  final fm.Polygon polygon;
+  final List<LatLng> points;
+
+  _PolygonResult({required this.polygon, required this.points});
 }
 
 /// Service for fetching and parsing airspace data from OpenAIP Core API
@@ -424,35 +433,64 @@ class AirspaceGeoJsonService {
   }
 
   /// Parse GeoJSON string and return styled polygons for flutter_map
+  /// Also populates the AirspaceIdentificationService with polygon data
   Future<List<fm.Polygon>> parseAirspaceGeoJson(String geoJsonString, double opacity) async {
     try {
       // Use geobase to parse the GeoJSON data
       final featureCollection = geo.FeatureCollection.parse(geoJsonString);
 
       final polygons = <fm.Polygon>[];
+      final identificationPolygons = <AirspacePolygonData>[];
 
       for (final feature in featureCollection.features) {
         final geometry = feature.geometry;
         final properties = feature.properties;
 
         if (geometry != null) {
+          // Create airspace data from properties
+          final airspaceData = AirspaceData(
+            name: properties != null ? properties['name']?.toString() ?? 'Unknown Airspace' : 'Unknown Airspace',
+            type: properties != null ? _mapOpenAipTypeToStyle(properties['type']) ?? 'UNKNOWN' : 'UNKNOWN',
+            class_: properties != null ? properties['class']?.toString() : null,
+            upperLimit: properties != null ? properties['upperLimit'] as Map<String, dynamic>? : null,
+            lowerLimit: properties != null ? properties['lowerLimit'] as Map<String, dynamic>? : null,
+            country: properties != null ? properties['country']?.toString() : null,
+          );
+
           // Handle different geometry types
           if (geometry is geo.GeometryCollection) {
             // Handle geometry collections
             for (final geom in geometry.geometries) {
-              final polygon = _createPolygonFromGeometry(geom, properties, opacity);
-              if (polygon != null) polygons.add(polygon);
+              final result = _createPolygonFromGeometry(geom, properties, opacity);
+              if (result != null) {
+                polygons.add(result.polygon);
+                identificationPolygons.add(AirspacePolygonData(
+                  points: result.points,
+                  airspaceData: airspaceData,
+                ));
+              }
             }
           } else {
-            final polygon = _createPolygonFromGeometry(geometry, properties, opacity);
-            if (polygon != null) polygons.add(polygon);
+            final result = _createPolygonFromGeometry(geometry, properties, opacity);
+            if (result != null) {
+              polygons.add(result.polygon);
+              identificationPolygons.add(AirspacePolygonData(
+                points: result.points,
+                airspaceData: airspaceData,
+              ));
+            }
           }
         }
       }
 
+      // Update the identification service with polygon data
+      final boundsKey = _generateBoundsKeyFromGeoJson(featureCollection);
+      AirspaceIdentificationService.instance.updateAirspacePolygons(identificationPolygons, boundsKey);
+
       LoggingService.structured('GEOJSON_PARSING', {
         'features_count': featureCollection.features.length,
         'polygons_created': polygons.length,
+        'identification_polygons': identificationPolygons.length,
         'geojson_size': geoJsonString.length,
       });
 
@@ -467,7 +505,9 @@ class AirspaceGeoJsonService {
     }
   }
 
+
   /// Create a flutter_map Polygon from a geobase geometry
+  /// Returns both the styled polygon and the coordinate points for identification
   /// Log statistics about airspace types and distribution
   void _logAirspaceStatistics(geo.FeatureCollection featureCollection) {
     final Map<String, int> typeStats = {};
@@ -477,7 +517,7 @@ class AirspaceGeoJsonService {
 
     for (final feature in featureCollection.features) {
       final props = feature.properties;
-      if (props != null && props.isNotEmpty) {
+      if (props != null) {
         // Count by mapped type
         final originalType = props['type']?.toString() ?? 'null';
         final mappedType = _mapOpenAipTypeToStyle(props['type']);
@@ -521,7 +561,7 @@ class AirspaceGeoJsonService {
     });
   }
 
-  fm.Polygon? _createPolygonFromGeometry(geo.Geometry geometry, Map<String, dynamic>? properties, double opacity) {
+  _PolygonResult? _createPolygonFromGeometry(geo.Geometry geometry, Map<String, dynamic>? properties, double opacity) {
     try {
       List<LatLng> points = [];
       final props = properties ?? <String, dynamic>{};
@@ -565,14 +605,14 @@ class AirspaceGeoJsonService {
       });
       */
 
-      return fm.Polygon(
+      final polygon = fm.Polygon(
         points: points,
         color: style.fillColor.withValues(alpha: opacity),
         borderColor: style.borderColor,
         borderStrokeWidth: style.borderWidth,
-        // Note: Store airspace data for future interactive features
-        // For now, we'll handle interactions at the layer level
       );
+
+      return _PolygonResult(polygon: polygon, points: points);
 
     } catch (error, stackTrace) {
       LoggingService.error('Failed to create polygon from geometry', error, stackTrace);
@@ -639,4 +679,27 @@ class AirspaceGeoJsonService {
 
   /// Get all defined airspace types with their styles
   Map<String, AirspaceStyle> get allAirspaceStyles => Map.from(_airspaceStyles);
+
+  /// Generate bounds key from GeoJSON feature collection
+  String _generateBoundsKeyFromGeoJson(geo.FeatureCollection featureCollection) {
+    if (featureCollection.features.isEmpty) return 'empty';
+
+    double minLat = 90.0, maxLat = -90.0, minLon = 180.0, maxLon = -180.0;
+
+    for (final feature in featureCollection.features) {
+      final geometry = feature.geometry;
+      if (geometry is geo.Polygon) {
+        for (final ring in geometry.rings) {
+          for (final point in ring.positions) {
+            minLat = math.min(minLat, point.y);
+            maxLat = math.max(maxLat, point.y);
+            minLon = math.min(minLon, point.x);
+            maxLon = math.max(maxLon, point.x);
+          }
+        }
+      }
+    }
+
+    return '${minLat.toStringAsFixed(2)},${minLon.toStringAsFixed(2)},${maxLat.toStringAsFixed(2)},${maxLon.toStringAsFixed(2)}';
+  }
 }
