@@ -40,6 +40,7 @@ class NearbySitesMapWidget extends StatefulWidget {
   final bool hasActiveFilters;
   final bool sitesEnabled;
   final double maxAltitudeFt;
+  final int filterUpdateCounter;
 
   const NearbySitesMapWidget({
     super.key,
@@ -65,6 +66,7 @@ class NearbySitesMapWidget extends StatefulWidget {
     this.hasActiveFilters = false,
     this.sitesEnabled = true,
     this.maxAltitudeFt = 15000.0,
+    this.filterUpdateCounter = 0,
   });
 
   @override
@@ -105,7 +107,8 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
     // Check if filter properties changed and reload overlays if needed
     if (oldWidget.sitesEnabled != widget.sitesEnabled ||
-        oldWidget.maxAltitudeFt != widget.maxAltitudeFt) {
+        oldWidget.maxAltitudeFt != widget.maxAltitudeFt ||
+        oldWidget.filterUpdateCounter != widget.filterUpdateCounter) {
       // Reload overlays with new filter settings
       _loadAirspaceOverlays();
     }

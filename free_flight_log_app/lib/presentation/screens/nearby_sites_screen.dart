@@ -79,6 +79,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   bool _sitesEnabled = true; // Controls site loading and display
   bool _airspaceEnabled = true; // Controls airspace loading and display
   double _maxAltitudeFt = 15000.0; // Default altitude filter
+  int _filterUpdateCounter = 0; // Increments when any filter changes to trigger map refresh
   final OpenAipService _openAipService = OpenAipService.instance;
   
 
@@ -660,7 +661,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
       // Refresh map to apply airspace filter changes
       setState(() {
-        // Just update state - don't reset the map widget key
+        // Increment counter to trigger map overlay refresh
+        _filterUpdateCounter++;
         // This preserves the map position and zoom level
       });
 
@@ -759,6 +761,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                               hasActiveFilters: hasActiveFilters,
                               sitesEnabled: _sitesEnabled,
                               maxAltitudeFt: _maxAltitudeFt,
+                              filterUpdateCounter: _filterUpdateCounter,
                             );
                           },
                         ),
