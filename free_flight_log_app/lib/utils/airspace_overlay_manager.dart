@@ -94,7 +94,7 @@ class AirspaceOverlayManager {
       final enabledTypes = _convertStringTypesToNumeric(enabledStringTypes);
 
       // Parse GeoJSON and convert to styled polygons (filtered by enabled types)
-      final polygons = await _geoJsonService.parseAirspaceGeoJson(geoJsonString, opacity, enabledTypes);
+      final polygons = await _geoJsonService.parseAirspaceGeoJson(geoJsonString, opacity, enabledTypes, bounds);
 
       LoggingService.structured('AIRSPACE_FETCH_SUCCESS', {
         'polygon_count': polygons.length,

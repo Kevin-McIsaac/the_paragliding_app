@@ -615,6 +615,7 @@ class AirspaceGeoJsonService {
     String geoJsonString,
     double opacity,
     Map<int, bool> enabledTypes,
+    fm.LatLngBounds viewport,
   ) async {
     try {
       // Use geobase to parse the GeoJSON data
@@ -692,7 +693,7 @@ class AirspaceGeoJsonService {
         });
 
         // Apply polygon clipping to remove overlapping areas
-        final clippedPolygons = _applyPolygonClipping(polygonsWithAltitude);
+        final clippedPolygons = _applyPolygonClipping(polygonsWithAltitude, viewport);
 
         // Convert clipped polygons back to flutter_map format
         polygons = _convertClippedPolygonsToFlutterMap(clippedPolygons, opacity);
@@ -957,11 +958,51 @@ class AirspaceGeoJsonService {
     return path.map((point) => _clipperToLatLng(point)).toList();
   }
 
+  /// Calculate bounding box for a list of LatLng points
+  fm.LatLngBounds _calculateBoundingBox(List<LatLng> points) {
+    if (points.isEmpty) {
+      // Return a minimal bounding box if no points
+      return fm.LatLngBounds(LatLng(0, 0), LatLng(0, 0));
+    }
+
+    double minLat = points.first.latitude;
+    double maxLat = points.first.latitude;
+    double minLon = points.first.longitude;
+    double maxLon = points.first.longitude;
+
+    for (final point in points) {
+      minLat = math.min(minLat, point.latitude);
+      maxLat = math.max(maxLat, point.latitude);
+      minLon = math.min(minLon, point.longitude);
+      maxLon = math.max(maxLon, point.longitude);
+    }
+
+    return fm.LatLngBounds(
+      LatLng(minLat, minLon),
+      LatLng(maxLat, maxLon),
+    );
+  }
+
+  /// Check if two bounding boxes overlap
+  bool _boundingBoxesOverlap(fm.LatLngBounds box1, fm.LatLngBounds box2) {
+    // Check if box1 is completely to the left, right, above, or below box2
+    return !(box1.east < box2.west ||
+             box1.west > box2.east ||
+             box1.north < box2.south ||
+             box1.south > box2.north);
+  }
+
+  /// Check if airspace bounding box intersects with viewport
+  bool _isInViewport(fm.LatLngBounds airspaceBounds, fm.LatLngBounds viewport) {
+    return _boundingBoxesOverlap(airspaceBounds, viewport);
+  }
+
   /// Subtract multiple polygons from a subject polygon using boolean difference
   /// Returns list of resulting polygons (may be empty, single, or multiple)
   List<_ClippedPolygonData> _subtractPolygonsFromSubject({
     required List<LatLng> subjectPoints,
     required List<List<LatLng>> clippingPolygons,
+    required List<AirspaceData> clippingAirspaceData,
     required AirspaceData airspaceData,
     required AirspaceStyle style,
   }) {
@@ -1015,6 +1056,25 @@ class AirspaceGeoJsonService {
         }
       }
 
+      // Track completely clipped airspaces
+      if (results.isEmpty && subjectPoints.isNotEmpty) {
+        // Extract names of airspaces that caused the clipping
+        final clippingNames = clippingAirspaceData.map((data) =>
+          '${data.name} (${data.getLowerAltitudeInFeet()}-${data.getUpperAltitudeInFeet()}ft)'
+        ).toList();
+
+        LoggingService.warning('AIRSPACE_COMPLETELY_CLIPPED', {
+          'name': airspaceData.name,
+          'type': airspaceData.type,
+          'lower_alt': airspaceData.getLowerAltitudeInFeet(),
+          'upper_alt': airspaceData.getUpperAltitudeInFeet(),
+          'original_points': subjectPoints.length,
+          'clipped_by_count': clippingPolygons.length,
+          'clipped_by_names': clippingNames.join(', '),
+          'clipped_by_details': clippingNames,
+        });
+      }
+
       LoggingService.structured('POLYGON_CLIPPING_OPERATION', {
         'subject_points': subjectPoints.length,
         'clipping_polygons': clippingPolygons.length,
@@ -1040,19 +1100,45 @@ class AirspaceGeoJsonService {
   /// Apply polygon clipping to eliminate overlapping airspace areas
   /// Each airspace shows only the areas not covered by lower-altitude airspaces
   List<_ClippedPolygonData> _applyPolygonClipping(
-    List<({fm.Polygon polygon, AirspacePolygonData data})> polygonsWithAltitude
+    List<({fm.Polygon polygon, AirspacePolygonData data})> polygonsWithAltitude,
+    fm.LatLngBounds viewport,
   ) {
     final List<_ClippedPolygonData> clippedPolygons = [];
+    int completelyClippedCount = 0;
+    List<String> completelyClippedNames = [];
 
     LoggingService.structured('AIRSPACE_CLIPPING_START', {
       'input_polygons': polygonsWithAltitude.length,
     });
 
-    // Process each polygon from lowest to highest altitude
-    for (int i = 0; i < polygonsWithAltitude.length; i++) {
-      final current = polygonsWithAltitude[i];
+    // STAGE 1: Filter to viewport-visible airspaces only
+    final List<({fm.Polygon polygon, AirspacePolygonData data, fm.LatLngBounds bounds})> visibleAirspaces = [];
+
+    for (final polygon in polygonsWithAltitude) {
+      final bounds = _calculateBoundingBox(polygon.data.points);
+      if (_isInViewport(bounds, viewport)) {
+        visibleAirspaces.add((
+          polygon: polygon.polygon,
+          data: polygon.data,
+          bounds: bounds, // Pre-calculate for Stage 2
+        ));
+      }
+    }
+
+    LoggingService.structured('VIEWPORT_FILTERING', {
+      'total_airspaces': polygonsWithAltitude.length,
+      'visible_airspaces': visibleAirspaces.length,
+      'filtered_out': polygonsWithAltitude.length - visibleAirspaces.length,
+      'reduction_percent': polygonsWithAltitude.length > 0 ?
+        ((polygonsWithAltitude.length - visibleAirspaces.length) / polygonsWithAltitude.length * 100).round() : 0,
+    });
+
+    // Process each visible polygon from lowest to highest altitude
+    for (int i = 0; i < visibleAirspaces.length; i++) {
+      final current = visibleAirspaces[i];
       final currentPoints = current.data.points;
       final airspaceData = current.data.airspaceData;
+      final currentBounds = current.bounds; // Pre-calculated
 
       // Get style for current airspace
       final typeValue = airspaceData.type;
@@ -1061,14 +1147,27 @@ class AirspaceGeoJsonService {
 
       // Collect all lower-altitude polygons as clipping masks
       final List<List<LatLng>> clippingPolygons = [];
+      final List<AirspaceData> clippingAirspaceData = [];
+      int skippedDueToBounds = 0;
+      int totalComparisons = 0;
+
       for (int j = 0; j < i; j++) {
-        final lowerPolygon = polygonsWithAltitude[j];
-        final lowerAltitude = lowerPolygon.data.airspaceData.getLowerAltitudeInFeet();
+        final lowerAirspace = visibleAirspaces[j];
+        totalComparisons++;
+
+        // STAGE 2: Skip if bounding boxes don't overlap
+        if (!_boundingBoxesOverlap(currentBounds, lowerAirspace.bounds)) {
+          skippedDueToBounds++;
+          continue;
+        }
+
+        final lowerAltitude = lowerAirspace.data.airspaceData.getLowerAltitudeInFeet();
         final currentAltitude = airspaceData.getLowerAltitudeInFeet();
 
         // Only clip against polygons that are actually lower
         if (lowerAltitude < currentAltitude) {
-          clippingPolygons.add(lowerPolygon.data.points);
+          clippingPolygons.add(lowerAirspace.data.points);
+          clippingAirspaceData.add(lowerAirspace.data.airspaceData);
         }
       }
 
@@ -1076,17 +1175,41 @@ class AirspaceGeoJsonService {
       final clippedResults = _subtractPolygonsFromSubject(
         subjectPoints: currentPoints,
         clippingPolygons: clippingPolygons,
+        clippingAirspaceData: clippingAirspaceData,
         airspaceData: airspaceData,
         style: style,
       );
+
+      // Log bounding box filtering efficiency
+      if (totalComparisons > 0) {
+        LoggingService.debug('BOUNDS_FILTERING', {
+          'airspace': airspaceData.name,
+          'potential_clippers': totalComparisons,
+          'actual_clippers': clippingPolygons.length,
+          'skipped_bounds': skippedDueToBounds,
+          'bounds_efficiency': (skippedDueToBounds / totalComparisons * 100).round(),
+        });
+      }
+
+      // Track if this airspace was completely clipped away
+      if (clippedResults.isEmpty && currentPoints.isNotEmpty) {
+        completelyClippedCount++;
+        completelyClippedNames.add(airspaceData.name);
+      }
 
       clippedPolygons.addAll(clippedResults);
     }
 
     LoggingService.structured('AIRSPACE_CLIPPING_COMPLETE', {
-      'input_polygons': polygonsWithAltitude.length,
+      'total_airspaces': polygonsWithAltitude.length,
+      'visible_airspaces': visibleAirspaces.length,
       'output_clipped_polygons': clippedPolygons.length,
-      'clipping_efficiency': clippedPolygons.length / polygonsWithAltitude.length,
+      'completely_clipped_count': completelyClippedCount,
+      'completely_clipped_names': completelyClippedNames,
+      'viewport_filter_reduction': polygonsWithAltitude.length > 0 ?
+        ((polygonsWithAltitude.length - visibleAirspaces.length) / polygonsWithAltitude.length * 100).round() : 0,
+      'clipping_efficiency': visibleAirspaces.length > 0 ?
+        (clippedPolygons.length / visibleAirspaces.length) : 0,
     });
 
     return clippedPolygons;
