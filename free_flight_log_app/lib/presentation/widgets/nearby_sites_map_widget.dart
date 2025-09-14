@@ -102,9 +102,16 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   @override
   void didUpdateWidget(NearbySitesMapWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    
+
+    // Check if filter properties changed and reload overlays if needed
+    if (oldWidget.sitesEnabled != widget.sitesEnabled ||
+        oldWidget.maxAltitudeFt != widget.maxAltitudeFt) {
+      // Reload overlays with new filter settings
+      _loadAirspaceOverlays();
+    }
+
     // Priority 1: Check if we should fit to exact bounds (for precise area display)
-    if (widget.boundsToFit != null && 
+    if (widget.boundsToFit != null &&
         oldWidget.boundsToFit != widget.boundsToFit) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _mapController.fitCamera(
