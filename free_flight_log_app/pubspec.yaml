@@ -63,6 +63,7 @@ dependencies:
   geolocator: ^10.1.1       # Device location access for nearby sites feature
 
   http: ^1.2.2              # HTTP client - pinned from "any" to stable
+  clipper2: ^0.0.3          # Polygon boolean operations (union, intersection, difference)
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_map/flutter_map.dart' as fm;
 import 'package:geobase/geobase.dart' as geo;
+import 'package:clipper2/clipper2.dart' as clipper;
 import '../services/logging_service.dart';
 import '../services/openaip_service.dart';
 import '../services/airspace_identification_service.dart';
@@ -179,6 +180,21 @@ class _PolygonResult {
   final List<LatLng> points;
 
   _PolygonResult({required this.polygon, required this.points});
+}
+
+/// Container for clipped polygon data
+class _ClippedPolygonData {
+  final List<LatLng> outerPoints;
+  final List<List<LatLng>> holes;
+  final AirspaceData airspaceData;
+  final AirspaceStyle style;
+
+  _ClippedPolygonData({
+    required this.outerPoints,
+    required this.holes,
+    required this.airspaceData,
+    required this.style,
+  });
 }
 
 /// Service for fetching and parsing airspace data from OpenAIP Core API
@@ -599,6 +615,7 @@ class AirspaceGeoJsonService {
     String geoJsonString,
     double opacity,
     Map<int, bool> enabledTypes,
+    fm.LatLngBounds viewport,
   ) async {
     try {
       // Use geobase to parse the GeoJSON data
@@ -669,22 +686,29 @@ class AirspaceGeoJsonService {
           ));
         }
 
-        // Sort by lower altitude: highest first (descending order)
+        // Sort by lower altitude: lowest first (ascending order) for clipping
         polygonsWithAltitude.sort((a, b) {
-          return b.data.airspaceData.getLowerAltitudeInFeet()
-              .compareTo(a.data.airspaceData.getLowerAltitudeInFeet());
+          return a.data.airspaceData.getLowerAltitudeInFeet()
+              .compareTo(b.data.airspaceData.getLowerAltitudeInFeet());
         });
 
-        // Extract sorted polygons and identification data
-        polygons = polygonsWithAltitude.map((p) => p.polygon).toList();
+        // Apply polygon clipping to remove overlapping areas
+        final clippedPolygons = _applyPolygonClipping(polygonsWithAltitude, viewport);
+
+        // Convert clipped polygons back to flutter_map format
+        polygons = _convertClippedPolygonsToFlutterMap(clippedPolygons, opacity);
+
+        // Update identification data to match clipped polygons
+        // For now, we'll keep original boundaries for tooltip hit testing
         identificationPolygons = polygonsWithAltitude.map((p) => p.data).toList();
 
-        LoggingService.structured('AIRSPACE_ALTITUDE_SORTING', {
-          'polygons_sorted': polygons.length,
-          'sort_order': 'highest_altitude_first',
+        LoggingService.structured('AIRSPACE_ALTITUDE_SORTING_AND_CLIPPING', {
+          'polygons_sorted': polygonsWithAltitude.length,
+          'clipped_polygons_output': polygons.length,
+          'sort_order': 'lowest_altitude_first_for_clipping',
           'altitude_range_feet': polygonsWithAltitude.isNotEmpty ? {
-            'highest': polygonsWithAltitude.first.data.airspaceData.getLowerAltitudeInFeet(),
-            'lowest': polygonsWithAltitude.last.data.airspaceData.getLowerAltitudeInFeet(),
+            'lowest': polygonsWithAltitude.first.data.airspaceData.getLowerAltitudeInFeet(),
+            'highest': polygonsWithAltitude.last.data.airspaceData.getLowerAltitudeInFeet(),
           } : null,
         });
       }
@@ -896,6 +920,333 @@ class AirspaceGeoJsonService {
 
   /// Get all defined airspace types with their styles
   Map<String, AirspaceStyle> get allAirspaceStyles => Map.from(_airspaceStyles);
+
+  // ==========================================================================
+  // POLYGON CLIPPING METHODS
+  // ==========================================================================
+
+  /// Coordinate conversion precision factor (10^7 for geographic coordinates)
+  static const double _coordPrecision = 10000000.0;
+
+  /// Convert LatLng to clipper2's integer coordinate system
+  clipper.Point64 _latLngToClipper(LatLng point) {
+    return clipper.Point64(
+      (point.longitude * _coordPrecision).round(),
+      (point.latitude * _coordPrecision).round(),
+    );
+  }
+
+  /// Convert clipper2 integer coordinates back to LatLng
+  LatLng _clipperToLatLng(clipper.Point64 point) {
+    return LatLng(
+      point.y / _coordPrecision,
+      point.x / _coordPrecision,
+    );
+  }
+
+  /// Convert List<LatLng> to clipper2 Path64
+  clipper.Path64 _latLngListToClipperPath(List<LatLng> points) {
+    final path = <clipper.Point64>[];
+    for (final point in points) {
+      path.add(_latLngToClipper(point));
+    }
+    return path;
+  }
+
+  /// Convert clipper2 Path64 to List<LatLng>
+  List<LatLng> _clipperPathToLatLngList(clipper.Path64 path) {
+    return path.map((point) => _clipperToLatLng(point)).toList();
+  }
+
+  /// Calculate bounding box for a list of LatLng points
+  fm.LatLngBounds _calculateBoundingBox(List<LatLng> points) {
+    if (points.isEmpty) {
+      // Return a minimal bounding box if no points
+      return fm.LatLngBounds(LatLng(0, 0), LatLng(0, 0));
+    }
+
+    double minLat = points.first.latitude;
+    double maxLat = points.first.latitude;
+    double minLon = points.first.longitude;
+    double maxLon = points.first.longitude;
+
+    for (final point in points) {
+      minLat = math.min(minLat, point.latitude);
+      maxLat = math.max(maxLat, point.latitude);
+      minLon = math.min(minLon, point.longitude);
+      maxLon = math.max(maxLon, point.longitude);
+    }
+
+    return fm.LatLngBounds(
+      LatLng(minLat, minLon),
+      LatLng(maxLat, maxLon),
+    );
+  }
+
+  /// Check if two bounding boxes overlap
+  bool _boundingBoxesOverlap(fm.LatLngBounds box1, fm.LatLngBounds box2) {
+    // Check if box1 is completely to the left, right, above, or below box2
+    return !(box1.east < box2.west ||
+             box1.west > box2.east ||
+             box1.north < box2.south ||
+             box1.south > box2.north);
+  }
+
+  /// Check if airspace bounding box intersects with viewport
+  bool _isInViewport(fm.LatLngBounds airspaceBounds, fm.LatLngBounds viewport) {
+    return _boundingBoxesOverlap(airspaceBounds, viewport);
+  }
+
+  /// Subtract multiple polygons from a subject polygon using boolean difference
+  /// Returns list of resulting polygons (may be empty, single, or multiple)
+  List<_ClippedPolygonData> _subtractPolygonsFromSubject({
+    required List<LatLng> subjectPoints,
+    required List<List<LatLng>> clippingPolygons,
+    required List<AirspaceData> clippingAirspaceData,
+    required AirspaceData airspaceData,
+    required AirspaceStyle style,
+  }) {
+    try {
+      if (subjectPoints.isEmpty) {
+        return [];
+      }
+
+      // Convert subject polygon to clipper format
+      final subjectPath = _latLngListToClipperPath(subjectPoints);
+      final subjectPaths = <clipper.Path64>[subjectPath];
+
+      // Convert all clipping polygons to clipper format
+      final clipPaths = <clipper.Path64>[];
+      for (final clippingPoints in clippingPolygons) {
+        if (clippingPoints.isNotEmpty) {
+          clipPaths.add(_latLngListToClipperPath(clippingPoints));
+        }
+      }
+
+      // If no clipping polygons, return original
+      if (clipPaths.isEmpty) {
+        return [_ClippedPolygonData(
+          outerPoints: subjectPoints,
+          holes: [],
+          airspaceData: airspaceData,
+          style: style,
+        )];
+      }
+
+      // Perform boolean difference operation
+      final solution = clipper.Clipper.difference(
+        subject: subjectPaths,
+        clip: clipPaths,
+        fillRule: clipper.FillRule.nonZero,
+      );
+
+      // Convert results back to LatLng
+      final List<_ClippedPolygonData> results = [];
+      for (final resultPath in solution) {
+        if (resultPath.isNotEmpty) {
+          final points = _clipperPathToLatLngList(resultPath);
+          if (points.length >= 3) { // Valid polygon needs at least 3 points
+            results.add(_ClippedPolygonData(
+              outerPoints: points,
+              holes: [], // For now, we handle simple polygons
+              airspaceData: airspaceData,
+              style: style,
+            ));
+          }
+        }
+      }
+
+      // Track completely clipped airspaces
+      if (results.isEmpty && subjectPoints.isNotEmpty) {
+        // Extract names of airspaces that caused the clipping
+        final clippingNames = clippingAirspaceData.map((data) =>
+          '${data.name} (${data.getLowerAltitudeInFeet()}-${data.getUpperAltitudeInFeet()}ft)'
+        ).toList();
+
+        LoggingService.warning('AIRSPACE_COMPLETELY_CLIPPED', {
+          'name': airspaceData.name,
+          'type': airspaceData.type,
+          'lower_alt': airspaceData.getLowerAltitudeInFeet(),
+          'upper_alt': airspaceData.getUpperAltitudeInFeet(),
+          'original_points': subjectPoints.length,
+          'clipped_by_count': clippingPolygons.length,
+          'clipped_by_names': clippingNames.join(', '),
+          'clipped_by_details': clippingNames,
+        });
+      }
+
+      LoggingService.structured('POLYGON_CLIPPING_OPERATION', {
+        'subject_points': subjectPoints.length,
+        'clipping_polygons': clippingPolygons.length,
+        'clipping_total_points': clippingPolygons.fold<int>(0, (sum, p) => sum + p.length),
+        'result_polygons': results.length,
+        'airspace_name': airspaceData.name,
+      });
+
+      return results;
+
+    } catch (error, stackTrace) {
+      LoggingService.error('Failed to perform polygon clipping operation', error, stackTrace);
+      // Return original polygon if clipping fails
+      return [_ClippedPolygonData(
+        outerPoints: subjectPoints,
+        holes: [],
+        airspaceData: airspaceData,
+        style: style,
+      )];
+    }
+  }
+
+  /// Apply polygon clipping to eliminate overlapping airspace areas
+  /// Each airspace shows only the areas not covered by lower-altitude airspaces
+  List<_ClippedPolygonData> _applyPolygonClipping(
+    List<({fm.Polygon polygon, AirspacePolygonData data})> polygonsWithAltitude,
+    fm.LatLngBounds viewport,
+  ) {
+    final List<_ClippedPolygonData> clippedPolygons = [];
+    int completelyClippedCount = 0;
+    List<String> completelyClippedNames = [];
+
+    LoggingService.structured('AIRSPACE_CLIPPING_START', {
+      'input_polygons': polygonsWithAltitude.length,
+    });
+
+    // STAGE 1: Filter to viewport-visible airspaces only
+    final List<({fm.Polygon polygon, AirspacePolygonData data, fm.LatLngBounds bounds})> visibleAirspaces = [];
+
+    for (final polygon in polygonsWithAltitude) {
+      final bounds = _calculateBoundingBox(polygon.data.points);
+      if (_isInViewport(bounds, viewport)) {
+        visibleAirspaces.add((
+          polygon: polygon.polygon,
+          data: polygon.data,
+          bounds: bounds, // Pre-calculate for Stage 2
+        ));
+      }
+    }
+
+    LoggingService.structured('VIEWPORT_FILTERING', {
+      'total_airspaces': polygonsWithAltitude.length,
+      'visible_airspaces': visibleAirspaces.length,
+      'filtered_out': polygonsWithAltitude.length - visibleAirspaces.length,
+      'reduction_percent': polygonsWithAltitude.length > 0 ?
+        ((polygonsWithAltitude.length - visibleAirspaces.length) / polygonsWithAltitude.length * 100).round() : 0,
+    });
+
+    // Process each visible polygon from lowest to highest altitude
+    for (int i = 0; i < visibleAirspaces.length; i++) {
+      final current = visibleAirspaces[i];
+      final currentPoints = current.data.points;
+      final airspaceData = current.data.airspaceData;
+      final currentBounds = current.bounds; // Pre-calculated
+
+      // Get style for current airspace
+      final typeValue = airspaceData.type;
+      final mappedType = _mapOpenAipTypeToStyle(typeValue);
+      final style = _airspaceStyles[mappedType] ?? _getDefaultStyle();
+
+      // Collect all lower-altitude polygons as clipping masks
+      final List<List<LatLng>> clippingPolygons = [];
+      final List<AirspaceData> clippingAirspaceData = [];
+      int skippedDueToBounds = 0;
+      int totalComparisons = 0;
+
+      for (int j = 0; j < i; j++) {
+        final lowerAirspace = visibleAirspaces[j];
+        totalComparisons++;
+
+        // STAGE 2: Skip if bounding boxes don't overlap
+        if (!_boundingBoxesOverlap(currentBounds, lowerAirspace.bounds)) {
+          skippedDueToBounds++;
+          continue;
+        }
+
+        final lowerAltitude = lowerAirspace.data.airspaceData.getLowerAltitudeInFeet();
+        final currentAltitude = airspaceData.getLowerAltitudeInFeet();
+
+        // Only clip against polygons that are actually lower
+        if (lowerAltitude < currentAltitude) {
+          clippingPolygons.add(lowerAirspace.data.points);
+          clippingAirspaceData.add(lowerAirspace.data.airspaceData);
+        }
+      }
+
+      // Perform clipping operation
+      final clippedResults = _subtractPolygonsFromSubject(
+        subjectPoints: currentPoints,
+        clippingPolygons: clippingPolygons,
+        clippingAirspaceData: clippingAirspaceData,
+        airspaceData: airspaceData,
+        style: style,
+      );
+
+      // Log bounding box filtering efficiency
+      if (totalComparisons > 0) {
+        LoggingService.debug('BOUNDS_FILTERING', {
+          'airspace': airspaceData.name,
+          'potential_clippers': totalComparisons,
+          'actual_clippers': clippingPolygons.length,
+          'skipped_bounds': skippedDueToBounds,
+          'bounds_efficiency': (skippedDueToBounds / totalComparisons * 100).round(),
+        });
+      }
+
+      // Track if this airspace was completely clipped away
+      if (clippedResults.isEmpty && currentPoints.isNotEmpty) {
+        completelyClippedCount++;
+        completelyClippedNames.add(airspaceData.name);
+      }
+
+      clippedPolygons.addAll(clippedResults);
+    }
+
+    LoggingService.structured('AIRSPACE_CLIPPING_COMPLETE', {
+      'total_airspaces': polygonsWithAltitude.length,
+      'visible_airspaces': visibleAirspaces.length,
+      'output_clipped_polygons': clippedPolygons.length,
+      'completely_clipped_count': completelyClippedCount,
+      'completely_clipped_names': completelyClippedNames,
+      'viewport_filter_reduction': polygonsWithAltitude.length > 0 ?
+        ((polygonsWithAltitude.length - visibleAirspaces.length) / polygonsWithAltitude.length * 100).round() : 0,
+      'clipping_efficiency': visibleAirspaces.length > 0 ?
+        (clippedPolygons.length / visibleAirspaces.length) : 0,
+    });
+
+    return clippedPolygons;
+  }
+
+  /// Convert clipped polygon data to flutter_map Polygons
+  List<fm.Polygon> _convertClippedPolygonsToFlutterMap(
+    List<_ClippedPolygonData> clippedPolygons,
+    double opacity,
+  ) {
+    final List<fm.Polygon> flutterMapPolygons = [];
+
+    for (final clippedData in clippedPolygons) {
+      if (clippedData.outerPoints.length >= 3) {
+        // Create flutter_map polygon with holes support
+        final polygon = fm.Polygon(
+          points: clippedData.outerPoints,
+          holePointsList: clippedData.holes.isNotEmpty ? clippedData.holes : null,
+          color: clippedData.style.fillColor.withValues(alpha: opacity),
+          borderColor: clippedData.style.borderColor,
+          borderStrokeWidth: clippedData.style.borderWidth,
+          // Disable hole borders for cleaner appearance
+          disableHolesBorder: true,
+        );
+
+        flutterMapPolygons.add(polygon);
+      }
+    }
+
+    LoggingService.structured('CLIPPED_POLYGONS_CONVERSION', {
+      'clipped_polygons_input': clippedPolygons.length,
+      'flutter_map_polygons_output': flutterMapPolygons.length,
+      'polygons_with_holes': clippedPolygons.where((p) => p.holes.isNotEmpty).length,
+    });
+
+    return flutterMapPolygons;
+  }
 
   /// Generate bounds key from GeoJSON feature collection
   String _generateBoundsKeyFromGeoJson(geo.FeatureCollection featureCollection) {
