@@ -256,12 +256,14 @@ class ParaglidingEarthApi {
     int limit = 50,
     bool detailed = true,
   }) async {
+    final stopwatch = Stopwatch()..start();
+
     try {
       final url = Uri.parse('$_baseUrl/getBoundingBoxSites.php').replace(
         queryParameters: {
           'north': north.toString(),
           'south': south.toString(),
-          'east': east.toString(),  
+          'east': east.toString(),
           'west': west.toString(),
           'limit': limit.toString(),
           if (detailed) 'style': 'detailled',
@@ -272,16 +274,38 @@ class ParaglidingEarthApi {
 
       final response = await httpClient.get(url).timeout(_timeout);
       _requestCount++; // Increment request counter
-      
+      stopwatch.stop();
+
       if (response.statusCode == 200) {
         final sites = _parseGeoJsonResponse(response.body);
+
+        LoggingService.performance(
+          'Paragliding Earth API',
+          Duration(milliseconds: stopwatch.elapsedMilliseconds),
+          'sites=${sites.length}, bounds=$west,$south,$east,$north'
+        );
+
         LoggingService.info('ParaglidingEarthApi: Found ${sites.length} sites in bounds');
         return sites;
       } else {
+        LoggingService.performance(
+          'Paragliding Earth API (Failed)',
+          Duration(milliseconds: stopwatch.elapsedMilliseconds),
+          'status=${response.statusCode}'
+        );
+
         LoggingService.warning('ParaglidingEarthApi: HTTP ${response.statusCode} - ${response.reasonPhrase}');
         return [];
       }
     } catch (e) {
+      stopwatch.stop();
+
+      LoggingService.performance(
+        'Paragliding Earth API (Error)',
+        Duration(milliseconds: stopwatch.elapsedMilliseconds),
+        'error=true'
+      );
+
       LoggingService.error('ParaglidingEarthApi: API error', e);
       return [];
     }

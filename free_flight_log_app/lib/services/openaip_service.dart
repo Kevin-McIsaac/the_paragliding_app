@@ -45,6 +45,9 @@ class OpenAipService {
 
   // Individual airspace type preferences
   static const String _airspaceTypesEnabledKey = 'openaip_airspace_types_enabled';
+
+  // Individual ICAO class preferences
+  static const String _icaoClassesEnabledKey = 'openaip_icao_classes_enabled';
   
   // Default values
   static const double _defaultOpacity = 0.15; // 15% optimal for airspace visibility
@@ -61,12 +64,20 @@ class OpenAipService {
     'D': true,    // Danger Area - critical for safety
     'R': true,    // Restricted - critical for safety
     'P': true,    // Prohibited - critical for safety
-    'A': false,   // Class A - less relevant for VFR
+    'FIR': false, // Flight Information Region - less critical
+    'None': false, // Unknown type - less critical
+  };
+
+  // Default enabled ICAO classes (VFR-focused)
+  static const Map<String, bool> _defaultIcaoClasses = {
+    'A': false,   // Class A - IFR only, less relevant for VFR
     'B': true,    // Class B - important for VFR
     'C': true,    // Class C - important for VFR
+    'D': true,    // Class D - important for VFR
     'E': false,   // Class E - less critical
     'F': false,   // Class F - less critical
-    'G': false,   // Class G - uncontrolled, less critical
+    'G': true,    // Class G - uncontrolled, relevant for VFR
+    'None': false, // No class assigned - less critical
   };
   
   /// Get the tile URL template for a specific layer
@@ -305,6 +316,7 @@ class OpenAipService {
     await prefs.remove(_reportingPointsEnabledKey);
     await prefs.remove(_overlayOpacityKey);
     await prefs.remove(_airspaceTypesEnabledKey);
+    await prefs.remove(_icaoClassesEnabledKey);
 
     LoggingService.info('OpenAIP settings reset to defaults');
   }
@@ -355,58 +367,121 @@ class OpenAipService {
     return enabledTypes[type] ?? _defaultAirspaceTypes[type] ?? false;
   }
 
-  /// Set airspace preset (quick configurations)
+  /// Set airspace and ICAO class preset (quick configurations)
   Future<void> setAirspacePreset(String presetName) async {
-    Map<String, bool> preset;
+    Map<String, bool> typePreset;
+    Map<String, bool> classPreset;
 
     switch (presetName) {
       case 'vfr':
-        preset = {
+        typePreset = {
           'CTR': true, 'TMA': true, 'CTA': true,
           'D': true, 'R': true, 'P': true,
-          'A': false, 'B': true, 'C': true,
-          'E': false, 'F': false, 'G': false,
+          'FIR': false, 'None': false,
+        };
+        classPreset = {
+          'A': false, 'B': true, 'C': true, 'D': true,
+          'E': false, 'F': false, 'G': true, 'None': false,
         };
         break;
       case 'ifr':
-        preset = {
+        typePreset = {
           'CTR': true, 'TMA': true, 'CTA': true,
           'D': true, 'R': true, 'P': true,
-          'A': true, 'B': true, 'C': true,
-          'E': true, 'F': true, 'G': false,
+          'FIR': true, 'None': false,
+        };
+        classPreset = {
+          'A': true, 'B': true, 'C': true, 'D': true,
+          'E': true, 'F': true, 'G': false, 'None': false,
         };
         break;
       case 'hazards':
-        preset = {
+        typePreset = {
           'CTR': false, 'TMA': false, 'CTA': false,
           'D': true, 'R': true, 'P': true,
-          'A': false, 'B': false, 'C': false,
-          'E': false, 'F': false, 'G': false,
+          'FIR': false, 'None': false,
+        };
+        classPreset = {
+          'A': false, 'B': false, 'C': false, 'D': false,
+          'E': false, 'F': false, 'G': false, 'None': true,
         };
         break;
       case 'training':
-        preset = {
+        typePreset = {
           'CTR': true, 'TMA': true, 'CTA': false,
           'D': true, 'R': true, 'P': true,
-          'A': false, 'B': false, 'C': true,
-          'E': false, 'F': false, 'G': false,
+          'FIR': false, 'None': false,
+        };
+        classPreset = {
+          'A': false, 'B': false, 'C': true, 'D': true,
+          'E': false, 'F': false, 'G': false, 'None': false,
         };
         break;
       default:
-        preset = _defaultAirspaceTypes;
+        typePreset = _defaultAirspaceTypes;
+        classPreset = _defaultIcaoClasses;
     }
 
-    await setEnabledAirspaceTypes(preset);
+    await setEnabledAirspaceTypes(typePreset);
+    await setEnabledIcaoClasses(classPreset);
 
     LoggingService.structured('AIRSPACE_PRESET_APPLIED', {
       'preset': presetName,
-      'enabled_count': preset.values.where((v) => v).length,
+      'enabled_types_count': typePreset.values.where((v) => v).length,
+      'enabled_classes_count': classPreset.values.where((v) => v).length,
     });
+  }
+
+  /// Get enabled ICAO classes
+  Future<Map<String, bool>> getEnabledIcaoClasses() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = prefs.getString(_icaoClassesEnabledKey);
+
+    if (jsonString == null) {
+      // First time - use defaults
+      await setEnabledIcaoClasses(_defaultIcaoClasses);
+      return _defaultIcaoClasses;
+    }
+
+    try {
+      final Map<String, dynamic> decoded = json.decode(jsonString);
+      return decoded.cast<String, bool>();
+    } catch (e) {
+      LoggingService.error('Failed to decode ICAO classes preferences', e, StackTrace.current);
+      return _defaultIcaoClasses;
+    }
+  }
+
+  /// Set enabled state for multiple ICAO classes
+  Future<void> setEnabledIcaoClasses(Map<String, bool> classes) async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = json.encode(classes);
+    await prefs.setString(_icaoClassesEnabledKey, jsonString);
+
+    LoggingService.structured('ICAO_CLASSES_UPDATE', {
+      'enabled_count': classes.values.where((v) => v).length,
+      'total_count': classes.length,
+      'enabled_classes': classes.entries.where((e) => e.value).map((e) => e.key).toList(),
+    });
+  }
+
+  /// Set enabled state for a specific ICAO class
+  Future<void> setIcaoClassEnabled(String icaoClass, bool enabled) async {
+    final currentClasses = await getEnabledIcaoClasses();
+    currentClasses[icaoClass] = enabled;
+    await setEnabledIcaoClasses(currentClasses);
+  }
+
+  /// Check if a specific ICAO class is enabled
+  Future<bool> isIcaoClassEnabled(String icaoClass) async {
+    final enabledClasses = await getEnabledIcaoClasses();
+    return enabledClasses[icaoClass] ?? _defaultIcaoClasses[icaoClass] ?? false;
   }
 
   /// Get a summary of current settings
   Future<Map<String, dynamic>> getSettingsSummary() async {
     final enabledTypes = await getEnabledAirspaceTypes();
+    final enabledClasses = await getEnabledIcaoClasses();
     return {
       'has_api_key': await hasApiKey(),
       'airspace_enabled': await isAirspaceEnabled(),
@@ -416,6 +491,8 @@ class OpenAipService {
       'overlay_opacity': await getOverlayOpacity(),
       'enabled_airspace_types': enabledTypes,
       'enabled_airspace_count': enabledTypes.values.where((v) => v).length,
+      'enabled_icao_classes': enabledClasses,
+      'enabled_icao_count': enabledClasses.values.where((v) => v).length,
     };
   }
 }

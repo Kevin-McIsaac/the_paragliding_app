@@ -15,6 +15,7 @@ import '../../services/openaip_service.dart';
 import '../../services/airspace_geojson_service.dart';
 import '../../services/airspace_identification_service.dart';
 import '../widgets/airspace_tooltip_widget.dart';
+import '../widgets/map_filter_fab.dart';
 
 class NearbySitesMapWidget extends StatefulWidget {
   final List<ParaglidingSite> sites;
@@ -26,7 +27,6 @@ class NearbySitesMapWidget extends StatefulWidget {
   final MapProvider mapProvider;
   final bool isLegendExpanded;
   final VoidCallback onToggleLegend;
-  final Function(MapProvider) onMapProviderChanged;
   final Function(ParaglidingSite)? onSiteSelected;
   final Function(LatLngBounds)? onBoundsChanged;
   final String searchQuery;
@@ -36,7 +36,10 @@ class NearbySitesMapWidget extends StatefulWidget {
   final List<ParaglidingSite> searchResults;
   final bool isSearching;
   final Function(ParaglidingSite) onSearchResultSelected;
-  
+  final VoidCallback? onShowMapFilter;
+  final bool hasActiveFilters;
+  final bool sitesEnabled;
+
   const NearbySitesMapWidget({
     super.key,
     required this.sites,
@@ -48,7 +51,6 @@ class NearbySitesMapWidget extends StatefulWidget {
     required this.mapProvider,
     required this.isLegendExpanded,
     required this.onToggleLegend,
-    required this.onMapProviderChanged,
     this.onSiteSelected,
     this.onBoundsChanged,
     required this.searchQuery,
@@ -58,6 +60,9 @@ class NearbySitesMapWidget extends StatefulWidget {
     required this.searchResults,
     required this.isSearching,
     required this.onSearchResultSelected,
+    this.onShowMapFilter,
+    this.hasActiveFilters = false,
+    this.sitesEnabled = true,
   });
 
   @override
@@ -347,6 +352,11 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
 
   List<Marker> _buildSiteMarkers() {
+    // Don't show site markers if sites are disabled
+    if (!widget.sitesEnabled) {
+      return [];
+    }
+
     return widget.sites.map((site) {
       final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
       final hasFlights = widget.siteFlightStatus[siteKey] ?? false;
@@ -409,14 +419,6 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
 
   // Add methods for map controls, legend, and attribution
-  Widget _buildMapControls() {
-    return MapControls.buildMapControls(
-      currentProvider: widget.mapProvider,
-      onProviderChanged: widget.onMapProviderChanged,
-    );
-  }
-
-
 
   Widget _buildTopControlBar() {
     return Positioned(
@@ -832,9 +834,18 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
           ),
           
           const SizedBox(width: 12),
-          
-          // Map controls (existing)
-          _buildMapControls(),
+
+          // Filter button
+          if (widget.onShowMapFilter != null)
+            MapFilterButton(
+              hasActiveFilters: widget.hasActiveFilters,
+              sitesEnabled: widget.sitesEnabled,
+              onPressed: widget.onShowMapFilter!,
+            ),
+
+          if (widget.onShowMapFilter != null)
+            const SizedBox(width: 12),
+
         ],
       ),
     );

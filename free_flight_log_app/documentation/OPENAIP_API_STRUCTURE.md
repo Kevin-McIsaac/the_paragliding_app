@@ -1,6 +1,7 @@
 # OpenAIP Airspace API JSON Structure
 
-This document describes the JSON structure returned by the OpenAIP Core API v1 airspaces endpoint.
+This document describes the JSON structure returned by the OpenAIP 
+Core API v1 airspaces endpoint.
 
 ## API Response Structure
 
@@ -26,7 +27,7 @@ Each airspace in the `items` array contains 22 properties:
   - Examples: "PERTH CTA C1", "JANDAKOT CONTROL ZONE (D)", "PERTH CENTRE"
 - `country`: ISO country code (string)
   - Example: "AU" (Australia)
-- `type`: Numeric airspace type code (integer)
+- `type`: Numeric airspace type code (integer 0 - 36)
   - `0`: Unknown
   - `1`: Restricted
   - `2`: Danger
@@ -37,38 +38,52 @@ Each airspace in the `items` array contains 22 properties:
   - `26`: CTA
 
 ### ICAO Classification System
-- `icaoClass`: Numeric ICAO airspace class code (integer)
-  - `0`: A 
+- `icaoClass`: Numeric ICAO airspace class code (integer 0-6, 8)
+  - `0`: A
   - `1`: B
   - `2`: C
   - `3`: D
   - `4`: E
   - `5`: F
-  - `6`: G 
+  - `6`: G
   - `8`: None
 
 **Note**: `icaoClass: 8` indicates the airspace has no ICAO class assigned in the OpenAIP system, not missing data.
 
-### ICAP Airspace Classifications Explainations
+### ICAO Airspace Classifications Explanations
 
-ICAO classifies airspace into seven classes (A through G) to provide different levels of air traffic s:w!ervices and separation. The classes range from highly controlled Class A to uncontrolled Class G:
+OpenAIP uses International Civil Aviation Organization (ICAO) classifications. THese classify airspace into seven classes (A through G) to provide different levels of air traffic services and separation. The classes range from highly controlled Class A to uncontrolled Class G:
 
-- **Class A**: IFR only. All flights receive air traffic control service and are separated from all other traffic.
+#### Controlled Airspace (Classes A-E)
 
-- **Class B**: IFR and VFR permitted. All flights receive air traffic control service and are separated from all other traffic.
+- **Class A**: High-level, restrictive airspace primarily for commercial and passenger jets, requiring advanced IFR clearance. IFR only. All flights receive air traffic control service and are separated from all other traffic.
 
-- **Class C**: IFR and VFR permitted. All flights receive air traffic control service. IFR flights are separated from other IFR and VFR flights. VFR flights are separated from IFR flights and receive traffic information on other VFR flights.
+- **Class B**: Airspace surrounding major airports, with specific requirements for IFR and VFR flight, including clearance and ATC services. IFR and VFR permitted. All flights receive air traffic control service and are separated from all other traffic.
 
-- **Class D**: IFR and VFR permitted. All flights receive air traffic control service. IFR flights are separated from other IFR flights and receive traffic information on VFR flights. VFR flights receive traffic information on all other traffic.
+- **Class C**: Airspace surrounding major airports, with specific requirements for IFR and VFR flight, including clearance and ATC services. IFR and VFR permitted. All flights receive air traffic control service. IFR flights are separated from other IFR and VFR flights. VFR flights are separated from IFR flights and receive traffic information on other VFR flights.
 
-- **Class E**: IFR and VFR permitted. IFR flights receive air traffic control service and are separated from other IFR flights. All flights receive traffic information as far as practical. VFR flights do not receive separation service.
+- **Class D**: Airspace surrounding major airports, with specific requirements for IFR and VFR flight, including clearance and ATC services. IFR and VFR permitted. All flights receive air traffic control service. IFR flights are separated from other IFR flights and receive traffic information on VFR flights. VFR flights receive traffic information on all other traffic.
+
+- **Class E**: Mid-level, en route controlled airspace open to both IFR and VFR aircraft, with less stringent rules than lower classes. IFR and VFR permitted. IFR flights receive air traffic control service and are separated from other IFR flights. All flights receive traffic information as far as practical. VFR flights do not receive separation service.
+
+#### Uncontrolled Airspace (Classes F-G)
 
 - **Class F**: IFR and VFR permitted. IFR flights receive air traffic advisory service and all flights receive flight information service if requested. Class F is not implemented in many countries.
 
-- **Class G**: Uncontrolled airspace. Only flight information service provided if requested. No separation service provided.
+- **Class G**: Uncontrolled airspace where pilots are responsible for "see and avoid" and maintaining separation, as ATC services and separation are not provided. Only flight information service provided if requested. No separation service provided.
 
+#### Special Use Airspace (SUA)
 
+SUA areas have specific limitations or rules for safety, found on flight charts and including:
 
+- **Prohibited Areas**: Flight is forbidden.
+- **Restricted Areas**: Flight is restricted and requires permission to enter.
+- **Warning Areas**: Areas with a high volume of military activity but do not pose the same danger as restricted areas.
+- **Military Operations Areas (MOAs)**: Used to separate military flight training from civilian air traffic.
+- **Alert Areas**: Areas with a high volume of pilot activity, though not necessarily dangerous.
+- **Controlled Firing Areas (CFAs)**: Areas where activities, like firing, pose a potential hazard and can be temporarily suspended to permit VFR flight.
+
+OpenAIP data includes details on the specific characteristics of each airspace, including its boundaries, altitudes, and operational times to ensure safe and efficient flight.
 
 ### Altitude Limits Structure
 Both `lowerLimit` and `upperLimit` are objects with identical structure:
@@ -90,18 +105,6 @@ Both `lowerLimit` and `upperLimit` are objects with identical structure:
 - `1`: Above Mean Sea Level (AMSL)
 - `2`: Standard/Flight Level (STD)
 
-#### Common Altitude Combinations (Perth Area)
-- GND (0/0) to 1500 ft AMSL (1500/1/1)
-- GND (0/0) to FL999 (999/6/2)
-- 1500 ft AMSL to 2000 ft AMSL
-- 2000 ft AMSL to 3500 ft AMSL
-- 3500 ft AMSL to 4500 ft AMSL
-- 4500 ft AMSL to 8500 ft AMSL
-- 8500 ft AMSL to FL125
-- FL125 to FL180
-- FL125 to FL245
-- FL180 to FL245
-- FL245 to FL600
 
 ### Operational Status Flags
 All boolean flags in the Perth dataset are `false`:
@@ -123,37 +126,16 @@ All boolean flags in the Perth dataset are `false`:
 - `hoursOfOperation`: Operating hours if applicable (array/null)
 - `geometry`: GeoJSON geometry defining airspace boundaries (object)
 
-## Perth Area Airspace Examples
-
-Based on the sample data from coordinates (-32.1067, 115.8913):
-
-### Control Areas (CTA)
-- **PERTH CTA A**: Type 26, ICAO Class 0 (G), FL245-FL600
-- **PERTH CTA C1**: Type 26, ICAO Class 2 (E), FL125-FL245
-- **PERTH CTA C2**: Type 26, ICAO Class 2 (E), FL125-FL180
-- **PERTH CTA C4-C7**: Type 26, ICAO Class 2 (E), various FL ranges
-
-### Control Zones (CTR)
-- **JANDAKOT CONTROL ZONE (D)**: Type 4, ICAO Class 3 (D), GND-1500ft AMSL
-
-### Terminal Areas
-- **PERTH/JANDAKOT**: Type 6, ICAO Class 8 (No class), 1500-2000ft AMSL
-
-### Centers
-- **PERTH CENTRE**: Type 0, ICAO Class 4 (C), 8500ft-FL125
-- **CONTINENTAL AUSTRALIA CTA E1**: Type 0, ICAO Class 4 (C), FL180-FL245
-
 ## Implementation Notes
 
-1. **Type Mapping**: The numeric type codes need to be mapped to aviation standard abbreviations (CTR, CTA, TMA, etc.)
+1. **Type Mapping**: The numeric type codes need to be mapped to aviation standard abbreviations (CTR, CTA, TMA, etc.) If there isn't a mapping, show the numerical value.
 
-2. **ICAO Class Display**: Use the numeric `icaoClass` code to determine the class letter (A-G), with code 8 meaning no class assigned.
 
-3. **Altitude Conversion**: Flight levels (unit=6) represent hundreds of feet (FL125 = 12,500ft), while feet (unit=1) are direct values.
+2. **Altitude Conversion**: Flight levels (unit=6) represent hundreds of feet (FL125 = 12,500ft), while feet (unit=1) are direct values.
 
-4. **Reference Datum**: Ground reference (referenceDatum=0) with value=0 should display as "GND".
+3. **Reference Datum**: Ground reference (referenceDatum=0) with value=0 should display as "GND".
 
-5. **Sorting**: For altitude-based sorting, convert all altitudes to a common unit (feet) using the conversion rules.
+4. **Sorting**: For altitude-based sorting, convert all altitudes to a common unit (feet) using the conversion rules.
 
 ## API Access
 
@@ -167,6 +149,7 @@ Based on the sample data from coordinates (-32.1067, 115.8913):
 The OpenAIP `/airspaces` endpoint uses both numeric type codes and standard aviation abbreviations. Below are the complete airspace classifications:
 
 ### ATS Airspace Types
+
 - **CTR** - Control Zone/Controlled Tower Region (airport control zone)
 - **TMA** - Terminal Maneuvering Area (terminal control area)
 - **FIR** - Flight Information Region
@@ -176,6 +159,7 @@ The OpenAIP `/airspaces` endpoint uses both numeric type codes and standard avia
 - **MATZ** - Military Aerodrome Traffic Zone
 
 ### Special Use Airspace
+
 - **DANGER** or **D** - Danger Area (hazardous activities)
 - **RESTRICTED** or **R** - Restricted Area (entry restricted)
 - **PROHIBITED** or **P** - Prohibited Area (flight forbidden)

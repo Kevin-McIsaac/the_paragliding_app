@@ -309,6 +309,7 @@ class AirspaceGeoJsonService {
 
   /// Fetch airspace data from OpenAIP Core API with fallback to sample data
   Future<String> fetchAirspaceGeoJson(fm.LatLngBounds bounds) async {
+    final stopwatch = Stopwatch()..start();
     final apiKey = await _openAipService.getApiKey();
 
     // Build API URL with optional API key as query parameter
@@ -342,6 +343,8 @@ class AirspaceGeoJsonService {
         headers: headers,
       ).timeout(_requestTimeout);
 
+      stopwatch.stop();
+
       LoggingService.structured('AIRSPACE_API_RESPONSE', {
         'status_code': response.statusCode,
         'content_length': response.body.length,
@@ -349,15 +352,46 @@ class AirspaceGeoJsonService {
       });
 
       if (response.statusCode == 200) {
+        // Count airspaces for performance logging
+        int airspaceCount = 0;
+        try {
+          final parsed = json.decode(response.body);
+          if (parsed['features'] != null) {
+            airspaceCount = (parsed['features'] as List).length;
+          }
+        } catch (e) {
+          // Ignore parse errors for counting
+        }
+
+        LoggingService.performance(
+          'Airspace API Fetch',
+          Duration(milliseconds: stopwatch.elapsedMilliseconds),
+          'airspaces=$airspaceCount, cache_hit=false, bounds=${bounds.west},${bounds.south},${bounds.east},${bounds.north}'
+        );
+
         // Convert OpenAIP format to standard GeoJSON
         return _convertToGeoJson(response.body);
       } else {
+        LoggingService.performance(
+          'Airspace API Fetch (Failed)',
+          Duration(milliseconds: stopwatch.elapsedMilliseconds),
+          'status=${response.statusCode}, fallback_to_sample=true'
+        );
+
         // For authentication errors or API failures, use sample data for demo purposes
         LoggingService.info('API failed with status ${response.statusCode}, using sample airspace data for demo');
         return _getSampleGeoJson(bounds);
       }
 
     } catch (error, stackTrace) {
+      stopwatch.stop();
+
+      LoggingService.performance(
+        'Airspace API Fetch (Error)',
+        Duration(milliseconds: stopwatch.elapsedMilliseconds),
+        'error=true, fallback_to_sample=true'
+      );
+
       LoggingService.error('Failed to fetch airspace data from OpenAIP, using sample data', error, stackTrace);
       // Return sample data instead of failing completely
       return _getSampleGeoJson(bounds);
@@ -615,6 +649,7 @@ class AirspaceGeoJsonService {
     String geoJsonString,
     double opacity,
     Map<int, bool> enabledTypes,
+    Map<int, bool> enabledIcaoClasses,
     fm.LatLngBounds viewport,
   ) async {
     try {
@@ -643,6 +678,13 @@ class AirspaceGeoJsonService {
           // Filter based on enabled airspace types - skip if type not enabled
           if (!(enabledTypes[airspaceData.type] ?? false)) {
             continue; // Skip this airspace if its type is not enabled
+          }
+
+          // Filter based on enabled ICAO classes - skip if class not enabled
+          // Handle null ICAO class (treat as -1 for mapping)
+          final icaoClassKey = airspaceData.icaoClass ?? -1;
+          if (!(enabledIcaoClasses[icaoClassKey] ?? false)) {
+            continue; // Skip this airspace if its ICAO class is not enabled
           }
 
           // Track this type as visible and enabled

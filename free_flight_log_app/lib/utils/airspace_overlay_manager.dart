@@ -215,6 +215,8 @@ class AirspaceOverlayManager {
 
   /// Build airspace polygons from GeoJSON data
   Future<List<Polygon>> _buildAirspacePolygons(LatLng center, double zoom, double opacity) async {
+    final stopwatch = Stopwatch()..start();
+
     try {
       // Calculate bounding box for API request
       final bounds = _geoJsonService.calculateBoundingBox(center, zoom);
@@ -227,25 +229,49 @@ class AirspaceOverlayManager {
       // Fetch GeoJSON data from OpenAIP
       final geoJsonString = await _geoJsonService.fetchAirspaceGeoJson(bounds);
 
-      // Get enabled airspace types for filtering
+      // Get enabled airspace types and ICAO classes for filtering
       final enabledStringTypes = await _openAipService.getEnabledAirspaceTypes();
+      final enabledStringClasses = await _openAipService.getEnabledIcaoClasses();
 
-      // Convert string type keys to numeric type keys
+      // Convert string keys to numeric keys
       final enabledTypes = _convertStringTypesToNumeric(enabledStringTypes);
+      final enabledClasses = _convertStringClassesToNumeric(enabledStringClasses);
 
-      // Parse GeoJSON and convert to styled polygons (filtered by enabled types)
-      final polygons = await _geoJsonService.parseAirspaceGeoJson(geoJsonString, opacity, enabledTypes, bounds);
+      // Time the airspace processing/clipping step
+      final processingStopwatch = Stopwatch()..start();
+
+      // Parse GeoJSON and convert to styled polygons (filtered by enabled types and classes)
+      final polygons = await _geoJsonService.parseAirspaceGeoJson(geoJsonString, opacity, enabledTypes, enabledClasses, bounds);
+
+      processingStopwatch.stop();
+      stopwatch.stop();
+
+      LoggingService.performance(
+        'Airspace Processing',
+        Duration(milliseconds: processingStopwatch.elapsedMilliseconds),
+        'polygons=${polygons.length}, viewport=${bounds.west},${bounds.south},${bounds.east},${bounds.north}'
+      );
 
       LoggingService.structured('AIRSPACE_FETCH_SUCCESS', {
         'polygon_count': polygons.length,
         'geojson_size': geoJsonString.length,
         'enabled_types_count': enabledStringTypes.values.where((enabled) => enabled).length,
         'total_types_count': enabledTypes.length,
+        'total_time_ms': stopwatch.elapsedMilliseconds,
+        'processing_time_ms': processingStopwatch.elapsedMilliseconds,
       });
 
       return polygons;
 
     } catch (error, stackTrace) {
+      stopwatch.stop();
+
+      LoggingService.performance(
+        'Airspace Processing (Error)',
+        Duration(milliseconds: stopwatch.elapsedMilliseconds),
+        'error=true'
+      );
+
       LoggingService.error('Failed to build airspace polygons', error, stackTrace);
       // Return empty list to continue without airspace data
       return [];
@@ -569,6 +595,32 @@ class AirspaceOverlayManager {
       'dependencies_valid': validateDependencies(),
       'debounce_metrics': getDebounceMetrics(),
     };
+  }
+
+  /// Convert string ICAO class keys to numeric ICAO class keys for airspace filtering
+  Map<int, bool> _convertStringClassesToNumeric(Map<String, bool> stringClasses) {
+    // Mapping from string ICAO classes to numeric codes used in OpenAIP data
+    const stringToNumeric = {
+      'A': 0,       // Class A
+      'B': 1,       // Class B
+      'C': 2,       // Class C
+      'D': 3,       // Class D
+      'E': 4,       // Class E
+      'F': 5,       // Class F
+      'G': 6,       // Class G
+      'None': -1,   // No class assigned (null in data)
+    };
+
+    final numericClasses = <int, bool>{};
+
+    stringClasses.forEach((stringClass, enabled) {
+      final numericCode = stringToNumeric[stringClass];
+      if (numericCode != null) {
+        numericClasses[numericCode] = enabled;
+      }
+    });
+
+    return numericClasses;
   }
 
   /// Convert string type keys to numeric type keys for airspace filtering
