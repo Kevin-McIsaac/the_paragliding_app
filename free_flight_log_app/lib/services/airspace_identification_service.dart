@@ -58,30 +58,16 @@ class AirspaceIdentificationService {
       'airspace_types': containingAirspaces.map((a) => a.type).toList(),
     });
 
-    // Sort by priority: Prohibited > Restricted > Danger > CTR > TMA > CTA > Others
-    containingAirspaces.sort((a, b) => _getTypePriority(a.type).compareTo(_getTypePriority(b.type)));
+    // Sort by lower altitude first, then upper altitude if lower altitudes are equal
+    containingAirspaces.sort((a, b) {
+      int lowerCompare = a.getLowerAltitudeInFeet().compareTo(b.getLowerAltitudeInFeet());
+      if (lowerCompare != 0) return lowerCompare;
+      return a.getUpperAltitudeInFeet().compareTo(b.getUpperAltitudeInFeet());
+    });
 
     return containingAirspaces;
   }
 
-  /// Get priority order for airspace types (lower number = higher priority)
-  int _getTypePriority(String type) {
-    switch (type.toUpperCase()) {
-      case 'P': return 1; // Prohibited - highest priority
-      case 'R': return 2; // Restricted
-      case 'D': return 3; // Danger
-      case 'CTR': return 4; // Control Zone
-      case 'TMA': return 5; // Terminal Area
-      case 'CTA': return 6; // Control Area
-      case 'A': return 7; // Class A
-      case 'B': return 8; // Class B
-      case 'C': return 9; // Class C
-      case 'E': return 10; // Class E
-      case 'F': return 11; // Class F
-      case 'G': return 12; // Class G
-      default: return 99; // Unknown types last
-    }
-  }
 
   /// Point-in-polygon test using ray casting algorithm
   /// Robust implementation handling edge cases and precision issues
@@ -198,7 +184,7 @@ class AirspaceIdentificationService {
 
   /// Get cache statistics for debugging
   Map<String, dynamic> getCacheStats() {
-    final typeStats = <String, int>{};
+    final typeStats = <int, int>{};
     for (final polygon in _airspacePolygons) {
       final type = polygon.airspaceData.type;
       typeStats[type] = (typeStats[type] ?? 0) + 1;

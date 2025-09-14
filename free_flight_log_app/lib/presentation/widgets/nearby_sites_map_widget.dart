@@ -73,7 +73,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   List<Widget> _airspaceLayers = [];
   bool _airspaceLoading = false;
   bool _airspaceEnabled = false;
-  Set<String> _visibleAirspaceTypes = {};
+  Set<int> _visibleAirspaceTypes = {};
 
   // Airspace tooltip state
   List<AirspaceData> _tooltipAirspaces = [];
@@ -231,6 +231,37 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     _loadAirspaceLayers();
   }
 
+  /// Convert numeric airspace types back to string abbreviations for legacy compatibility
+  Set<String> _convertNumericTypesToStrings(Set<int> numericTypes) {
+    const numericToString = {
+      0: 'Unknown',
+      1: 'A',
+      2: 'E',
+      3: 'C',
+      4: 'CTR',
+      5: 'E',
+      6: 'TMA',
+      7: 'G',
+      8: 'CTR',
+      9: 'TMA',
+      10: 'CTA',
+      11: 'R',
+      12: 'P',
+      13: 'ATZ',
+      14: 'D',
+      15: 'R',
+      16: 'TMA',
+      17: 'CTR',
+      18: 'R',
+      19: 'P',
+      20: 'D',
+      21: 'TMA',
+      26: 'CTA',
+    };
+
+    return numericTypes.map((type) => numericToString[type] ?? 'Unknown').toSet();
+  }
+
   /// Handle click for airspace identification
   void _handleAirspaceInteraction(Offset screenPosition, LatLng mapPoint) async {
     if (!_airspaceEnabled) return;
@@ -240,9 +271,16 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
     // Filter airspaces by enabled types only
     final enabledTypes = await OpenAipService.instance.getEnabledAirspaceTypes();
-    final airspaces = allAirspaces.where((airspace) => enabledTypes[airspace.type] ?? false).toList();
+    final filteredAirspaces = allAirspaces.where((airspace) {
+      // Convert numeric type to string type for filtering
+      final typeString = _getTypeStringFromCode(airspace.type);
+      return enabledTypes[typeString] ?? false;
+    }).toList();
 
-    if (airspaces.isNotEmpty) {
+    // Sort airspaces by lower altitude limit (ascending)
+    filteredAirspaces.sort((a, b) => a.getLowerAltitudeInFeet().compareTo(b.getLowerAltitudeInFeet()));
+
+    if (filteredAirspaces.isNotEmpty) {
       // Check if clicking near the same position (toggle behavior)
       if (_showTooltip && _tooltipPosition != null && _isSimilarPosition(screenPosition, _tooltipPosition!)) {
         // Toggle: hide tooltip if clicking the same area
@@ -250,7 +288,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
       } else {
         // Show tooltip immediately
         setState(() {
-          _tooltipAirspaces = airspaces;
+          _tooltipAirspaces = filteredAirspaces;
           _tooltipPosition = screenPosition;
           _showTooltip = true;
         });
@@ -411,7 +449,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                   ),
                   const SizedBox(height: 4),
                   // Airspace type legend items with tooltips (filtered by visible types)
-                  ...SiteMarkerUtils.buildAirspaceLegendItems(visibleTypes: _visibleAirspaceTypes),
+                  ...SiteMarkerUtils.buildAirspaceLegendItems(visibleTypes: _convertNumericTypesToStrings(_visibleAirspaceTypes)),
                 ],
               ],
             ),
@@ -884,5 +922,41 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
           ),
       ],
     );
+  }
+
+  /// Convert numeric type code to string type for filtering compatibility
+  String _getTypeStringFromCode(int typeCode) {
+    // Map numeric codes back to the string types used by the filtering system
+    final typeMap = {
+      0: 'UNKNOWN',
+      1: 'A',
+      2: 'B',
+      3: 'C',
+      4: 'CTR',
+      5: 'E',
+      6: 'TMA',
+      7: 'G',
+      8: 'CTR',
+      9: 'TMA',
+      10: 'CTA',
+      11: 'R',
+      12: 'P',
+      13: 'CTR',  // ATZ mapped to CTR for filtering
+      14: 'D',
+      15: 'R',
+      16: 'TMA',
+      17: 'CTR',
+      18: 'R',
+      19: 'P',
+      20: 'D',
+      21: 'TMA',
+      22: 'CTA',
+      23: 'CTA',
+      24: 'CTA',
+      25: 'CTA',
+      26: 'CTA',
+    };
+
+    return typeMap[typeCode] ?? 'UNKNOWN';
   }
 }

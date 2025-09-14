@@ -88,7 +88,10 @@ class AirspaceOverlayManager {
       final geoJsonString = await _geoJsonService.fetchAirspaceGeoJson(bounds);
 
       // Get enabled airspace types for filtering
-      final enabledTypes = await _openAipService.getEnabledAirspaceTypes();
+      final enabledStringTypes = await _openAipService.getEnabledAirspaceTypes();
+
+      // Convert string type keys to numeric type keys
+      final enabledTypes = _convertStringTypesToNumeric(enabledStringTypes);
 
       // Parse GeoJSON and convert to styled polygons (filtered by enabled types)
       final polygons = await _geoJsonService.parseAirspaceGeoJson(geoJsonString, opacity, enabledTypes);
@@ -96,7 +99,7 @@ class AirspaceOverlayManager {
       LoggingService.structured('AIRSPACE_FETCH_SUCCESS', {
         'polygon_count': polygons.length,
         'geojson_size': geoJsonString.length,
-        'enabled_types_count': enabledTypes.values.where((enabled) => enabled).length,
+        'enabled_types_count': enabledStringTypes.values.where((enabled) => enabled).length,
         'total_types_count': enabledTypes.length,
       });
 
@@ -403,5 +406,67 @@ class AirspaceOverlayManager {
       'has_api_key': hasApiKey,
       'dependencies_valid': validateDependencies(),
     };
+  }
+
+  /// Convert string type keys to numeric type keys for airspace filtering
+  Map<int, bool> _convertStringTypesToNumeric(Map<String, bool> stringTypes) {
+    // Mapping from string abbreviations to numeric codes
+    const stringToNumeric = {
+      'Unknown': 0,
+      'A': 1,       // Class A (could be 1, 6, or others depending on context)
+      'B': 2,       // Class B
+      'C': 3,       // Class C
+      'CTR': 4,     // Control Zone
+      'E': 5,       // Class E (could be 2 or 5 depending on context)
+      'TMA': 6,     // Terminal Control Area
+      'G': 7,       // Class G
+      'CTA': 10,    // Control Area (primary mapping to 10/26)
+      'R': 11,      // Restricted
+      'P': 12,      // Prohibited
+      'ATZ': 13,    // Aerodrome Traffic Zone
+      'D': 14,      // Danger Area
+    };
+
+    final numericTypes = <int, bool>{};
+
+    stringTypes.forEach((stringType, enabled) {
+      final numericCode = stringToNumeric[stringType];
+      if (numericCode != null) {
+        numericTypes[numericCode] = enabled;
+
+        // Handle special mappings for types that have multiple numeric codes
+        if (stringType == 'CTA') {
+          // CTA maps to both 10 and 26
+          numericTypes[26] = enabled;
+        } else if (stringType == 'CTR') {
+          // CTR maps to 4, 8, and 17
+          numericTypes[8] = enabled;
+          numericTypes[17] = enabled;
+        } else if (stringType == 'TMA') {
+          // TMA maps to 6, 9, 16, and 21
+          numericTypes[9] = enabled;
+          numericTypes[16] = enabled;
+          numericTypes[21] = enabled;
+        } else if (stringType == 'A') {
+          // Class A can be code 6 as well
+          numericTypes[6] = enabled;
+        } else if (stringType == 'E') {
+          // Class E can be code 2 as well
+          numericTypes[2] = enabled;
+        } else if (stringType == 'R') {
+          // Restricted maps to 11, 15, and 18
+          numericTypes[15] = enabled;
+          numericTypes[18] = enabled;
+        } else if (stringType == 'P') {
+          // Prohibited maps to 12 and 19
+          numericTypes[19] = enabled;
+        } else if (stringType == 'D') {
+          // Danger maps to 14 and 20
+          numericTypes[20] = enabled;
+        }
+      }
+    });
+
+    return numericTypes;
   }
 }

@@ -12,8 +12,8 @@ import '../services/airspace_identification_service.dart';
 /// Data structure for airspace information
 class AirspaceData {
   final String name;
-  final String type;
-  final String? class_;
+  final int type;
+  final int? icaoClass;
   final Map<String, dynamic>? upperLimit;
   final Map<String, dynamic>? lowerLimit;
   final String? country;
@@ -21,11 +21,111 @@ class AirspaceData {
   AirspaceData({
     required this.name,
     required this.type,
-    this.class_,
+    this.icaoClass,
     this.upperLimit,
     this.lowerLimit,
     this.country,
   });
+
+  /// Convert lower altitude limit to feet for sorting purposes
+  /// GND = 0, ft AMSL = direct value, FL = value × 100
+  int getLowerAltitudeInFeet() {
+    if (lowerLimit == null) return 999999; // Put unknown altitudes at the end
+
+    final value = lowerLimit!['value'];
+    final unit = lowerLimit!['unit'];
+    final reference = lowerLimit!['reference'];
+
+    // Handle special ground values or reference code 0 (GND)
+    if (reference == 0 || (value is String && value.toLowerCase() == 'gnd')) {
+      return 0;
+    }
+
+    // Handle numeric values with OpenAIP unit codes
+    if (value is num) {
+      // OpenAIP unit codes: 1=ft, 2=m, 6=FL
+      if (unit == 6) {
+        // Flight Level: FL090 = 9,000 feet
+        return (value * 100).round();
+      } else if (unit == 1) {
+        // Feet (AMSL or AGL - treat both as feet for sorting)
+        return value.round();
+      } else if (unit == 2) {
+        // Meters - convert to feet
+        return (value * 3.28084).round();
+      }
+    }
+
+    // Fallback: if unit is string (processed data)
+    if (unit is String) {
+      final unitStr = unit.toString().toLowerCase();
+      if (value is num) {
+        if (unitStr == 'fl') {
+          return (value * 100).round();
+        } else if (unitStr == 'ft') {
+          return value.round();
+        } else if (unitStr == 'm') {
+          return (value * 3.28084).round();
+        }
+      }
+    }
+
+    // Default case - try to parse as number in feet
+    if (value is num) {
+      return value.round();
+    }
+    return 999999; // Unknown - put at end
+  }
+
+  /// Convert upper altitude limit to feet for sorting purposes
+  /// GND = 0, ft AMSL = direct value, FL = value × 100
+  int getUpperAltitudeInFeet() {
+    if (upperLimit == null) return 999999; // Put unknown altitudes at the end
+
+    final value = upperLimit!['value'];
+    final unit = upperLimit!['unit'];
+    final reference = upperLimit!['reference'];
+
+    // Handle special ground values or reference code 0 (GND)
+    if (reference == 0 || (value is String && value.toLowerCase() == 'gnd')) {
+      return 0;
+    }
+
+    // Handle numeric values with OpenAIP unit codes
+    if (value is num) {
+      // OpenAIP unit codes: 1=ft, 2=m, 6=FL
+      if (unit == 6) {
+        // Flight Level: FL090 = 9,000 feet
+        return (value * 100).round();
+      } else if (unit == 1) {
+        // Feet (AMSL or AGL - treat both as feet for sorting)
+        return value.round();
+      } else if (unit == 2) {
+        // Meters - convert to feet
+        return (value * 3.28084).round();
+      }
+    }
+
+    // Fallback: if unit is string (processed data)
+    if (unit is String) {
+      final unitStr = unit.toString().toLowerCase();
+      if (value is num) {
+        if (unitStr == 'fl') {
+          return (value * 100).round();
+        } else if (unitStr == 'ft') {
+          return value.round();
+        } else if (unitStr == 'm') {
+          return (value * 3.28084).round();
+        }
+      }
+    }
+
+    // Default case - try to parse as number in feet
+    if (value is num) {
+      return value.round();
+    }
+    return 999999; // Unknown - put at end
+  }
 
   /// Format altitude limit for display
   String formatAltitude(Map<String, dynamic>? limit) {
@@ -96,10 +196,10 @@ class AirspaceGeoJsonService {
   static const Duration _requestTimeout = Duration(seconds: 30);
 
   // Track currently visible airspace types
-  Set<String> _currentVisibleTypes = <String>{};
+  Set<int> _currentVisibleTypes = <int>{};
 
   /// Get the currently visible airspace types in the loaded data
-  Set<String> get visibleAirspaceTypes => Set.from(_currentVisibleTypes);
+  Set<int> get visibleAirspaceTypes => Set.from(_currentVisibleTypes);
 
   // Airspace type to style mapping
   static const Map<String, AirspaceStyle> _airspaceStyles = {
@@ -403,6 +503,62 @@ class AirspaceGeoJsonService {
     }
   }
 
+  /// OpenAIP unit codes to aviation units mapping
+  static const Map<int, String> _openAipUnits = {
+    1: 'ft',    // Feet
+    2: 'm',     // Meters
+    6: 'FL',    // Flight Level
+  };
+
+  /// OpenAIP reference datum codes to aviation references mapping
+  static const Map<int, String> _openAipReferenceDatums = {
+    0: 'GND',   // Ground/Surface
+    1: 'AMSL',  // Above Mean Sea Level
+    2: 'STD',   // Standard (Flight Level)
+  };
+
+  /// OpenAIP ICAO class codes to class letters mapping
+  static const Map<int, String> _openAipIcaoClasses = {
+    0: 'G',     // Class G
+    1: 'F',     // Class F
+    2: 'E',     // Class E
+    3: 'D',     // Class D
+    4: 'C',     // Class C
+    5: 'B',     // Class B
+    6: 'A',     // Class A
+  };
+
+  /// Convert OpenAIP numeric altitude limit to text format
+  Map<String, dynamic>? _convertAltitudeLimit(Map<String, dynamic>? limit) {
+    if (limit == null) return null;
+
+    final value = limit['value'];
+    final unitCode = limit['unit'];
+    final referenceCode = limit['referenceDatum'];
+
+    // Handle special values
+    if (value == 0 && referenceCode == 0) {
+      return {'value': 'GND', 'unit': '', 'reference': ''};
+    }
+
+    // Convert unit code to text
+    String unit = _openAipUnits[unitCode] ?? 'ft';
+
+    // Convert reference datum code to text
+    String reference = _openAipReferenceDatums[referenceCode] ?? 'AMSL';
+
+    // For flight levels, use standard format
+    if (unit == 'FL' || reference == 'STD') {
+      return {'value': value, 'unit': 'FL', 'reference': ''};
+    }
+
+    return {
+      'value': value,
+      'unit': unit,
+      'reference': reference,
+    };
+  }
+
   /// Convert single airspace item to GeoJSON feature
   Map<String, dynamic> _convertAirspaceToFeature(dynamic item) {
     if (item is! Map<String, dynamic>) {
@@ -415,13 +571,17 @@ class AirspaceGeoJsonService {
       throw Exception('Airspace missing geometry');
     }
 
-    // Extract properties
+    // Convert altitude limits from numeric codes to text
+    final upperLimit = _convertAltitudeLimit(item['upperLimit'] as Map<String, dynamic>?);
+    final lowerLimit = _convertAltitudeLimit(item['lowerLimit'] as Map<String, dynamic>?);
+
+    // Extract properties - keep numeric codes
     final properties = <String, dynamic>{
       'name': item['name'] ?? 'Unknown Airspace',
-      'type': item['type'] ?? 'UNKNOWN',
-      'class': item['class'],
-      'upperLimit': item['upperLimit'],
-      'lowerLimit': item['lowerLimit'],
+      'type': item['type'] ?? 0,  // Keep numeric type code
+      'class': item['icaoClass'],  // Keep numeric ICAO class code
+      'upperLimit': upperLimit,
+      'lowerLimit': lowerLimit,
       'country': item['country'],
     };
 
@@ -438,7 +598,7 @@ class AirspaceGeoJsonService {
   Future<List<fm.Polygon>> parseAirspaceGeoJson(
     String geoJsonString,
     double opacity,
-    Map<String, bool> enabledTypes,
+    Map<int, bool> enabledTypes,
   ) async {
     try {
       // Use geobase to parse the GeoJSON data
@@ -446,7 +606,7 @@ class AirspaceGeoJsonService {
 
       final polygons = <fm.Polygon>[];
       final identificationPolygons = <AirspacePolygonData>[];
-      final Set<String> visibleEnabledTypes = <String>{}; // Track visible enabled types
+      final Set<int> visibleEnabledTypes = <int>{}; // Track visible enabled types
 
       for (final feature in featureCollection.features) {
         final geometry = feature.geometry;
@@ -456,8 +616,8 @@ class AirspaceGeoJsonService {
           // Create airspace data from properties
           final airspaceData = AirspaceData(
             name: properties != null ? properties['name']?.toString() ?? 'Unknown Airspace' : 'Unknown Airspace',
-            type: properties != null ? _mapOpenAipTypeToStyle(properties['type']) ?? 'UNKNOWN' : 'UNKNOWN',
-            class_: properties != null ? properties['class']?.toString() : null,
+            type: properties != null ? (properties['type'] as int?) ?? 0 : 0,
+            icaoClass: properties != null ? properties['class'] as int? : null,
             upperLimit: properties != null ? properties['upperLimit'] as Map<String, dynamic>? : null,
             lowerLimit: properties != null ? properties['lowerLimit'] as Map<String, dynamic>? : null,
             country: properties != null ? properties['country']?.toString() : null,
@@ -536,7 +696,7 @@ class AirspaceGeoJsonService {
   void _logAirspaceStatistics(geo.FeatureCollection featureCollection) {
     final Map<String, int> typeStats = {};
     final Map<String, int> originalTypeStats = {};
-    final Set<String> visibleTypes = <String>{};
+    final Set<int> visibleTypes = <int>{};
     double minLat = 90.0, maxLat = -90.0, minLon = 180.0, maxLon = -180.0;
 
     for (final feature in featureCollection.features) {
@@ -549,8 +709,9 @@ class AirspaceGeoJsonService {
         typeStats[mappedType] = (typeStats[mappedType] ?? 0) + 1;
         originalTypeStats[originalType] = (originalTypeStats[originalType] ?? 0) + 1;
 
-        // Track visible types for legend filtering
-        visibleTypes.add(mappedType);
+        // Track visible types for legend filtering (use numeric type)
+        final numericType = props['type'] as int? ?? 0;
+        visibleTypes.add(numericType);
 
         // Calculate bounds for coverage area
         final geometry = feature.geometry;

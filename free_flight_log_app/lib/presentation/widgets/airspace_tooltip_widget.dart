@@ -23,7 +23,8 @@ class AirspaceTooltipWidget extends StatelessWidget {
 
     // Calculate tooltip dimensions
     const double tooltipWidth = 300.0;
-    const double maxTooltipHeight = 350.0;
+    // Dynamic height based on content, with reasonable limits
+    final double maxTooltipHeight = (screenSize.height * 0.8).clamp(400.0, 600.0);
     const double padding = 8.0;
 
     // Determine optimal position to avoid screen edges
@@ -44,7 +45,7 @@ class AirspaceTooltipWidget extends StatelessWidget {
         color: Colors.transparent,
         child: Container(
           width: tooltipWidth,
-          constraints: const BoxConstraints(maxHeight: maxTooltipHeight),
+          constraints: BoxConstraints(maxHeight: maxTooltipHeight),
           decoration: BoxDecoration(
             color: const Color(0xE6000000), // Semi-transparent black
             borderRadius: BorderRadius.circular(8),
@@ -165,27 +166,22 @@ class AirspaceTooltipWidget extends StatelessWidget {
                 ),
               ),
 
-              // Airspace list with scrollbar
+              // Airspace list (no scrolling - all items visible)
               Flexible(
-                child: Scrollbar(
-                  thumbVisibility: airspaces.length > 3,
-                  thickness: 4.0,
-                  radius: const Radius.circular(2),
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    padding: const EdgeInsets.only(left: 8, right: 12, top: 8, bottom: 8),
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    itemCount: airspaces.length,
-                    separatorBuilder: (context, index) => Container(
-                      height: 1,
-                      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-                      color: Colors.white.withValues(alpha: 0.2),
-                    ),
-                    itemBuilder: (context, index) {
-                      final airspace = airspaces[index];
-                      return _buildAirspaceItem(airspace);
-                    },
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.only(left: 8, right: 12, top: 8, bottom: 8),
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: airspaces.length,
+                  separatorBuilder: (context, index) => Container(
+                    height: 1,
+                    margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 4), // Reduced spacing
+                    color: Colors.white.withValues(alpha: 0.2),
                   ),
+                  itemBuilder: (context, index) {
+                    final airspace = airspaces[index];
+                    return _buildAirspaceItem(airspace);
+                  },
                 ),
               ),
 
@@ -213,7 +209,7 @@ class AirspaceTooltipWidget extends StatelessWidget {
   /// Build individual airspace information item (compact 2-line format)
   Widget _buildAirspaceItem(AirspaceData airspace) {
     // Get type-specific styling
-    final style = AirspaceGeoJsonService.instance.getStyleForType(airspace.type);
+    final style = AirspaceGeoJsonService.instance.getStyleForType(_getTypeAbbreviation(airspace.type));
 
     // Format compact details line (type, altitude, country)
     final String compactDetails = _formatCompactDetails(airspace);
@@ -257,17 +253,55 @@ class AirspaceTooltipWidget extends StatelessWidget {
             ],
           ),
 
-          // Line 2: Type, altitude, country (compact format)
+          // Line 2: Type, ICAO class, altitude, country with tooltips
           Padding(
             padding: const EdgeInsets.only(left: 16, top: 1),
-            child: Text(
-              compactDetails,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.85),
-                fontSize: 10,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            child: Row(
+              children: [
+                // Airspace type with tooltip
+                Tooltip(
+                  message: _getTypeDescription(airspace.type),
+                  child: Text(
+                    '${_getTypeAbbreviation(airspace.type)},',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.85),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+
+                // ICAO class with tooltip (if available)
+                if (airspace.icaoClass != null && _getIcaoClassAbbreviation(airspace.icaoClass).isNotEmpty) ...[
+                  const SizedBox(width: 4),
+                  Tooltip(
+                    message: _getIcaoClassDescription(airspace.icaoClass),
+                    child: Text(
+                      _getIcaoClassAbbreviation(airspace.icaoClass),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+
+                const SizedBox(width: 6),
+
+                // Altitude range and country
+                Expanded(
+                  child: Text(
+                    '${_formatAltitudeRangeWithUnits(airspace)} ${_getCountryName(airspace.country)}',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.85),
+                      fontSize: 10,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -362,13 +396,19 @@ class AirspaceTooltipWidget extends StatelessWidget {
     return '$valueStr$unitStr$refStr';
   }
 
-  /// Format compact details line (type, altitude, country)
+  /// Format compact details line (type, icaoClass, altitude, country)
   String _formatCompactDetails(AirspaceData airspace) {
     final parts = <String>[];
 
     // Add type abbreviation
-    final typeAbbrev = _getTypeAbbreviation(airspace.type, airspace.class_);
+    final typeAbbrev = _getTypeAbbreviation(airspace.type);
     parts.add(typeAbbrev);
+
+    // Add ICAO class abbreviation if available
+    final icaoClassAbbrev = _getIcaoClassAbbreviation(airspace.icaoClass);
+    if (icaoClassAbbrev.isNotEmpty) {
+      parts.add(icaoClassAbbrev);
+    }
 
     // Add altitude range with units
     final altitudeRange = _formatAltitudeRangeWithUnits(airspace);
@@ -382,57 +422,114 @@ class AirspaceTooltipWidget extends StatelessWidget {
       parts.add(countryName);
     }
 
-    return parts.join(', ');
+    return parts.join(' ');
   }
 
-  /// Get human-readable type description
-  String _getTypeDescription(String type, String? class_) {
-    final descriptions = {
-      'CTR': 'Control Zone',
-      'TMA': 'Terminal Control Area',
-      'CTA': 'Control Area',
-      'D': 'Danger Area',
-      'R': 'Restricted Area',
-      'P': 'Prohibited Area',
-      'A': 'Class A Airspace',
-      'B': 'Class B Airspace',
-      'C': 'Class C Airspace',
-      'E': 'Class E Airspace',
-      'F': 'Class F Airspace',
-      'G': 'Class G Airspace',
+
+  /// Get airspace type abbreviation from numeric code
+  String _getTypeAbbreviation(int typeCode) {
+    final typeMap = {
+      0: 'Unknown',
+      1: 'A',       // Class A
+      2: 'B',       // Class B
+      3: 'C',       // Class C
+      4: 'CTR',     // Control Zone
+      5: 'E',       // Class E
+      6: 'TMA',     // Terminal Control Area
+      7: 'G',       // Class G
+      8: 'CTR',     // Control Zone
+      9: 'TMA',     // Terminal Control Area
+      10: 'CTA',    // Control Area
+      11: 'R',      // Restricted
+      12: 'P',      // Prohibited
+      13: 'ATZ',    // Aerodrome Traffic Zone
+      14: 'D',      // Danger Area
+      15: 'R',      // Military Restricted
+      16: 'TMA',    // Approach Control
+      17: 'CTR',    // Airport Control Zone
+      18: 'R',      // Temporary Restricted
+      19: 'P',      // Temporary Prohibited
+      20: 'D',      // Temporary Danger
+      21: 'TMA',    // Terminal Area
+      22: 'CTA',    // Control Terminal Area
+      23: 'CTA',    // Control Area Extension
+      24: 'CTA',    // Control Area Sector
+      25: 'CTA',    // Control Area Step
+      26: 'CTA',    // Control Terminal Area (CTA A, CTA C1-C7)
     };
 
-    String description = descriptions[type.toUpperCase()] ?? 'Unknown Airspace';
-
-    if (class_ != null && class_.isNotEmpty && !description.contains('Class')) {
-      description += ' (Class $class_)';
-    }
-
-    return description;
+    return typeMap[typeCode] ?? 'Unknown';
   }
 
-  /// Get abbreviated type code for compact display
-  String _getTypeAbbreviation(String type, String? class_) {
-    // Return the type code directly for most cases
-    final typeUpper = type.toUpperCase();
-
-    // Handle class-specific airspace types
-    if (typeUpper == 'A' || typeUpper == 'B' || typeUpper == 'C' ||
-        typeUpper == 'E' || typeUpper == 'F' || typeUpper == 'G') {
-      return typeUpper; // Already abbreviated
-    }
-
-    // Return standard abbreviations
-    final abbreviations = {
-      'CTR': 'CTR',
-      'TMA': 'TMA',
-      'CTA': 'CTA',
-      'D': 'D',
-      'R': 'R',
-      'P': 'P',
+  /// Get airspace type full name from numeric code
+  String _getTypeDescription(int typeCode) {
+    final typeDescriptionMap = {
+      0: 'Unknown/Center Airspace',
+      1: 'Class A Airspace',
+      2: 'Class B Airspace',
+      3: 'Class C Airspace',
+      4: 'Control Zone',
+      5: 'Class E Airspace',
+      6: 'Terminal Control Area',
+      7: 'Class G Airspace',
+      8: 'Control Zone',
+      9: 'Terminal Control Area',
+      10: 'Control Area',
+      11: 'Restricted Area',
+      12: 'Prohibited Area',
+      13: 'Aerodrome Traffic Zone',
+      14: 'Danger Area',
+      15: 'Military Restricted Area',
+      16: 'Approach Control Area',
+      17: 'Airport Control Zone',
+      18: 'Temporary Restricted Area',
+      19: 'Temporary Prohibited Area',
+      20: 'Temporary Danger Area',
+      21: 'Terminal Area',
+      22: 'Control Terminal Area',
+      23: 'Control Area Extension',
+      24: 'Control Area Sector',
+      25: 'Control Area Step',
+      26: 'Control Terminal Area',
     };
 
-    return abbreviations[typeUpper] ?? typeUpper;
+    return typeDescriptionMap[typeCode] ?? 'Unknown Airspace Type';
+  }
+
+  /// Get ICAO class abbreviation from numeric code
+  String _getIcaoClassAbbreviation(int? icaoClassCode) {
+    if (icaoClassCode == null) return '';
+
+    final icaoClassMap = {
+      0: 'Class G',       // Class G - Uncontrolled
+      1: 'Class F',       // Class F - Advisory
+      2: 'Class E',       // Class E - Controlled
+      3: 'Class D',       // Class D - Controlled
+      4: 'Class C',       // Class C - Controlled
+      5: 'Class B',       // Class B - Controlled
+      6: 'Class A',       // Class A - Controlled
+      8: '',              // No class defined/Unknown - show empty
+    };
+
+    return icaoClassMap[icaoClassCode] ?? '';
+  }
+
+  /// Get ICAO class full description from numeric code
+  String _getIcaoClassDescription(int? icaoClassCode) {
+    if (icaoClassCode == null) return 'No ICAO class information';
+
+    final icaoClassDescriptionMap = {
+      0: 'Class G - Uncontrolled Airspace',
+      1: 'Class F - Advisory Airspace',
+      2: 'Class E - Controlled Airspace',
+      3: 'Class D - Controlled Airspace',
+      4: 'Class C - Controlled Airspace',
+      5: 'Class B - Controlled Airspace',
+      6: 'Class A - Controlled Airspace',
+      8: 'No ICAO class assigned',
+    };
+
+    return icaoClassDescriptionMap[icaoClassCode] ?? 'Unknown ICAO class';
   }
 
   /// Get country name from country code
@@ -489,7 +586,7 @@ class AirspaceTooltipWidget extends StatelessWidget {
     return countryNames[countryCode.toUpperCase()] ?? countryCode;
   }
 
-  /// Calculate optimal position for tooltip to avoid screen edges
+  /// Calculate optimal position for tooltip in top right corner
   Offset _calculateOptimalPosition(
     Offset cursorPosition,
     double tooltipWidth,
@@ -497,32 +594,19 @@ class AirspaceTooltipWidget extends StatelessWidget {
     Size screenSize,
     double padding,
   ) {
-    double x = cursorPosition.dx;
-    double y = cursorPosition.dy;
+    // Always position tooltip in top right corner
+    const double topOffset = 80.0; // Below app bar and controls
 
-    // Default: show tooltip to the right and below cursor
-    const double cursorOffset = 16.0;
-    x += cursorOffset;
-    y += cursorOffset;
+    double x = screenSize.width - tooltipWidth - padding;
+    double y = topOffset;
 
-    // Adjust if tooltip would go off right edge
-    if (x + tooltipWidth + padding > screenSize.width) {
-      x = cursorPosition.dx - tooltipWidth - cursorOffset;
-    }
-
-    // Adjust if tooltip would go off bottom edge
-    if (y + tooltipHeight + padding > screenSize.height) {
-      y = cursorPosition.dy - tooltipHeight - cursorOffset;
-    }
-
-    // Ensure tooltip doesn't go off left edge
+    // Ensure tooltip doesn't go off screen edges (safety checks)
     if (x < padding) {
       x = padding;
     }
-
-    // Ensure tooltip doesn't go off top edge
-    if (y < padding) {
-      y = padding;
+    if (y + tooltipHeight > screenSize.height - padding) {
+      y = screenSize.height - tooltipHeight - padding;
+      if (y < padding) y = padding; // Fallback if screen is too small
     }
 
     return Offset(x, y);
