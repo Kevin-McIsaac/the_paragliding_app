@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -27,20 +29,100 @@ class AirspaceOverlayManager {
   List<ReportingPoint> _cachedReportingPoints = [];
   String? _lastBoundsKey;
 
+  // Debouncing for map movement
+  Timer? _debounceTimer;
+  String? _currentRequestId;
+  int _requestCounter = 0;
+  int _debouncedRequestsCount = 0;
+  int _cancelledRequestsCount = 0;
+
   /// Build all overlay layers for enabled OpenAIP data types
   Future<List<Widget>> buildEnabledOverlayLayers({
     required LatLng center,
     required double zoom,
   }) async {
-    final List<Widget> layers = [];
+    // Generate unique request ID for this request
+    final requestId = 'req_${++_requestCounter}_${DateTime.now().millisecondsSinceEpoch}';
+    _currentRequestId = requestId;
+
     final bounds = _geoJsonService.calculateBoundingBox(center, zoom);
     final boundsKey = '${bounds.south},${bounds.west},${bounds.north},${bounds.east}';
 
+    // Check if bounds overlap with cached data to avoid unnecessary work
+    final shouldDebounce = _shouldDebounceRequest(bounds, boundsKey);
+
     LoggingService.structured('AVIATION_OVERLAY_BUILD', {
+      'request_id': requestId,
       'center': '${center.latitude},${center.longitude}',
       'zoom': zoom,
       'bounds_key': boundsKey,
+      'should_debounce': shouldDebounce,
     });
+
+    // Cancel existing timer
+    _debounceTimer?.cancel();
+
+    if (shouldDebounce) {
+      _debouncedRequestsCount++;
+
+      // Use a Completer to handle the debounced response
+      final completer = Completer<List<Widget>>();
+
+      _debounceTimer = Timer(const Duration(milliseconds: 300), () async {
+        // Check if this request is still current
+        if (_currentRequestId != requestId) {
+          _cancelledRequestsCount++;
+          LoggingService.structured('DEBOUNCE_REQUEST_CANCELLED', {
+            'cancelled_request_id': requestId,
+            'current_request_id': _currentRequestId,
+            'total_cancelled_requests': _cancelledRequestsCount,
+          });
+          completer.complete(<Widget>[]);
+          return;
+        }
+
+        try {
+          LoggingService.structured('DEBOUNCE_REQUEST_EXECUTED', {
+            'request_id': requestId,
+            'total_debounced_requests': _debouncedRequestsCount,
+            'delay_ms': 300,
+          });
+          final result = await _buildLayersInternal(center, zoom, bounds, boundsKey, requestId);
+          completer.complete(result);
+        } catch (error) {
+          completer.completeError(error);
+        }
+      });
+
+      return completer.future;
+    } else {
+      // No debouncing needed, execute immediately
+      LoggingService.structured('IMMEDIATE_REQUEST_EXECUTED', {
+        'request_id': requestId,
+        'reason': 'no_debounce_needed',
+      });
+      return _buildLayersInternal(center, zoom, bounds, boundsKey, requestId);
+    }
+  }
+
+  /// Internal method to build layers (called after debouncing logic)
+  Future<List<Widget>> _buildLayersInternal(
+    LatLng center,
+    double zoom,
+    LatLngBounds bounds,
+    String boundsKey,
+    String requestId
+  ) async {
+    // Check if request is still current before proceeding
+    if (_currentRequestId != requestId) {
+      LoggingService.structured('REQUEST_CANCELLED_DURING_BUILD', {
+        'cancelled_request_id': requestId,
+        'current_request_id': _currentRequestId,
+      });
+      return <Widget>[];
+    }
+
+    final List<Widget> layers = [];
 
     // Build airspace polygons (bottom layer)
     if (await _openAipService.getAirspaceEnabled()) {
@@ -71,6 +153,64 @@ class AirspaceOverlayManager {
     layers.addAll(markerLayers);
 
     return layers;
+  }
+
+  /// Check if request should be debounced based on bounds overlap
+  bool _shouldDebounceRequest(LatLngBounds bounds, String boundsKey) {
+    // If this is the first request or bounds are completely different, don't debounce
+    if (_lastBoundsKey == null) {
+      return false;
+    }
+
+    // If bounds are exactly the same, don't debounce (likely a forced refresh)
+    if (_lastBoundsKey == boundsKey) {
+      return false;
+    }
+
+    // Parse previous bounds
+    final lastParts = _lastBoundsKey!.split(',');
+    if (lastParts.length != 4) {
+      return false; // Invalid previous bounds, don't debounce
+    }
+
+    try {
+      final lastBounds = LatLngBounds(
+        LatLng(double.parse(lastParts[0]), double.parse(lastParts[1])), // SW
+        LatLng(double.parse(lastParts[2]), double.parse(lastParts[3])), // NE
+      );
+
+      // Calculate overlap percentage
+      final overlapPercent = _calculateBoundsOverlap(lastBounds, bounds);
+
+      // Debounce if there's significant overlap (>50% suggests small movement)
+      return overlapPercent > 0.5;
+    } catch (e) {
+      LoggingService.error('Error parsing previous bounds for debounce check', e);
+      return false;
+    }
+  }
+
+  /// Calculate overlap percentage between two bounds
+  double _calculateBoundsOverlap(LatLngBounds bounds1, LatLngBounds bounds2) {
+    // Calculate intersection bounds
+    final intersectionSouth = math.max(bounds1.south, bounds2.south);
+    final intersectionNorth = math.min(bounds1.north, bounds2.north);
+    final intersectionWest = math.max(bounds1.west, bounds2.west);
+    final intersectionEast = math.min(bounds1.east, bounds2.east);
+
+    // Check if there's any intersection
+    if (intersectionSouth >= intersectionNorth || intersectionWest >= intersectionEast) {
+      return 0.0; // No overlap
+    }
+
+    // Calculate areas
+    final intersectionArea = (intersectionNorth - intersectionSouth) * (intersectionEast - intersectionWest);
+    final bounds1Area = (bounds1.north - bounds1.south) * (bounds1.east - bounds1.west);
+    final bounds2Area = (bounds2.north - bounds2.south) * (bounds2.east - bounds2.west);
+
+    // Return overlap as percentage of the smaller bounds
+    final smallerArea = math.min(bounds1Area, bounds2Area);
+    return smallerArea > 0 ? intersectionArea / smallerArea : 0.0;
   }
 
   /// Build airspace polygons from GeoJSON data
@@ -381,8 +521,30 @@ class AirspaceOverlayManager {
     _cachedNavaids = [];
     _cachedReportingPoints = [];
     _lastBoundsKey = null;
+
+    // Clear debouncing state
+    _debounceTimer?.cancel();
+    _debounceTimer = null;
+    _currentRequestId = null;
+    _requestCounter = 0;
+    _debouncedRequestsCount = 0;
+    _cancelledRequestsCount = 0;
+
     _aviationDataService.clearCaches();
-    LoggingService.info('Aviation overlay cache cleared');
+    LoggingService.info('Aviation overlay cache and debouncing state cleared');
+  }
+
+  /// Get debouncing performance metrics
+  Map<String, dynamic> getDebounceMetrics() {
+    return {
+      'total_requests': _requestCounter,
+      'debounced_requests': _debouncedRequestsCount,
+      'cancelled_requests': _cancelledRequestsCount,
+      'successful_requests': _requestCounter - _cancelledRequestsCount,
+      'debounce_efficiency': _requestCounter > 0 ? _debouncedRequestsCount / _requestCounter : 0.0,
+      'current_request_id': _currentRequestId,
+      'has_active_timer': _debounceTimer?.isActive ?? false,
+    };
   }
 
   /// Get overlay status for logging/debugging
@@ -405,6 +567,7 @@ class AirspaceOverlayManager {
       'opacity': opacity,
       'has_api_key': hasApiKey,
       'dependencies_valid': validateDependencies(),
+      'debounce_metrics': getDebounceMetrics(),
     };
   }
 
