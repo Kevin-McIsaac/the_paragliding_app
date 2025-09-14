@@ -277,8 +277,12 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
       return enabledTypes[typeString] ?? false;
     }).toList();
 
-    // Sort airspaces by lower altitude limit (ascending)
-    filteredAirspaces.sort((a, b) => a.getLowerAltitudeInFeet().compareTo(b.getLowerAltitudeInFeet()));
+    // Sort airspaces by lower altitude limit (ascending), then by upper altitude limit (ascending)
+    filteredAirspaces.sort((a, b) {
+      int lowerCompare = a.getLowerAltitudeInFeet().compareTo(b.getLowerAltitudeInFeet());
+      if (lowerCompare != 0) return lowerCompare;
+      return a.getUpperAltitudeInFeet().compareTo(b.getUpperAltitudeInFeet());
+    });
 
     if (filteredAirspaces.isNotEmpty) {
       // Check if clicking near the same position (toggle behavior)

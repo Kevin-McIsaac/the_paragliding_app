@@ -168,20 +168,21 @@ class AirspaceTooltipWidget extends StatelessWidget {
 
               // Airspace list (no scrolling - all items visible)
               Flexible(
-                child: ListView.separated(
-                  shrinkWrap: true,
+                child: Padding(
                   padding: const EdgeInsets.only(left: 8, right: 12, top: 8, bottom: 8),
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: airspaces.length,
-                  separatorBuilder: (context, index) => Container(
-                    height: 1,
-                    margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 4), // Reduced spacing
-                    color: Colors.white.withValues(alpha: 0.2),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (int index = 0; index < airspaces.length; index++) ...[
+                        _buildAirspaceItem(airspaces[index]),
+                        if (index < airspaces.length - 1) Container(
+                          height: 1,
+                          margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                          color: Colors.white.withValues(alpha: 0.2),
+                        ),
+                      ],
+                    ],
                   ),
-                  itemBuilder: (context, index) {
-                    final airspace = airspaces[index];
-                    return _buildAirspaceItem(airspace);
-                  },
                 ),
               ),
 
