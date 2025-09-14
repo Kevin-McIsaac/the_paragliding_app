@@ -84,7 +84,7 @@ class LocationService {
       
       final position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 3),
+        timeLimit: const Duration(seconds: 5), // Increased from 3 to 5 seconds
       );
       
       stopwatch.stop();
@@ -111,6 +111,19 @@ class LocationService {
       return position;
     } catch (e, stackTrace) {
       LoggingService.error('Error getting current position', e, stackTrace);
+
+      // If we have a cached position, return it as fallback
+      if (_lastKnownPosition != null) {
+        final age = DateTime.now().difference(_lastPositionTime!);
+        LoggingService.structured('LOCATION_FALLBACK', {
+          'error_type': e.runtimeType.toString(),
+          'cached_age_minutes': age.inMinutes,
+          'latitude': _lastKnownPosition!.latitude.toStringAsFixed(6),
+          'longitude': _lastKnownPosition!.longitude.toStringAsFixed(6),
+        });
+        return _lastKnownPosition;
+      }
+
       return null;
     }
   }

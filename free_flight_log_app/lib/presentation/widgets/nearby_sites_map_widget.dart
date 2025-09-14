@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -9,6 +10,11 @@ import '../../utils/map_provider.dart';
 import '../../utils/site_utils.dart';
 import '../../utils/map_controls.dart';
 import '../../utils/map_tile_provider.dart';
+import '../../utils/airspace_overlay_manager.dart';
+import '../../services/openaip_service.dart';
+import '../../services/airspace_geojson_service.dart';
+import '../../services/airspace_identification_service.dart';
+import '../widgets/airspace_tooltip_widget.dart';
 
 class NearbySitesMapWidget extends StatefulWidget {
   final List<ParaglidingSite> sites;
@@ -61,11 +67,30 @@ class NearbySitesMapWidget extends StatefulWidget {
 class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   final MapController _mapController = MapController();
   final FocusNode _searchFocusNode = FocusNode();
+  final AirspaceOverlayManager _airspaceManager = AirspaceOverlayManager.instance;
+  
+  // Airspace overlay state
+  List<Widget> _airspaceLayers = [];
+  bool _airspaceLoading = false;
+  bool _airspaceEnabled = false;
+  Set<int> _visibleAirspaceTypes = {};
+
+  // Airspace tooltip state
+  List<AirspaceData> _tooltipAirspaces = [];
+  Offset? _tooltipPosition;
+  bool _showTooltip = false;
+
   
   @override
   void initState() {
     super.initState();
+    _loadAirspaceStatus();
+    // Delay airspace loading until after the first frame to ensure MapController is ready
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadAirspaceLayers();
+    });
   }
+
 
   @override
   void didUpdateWidget(NearbySitesMapWidget oldWidget) {
@@ -108,18 +133,196 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   }
   
   void _onMapEvent(MapEvent event) {
-    // React to all movement and zoom end events to reload sites
-    if (event is MapEventMoveEnd || 
+    // React to all movement and zoom end events to reload sites and airspace
+    if (event is MapEventMoveEnd ||
         event is MapEventFlingAnimationEnd ||
         event is MapEventDoubleTapZoomEnd ||
         event is MapEventScrollWheelZoom) {
-      
+
+      // Reload site data
       if (widget.onBoundsChanged != null) {
         final bounds = _mapController.camera.visibleBounds;
         widget.onBoundsChanged!(bounds);
       }
+
+      // Reload airspace data for new viewport
+      _loadAirspaceLayers();
     }
   }
+  
+  /// Load airspace overlay layers based on user preferences and current map view
+  Future<void> _loadAirspaceLayers() async {
+    if (_airspaceLoading) return;
+
+    setState(() {
+      _airspaceLoading = true;
+    });
+
+    try {
+      // Check if MapController is ready by trying to access camera properties
+      try {
+        // This will throw if the map hasn't been rendered yet
+        _mapController.camera.center;
+      } catch (e) {
+        LoggingService.info('MapController not ready yet, skipping airspace load');
+        setState(() {
+          _airspaceLoading = false;
+        });
+        return;
+      }
+
+      // Get current map center and zoom for GeoJSON request
+      final center = _mapController.camera.center;
+      final zoom = _mapController.camera.zoom;
+
+      final layers = await _airspaceManager.buildEnabledOverlayLayers(
+        center: center,
+        zoom: zoom,
+      );
+
+      if (mounted) {
+        // Get the visible airspace types from the service for legend filtering
+        final visibleTypes = AirspaceGeoJsonService.instance.visibleAirspaceTypes;
+
+        setState(() {
+          _airspaceLayers = layers;
+          _airspaceLoading = false;
+          _visibleAirspaceTypes = visibleTypes;
+        });
+
+        LoggingService.structured('AIRSPACE_LAYERS_LOADED', {
+          'layer_count': layers.length,
+          'visible_types_count': visibleTypes.length,
+          'visible_types': visibleTypes.toList(),
+          'widget_mounted': mounted,
+          'center': '${center.latitude},${center.longitude}',
+          'zoom': zoom,
+        });
+      }
+    } catch (error, stackTrace) {
+      LoggingService.error('Failed to load airspace layers', error, stackTrace);
+
+      if (mounted) {
+        setState(() {
+          _airspaceLayers = [];
+          _airspaceLoading = false;
+        });
+      }
+    }
+  }
+  
+  /// Load airspace status for legend display
+  Future<void> _loadAirspaceStatus() async {
+    try {
+      final enabled = await OpenAipService.instance.isAirspaceEnabled();
+      if (mounted) {
+        setState(() {
+          _airspaceEnabled = enabled;
+        });
+      }
+    } catch (error, stackTrace) {
+      LoggingService.error('Failed to load airspace status', error, stackTrace);
+    }
+  }
+
+  /// Refresh airspace layers when settings change
+  void refreshAirspaceLayers() {
+    _loadAirspaceStatus(); // Also refresh the status for legend
+    _loadAirspaceLayers();
+  }
+
+  /// Convert numeric airspace types back to string abbreviations for legacy compatibility
+  Set<String> _convertNumericTypesToStrings(Set<int> numericTypes) {
+    const numericToString = {
+      0: 'Unknown',
+      1: 'A',
+      2: 'E',
+      3: 'C',
+      4: 'CTR',
+      5: 'E',
+      6: 'TMA',
+      7: 'G',
+      8: 'CTR',
+      9: 'TMA',
+      10: 'CTA',
+      11: 'R',
+      12: 'P',
+      13: 'ATZ',
+      14: 'D',
+      15: 'R',
+      16: 'TMA',
+      17: 'CTR',
+      18: 'R',
+      19: 'P',
+      20: 'D',
+      21: 'TMA',
+      26: 'CTA',
+    };
+
+    return numericTypes.map((type) => numericToString[type] ?? 'Unknown').toSet();
+  }
+
+  /// Handle click for airspace identification
+  void _handleAirspaceInteraction(Offset screenPosition, LatLng mapPoint) async {
+    if (!_airspaceEnabled) return;
+
+    // Identify airspaces at the point (using map coordinates from FlutterMap)
+    final allAirspaces = AirspaceIdentificationService.instance.identifyAirspacesAtPoint(mapPoint);
+
+    // Filter airspaces by enabled types only
+    final enabledTypes = await OpenAipService.instance.getEnabledAirspaceTypes();
+    final filteredAirspaces = allAirspaces.where((airspace) {
+      // Convert numeric type to string type for filtering
+      final typeString = _getTypeStringFromCode(airspace.type);
+      return enabledTypes[typeString] ?? false;
+    }).toList();
+
+    // Sort airspaces by lower altitude limit (ascending), then by upper altitude limit (ascending)
+    filteredAirspaces.sort((a, b) {
+      int lowerCompare = a.getLowerAltitudeInFeet().compareTo(b.getLowerAltitudeInFeet());
+      if (lowerCompare != 0) return lowerCompare;
+      return a.getUpperAltitudeInFeet().compareTo(b.getUpperAltitudeInFeet());
+    });
+
+    if (filteredAirspaces.isNotEmpty) {
+      // Check if clicking near the same position (toggle behavior)
+      if (_showTooltip && _tooltipPosition != null && _isSimilarPosition(screenPosition, _tooltipPosition!)) {
+        // Toggle: hide tooltip if clicking the same area
+        _hideTooltip();
+      } else {
+        // Show tooltip immediately
+        setState(() {
+          _tooltipAirspaces = filteredAirspaces;
+          _tooltipPosition = screenPosition;
+          _showTooltip = true;
+        });
+      }
+    } else {
+      // No airspaces found, hide tooltip
+      _hideTooltip();
+    }
+  }
+
+  /// Check if two positions are similar (within 50 pixels)
+  bool _isSimilarPosition(Offset pos1, Offset pos2) {
+    const double threshold = 50.0;
+    return (pos1 - pos2).distance < threshold;
+  }
+
+
+  /// Hide the airspace tooltip immediately
+  void _hideTooltip() {
+    if (_showTooltip) {
+      setState(() {
+        _showTooltip = false;
+        _tooltipAirspaces = [];
+        _tooltipPosition = null;
+      });
+    }
+  }
+
+
+
 
   LatLng _getInitialCenter() {
     // Priority: explicit center position, user position, or default
@@ -231,12 +434,34 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               isExpanded: widget.isLegendExpanded,
               onToggle: widget.onToggleLegend,
               legendItems: [
+                // Site legend items
                 SiteMarkerUtils.buildLegendItem(context, Icons.location_on, SiteMarkerUtils.flownSiteColor, 'Local Sites (DB)'),
                 const SizedBox(height: 4),
                 SiteMarkerUtils.buildLegendItem(context, Icons.location_on, SiteMarkerUtils.newSiteColor, 'API Sites'),
+
+                // Airspace legend items (only when airspace is enabled)
+                if (_airspaceEnabled) ...[
+                  const SizedBox(height: 8),
+                  // Airspace section title
+                  const Text(
+                    'Airspace Types',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  // Airspace type legend items with tooltips (filtered by visible types)
+                  ...SiteMarkerUtils.buildAirspaceLegendItems(visibleTypes: _convertNumericTypesToStrings(_visibleAirspaceTypes)),
+                ],
               ],
             ),
           ),
+          
+          const SizedBox(width: 8),
+          
+          // Airspace controls moved to AppBar to avoid gesture conflicts
           
           const SizedBox(width: 8),
           
@@ -635,10 +860,13 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
       'has_center_position': widget.centerPosition != null,
       'initial_zoom': widget.initialZoom,
       'map_provider': widget.mapProvider.shortName,
+      'airspace_layer_count': _airspaceLayers.length,
+      'airspace_loading': _airspaceLoading,
     });
 
     return Stack(
       children: [
+        // FlutterMap with native click handling for airspace tooltip
         FlutterMap(
           mapController: _mapController,
           options: MapOptions(
@@ -652,36 +880,87 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               flags: InteractiveFlag.all,
             ),
             onTap: (tapPosition, point) {
+              // Handle airspace tooltip on click with proper coordinates
+              _handleAirspaceInteraction(tapPosition.global, point);
+
               // Clear search when tapping the map
               if (widget.searchQuery.isNotEmpty) {
                 widget.onSearchChanged('');
               }
             },
           ),
-          children: [
-            // Map tiles layer
-            TileLayer(
-              urlTemplate: widget.mapProvider.urlTemplate,
-              userAgentPackageName: 'com.example.free_flight_log_app',
-              maxZoom: widget.mapProvider.maxZoom.toDouble(),
-              tileProvider: MapTileProvider.createInstance(),
-              errorTileCallback: MapTileProvider.getErrorCallback(),
-            ),
-            
-            // Site markers layer
-            MarkerLayer(
-              markers: [
-                ..._buildUserLocationMarker(),
-                ..._buildSiteMarkers(),
+              children: [
+                // Map tiles layer
+                TileLayer(
+                  urlTemplate: widget.mapProvider.urlTemplate,
+                  userAgentPackageName: 'com.example.free_flight_log_app',
+                  maxZoom: widget.mapProvider.maxZoom.toDouble(),
+                  tileProvider: MapTileProvider.createInstance(),
+                  errorTileCallback: MapTileProvider.getErrorCallback(),
+                ),
+
+                // Airspace overlay layers (between base map and markers)
+                ..._airspaceLayers,
+
+                // Site markers layer
+                MarkerLayer(
+                  markers: [
+                    ..._buildUserLocationMarker(),
+                    ..._buildSiteMarkers(),
+                  ],
+                ),
               ],
             ),
-          ],
-        ),
-        
+
         // Map overlays
         _buildAttribution(),
         _buildTopControlBar(),
+
+        // Airspace tooltip
+        if (_showTooltip && _tooltipPosition != null)
+          AirspaceTooltipWidget(
+            airspaces: _tooltipAirspaces,
+            position: _tooltipPosition!,
+            screenSize: MediaQuery.of(context).size,
+            onClose: _hideTooltip,
+          ),
       ],
     );
+  }
+
+  /// Convert numeric type code to string type for filtering compatibility
+  String _getTypeStringFromCode(int typeCode) {
+    // Map numeric codes back to the string types used by the filtering system
+    final typeMap = {
+      0: 'UNKNOWN',
+      1: 'A',
+      2: 'B',
+      3: 'C',
+      4: 'CTR',
+      5: 'E',
+      6: 'TMA',
+      7: 'G',
+      8: 'CTR',
+      9: 'TMA',
+      10: 'CTA',
+      11: 'R',
+      12: 'P',
+      13: 'CTR',  // ATZ mapped to CTR for filtering
+      14: 'D',
+      15: 'R',
+      16: 'TMA',
+      17: 'CTR',
+      18: 'R',
+      19: 'P',
+      20: 'D',
+      21: 'TMA',
+      22: 'CTA',
+      23: 'CTA',
+      24: 'CTA',
+      25: 'CTA',
+      26: 'CTA',
+    };
+
+    return typeMap[typeCode] ?? 'UNKNOWN';
   }
 }

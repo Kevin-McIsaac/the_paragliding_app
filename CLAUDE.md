@@ -437,6 +437,91 @@ flutter_controller_enhanced ss emulator-5556 # Specific device
 - **GPS**: Primary data source for all calculations
 - **IGC Files**: Immutable once imported, parse once and store results
 
+## 🌐 OpenAIP API Integration
+
+### Overview
+Free Flight Log integrates with OpenAIP Core API for aviation data overlays including airspaces, airports, navigation aids, and reporting points.
+
+### API Endpoints & Authentication
+```
+Base URL: https://api.core.openaip.net/api
+Authentication: API key as query parameter (?apiKey=xxx)
+```
+
+**Working Endpoints:**
+- `/api/airspaces` - Controlled airspace polygons (CTR, TMA, CTA, danger areas, etc.)
+- `/api/airports` - Airport point data with details and frequencies
+- `/api/navaids` - Navigation aids (VOR, NDB, DME, waypoints)
+- `/api/reporting-points` - VFR reporting points with altitude restrictions
+
+### Request Format
+```http
+GET /api/{endpoint}?bbox=west,south,east,north&limit=500&apiKey={key}
+Headers:
+  Accept: application/json
+  User-Agent: FreeFlightLog/1.0
+```
+
+### Response Format
+All endpoints return GeoJSON FeatureCollection with:
+```json
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "_id": "unique_identifier",
+      "geometry": { "type": "Point|Polygon", "coordinates": [...] },
+      "properties": { endpoint-specific data }
+    }
+  ]
+}
+```
+
+### Code Integration
+
+**Service Architecture:**
+- `AirspaceGeoJsonService` - Handles airspace polygons and styling
+- `AviationDataService` - Handles airports, navaids, reporting points
+- `AirspaceOverlayManager` - Coordinates all aviation data layers
+- `OpenAipService` - Manages API keys and layer preferences
+
+**Key Implementation Points:**
+```dart
+// ✅ Correct authentication (URL parameter, not headers)
+final url = 'https://api.core.openaip.net/api/airports'
+    '?bbox=$west,$south,$east,$north&limit=500&apiKey=$apiKey';
+
+// ✅ Standard headers (same as working airspace service)
+final headers = {
+  'Accept': 'application/json',
+  'User-Agent': 'FreeFlightLog/1.0',
+};
+
+// ✅ Individual caching per data type
+final airports = await AviationDataService.instance.fetchAirports(bounds);
+```
+
+### Visual Representation
+- **Airspaces**: Semi-transparent polygons with type-specific colors
+- **Airports**: Circular markers with airplane icons, sized by category
+- **Navaids**: Symbol markers (⬡ VOR, ● NDB, ◇ DME, ◉ Waypoints)
+- **Reporting Points**: Triangle markers with altitude restriction tooltips
+
+### Troubleshooting
+| Issue | Cause | Solution |
+|-------|--------|----------|
+| 401 Auth Failed | Invalid API key | Check OpenAIP account, verify key |
+| 404 Not Found | Wrong endpoint | Use full names: `/airports` not `/apt` |
+| No data returned | Geographic bounds | Try different location/zoom level |
+| Headers auth failure | Wrong auth method | Use query parameter, not headers |
+
+### Logging Integration
+All API calls generate structured logs:
+```
+[AIRPORTS_API_REQUEST] url=*** | bounds=*** | has_api_key=true
+[AIRPORTS_API_SUCCESS] airports_count=15 | cache_key=***
+```
+
 ## 🚀 Development Workflow (Claude-Optimized)
 
 ### Standard Development Process

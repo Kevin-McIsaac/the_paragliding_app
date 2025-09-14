@@ -16,6 +16,7 @@ import '../../services/nearby_sites_search_manager.dart';
 import '../../utils/map_provider.dart';
 import '../../utils/site_utils.dart';
 import '../widgets/nearby_sites_map_widget.dart';
+import '../widgets/airspace_controls_widget.dart';
 import '../widgets/common/app_error_state.dart';
 import '../widgets/common/app_empty_state.dart';
 
@@ -31,7 +32,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   final DatabaseService _databaseService = DatabaseService.instance;
   final LocationService _locationService = LocationService.instance;
   final ParaglidingEarthApi _paraglidingEarthApi = ParaglidingEarthApi.instance;
-  final TextEditingController _searchController = TextEditingController();
   
   // Constants for bounds-based loading (copied from EditSiteScreen)
   static const double _boundsThreshold = 0.001;
@@ -51,6 +51,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   
   // Map provider state
   MapProvider _selectedMapProvider = MapProvider.openStreetMap;
+  
+  // Key to force map widget refresh when airspace settings change
+  Key _mapWidgetKey = UniqueKey();
   static const String _mapProviderKey = 'nearby_sites_map_provider';
   
   // Legend state
@@ -64,6 +67,10 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   String? _lastLoadedBoundsKey;
   
   // Search management - consolidated into SearchManager
+
+  // Location notification state
+  bool _showLocationNotification = false;
+  Timer? _locationNotificationTimer;
   late final NearbySitesSearchManager _searchManager;
   
 
@@ -77,8 +84,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
   @override
   void dispose() {
-    _searchController.dispose();
     _debounceTimer?.cancel(); // Clean up timer
+    _locationNotificationTimer?.cancel(); // Clean up location notification timer
     _searchManager.dispose(); // Clean up search manager
     super.dispose();
   }
@@ -87,11 +94,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     _searchManager = NearbySitesSearchManager(
       onStateChanged: (SearchState state) {
         setState(() {
-          // Update search query in controller if different
-          if (_searchController.text != state.query) {
-            _searchController.text = state.query;
-          }
-          // Update displayed sites
+          // Update displayed sites when search state changes
           _updateDisplayedSites();
         });
       },
@@ -175,10 +178,12 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           _userPosition = position;
           _isLocationLoading = false;
         });
-        
+
         // Update map center to user position when location is acquired
         if (position != null) {
           _mapCenterPosition = LatLng(position.latitude, position.longitude);
+          // Hide location notification if location was successfully obtained
+          _hideLocationNotification();
         }
         _updateDisplayedSites();
         return position;
@@ -190,8 +195,39 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         setState(() {
           _isLocationLoading = false;
         });
+        // Show auto-dismissing notification when location fails
+        _showLocationNotificationBriefly();
       }
       return null;
+    }
+  }
+
+  /// Show location notification briefly and auto-dismiss after 4 seconds
+  void _showLocationNotificationBriefly() {
+    // Cancel any existing timer
+    _locationNotificationTimer?.cancel();
+
+    if (mounted) {
+      setState(() {
+        _showLocationNotification = true;
+      });
+
+      // Auto-dismiss after 4 seconds
+      _locationNotificationTimer = Timer(const Duration(seconds: 4), () {
+        _hideLocationNotification();
+      });
+    }
+  }
+
+  /// Hide location notification
+  void _hideLocationNotification() {
+    _locationNotificationTimer?.cancel();
+    _locationNotificationTimer = null;
+
+    if (mounted) {
+      setState(() {
+        _showLocationNotification = false;
+      });
     }
   }
 
@@ -510,34 +546,86 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     );
   }
 
+  /// Show airspace controls in a bottom sheet to avoid map gesture conflicts
+  void _showAirspaceControls() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              children: [
+                const Icon(Icons.airplanemode_active, color: Colors.blue),
+                const SizedBox(width: 8),
+                const Text(
+                  'Airspace Overlays',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            // Airspace controls widget in a container with dark background
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.grey[900],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.all(16),
+              child: AirspaceControlsWidget(
+                isExpanded: true, // Always expanded in bottom sheet
+                onToggleExpanded: () {}, // No-op since always expanded
+                onLayersChanged: () {
+                  // Refresh map layers when airspace settings change
+                  setState(() {
+                    // Generate new key to force map widget rebuild and reload airspace layers
+                    _mapWidgetKey = UniqueKey();
+                  });
+                  LoggingService.action('NearbySites', 'airspace_settings_changed', {
+                    'triggered_map_refresh': true,
+                  });
+                },
+              ),
+            ),
+            
+            // Bottom padding for safe area
+            SizedBox(height: MediaQuery.of(context).padding.bottom),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: _searchManager.state.isSearchMode 
-          ? TextField(
-              controller: _searchController,
-              autofocus: true,
-              decoration: const InputDecoration(
-                hintText: 'Search sites worldwide...',
-                border: InputBorder.none,
-                hintStyle: TextStyle(color: Colors.grey),
-              ),
-              style: const TextStyle(color: Colors.white),
-              onChanged: _searchManager.onSearchQueryChanged,
-              onSubmitted: (value) => _searchManager.performImmediateSearch(value),
-            )
-          : const Text('Nearby Sites'),
+        title: const Text('Nearby Sites'),
         actions: [
-          _searchManager.state.isSearchMode 
-            ? IconButton(
-                icon: const Icon(Icons.close),
-                onPressed: _searchManager.exitSearchMode,
-              )
-            : IconButton(
-                icon: const Icon(Icons.search),
-                onPressed: _searchManager.enterSearchMode,
-              ),
+          // Airspace controls - moved to app bar to avoid map gesture conflicts
+          IconButton(
+            icon: const Icon(Icons.airplanemode_active),
+            onPressed: _showAirspaceControls,
+            tooltip: 'Airspace overlays',
+          ),
         ],
       ),
       body: Stack(
@@ -550,16 +638,11 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                     message: _errorMessage!,
                     onRetry: _loadData,
                   )
-                : (_allSites.isEmpty && _lastLoadedBoundsKey != null)
-                    ? const AppEmptyState(
-                        title: 'No sites found',
-                        message: 'No sites found in this area',
-                        icon: Icons.location_on,
-                      )
-                    : Stack(
+                : Stack(
                       children: [
                         // Map
                         NearbySitesMapWidget(
+                          key: _mapWidgetKey, // Force rebuild when airspace settings change
                           sites: _displayedSites,
                           siteFlightStatus: _siteFlightStatus,
                           userPosition: _userPosition,
@@ -629,63 +712,49 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                             ),
                           ),
                         
-                        // Location unavailable message
-                        if (_userPosition == null && !_isLocationLoading)
+                        // Auto-dismissing location notification
+                        if (_showLocationNotification)
                           Positioned(
-                            bottom: 100,
+                            bottom: 120,
                             left: 16,
                             right: 16,
-                            child: Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.shade900.withValues(alpha: 0.9),
-                                borderRadius: BorderRadius.circular(8),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.3),
-                                    blurRadius: 4,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.location_off,
-                                    color: Colors.white,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  const Expanded(
-                                    child: Text(
-                                      'Location unavailable. Using last known position.',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 13,
+                            child: AnimatedOpacity(
+                              opacity: _showLocationNotification ? 1.0 : 0.0,
+                              duration: const Duration(milliseconds: 300),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.85),
+                                  borderRadius: BorderRadius.circular(8),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.3),
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.location_off,
+                                      color: Colors.white.withValues(alpha: 0.9),
+                                      size: 18,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    const Expanded(
+                                      child: Text(
+                                        'Location unavailable',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  TextButton(
-                                    onPressed: _onRefreshLocation,
-                                    style: TextButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                      minimumSize: Size.zero,
-                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                      backgroundColor: Colors.white.withValues(alpha: 0.2),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                    ),
-                                    child: const Text(
-                                      'Retry',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           ),
