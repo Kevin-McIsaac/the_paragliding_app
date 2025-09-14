@@ -201,61 +201,61 @@ class AirspaceGeoJsonService {
   /// Get the currently visible airspace types in the loaded data
   Set<int> get visibleAirspaceTypes => Set.from(_currentVisibleTypes);
 
-  // Airspace type to style mapping
+  // Airspace type to style mapping - All with 10% opacity (0x1A) for better map visibility
   static const Map<String, AirspaceStyle> _airspaceStyles = {
     'CTR': AirspaceStyle(
-      fillColor: Color(0x30FF0000),
+      fillColor: Color(0x1AFF0000),  // 10% opacity red
       borderColor: Color(0xFFFF0000),
       borderWidth: 2.0,
     ),
     'TMA': AirspaceStyle(
-      fillColor: Color(0x30FFA500),
+      fillColor: Color(0x1AFFA500),  // 10% opacity orange
       borderColor: Color(0xFFFFA500),
       borderWidth: 1.8,
     ),
     'CTA': AirspaceStyle(
-      fillColor: Color(0x300000FF),
+      fillColor: Color(0x1A0000FF),  // 10% opacity blue
       borderColor: Color(0xFF0000FF),
       borderWidth: 1.5,
     ),
     'D': AirspaceStyle( // Danger
-      fillColor: Color(0x40FF0000),
+      fillColor: Color(0x1AFF0000),  // 10% opacity red
       borderColor: Color(0xFFFF0000),
       borderWidth: 2.0,
       isDotted: true,
     ),
     'R': AirspaceStyle( // Restricted
-      fillColor: Color(0x40FF4500),
+      fillColor: Color(0x1AFF4500),  // 10% opacity orange-red
       borderColor: Color(0xFFFF4500),
       borderWidth: 2.0,
     ),
     'P': AirspaceStyle( // Prohibited
-      fillColor: Color(0x508B0000),
+      fillColor: Color(0x1A8B0000),  // 10% opacity dark red
       borderColor: Color(0xFF8B0000),
       borderWidth: 2.5,
     ),
     'A': AirspaceStyle( // Class A
-      fillColor: Color(0x20800080),
+      fillColor: Color(0x1A800080),  // 10% opacity purple
       borderColor: Color(0xFF800080),
     ),
     'B': AirspaceStyle( // Class B
-      fillColor: Color(0x200000FF),
+      fillColor: Color(0x1A0000FF),  // 10% opacity blue
       borderColor: Color(0xFF0000FF),
     ),
     'C': AirspaceStyle( // Class C
-      fillColor: Color(0x20FF00FF),
+      fillColor: Color(0x1AFF00FF),  // 10% opacity magenta
       borderColor: Color(0xFFFF00FF),
     ),
     'E': AirspaceStyle( // Class E
-      fillColor: Color(0x20008000),
+      fillColor: Color(0x1A008000),  // 10% opacity green
       borderColor: Color(0xFF008000),
     ),
     'F': AirspaceStyle( // Class F
-      fillColor: Color(0x20808080),
+      fillColor: Color(0x1A808080),  // 10% opacity gray
       borderColor: Color(0xFF808080),
     ),
     'G': AirspaceStyle( // Class G
-      fillColor: Color(0x20C0C0C0),
+      fillColor: Color(0x1AC0C0C0),  // 10% opacity light gray
       borderColor: Color(0xFFC0C0C0),
     ),
   };
@@ -604,8 +604,8 @@ class AirspaceGeoJsonService {
       // Use geobase to parse the GeoJSON data
       final featureCollection = geo.FeatureCollection.parse(geoJsonString);
 
-      final polygons = <fm.Polygon>[];
-      final identificationPolygons = <AirspacePolygonData>[];
+      List<fm.Polygon> polygons = <fm.Polygon>[];
+      List<AirspacePolygonData> identificationPolygons = <AirspacePolygonData>[];
       final Set<int> visibleEnabledTypes = <int>{}; // Track visible enabled types
 
       for (final feature in featureCollection.features) {
@@ -655,6 +655,38 @@ class AirspaceGeoJsonService {
             }
           }
         }
+      }
+
+      // Sort polygons by lower altitude: highest first, lowest last
+      // This ensures lowest airspaces render on top (most visible)
+      if (polygons.isNotEmpty && identificationPolygons.isNotEmpty) {
+        // Create paired list of polygons with their altitude data
+        final polygonsWithAltitude = <({fm.Polygon polygon, AirspacePolygonData data})>[];
+        for (int i = 0; i < polygons.length; i++) {
+          polygonsWithAltitude.add((
+            polygon: polygons[i],
+            data: identificationPolygons[i],
+          ));
+        }
+
+        // Sort by lower altitude: highest first (descending order)
+        polygonsWithAltitude.sort((a, b) {
+          return b.data.airspaceData.getLowerAltitudeInFeet()
+              .compareTo(a.data.airspaceData.getLowerAltitudeInFeet());
+        });
+
+        // Extract sorted polygons and identification data
+        polygons = polygonsWithAltitude.map((p) => p.polygon).toList();
+        identificationPolygons = polygonsWithAltitude.map((p) => p.data).toList();
+
+        LoggingService.structured('AIRSPACE_ALTITUDE_SORTING', {
+          'polygons_sorted': polygons.length,
+          'sort_order': 'highest_altitude_first',
+          'altitude_range_feet': polygonsWithAltitude.isNotEmpty ? {
+            'highest': polygonsWithAltitude.first.data.airspaceData.getLowerAltitudeInFeet(),
+            'lowest': polygonsWithAltitude.last.data.airspaceData.getLowerAltitudeInFeet(),
+          } : null,
+        });
       }
 
       // Update the identification service with polygon data
