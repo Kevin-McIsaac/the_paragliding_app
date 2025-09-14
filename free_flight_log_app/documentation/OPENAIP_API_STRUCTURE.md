@@ -27,34 +27,47 @@ Each airspace in the `items` array contains 22 properties:
 - `country`: ISO country code (string)
   - Example: "AU" (Australia)
 - `type`: Numeric airspace type code (integer)
-  - `0`: Unknown/Center type (e.g., PERTH CENTRE, CONTINENTAL AUSTRALIA)
-  - `4`: Control Zone (CTR)
-  - `6`: Terminal Control Area (TMA)
-  - `26`: Control Area (CTA)
+  - `0`: Unknown
+  - `1`: Restricted
+  - `2`: Danger
+  - `4`: CTR
+  - `6`: TMA
+  - `7`: TMA
+  - `10`: FIR
+  - `26`: CTA
 
 ### ICAO Classification System
 - `icaoClass`: Numeric ICAO airspace class code (integer)
-  - `0`: Class G (General/Uncontrolled)
-  - `1`: Class F
-  - `2`: Class E (Controlled)
-  - `3`: Class D (Controlled)
-  - `4`: Class C (Controlled)
-  - `5`: Class B (Controlled)
-  - `6`: Class A (Controlled)
-  - `8`: No class defined/Unknown
+  - `0`: A 
+  - `1`: B
+  - `2`: C
+  - `3`: D
+  - `4`: E
+  - `5`: F
+  - `6`: G 
+  - `8`: None
 
 **Note**: `icaoClass: 8` indicates the airspace has no ICAO class assigned in the OpenAIP system, not missing data.
 
 ### ICAP Airspace Classifications Explainations
 
-ICAO classifies airspace to provide different levels of service and safety. There are seven classes, ranging from the highly controlled Class A to the uncontrolled Class G: 
-- **Class A**: IFR flights only, with all flights receiving air traffic control and separation. 
-- **Class B**: Both IFR and VFR flights are permitted, with air traffic control and separation for all flights. 
-- **Class C**: IFR and VFR flights allowed. ATC provides separation for IFR from other IFR and VFR flights, and VFR from IFR flights, with traffic information for VFR. 
-- **Class D**: IFR and VFR flights. ATC provides separation for IFR flights and traffic information for VFR flights. 
-- **Class E**: IFR and VFR allowed. IFR flights receive ATC separation and all flights receive traffic information when practical. 
-- **Class F**: IFR and VFR flights. IFR flights receive an air traffic advisory service, and all flights receive flight information service if requested. 
-- **Class G**: Uncontrolled airspace where separation is not provided. 
+ICAO classifies airspace into seven classes (A through G) to provide different levels of air traffic s:w!ervices and separation. The classes range from highly controlled Class A to uncontrolled Class G:
+
+- **Class A**: IFR only. All flights receive air traffic control service and are separated from all other traffic.
+
+- **Class B**: IFR and VFR permitted. All flights receive air traffic control service and are separated from all other traffic.
+
+- **Class C**: IFR and VFR permitted. All flights receive air traffic control service. IFR flights are separated from other IFR and VFR flights. VFR flights are separated from IFR flights and receive traffic information on other VFR flights.
+
+- **Class D**: IFR and VFR permitted. All flights receive air traffic control service. IFR flights are separated from other IFR flights and receive traffic information on VFR flights. VFR flights receive traffic information on all other traffic.
+
+- **Class E**: IFR and VFR permitted. IFR flights receive air traffic control service and are separated from other IFR flights. All flights receive traffic information as far as practical. VFR flights do not receive separation service.
+
+- **Class F**: IFR and VFR permitted. IFR flights receive air traffic advisory service and all flights receive flight information service if requested. Class F is not implemented in many countries.
+
+- **Class G**: Uncontrolled airspace. Only flight information service provided if requested. No separation service provided.
+
+
 
 
 ### Altitude Limits Structure
@@ -148,6 +161,32 @@ Based on the sample data from coordinates (-32.1067, 115.8913):
 - **Parameters**: `bbox`, `limit`, `apiKey`
 - **Authentication**: Requires valid API key
 - **Rate Limits**: Subject to OpenAIP usage policies
+
+## Airspace Types Reference
+
+The OpenAIP `/airspaces` endpoint uses both numeric type codes and standard aviation abbreviations. Below are the complete airspace classifications:
+
+### ATS Airspace Types
+- **CTR** - Control Zone/Controlled Tower Region (airport control zone)
+- **TMA** - Terminal Maneuvering Area (terminal control area)
+- **FIR** - Flight Information Region
+- **UIR** - Upper Information Region
+- **CTA** - Control Area
+- **UTA** - Upper Control Area
+- **MATZ** - Military Aerodrome Traffic Zone
+
+### Special Use Airspace
+- **DANGER** or **D** - Danger Area (hazardous activities)
+- **RESTRICTED** or **R** - Restricted Area (entry restricted)
+- **PROHIBITED** or **P** - Prohibited Area (flight forbidden)
+- **TMZ** - Transponder Mandatory Zone
+- **RMZ** - Radio Mandatory Zone
+- **TRA** - Temporary Reserved Area
+- **TSA** - Temporary Segregated Area
+- **MOA** - Military Operations Area
+- **WAVE** - Wave/Mountain wave area
+- **GLIDING** - Gliding area
+- **SPORT** - Sport/recreational aviation area
 
 ## Sample Query
 

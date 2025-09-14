@@ -22,7 +22,7 @@ class AirspaceTooltipWidget extends StatelessWidget {
     if (airspaces.isEmpty) return const SizedBox.shrink();
 
     // Calculate tooltip dimensions
-    const double tooltipWidth = 300.0;
+    const double tooltipWidth = 220.0;
     // Dynamic height based on content, with reasonable limits
     final double maxTooltipHeight = (screenSize.height * 0.8).clamp(400.0, 600.0);
     const double padding = 8.0;
@@ -259,11 +259,23 @@ class AirspaceTooltipWidget extends StatelessWidget {
             padding: const EdgeInsets.only(left: 16, top: 1),
             child: Row(
               children: [
-                // Airspace type with tooltip
+                // Airspace type with mapping and tooltip
                 Tooltip(
-                  message: _getTypeDescription(airspace.type),
+                  preferBelow: false,
+                  margin: const EdgeInsets.symmetric(horizontal: 30),
+                  decoration: BoxDecoration(
+                    color: const Color(0xE6000000),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                  ),
+                  textStyle: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
+                  ),
+                  message: _getTypeTooltip(airspace.type),
                   child: Text(
-                    '${_getTypeAbbreviation(airspace.type)},',
+                    '${_getTypeMappedString(airspace.type)},',
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.85),
                       fontSize: 10,
@@ -272,13 +284,25 @@ class AirspaceTooltipWidget extends StatelessWidget {
                   ),
                 ),
 
-                // ICAO class with tooltip (if available)
-                if (airspace.icaoClass != null && _getIcaoClassAbbreviation(airspace.icaoClass).isNotEmpty) ...[
-                  const SizedBox(width: 4),
+                // ICAO class with mapping and tooltip (if available)
+                if (airspace.icaoClass != null && _getIcaoClassMappedString(airspace.icaoClass).isNotEmpty) ...[
+                  const SizedBox(width: 6),
                   Tooltip(
-                    message: _getIcaoClassDescription(airspace.icaoClass),
+                    preferBelow: false,
+                    margin: const EdgeInsets.symmetric(horizontal: 30),
+                    decoration: BoxDecoration(
+                      color: const Color(0xE6000000),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                    ),
+                    textStyle: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                    ),
+                    message: _getIcaoClassTooltip(airspace.icaoClass),
                     child: Text(
-                      _getIcaoClassAbbreviation(airspace.icaoClass),
+                      '${_getIcaoClassMappedString(airspace.icaoClass)},',
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.85),
                         fontSize: 10,
@@ -431,32 +455,13 @@ class AirspaceTooltipWidget extends StatelessWidget {
   String _getTypeAbbreviation(int typeCode) {
     final typeMap = {
       0: 'Unknown',
-      1: 'A',       // Class A
-      2: 'B',       // Class B
-      3: 'C',       // Class C
+      1: 'R',       // Restricted
+      2: 'D',       // Danger
       4: 'CTR',     // Control Zone
-      5: 'E',       // Class E
       6: 'TMA',     // Terminal Control Area
-      7: 'G',       // Class G
-      8: 'CTR',     // Control Zone
-      9: 'TMA',     // Terminal Control Area
-      10: 'CTA',    // Control Area
-      11: 'R',      // Restricted
-      12: 'P',      // Prohibited
-      13: 'ATZ',    // Aerodrome Traffic Zone
-      14: 'D',      // Danger Area
-      15: 'R',      // Military Restricted
-      16: 'TMA',    // Approach Control
-      17: 'CTR',    // Airport Control Zone
-      18: 'R',      // Temporary Restricted
-      19: 'P',      // Temporary Prohibited
-      20: 'D',      // Temporary Danger
-      21: 'TMA',    // Terminal Area
-      22: 'CTA',    // Control Terminal Area
-      23: 'CTA',    // Control Area Extension
-      24: 'CTA',    // Control Area Sector
-      25: 'CTA',    // Control Area Step
-      26: 'CTA',    // Control Terminal Area (CTA A, CTA C1-C7)
+      7: 'TMA',     // Terminal Control Area
+      10: 'FIR',    // Flight Information Region
+      26: 'CTA',    // Control Terminal Area
     };
 
     return typeMap[typeCode] ?? 'Unknown';
@@ -465,32 +470,13 @@ class AirspaceTooltipWidget extends StatelessWidget {
   /// Get airspace type full name from numeric code
   String _getTypeDescription(int typeCode) {
     final typeDescriptionMap = {
-      0: 'Unknown/Center Airspace',
-      1: 'Class A Airspace',
-      2: 'Class B Airspace',
-      3: 'Class C Airspace',
+      0: 'Unknown Airspace',
+      1: 'Restricted Area',
+      2: 'Danger Area',
       4: 'Control Zone',
-      5: 'Class E Airspace',
       6: 'Terminal Control Area',
-      7: 'Class G Airspace',
-      8: 'Control Zone',
-      9: 'Terminal Control Area',
-      10: 'Control Area',
-      11: 'Restricted Area',
-      12: 'Prohibited Area',
-      13: 'Aerodrome Traffic Zone',
-      14: 'Danger Area',
-      15: 'Military Restricted Area',
-      16: 'Approach Control Area',
-      17: 'Airport Control Zone',
-      18: 'Temporary Restricted Area',
-      19: 'Temporary Prohibited Area',
-      20: 'Temporary Danger Area',
-      21: 'Terminal Area',
-      22: 'Control Terminal Area',
-      23: 'Control Area Extension',
-      24: 'Control Area Sector',
-      25: 'Control Area Step',
+      7: 'Terminal Control Area',
+      10: 'Flight Information Region',
       26: 'Control Terminal Area',
     };
 
@@ -502,14 +488,14 @@ class AirspaceTooltipWidget extends StatelessWidget {
     if (icaoClassCode == null) return '';
 
     final icaoClassMap = {
-      0: 'Class G',       // Class G - Uncontrolled
-      1: 'Class F',       // Class F - Advisory
-      2: 'Class E',       // Class E - Controlled
+      0: 'Class A',       // Class A - Controlled
+      1: 'Class B',       // Class B - Controlled
+      2: 'Class C',       // Class C - Controlled
       3: 'Class D',       // Class D - Controlled
-      4: 'Class C',       // Class C - Controlled
-      5: 'Class B',       // Class B - Controlled
-      6: 'Class A',       // Class A - Controlled
-      8: '',              // No class defined/Unknown - show empty
+      4: 'Class E',       // Class E - Controlled
+      5: 'Class F',       // Class F - Advisory
+      6: 'Class G',       // Class G - Uncontrolled
+      8: 'None',          // No class defined/Unknown
     };
 
     return icaoClassMap[icaoClassCode] ?? '';
@@ -520,13 +506,13 @@ class AirspaceTooltipWidget extends StatelessWidget {
     if (icaoClassCode == null) return 'No ICAO class information';
 
     final icaoClassDescriptionMap = {
-      0: 'Class G - Uncontrolled Airspace',
-      1: 'Class F - Advisory Airspace',
-      2: 'Class E - Controlled Airspace',
+      0: 'Class A - Controlled Airspace',
+      1: 'Class B - Controlled Airspace',
+      2: 'Class C - Controlled Airspace',
       3: 'Class D - Controlled Airspace',
-      4: 'Class C - Controlled Airspace',
-      5: 'Class B - Controlled Airspace',
-      6: 'Class A - Controlled Airspace',
+      4: 'Class E - Controlled Airspace',
+      5: 'Class F - Advisory Airspace',
+      6: 'Class G - Uncontrolled Airspace',
       8: 'No ICAO class assigned',
     };
 
@@ -611,5 +597,73 @@ class AirspaceTooltipWidget extends StatelessWidget {
     }
 
     return Offset(x, y);
+  }
+
+  /// Get type string from numeric code based on OpenAIP documentation
+  String _getTypeMappedString(int typeCode) {
+    final typeMap = {
+      0: 'Unknown',
+      1: 'Restricted',
+      2: 'Danger',
+      4: 'CTR',
+      6: 'TMA',
+      7: 'TMA',
+      10: 'FIR',
+      26: 'CTA',
+    };
+
+    return typeMap[typeCode] ?? typeCode.toString();
+  }
+
+  /// Get ICAO class string from numeric code based on OpenAIP documentation
+  String _getIcaoClassMappedString(int? icaoClassCode) {
+    if (icaoClassCode == null) return '';
+
+    final icaoClassMap = {
+      0: 'Class A',
+      1: 'Class B',
+      2: 'Class C',
+      3: 'Class D',
+      4: 'Class E',
+      5: 'Class F',
+      6: 'Class G',
+      8: 'None',
+    };
+
+    return icaoClassMap[icaoClassCode] ?? icaoClassCode.toString();
+  }
+
+  /// Get tooltip description for airspace type
+  String _getTypeTooltip(int typeCode) {
+    final typeTooltipMap = {
+      0: 'Unknown airspace type',
+      1: 'RESTRICTED - Restricted Area (entry restricted)',
+      2: 'DANGER - Danger Area (hazardous activities)',
+      4: 'CTR - Control Zone/Controlled Tower Region (airport control zone)',
+      6: 'TMA - Terminal Maneuvering Area (terminal control area)',
+      7: 'TMA - Terminal Maneuvering Area (terminal control area)',
+      10: 'FIR - Flight Information Region',
+      26: 'CTA - Control Area',
+    };
+
+    return typeTooltipMap[typeCode] ?? 'Airspace type $typeCode';
+  }
+
+  /// Get tooltip description for ICAO class
+  String _getIcaoClassTooltip(int? icaoClassCode) {
+    if (icaoClassCode == null) return '';
+
+    final icaoTooltipMap = {
+      0: 'Class A - IFR only. All flights receive air traffic control service and are separated from all other traffic',
+      1: 'Class B - IFR and VFR permitted. All flights receive air traffic control service and are separated from all other traffic',
+      2: 'Class C - IFR and VFR permitted. All flights receive air traffic control service. IFR flights are separated from other IFR and VFR flights. VFR flights are separated from IFR flights and receive traffic information on other VFR flights',
+      3: 'Class D - IFR and VFR permitted. All flights receive air traffic control service. IFR flights are separated from other IFR flights and receive traffic information on VFR flights. VFR flights receive traffic information on all other traffic',
+      4: 'Class E - IFR and VFR permitted. IFR flights receive air traffic control service and are separated from other IFR flights. All flights receive traffic information as far as practical. VFR flights do not receive separation service',
+      5: 'Class F - IFR and VFR permitted. IFR flights receive air traffic advisory service and all flights receive flight information service if requested. Class F is not implemented in many countries',
+      6: 'Class G - Uncontrolled airspace. Only flight information service provided if requested. No separation service provided',
+      8: 'No ICAO class assigned - This airspace does not have an ICAO classification in the OpenAIP system',
+    };
+
+    return icaoTooltipMap[icaoClassCode] ?? 'ICAO Class $icaoClassCode';
   }
 }
