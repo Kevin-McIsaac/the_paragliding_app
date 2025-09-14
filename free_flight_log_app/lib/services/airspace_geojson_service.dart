@@ -651,6 +651,7 @@ class AirspaceGeoJsonService {
     Map<int, bool> enabledTypes,
     Map<int, bool> enabledIcaoClasses,
     fm.LatLngBounds viewport,
+    double maxAltitudeFt,
   ) async {
     try {
       // Use geobase to parse the GeoJSON data
@@ -685,6 +686,12 @@ class AirspaceGeoJsonService {
           final icaoClassKey = airspaceData.icaoClass ?? -1;
           if (!(enabledIcaoClasses[icaoClassKey] ?? false)) {
             continue; // Skip this airspace if its ICAO class is not enabled
+          }
+
+          // Filter based on maximum elevation setting
+          // Skip airspaces that START above the elevation filter
+          if (airspaceData.getLowerAltitudeInFeet() > maxAltitudeFt) {
+            continue; // Skip airspaces that start above the elevation filter
           }
 
           // Track this type as visible and enabled
@@ -739,6 +746,11 @@ class AirspaceGeoJsonService {
 
         // Convert clipped polygons back to flutter_map format
         polygons = _convertClippedPolygonsToFlutterMap(clippedPolygons, opacity);
+
+        // IMPORTANT: Reverse polygon order for correct rendering
+        // Higher altitude airspaces render first (bottom layer)
+        // Lower altitude airspaces render last (top layer, most visible)
+        polygons = polygons.reversed.toList();
 
         // Update identification data to match clipped polygons
         // For now, we'll keep original boundaries for tooltip hit testing

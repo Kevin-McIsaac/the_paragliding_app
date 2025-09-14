@@ -660,7 +660,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
       // Refresh map to apply airspace filter changes
       setState(() {
-        _mapWidgetKey = UniqueKey();
+        // Just update state - don't reset the map widget key
+        // This preserves the map position and zoom level
       });
 
       LoggingService.structured('MAP_FILTER_APPLIED_SUCCESS', {
@@ -757,6 +758,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                               onShowMapFilter: _showMapFilterDialog,
                               hasActiveFilters: hasActiveFilters,
                               sitesEnabled: _sitesEnabled,
+                              maxAltitudeFt: _maxAltitudeFt,
                             );
                           },
                         ),

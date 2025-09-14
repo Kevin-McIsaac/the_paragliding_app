@@ -40,6 +40,7 @@ class AirspaceOverlayManager {
   Future<List<Widget>> buildEnabledOverlayLayers({
     required LatLng center,
     required double zoom,
+    double maxAltitudeFt = 30000.0,
   }) async {
     // Generate unique request ID for this request
     final requestId = 'req_${++_requestCounter}_${DateTime.now().millisecondsSinceEpoch}';
@@ -87,7 +88,7 @@ class AirspaceOverlayManager {
             'total_debounced_requests': _debouncedRequestsCount,
             'delay_ms': 300,
           });
-          final result = await _buildLayersInternal(center, zoom, bounds, boundsKey, requestId);
+          final result = await _buildLayersInternal(center, zoom, bounds, boundsKey, requestId, maxAltitudeFt);
           completer.complete(result);
         } catch (error) {
           completer.completeError(error);
@@ -101,7 +102,7 @@ class AirspaceOverlayManager {
         'request_id': requestId,
         'reason': 'no_debounce_needed',
       });
-      return _buildLayersInternal(center, zoom, bounds, boundsKey, requestId);
+      return _buildLayersInternal(center, zoom, bounds, boundsKey, requestId, maxAltitudeFt);
     }
   }
 
@@ -111,7 +112,8 @@ class AirspaceOverlayManager {
     double zoom,
     LatLngBounds bounds,
     String boundsKey,
-    String requestId
+    String requestId,
+    double maxAltitudeFt,
   ) async {
     // Check if request is still current before proceeding
     if (_currentRequestId != requestId) {
@@ -128,7 +130,7 @@ class AirspaceOverlayManager {
     if (await _openAipService.getAirspaceEnabled()) {
       try {
         final opacity = await _openAipService.getOverlayOpacity();
-        final polygons = await _buildAirspacePolygons(center, zoom, opacity);
+        final polygons = await _buildAirspacePolygons(center, zoom, opacity, maxAltitudeFt);
 
         if (polygons.isNotEmpty) {
           final polygonLayer = PolygonLayer(
@@ -214,7 +216,7 @@ class AirspaceOverlayManager {
   }
 
   /// Build airspace polygons from GeoJSON data
-  Future<List<Polygon>> _buildAirspacePolygons(LatLng center, double zoom, double opacity) async {
+  Future<List<Polygon>> _buildAirspacePolygons(LatLng center, double zoom, double opacity, double maxAltitudeFt) async {
     final stopwatch = Stopwatch()..start();
 
     try {
@@ -241,7 +243,7 @@ class AirspaceOverlayManager {
       final processingStopwatch = Stopwatch()..start();
 
       // Parse GeoJSON and convert to styled polygons (filtered by enabled types and classes)
-      final polygons = await _geoJsonService.parseAirspaceGeoJson(geoJsonString, opacity, enabledTypes, enabledClasses, bounds);
+      final polygons = await _geoJsonService.parseAirspaceGeoJson(geoJsonString, opacity, enabledTypes, enabledClasses, bounds, maxAltitudeFt);
 
       processingStopwatch.stop();
       stopwatch.stop();
@@ -426,10 +428,20 @@ class AirspaceOverlayManager {
       final visibleAirspaceTypes = _geoJsonService.visibleAirspaceTypes;
 
       if (visibleAirspaceTypes.isNotEmpty) {
+        // Map numeric type codes to string type names
+        final Set<String> visibleTypeNames = {};
+        for (final typeCode in visibleAirspaceTypes) {
+          // Map the numeric code to the string type name
+          final typeName = _mapNumericTypeToString(typeCode);
+          if (typeName != null) {
+            visibleTypeNames.add(typeName);
+          }
+        }
+
         final airspaceLegendItems = await Future.value(
           // Use the existing airspace legend from SiteMarkerUtils
           _geoJsonService.allAirspaceStyles.entries
-              .where((entry) => visibleAirspaceTypes.contains(entry.key))
+              .where((entry) => visibleTypeNames.contains(entry.key))
               .map((entry) => _buildAirspaceLegendItem(entry.key, entry.value))
               .toList(),
         );
@@ -595,6 +607,42 @@ class AirspaceOverlayManager {
       'dependencies_valid': validateDependencies(),
       'debounce_metrics': getDebounceMetrics(),
     };
+  }
+
+  /// Map numeric type code to string type name
+  String? _mapNumericTypeToString(int typeCode) {
+    // Reverse mapping from numeric codes to string abbreviations
+    const numericToString = {
+      0: 'CTA',     // Control Area/Centre
+      1: 'A',       // Class A
+      2: 'B',       // Class B
+      3: 'C',       // Class C
+      4: 'CTR',     // Control Zone
+      5: 'E',       // Class E
+      6: 'A',       // Class A (alternate code)
+      7: 'G',       // Class G
+      8: 'CTR',     // Control Zone (alternate)
+      9: 'TMA',     // Terminal Control Area (alternate)
+      10: 'CTA',    // Control Area (primary)
+      11: 'R',      // Restricted
+      12: 'P',      // Prohibited
+      13: 'CTR',    // ATZ (Aerodrome Traffic Zone)
+      14: 'D',      // Danger Area
+      15: 'R',      // Military Restricted
+      16: 'TMA',    // Approach Control
+      17: 'CTR',    // Airport Control Zone
+      18: 'R',      // Temporary Restricted
+      19: 'P',      // Temporary Prohibited
+      20: 'D',      // Temporary Danger
+      21: 'TMA',    // Terminal Area
+      22: 'CTA',    // Control Terminal Area
+      23: 'CTA',    // Control Area Extension
+      24: 'CTA',    // Control Area Sector
+      25: 'CTA',    // Control Area Step
+      26: 'CTA',    // Control Terminal Area (CTA A, CTA C1-C7)
+    };
+
+    return numericToString[typeCode];
   }
 
   /// Convert string ICAO class keys to numeric ICAO class keys for airspace filtering

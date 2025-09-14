@@ -39,6 +39,7 @@ class NearbySitesMapWidget extends StatefulWidget {
   final VoidCallback? onShowMapFilter;
   final bool hasActiveFilters;
   final bool sitesEnabled;
+  final double maxAltitudeFt;
 
   const NearbySitesMapWidget({
     super.key,
@@ -63,6 +64,7 @@ class NearbySitesMapWidget extends StatefulWidget {
     this.onShowMapFilter,
     this.hasActiveFilters = false,
     this.sitesEnabled = true,
+    this.maxAltitudeFt = 15000.0,
   });
 
   @override
@@ -183,6 +185,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
       final layers = await _airspaceManager.buildEnabledOverlayLayers(
         center: center,
         zoom: zoom,
+        maxAltitudeFt: widget.maxAltitudeFt,
       );
 
       if (mounted) {
