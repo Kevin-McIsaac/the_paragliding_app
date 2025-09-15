@@ -7,6 +7,7 @@ import '../services/openaip_service.dart';
 import '../services/airspace_geojson_service.dart';
 import '../services/aviation_data_service.dart';
 import '../services/logging_service.dart';
+import '../data/models/airspace_enums.dart';
 import '../data/models/airport.dart';
 import '../data/models/navaid.dart';
 import '../data/models/reporting_point.dart';
@@ -231,13 +232,9 @@ class AirspaceOverlayManager {
       // Fetch GeoJSON data from OpenAIP
       final geoJsonString = await _geoJsonService.fetchAirspaceGeoJson(bounds);
 
-      // Get enabled airspace types and ICAO classes for filtering
-      final enabledStringTypes = await _openAipService.getEnabledAirspaceTypes();
-      final enabledStringClasses = await _openAipService.getEnabledIcaoClasses();
-
-      // Convert string keys to numeric keys
-      final enabledTypes = _convertStringTypesToNumeric(enabledStringTypes);
-      final enabledClasses = _convertStringClassesToNumeric(enabledStringClasses);
+      // Get enabled airspace types and ICAO classes for filtering (now enum-based)
+      final enabledTypes = await _openAipService.getEnabledAirspaceTypes();
+      final enabledClasses = await _openAipService.getEnabledIcaoClasses();
 
       // Time the airspace processing/clipping step
       final processingStopwatch = Stopwatch()..start();
@@ -257,7 +254,7 @@ class AirspaceOverlayManager {
       LoggingService.structured('AIRSPACE_FETCH_SUCCESS', {
         'polygon_count': polygons.length,
         'geojson_size': geoJsonString.length,
-        'enabled_types_count': enabledStringTypes.values.where((enabled) => enabled).length,
+        'enabled_types_count': enabledTypes.values.where((enabled) => enabled).length,
         'total_types_count': enabledTypes.length,
         'total_time_ms': stopwatch.elapsedMilliseconds,
         'processing_time_ms': processingStopwatch.elapsedMilliseconds,
@@ -432,7 +429,7 @@ class AirspaceOverlayManager {
         final Set<String> visibleTypeNames = {};
         for (final typeCode in visibleAirspaceTypes) {
           // Map the numeric code to the string type name
-          final typeName = _mapNumericTypeToString(typeCode);
+          final typeName = _mapNumericTypeToString(typeCode.code);
           if (typeName != null) {
             visibleTypeNames.add(typeName);
           }

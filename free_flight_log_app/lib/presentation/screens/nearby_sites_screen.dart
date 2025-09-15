@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../data/models/site.dart';
 import '../../data/models/paragliding_site.dart';
+import '../../data/models/airspace_enums.dart';
 import '../../services/database_service.dart';
 import '../../services/location_service.dart';
 import '../../services/paragliding_earth_api.dart';
@@ -581,8 +582,18 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   void _showMapFilterDialog() async {
     try {
       // Get current filter states
-      final airspaceTypes = await _openAipService.getEnabledAirspaceTypes();
-      final icaoClasses = await _openAipService.getEnabledIcaoClasses();
+      final airspaceTypesEnum = await _openAipService.getEnabledAirspaceTypes();
+      final icaoClassesEnum = await _openAipService.getEnabledIcaoClasses();
+
+      // Convert enum maps to string maps for dialog
+      final airspaceTypes = <String, bool>{
+        for (final entry in airspaceTypesEnum.entries)
+          entry.key.abbreviation: entry.value
+      };
+      final icaoClasses = <String, bool>{
+        for (final entry in icaoClassesEnum.entries)
+          entry.key.abbreviation: entry.value
+      };
 
       if (!mounted) return;
 
@@ -637,10 +648,20 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
       // Handle airspace visibility changes
       if (airspaceEnabled) {
+        // Convert string maps back to enum maps
+        final typesEnum = <AirspaceType, bool>{
+          for (final entry in types.entries)
+            AirspaceType.values.where((t) => t.abbreviation == entry.key).firstOrNull ?? AirspaceType.other: entry.value
+        };
+        final classesEnum = <IcaoClass, bool>{
+          for (final entry in classes.entries)
+            IcaoClass.values.where((c) => c.abbreviation == entry.key).firstOrNull ?? IcaoClass.none: entry.value
+        };
+
         // Enable airspace and update filters
         await _openAipService.setAirspaceEnabled(true);
-        await _openAipService.setEnabledAirspaceTypes(types);
-        await _openAipService.setEnabledIcaoClasses(classes);
+        await _openAipService.setEnabledAirspaceTypes(typesEnum);
+        await _openAipService.setEnabledIcaoClasses(classesEnum);
 
         if (!previousAirspaceEnabled) {
           LoggingService.action('MapFilter', 'airspace_enabled');

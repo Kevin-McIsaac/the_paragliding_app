@@ -217,10 +217,10 @@ class AirspaceGeoJsonService {
   static const Duration _requestTimeout = Duration(seconds: 30);
 
   // Track currently visible airspace types
-  Set<int> _currentVisibleTypes = <int>{};
+  Set<AirspaceType> _currentVisibleTypes = <AirspaceType>{};
 
   /// Get the currently visible airspace types in the loaded data
-  Set<int> get visibleAirspaceTypes => Set.from(_currentVisibleTypes);
+  Set<AirspaceType> get visibleAirspaceTypes => Set.from(_currentVisibleTypes);
 
   // Airspace type to style mapping - All with 10% opacity (0x1A) for better map visibility
   static const Map<String, AirspaceStyle> _airspaceStyles = {
@@ -664,7 +664,7 @@ class AirspaceGeoJsonService {
 
       List<fm.Polygon> polygons = <fm.Polygon>[];
       List<AirspacePolygonData> identificationPolygons = <AirspacePolygonData>[];
-      final Set<int> visibleEnabledTypes = <int>{}; // Track visible enabled types
+      final Set<AirspaceType> visibleEnabledTypes = <AirspaceType>{}; // Track visible enabled types
 
       for (final feature in featureCollection.features) {
         final geometry = feature.geometry;
@@ -875,8 +875,8 @@ class AirspaceGeoJsonService {
       }
     }
 
-    // Update the visible types for legend filtering
-    _currentVisibleTypes = visibleTypes;
+    // Update the visible types for legend filtering (convert int to AirspaceType)
+    _currentVisibleTypes = visibleTypes.map((type) => AirspaceType.fromCode(type)).toSet();
 
     LoggingService.structured('AIRSPACE_STATISTICS', {
       'mapped_types': typeStats,

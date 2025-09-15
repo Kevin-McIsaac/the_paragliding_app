@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:latlong2/latlong.dart';
 import '../services/logging_service.dart';
 import '../services/airspace_geojson_service.dart';
+import '../data/models/airspace_enums.dart';
 
 /// Container for airspace polygon with associated data
 class AirspacePolygonData {
@@ -184,7 +185,7 @@ class AirspaceIdentificationService {
 
   /// Get cache statistics for debugging
   Map<String, dynamic> getCacheStats() {
-    final typeStats = <int, int>{};
+    final typeStats = <AirspaceType, int>{};
     for (final polygon in _airspacePolygons) {
       final type = polygon.airspaceData.type;
       typeStats[type] = (typeStats[type] ?? 0) + 1;

@@ -347,15 +347,16 @@ class OpenAipService {
   }
 
   /// Set enabled state for a specific airspace type
-  Future<void> setAirspaceTypeEnabled(String type, bool enabled) async {
+  Future<void> setAirspaceTypeEnabled(AirspaceType type, bool enabled) async {
     final currentTypes = await getEnabledAirspaceTypes();
     currentTypes[type] = enabled;
     await setEnabledAirspaceTypes(currentTypes);
   }
 
   /// Check if a specific airspace type is enabled
-  Future<bool> isAirspaceTypeEnabled(String type) async {
+  Future<bool> isAirspaceTypeEnabled(AirspaceType type) async {
     final enabledTypes = await getEnabledAirspaceTypes();
+    // _defaultAirspaceTypes is already enum-based, no conversion needed
     return enabledTypes[type] ?? _defaultAirspaceTypes[type] ?? false;
   }
 
@@ -410,12 +411,12 @@ class OpenAipService {
         };
         break;
       default:
-        typePreset = _defaultAirspaceTypes;
-        classPreset = _defaultIcaoClasses;
+        typePreset = _convertEnumMapToStringMap(_defaultAirspaceTypes);
+        classPreset = _convertIcaoEnumMapToStringMap(_defaultIcaoClasses);
     }
 
-    await setEnabledAirspaceTypes(typePreset);
-    await setEnabledIcaoClasses(classPreset);
+    await setEnabledAirspaceTypes(_convertStringMapToEnumMap(typePreset));
+    await setEnabledIcaoClasses(_convertIcaoStringMapToEnumMap(classPreset));
 
     LoggingService.structured('AIRSPACE_PRESET_APPLIED', {
       'preset': presetName,
@@ -459,15 +460,16 @@ class OpenAipService {
   }
 
   /// Set enabled state for a specific ICAO class
-  Future<void> setIcaoClassEnabled(String icaoClass, bool enabled) async {
+  Future<void> setIcaoClassEnabled(IcaoClass icaoClass, bool enabled) async {
     final currentClasses = await getEnabledIcaoClasses();
     currentClasses[icaoClass] = enabled;
     await setEnabledIcaoClasses(currentClasses);
   }
 
   /// Check if a specific ICAO class is enabled
-  Future<bool> isIcaoClassEnabled(String icaoClass) async {
+  Future<bool> isIcaoClassEnabled(IcaoClass icaoClass) async {
     final enabledClasses = await getEnabledIcaoClasses();
+    // _defaultIcaoClasses is already enum-based, no conversion needed
     return enabledClasses[icaoClass] ?? _defaultIcaoClasses[icaoClass] ?? false;
   }
 
