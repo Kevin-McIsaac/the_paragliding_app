@@ -257,7 +257,7 @@ class SiteMarkerUtils {
     final styles = airspaceService.allAirspaceStyles;
 
     // If visibleTypes is not provided, get from service (for backwards compatibility)
-    final typesToShow = visibleTypes ?? _convertNumericTypesToStrings(airspaceService.visibleAirspaceTypes);
+    final typesToShow = visibleTypes ?? airspaceService.visibleAirspaceTypes.map((type) => type.abbreviation).toSet();
 
     // Define airspace type descriptions with detailed tooltips
     final typeDescriptions = {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/airspace_geojson_service.dart';
+import '../../data/models/airspace_enums.dart';
 
 /// Widget that displays airspace information in a floating tooltip
 /// Positioned near the cursor/touch location on the map
@@ -209,8 +210,8 @@ class AirspaceTooltipWidget extends StatelessWidget {
 
   /// Build individual airspace information item (compact 2-line format)
   Widget _buildAirspaceItem(AirspaceData airspace) {
-    // Get type-specific styling
-    final style = AirspaceGeoJsonService.instance.getStyleForType(_getTypeAbbreviation(airspace.type));
+    // Get ICAO class-based styling (prioritizes ICAO class over type)
+    final style = AirspaceGeoJsonService.instance.getStyleForAirspace(airspace);
 
     // Format compact details line (type, altitude, country)
     final String compactDetails = _formatCompactDetails(airspace);
@@ -220,20 +221,36 @@ class AirspaceTooltipWidget extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Line 1: Airspace name with type indicator
+          // Line 1: Airspace name with visibility indicator
           Row(
             children: [
-              // Type color indicator
-              Container(
-                width: 10,
-                height: 6,
+              // Visibility status indicator (moved from right to left)
+              Tooltip(
+                preferBelow: false,
+                message: airspace.isCurrentlyFiltered
+                  ? 'This airspace is currently hidden on map'
+                  : 'This airspace is visible on map',
                 decoration: BoxDecoration(
-                  color: style.fillColor,
-                  border: Border.all(
-                    color: style.borderColor,
-                    width: 1,
+                  color: const Color(0xE6000000),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                ),
+                textStyle: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
+                ),
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  child: Icon(
+                    airspace.isCurrentlyFiltered
+                      ? Icons.visibility_off
+                      : Icons.visibility,
+                    size: 12,
+                    color: airspace.isCurrentlyFiltered
+                      ? Colors.orange.withValues(alpha: 0.8)
+                      : Colors.green.withValues(alpha: 0.8),
                   ),
-                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
               const SizedBox(width: 6),
@@ -242,8 +259,8 @@ class AirspaceTooltipWidget extends StatelessWidget {
               Expanded(
                 child: Text(
                   airspace.name,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: airspace.isCurrentlyFiltered ? Colors.grey : Colors.white,
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
@@ -273,11 +290,13 @@ class AirspaceTooltipWidget extends StatelessWidget {
                     fontSize: 12,
                     fontWeight: FontWeight.w400,
                   ),
-                  message: _getTypeTooltip(airspace.type),
+                  message: airspace.type.tooltip,
                   child: Text(
-                    '${_getTypeMappedString(airspace.type)},',
+                    '${airspace.type.abbreviation},',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.85),
+                      color: airspace.isCurrentlyFiltered
+                        ? Colors.grey.withValues(alpha: 0.8)
+                        : Colors.white.withValues(alpha: 0.85),
                       fontSize: 10,
                       fontWeight: FontWeight.w600,
                     ),
@@ -285,7 +304,7 @@ class AirspaceTooltipWidget extends StatelessWidget {
                 ),
 
                 // ICAO class with mapping and tooltip (if available)
-                if (airspace.icaoClass != null && _getIcaoClassMappedString(airspace.icaoClass).isNotEmpty) ...[
+                if (airspace.icaoClass != null && airspace.icaoClass != IcaoClass.none) ...[
                   const SizedBox(width: 6),
                   Tooltip(
                     preferBelow: false,
@@ -300,13 +319,15 @@ class AirspaceTooltipWidget extends StatelessWidget {
                       fontSize: 12,
                       fontWeight: FontWeight.w400,
                     ),
-                    message: _getIcaoClassTooltip(airspace.icaoClass),
+                    message: airspace.icaoClass!.tooltip,
                     child: Text(
-                      '${_getIcaoClassMappedString(airspace.icaoClass)},',
+                      '${airspace.icaoClass!.abbreviation},',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.85),
+                        color: airspace.isCurrentlyFiltered
+                          ? Colors.grey.withValues(alpha: 0.8)
+                          : style.borderColor, // Use ICAO class color for highlighting when visible
                         fontSize: 10,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.bold, // Make it bold to emphasize
                       ),
                     ),
                   ),
@@ -319,7 +340,9 @@ class AirspaceTooltipWidget extends StatelessWidget {
                   child: Text(
                     '${_formatAltitudeRangeWithUnits(airspace)} ${_getCountryName(airspace.country)}',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.85),
+                      color: airspace.isCurrentlyFiltered
+                        ? Colors.grey.withValues(alpha: 0.8)
+                        : Colors.white.withValues(alpha: 0.85),
                       fontSize: 10,
                     ),
                     maxLines: 1,
@@ -426,13 +449,11 @@ class AirspaceTooltipWidget extends StatelessWidget {
     final parts = <String>[];
 
     // Add type abbreviation
-    final typeAbbrev = _getTypeAbbreviation(airspace.type);
-    parts.add(typeAbbrev);
+    parts.add(airspace.type.abbreviation);
 
     // Add ICAO class abbreviation if available
-    final icaoClassAbbrev = _getIcaoClassAbbreviation(airspace.icaoClass);
-    if (icaoClassAbbrev.isNotEmpty) {
-      parts.add(icaoClassAbbrev);
+    if (airspace.icaoClass != null && airspace.icaoClass != IcaoClass.none) {
+      parts.add(airspace.icaoClass!.abbreviation);
     }
 
     // Add altitude range with units

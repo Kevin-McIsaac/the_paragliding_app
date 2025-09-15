@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/logging_service.dart';
+import '../data/models/airspace_enums.dart';
 
 /// Available OpenAIP data layers for aviation maps
 /// Note: As of May 2023, OpenAIP consolidated all layers into a single 'openaip' layer
@@ -45,6 +46,9 @@ class OpenAipService {
 
   // Individual airspace type preferences
   static const String _airspaceTypesEnabledKey = 'openaip_airspace_types_enabled';
+
+  // Individual ICAO class preferences
+  static const String _icaoClassesEnabledKey = 'openaip_icao_classes_enabled';
   
   // Default values
   static const double _defaultOpacity = 0.15; // 15% optimal for airspace visibility
@@ -53,20 +57,18 @@ class OpenAipService {
   static const bool _defaultNavaidsEnabled = false;
   static const bool _defaultReportingPointsEnabled = false;
 
-  // Default enabled airspace types (VFR-focused: critical for safety)
-  static const Map<String, bool> _defaultAirspaceTypes = {
-    'CTR': true,  // Control Zone - critical
-    'TMA': true,  // Terminal Area - critical
-    'CTA': true,  // Control Area - important
-    'D': true,    // Danger Area - critical for safety
-    'R': true,    // Restricted - critical for safety
-    'P': true,    // Prohibited - critical for safety
-    'A': false,   // Class A - less relevant for VFR
-    'B': true,    // Class B - important for VFR
-    'C': true,    // Class C - important for VFR
-    'E': false,   // Class E - less critical
-    'F': false,   // Class F - less critical
-    'G': false,   // Class G - uncontrolled, less critical
+  // Default airspace type visibility (false = show, true = hide)
+  // This ensures unmapped types are shown by default
+  static Map<AirspaceType, bool> get _defaultAirspaceTypes => {
+    for (final type in AirspaceType.values)
+      type: type.isHiddenByDefault,
+  };
+
+  // Default ICAO class visibility (false = show, true = hide)
+  // This ensures unmapped classes are shown by default
+  static Map<IcaoClass, bool> get _defaultIcaoClasses => {
+    for (final icaoClass in IcaoClass.values)
+      icaoClass: icaoClass.isHiddenByDefault,
   };
   
   /// Get the tile URL template for a specific layer
@@ -305,19 +307,21 @@ class OpenAipService {
     await prefs.remove(_reportingPointsEnabledKey);
     await prefs.remove(_overlayOpacityKey);
     await prefs.remove(_airspaceTypesEnabledKey);
+    await prefs.remove(_icaoClassesEnabledKey);
 
     LoggingService.info('OpenAIP settings reset to defaults');
   }
   
-  /// Get enabled airspace types
-  Future<Map<String, bool>> getEnabledAirspaceTypes() async {
+  /// Get enabled airspace types (internal - returns string keys)
+  Future<Map<String, bool>> _getEnabledAirspaceTypesInternal() async {
     final prefs = await SharedPreferences.getInstance();
     final jsonString = prefs.getString(_airspaceTypesEnabledKey);
 
     if (jsonString == null) {
       // First time - use defaults
-      await setEnabledAirspaceTypes(_defaultAirspaceTypes);
-      return _defaultAirspaceTypes;
+      final stringDefaults = _convertEnumMapToStringMap(_defaultAirspaceTypes);
+      await _setEnabledAirspaceTypesInternal(stringDefaults);
+      return stringDefaults;
     }
 
     try {
@@ -325,12 +329,12 @@ class OpenAipService {
       return decoded.cast<String, bool>();
     } catch (e) {
       LoggingService.error('Failed to decode airspace types preferences', e, StackTrace.current);
-      return _defaultAirspaceTypes;
+      return _convertEnumMapToStringMap(_defaultAirspaceTypes);
     }
   }
 
-  /// Set enabled state for multiple airspace types
-  Future<void> setEnabledAirspaceTypes(Map<String, bool> types) async {
+  /// Set enabled state for multiple airspace types (internal)
+  Future<void> _setEnabledAirspaceTypesInternal(Map<String, bool> types) async {
     final prefs = await SharedPreferences.getInstance();
     final jsonString = json.encode(types);
     await prefs.setString(_airspaceTypesEnabledKey, jsonString);
@@ -343,70 +347,136 @@ class OpenAipService {
   }
 
   /// Set enabled state for a specific airspace type
-  Future<void> setAirspaceTypeEnabled(String type, bool enabled) async {
+  Future<void> setAirspaceTypeEnabled(AirspaceType type, bool enabled) async {
     final currentTypes = await getEnabledAirspaceTypes();
     currentTypes[type] = enabled;
     await setEnabledAirspaceTypes(currentTypes);
   }
 
   /// Check if a specific airspace type is enabled
-  Future<bool> isAirspaceTypeEnabled(String type) async {
+  Future<bool> isAirspaceTypeEnabled(AirspaceType type) async {
     final enabledTypes = await getEnabledAirspaceTypes();
+    // _defaultAirspaceTypes is already enum-based, no conversion needed
     return enabledTypes[type] ?? _defaultAirspaceTypes[type] ?? false;
   }
 
-  /// Set airspace preset (quick configurations)
+  /// Set airspace and ICAO class preset (quick configurations)
   Future<void> setAirspacePreset(String presetName) async {
-    Map<String, bool> preset;
+    Map<String, bool> typePreset;
+    Map<String, bool> classPreset;
 
     switch (presetName) {
       case 'vfr':
-        preset = {
+        typePreset = {
           'CTR': true, 'TMA': true, 'CTA': true,
           'D': true, 'R': true, 'P': true,
-          'A': false, 'B': true, 'C': true,
-          'E': false, 'F': false, 'G': false,
+          'FIR': false, 'None': false,
+        };
+        classPreset = {
+          'A': false, 'B': true, 'C': true, 'D': true,
+          'E': false, 'F': false, 'G': true, 'None': false,
         };
         break;
       case 'ifr':
-        preset = {
+        typePreset = {
           'CTR': true, 'TMA': true, 'CTA': true,
           'D': true, 'R': true, 'P': true,
-          'A': true, 'B': true, 'C': true,
-          'E': true, 'F': true, 'G': false,
+          'FIR': true, 'None': false,
+        };
+        classPreset = {
+          'A': true, 'B': true, 'C': true, 'D': true,
+          'E': true, 'F': true, 'G': false, 'None': false,
         };
         break;
       case 'hazards':
-        preset = {
+        typePreset = {
           'CTR': false, 'TMA': false, 'CTA': false,
           'D': true, 'R': true, 'P': true,
-          'A': false, 'B': false, 'C': false,
-          'E': false, 'F': false, 'G': false,
+          'FIR': false, 'None': false,
+        };
+        classPreset = {
+          'A': false, 'B': false, 'C': false, 'D': false,
+          'E': false, 'F': false, 'G': false, 'None': true,
         };
         break;
       case 'training':
-        preset = {
+        typePreset = {
           'CTR': true, 'TMA': true, 'CTA': false,
           'D': true, 'R': true, 'P': true,
-          'A': false, 'B': false, 'C': true,
-          'E': false, 'F': false, 'G': false,
+          'FIR': false, 'None': false,
+        };
+        classPreset = {
+          'A': false, 'B': false, 'C': true, 'D': true,
+          'E': false, 'F': false, 'G': false, 'None': false,
         };
         break;
       default:
-        preset = _defaultAirspaceTypes;
+        typePreset = _convertEnumMapToStringMap(_defaultAirspaceTypes);
+        classPreset = _convertIcaoEnumMapToStringMap(_defaultIcaoClasses);
     }
 
-    await setEnabledAirspaceTypes(preset);
+    await setEnabledAirspaceTypes(_convertStringMapToEnumMap(typePreset));
+    await setEnabledIcaoClasses(_convertIcaoStringMapToEnumMap(classPreset));
 
     LoggingService.structured('AIRSPACE_PRESET_APPLIED', {
       'preset': presetName,
-      'enabled_count': preset.values.where((v) => v).length,
+      'enabled_types_count': typePreset.values.where((v) => v).length,
+      'enabled_classes_count': classPreset.values.where((v) => v).length,
     });
+  }
+
+  /// Get enabled ICAO classes (internal)
+  Future<Map<String, bool>> _getEnabledIcaoClassesInternal() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = prefs.getString(_icaoClassesEnabledKey);
+
+    if (jsonString == null) {
+      // First time - use defaults
+      final stringDefaults = _convertIcaoEnumMapToStringMap(_defaultIcaoClasses);
+      await _setEnabledIcaoClassesInternal(stringDefaults);
+      return stringDefaults;
+    }
+
+    try {
+      final Map<String, dynamic> decoded = json.decode(jsonString);
+      return decoded.cast<String, bool>();
+    } catch (e) {
+      LoggingService.error('Failed to decode ICAO classes preferences', e, StackTrace.current);
+      return _convertIcaoEnumMapToStringMap(_defaultIcaoClasses);
+    }
+  }
+
+  /// Set enabled state for multiple ICAO classes (internal)
+  Future<void> _setEnabledIcaoClassesInternal(Map<String, bool> classes) async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = json.encode(classes);
+    await prefs.setString(_icaoClassesEnabledKey, jsonString);
+
+    LoggingService.structured('ICAO_CLASSES_UPDATE', {
+      'enabled_count': classes.values.where((v) => v).length,
+      'total_count': classes.length,
+      'enabled_classes': classes.entries.where((e) => e.value).map((e) => e.key).toList(),
+    });
+  }
+
+  /// Set enabled state for a specific ICAO class
+  Future<void> setIcaoClassEnabled(IcaoClass icaoClass, bool enabled) async {
+    final currentClasses = await getEnabledIcaoClasses();
+    currentClasses[icaoClass] = enabled;
+    await setEnabledIcaoClasses(currentClasses);
+  }
+
+  /// Check if a specific ICAO class is enabled
+  Future<bool> isIcaoClassEnabled(IcaoClass icaoClass) async {
+    final enabledClasses = await getEnabledIcaoClasses();
+    // _defaultIcaoClasses is already enum-based, no conversion needed
+    return enabledClasses[icaoClass] ?? _defaultIcaoClasses[icaoClass] ?? false;
   }
 
   /// Get a summary of current settings
   Future<Map<String, dynamic>> getSettingsSummary() async {
     final enabledTypes = await getEnabledAirspaceTypes();
+    final enabledClasses = await getEnabledIcaoClasses();
     return {
       'has_api_key': await hasApiKey(),
       'airspace_enabled': await isAirspaceEnabled(),
@@ -416,6 +486,96 @@ class OpenAipService {
       'overlay_opacity': await getOverlayOpacity(),
       'enabled_airspace_types': enabledTypes,
       'enabled_airspace_count': enabledTypes.values.where((v) => v).length,
+      'enabled_icao_classes': enabledClasses,
+      'enabled_icao_count': enabledClasses.values.where((v) => v).length,
     };
+  }
+
+  // ==========================================================================
+  // ENUM CONVERSION HELPERS
+  // ==========================================================================
+
+  /// Convert enum-based map to string-based map for storage
+  static Map<String, bool> _convertEnumMapToStringMap(Map<AirspaceType, bool> enumMap) {
+    return {
+      for (final entry in enumMap.entries)
+        entry.key.abbreviation: entry.value
+    };
+  }
+
+  /// Convert string-based map to enum-based map for API
+  static Map<AirspaceType, bool> _convertStringMapToEnumMap(Map<String, bool> stringMap) {
+    final result = <AirspaceType, bool>{};
+
+    // First, set all enum values to their defaults
+    for (final type in AirspaceType.values) {
+      result[type] = type.isHiddenByDefault;
+    }
+
+    // Then override with stored preferences
+    for (final entry in stringMap.entries) {
+      final type = AirspaceType.values.where((t) => t.abbreviation == entry.key).firstOrNull;
+      if (type != null) {
+        result[type] = entry.value;
+      }
+    }
+
+    return result;
+  }
+
+  /// Convert enum-based ICAO map to string-based map for storage
+  static Map<String, bool> _convertIcaoEnumMapToStringMap(Map<IcaoClass, bool> enumMap) {
+    return {
+      for (final entry in enumMap.entries)
+        entry.key.abbreviation: entry.value
+    };
+  }
+
+  /// Convert string-based ICAO map to enum-based map for API
+  static Map<IcaoClass, bool> _convertIcaoStringMapToEnumMap(Map<String, bool> stringMap) {
+    final result = <IcaoClass, bool>{};
+
+    // First, set all enum values to their defaults
+    for (final icaoClass in IcaoClass.values) {
+      result[icaoClass] = icaoClass.isHiddenByDefault;
+    }
+
+    // Then override with stored preferences
+    for (final entry in stringMap.entries) {
+      final icaoClass = IcaoClass.values.where((c) => c.abbreviation == entry.key).firstOrNull;
+      if (icaoClass != null) {
+        result[icaoClass] = entry.value;
+      }
+    }
+
+    return result;
+  }
+
+  // ==========================================================================
+  // ENUM-BASED PUBLIC API (NEW)
+  // ==========================================================================
+
+  /// Get enabled airspace types (enum-based)
+  Future<Map<AirspaceType, bool>> getEnabledAirspaceTypes() async {
+    final stringMap = await _getEnabledAirspaceTypesInternal();
+    return _convertStringMapToEnumMap(stringMap);
+  }
+
+  /// Set enabled airspace types (enum-based)
+  Future<void> setEnabledAirspaceTypes(Map<AirspaceType, bool> types) async {
+    final stringMap = _convertEnumMapToStringMap(types);
+    await _setEnabledAirspaceTypesInternal(stringMap);
+  }
+
+  /// Get enabled ICAO classes (enum-based)
+  Future<Map<IcaoClass, bool>> getEnabledIcaoClasses() async {
+    final stringMap = await _getEnabledIcaoClassesInternal();
+    return _convertIcaoStringMapToEnumMap(stringMap);
+  }
+
+  /// Set enabled ICAO classes (enum-based)
+  Future<void> setEnabledIcaoClasses(Map<IcaoClass, bool> classes) async {
+    final stringMap = _convertIcaoEnumMapToStringMap(classes);
+    await _setEnabledIcaoClassesInternal(stringMap);
   }
 }

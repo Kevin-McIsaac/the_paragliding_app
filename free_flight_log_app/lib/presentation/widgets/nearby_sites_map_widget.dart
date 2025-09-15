@@ -13,8 +13,11 @@ import '../../utils/map_tile_provider.dart';
 import '../../utils/airspace_overlay_manager.dart';
 import '../../services/openaip_service.dart';
 import '../../services/airspace_geojson_service.dart';
+import '../../data/models/airspace_enums.dart';
 import '../../services/airspace_identification_service.dart';
 import '../widgets/airspace_tooltip_widget.dart';
+import '../widgets/map_filter_fab.dart';
+import '../widgets/map_legend_widget.dart';
 
 class NearbySitesMapWidget extends StatefulWidget {
   final List<ParaglidingSite> sites;
@@ -26,7 +29,6 @@ class NearbySitesMapWidget extends StatefulWidget {
   final MapProvider mapProvider;
   final bool isLegendExpanded;
   final VoidCallback onToggleLegend;
-  final Function(MapProvider) onMapProviderChanged;
   final Function(ParaglidingSite)? onSiteSelected;
   final Function(LatLngBounds)? onBoundsChanged;
   final String searchQuery;
@@ -36,7 +38,13 @@ class NearbySitesMapWidget extends StatefulWidget {
   final List<ParaglidingSite> searchResults;
   final bool isSearching;
   final Function(ParaglidingSite) onSearchResultSelected;
-  
+  final VoidCallback? onShowMapFilter;
+  final bool hasActiveFilters;
+  final bool sitesEnabled;
+  final double maxAltitudeFt;
+  final int filterUpdateCounter;
+  final Map<IcaoClass, bool> enabledIcaoClasses;
+
   const NearbySitesMapWidget({
     super.key,
     required this.sites,
@@ -48,7 +56,6 @@ class NearbySitesMapWidget extends StatefulWidget {
     required this.mapProvider,
     required this.isLegendExpanded,
     required this.onToggleLegend,
-    required this.onMapProviderChanged,
     this.onSiteSelected,
     this.onBoundsChanged,
     required this.searchQuery,
@@ -58,6 +65,12 @@ class NearbySitesMapWidget extends StatefulWidget {
     required this.searchResults,
     required this.isSearching,
     required this.onSearchResultSelected,
+    this.onShowMapFilter,
+    this.hasActiveFilters = false,
+    this.sitesEnabled = true,
+    this.maxAltitudeFt = 15000.0,
+    this.filterUpdateCounter = 0,
+    this.enabledIcaoClasses = const {},
   });
 
   @override
@@ -73,7 +86,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   List<Widget> _airspaceLayers = [];
   bool _airspaceLoading = false;
   bool _airspaceEnabled = false;
-  Set<int> _visibleAirspaceTypes = {};
+  Set<AirspaceType> _visibleAirspaceTypes = {};
 
   // Airspace tooltip state
   List<AirspaceData> _tooltipAirspaces = [];
@@ -95,9 +108,26 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   @override
   void didUpdateWidget(NearbySitesMapWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    
+
+    // Check if sites were just enabled - reload site data
+    if (oldWidget.sitesEnabled != widget.sitesEnabled) {
+      if (widget.sitesEnabled && widget.onBoundsChanged != null && _mapController.camera != null) {
+        // Sites were just enabled - reload site data for current bounds
+        final bounds = _mapController.camera.visibleBounds;
+        widget.onBoundsChanged!(bounds);
+      }
+    }
+
+    // Check if filter properties changed and reload overlays if needed
+    if (oldWidget.sitesEnabled != widget.sitesEnabled ||
+        oldWidget.maxAltitudeFt != widget.maxAltitudeFt ||
+        oldWidget.filterUpdateCounter != widget.filterUpdateCounter) {
+      // Reload overlays with new filter settings
+      _loadAirspaceLayers();
+    }
+
     // Priority 1: Check if we should fit to exact bounds (for precise area display)
-    if (widget.boundsToFit != null && 
+    if (widget.boundsToFit != null &&
         oldWidget.boundsToFit != widget.boundsToFit) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _mapController.fitCamera(
@@ -178,6 +208,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
       final layers = await _airspaceManager.buildEnabledOverlayLayers(
         center: center,
         zoom: zoom,
+        maxAltitudeFt: widget.maxAltitudeFt,
       );
 
       if (mounted) {
@@ -269,30 +300,37 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     // Identify airspaces at the point (using map coordinates from FlutterMap)
     final allAirspaces = AirspaceIdentificationService.instance.identifyAirspacesAtPoint(mapPoint);
 
-    // Filter airspaces by enabled types only
+    // Get filter settings to mark which airspaces are currently filtered
     final enabledTypes = await OpenAipService.instance.getEnabledAirspaceTypes();
-    final filteredAirspaces = allAirspaces.where((airspace) {
-      // Convert numeric type to string type for filtering
-      final typeString = _getTypeStringFromCode(airspace.type);
-      return enabledTypes[typeString] ?? false;
-    }).toList();
+    final enabledClasses = await OpenAipService.instance.getEnabledIcaoClasses();
 
-    // Sort airspaces by lower altitude limit (ascending), then by upper altitude limit (ascending)
-    filteredAirspaces.sort((a, b) {
+    // Mark each airspace with its filter status for visual distinction
+    for (final airspace in allAirspaces) {
+      // Check if airspace is filtered: false = filtered out, true/null = shown
+      final isTypeFiltered = enabledTypes[airspace.type] == false;  // false = filtered out
+      final isClassFiltered = enabledClasses[airspace.icaoClass ?? IcaoClass.none] == false;  // false = filtered out
+      final isElevationFiltered = airspace.getLowerAltitudeInFeet() > widget.maxAltitudeFt;
+
+      // Mark if this airspace is currently filtered out
+      airspace.isCurrentlyFiltered = isTypeFiltered || isClassFiltered || isElevationFiltered;
+    }
+
+    // Sort all airspaces by lower altitude limit (ascending), then by upper altitude limit (ascending)
+    allAirspaces.sort((a, b) {
       int lowerCompare = a.getLowerAltitudeInFeet().compareTo(b.getLowerAltitudeInFeet());
       if (lowerCompare != 0) return lowerCompare;
       return a.getUpperAltitudeInFeet().compareTo(b.getUpperAltitudeInFeet());
     });
 
-    if (filteredAirspaces.isNotEmpty) {
+    if (allAirspaces.isNotEmpty) {
       // Check if clicking near the same position (toggle behavior)
       if (_showTooltip && _tooltipPosition != null && _isSimilarPosition(screenPosition, _tooltipPosition!)) {
         // Toggle: hide tooltip if clicking the same area
         _hideTooltip();
       } else {
-        // Show tooltip immediately
+        // Show tooltip for all airspaces (filtered and unfiltered)
         setState(() {
-          _tooltipAirspaces = filteredAirspaces;
+          _tooltipAirspaces = allAirspaces;
           _tooltipPosition = screenPosition;
           _showTooltip = true;
         });
@@ -347,6 +385,11 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
 
   List<Marker> _buildSiteMarkers() {
+    // Don't show site markers if sites are disabled
+    if (!widget.sitesEnabled) {
+      return [];
+    }
+
     return widget.sites.map((site) {
       final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
       final hasFlights = widget.siteFlightStatus[siteKey] ?? false;
@@ -409,14 +452,6 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
 
   // Add methods for map controls, legend, and attribution
-  Widget _buildMapControls() {
-    return MapControls.buildMapControls(
-      currentProvider: widget.mapProvider,
-      onProviderChanged: widget.onMapProviderChanged,
-    );
-  }
-
-
 
   Widget _buildTopControlBar() {
     return Positioned(
@@ -426,37 +461,11 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Legend (existing) - aligned to top
-          Align(
-            alignment: Alignment.topCenter,
-            child: SiteMarkerUtils.buildCollapsibleMapLegend(
-              context: context,
-              isExpanded: widget.isLegendExpanded,
-              onToggle: widget.onToggleLegend,
-              legendItems: [
-                // Site legend items
-                SiteMarkerUtils.buildLegendItem(context, Icons.location_on, SiteMarkerUtils.flownSiteColor, 'Local Sites (DB)'),
-                const SizedBox(height: 4),
-                SiteMarkerUtils.buildLegendItem(context, Icons.location_on, SiteMarkerUtils.newSiteColor, 'API Sites'),
-
-                // Airspace legend items (only when airspace is enabled)
-                if (_airspaceEnabled) ...[
-                  const SizedBox(height: 8),
-                  // Airspace section title
-                  const Text(
-                    'Airspace Types',
-                    style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  // Airspace type legend items with tooltips (filtered by visible types)
-                  ...SiteMarkerUtils.buildAirspaceLegendItems(visibleTypes: _convertNumericTypesToStrings(_visibleAirspaceTypes)),
-                ],
-              ],
-            ),
+          // Legend with ICAO classes
+          MapLegendWidget(
+            isMergeMode: false, // Merge mode not relevant for this widget
+            sitesEnabled: widget.sitesEnabled,
+            enabledIcaoClasses: widget.enabledIcaoClasses,
           ),
           
           const SizedBox(width: 8),
@@ -832,9 +841,18 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
           ),
           
           const SizedBox(width: 12),
-          
-          // Map controls (existing)
-          _buildMapControls(),
+
+          // Filter button
+          if (widget.onShowMapFilter != null)
+            MapFilterButton(
+              hasActiveFilters: widget.hasActiveFilters,
+              sitesEnabled: widget.sitesEnabled,
+              onPressed: widget.onShowMapFilter!,
+            ),
+
+          if (widget.onShowMapFilter != null)
+            const SizedBox(width: 12),
+
         ],
       ),
     );
@@ -923,6 +941,50 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
             position: _tooltipPosition!,
             screenSize: MediaQuery.of(context).size,
             onClose: _hideTooltip,
+          ),
+
+        // Loading indicator for airspace refresh (non-blocking)
+        if (_airspaceLoading)
+          Positioned(
+            top: 60, // Same position as sites loading
+            right: 16, // Same position as sites loading
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: Colors.white,
+                      strokeCap: StrokeCap.round,
+                    ),
+                  ),
+                  SizedBox(width: 10),
+                  Text(
+                    'Loading airspace...',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
       ],
     );

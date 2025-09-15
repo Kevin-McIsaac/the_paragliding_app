@@ -7,6 +7,7 @@ import '../services/openaip_service.dart';
 import '../services/airspace_geojson_service.dart';
 import '../services/aviation_data_service.dart';
 import '../services/logging_service.dart';
+import '../data/models/airspace_enums.dart';
 import '../data/models/airport.dart';
 import '../data/models/navaid.dart';
 import '../data/models/reporting_point.dart';
@@ -40,6 +41,7 @@ class AirspaceOverlayManager {
   Future<List<Widget>> buildEnabledOverlayLayers({
     required LatLng center,
     required double zoom,
+    double maxAltitudeFt = 30000.0,
   }) async {
     // Generate unique request ID for this request
     final requestId = 'req_${++_requestCounter}_${DateTime.now().millisecondsSinceEpoch}';
@@ -87,7 +89,7 @@ class AirspaceOverlayManager {
             'total_debounced_requests': _debouncedRequestsCount,
             'delay_ms': 300,
           });
-          final result = await _buildLayersInternal(center, zoom, bounds, boundsKey, requestId);
+          final result = await _buildLayersInternal(center, zoom, bounds, boundsKey, requestId, maxAltitudeFt);
           completer.complete(result);
         } catch (error) {
           completer.completeError(error);
@@ -101,7 +103,7 @@ class AirspaceOverlayManager {
         'request_id': requestId,
         'reason': 'no_debounce_needed',
       });
-      return _buildLayersInternal(center, zoom, bounds, boundsKey, requestId);
+      return _buildLayersInternal(center, zoom, bounds, boundsKey, requestId, maxAltitudeFt);
     }
   }
 
@@ -111,7 +113,8 @@ class AirspaceOverlayManager {
     double zoom,
     LatLngBounds bounds,
     String boundsKey,
-    String requestId
+    String requestId,
+    double maxAltitudeFt,
   ) async {
     // Check if request is still current before proceeding
     if (_currentRequestId != requestId) {
@@ -128,7 +131,7 @@ class AirspaceOverlayManager {
     if (await _openAipService.getAirspaceEnabled()) {
       try {
         final opacity = await _openAipService.getOverlayOpacity();
-        final polygons = await _buildAirspacePolygons(center, zoom, opacity);
+        final polygons = await _buildAirspacePolygons(center, zoom, opacity, maxAltitudeFt);
 
         if (polygons.isNotEmpty) {
           final polygonLayer = PolygonLayer(
@@ -214,7 +217,9 @@ class AirspaceOverlayManager {
   }
 
   /// Build airspace polygons from GeoJSON data
-  Future<List<Polygon>> _buildAirspacePolygons(LatLng center, double zoom, double opacity) async {
+  Future<List<Polygon>> _buildAirspacePolygons(LatLng center, double zoom, double opacity, double maxAltitudeFt) async {
+    final stopwatch = Stopwatch()..start();
+
     try {
       // Calculate bounding box for API request
       final bounds = _geoJsonService.calculateBoundingBox(center, zoom);
@@ -227,25 +232,45 @@ class AirspaceOverlayManager {
       // Fetch GeoJSON data from OpenAIP
       final geoJsonString = await _geoJsonService.fetchAirspaceGeoJson(bounds);
 
-      // Get enabled airspace types for filtering
-      final enabledStringTypes = await _openAipService.getEnabledAirspaceTypes();
+      // Get enabled airspace types and ICAO classes for filtering (now enum-based)
+      final enabledTypes = await _openAipService.getEnabledAirspaceTypes();
+      final enabledClasses = await _openAipService.getEnabledIcaoClasses();
 
-      // Convert string type keys to numeric type keys
-      final enabledTypes = _convertStringTypesToNumeric(enabledStringTypes);
+      // Time the airspace processing/clipping step
+      final processingStopwatch = Stopwatch()..start();
 
-      // Parse GeoJSON and convert to styled polygons (filtered by enabled types)
-      final polygons = await _geoJsonService.parseAirspaceGeoJson(geoJsonString, opacity, enabledTypes, bounds);
+      // Parse GeoJSON and convert to styled polygons (filtered by enabled types and classes)
+      final polygons = await _geoJsonService.parseAirspaceGeoJson(geoJsonString, opacity, enabledTypes, enabledClasses, bounds, maxAltitudeFt);
+
+      processingStopwatch.stop();
+      stopwatch.stop();
+
+      LoggingService.performance(
+        'Airspace Processing',
+        Duration(milliseconds: processingStopwatch.elapsedMilliseconds),
+        'polygons=${polygons.length}, viewport=${bounds.west},${bounds.south},${bounds.east},${bounds.north}'
+      );
 
       LoggingService.structured('AIRSPACE_FETCH_SUCCESS', {
         'polygon_count': polygons.length,
         'geojson_size': geoJsonString.length,
-        'enabled_types_count': enabledStringTypes.values.where((enabled) => enabled).length,
+        'enabled_types_count': enabledTypes.values.where((enabled) => enabled).length,
         'total_types_count': enabledTypes.length,
+        'total_time_ms': stopwatch.elapsedMilliseconds,
+        'processing_time_ms': processingStopwatch.elapsedMilliseconds,
       });
 
       return polygons;
 
     } catch (error, stackTrace) {
+      stopwatch.stop();
+
+      LoggingService.performance(
+        'Airspace Processing (Error)',
+        Duration(milliseconds: stopwatch.elapsedMilliseconds),
+        'error=true'
+      );
+
       LoggingService.error('Failed to build airspace polygons', error, stackTrace);
       // Return empty list to continue without airspace data
       return [];
@@ -400,10 +425,20 @@ class AirspaceOverlayManager {
       final visibleAirspaceTypes = _geoJsonService.visibleAirspaceTypes;
 
       if (visibleAirspaceTypes.isNotEmpty) {
+        // Map numeric type codes to string type names
+        final Set<String> visibleTypeNames = {};
+        for (final typeCode in visibleAirspaceTypes) {
+          // Map the numeric code to the string type name
+          final typeName = _mapNumericTypeToString(typeCode.code);
+          if (typeName != null) {
+            visibleTypeNames.add(typeName);
+          }
+        }
+
         final airspaceLegendItems = await Future.value(
           // Use the existing airspace legend from SiteMarkerUtils
           _geoJsonService.allAirspaceStyles.entries
-              .where((entry) => visibleAirspaceTypes.contains(entry.key))
+              .where((entry) => visibleTypeNames.contains(entry.key))
               .map((entry) => _buildAirspaceLegendItem(entry.key, entry.value))
               .toList(),
         );
@@ -571,23 +606,82 @@ class AirspaceOverlayManager {
     };
   }
 
+  /// Map numeric type code to string type name
+  String? _mapNumericTypeToString(int typeCode) {
+    // Reverse mapping from numeric codes to string abbreviations
+    const numericToString = {
+      0: 'CTA',     // Control Area/Centre
+      1: 'A',       // Class A
+      2: 'B',       // Class B
+      3: 'C',       // Class C
+      4: 'CTR',     // Control Zone
+      5: 'E',       // Class E
+      6: 'A',       // Class A (alternate code)
+      7: 'G',       // Class G
+      8: 'CTR',     // Control Zone (alternate)
+      9: 'TMA',     // Terminal Control Area (alternate)
+      10: 'CTA',    // Control Area (primary)
+      11: 'R',      // Restricted
+      12: 'P',      // Prohibited
+      13: 'CTR',    // ATZ (Aerodrome Traffic Zone)
+      14: 'D',      // Danger Area
+      15: 'R',      // Military Restricted
+      16: 'TMA',    // Approach Control
+      17: 'CTR',    // Airport Control Zone
+      18: 'R',      // Temporary Restricted
+      19: 'P',      // Temporary Prohibited
+      20: 'D',      // Temporary Danger
+      21: 'TMA',    // Terminal Area
+      22: 'CTA',    // Control Terminal Area
+      23: 'CTA',    // Control Area Extension
+      24: 'CTA',    // Control Area Sector
+      25: 'CTA',    // Control Area Step
+      26: 'CTA',    // Control Terminal Area (CTA A, CTA C1-C7)
+    };
+
+    return numericToString[typeCode];
+  }
+
+  /// Convert string ICAO class keys to numeric ICAO class keys for airspace filtering
+  Map<int, bool> _convertStringClassesToNumeric(Map<String, bool> stringClasses) {
+    // Mapping from string ICAO classes to numeric codes used in OpenAIP data
+    const stringToNumeric = {
+      'A': 0,       // Class A
+      'B': 1,       // Class B
+      'C': 2,       // Class C
+      'D': 3,       // Class D
+      'E': 4,       // Class E
+      'F': 5,       // Class F
+      'G': 6,       // Class G
+      'None': 8,    // No ICAO class assigned
+    };
+
+    final numericClasses = <int, bool>{};
+
+    stringClasses.forEach((stringClass, enabled) {
+      final numericCode = stringToNumeric[stringClass];
+      if (numericCode != null) {
+        numericClasses[numericCode] = enabled;
+      }
+    });
+
+    return numericClasses;
+  }
+
   /// Convert string type keys to numeric type keys for airspace filtering
   Map<int, bool> _convertStringTypesToNumeric(Map<String, bool> stringTypes) {
     // Mapping from string abbreviations to numeric codes
     const stringToNumeric = {
       'Unknown': 0,
-      'A': 1,       // Class A (could be 1, 6, or others depending on context)
-      'B': 2,       // Class B
-      'C': 3,       // Class C
+      'R': 1,       // Restricted (per OpenAIP doc)
+      'D': 2,       // Danger (per OpenAIP doc)
       'CTR': 4,     // Control Zone
-      'E': 5,       // Class E (could be 2 or 5 depending on context)
-      'TMA': 6,     // Terminal Control Area
-      'G': 7,       // Class G
-      'CTA': 10,    // Control Area (primary mapping to 10/26)
-      'R': 11,      // Restricted
-      'P': 12,      // Prohibited
-      'ATZ': 13,    // Aerodrome Traffic Zone
-      'D': 14,      // Danger Area
+      'TMA': 6,     // Terminal Control Area (also maps to 7)
+      'FIR': 10,    // Flight Information Region
+      'CTA': 26,    // Control Area
+      // Additional mappings for alternate codes
+      'P': 12,      // Prohibited (keeping existing)
+      'ATZ': 13,    // Aerodrome Traffic Zone (keeping existing)
     };
 
     final numericTypes = <int, bool>{};
@@ -598,34 +692,29 @@ class AirspaceOverlayManager {
         numericTypes[numericCode] = enabled;
 
         // Handle special mappings for types that have multiple numeric codes
-        if (stringType == 'CTA') {
-          // CTA maps to both 10 and 26
-          numericTypes[26] = enabled;
-        } else if (stringType == 'CTR') {
-          // CTR maps to 4, 8, and 17
+        if (stringType == 'CTR') {
+          // CTR maps to 4, 8, 13, and 17 (various control zone types)
           numericTypes[8] = enabled;
+          numericTypes[13] = enabled;  // ATZ
           numericTypes[17] = enabled;
         } else if (stringType == 'TMA') {
-          // TMA maps to 6, 9, 16, and 21
+          // TMA maps to 6, 7, 9, 16, and 21
+          numericTypes[7] = enabled;   // Alternate TMA code
           numericTypes[9] = enabled;
           numericTypes[16] = enabled;
           numericTypes[21] = enabled;
-        } else if (stringType == 'A') {
-          // Class A can be code 6 as well
-          numericTypes[6] = enabled;
-        } else if (stringType == 'E') {
-          // Class E can be code 2 as well
-          numericTypes[2] = enabled;
         } else if (stringType == 'R') {
-          // Restricted maps to 11, 15, and 18
-          numericTypes[15] = enabled;
-          numericTypes[18] = enabled;
-        } else if (stringType == 'P') {
-          // Prohibited maps to 12 and 19
-          numericTypes[19] = enabled;
+          // Restricted can be 1, 11, 15, 18
+          numericTypes[11] = enabled;
+          numericTypes[15] = enabled;  // Military Restricted
+          numericTypes[18] = enabled;  // Temporary Restricted
         } else if (stringType == 'D') {
-          // Danger maps to 14 and 20
-          numericTypes[20] = enabled;
+          // Danger can be 2, 14, 20
+          numericTypes[14] = enabled;
+          numericTypes[20] = enabled;  // Temporary Danger
+        } else if (stringType == 'P') {
+          // Prohibited can be 12, 19
+          numericTypes[19] = enabled;  // Temporary Prohibited
         }
       }
     });

@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../data/models/site.dart';
 import '../../data/models/paragliding_site.dart';
+import '../../data/models/airspace_enums.dart';
 import '../../services/database_service.dart';
 import '../../services/location_service.dart';
 import '../../services/paragliding_earth_api.dart';
@@ -17,8 +18,10 @@ import '../../utils/map_provider.dart';
 import '../../utils/site_utils.dart';
 import '../widgets/nearby_sites_map_widget.dart';
 import '../widgets/airspace_controls_widget.dart';
+import '../widgets/map_filter_dialog.dart';
 import '../widgets/common/app_error_state.dart';
 import '../widgets/common/app_empty_state.dart';
+import '../../services/openaip_service.dart';
 
 
 class NearbySitesScreen extends StatefulWidget {
@@ -72,6 +75,14 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   bool _showLocationNotification = false;
   Timer? _locationNotificationTimer;
   late final NearbySitesSearchManager _searchManager;
+
+  // Filter state for sites and airspace
+  bool _sitesEnabled = true; // Controls site loading and display
+  bool _airspaceEnabled = true; // Controls airspace loading and display
+  double _maxAltitudeFt = 15000.0; // Default altitude filter
+  int _filterUpdateCounter = 0; // Increments when any filter changes to trigger map refresh
+  Map<IcaoClass, bool> _enabledIcaoClasses = {}; // Current ICAO class filter state
+  final OpenAipService _openAipService = OpenAipService.instance;
   
 
   @override
@@ -79,6 +90,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     super.initState();
     _initializeSearchManager();
     _loadPreferences();
+    _loadFilterSettings();
     _loadData();
   }
 
@@ -109,7 +121,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       final prefs = await SharedPreferences.getInstance();
       final providerIndex = prefs.getInt(_mapProviderKey) ?? MapProvider.openStreetMap.index;
       final legendExpanded = prefs.getBool(_legendExpandedKey) ?? false;
-      
+
       if (mounted) {
         setState(() {
           _selectedMapProvider = MapProvider.values[providerIndex];
@@ -118,6 +130,19 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       }
     } catch (e) {
       LoggingService.error('Failed to load preferences', e);
+    }
+  }
+
+  Future<void> _loadFilterSettings() async {
+    try {
+      final icaoClasses = await _openAipService.getEnabledIcaoClasses();
+      if (mounted) {
+        setState(() {
+          _enabledIcaoClasses = icaoClasses;
+        });
+      }
+    } catch (e) {
+      LoggingService.error('Failed to load filter settings', e);
     }
   }
 
@@ -427,6 +452,12 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
   Future<void> _loadSitesForBounds(LatLngBounds bounds) async {
     if (_isLoadingSites) return;
+
+    // Skip loading sites if they're disabled
+    if (!_sitesEnabled) {
+      LoggingService.info('Sites loading skipped - sites disabled');
+      return;
+    }
     
     // Create a unique key for these bounds to prevent duplicate requests
     final boundsKey = '${bounds.north.toStringAsFixed(6)}_${bounds.south.toStringAsFixed(6)}_${bounds.east.toStringAsFixed(6)}_${bounds.west.toStringAsFixed(6)}';
@@ -440,14 +471,23 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     
     try {
       // 1. Load local sites from DB to check flight status
+      final dbStopwatch = Stopwatch()..start();
       final localSites = await _databaseService.getSitesInBounds(
         north: bounds.north,
         south: bounds.south,
         east: bounds.east,
         west: bounds.west,
       );
-      
+      dbStopwatch.stop();
+
+      LoggingService.performance(
+        'Sites DB Query',
+        Duration(milliseconds: dbStopwatch.elapsedMilliseconds),
+        'sites=${localSites.length}'
+      );
+
       // 2. Load API sites within bounds
+      final apiStopwatch = Stopwatch()..start();
       final apiSites = await _paraglidingEarthApi.getSitesInBounds(
         bounds.north,
         bounds.south,
@@ -455,6 +495,13 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         bounds.west,
         limit: 50,
         detailed: false,
+      );
+      apiStopwatch.stop();
+
+      LoggingService.performance(
+        'Sites API Fetch',
+        Duration(milliseconds: apiStopwatch.elapsedMilliseconds),
+        'sites=${apiSites.length}, bounds=${bounds.west},${bounds.south},${bounds.east},${bounds.north}'
       );
       
       // 3. For each local site, try to find its corresponding API data
@@ -546,72 +593,168 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     );
   }
 
-  /// Show airspace controls in a bottom sheet to avoid map gesture conflicts
-  void _showAirspaceControls() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+  /// Show map filter dialog
+  void _showMapFilterDialog() async {
+    try {
+      // Get current filter states
+      final airspaceTypesEnum = await _openAipService.getEnabledAirspaceTypes();
+      final icaoClassesEnum = await _openAipService.getEnabledIcaoClasses();
+
+      // Convert enum maps to string maps for dialog
+      final airspaceTypes = <String, bool>{
+        for (final entry in airspaceTypesEnum.entries)
+          entry.key.abbreviation: entry.value
+      };
+      final icaoClasses = <String, bool>{
+        for (final entry in icaoClassesEnum.entries)
+          entry.key.abbreviation: entry.value
+      };
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        barrierColor: Colors.black54,
+        builder: (context) => _DraggableFilterDialog(
+          sitesEnabled: _sitesEnabled,
+          airspaceEnabled: _airspaceEnabled,
+          airspaceTypes: airspaceTypes,
+          icaoClasses: icaoClasses,
+          maxAltitudeFt: _maxAltitudeFt,
+          mapProvider: _selectedMapProvider,
+          onApply: _handleFilterApply,
         ),
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Row(
-              children: [
-                const Icon(Icons.airplanemode_active, color: Colors.blue),
-                const SizedBox(width: 8),
-                const Text(
-                  'Airspace Overlays',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            
-            // Airspace controls widget in a container with dark background
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.grey[900],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              padding: const EdgeInsets.all(16),
-              child: AirspaceControlsWidget(
-                isExpanded: true, // Always expanded in bottom sheet
-                onToggleExpanded: () {}, // No-op since always expanded
-                onLayersChanged: () {
-                  // Refresh map layers when airspace settings change
-                  setState(() {
-                    // Generate new key to force map widget rebuild and reload airspace layers
-                    _mapWidgetKey = UniqueKey();
-                  });
-                  LoggingService.action('NearbySites', 'airspace_settings_changed', {
-                    'triggered_map_refresh': true,
-                  });
-                },
-              ),
-            ),
-            
-            // Bottom padding for safe area
-            SizedBox(height: MediaQuery.of(context).padding.bottom),
-          ],
-        ),
-      ),
-    );
+      );
+    } catch (error, stackTrace) {
+      LoggingService.error('Failed to show map filter dialog', error, stackTrace);
+    }
+  }
+
+  /// Handle filter apply from dialog
+  void _handleFilterApply(bool sitesEnabled, bool airspaceEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, MapProvider mapProvider) async {
+    try {
+      // Update filter states
+      final previousSitesEnabled = _sitesEnabled;
+      final previousAirspaceEnabled = _airspaceEnabled;
+      final previousMapProvider = _selectedMapProvider;
+
+      setState(() {
+        _sitesEnabled = sitesEnabled;
+        _airspaceEnabled = airspaceEnabled;
+        _maxAltitudeFt = maxAltitudeFt;
+        _selectedMapProvider = mapProvider;
+      });
+
+      // Handle sites visibility changes
+      if (!sitesEnabled && previousSitesEnabled) {
+        // Sites were disabled - clear displayed sites
+        setState(() {
+          _displayedSites.clear();
+          _allSites.clear();
+        });
+        LoggingService.action('MapFilter', 'sites_disabled', {'cleared_sites_count': _displayedSites.length});
+      } else if (sitesEnabled && !previousSitesEnabled) {
+        // Sites were enabled - reload sites for current bounds or trigger map refresh
+        if (_currentBounds != null) {
+          _loadSitesForBounds(_currentBounds!);
+        }
+        LoggingService.action('MapFilter', 'sites_enabled', {'reloading_sites': true, 'has_bounds': _currentBounds != null});
+      }
+
+      // Handle airspace visibility changes
+      if (airspaceEnabled) {
+        // Convert string maps back to enum maps
+        final typesEnum = <AirspaceType, bool>{
+          for (final entry in types.entries)
+            AirspaceType.values.where((t) => t.abbreviation == entry.key).firstOrNull ?? AirspaceType.other: entry.value
+        };
+        final classesEnum = <IcaoClass, bool>{
+          for (final entry in classes.entries)
+            IcaoClass.values.where((c) => c.abbreviation == entry.key).firstOrNull ?? IcaoClass.none: entry.value
+        };
+
+        // Enable airspace and update filters
+        await _openAipService.setAirspaceEnabled(true);
+        await _openAipService.setEnabledAirspaceTypes(typesEnum);
+        await _openAipService.setEnabledIcaoClasses(classesEnum);
+
+        // Update local state for immediate UI updates
+        setState(() {
+          _enabledIcaoClasses = classesEnum;
+        });
+
+        if (!previousAirspaceEnabled) {
+          LoggingService.action('MapFilter', 'airspace_enabled');
+        }
+      } else if (!airspaceEnabled) {
+        // Disable airspace completely
+        await _openAipService.setAirspaceEnabled(false);
+
+        // Clear local ICAO classes state
+        setState(() {
+          _enabledIcaoClasses = {};
+        });
+
+        if (previousAirspaceEnabled) {
+          LoggingService.action('MapFilter', 'airspace_disabled');
+        }
+      }
+
+      // Handle map provider changes
+      if (mapProvider != previousMapProvider) {
+        await _saveMapProviderPreference(mapProvider);
+        LoggingService.action('MapFilter', 'map_provider_changed', {'provider': mapProvider.displayName});
+      }
+
+      // Refresh map to apply airspace filter changes
+      setState(() {
+        // Increment counter to trigger map overlay refresh
+        _filterUpdateCounter++;
+        // This preserves the map position and zoom level
+      });
+
+      LoggingService.structured('MAP_FILTER_APPLIED_SUCCESS', {
+        'sites_enabled': sitesEnabled,
+        'airspace_enabled': airspaceEnabled,
+        'sites_changed': sitesEnabled != previousSitesEnabled,
+        'airspace_changed': airspaceEnabled != previousAirspaceEnabled,
+        'map_provider_changed': mapProvider != previousMapProvider,
+        'selected_types': types.values.where((v) => v).length,
+        'selected_classes': classes.values.where((v) => v).length,
+        'max_altitude_ft': maxAltitudeFt,
+        'map_provider': mapProvider.displayName,
+      });
+    } catch (error, stackTrace) {
+      LoggingService.error('Failed to apply map filters', error, stackTrace);
+    }
+  }
+
+  /// Save map provider preference
+  Future<void> _saveMapProviderPreference(MapProvider provider) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_mapProviderKey, provider.index);
+    } catch (e) {
+      LoggingService.error('Failed to save map provider preference', e);
+    }
+  }
+
+  /// Check if filters are currently active (for FAB indicator)
+  Future<bool> _hasActiveFilters() async {
+    try {
+      // Check if any airspace types or classes are disabled from defaults
+      final types = await _openAipService.getEnabledAirspaceTypes();
+      final classes = await _openAipService.getEnabledIcaoClasses();
+
+      // Consider filters active if any type/class is disabled or sites are disabled
+      final hasDisabledTypes = types.values.contains(false);
+      final hasDisabledClasses = classes.values.contains(false);
+
+      return !_sitesEnabled || hasDisabledTypes || hasDisabledClasses;
+    } catch (error) {
+      LoggingService.error('Failed to check active filters', error);
+      return false; // Assume no active filters on error
+    }
   }
 
   @override
@@ -619,14 +762,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Nearby Sites'),
-        actions: [
-          // Airspace controls - moved to app bar to avoid map gesture conflicts
-          IconButton(
-            icon: const Icon(Icons.airplanemode_active),
-            onPressed: _showAirspaceControls,
-            tooltip: 'Airspace overlays',
-          ),
-        ],
       ),
       body: Stack(
         children: [
@@ -641,30 +776,41 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                 : Stack(
                       children: [
                         // Map
-                        NearbySitesMapWidget(
-                          key: _mapWidgetKey, // Force rebuild when airspace settings change
-                          sites: _displayedSites,
-                          siteFlightStatus: _siteFlightStatus,
-                          userPosition: _userPosition,
-                          centerPosition: _mapCenterPosition,
-                          boundsToFit: _boundsToFit,
-                          initialZoom: _mapZoom,
-                          mapProvider: _selectedMapProvider,
-                          isLegendExpanded: _isLegendExpanded,
-                          onToggleLegend: _toggleLegend,
-                          onMapProviderChanged: _selectMapProvider,
-                          onSiteSelected: _onSiteSelected,
-                          onBoundsChanged: _onBoundsChanged,
-                          searchQuery: _searchManager.state.query,
-                          onSearchChanged: _searchManager.onSearchQueryChanged,
-                          onRefreshLocation: _onRefreshLocation,
-                          isLocationLoading: _isLocationLoading,
-                          searchResults: _searchManager.state.results,
-                          isSearching: _searchManager.state.isSearching,
-                          onSearchResultSelected: (site) {
-                            _searchManager.selectSearchResult(site);
-                            // Also jump to location for smooth UX
-                            _jumpToLocation(site);
+                        FutureBuilder<bool>(
+                          future: _hasActiveFilters(),
+                          builder: (context, snapshot) {
+                            final hasActiveFilters = snapshot.data ?? false;
+                            return NearbySitesMapWidget(
+                              key: _mapWidgetKey, // Force rebuild when airspace settings change
+                              sites: _displayedSites,
+                              siteFlightStatus: _siteFlightStatus,
+                              userPosition: _userPosition,
+                              centerPosition: _mapCenterPosition,
+                              boundsToFit: _boundsToFit,
+                              initialZoom: _mapZoom,
+                              mapProvider: _selectedMapProvider,
+                              isLegendExpanded: _isLegendExpanded,
+                              onToggleLegend: _toggleLegend,
+                                              onSiteSelected: _onSiteSelected,
+                              onBoundsChanged: _onBoundsChanged,
+                              searchQuery: _searchManager.state.query,
+                              onSearchChanged: _searchManager.onSearchQueryChanged,
+                              onRefreshLocation: _onRefreshLocation,
+                              isLocationLoading: _isLocationLoading,
+                              searchResults: _searchManager.state.results,
+                              isSearching: _searchManager.state.isSearching,
+                              onSearchResultSelected: (site) {
+                                _searchManager.selectSearchResult(site);
+                                // Also jump to location for smooth UX
+                                _jumpToLocation(site);
+                              },
+                              onShowMapFilter: _showMapFilterDialog,
+                              hasActiveFilters: hasActiveFilters,
+                              sitesEnabled: _sitesEnabled,
+                              maxAltitudeFt: _maxAltitudeFt,
+                              filterUpdateCounter: _filterUpdateCounter,
+                              enabledIcaoClasses: _enabledIcaoClasses,
+                            );
                           },
                         ),
                         
@@ -830,6 +976,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                 ),
               ),
             ),
+
         ],
       ),
     );
@@ -1554,8 +1701,74 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
       }
     });
     
-    return characteristics.isNotEmpty 
+    return characteristics.isNotEmpty
         ? characteristics.join(', ')
         : 'Site information';
+  }
+}
+
+/// Draggable dialog widget for the map filter
+class _DraggableFilterDialog extends StatefulWidget {
+  final bool sitesEnabled;
+  final bool airspaceEnabled;
+  final Map<String, bool> airspaceTypes;
+  final Map<String, bool> icaoClasses;
+  final double maxAltitudeFt;
+  final MapProvider mapProvider;
+  final Function(bool sitesEnabled, bool airspaceEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, MapProvider mapProvider) onApply;
+
+  const _DraggableFilterDialog({
+    required this.sitesEnabled,
+    required this.airspaceEnabled,
+    required this.airspaceTypes,
+    required this.icaoClasses,
+    required this.maxAltitudeFt,
+    required this.mapProvider,
+    required this.onApply,
+  });
+
+  @override
+  State<_DraggableFilterDialog> createState() => _DraggableFilterDialogState();
+}
+
+class _DraggableFilterDialogState extends State<_DraggableFilterDialog> {
+  late Offset _position = const Offset(16, 80); // Start in top-left
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        // Positioned dialog
+        Positioned(
+          left: _position.dx,
+          top: _position.dy,
+          child: GestureDetector(
+            onPanUpdate: (details) {
+              setState(() {
+                _position += details.delta;
+                // Keep dialog within screen bounds
+                final screenSize = MediaQuery.of(context).size;
+                _position = Offset(
+                  _position.dx.clamp(0, screenSize.width - 300), // Assume dialog width ~300
+                  _position.dy.clamp(0, screenSize.height - 400), // Assume dialog height ~400
+                );
+              });
+            },
+            child: Material(
+              color: Colors.transparent,
+              child: MapFilterDialog(
+                sitesEnabled: widget.sitesEnabled,
+                airspaceEnabled: widget.airspaceEnabled,
+                airspaceTypes: widget.airspaceTypes,
+                icaoClasses: widget.icaoClasses,
+                maxAltitudeFt: widget.maxAltitudeFt,
+                mapProvider: widget.mapProvider,
+                onApply: widget.onApply,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
