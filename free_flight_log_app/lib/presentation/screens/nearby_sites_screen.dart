@@ -81,6 +81,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   bool _airspaceEnabled = true; // Controls airspace loading and display
   double _maxAltitudeFt = 15000.0; // Default altitude filter
   int _filterUpdateCounter = 0; // Increments when any filter changes to trigger map refresh
+  Map<IcaoClass, bool> _enabledIcaoClasses = {}; // Current ICAO class filter state
   final OpenAipService _openAipService = OpenAipService.instance;
   
 
@@ -89,6 +90,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     super.initState();
     _initializeSearchManager();
     _loadPreferences();
+    _loadFilterSettings();
     _loadData();
   }
 
@@ -119,7 +121,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       final prefs = await SharedPreferences.getInstance();
       final providerIndex = prefs.getInt(_mapProviderKey) ?? MapProvider.openStreetMap.index;
       final legendExpanded = prefs.getBool(_legendExpandedKey) ?? false;
-      
+
       if (mounted) {
         setState(() {
           _selectedMapProvider = MapProvider.values[providerIndex];
@@ -128,6 +130,19 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       }
     } catch (e) {
       LoggingService.error('Failed to load preferences', e);
+    }
+  }
+
+  Future<void> _loadFilterSettings() async {
+    try {
+      final icaoClasses = await _openAipService.getEnabledIcaoClasses();
+      if (mounted) {
+        setState(() {
+          _enabledIcaoClasses = icaoClasses;
+        });
+      }
+    } catch (e) {
+      LoggingService.error('Failed to load filter settings', e);
     }
   }
 
@@ -663,12 +678,23 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         await _openAipService.setEnabledAirspaceTypes(typesEnum);
         await _openAipService.setEnabledIcaoClasses(classesEnum);
 
+        // Update local state for immediate UI updates
+        setState(() {
+          _enabledIcaoClasses = classesEnum;
+        });
+
         if (!previousAirspaceEnabled) {
           LoggingService.action('MapFilter', 'airspace_enabled');
         }
       } else if (!airspaceEnabled) {
         // Disable airspace completely
         await _openAipService.setAirspaceEnabled(false);
+
+        // Clear local ICAO classes state
+        setState(() {
+          _enabledIcaoClasses = {};
+        });
+
         if (previousAirspaceEnabled) {
           LoggingService.action('MapFilter', 'airspace_disabled');
         }
@@ -783,6 +809,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                               sitesEnabled: _sitesEnabled,
                               maxAltitudeFt: _maxAltitudeFt,
                               filterUpdateCounter: _filterUpdateCounter,
+                              enabledIcaoClasses: _enabledIcaoClasses,
                             );
                           },
                         ),

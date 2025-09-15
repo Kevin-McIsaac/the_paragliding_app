@@ -222,8 +222,52 @@ class AirspaceGeoJsonService {
   /// Get the currently visible airspace types in the loaded data
   Set<AirspaceType> get visibleAirspaceTypes => Set.from(_currentVisibleTypes);
 
-  // Airspace type to style mapping - All with 10% opacity (0x1A) for better map visibility
-  static const Map<String, AirspaceStyle> _airspaceStyles = {
+  // ICAO class-based color mapping - All with 10% opacity (0x1A) for better map visibility
+  static const Map<IcaoClass, AirspaceStyle> _icaoClassStyles = {
+    IcaoClass.classA: AirspaceStyle(
+      fillColor: Color(0x1AFF0000),  // 10% opacity red - Most restrictive (IFR only)
+      borderColor: Color(0xFFFF0000),
+      borderWidth: 2.0,
+    ),
+    IcaoClass.classB: AirspaceStyle(
+      fillColor: Color(0x1AFFA500),  // 10% opacity orange - IFR/VFR, all get ATC
+      borderColor: Color(0xFFFFA500),
+      borderWidth: 1.8,
+    ),
+    IcaoClass.classC: AirspaceStyle(
+      fillColor: Color(0x1AFFD700),  // 10% opacity yellow - IFR/VFR, IFR separation
+      borderColor: Color(0xFFFFD700),
+      borderWidth: 1.6,
+    ),
+    IcaoClass.classD: AirspaceStyle(
+      fillColor: Color(0x1A0080FF),  // 10% opacity blue - IFR/VFR, IFR from IFR only
+      borderColor: Color(0xFF0080FF),
+      borderWidth: 1.5,
+    ),
+    IcaoClass.classE: AirspaceStyle(
+      fillColor: Color(0x1A00C000),  // 10% opacity green - IFR gets ATC service
+      borderColor: Color(0xFF00C000),
+      borderWidth: 1.4,
+    ),
+    IcaoClass.classF: AirspaceStyle(
+      fillColor: Color(0x1A9370DB),  // 10% opacity purple - Advisory service
+      borderColor: Color(0xFF9370DB),
+      borderWidth: 1.3,
+    ),
+    IcaoClass.classG: AirspaceStyle(
+      fillColor: Color(0x1A808080),  // 10% opacity gray - Uncontrolled
+      borderColor: Color(0xFF808080),
+      borderWidth: 1.2,
+    ),
+    IcaoClass.none: AirspaceStyle(
+      fillColor: Color(0x1AC0C0C0),  // 10% opacity light gray - No class assigned
+      borderColor: Color(0xFFC0C0C0),
+      borderWidth: 1.0,
+    ),
+  };
+
+  // Fallback airspace type to style mapping for airspaces without ICAO class
+  static const Map<String, AirspaceStyle> _airspaceTypeFallbackStyles = {
     'CTR': AirspaceStyle(
       fillColor: Color(0x1AFF0000),  // 10% opacity red
       borderColor: Color(0xFFFF0000),
@@ -255,29 +299,15 @@ class AirspaceGeoJsonService {
       borderColor: Color(0xFF8B0000),
       borderWidth: 2.5,
     ),
-    'A': AirspaceStyle( // Class A
-      fillColor: Color(0x1A800080),  // 10% opacity purple
-      borderColor: Color(0xFF800080),
-    ),
-    'B': AirspaceStyle( // Class B
-      fillColor: Color(0x1A0000FF),  // 10% opacity blue
-      borderColor: Color(0xFF0000FF),
-    ),
-    'C': AirspaceStyle( // Class C
-      fillColor: Color(0x1AFF00FF),  // 10% opacity magenta
-      borderColor: Color(0xFFFF00FF),
-    ),
-    'E': AirspaceStyle( // Class E
-      fillColor: Color(0x1A008000),  // 10% opacity green
-      borderColor: Color(0xFF008000),
-    ),
-    'F': AirspaceStyle( // Class F
+    'FIR': AirspaceStyle( // Flight Information Region
       fillColor: Color(0x1A808080),  // 10% opacity gray
       borderColor: Color(0xFF808080),
+      borderWidth: 1.0,
     ),
-    'G': AirspaceStyle( // Class G
+    'OTHER': AirspaceStyle( // Other/Unknown
       fillColor: Color(0x1AC0C0C0),  // 10% opacity light gray
       borderColor: Color(0xFFC0C0C0),
+      borderWidth: 1.0,
     ),
   };
 
@@ -943,10 +973,18 @@ class AirspaceGeoJsonService {
 
       if (points.isEmpty) return null;
 
-      // Get airspace style based on type
+      // Get airspace style based on ICAO class first, then type
       final typeValue = props['type'] as int? ?? 0;
       final airspaceType = AirspaceType.fromCode(typeValue);
-      final style = getStyleForType(airspaceType);
+      final icaoClass = IcaoClass.fromCode(props['class'] as int?);
+
+      final airspaceData = AirspaceData(
+        name: props['name']?.toString() ?? 'Unknown',
+        type: airspaceType,
+        icaoClass: icaoClass,
+      );
+
+      final style = getStyleForAirspace(airspaceData);
 
       // Debug logging for development only (disabled in production)
       // Uncomment for debugging new airspace types
@@ -1027,13 +1065,35 @@ class AirspaceGeoJsonService {
     return 'UNKNOWN';
   }
 
-  /// Get style for airspace type (for legend/UI purposes)
-  AirspaceStyle getStyleForType(AirspaceType type) {
-    return _airspaceStyles[type.abbreviation.toUpperCase()] ?? _getDefaultStyle();
+  /// Get style for airspace data (ICAO class takes priority, fallback to type)
+  AirspaceStyle getStyleForAirspace(AirspaceData airspaceData) {
+    // Primary: Use ICAO class if available
+    if (airspaceData.icaoClass != null) {
+      final icaoStyle = _icaoClassStyles[airspaceData.icaoClass];
+      if (icaoStyle != null) {
+        return icaoStyle;
+      }
+    }
+
+    // Fallback: Use airspace type
+    return getStyleForType(airspaceData.type);
   }
 
-  /// Get all defined airspace types with their styles
-  Map<String, AirspaceStyle> get allAirspaceStyles => Map.from(_airspaceStyles);
+  /// Get style for airspace type (fallback for when ICAO class is not available)
+  AirspaceStyle getStyleForType(AirspaceType type) {
+    return _airspaceTypeFallbackStyles[type.abbreviation.toUpperCase()] ?? _getDefaultStyle();
+  }
+
+  /// Get style for ICAO class (for legend/UI purposes)
+  AirspaceStyle? getStyleForIcaoClass(IcaoClass icaoClass) {
+    return _icaoClassStyles[icaoClass];
+  }
+
+  /// Get all defined ICAO class styles
+  Map<IcaoClass, AirspaceStyle> get allIcaoClassStyles => Map.from(_icaoClassStyles);
+
+  /// Get all defined airspace type styles (fallback)
+  Map<String, AirspaceStyle> get allAirspaceStyles => Map.from(_airspaceTypeFallbackStyles);
 
   // ==========================================================================
   // POLYGON CLIPPING METHODS
@@ -1254,8 +1314,8 @@ class AirspaceGeoJsonService {
       final airspaceData = current.data.airspaceData;
       final currentBounds = current.bounds; // Pre-calculated
 
-      // Get style for current airspace
-      final style = getStyleForType(airspaceData.type);
+      // Get style for current airspace (prioritizes ICAO class)
+      final style = getStyleForAirspace(airspaceData);
 
       // Collect all lower-altitude polygons as clipping masks
       final List<List<LatLng>> clippingPolygons = [];

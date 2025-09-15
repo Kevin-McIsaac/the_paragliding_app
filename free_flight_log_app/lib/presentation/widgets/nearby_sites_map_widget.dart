@@ -17,6 +17,7 @@ import '../../data/models/airspace_enums.dart';
 import '../../services/airspace_identification_service.dart';
 import '../widgets/airspace_tooltip_widget.dart';
 import '../widgets/map_filter_fab.dart';
+import '../widgets/map_legend_widget.dart';
 
 class NearbySitesMapWidget extends StatefulWidget {
   final List<ParaglidingSite> sites;
@@ -42,6 +43,7 @@ class NearbySitesMapWidget extends StatefulWidget {
   final bool sitesEnabled;
   final double maxAltitudeFt;
   final int filterUpdateCounter;
+  final Map<IcaoClass, bool> enabledIcaoClasses;
 
   const NearbySitesMapWidget({
     super.key,
@@ -68,6 +70,7 @@ class NearbySitesMapWidget extends StatefulWidget {
     this.sitesEnabled = true,
     this.maxAltitudeFt = 15000.0,
     this.filterUpdateCounter = 0,
+    this.enabledIcaoClasses = const {},
   });
 
   @override
@@ -458,37 +461,11 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Legend (existing) - aligned to top
-          Align(
-            alignment: Alignment.topCenter,
-            child: SiteMarkerUtils.buildCollapsibleMapLegend(
-              context: context,
-              isExpanded: widget.isLegendExpanded,
-              onToggle: widget.onToggleLegend,
-              legendItems: [
-                // Site legend items
-                SiteMarkerUtils.buildLegendItem(context, Icons.location_on, SiteMarkerUtils.flownSiteColor, 'Local Sites (DB)'),
-                const SizedBox(height: 4),
-                SiteMarkerUtils.buildLegendItem(context, Icons.location_on, SiteMarkerUtils.newSiteColor, 'API Sites'),
-
-                // Airspace legend items (only when airspace is enabled)
-                if (_airspaceEnabled) ...[
-                  const SizedBox(height: 8),
-                  // Airspace section title
-                  const Text(
-                    'Airspace Types',
-                    style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  // Airspace type legend items with tooltips (filtered by visible types)
-                  ...SiteMarkerUtils.buildAirspaceLegendItems(visibleTypes: _visibleAirspaceTypes.map((type) => type.abbreviation).toSet()),
-                ],
-              ],
-            ),
+          // Legend with ICAO classes
+          MapLegendWidget(
+            isMergeMode: false, // Merge mode not relevant for this widget
+            sitesEnabled: widget.sitesEnabled,
+            enabledIcaoClasses: widget.enabledIcaoClasses,
           ),
           
           const SizedBox(width: 8),
