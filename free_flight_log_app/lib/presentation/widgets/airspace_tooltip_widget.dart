@@ -102,49 +102,6 @@ class AirspaceTooltipWidget extends StatelessWidget {
                       ),
                     ),
                     const Spacer(),
-                    if (airspaces.length > 3)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withValues(alpha: 0.8),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.unfold_more,
-                              color: Colors.white,
-                              size: 10,
-                            ),
-                            SizedBox(width: 2),
-                            Text(
-                              'Scroll',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    else if (airspaces.length > 1)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.withValues(alpha: 0.8),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          '${airspaces.length}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
                     // Close button for mobile users
                     if (onClose != null)
                       GestureDetector(

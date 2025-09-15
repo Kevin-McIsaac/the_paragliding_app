@@ -85,25 +85,11 @@ class MapLegendWidget extends StatelessWidget {
                   if (style != null) {
                     return Column(
                       children: [
-                        Tooltip(
-                          message: icaoClass.tooltip,
-                          preferBelow: false,
-                          decoration: BoxDecoration(
-                            color: const Color(0xE6000000),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-                          ),
-                          textStyle: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w400,
-                          ),
-                          child: _buildLegendItem(
-                            null,
-                            style.borderColor,
-                            'Class ${icaoClass.abbreviation}',
-                            isSquare: true,
-                          ),
+                        _buildLegendItem(
+                          null,
+                          style.borderColor,
+                          'Class ${icaoClass.abbreviation}',
+                          isSquare: true,
                         ),
                         if (index < visibleIcaoClassesList.length - 1)
                           const SizedBox(height: 2),

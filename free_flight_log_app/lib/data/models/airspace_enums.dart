@@ -1,10 +1,12 @@
 /// Enum definitions for OpenAIP airspace types and ICAO classes
 /// Provides type safety and centralized mapping for airspace data
 
+import '../../services/logging_service.dart';
+
 /// OpenAIP airspace type classifications
 /// Based on OpenAIP Core API documentation
 enum AirspaceType {
-  other(0, 'Other', 'Unknown/Other', 'Other airspace type'),
+  other(0, 'Other', 'Other', 'Other airspace type'),
   restricted(1, 'R', 'Restricted', 'Restricted Area - entry restricted'),
   danger(2, 'D', 'Danger', 'Danger Area - hazardous activities'),
   prohibited(3, 'P', 'Prohibited', 'Prohibited Area - flight forbidden'),
@@ -54,6 +56,15 @@ enum AirspaceType {
     for (final type in AirspaceType.values) {
       if (type.code == code) return type;
     }
+
+    // Log warning for unknown codes to help identify missing enum mappings
+    LoggingService.structured('UNKNOWN_AIRSPACE_TYPE_CODE', {
+      'unknown_code': code,
+      'fallback_used': 'AirspaceType.other',
+      'available_codes': AirspaceType.values.map((t) => t.code).toList(),
+      'suggestion': 'Consider adding this code to AirspaceType enum if it represents a new OpenAIP airspace type'
+    });
+
     return AirspaceType.other; // Default to other for unknown codes
   }
 
