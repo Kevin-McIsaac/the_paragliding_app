@@ -826,10 +826,10 @@ class AirspaceGeoJsonService {
         // Convert clipped polygons back to flutter_map format
         polygons = _convertClippedPolygonsToFlutterMap(clippedPolygons, opacity);
 
-        // IMPORTANT: Reverse polygon order for correct rendering
-        // Higher altitude airspaces render first (bottom layer)
-        // Lower altitude airspaces render last (top layer, most visible)
-        polygons = polygons.reversed.toList();
+        // IMPORTANT: Keep polygon order from clipping (lowest altitude first)
+        // Lower altitude airspaces render first (bottom layer)
+        // Higher altitude airspaces render last (top layer, most visible)
+        // Note: Removed reversal to show lowest altitude on top visually
 
         // Update identification data to match clipped polygons
         // For now, we'll keep original boundaries for tooltip hit testing

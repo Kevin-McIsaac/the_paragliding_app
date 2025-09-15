@@ -120,8 +120,8 @@ enum IcaoClass {
     'E',
     'Class E',
     'IFR/VFR. IFR receives ATC service and separation',
-    Color(0xFFFF1493),  // Deep Pink border
-    Color(0x4DFF1493),  // 30% opacity deep pink fill
+    Color(0xFFA0522D),  // Sienna/Brown border
+    Color(0x4DA0522D),  // 30% opacity sienna fill
   ),
   classF(
     5,
