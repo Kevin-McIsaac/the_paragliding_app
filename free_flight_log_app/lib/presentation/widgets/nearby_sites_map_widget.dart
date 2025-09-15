@@ -105,6 +105,15 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   void didUpdateWidget(NearbySitesMapWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
 
+    // Check if sites were just enabled - reload site data
+    if (oldWidget.sitesEnabled != widget.sitesEnabled) {
+      if (widget.sitesEnabled && widget.onBoundsChanged != null && _mapController.camera != null) {
+        // Sites were just enabled - reload site data for current bounds
+        final bounds = _mapController.camera.visibleBounds;
+        widget.onBoundsChanged!(bounds);
+      }
+    }
+
     // Check if filter properties changed and reload overlays if needed
     if (oldWidget.sitesEnabled != widget.sitesEnabled ||
         oldWidget.maxAltitudeFt != widget.maxAltitudeFt ||
