@@ -236,11 +236,14 @@ class AirspaceOverlayManager {
       final excludedTypes = await _openAipService.getExcludedAirspaceTypes();
       final excludedClasses = await _openAipService.getExcludedIcaoClasses();
 
+      // Get clipping preference
+      final clippingEnabled = await _openAipService.isClippingEnabled();
+
       // Time the airspace processing/clipping step
       final processingStopwatch = Stopwatch()..start();
 
       // Parse GeoJSON and convert to styled polygons (filtered by excluded types and classes)
-      final polygons = await _geoJsonService.parseAirspaceGeoJson(geoJsonString, opacity, excludedTypes, excludedClasses, bounds, maxAltitudeFt);
+      final polygons = await _geoJsonService.parseAirspaceGeoJson(geoJsonString, opacity, excludedTypes, excludedClasses, bounds, maxAltitudeFt, clippingEnabled);
 
       processingStopwatch.stop();
       stopwatch.stop();

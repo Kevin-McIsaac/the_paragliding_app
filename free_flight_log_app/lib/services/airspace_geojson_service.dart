@@ -680,6 +680,7 @@ class AirspaceGeoJsonService {
   /// Parse GeoJSON string and return styled polygons for flutter_map
   /// Also populates the AirspaceIdentificationService with polygon data
   /// Filters polygons based on user-excluded airspace types
+  /// Optionally clips overlapping polygons for visual clarity
   Future<List<fm.Polygon>> parseAirspaceGeoJson(
     String geoJsonString,
     double opacity,
@@ -687,6 +688,7 @@ class AirspaceGeoJsonService {
     Map<IcaoClass, bool> excludedIcaoClasses,
     fm.LatLngBounds viewport,
     double maxAltitudeFt,
+    bool enableClipping,
   ) async {
     try {
       // Use geobase to parse the GeoJSON data
@@ -814,36 +816,53 @@ class AirspaceGeoJsonService {
           ));
         }
 
-        // Sort by lower altitude: lowest first (ascending order) for clipping
+        // Sort by lower altitude: lowest first (ascending order) for rendering and clipping
         polygonsWithAltitude.sort((a, b) {
           return a.data.airspaceData.getLowerAltitudeInFeet()
               .compareTo(b.data.airspaceData.getLowerAltitudeInFeet());
         });
 
-        // Apply polygon clipping to remove overlapping areas
-        final clippedPolygons = _applyPolygonClipping(polygonsWithAltitude, viewport);
+        if (enableClipping) {
+          // Apply polygon clipping to remove overlapping areas
+          final clippedPolygons = _applyPolygonClipping(polygonsWithAltitude, viewport);
 
-        // Convert clipped polygons back to flutter_map format
-        polygons = _convertClippedPolygonsToFlutterMap(clippedPolygons, opacity);
+          // Convert clipped polygons back to flutter_map format
+          polygons = _convertClippedPolygonsToFlutterMap(clippedPolygons, opacity);
 
-        // IMPORTANT: Keep polygon order from clipping (lowest altitude first)
+          // For clipped polygons, keep original boundaries for tooltip hit testing
+          identificationPolygons = polygonsWithAltitude.map((p) => p.data).toList();
+
+          LoggingService.structured('AIRSPACE_ALTITUDE_SORTING_AND_CLIPPING', {
+            'clipping_enabled': true,
+            'polygons_sorted': polygonsWithAltitude.length,
+            'clipped_polygons_output': polygons.length,
+            'sort_order': 'lowest_altitude_first_for_clipping',
+            'altitude_range_feet': polygonsWithAltitude.isNotEmpty ? {
+              'lowest': polygonsWithAltitude.first.data.airspaceData.getLowerAltitudeInFeet(),
+              'highest': polygonsWithAltitude.last.data.airspaceData.getLowerAltitudeInFeet(),
+            } : null,
+          });
+        } else {
+          // No clipping - keep original polygons but maintain altitude-based rendering order
+          // Polygons are already in the list from the filtering loop above
+          // They are sorted by altitude, so lower altitude airspaces render first (bottom layer)
+          // Higher altitude airspaces render last (top layer, most visible)
+
+          LoggingService.structured('AIRSPACE_ALTITUDE_SORTING_NO_CLIPPING', {
+            'clipping_enabled': false,
+            'polygon_count': polygons.length,
+            'sort_order': 'lowest_altitude_first_for_rendering',
+            'altitude_range_feet': polygonsWithAltitude.isNotEmpty ? {
+              'lowest': polygonsWithAltitude.first.data.airspaceData.getLowerAltitudeInFeet(),
+              'highest': polygonsWithAltitude.last.data.airspaceData.getLowerAltitudeInFeet(),
+            } : null,
+          });
+        }
+
+        // IMPORTANT: Keep polygon order from sorting (lowest altitude first)
         // Lower altitude airspaces render first (bottom layer)
         // Higher altitude airspaces render last (top layer, most visible)
         // Note: Removed reversal to show lowest altitude on top visually
-
-        // Update identification data to match clipped polygons
-        // For now, we'll keep original boundaries for tooltip hit testing
-        identificationPolygons = polygonsWithAltitude.map((p) => p.data).toList();
-
-        LoggingService.structured('AIRSPACE_ALTITUDE_SORTING_AND_CLIPPING', {
-          'polygons_sorted': polygonsWithAltitude.length,
-          'clipped_polygons_output': polygons.length,
-          'sort_order': 'lowest_altitude_first_for_clipping',
-          'altitude_range_feet': polygonsWithAltitude.isNotEmpty ? {
-            'lowest': polygonsWithAltitude.first.data.airspaceData.getLowerAltitudeInFeet(),
-            'highest': polygonsWithAltitude.last.data.airspaceData.getLowerAltitudeInFeet(),
-          } : null,
-        });
       }
 
       // Update the identification service with polygon data (use ALL airspaces, not just filtered ones)

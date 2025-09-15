@@ -49,13 +49,17 @@ class OpenAipService {
 
   // Individual ICAO class preferences
   static const String _icaoClassesExcludedKey = 'openaip_icao_classes_excluded';
-  
+
+  // Airspace clipping preference
+  static const String _airspaceClippingEnabledKey = 'openaip_airspace_clipping_enabled';
+
   // Default values
   static const double _defaultOpacity = 0.15; // 15% optimal for airspace visibility
   static const bool _defaultAirspaceEnabled = false;
   static const bool _defaultAirportsEnabled = false;
   static const bool _defaultNavaidsEnabled = false;
   static const bool _defaultReportingPointsEnabled = false;
+  static const bool _defaultClippingEnabled = true; // Default to enabled for backwards compatibility
 
   // Default airspace type exclusions (false = include/show, true = exclude/hide)
   // This ensures unmapped types are shown by default
@@ -209,7 +213,26 @@ class OpenAipService {
       'enabled': enabled,
     });
   }
-  
+
+  /// Get clipping state for airspace layer
+  Future<bool> isClippingEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!prefs.containsKey(_airspaceClippingEnabledKey)) {
+      await prefs.setBool(_airspaceClippingEnabledKey, _defaultClippingEnabled);
+      return _defaultClippingEnabled;
+    }
+    return prefs.getBool(_airspaceClippingEnabledKey) ?? _defaultClippingEnabled;
+  }
+
+  /// Set clipping state for airspace layer
+  Future<void> setClippingEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_airspaceClippingEnabledKey, enabled);
+    LoggingService.structured('AIRSPACE_CLIPPING_TOGGLE', {
+      'enabled': enabled,
+    });
+  }
+
   /// Get enabled state for a specific layer
   Future<bool> isLayerEnabled(OpenAipLayer layer) async {
     switch (layer) {
@@ -483,6 +506,7 @@ class OpenAipService {
       'airports_enabled': await isAirportsEnabled(),
       'navaids_enabled': await isNavaidsEnabled(),
       'reporting_points_enabled': await isReportingPointsEnabled(),
+      'airspace_clipping_enabled': await isClippingEnabled(),
       'overlay_opacity': await getOverlayOpacity(),
       'excluded_airspace_types': excludedTypes,
       'excluded_airspace_count': excludedTypes.values.where((v) => v).length,
