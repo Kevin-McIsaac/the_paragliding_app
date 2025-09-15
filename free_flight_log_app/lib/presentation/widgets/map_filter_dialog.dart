@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../services/logging_service.dart';
 import '../../utils/map_provider.dart';
+import '../../data/models/airspace_enums.dart';
 
 /// Filter dialog for controlling map layer visibility
 /// Supports sites toggle, airspace type filtering, ICAO class filtering, and altitude filtering
@@ -39,17 +40,14 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
 
   Timer? _debounceTimer;
 
-  // Available airspace types with full descriptions for tooltips
-  static const Map<String, String> _typeDescriptions = {
-    'CTR': 'Control Zone - Airport control zone with mandatory ATC contact',
-    'TMA': 'Terminal Area - Terminal maneuvering area around major airports',
-    'CTA': 'Control Area - Controlled airspace providing separation services',
-    'D': 'Danger Area - Areas with hazardous activities for aircraft',
-    'R': 'Restricted Area - Areas where flight entry is restricted',
-    'P': 'Prohibited Area - Areas where flight is forbidden',
-    'FIR': 'Flight Information Region - Airspace for flight information services',
-    'Other': 'Unknown Type - Airspace with unidentified or missing classification',
-  };
+  // Dynamic generation of all airspace types from enum
+  static Map<String, String> get _typeDescriptions {
+    final Map<String, String> descriptions = {};
+    for (final type in AirspaceType.values) {
+      descriptions[type.abbreviation] = '${type.displayName} - ${type.description}';
+    }
+    return descriptions;
+  }
 
   // Available ICAO classes with detailed descriptions
   static const Map<String, String> _classDescriptions = {
@@ -360,65 +358,98 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Types',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
-          ),
-        ),
-        const SizedBox(height: 8),
-        ..._typeDescriptions.entries.map((entry) {
-          return Tooltip(
-            message: entry.value,
-            textStyle: const TextStyle(color: Colors.white, fontSize: 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E1E1E),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: Colors.white24),
+        Row(
+          children: [
+            const Text(
+              'Types',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
             ),
-            child: InkWell(
+            const Spacer(),
+            // Select All / Clear All buttons
+            GestureDetector(
               onTap: () {
                 setState(() {
-                  _airspaceTypes[entry.key] = !(_airspaceTypes[entry.key] ?? false);
-                  // Apply changes immediately
+                  final allSelected = _airspaceTypes.values.every((selected) => selected == true);
+                  for (final key in _airspaceTypes.keys) {
+                    _airspaceTypes[key] = !allSelected;
+                  }
                   _applyFiltersDebounced();
                 });
               },
-              borderRadius: BorderRadius.circular(4),
-              child: Container(
-                height: 18,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Transform.scale(
-                      scale: 0.6,
-                      child: Checkbox(
-                        value: _airspaceTypes[entry.key] ?? false,
-                        onChanged: (value) {
-                          setState(() {
-                            _airspaceTypes[entry.key] = value ?? false;
-                            // Apply changes immediately
-                            _applyFiltersDebounced();
-                          });
-                        },
-                        activeColor: Colors.blue,
-                        checkColor: Colors.white,
-                        side: const BorderSide(color: Colors.white54),
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                    ),
-                    Text(
-                      entry.key,
-                      style: const TextStyle(color: Colors.white, fontSize: 10),
-                    ),
-                  ],
+              child: Text(
+                _airspaceTypes.values.every((selected) => selected == true) ? 'Clear' : 'All',
+                style: const TextStyle(
+                  color: Colors.blue,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ),
-          );
-        }).toList(),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          height: 144,
+          child: SingleChildScrollView(
+            child: Column(
+              children: _typeDescriptions.entries.map((entry) {
+                return Tooltip(
+                  message: entry.value,
+                  textStyle: const TextStyle(color: Colors.white, fontSize: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E1E1E),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _airspaceTypes[entry.key] = !(_airspaceTypes[entry.key] ?? false);
+                        _applyFiltersDebounced();
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(4),
+                    child: Container(
+                      height: 18,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Transform.scale(
+                            scale: 0.6,
+                            child: Checkbox(
+                              value: _airspaceTypes[entry.key] ?? false,
+                              onChanged: (value) {
+                                setState(() {
+                                  _airspaceTypes[entry.key] = value ?? false;
+                                  _applyFiltersDebounced();
+                                });
+                              },
+                              activeColor: Colors.blue,
+                              checkColor: Colors.white,
+                              side: const BorderSide(color: Colors.white54),
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              entry.key,
+                              style: const TextStyle(color: Colors.white, fontSize: 10),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ),
       ],
     );
   }
