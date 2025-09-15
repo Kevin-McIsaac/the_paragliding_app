@@ -83,7 +83,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   List<Widget> _airspaceLayers = [];
   bool _airspaceLoading = false;
   bool _airspaceEnabled = false;
-  Set<int> _visibleAirspaceTypes = {};
+  Set<AirspaceType> _visibleAirspaceTypes = {};
 
   // Airspace tooltip state
   List<AirspaceData> _tooltipAirspaces = [];
@@ -303,9 +303,9 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
     // Mark each airspace with its filter status for visual distinction
     for (final airspace in allAirspaces) {
-      // OpenAipService uses inverted logic: true = filtered out, false = shown
-      final isTypeFiltered = enabledTypes[airspace.type] ?? false;  // true = filtered out
-      final isClassFiltered = enabledClasses[airspace.icaoClass ?? IcaoClass.none] ?? false;  // true = filtered out
+      // Check if airspace is filtered: false = filtered out, true/null = shown
+      final isTypeFiltered = enabledTypes[airspace.type] == false;  // false = filtered out
+      final isClassFiltered = enabledClasses[airspace.icaoClass ?? IcaoClass.none] == false;  // false = filtered out
       final isElevationFiltered = airspace.getLowerAltitudeInFeet() > widget.maxAltitudeFt;
 
       // Mark if this airspace is currently filtered out
@@ -485,7 +485,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                   ),
                   const SizedBox(height: 4),
                   // Airspace type legend items with tooltips (filtered by visible types)
-                  ...SiteMarkerUtils.buildAirspaceLegendItems(visibleTypes: _convertNumericTypesToStrings(_visibleAirspaceTypes)),
+                  ...SiteMarkerUtils.buildAirspaceLegendItems(visibleTypes: _visibleAirspaceTypes.map((type) => type.abbreviation).toSet()),
                 ],
               ],
             ),

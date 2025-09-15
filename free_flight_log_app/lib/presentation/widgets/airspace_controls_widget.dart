@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/openaip_service.dart';
 import '../../services/logging_service.dart';
+import '../../data/models/airspace_enums.dart';
 
 /// Widget for controlling OpenAIP airspace overlay layers
 class AirspaceControlsWidget extends StatefulWidget {
@@ -31,7 +32,7 @@ class _AirspaceControlsWidgetState extends State<AirspaceControlsWidget> {
   bool _hasApiKey = false;
 
   // Individual airspace type states
-  Map<String, bool> _airspaceTypes = {};
+  Map<AirspaceType, bool> _airspaceTypes = {};
   bool _airspaceTypesExpanded = false;
 
   bool _loading = true;
@@ -152,12 +153,18 @@ class _AirspaceControlsWidgetState extends State<AirspaceControlsWidget> {
 
   Future<void> _updateAirspaceTypeEnabled(String type, bool enabled) async {
     try {
-      await _openAipService.setAirspaceTypeEnabled(type, enabled);
+      // Convert string abbreviation to AirspaceType enum
+      final airspaceType = AirspaceType.values.firstWhere(
+        (t) => t.abbreviation == type,
+        orElse: () => AirspaceType.other,
+      );
+
+      await _openAipService.setAirspaceTypeEnabled(airspaceType, enabled);
 
       // Update local state
       if (mounted) {
         setState(() {
-          _airspaceTypes[type] = enabled;
+          _airspaceTypes[airspaceType] = enabled;
         });
 
         // Defer parent callback to avoid re-entrancy during gesture handling
@@ -677,7 +684,12 @@ class _AirspaceControlsWidgetState extends State<AirspaceControlsWidget> {
 
   /// Build individual airspace type toggle
   Widget _buildAirspaceTypeToggle(String type, String description, Color color) {
-    final isEnabled = _airspaceTypes[type] ?? false;
+    // Convert string abbreviation to AirspaceType enum
+    final airspaceType = AirspaceType.values.firstWhere(
+      (t) => t.abbreviation == type,
+      orElse: () => AirspaceType.other,
+    );
+    final isEnabled = _airspaceTypes[airspaceType] ?? false;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),

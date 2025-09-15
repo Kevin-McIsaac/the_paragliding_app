@@ -48,7 +48,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
     'R': 'Restricted Area - Areas where flight entry is restricted',
     'P': 'Prohibited Area - Areas where flight is forbidden',
     'FIR': 'Flight Information Region - Airspace for flight information services',
-    'None': 'Unknown Type - Airspace with unidentified or missing classification',
+    'Other': 'Unknown Type - Airspace with unidentified or missing classification',
   };
 
   // Available ICAO classes with detailed descriptions
