@@ -110,7 +110,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         oldWidget.maxAltitudeFt != widget.maxAltitudeFt ||
         oldWidget.filterUpdateCounter != widget.filterUpdateCounter) {
       // Reload overlays with new filter settings
-      _loadAirspaceOverlays();
+      _loadAirspaceLayers();
     }
 
     // Priority 1: Check if we should fit to exact bounds (for precise area display)

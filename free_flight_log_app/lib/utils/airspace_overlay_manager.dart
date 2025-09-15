@@ -656,7 +656,7 @@ class AirspaceOverlayManager {
       'E': 4,       // Class E
       'F': 5,       // Class F
       'G': 6,       // Class G
-      'None': -1,   // No class assigned (null in data)
+      'None': 8,    // No ICAO class assigned
     };
 
     final numericClasses = <int, bool>{};
@@ -676,18 +676,15 @@ class AirspaceOverlayManager {
     // Mapping from string abbreviations to numeric codes
     const stringToNumeric = {
       'Unknown': 0,
-      'A': 1,       // Class A (could be 1, 6, or others depending on context)
-      'B': 2,       // Class B
-      'C': 3,       // Class C
+      'R': 1,       // Restricted (per OpenAIP doc)
+      'D': 2,       // Danger (per OpenAIP doc)
       'CTR': 4,     // Control Zone
-      'E': 5,       // Class E (could be 2 or 5 depending on context)
-      'TMA': 6,     // Terminal Control Area
-      'G': 7,       // Class G
-      'CTA': 10,    // Control Area (primary mapping to 10/26)
-      'R': 11,      // Restricted
-      'P': 12,      // Prohibited
-      'ATZ': 13,    // Aerodrome Traffic Zone
-      'D': 14,      // Danger Area
+      'TMA': 6,     // Terminal Control Area (also maps to 7)
+      'FIR': 10,    // Flight Information Region
+      'CTA': 26,    // Control Area
+      // Additional mappings for alternate codes
+      'P': 12,      // Prohibited (keeping existing)
+      'ATZ': 13,    // Aerodrome Traffic Zone (keeping existing)
     };
 
     final numericTypes = <int, bool>{};
@@ -698,34 +695,29 @@ class AirspaceOverlayManager {
         numericTypes[numericCode] = enabled;
 
         // Handle special mappings for types that have multiple numeric codes
-        if (stringType == 'CTA') {
-          // CTA maps to both 10 and 26
-          numericTypes[26] = enabled;
-        } else if (stringType == 'CTR') {
-          // CTR maps to 4, 8, and 17
+        if (stringType == 'CTR') {
+          // CTR maps to 4, 8, 13, and 17 (various control zone types)
           numericTypes[8] = enabled;
+          numericTypes[13] = enabled;  // ATZ
           numericTypes[17] = enabled;
         } else if (stringType == 'TMA') {
-          // TMA maps to 6, 9, 16, and 21
+          // TMA maps to 6, 7, 9, 16, and 21
+          numericTypes[7] = enabled;   // Alternate TMA code
           numericTypes[9] = enabled;
           numericTypes[16] = enabled;
           numericTypes[21] = enabled;
-        } else if (stringType == 'A') {
-          // Class A can be code 6 as well
-          numericTypes[6] = enabled;
-        } else if (stringType == 'E') {
-          // Class E can be code 2 as well
-          numericTypes[2] = enabled;
         } else if (stringType == 'R') {
-          // Restricted maps to 11, 15, and 18
-          numericTypes[15] = enabled;
-          numericTypes[18] = enabled;
-        } else if (stringType == 'P') {
-          // Prohibited maps to 12 and 19
-          numericTypes[19] = enabled;
+          // Restricted can be 1, 11, 15, 18
+          numericTypes[11] = enabled;
+          numericTypes[15] = enabled;  // Military Restricted
+          numericTypes[18] = enabled;  // Temporary Restricted
         } else if (stringType == 'D') {
-          // Danger maps to 14 and 20
-          numericTypes[20] = enabled;
+          // Danger can be 2, 14, 20
+          numericTypes[14] = enabled;
+          numericTypes[20] = enabled;  // Temporary Danger
+        } else if (stringType == 'P') {
+          // Prohibited can be 12, 19
+          numericTypes[19] = enabled;  // Temporary Prohibited
         }
       }
     });

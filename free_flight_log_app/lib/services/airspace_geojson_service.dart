@@ -676,21 +676,42 @@ class AirspaceGeoJsonService {
             country: properties != null ? properties['country']?.toString() : null,
           );
 
-          // Filter based on enabled airspace types - skip if type not enabled
-          if (!(enabledTypes[airspaceData.type] ?? false)) {
-            continue; // Skip this airspace if its type is not enabled
+          // Filter based on disabled airspace types - skip only if explicitly disabled
+          // This inverted logic ensures unmapped types are shown by default
+          if (enabledTypes[airspaceData.type] == false) {
+            LoggingService.debug('AIRSPACE_FILTERED_TYPE', {
+              'name': airspaceData.name,
+              'type': airspaceData.type,
+              'reason': 'Type explicitly disabled',
+              'disabled_types': enabledTypes.keys.where((k) => enabledTypes[k] == false).toList(),
+            });
+            continue; // Skip this airspace only if its type is explicitly disabled
           }
 
-          // Filter based on enabled ICAO classes - skip if class not enabled
-          // Handle null ICAO class (treat as -1 for mapping)
-          final icaoClassKey = airspaceData.icaoClass ?? -1;
-          if (!(enabledIcaoClasses[icaoClassKey] ?? false)) {
-            continue; // Skip this airspace if its ICAO class is not enabled
+          // Filter based on disabled ICAO classes - skip only if explicitly disabled
+          // Handle null ICAO class (treat as 8 for 'None' per OpenAIP spec)
+          final icaoClassKey = airspaceData.icaoClass ?? 8;
+          if (enabledIcaoClasses[icaoClassKey] == false) {
+            LoggingService.debug('AIRSPACE_FILTERED_CLASS', {
+              'name': airspaceData.name,
+              'type': airspaceData.type,
+              'icao_class': icaoClassKey,
+              'reason': 'ICAO class explicitly disabled',
+              'disabled_classes': enabledIcaoClasses.keys.where((k) => enabledIcaoClasses[k] == false).toList(),
+            });
+            continue; // Skip this airspace only if its ICAO class is explicitly disabled
           }
 
           // Filter based on maximum elevation setting
           // Skip airspaces that START above the elevation filter
           if (airspaceData.getLowerAltitudeInFeet() > maxAltitudeFt) {
+            LoggingService.debug('AIRSPACE_FILTERED_ELEVATION', {
+              'name': airspaceData.name,
+              'type': airspaceData.type,
+              'lower_altitude': airspaceData.getLowerAltitudeInFeet(),
+              'max_altitude_filter': maxAltitudeFt,
+              'reason': 'Starts above elevation filter',
+            });
             continue; // Skip airspaces that start above the elevation filter
           }
 
@@ -770,6 +791,15 @@ class AirspaceGeoJsonService {
       // Update the identification service with polygon data
       final boundsKey = _generateBoundsKeyFromGeoJson(featureCollection);
       AirspaceIdentificationService.instance.updateAirspacePolygons(identificationPolygons, boundsKey);
+
+      // Log filtering summary
+      LoggingService.structured('AIRSPACE_FILTERING_SUMMARY', {
+        'total_features_from_api': featureCollection.features.length,
+        'features_after_filtering': polygons.length,
+        'enabled_types': enabledTypes.keys.where((k) => enabledTypes[k] == true).toList(),
+        'enabled_classes': enabledIcaoClasses.keys.where((k) => enabledIcaoClasses[k] == true).toList(),
+        'max_altitude_ft': maxAltitudeFt,
+      });
 
       LoggingService.structured('GEOJSON_PARSING', {
         'features_count': featureCollection.features.length,

@@ -56,28 +56,30 @@ class OpenAipService {
   static const bool _defaultNavaidsEnabled = false;
   static const bool _defaultReportingPointsEnabled = false;
 
-  // Default enabled airspace types (VFR-focused: critical for safety)
+  // Default disabled airspace types (inverted logic - show all except these)
+  // This ensures unmapped types are shown by default
   static const Map<String, bool> _defaultAirspaceTypes = {
-    'CTR': true,  // Control Zone - critical
-    'TMA': true,  // Terminal Area - critical
-    'CTA': true,  // Control Area - important
-    'D': true,    // Danger Area - critical for safety
-    'R': true,    // Restricted - critical for safety
-    'P': true,    // Prohibited - critical for safety
-    'FIR': false, // Flight Information Region - less critical
-    'None': false, // Unknown type - less critical
+    'CTR': false,  // Control Zone - show by default
+    'TMA': false,  // Terminal Area - show by default
+    'CTA': false,  // Control Area - show by default
+    'D': false,    // Danger Area - show by default
+    'R': false,    // Restricted - show by default
+    'P': false,    // Prohibited - show by default
+    'FIR': true,   // Flight Information Region - hide by default (very large)
+    'Unknown': true, // Unknown type - hide by default
   };
 
-  // Default enabled ICAO classes (VFR-focused)
+  // Default disabled ICAO classes (inverted logic - show all except these)
+  // This ensures unmapped classes are shown by default
   static const Map<String, bool> _defaultIcaoClasses = {
-    'A': false,   // Class A - IFR only, less relevant for VFR
-    'B': true,    // Class B - important for VFR
-    'C': true,    // Class C - important for VFR
-    'D': true,    // Class D - important for VFR
-    'E': false,   // Class E - less critical
-    'F': false,   // Class F - less critical
-    'G': true,    // Class G - uncontrolled, relevant for VFR
-    'None': false, // No class assigned - less critical
+    'A': true,    // Class A - IFR only, hide by default
+    'B': false,   // Class B - show by default
+    'C': false,   // Class C - show by default
+    'D': false,   // Class D - show by default
+    'E': true,    // Class E - hide by default (less critical)
+    'F': true,    // Class F - hide by default (less critical)
+    'G': false,   // Class G - show by default (uncontrolled)
+    'None': false, // No ICAO class - show by default
   };
   
   /// Get the tile URL template for a specific layer
