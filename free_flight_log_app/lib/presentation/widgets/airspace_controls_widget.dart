@@ -46,7 +46,7 @@ class _AirspaceControlsWidgetState extends State<AirspaceControlsWidget> {
   Future<void> _loadSettings() async {
     try {
       final settings = await _openAipService.getSettingsSummary();
-      final airspaceTypes = await _openAipService.getEnabledAirspaceTypes();
+      final airspaceTypes = await _openAipService.getExcludedAirspaceTypes();
 
       if (mounted) {
         setState(() {
@@ -159,7 +159,7 @@ class _AirspaceControlsWidgetState extends State<AirspaceControlsWidget> {
         orElse: () => AirspaceType.other,
       );
 
-      await _openAipService.setAirspaceTypeEnabled(airspaceType, enabled);
+      await _openAipService.setAirspaceTypeExcluded(airspaceType, enabled);
 
       // Update local state
       if (mounted) {

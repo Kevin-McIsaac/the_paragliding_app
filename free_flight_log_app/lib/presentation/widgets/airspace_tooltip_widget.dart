@@ -102,49 +102,6 @@ class AirspaceTooltipWidget extends StatelessWidget {
                       ),
                     ),
                     const Spacer(),
-                    if (airspaces.length > 3)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withValues(alpha: 0.8),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.unfold_more,
-                              color: Colors.white,
-                              size: 10,
-                            ),
-                            SizedBox(width: 2),
-                            Text(
-                              'Scroll',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    else if (airspaces.length > 1)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.withValues(alpha: 0.8),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          '${airspaces.length}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
                     // Close button for mobile users
                     if (onClose != null)
                       GestureDetector(
@@ -292,7 +249,7 @@ class AirspaceTooltipWidget extends StatelessWidget {
                   ),
                   message: airspace.type.tooltip,
                   child: Text(
-                    '${airspace.type.abbreviation},',
+                    '${_getDisplayTypeAbbreviation(airspace.type)},',
                     style: TextStyle(
                       color: airspace.isCurrentlyFiltered
                         ? Colors.grey.withValues(alpha: 0.8)
@@ -303,8 +260,8 @@ class AirspaceTooltipWidget extends StatelessWidget {
                   ),
                 ),
 
-                // ICAO class with mapping and tooltip (if available)
-                if (airspace.icaoClass != null && airspace.icaoClass != IcaoClass.none) ...[
+                // ICAO class with mapping and tooltip (always show if available)
+                if (airspace.icaoClass != null) ...[
                   const SizedBox(width: 6),
                   Tooltip(
                     preferBelow: false,
@@ -321,7 +278,7 @@ class AirspaceTooltipWidget extends StatelessWidget {
                     ),
                     message: airspace.icaoClass!.tooltip,
                     child: Text(
-                      '${airspace.icaoClass!.abbreviation},',
+                      '${_getDisplayIcaoClassAbbreviation(airspace.icaoClass!)},',
                       style: TextStyle(
                         color: airspace.isCurrentlyFiltered
                           ? Colors.grey.withValues(alpha: 0.8)
@@ -472,55 +429,6 @@ class AirspaceTooltipWidget extends StatelessWidget {
   }
 
 
-  /// Get airspace type abbreviation from numeric code
-  String _getTypeAbbreviation(int typeCode) {
-    final typeMap = {
-      0: 'Unknown',
-      1: 'R',       // Restricted
-      2: 'D',       // Danger
-      4: 'CTR',     // Control Zone
-      6: 'TMA',     // Terminal Control Area
-      7: 'TMA',     // Terminal Control Area
-      10: 'FIR',    // Flight Information Region
-      26: 'CTA',    // Control Terminal Area
-    };
-
-    return typeMap[typeCode] ?? 'Unknown';
-  }
-
-  /// Get airspace type full name from numeric code
-  String _getTypeDescription(int typeCode) {
-    final typeDescriptionMap = {
-      0: 'Unknown Airspace',
-      1: 'Restricted Area',
-      2: 'Danger Area',
-      4: 'Control Zone',
-      6: 'Terminal Control Area',
-      7: 'Terminal Control Area',
-      10: 'Flight Information Region',
-      26: 'Control Terminal Area',
-    };
-
-    return typeDescriptionMap[typeCode] ?? 'Unknown Airspace Type';
-  }
-
-  /// Get ICAO class abbreviation from numeric code
-  String _getIcaoClassAbbreviation(int? icaoClassCode) {
-    if (icaoClassCode == null) return '';
-
-    final icaoClassMap = {
-      0: 'Class A',       // Class A - Controlled
-      1: 'Class B',       // Class B - Controlled
-      2: 'Class C',       // Class C - Controlled
-      3: 'Class D',       // Class D - Controlled
-      4: 'Class E',       // Class E - Controlled
-      5: 'Class F',       // Class F - Advisory
-      6: 'Class G',       // Class G - Uncontrolled
-      8: 'None',          // No class defined/Unknown
-    };
-
-    return icaoClassMap[icaoClassCode] ?? '';
-  }
 
   /// Get ICAO class full description from numeric code
   String _getIcaoClassDescription(int? icaoClassCode) {
@@ -686,5 +594,17 @@ class AirspaceTooltipWidget extends StatelessWidget {
     };
 
     return icaoTooltipMap[icaoClassCode] ?? 'ICAO Class $icaoClassCode';
+  }
+
+  /// Get display abbreviation for airspace type, showing 'Unknown' for unmapped types
+  String _getDisplayTypeAbbreviation(AirspaceType type) {
+    // Always use the enum's abbreviation for consistency with Filter Map
+    return type.abbreviation;
+  }
+
+  /// Get display abbreviation for ICAO class, using enum's display name for consistency
+  String _getDisplayIcaoClassAbbreviation(IcaoClass icaoClass) {
+    // Always use the enum's display name for consistency with Filter Map
+    return icaoClass.displayName;
   }
 }

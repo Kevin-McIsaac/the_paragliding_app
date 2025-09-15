@@ -81,7 +81,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   bool _airspaceEnabled = true; // Controls airspace loading and display
   double _maxAltitudeFt = 15000.0; // Default altitude filter
   int _filterUpdateCounter = 0; // Increments when any filter changes to trigger map refresh
-  Map<IcaoClass, bool> _enabledIcaoClasses = {}; // Current ICAO class filter state
+  Map<IcaoClass, bool> _excludedIcaoClasses = {}; // Current ICAO class filter state
   final OpenAipService _openAipService = OpenAipService.instance;
   
 
@@ -135,10 +135,10 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
   Future<void> _loadFilterSettings() async {
     try {
-      final icaoClasses = await _openAipService.getEnabledIcaoClasses();
+      final icaoClasses = await _openAipService.getExcludedIcaoClasses();
       if (mounted) {
         setState(() {
-          _enabledIcaoClasses = icaoClasses;
+          _excludedIcaoClasses = icaoClasses;
         });
       }
     } catch (e) {
@@ -597,8 +597,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   void _showMapFilterDialog() async {
     try {
       // Get current filter states
-      final airspaceTypesEnum = await _openAipService.getEnabledAirspaceTypes();
-      final icaoClassesEnum = await _openAipService.getEnabledIcaoClasses();
+      final airspaceTypesEnum = await _openAipService.getExcludedAirspaceTypes();
+      final icaoClassesEnum = await _openAipService.getExcludedIcaoClasses();
+      final clippingEnabled = await _openAipService.isClippingEnabled();
 
       // Convert enum maps to string maps for dialog
       final airspaceTypes = <String, bool>{
@@ -621,6 +622,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           airspaceTypes: airspaceTypes,
           icaoClasses: icaoClasses,
           maxAltitudeFt: _maxAltitudeFt,
+          clippingEnabled: clippingEnabled,
           mapProvider: _selectedMapProvider,
           onApply: _handleFilterApply,
         ),
@@ -631,7 +633,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   }
 
   /// Handle filter apply from dialog
-  void _handleFilterApply(bool sitesEnabled, bool airspaceEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, MapProvider mapProvider) async {
+  void _handleFilterApply(bool sitesEnabled, bool airspaceEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled, MapProvider mapProvider) async {
     try {
       // Update filter states
       final previousSitesEnabled = _sitesEnabled;
@@ -647,15 +649,18 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
       // Handle sites visibility changes
       if (!sitesEnabled && previousSitesEnabled) {
-        // Sites were disabled - clear displayed sites
+        // Sites were disabled - clear displayed sites and reset the bounds key
         setState(() {
           _displayedSites.clear();
           _allSites.clear();
+          _lastLoadedBoundsKey = ''; // Clear the bounds key so sites reload when re-enabled
         });
         LoggingService.action('MapFilter', 'sites_disabled', {'cleared_sites_count': _displayedSites.length});
       } else if (sitesEnabled && !previousSitesEnabled) {
         // Sites were enabled - reload sites for current bounds or trigger map refresh
         if (_currentBounds != null) {
+          // Force reload by clearing the last loaded bounds key
+          _lastLoadedBoundsKey = '';
           _loadSitesForBounds(_currentBounds!);
         }
         LoggingService.action('MapFilter', 'sites_enabled', {'reloading_sites': true, 'has_bounds': _currentBounds != null});
@@ -675,12 +680,13 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
         // Enable airspace and update filters
         await _openAipService.setAirspaceEnabled(true);
-        await _openAipService.setEnabledAirspaceTypes(typesEnum);
-        await _openAipService.setEnabledIcaoClasses(classesEnum);
+        await _openAipService.setExcludedAirspaceTypes(typesEnum);
+        await _openAipService.setExcludedIcaoClasses(classesEnum);
+        await _openAipService.setClippingEnabled(clippingEnabled);
 
         // Update local state for immediate UI updates
         setState(() {
-          _enabledIcaoClasses = classesEnum;
+          _excludedIcaoClasses = classesEnum;
         });
 
         if (!previousAirspaceEnabled) {
@@ -692,7 +698,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
         // Clear local ICAO classes state
         setState(() {
-          _enabledIcaoClasses = {};
+          _excludedIcaoClasses = {};
         });
 
         if (previousAirspaceEnabled) {
@@ -743,8 +749,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   Future<bool> _hasActiveFilters() async {
     try {
       // Check if any airspace types or classes are disabled from defaults
-      final types = await _openAipService.getEnabledAirspaceTypes();
-      final classes = await _openAipService.getEnabledIcaoClasses();
+      final types = await _openAipService.getExcludedAirspaceTypes();
+      final classes = await _openAipService.getExcludedIcaoClasses();
 
       // Consider filters active if any type/class is disabled or sites are disabled
       final hasDisabledTypes = types.values.contains(false);
@@ -809,7 +815,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                               sitesEnabled: _sitesEnabled,
                               maxAltitudeFt: _maxAltitudeFt,
                               filterUpdateCounter: _filterUpdateCounter,
-                              enabledIcaoClasses: _enabledIcaoClasses,
+                              excludedIcaoClasses: _excludedIcaoClasses,
                             );
                           },
                         ),
@@ -1714,8 +1720,9 @@ class _DraggableFilterDialog extends StatefulWidget {
   final Map<String, bool> airspaceTypes;
   final Map<String, bool> icaoClasses;
   final double maxAltitudeFt;
+  final bool clippingEnabled;
   final MapProvider mapProvider;
-  final Function(bool sitesEnabled, bool airspaceEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, MapProvider mapProvider) onApply;
+  final Function(bool sitesEnabled, bool airspaceEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled, MapProvider mapProvider) onApply;
 
   const _DraggableFilterDialog({
     required this.sitesEnabled,
@@ -1723,6 +1730,7 @@ class _DraggableFilterDialog extends StatefulWidget {
     required this.airspaceTypes,
     required this.icaoClasses,
     required this.maxAltitudeFt,
+    required this.clippingEnabled,
     required this.mapProvider,
     required this.onApply,
   });
@@ -1762,6 +1770,7 @@ class _DraggableFilterDialogState extends State<_DraggableFilterDialog> {
                 airspaceTypes: widget.airspaceTypes,
                 icaoClasses: widget.icaoClasses,
                 maxAltitudeFt: widget.maxAltitudeFt,
+                clippingEnabled: widget.clippingEnabled,
                 mapProvider: widget.mapProvider,
                 onApply: widget.onApply,
               ),

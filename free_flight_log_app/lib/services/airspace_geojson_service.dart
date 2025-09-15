@@ -222,46 +222,46 @@ class AirspaceGeoJsonService {
   /// Get the currently visible airspace types in the loaded data
   Set<AirspaceType> get visibleAirspaceTypes => Set.from(_currentVisibleTypes);
 
-  // ICAO class-based color mapping - All with 10% opacity (0x1A) for better map visibility
-  static const Map<IcaoClass, AirspaceStyle> _icaoClassStyles = {
+  // ICAO class-based color mapping - Uses colors from IcaoClass enum for single source of truth
+  static Map<IcaoClass, AirspaceStyle> get _icaoClassStyles => {
     IcaoClass.classA: AirspaceStyle(
-      fillColor: Color(0x1AFF0000),  // 10% opacity red - Most restrictive (IFR only)
-      borderColor: Color(0xFFFF0000),
+      fillColor: IcaoClass.classA.fillColor,
+      borderColor: IcaoClass.classA.borderColor,
       borderWidth: 2.0,
     ),
     IcaoClass.classB: AirspaceStyle(
-      fillColor: Color(0x1AFFA500),  // 10% opacity orange - IFR/VFR, all get ATC
-      borderColor: Color(0xFFFFA500),
+      fillColor: IcaoClass.classB.fillColor,
+      borderColor: IcaoClass.classB.borderColor,
       borderWidth: 1.8,
     ),
     IcaoClass.classC: AirspaceStyle(
-      fillColor: Color(0x1AFFD700),  // 10% opacity yellow - IFR/VFR, IFR separation
-      borderColor: Color(0xFFFFD700),
+      fillColor: IcaoClass.classC.fillColor,
+      borderColor: IcaoClass.classC.borderColor,
       borderWidth: 1.6,
     ),
     IcaoClass.classD: AirspaceStyle(
-      fillColor: Color(0x1A0080FF),  // 10% opacity blue - IFR/VFR, IFR from IFR only
-      borderColor: Color(0xFF0080FF),
+      fillColor: IcaoClass.classD.fillColor,
+      borderColor: IcaoClass.classD.borderColor,
       borderWidth: 1.5,
     ),
     IcaoClass.classE: AirspaceStyle(
-      fillColor: Color(0x1A00C000),  // 10% opacity green - IFR gets ATC service
-      borderColor: Color(0xFF00C000),
+      fillColor: IcaoClass.classE.fillColor,
+      borderColor: IcaoClass.classE.borderColor,
       borderWidth: 1.4,
     ),
     IcaoClass.classF: AirspaceStyle(
-      fillColor: Color(0x1A9370DB),  // 10% opacity purple - Advisory service
-      borderColor: Color(0xFF9370DB),
+      fillColor: IcaoClass.classF.fillColor,
+      borderColor: IcaoClass.classF.borderColor,
       borderWidth: 1.3,
     ),
     IcaoClass.classG: AirspaceStyle(
-      fillColor: Color(0x1A808080),  // 10% opacity gray - Uncontrolled
-      borderColor: Color(0xFF808080),
+      fillColor: IcaoClass.classG.fillColor,
+      borderColor: IcaoClass.classG.borderColor,
       borderWidth: 1.2,
     ),
     IcaoClass.none: AirspaceStyle(
-      fillColor: Color(0x1AC0C0C0),  // 10% opacity light gray - No class assigned
-      borderColor: Color(0xFFC0C0C0),
+      fillColor: IcaoClass.none.fillColor,
+      borderColor: IcaoClass.none.borderColor,
       borderWidth: 1.0,
     ),
   };
@@ -679,14 +679,16 @@ class AirspaceGeoJsonService {
 
   /// Parse GeoJSON string and return styled polygons for flutter_map
   /// Also populates the AirspaceIdentificationService with polygon data
-  /// Filters polygons based on user-enabled airspace types
+  /// Filters polygons based on user-excluded airspace types
+  /// Optionally clips overlapping polygons for visual clarity
   Future<List<fm.Polygon>> parseAirspaceGeoJson(
     String geoJsonString,
     double opacity,
-    Map<AirspaceType, bool> enabledTypes,
-    Map<IcaoClass, bool> enabledIcaoClasses,
+    Map<AirspaceType, bool> excludedTypes,
+    Map<IcaoClass, bool> excludedIcaoClasses,
     fm.LatLngBounds viewport,
     double maxAltitudeFt,
+    bool enableClipping,
   ) async {
     try {
       // Use geobase to parse the GeoJSON data
@@ -695,7 +697,7 @@ class AirspaceGeoJsonService {
       List<fm.Polygon> polygons = <fm.Polygon>[];
       List<AirspacePolygonData> identificationPolygons = <AirspacePolygonData>[];
       List<AirspacePolygonData> allIdentificationPolygons = <AirspacePolygonData>[]; // For tooltip - includes ALL airspaces
-      final Set<AirspaceType> visibleEnabledTypes = <AirspaceType>{}; // Track visible enabled types
+      final Set<AirspaceType> visibleIncludedTypes = <AirspaceType>{}; // Track visible included types
 
       for (final feature in featureCollection.features) {
         final geometry = feature.geometry;
@@ -734,30 +736,30 @@ class AirspaceGeoJsonService {
             }
           }
 
-          // Filter based on disabled airspace types - skip only if explicitly disabled
-          // This inverted logic ensures unmapped types are shown by default
-          if (enabledTypes[airspaceData.type] == false) {
+          // Filter based on excluded airspace types - skip only if explicitly excluded
+          // This logic ensures unmapped types are shown by default
+          if (excludedTypes[airspaceData.type] == true) {
             LoggingService.debug('AIRSPACE_FILTERED_TYPE', {
               'name': airspaceData.name,
               'type': airspaceData.type.abbreviation,
-              'reason': 'Type explicitly disabled',
-              'disabled_types': enabledTypes.keys.where((k) => enabledTypes[k] == false).map((k) => k.abbreviation).toList(),
+              'reason': 'Type explicitly excluded',
+              'excluded_types': excludedTypes.keys.where((k) => excludedTypes[k] == true).map((k) => k.abbreviation).toList(),
             });
-            continue; // Skip this airspace only if its type is explicitly disabled
+            continue; // Skip this airspace only if its type is explicitly excluded
           }
 
-          // Filter based on disabled ICAO classes - skip only if explicitly disabled
-          // Handle null ICAO class (treat as 8 for 'None' per OpenAIP spec)
-          final icaoClassKey = airspaceData.icaoClass ?? 8;
-          if (enabledIcaoClasses[icaoClassKey] == false) {
+          // Filter based on excluded ICAO classes - skip only if explicitly excluded
+          // Handle null ICAO class (treat as IcaoClass.none per OpenAIP spec)
+          final icaoClassKey = airspaceData.icaoClass ?? IcaoClass.none;
+          if (excludedIcaoClasses[icaoClassKey] == true) {
             LoggingService.debug('AIRSPACE_FILTERED_CLASS', {
               'name': airspaceData.name,
               'type': airspaceData.type,
               'icao_class': icaoClassKey,
-              'reason': 'ICAO class explicitly disabled',
-              'disabled_classes': enabledIcaoClasses.keys.where((k) => enabledIcaoClasses[k] == false).toList(),
+              'reason': 'ICAO class explicitly excluded',
+              'excluded_classes': excludedIcaoClasses.keys.where((k) => excludedIcaoClasses[k] == true).toList(),
             });
-            continue; // Skip this airspace only if its ICAO class is explicitly disabled
+            continue; // Skip this airspace only if its ICAO class is explicitly excluded
           }
 
           // Filter based on maximum elevation setting
@@ -773,8 +775,8 @@ class AirspaceGeoJsonService {
             continue; // Skip airspaces that start above the elevation filter
           }
 
-          // Track this type as visible and enabled
-          visibleEnabledTypes.add(airspaceData.type);
+          // Track this type as visible and included
+          visibleIncludedTypes.add(airspaceData.type);
 
           // Handle different geometry types
           if (geometry is geo.GeometryCollection) {
@@ -814,36 +816,53 @@ class AirspaceGeoJsonService {
           ));
         }
 
-        // Sort by lower altitude: lowest first (ascending order) for clipping
+        // Sort by lower altitude: lowest first (ascending order) for rendering and clipping
         polygonsWithAltitude.sort((a, b) {
           return a.data.airspaceData.getLowerAltitudeInFeet()
               .compareTo(b.data.airspaceData.getLowerAltitudeInFeet());
         });
 
-        // Apply polygon clipping to remove overlapping areas
-        final clippedPolygons = _applyPolygonClipping(polygonsWithAltitude, viewport);
+        if (enableClipping) {
+          // Apply polygon clipping to remove overlapping areas
+          final clippedPolygons = _applyPolygonClipping(polygonsWithAltitude, viewport);
 
-        // Convert clipped polygons back to flutter_map format
-        polygons = _convertClippedPolygonsToFlutterMap(clippedPolygons, opacity);
+          // Convert clipped polygons back to flutter_map format
+          polygons = _convertClippedPolygonsToFlutterMap(clippedPolygons, opacity);
 
-        // IMPORTANT: Reverse polygon order for correct rendering
-        // Higher altitude airspaces render first (bottom layer)
-        // Lower altitude airspaces render last (top layer, most visible)
-        polygons = polygons.reversed.toList();
+          // For clipped polygons, keep original boundaries for tooltip hit testing
+          identificationPolygons = polygonsWithAltitude.map((p) => p.data).toList();
 
-        // Update identification data to match clipped polygons
-        // For now, we'll keep original boundaries for tooltip hit testing
-        identificationPolygons = polygonsWithAltitude.map((p) => p.data).toList();
+          LoggingService.structured('AIRSPACE_ALTITUDE_SORTING_AND_CLIPPING', {
+            'clipping_enabled': true,
+            'polygons_sorted': polygonsWithAltitude.length,
+            'clipped_polygons_output': polygons.length,
+            'sort_order': 'lowest_altitude_first_for_clipping',
+            'altitude_range_feet': polygonsWithAltitude.isNotEmpty ? {
+              'lowest': polygonsWithAltitude.first.data.airspaceData.getLowerAltitudeInFeet(),
+              'highest': polygonsWithAltitude.last.data.airspaceData.getLowerAltitudeInFeet(),
+            } : null,
+          });
+        } else {
+          // No clipping - keep original polygons but maintain altitude-based rendering order
+          // Polygons are already in the list from the filtering loop above
+          // They are sorted by altitude, so lower altitude airspaces render first (bottom layer)
+          // Higher altitude airspaces render last (top layer, most visible)
 
-        LoggingService.structured('AIRSPACE_ALTITUDE_SORTING_AND_CLIPPING', {
-          'polygons_sorted': polygonsWithAltitude.length,
-          'clipped_polygons_output': polygons.length,
-          'sort_order': 'lowest_altitude_first_for_clipping',
-          'altitude_range_feet': polygonsWithAltitude.isNotEmpty ? {
-            'lowest': polygonsWithAltitude.first.data.airspaceData.getLowerAltitudeInFeet(),
-            'highest': polygonsWithAltitude.last.data.airspaceData.getLowerAltitudeInFeet(),
-          } : null,
-        });
+          LoggingService.structured('AIRSPACE_ALTITUDE_SORTING_NO_CLIPPING', {
+            'clipping_enabled': false,
+            'polygon_count': polygons.length,
+            'sort_order': 'lowest_altitude_first_for_rendering',
+            'altitude_range_feet': polygonsWithAltitude.isNotEmpty ? {
+              'lowest': polygonsWithAltitude.first.data.airspaceData.getLowerAltitudeInFeet(),
+              'highest': polygonsWithAltitude.last.data.airspaceData.getLowerAltitudeInFeet(),
+            } : null,
+          });
+        }
+
+        // IMPORTANT: Keep polygon order from sorting (lowest altitude first)
+        // Lower altitude airspaces render first (bottom layer)
+        // Higher altitude airspaces render last (top layer, most visible)
+        // Note: Removed reversal to show lowest altitude on top visually
       }
 
       // Update the identification service with polygon data (use ALL airspaces, not just filtered ones)
@@ -854,8 +873,8 @@ class AirspaceGeoJsonService {
       LoggingService.structured('AIRSPACE_FILTERING_SUMMARY', {
         'total_features_from_api': featureCollection.features.length,
         'features_after_filtering': polygons.length,
-        'enabled_types': enabledTypes.keys.where((k) => enabledTypes[k] == true).map((k) => k.abbreviation).toList(),
-        'enabled_classes': enabledIcaoClasses.keys.where((k) => enabledIcaoClasses[k] == true).map((k) => k.abbreviation).toList(),
+        'included_types': excludedTypes.keys.where((k) => excludedTypes[k] == false).map((k) => k.abbreviation).toList(),
+        'included_classes': excludedIcaoClasses.keys.where((k) => excludedIcaoClasses[k] == false).map((k) => k.abbreviation).toList(),
         'max_altitude_ft': maxAltitudeFt,
       });
 
@@ -867,7 +886,7 @@ class AirspaceGeoJsonService {
       });
 
       // Update visible types with only enabled types that are present
-      _currentVisibleTypes = visibleEnabledTypes;
+      _currentVisibleTypes = visibleIncludedTypes;
 
       // Add airspace statistics logging (for debugging)
       _logAirspaceStatistics(featureCollection);
@@ -875,8 +894,8 @@ class AirspaceGeoJsonService {
       LoggingService.structured('AIRSPACE_FILTERING_RESULTS', {
         'total_features': featureCollection.features.length,
         'filtered_polygons': polygons.length,
-        'visible_enabled_types_count': visibleEnabledTypes.length,
-        'visible_enabled_types': visibleEnabledTypes.toList(),
+        'visible_included_types_count': visibleIncludedTypes.length,
+        'visible_included_types': visibleIncludedTypes.toList(),
       });
 
       return polygons;
