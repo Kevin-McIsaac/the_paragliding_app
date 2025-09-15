@@ -13,6 +13,7 @@ import '../../utils/map_tile_provider.dart';
 import '../../utils/airspace_overlay_manager.dart';
 import '../../services/openaip_service.dart';
 import '../../services/airspace_geojson_service.dart';
+import '../../data/models/airspace_enums.dart';
 import '../../services/airspace_identification_service.dart';
 import '../widgets/airspace_tooltip_widget.dart';
 import '../widgets/map_filter_fab.dart';
@@ -302,10 +303,9 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
     // Mark each airspace with its filter status for visual distinction
     for (final airspace in allAirspaces) {
-      final typeString = _getTypeStringFromCode(airspace.type);
       // OpenAipService uses inverted logic: true = filtered out, false = shown
-      final isTypeFiltered = enabledTypes[typeString] ?? false;  // true = filtered out
-      final isClassFiltered = enabledClasses[airspace.icaoClass ?? 8] ?? false;  // true = filtered out
+      final isTypeFiltered = enabledTypes[airspace.type] ?? false;  // true = filtered out
+      final isClassFiltered = enabledClasses[airspace.icaoClass ?? IcaoClass.none] ?? false;  // true = filtered out
       final isElevationFiltered = airspace.getLowerAltitudeInFeet() > widget.maxAltitudeFt;
 
       // Mark if this airspace is currently filtered out

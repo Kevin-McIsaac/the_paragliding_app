@@ -9,12 +9,13 @@ import 'package:clipper2/clipper2.dart' as clipper;
 import '../services/logging_service.dart';
 import '../services/openaip_service.dart';
 import '../services/airspace_identification_service.dart';
+import '../data/models/airspace_enums.dart';
 
 /// Data structure for airspace information
 class AirspaceData {
   final String name;
-  final int type;
-  final int? icaoClass;
+  final AirspaceType type;
+  final IcaoClass? icaoClass;
   final Map<String, dynamic>? upperLimit;
   final Map<String, dynamic>? lowerLimit;
   final String? country;
@@ -652,8 +653,8 @@ class AirspaceGeoJsonService {
   Future<List<fm.Polygon>> parseAirspaceGeoJson(
     String geoJsonString,
     double opacity,
-    Map<int, bool> enabledTypes,
-    Map<int, bool> enabledIcaoClasses,
+    Map<AirspaceType, bool> enabledTypes,
+    Map<IcaoClass, bool> enabledIcaoClasses,
     fm.LatLngBounds viewport,
     double maxAltitudeFt,
   ) async {
@@ -673,8 +674,8 @@ class AirspaceGeoJsonService {
           // Create airspace data from properties
           final airspaceData = AirspaceData(
             name: properties != null ? properties['name']?.toString() ?? 'Unknown Airspace' : 'Unknown Airspace',
-            type: properties != null ? (properties['type'] as int?) ?? 0 : 0,
-            icaoClass: properties != null ? properties['class'] as int? : null,
+            type: AirspaceType.fromCode(properties != null ? (properties['type'] as int?) ?? 0 : 0),
+            icaoClass: IcaoClass.fromCode(properties != null ? properties['class'] as int? : null),
             upperLimit: properties != null ? properties['upperLimit'] as Map<String, dynamic>? : null,
             lowerLimit: properties != null ? properties['lowerLimit'] as Map<String, dynamic>? : null,
             country: properties != null ? properties['country']?.toString() : null,
@@ -685,9 +686,9 @@ class AirspaceGeoJsonService {
           if (enabledTypes[airspaceData.type] == false) {
             LoggingService.debug('AIRSPACE_FILTERED_TYPE', {
               'name': airspaceData.name,
-              'type': airspaceData.type,
+              'type': airspaceData.type.abbreviation,
               'reason': 'Type explicitly disabled',
-              'disabled_types': enabledTypes.keys.where((k) => enabledTypes[k] == false).toList(),
+              'disabled_types': enabledTypes.keys.where((k) => enabledTypes[k] == false).map((k) => k.abbreviation).toList(),
             });
             continue; // Skip this airspace only if its type is explicitly disabled
           }
@@ -800,8 +801,8 @@ class AirspaceGeoJsonService {
       LoggingService.structured('AIRSPACE_FILTERING_SUMMARY', {
         'total_features_from_api': featureCollection.features.length,
         'features_after_filtering': polygons.length,
-        'enabled_types': enabledTypes.keys.where((k) => enabledTypes[k] == true).toList(),
-        'enabled_classes': enabledIcaoClasses.keys.where((k) => enabledIcaoClasses[k] == true).toList(),
+        'enabled_types': enabledTypes.keys.where((k) => enabledTypes[k] == true).map((k) => k.abbreviation).toList(),
+        'enabled_classes': enabledIcaoClasses.keys.where((k) => enabledIcaoClasses[k] == true).map((k) => k.abbreviation).toList(),
         'max_altitude_ft': maxAltitudeFt,
       });
 
@@ -848,7 +849,9 @@ class AirspaceGeoJsonService {
       if (props != null) {
         // Count by mapped type
         final originalType = props['type']?.toString() ?? 'null';
-        final mappedType = _mapOpenAipTypeToStyle(props['type']);
+        final typeValue = props['type'] as int? ?? 0;
+        final airspaceType = AirspaceType.fromCode(typeValue);
+        final mappedType = airspaceType.abbreviation;
 
         typeStats[mappedType] = (typeStats[mappedType] ?? 0) + 1;
         originalTypeStats[originalType] = (originalTypeStats[originalType] ?? 0) + 1;
@@ -917,10 +920,10 @@ class AirspaceGeoJsonService {
 
       if (points.isEmpty) return null;
 
-      // Get airspace style based on type (handle both String and int from OpenAIP)
-      final typeValue = props['type'];
-      final mappedType = _mapOpenAipTypeToStyle(typeValue);
-      final style = _airspaceStyles[mappedType] ?? _getDefaultStyle();
+      // Get airspace style based on type
+      final typeValue = props['type'] as int? ?? 0;
+      final airspaceType = AirspaceType.fromCode(typeValue);
+      final style = getStyleForType(airspaceType);
 
       // Debug logging for development only (disabled in production)
       // Uncomment for debugging new airspace types
@@ -1002,8 +1005,8 @@ class AirspaceGeoJsonService {
   }
 
   /// Get style for airspace type (for legend/UI purposes)
-  AirspaceStyle getStyleForType(String type) {
-    return _airspaceStyles[type.toUpperCase()] ?? _getDefaultStyle();
+  AirspaceStyle getStyleForType(AirspaceType type) {
+    return _airspaceStyles[type.abbreviation.toUpperCase()] ?? _getDefaultStyle();
   }
 
   /// Get all defined airspace types with their styles
@@ -1229,9 +1232,7 @@ class AirspaceGeoJsonService {
       final currentBounds = current.bounds; // Pre-calculated
 
       // Get style for current airspace
-      final typeValue = airspaceData.type;
-      final mappedType = _mapOpenAipTypeToStyle(typeValue);
-      final style = _airspaceStyles[mappedType] ?? _getDefaultStyle();
+      final style = getStyleForType(airspaceData.type);
 
       // Collect all lower-altitude polygons as clipping masks
       final List<List<LatLng>> clippingPolygons = [];

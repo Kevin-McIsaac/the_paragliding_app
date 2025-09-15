@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/airspace_geojson_service.dart';
+import '../../data/models/airspace_enums.dart';
 
 /// Widget that displays airspace information in a floating tooltip
 /// Positioned near the cursor/touch location on the map
@@ -210,7 +211,7 @@ class AirspaceTooltipWidget extends StatelessWidget {
   /// Build individual airspace information item (compact 2-line format)
   Widget _buildAirspaceItem(AirspaceData airspace) {
     // Get type-specific styling
-    final style = AirspaceGeoJsonService.instance.getStyleForType(_getTypeAbbreviation(airspace.type));
+    final style = AirspaceGeoJsonService.instance.getStyleForType(airspace.type);
 
     // Format compact details line (type, altitude, country)
     final String compactDetails = _formatCompactDetails(airspace);
@@ -303,9 +304,9 @@ class AirspaceTooltipWidget extends StatelessWidget {
                     fontSize: 12,
                     fontWeight: FontWeight.w400,
                   ),
-                  message: _getTypeTooltip(airspace.type),
+                  message: airspace.type.tooltip,
                   child: Text(
-                    '${_getTypeMappedString(airspace.type)},',
+                    '${airspace.type.abbreviation},',
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.85),
                       fontSize: 10,
@@ -315,7 +316,7 @@ class AirspaceTooltipWidget extends StatelessWidget {
                 ),
 
                 // ICAO class with mapping and tooltip (if available)
-                if (airspace.icaoClass != null && _getIcaoClassMappedString(airspace.icaoClass).isNotEmpty) ...[
+                if (airspace.icaoClass != null && airspace.icaoClass != IcaoClass.none) ...[
                   const SizedBox(width: 6),
                   Tooltip(
                     preferBelow: false,
@@ -330,9 +331,9 @@ class AirspaceTooltipWidget extends StatelessWidget {
                       fontSize: 12,
                       fontWeight: FontWeight.w400,
                     ),
-                    message: _getIcaoClassTooltip(airspace.icaoClass),
+                    message: airspace.icaoClass!.tooltip,
                     child: Text(
-                      '${_getIcaoClassMappedString(airspace.icaoClass)},',
+                      '${airspace.icaoClass!.abbreviation},',
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.85),
                         fontSize: 10,
@@ -456,13 +457,11 @@ class AirspaceTooltipWidget extends StatelessWidget {
     final parts = <String>[];
 
     // Add type abbreviation
-    final typeAbbrev = _getTypeAbbreviation(airspace.type);
-    parts.add(typeAbbrev);
+    parts.add(airspace.type.abbreviation);
 
     // Add ICAO class abbreviation if available
-    final icaoClassAbbrev = _getIcaoClassAbbreviation(airspace.icaoClass);
-    if (icaoClassAbbrev.isNotEmpty) {
-      parts.add(icaoClassAbbrev);
+    if (airspace.icaoClass != null && airspace.icaoClass != IcaoClass.none) {
+      parts.add(airspace.icaoClass!.abbreviation);
     }
 
     // Add altitude range with units
