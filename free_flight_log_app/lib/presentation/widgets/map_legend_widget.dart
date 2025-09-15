@@ -6,27 +6,24 @@ import '../../services/airspace_geojson_service.dart';
 class MapLegendWidget extends StatelessWidget {
   final bool isMergeMode;
   final bool sitesEnabled;
-  final Map<IcaoClass, bool> enabledIcaoClasses;
+  final Map<IcaoClass, bool> excludedIcaoClasses;
 
   const MapLegendWidget({
     super.key,
     this.isMergeMode = false,
     this.sitesEnabled = true,
-    this.enabledIcaoClasses = const {},
+    this.excludedIcaoClasses = const {},
   });
 
   @override
   Widget build(BuildContext context) {
     final airspaceService = AirspaceGeoJsonService.instance;
-    final enabledIcaoClassesList = enabledIcaoClasses.entries
-        .where((entry) => entry.value == true)
+    final visibleIcaoClassesList = excludedIcaoClasses.entries
+        .where((entry) => entry.value == false)  // false = not excluded = visible
         .map((entry) => entry.key)
         .toList();
 
-    return Positioned(
-      bottom: 60,
-      left: 10,
-      child: Container(
+    return Container(
         decoration: const BoxDecoration(
           color: Color(0xCC000000), // 80% black for better readability
           borderRadius: BorderRadius.all(Radius.circular(8)),
@@ -71,7 +68,7 @@ class MapLegendWidget extends StatelessWidget {
               ],
 
               // ICAO Classes section
-              if (enabledIcaoClassesList.isNotEmpty) ...[
+              if (visibleIcaoClassesList.isNotEmpty) ...[
                 if (sitesEnabled) ...[
                   const SizedBox(height: 8),
                   Container(
@@ -81,7 +78,7 @@ class MapLegendWidget extends StatelessWidget {
                   ),
                 ],
                 _buildSectionHeader('Airspace Classes'),
-                ...enabledIcaoClassesList.asMap().entries.map((entry) {
+                ...visibleIcaoClassesList.asMap().entries.map((entry) {
                   final index = entry.key;
                   final icaoClass = entry.value;
                   final style = airspaceService.getStyleForIcaoClass(icaoClass);
@@ -108,7 +105,7 @@ class MapLegendWidget extends StatelessWidget {
                             isSquare: true,
                           ),
                         ),
-                        if (index < enabledIcaoClassesList.length - 1)
+                        if (index < visibleIcaoClassesList.length - 1)
                           const SizedBox(height: 2),
                       ],
                     );
@@ -143,7 +140,6 @@ class MapLegendWidget extends StatelessWidget {
             ],
           ),
         ),
-      ),
     );
   }
 

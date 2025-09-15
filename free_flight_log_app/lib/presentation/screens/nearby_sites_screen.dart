@@ -81,7 +81,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   bool _airspaceEnabled = true; // Controls airspace loading and display
   double _maxAltitudeFt = 15000.0; // Default altitude filter
   int _filterUpdateCounter = 0; // Increments when any filter changes to trigger map refresh
-  Map<IcaoClass, bool> _enabledIcaoClasses = {}; // Current ICAO class filter state
+  Map<IcaoClass, bool> _excludedIcaoClasses = {}; // Current ICAO class filter state
   final OpenAipService _openAipService = OpenAipService.instance;
   
 
@@ -135,10 +135,10 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
   Future<void> _loadFilterSettings() async {
     try {
-      final icaoClasses = await _openAipService.getEnabledIcaoClasses();
+      final icaoClasses = await _openAipService.getExcludedIcaoClasses();
       if (mounted) {
         setState(() {
-          _enabledIcaoClasses = icaoClasses;
+          _excludedIcaoClasses = icaoClasses;
         });
       }
     } catch (e) {
@@ -597,8 +597,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   void _showMapFilterDialog() async {
     try {
       // Get current filter states
-      final airspaceTypesEnum = await _openAipService.getEnabledAirspaceTypes();
-      final icaoClassesEnum = await _openAipService.getEnabledIcaoClasses();
+      final airspaceTypesEnum = await _openAipService.getExcludedAirspaceTypes();
+      final icaoClassesEnum = await _openAipService.getExcludedIcaoClasses();
 
       // Convert enum maps to string maps for dialog
       final airspaceTypes = <String, bool>{
@@ -675,12 +675,12 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
         // Enable airspace and update filters
         await _openAipService.setAirspaceEnabled(true);
-        await _openAipService.setEnabledAirspaceTypes(typesEnum);
-        await _openAipService.setEnabledIcaoClasses(classesEnum);
+        await _openAipService.setExcludedAirspaceTypes(typesEnum);
+        await _openAipService.setExcludedIcaoClasses(classesEnum);
 
         // Update local state for immediate UI updates
         setState(() {
-          _enabledIcaoClasses = classesEnum;
+          _excludedIcaoClasses = classesEnum;
         });
 
         if (!previousAirspaceEnabled) {
@@ -692,7 +692,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
         // Clear local ICAO classes state
         setState(() {
-          _enabledIcaoClasses = {};
+          _excludedIcaoClasses = {};
         });
 
         if (previousAirspaceEnabled) {
@@ -743,8 +743,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   Future<bool> _hasActiveFilters() async {
     try {
       // Check if any airspace types or classes are disabled from defaults
-      final types = await _openAipService.getEnabledAirspaceTypes();
-      final classes = await _openAipService.getEnabledIcaoClasses();
+      final types = await _openAipService.getExcludedAirspaceTypes();
+      final classes = await _openAipService.getExcludedIcaoClasses();
 
       // Consider filters active if any type/class is disabled or sites are disabled
       final hasDisabledTypes = types.values.contains(false);
@@ -809,7 +809,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                               sitesEnabled: _sitesEnabled,
                               maxAltitudeFt: _maxAltitudeFt,
                               filterUpdateCounter: _filterUpdateCounter,
-                              enabledIcaoClasses: _enabledIcaoClasses,
+                              excludedIcaoClasses: _excludedIcaoClasses,
                             );
                           },
                         ),

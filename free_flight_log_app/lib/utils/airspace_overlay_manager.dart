@@ -232,15 +232,15 @@ class AirspaceOverlayManager {
       // Fetch GeoJSON data from OpenAIP
       final geoJsonString = await _geoJsonService.fetchAirspaceGeoJson(bounds);
 
-      // Get enabled airspace types and ICAO classes for filtering (now enum-based)
-      final enabledTypes = await _openAipService.getEnabledAirspaceTypes();
-      final enabledClasses = await _openAipService.getEnabledIcaoClasses();
+      // Get excluded airspace types and ICAO classes for filtering (now enum-based)
+      final excludedTypes = await _openAipService.getExcludedAirspaceTypes();
+      final excludedClasses = await _openAipService.getExcludedIcaoClasses();
 
       // Time the airspace processing/clipping step
       final processingStopwatch = Stopwatch()..start();
 
-      // Parse GeoJSON and convert to styled polygons (filtered by enabled types and classes)
-      final polygons = await _geoJsonService.parseAirspaceGeoJson(geoJsonString, opacity, enabledTypes, enabledClasses, bounds, maxAltitudeFt);
+      // Parse GeoJSON and convert to styled polygons (filtered by excluded types and classes)
+      final polygons = await _geoJsonService.parseAirspaceGeoJson(geoJsonString, opacity, excludedTypes, excludedClasses, bounds, maxAltitudeFt);
 
       processingStopwatch.stop();
       stopwatch.stop();
@@ -254,8 +254,8 @@ class AirspaceOverlayManager {
       LoggingService.structured('AIRSPACE_FETCH_SUCCESS', {
         'polygon_count': polygons.length,
         'geojson_size': geoJsonString.length,
-        'enabled_types_count': enabledTypes.values.where((enabled) => enabled).length,
-        'total_types_count': enabledTypes.length,
+        'excluded_types_count': excludedTypes.values.where((excluded) => excluded).length,
+        'total_types_count': excludedTypes.length,
         'total_time_ms': stopwatch.elapsedMilliseconds,
         'processing_time_ms': processingStopwatch.elapsedMilliseconds,
       });

@@ -679,12 +679,12 @@ class AirspaceGeoJsonService {
 
   /// Parse GeoJSON string and return styled polygons for flutter_map
   /// Also populates the AirspaceIdentificationService with polygon data
-  /// Filters polygons based on user-enabled airspace types
+  /// Filters polygons based on user-excluded airspace types
   Future<List<fm.Polygon>> parseAirspaceGeoJson(
     String geoJsonString,
     double opacity,
-    Map<AirspaceType, bool> enabledTypes,
-    Map<IcaoClass, bool> enabledIcaoClasses,
+    Map<AirspaceType, bool> excludedTypes,
+    Map<IcaoClass, bool> excludedIcaoClasses,
     fm.LatLngBounds viewport,
     double maxAltitudeFt,
   ) async {
@@ -695,7 +695,7 @@ class AirspaceGeoJsonService {
       List<fm.Polygon> polygons = <fm.Polygon>[];
       List<AirspacePolygonData> identificationPolygons = <AirspacePolygonData>[];
       List<AirspacePolygonData> allIdentificationPolygons = <AirspacePolygonData>[]; // For tooltip - includes ALL airspaces
-      final Set<AirspaceType> visibleEnabledTypes = <AirspaceType>{}; // Track visible enabled types
+      final Set<AirspaceType> visibleIncludedTypes = <AirspaceType>{}; // Track visible included types
 
       for (final feature in featureCollection.features) {
         final geometry = feature.geometry;
@@ -734,30 +734,30 @@ class AirspaceGeoJsonService {
             }
           }
 
-          // Filter based on disabled airspace types - skip only if explicitly disabled
-          // This inverted logic ensures unmapped types are shown by default
-          if (enabledTypes[airspaceData.type] == false) {
+          // Filter based on excluded airspace types - skip only if explicitly excluded
+          // This logic ensures unmapped types are shown by default
+          if (excludedTypes[airspaceData.type] == true) {
             LoggingService.debug('AIRSPACE_FILTERED_TYPE', {
               'name': airspaceData.name,
               'type': airspaceData.type.abbreviation,
-              'reason': 'Type explicitly disabled',
-              'disabled_types': enabledTypes.keys.where((k) => enabledTypes[k] == false).map((k) => k.abbreviation).toList(),
+              'reason': 'Type explicitly excluded',
+              'excluded_types': excludedTypes.keys.where((k) => excludedTypes[k] == true).map((k) => k.abbreviation).toList(),
             });
-            continue; // Skip this airspace only if its type is explicitly disabled
+            continue; // Skip this airspace only if its type is explicitly excluded
           }
 
-          // Filter based on disabled ICAO classes - skip only if explicitly disabled
-          // Handle null ICAO class (treat as 8 for 'None' per OpenAIP spec)
-          final icaoClassKey = airspaceData.icaoClass ?? 8;
-          if (enabledIcaoClasses[icaoClassKey] == false) {
+          // Filter based on excluded ICAO classes - skip only if explicitly excluded
+          // Handle null ICAO class (treat as IcaoClass.none per OpenAIP spec)
+          final icaoClassKey = airspaceData.icaoClass ?? IcaoClass.none;
+          if (excludedIcaoClasses[icaoClassKey] == true) {
             LoggingService.debug('AIRSPACE_FILTERED_CLASS', {
               'name': airspaceData.name,
               'type': airspaceData.type,
               'icao_class': icaoClassKey,
-              'reason': 'ICAO class explicitly disabled',
-              'disabled_classes': enabledIcaoClasses.keys.where((k) => enabledIcaoClasses[k] == false).toList(),
+              'reason': 'ICAO class explicitly excluded',
+              'excluded_classes': excludedIcaoClasses.keys.where((k) => excludedIcaoClasses[k] == true).toList(),
             });
-            continue; // Skip this airspace only if its ICAO class is explicitly disabled
+            continue; // Skip this airspace only if its ICAO class is explicitly excluded
           }
 
           // Filter based on maximum elevation setting
@@ -773,8 +773,8 @@ class AirspaceGeoJsonService {
             continue; // Skip airspaces that start above the elevation filter
           }
 
-          // Track this type as visible and enabled
-          visibleEnabledTypes.add(airspaceData.type);
+          // Track this type as visible and included
+          visibleIncludedTypes.add(airspaceData.type);
 
           // Handle different geometry types
           if (geometry is geo.GeometryCollection) {
@@ -854,8 +854,8 @@ class AirspaceGeoJsonService {
       LoggingService.structured('AIRSPACE_FILTERING_SUMMARY', {
         'total_features_from_api': featureCollection.features.length,
         'features_after_filtering': polygons.length,
-        'enabled_types': enabledTypes.keys.where((k) => enabledTypes[k] == true).map((k) => k.abbreviation).toList(),
-        'enabled_classes': enabledIcaoClasses.keys.where((k) => enabledIcaoClasses[k] == true).map((k) => k.abbreviation).toList(),
+        'included_types': excludedTypes.keys.where((k) => excludedTypes[k] == false).map((k) => k.abbreviation).toList(),
+        'included_classes': excludedIcaoClasses.keys.where((k) => excludedIcaoClasses[k] == false).map((k) => k.abbreviation).toList(),
         'max_altitude_ft': maxAltitudeFt,
       });
 
@@ -867,7 +867,7 @@ class AirspaceGeoJsonService {
       });
 
       // Update visible types with only enabled types that are present
-      _currentVisibleTypes = visibleEnabledTypes;
+      _currentVisibleTypes = visibleIncludedTypes;
 
       // Add airspace statistics logging (for debugging)
       _logAirspaceStatistics(featureCollection);
@@ -875,8 +875,8 @@ class AirspaceGeoJsonService {
       LoggingService.structured('AIRSPACE_FILTERING_RESULTS', {
         'total_features': featureCollection.features.length,
         'filtered_polygons': polygons.length,
-        'visible_enabled_types_count': visibleEnabledTypes.length,
-        'visible_enabled_types': visibleEnabledTypes.toList(),
+        'visible_included_types_count': visibleIncludedTypes.length,
+        'visible_included_types': visibleIncludedTypes.toList(),
       });
 
       return polygons;

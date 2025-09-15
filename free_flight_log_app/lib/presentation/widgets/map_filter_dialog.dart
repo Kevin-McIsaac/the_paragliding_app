@@ -142,6 +142,63 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                     _buildTopTwoColumnSection(),
                     const SizedBox(height: 16),
 
+                    // Exclude header row
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 1,
+                          child: Opacity(
+                            opacity: _airspaceEnabled ? 1.0 : 0.3,
+                            child: Center(
+                              child: Text(
+                                'Exclude',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.orange.withValues(alpha: 0.9),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          flex: 1,
+                          child: Opacity(
+                            opacity: _airspaceEnabled ? 1.0 : 0.3,
+                            child: Center(
+                              child: Text(
+                                'Exclude',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.orange.withValues(alpha: 0.9),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          flex: 1,
+                          child: Opacity(
+                            opacity: _airspaceEnabled ? 1.0 : 0.3,
+                            child: Center(
+                              child: Text(
+                                'Exclude',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.orange.withValues(alpha: 0.9),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+
                     // Three-column layout: Types | Classes | Altitude
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,

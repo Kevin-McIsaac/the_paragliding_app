@@ -43,7 +43,7 @@ class NearbySitesMapWidget extends StatefulWidget {
   final bool sitesEnabled;
   final double maxAltitudeFt;
   final int filterUpdateCounter;
-  final Map<IcaoClass, bool> enabledIcaoClasses;
+  final Map<IcaoClass, bool> excludedIcaoClasses;
 
   const NearbySitesMapWidget({
     super.key,
@@ -70,7 +70,7 @@ class NearbySitesMapWidget extends StatefulWidget {
     this.sitesEnabled = true,
     this.maxAltitudeFt = 15000.0,
     this.filterUpdateCounter = 0,
-    this.enabledIcaoClasses = const {},
+    this.excludedIcaoClasses = const {},
   });
 
   @override
@@ -300,15 +300,15 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     // Identify airspaces at the point (using map coordinates from FlutterMap)
     final allAirspaces = AirspaceIdentificationService.instance.identifyAirspacesAtPoint(mapPoint);
 
-    // Get filter settings to mark which airspaces are currently filtered
-    final enabledTypes = await OpenAipService.instance.getEnabledAirspaceTypes();
-    final enabledClasses = await OpenAipService.instance.getEnabledIcaoClasses();
+    // Get exclusion settings to mark which airspaces are currently filtered
+    final excludedTypes = await OpenAipService.instance.getExcludedAirspaceTypes();
+    final excludedClasses = await OpenAipService.instance.getExcludedIcaoClasses();
 
     // Mark each airspace with its filter status for visual distinction
     for (final airspace in allAirspaces) {
-      // Check if airspace is filtered: false = filtered out, true/null = shown
-      final isTypeFiltered = enabledTypes[airspace.type] == false;  // false = filtered out
-      final isClassFiltered = enabledClasses[airspace.icaoClass ?? IcaoClass.none] == false;  // false = filtered out
+      // Check if airspace is filtered: true = excluded/filtered out, false/null = shown
+      final isTypeFiltered = excludedTypes[airspace.type] == true;  // true = excluded/filtered out
+      final isClassFiltered = excludedClasses[airspace.icaoClass ?? IcaoClass.none] == true;  // true = excluded/filtered out
       final isElevationFiltered = airspace.getLowerAltitudeInFeet() > widget.maxAltitudeFt;
 
       // Mark if this airspace is currently filtered out
@@ -465,7 +465,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
           MapLegendWidget(
             isMergeMode: false, // Merge mode not relevant for this widget
             sitesEnabled: widget.sitesEnabled,
-            enabledIcaoClasses: widget.enabledIcaoClasses,
+            excludedIcaoClasses: widget.excludedIcaoClasses,
           ),
           
           const SizedBox(width: 8),

@@ -292,7 +292,7 @@ class AirspaceTooltipWidget extends StatelessWidget {
                   ),
                   message: airspace.type.tooltip,
                   child: Text(
-                    '${airspace.type.abbreviation},',
+                    '${_getDisplayTypeAbbreviation(airspace.type)},',
                     style: TextStyle(
                       color: airspace.isCurrentlyFiltered
                         ? Colors.grey.withValues(alpha: 0.8)
@@ -303,8 +303,8 @@ class AirspaceTooltipWidget extends StatelessWidget {
                   ),
                 ),
 
-                // ICAO class with mapping and tooltip (if available)
-                if (airspace.icaoClass != null && airspace.icaoClass != IcaoClass.none) ...[
+                // ICAO class with mapping and tooltip (always show if available)
+                if (airspace.icaoClass != null) ...[
                   const SizedBox(width: 6),
                   Tooltip(
                     preferBelow: false,
@@ -321,7 +321,7 @@ class AirspaceTooltipWidget extends StatelessWidget {
                     ),
                     message: airspace.icaoClass!.tooltip,
                     child: Text(
-                      '${airspace.icaoClass!.abbreviation},',
+                      '${_getDisplayIcaoClassAbbreviation(airspace.icaoClass!)},',
                       style: TextStyle(
                         color: airspace.isCurrentlyFiltered
                           ? Colors.grey.withValues(alpha: 0.8)
@@ -686,5 +686,21 @@ class AirspaceTooltipWidget extends StatelessWidget {
     };
 
     return icaoTooltipMap[icaoClassCode] ?? 'ICAO Class $icaoClassCode';
+  }
+
+  /// Get display abbreviation for airspace type, showing 'Unknown' for unmapped types
+  String _getDisplayTypeAbbreviation(AirspaceType type) {
+    if (type == AirspaceType.other) {
+      return 'Unknown';
+    }
+    return type.abbreviation;
+  }
+
+  /// Get display abbreviation for ICAO class, showing 'No Class' for unmapped classes
+  String _getDisplayIcaoClassAbbreviation(IcaoClass icaoClass) {
+    if (icaoClass == IcaoClass.none) {
+      return 'No Class';
+    }
+    return icaoClass.abbreviation;
   }
 }
