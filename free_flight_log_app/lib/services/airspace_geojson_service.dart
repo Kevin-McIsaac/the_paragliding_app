@@ -664,6 +664,7 @@ class AirspaceGeoJsonService {
 
       List<fm.Polygon> polygons = <fm.Polygon>[];
       List<AirspacePolygonData> identificationPolygons = <AirspacePolygonData>[];
+      List<AirspacePolygonData> allIdentificationPolygons = <AirspacePolygonData>[]; // For tooltip - includes ALL airspaces
       final Set<AirspaceType> visibleEnabledTypes = <AirspaceType>{}; // Track visible enabled types
 
       for (final feature in featureCollection.features) {
@@ -680,6 +681,28 @@ class AirspaceGeoJsonService {
             lowerLimit: properties != null ? properties['lowerLimit'] as Map<String, dynamic>? : null,
             country: properties != null ? properties['country']?.toString() : null,
           );
+
+          // Always add to identification polygons first (for tooltip - regardless of filters)
+          if (geometry is geo.GeometryCollection) {
+            // Handle geometry collections
+            for (final geom in geometry.geometries) {
+              final result = _createPolygonFromGeometry(geom, properties, opacity);
+              if (result != null) {
+                allIdentificationPolygons.add(AirspacePolygonData(
+                  points: result.points,
+                  airspaceData: airspaceData,
+                ));
+              }
+            }
+          } else {
+            final result = _createPolygonFromGeometry(geometry, properties, opacity);
+            if (result != null) {
+              allIdentificationPolygons.add(AirspacePolygonData(
+                points: result.points,
+                airspaceData: airspaceData,
+              ));
+            }
+          }
 
           // Filter based on disabled airspace types - skip only if explicitly disabled
           // This inverted logic ensures unmapped types are shown by default
@@ -793,9 +816,9 @@ class AirspaceGeoJsonService {
         });
       }
 
-      // Update the identification service with polygon data
+      // Update the identification service with polygon data (use ALL airspaces, not just filtered ones)
       final boundsKey = _generateBoundsKeyFromGeoJson(featureCollection);
-      AirspaceIdentificationService.instance.updateAirspacePolygons(identificationPolygons, boundsKey);
+      AirspaceIdentificationService.instance.updateAirspacePolygons(allIdentificationPolygons, boundsKey);
 
       // Log filtering summary
       LoggingService.structured('AIRSPACE_FILTERING_SUMMARY', {

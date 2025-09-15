@@ -246,8 +246,8 @@ class AirspaceTooltipWidget extends StatelessWidget {
                     Expanded(
                       child: Text(
                         airspace.name,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: airspace.isCurrentlyFiltered ? Colors.grey : Colors.white,
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
@@ -255,30 +255,35 @@ class AirspaceTooltipWidget extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    // Filter status indicator
-                    if (airspace.isCurrentlyFiltered)
-                      Tooltip(
-                        preferBelow: false,
-                        message: 'This airspace is currently filtered (hidden on map)',
-                        decoration: BoxDecoration(
-                          color: const Color(0xE6000000),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-                        ),
-                        textStyle: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w400,
-                        ),
-                        child: Container(
-                          padding: const EdgeInsets.all(2),
-                          child: Icon(
-                            Icons.visibility_off,
-                            size: 12,
-                            color: Colors.orange.withValues(alpha: 0.8),
-                          ),
+                    // Filter status indicator (always shown)
+                    Tooltip(
+                      preferBelow: false,
+                      message: airspace.isCurrentlyFiltered
+                        ? 'This airspace is currently hidden on map'
+                        : 'This airspace is visible on map',
+                      decoration: BoxDecoration(
+                        color: const Color(0xE6000000),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                      ),
+                      textStyle: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        child: Icon(
+                          airspace.isCurrentlyFiltered
+                            ? Icons.visibility_off
+                            : Icons.visibility,
+                          size: 12,
+                          color: airspace.isCurrentlyFiltered
+                            ? Colors.orange.withValues(alpha: 0.8)
+                            : Colors.green.withValues(alpha: 0.8),
                         ),
                       ),
+                    ),
                   ],
                 ),
               ),
