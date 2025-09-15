@@ -429,55 +429,6 @@ class AirspaceTooltipWidget extends StatelessWidget {
   }
 
 
-  /// Get airspace type abbreviation from numeric code
-  String _getTypeAbbreviation(int typeCode) {
-    final typeMap = {
-      0: 'Unknown',
-      1: 'R',       // Restricted
-      2: 'D',       // Danger
-      4: 'CTR',     // Control Zone
-      6: 'TMA',     // Terminal Control Area
-      7: 'TMA',     // Terminal Control Area
-      10: 'FIR',    // Flight Information Region
-      26: 'CTA',    // Control Terminal Area
-    };
-
-    return typeMap[typeCode] ?? 'Unknown';
-  }
-
-  /// Get airspace type full name from numeric code
-  String _getTypeDescription(int typeCode) {
-    final typeDescriptionMap = {
-      0: 'Unknown Airspace',
-      1: 'Restricted Area',
-      2: 'Danger Area',
-      4: 'Control Zone',
-      6: 'Terminal Control Area',
-      7: 'Terminal Control Area',
-      10: 'Flight Information Region',
-      26: 'Control Terminal Area',
-    };
-
-    return typeDescriptionMap[typeCode] ?? 'Unknown Airspace Type';
-  }
-
-  /// Get ICAO class abbreviation from numeric code
-  String _getIcaoClassAbbreviation(int? icaoClassCode) {
-    if (icaoClassCode == null) return '';
-
-    final icaoClassMap = {
-      0: 'Class A',       // Class A - Controlled
-      1: 'Class B',       // Class B - Controlled
-      2: 'Class C',       // Class C - Controlled
-      3: 'Class D',       // Class D - Controlled
-      4: 'Class E',       // Class E - Controlled
-      5: 'Class F',       // Class F - Advisory
-      6: 'Class G',       // Class G - Uncontrolled
-      8: 'None',          // No class defined/Unknown
-    };
-
-    return icaoClassMap[icaoClassCode] ?? '';
-  }
 
   /// Get ICAO class full description from numeric code
   String _getIcaoClassDescription(int? icaoClassCode) {
@@ -647,17 +598,13 @@ class AirspaceTooltipWidget extends StatelessWidget {
 
   /// Get display abbreviation for airspace type, showing 'Unknown' for unmapped types
   String _getDisplayTypeAbbreviation(AirspaceType type) {
-    if (type == AirspaceType.other) {
-      return 'Unknown';
-    }
+    // Always use the enum's abbreviation for consistency with Filter Map
     return type.abbreviation;
   }
 
-  /// Get display abbreviation for ICAO class, showing 'No Class' for unmapped classes
+  /// Get display abbreviation for ICAO class, using enum's display name for consistency
   String _getDisplayIcaoClassAbbreviation(IcaoClass icaoClass) {
-    if (icaoClass == IcaoClass.none) {
-      return 'No Class';
-    }
-    return icaoClass.abbreviation;
+    // Always use the enum's display name for consistency with Filter Map
+    return icaoClass.displayName;
   }
 }

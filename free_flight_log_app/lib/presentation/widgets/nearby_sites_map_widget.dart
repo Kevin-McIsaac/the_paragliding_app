@@ -124,6 +124,8 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         oldWidget.filterUpdateCounter != widget.filterUpdateCounter) {
       // Reload overlays with new filter settings
       _loadAirspaceLayers();
+      // Refresh tooltip with updated filter status if currently open
+      _refreshTooltipIfOpen();
     }
 
     // Priority 1: Check if we should fit to exact bounds (for precise area display)
@@ -300,20 +302,8 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     // Identify airspaces at the point (using map coordinates from FlutterMap)
     final allAirspaces = AirspaceIdentificationService.instance.identifyAirspacesAtPoint(mapPoint);
 
-    // Get exclusion settings to mark which airspaces are currently filtered
-    final excludedTypes = await OpenAipService.instance.getExcludedAirspaceTypes();
-    final excludedClasses = await OpenAipService.instance.getExcludedIcaoClasses();
-
-    // Mark each airspace with its filter status for visual distinction
-    for (final airspace in allAirspaces) {
-      // Check if airspace is filtered: true = excluded/filtered out, false/null = shown
-      final isTypeFiltered = excludedTypes[airspace.type] == true;  // true = excluded/filtered out
-      final isClassFiltered = excludedClasses[airspace.icaoClass ?? IcaoClass.none] == true;  // true = excluded/filtered out
-      final isElevationFiltered = airspace.getLowerAltitudeInFeet() > widget.maxAltitudeFt;
-
-      // Mark if this airspace is currently filtered out
-      airspace.isCurrentlyFiltered = isTypeFiltered || isClassFiltered || isElevationFiltered;
-    }
+    // Update filter status for all identified airspaces
+    await _updateAirspaceFilterStatus(allAirspaces);
 
     // Sort all airspaces by lower altitude limit (ascending), then by upper altitude limit (ascending)
     allAirspaces.sort((a, b) {
@@ -338,6 +328,71 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     } else {
       // No airspaces found, hide tooltip
       _hideTooltip();
+    }
+  }
+
+  /// Update airspace filter status flags based on current filter settings
+  Future<void> _updateAirspaceFilterStatus(List<AirspaceData> airspaces) async {
+    if (airspaces.isEmpty) return;
+
+    // Get current exclusion settings
+    final excludedTypes = await OpenAipService.instance.getExcludedAirspaceTypes();
+    final excludedClasses = await OpenAipService.instance.getExcludedIcaoClasses();
+
+    // Update filter status for each airspace
+    for (final airspace in airspaces) {
+      // Check if airspace is filtered: true = excluded/filtered out, false/null = shown
+      final isTypeFiltered = excludedTypes[airspace.type] == true;
+      final isClassFiltered = excludedClasses[airspace.icaoClass ?? IcaoClass.none] == true;
+      final isElevationFiltered = airspace.getLowerAltitudeInFeet() > widget.maxAltitudeFt;
+
+      // Mark if this airspace is currently filtered out
+      airspace.isCurrentlyFiltered = isTypeFiltered || isClassFiltered || isElevationFiltered;
+    }
+  }
+
+  /// Refresh tooltip if currently open by re-identifying airspaces with updated filter status
+  Future<void> _refreshTooltipIfOpen() async {
+    if (!_showTooltip || _tooltipPosition == null) return;
+
+    try {
+      // Convert screen position back to map coordinates
+      // We need to estimate the LatLng from the screen position
+      // The exact conversion requires the map controller's current state
+      final camera = _mapController.camera;
+      final bounds = camera.visibleBounds;
+      final size = MediaQuery.of(context).size;
+
+      // Convert screen position to normalized coordinates (0-1)
+      final normalizedX = _tooltipPosition!.dx / size.width;
+      final normalizedY = _tooltipPosition!.dy / size.height;
+
+      // Convert to LatLng based on current map bounds
+      final lat = bounds.north - (bounds.north - bounds.south) * normalizedY;
+      final lng = bounds.west + (bounds.east - bounds.west) * normalizedX;
+      final mapPoint = LatLng(lat, lng);
+
+      // Re-identify airspaces at the same location
+      final allAirspaces = AirspaceIdentificationService.instance.identifyAirspacesAtPoint(mapPoint);
+
+      // Update filter status for all identified airspaces
+      await _updateAirspaceFilterStatus(allAirspaces);
+
+      // Sort airspaces by altitude (same as original logic)
+      allAirspaces.sort((a, b) {
+        int lowerCompare = a.getLowerAltitudeInFeet().compareTo(b.getLowerAltitudeInFeet());
+        if (lowerCompare != 0) return lowerCompare;
+        return a.getUpperAltitudeInFeet().compareTo(b.getUpperAltitudeInFeet());
+      });
+
+      // Update tooltip with refreshed airspace data
+      if (mounted) {
+        setState(() {
+          _tooltipAirspaces = allAirspaces;
+        });
+      }
+    } catch (error, stackTrace) {
+      LoggingService.error('Failed to refresh tooltip airspaces', error, stackTrace);
     }
   }
 

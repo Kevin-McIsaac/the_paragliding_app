@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../data/models/airspace_enums.dart';
-import '../../services/airspace_geojson_service.dart';
 
 /// Widget for displaying map legend
-class MapLegendWidget extends StatelessWidget {
+class MapLegendWidget extends StatefulWidget {
   final bool isMergeMode;
   final bool sitesEnabled;
   final Map<IcaoClass, bool> excludedIcaoClasses;
@@ -16,43 +15,114 @@ class MapLegendWidget extends StatelessWidget {
   });
 
   @override
+  State<MapLegendWidget> createState() => _MapLegendWidgetState();
+}
+
+class _MapLegendWidgetState extends State<MapLegendWidget> with SingleTickerProviderStateMixin {
+  bool _isExpanded = true;
+  late AnimationController _animationController;
+  late Animation<double> _expandAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 200),
+      vsync: this,
+    );
+    _expandAnimation = CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeInOut,
+    );
+    if (_isExpanded) {
+      _animationController.value = 1.0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  void _toggleExpanded() {
+    setState(() {
+      _isExpanded = !_isExpanded;
+      if (_isExpanded) {
+        _animationController.forward();
+      } else {
+        _animationController.reverse();
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final airspaceService = AirspaceGeoJsonService.instance;
-    final visibleIcaoClassesList = excludedIcaoClasses.entries
+    final visibleIcaoClassesList = widget.excludedIcaoClasses.entries
         .where((entry) => entry.value == false)  // false = not excluded = visible
         .map((entry) => entry.key)
         .toList();
 
     return Container(
-        decoration: const BoxDecoration(
-          color: Color(0xCC000000), // 80% black for better readability
-          borderRadius: BorderRadius.all(Radius.circular(8)),
+        decoration: BoxDecoration(
+          color: const Color(0x80000000), // 50% black to match other controls
+          borderRadius: const BorderRadius.all(Radius.circular(4)), // Match search bar radius
           boxShadow: [
             BoxShadow(
-              color: Colors.black26,
-              blurRadius: 6,
-              offset: Offset(0, 3),
+              color: Colors.black.withValues(alpha: 0.3),
+              blurRadius: 4, // Match other controls
+              offset: const Offset(0, 2), // Match other controls
             ),
           ],
         ),
         child: Padding(
-          padding: const EdgeInsets.all(12.0),
+          // Conditional padding: less when collapsed to match search bar height
+          padding: _isExpanded
+              ? const EdgeInsets.all(12.0)
+              : const EdgeInsets.symmetric(horizontal: 12.0, vertical: 10.0),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Legend',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                  color: Colors.white,
+              // Clickable header with expand/collapse
+              InkWell(
+                onTap: _toggleExpanded,
+                borderRadius: BorderRadius.circular(4),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2.0),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Legend',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        _isExpanded ? Icons.expand_less : Icons.expand_more,
+                        color: Colors.white70,
+                        size: 16,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 6),
 
-              // Sites section
-              if (sitesEnabled) ...[
+              // Animated expandable content
+              SizeTransition(
+                sizeFactor: _expandAnimation,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 6),
+
+                    // Sites section
+                    if (widget.sitesEnabled) ...[
                 _buildSectionHeader('Sites'),
                 _buildLegendItem(
                   Icons.location_on,
@@ -67,9 +137,9 @@ class MapLegendWidget extends StatelessWidget {
                 ),
               ],
 
-              // ICAO Classes section
-              if (visibleIcaoClassesList.isNotEmpty) ...[
-                if (sitesEnabled) ...[
+                    // ICAO Classes section
+                    if (visibleIcaoClassesList.isNotEmpty) ...[
+                      if (widget.sitesEnabled) ...[
                   const SizedBox(height: 8),
                   Container(
                     height: 1,
@@ -81,48 +151,50 @@ class MapLegendWidget extends StatelessWidget {
                 ...visibleIcaoClassesList.asMap().entries.map((entry) {
                   final index = entry.key;
                   final icaoClass = entry.value;
-                  final style = airspaceService.getStyleForIcaoClass(icaoClass);
-                  if (style != null) {
-                    return Column(
-                      children: [
-                        _buildLegendItem(
+                  return Column(
+                    children: [
+                      Tooltip(
+                        message: icaoClass.description,
+                        child: _buildLegendItem(
                           null,
-                          style.borderColor,
+                          icaoClass.borderColor,
                           'Class ${icaoClass.abbreviation}',
                           isSquare: true,
                         ),
-                        if (index < visibleIcaoClassesList.length - 1)
-                          const SizedBox(height: 2),
-                      ],
-                    );
-                  }
-                  return const SizedBox.shrink();
+                      ),
+                      if (index < visibleIcaoClassesList.length - 1)
+                        const SizedBox(height: 2),
+                    ],
+                  );
                 }).toList(),
               ],
 
-              if (isMergeMode) ...[
+                    if (widget.isMergeMode) ...[
                 Container(
                   height: 1,
                   color: Colors.white12,
                   margin: const EdgeInsets.symmetric(vertical: 8),
                 ),
-                const Text(
-                  'Merge Mode Active',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 11,
-                    color: Colors.orange,
-                  ),
+                      const Text(
+                        'Merge Mode Active',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                          color: Colors.orange,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      const Text(
+                        'Drop site on target',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.white70,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-                const SizedBox(height: 2),
-                const Text(
-                  'Drop site on target',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.white70,
-                  ),
-                ),
-              ],
+              ),
             ],
           ),
         ),

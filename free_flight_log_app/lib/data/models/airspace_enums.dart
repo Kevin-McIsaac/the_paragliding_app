@@ -1,6 +1,7 @@
 /// Enum definitions for OpenAIP airspace types and ICAO classes
 /// Provides type safety and centralized mapping for airspace data
 
+import 'package:flutter/material.dart';
 import '../../services/logging_service.dart';
 
 /// OpenAIP airspace type classifications
@@ -82,21 +83,86 @@ enum AirspaceType {
 /// ICAO airspace class classifications
 /// Based on International Civil Aviation Organization standards
 enum IcaoClass {
-  classA(0, 'A', 'Class A', 'IFR only. All flights receive ATC service and separation'),
-  classB(1, 'B', 'Class B', 'IFR/VFR. All flights receive ATC service and separation'),
-  classC(2, 'C', 'Class C', 'IFR/VFR. All receive ATC, IFR separated from all'),
-  classD(3, 'D', 'Class D', 'IFR/VFR. All receive ATC, IFR separated from IFR only'),
-  classE(4, 'E', 'Class E', 'IFR/VFR. IFR receives ATC service and separation'),
-  classF(5, 'F', 'Class F', 'IFR/VFR. Advisory service, not widely implemented'),
-  classG(6, 'G', 'Class G', 'Uncontrolled airspace, flight information only'),
-  none(8, 'None', 'No Class', 'No ICAO class assigned in the OpenAIP system');
+  classA(
+    0,
+    'A',
+    'Class A',
+    'IFR only. All flights receive ATC service and separation',
+    Color(0xFFFF0000),  // Red border
+    Color(0x1AFF0000),  // 10% opacity red fill
+  ),
+  classB(
+    1,
+    'B',
+    'Class B',
+    'IFR/VFR. All flights receive ATC service and separation',
+    Color(0xFFFFA500),  // Orange border
+    Color(0x1AFFA500),  // 10% opacity orange fill
+  ),
+  classC(
+    2,
+    'C',
+    'Class C',
+    'IFR/VFR. All receive ATC, IFR separated from all',
+    Color(0xFFFFD700),  // Yellow/Gold border
+    Color(0x1AFFD700),  // 10% opacity yellow fill
+  ),
+  classD(
+    3,
+    'D',
+    'Class D',
+    'IFR/VFR. All receive ATC, IFR separated from IFR only',
+    Color(0xFF0080FF),  // Blue border
+    Color(0x1A0080FF),  // 10% opacity blue fill
+  ),
+  classE(
+    4,
+    'E',
+    'Class E',
+    'IFR/VFR. IFR receives ATC service and separation',
+    Color(0xFF9370DB),  // Purple border
+    Color(0x1A9370DB),  // 10% opacity purple fill
+  ),
+  classF(
+    5,
+    'F',
+    'Class F',
+    'IFR/VFR. Advisory service, not widely implemented',
+    Color(0xFF00CED1),  // Cyan/Turquoise border
+    Color(0x1A00CED1),  // 10% opacity cyan fill
+  ),
+  classG(
+    6,
+    'G',
+    'Class G',
+    'Uncontrolled airspace, flight information only',
+    Color(0xFF00C000),  // Green border
+    Color(0x1A00C000),  // 10% opacity green fill
+  ),
+  none(
+    8,
+    'None',
+    'Class None',
+    'No ICAO class assigned in the OpenAIP system',
+    Color(0xFF404040),  // Dark gray border
+    Color(0x1A404040),  // 10% opacity dark gray fill
+  );
 
-  const IcaoClass(this.code, this.abbreviation, this.displayName, this.description);
+  const IcaoClass(
+    this.code,
+    this.abbreviation,
+    this.displayName,
+    this.description,
+    this.borderColor,
+    this.fillColor,
+  );
 
   final int code;
   final String abbreviation;
   final String displayName;
   final String description;
+  final Color borderColor;
+  final Color fillColor;
 
   /// Convert from OpenAIP numeric code to enum
   static IcaoClass? fromCode(int? code) {

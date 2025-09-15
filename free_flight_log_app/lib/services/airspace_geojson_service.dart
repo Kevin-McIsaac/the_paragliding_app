@@ -222,46 +222,46 @@ class AirspaceGeoJsonService {
   /// Get the currently visible airspace types in the loaded data
   Set<AirspaceType> get visibleAirspaceTypes => Set.from(_currentVisibleTypes);
 
-  // ICAO class-based color mapping - All with 10% opacity (0x1A) for better map visibility
-  static const Map<IcaoClass, AirspaceStyle> _icaoClassStyles = {
+  // ICAO class-based color mapping - Uses colors from IcaoClass enum for single source of truth
+  static Map<IcaoClass, AirspaceStyle> get _icaoClassStyles => {
     IcaoClass.classA: AirspaceStyle(
-      fillColor: Color(0x1AFF0000),  // 10% opacity red - Most restrictive (IFR only)
-      borderColor: Color(0xFFFF0000),
+      fillColor: IcaoClass.classA.fillColor,
+      borderColor: IcaoClass.classA.borderColor,
       borderWidth: 2.0,
     ),
     IcaoClass.classB: AirspaceStyle(
-      fillColor: Color(0x1AFFA500),  // 10% opacity orange - IFR/VFR, all get ATC
-      borderColor: Color(0xFFFFA500),
+      fillColor: IcaoClass.classB.fillColor,
+      borderColor: IcaoClass.classB.borderColor,
       borderWidth: 1.8,
     ),
     IcaoClass.classC: AirspaceStyle(
-      fillColor: Color(0x1AFFD700),  // 10% opacity yellow - IFR/VFR, IFR separation
-      borderColor: Color(0xFFFFD700),
+      fillColor: IcaoClass.classC.fillColor,
+      borderColor: IcaoClass.classC.borderColor,
       borderWidth: 1.6,
     ),
     IcaoClass.classD: AirspaceStyle(
-      fillColor: Color(0x1A0080FF),  // 10% opacity blue - IFR/VFR, IFR from IFR only
-      borderColor: Color(0xFF0080FF),
+      fillColor: IcaoClass.classD.fillColor,
+      borderColor: IcaoClass.classD.borderColor,
       borderWidth: 1.5,
     ),
     IcaoClass.classE: AirspaceStyle(
-      fillColor: Color(0x1A00C000),  // 10% opacity green - IFR gets ATC service
-      borderColor: Color(0xFF00C000),
+      fillColor: IcaoClass.classE.fillColor,
+      borderColor: IcaoClass.classE.borderColor,
       borderWidth: 1.4,
     ),
     IcaoClass.classF: AirspaceStyle(
-      fillColor: Color(0x1A9370DB),  // 10% opacity purple - Advisory service
-      borderColor: Color(0xFF9370DB),
+      fillColor: IcaoClass.classF.fillColor,
+      borderColor: IcaoClass.classF.borderColor,
       borderWidth: 1.3,
     ),
     IcaoClass.classG: AirspaceStyle(
-      fillColor: Color(0x1A808080),  // 10% opacity gray - Uncontrolled
-      borderColor: Color(0xFF808080),
+      fillColor: IcaoClass.classG.fillColor,
+      borderColor: IcaoClass.classG.borderColor,
       borderWidth: 1.2,
     ),
     IcaoClass.none: AirspaceStyle(
-      fillColor: Color(0x1AC0C0C0),  // 10% opacity light gray - No class assigned
-      borderColor: Color(0xFFC0C0C0),
+      fillColor: IcaoClass.none.fillColor,
+      borderColor: IcaoClass.none.borderColor,
       borderWidth: 1.0,
     ),
   };
