@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../services/logging_service.dart';
 import '../../utils/map_provider.dart';
@@ -35,6 +36,8 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
   late Map<String, bool> _icaoClasses;
   late double _maxAltitudeFt;
   late MapProvider _selectedMapProvider;
+
+  Timer? _debounceTimer;
 
   // Available airspace types with full descriptions for tooltips
   static const Map<String, String> _typeDescriptions = {
@@ -228,7 +231,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
           InkWell(
             onTap: () => setState(() {
               _selectedMapProvider = provider;
-              _applyFiltersImmediately();
+              _applyFiltersDebounced();
             }),
             borderRadius: BorderRadius.circular(4),
             child: Container(
@@ -243,7 +246,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                       groupValue: _selectedMapProvider,
                       onChanged: (value) => setState(() {
                         _selectedMapProvider = value!;
-                        _applyFiltersImmediately();
+                        _applyFiltersDebounced();
                       }),
                       activeColor: Colors.blue,
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -283,7 +286,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
         InkWell(
           onTap: () => setState(() {
             _sitesEnabled = !_sitesEnabled;
-            _applyFiltersImmediately();
+            _applyFiltersDebounced();
           }),
           borderRadius: BorderRadius.circular(4),
           child: Container(
@@ -297,7 +300,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                     value: _sitesEnabled,
                     onChanged: (value) => setState(() {
                       _sitesEnabled = value ?? true;
-                      _applyFiltersImmediately();
+                      _applyFiltersDebounced();
                     }),
                     activeColor: Colors.blue,
                     checkColor: Colors.white,
@@ -318,7 +321,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
         InkWell(
           onTap: () => setState(() {
             _airspaceEnabled = !_airspaceEnabled;
-            _applyFiltersImmediately();
+            _applyFiltersDebounced();
           }),
           borderRadius: BorderRadius.circular(4),
           child: Container(
@@ -332,7 +335,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                     value: _airspaceEnabled,
                     onChanged: (value) => setState(() {
                       _airspaceEnabled = value ?? true;
-                      _applyFiltersImmediately();
+                      _applyFiltersDebounced();
                     }),
                     activeColor: Colors.blue,
                     checkColor: Colors.white,
@@ -380,7 +383,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                 setState(() {
                   _airspaceTypes[entry.key] = !(_airspaceTypes[entry.key] ?? false);
                   // Apply changes immediately
-                  _applyFiltersImmediately();
+                  _applyFiltersDebounced();
                 });
               },
               borderRadius: BorderRadius.circular(4),
@@ -397,7 +400,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                           setState(() {
                             _airspaceTypes[entry.key] = value ?? false;
                             // Apply changes immediately
-                            _applyFiltersImmediately();
+                            _applyFiltersDebounced();
                           });
                         },
                         activeColor: Colors.blue,
@@ -447,7 +450,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                 setState(() {
                   _icaoClasses[entry.key] = !(_icaoClasses[entry.key] ?? false);
                   // Apply changes immediately
-                  _applyFiltersImmediately();
+                  _applyFiltersDebounced();
                 });
               },
               borderRadius: BorderRadius.circular(4),
@@ -464,7 +467,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                           setState(() {
                             _icaoClasses[entry.key] = value ?? false;
                             // Apply changes immediately
-                            _applyFiltersImmediately();
+                            _applyFiltersDebounced();
                           });
                         },
                         activeColor: Colors.blue,
@@ -540,7 +543,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                       onChanged: (value) {
                         setState(() {
                           _maxAltitudeFt = value;
-                          _applyFiltersImmediately();
+                          _applyFiltersDebounced();
                         });
                       },
                     ),
@@ -562,6 +565,19 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
         ),
       ],
     );
+  }
+
+  @override
+  void dispose() {
+    _debounceTimer?.cancel();
+    super.dispose();
+  }
+
+  void _applyFiltersDebounced() {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+      _applyFiltersImmediately();
+    });
   }
 
   void _applyFiltersImmediately() {

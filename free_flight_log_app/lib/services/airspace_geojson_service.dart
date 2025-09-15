@@ -19,6 +19,10 @@ class AirspaceData {
   final Map<String, dynamic>? lowerLimit;
   final String? country;
 
+  /// Indicates if this airspace is currently filtered out by user settings
+  /// Used to show visual distinction in tooltips
+  bool isCurrentlyFiltered = false;
+
   AirspaceData({
     required this.name,
     required this.type,

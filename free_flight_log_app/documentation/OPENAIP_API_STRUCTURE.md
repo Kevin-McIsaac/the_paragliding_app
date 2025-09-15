@@ -28,14 +28,43 @@ Each airspace in the `items` array contains 22 properties:
 - `country`: ISO country code (string)
   - Example: "AU" (Australia)
 - `type`: Numeric airspace type code (integer 0 - 36)
-  - `0`: Unknown
+  - `0`: Other
   - `1`: Restricted
   - `2`: Danger
-  - `4`: CTR
-  - `6`: TMA
-  - `7`: TMA
-  - `10`: FIR
-  - `26`: CTA
+  - `3`: Prohibited
+  - `4`: Controlled Tower Region (CTR)
+  - `5`: Transponder Mandatory Zone (TMZ)
+  - `6`: Radio Mandatory Zone (RMZ)
+  - `7`: Terminal Maneuvering Area (TMA)
+  - `8`: Temporary Reserved Area (TRA)
+  - `9`: Temporary Segregated Area (TSA)
+  - `10`: Flight Information Region (FIR)
+  - `11`: Upper Flight Information Region (UIR)
+  - `12`: Air Defense Identification Zone (ADIZ)
+  - `13`: Airport Traffic Zone (ATZ)
+  - `14`: Military Airport Traffic Zone (MATZ)
+  - `15`: Airway
+  - `16`: Military Training Route (MTR)
+  - `17`: Alert Area
+  - `18`: Warning Area
+  - `19`: Protected Area
+  - `20`: Helicopter Traffic Zone (HTZ)
+  - `21`: Gliding Sector
+  - `22`: Transponder Setting (TRP)
+  - `23`: Traffic Information Zone (TIZ)
+  - `24`: Traffic Information Area (TIA)
+  - `25`: Military Training Area (MTA)
+  - `26`: Control Area (CTA)
+  - `27`: ACC Sector (ACC)
+  - `28`: Aerial Sporting Or Recreational Activity
+  - `29`: Low Altitude Overflight Restriction
+  - `30`: Military Route (MRT)
+  - `31`: TSA/TRA Feeding Route (TFR)
+  - `32`: VFR Sector
+  - `33`: FIS Sector
+  - `34`: Lower Traffic Area (LTA)
+  - `35`: Upper Traffic Area (UTA)
+  - `36`: Military Controlled Tower Region (MCTR)
 
 ### ICAO Classification System
 - `icaoClass`: Numeric ICAO airspace class code (integer 0-6, 8)

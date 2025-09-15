@@ -296,30 +296,38 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     // Identify airspaces at the point (using map coordinates from FlutterMap)
     final allAirspaces = AirspaceIdentificationService.instance.identifyAirspacesAtPoint(mapPoint);
 
-    // Filter airspaces by enabled types only
+    // Get filter settings to mark which airspaces are currently filtered
     final enabledTypes = await OpenAipService.instance.getEnabledAirspaceTypes();
-    final filteredAirspaces = allAirspaces.where((airspace) {
-      // Convert numeric type to string type for filtering
-      final typeString = _getTypeStringFromCode(airspace.type);
-      return enabledTypes[typeString] ?? false;
-    }).toList();
+    final enabledClasses = await OpenAipService.instance.getEnabledIcaoClasses();
 
-    // Sort airspaces by lower altitude limit (ascending), then by upper altitude limit (ascending)
-    filteredAirspaces.sort((a, b) {
+    // Mark each airspace with its filter status for visual distinction
+    for (final airspace in allAirspaces) {
+      final typeString = _getTypeStringFromCode(airspace.type);
+      // OpenAipService uses inverted logic: true = filtered out, false = shown
+      final isTypeFiltered = enabledTypes[typeString] ?? false;  // true = filtered out
+      final isClassFiltered = enabledClasses[airspace.icaoClass ?? 8] ?? false;  // true = filtered out
+      final isElevationFiltered = airspace.getLowerAltitudeInFeet() > widget.maxAltitudeFt;
+
+      // Mark if this airspace is currently filtered out
+      airspace.isCurrentlyFiltered = isTypeFiltered || isClassFiltered || isElevationFiltered;
+    }
+
+    // Sort all airspaces by lower altitude limit (ascending), then by upper altitude limit (ascending)
+    allAirspaces.sort((a, b) {
       int lowerCompare = a.getLowerAltitudeInFeet().compareTo(b.getLowerAltitudeInFeet());
       if (lowerCompare != 0) return lowerCompare;
       return a.getUpperAltitudeInFeet().compareTo(b.getUpperAltitudeInFeet());
     });
 
-    if (filteredAirspaces.isNotEmpty) {
+    if (allAirspaces.isNotEmpty) {
       // Check if clicking near the same position (toggle behavior)
       if (_showTooltip && _tooltipPosition != null && _isSimilarPosition(screenPosition, _tooltipPosition!)) {
         // Toggle: hide tooltip if clicking the same area
         _hideTooltip();
       } else {
-        // Show tooltip immediately
+        // Show tooltip for all airspaces (filtered and unfiltered)
         setState(() {
-          _tooltipAirspaces = filteredAirspaces;
+          _tooltipAirspaces = allAirspaces;
           _tooltipPosition = screenPosition;
           _showTooltip = true;
         });
@@ -956,6 +964,50 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
             position: _tooltipPosition!,
             screenSize: MediaQuery.of(context).size,
             onClose: _hideTooltip,
+          ),
+
+        // Loading indicator for airspace refresh (non-blocking)
+        if (_airspaceLoading)
+          Positioned(
+            top: 60, // Same position as sites loading
+            right: 16, // Same position as sites loading
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: Colors.white,
+                      strokeCap: StrokeCap.round,
+                    ),
+                  ),
+                  SizedBox(width: 10),
+                  Text(
+                    'Loading airspace...',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
       ],
     );

@@ -238,17 +238,47 @@ class AirspaceTooltipWidget extends StatelessWidget {
               ),
               const SizedBox(width: 6),
 
-              // Airspace name
+              // Airspace name with filter indicator
               Expanded(
-                child: Text(
-                  airspace.name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        airspace.name,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    // Filter status indicator
+                    if (airspace.isCurrentlyFiltered)
+                      Tooltip(
+                        preferBelow: false,
+                        message: 'This airspace is currently filtered (hidden on map)',
+                        decoration: BoxDecoration(
+                          color: const Color(0xE6000000),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                        ),
+                        textStyle: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w400,
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          child: Icon(
+                            Icons.visibility_off,
+                            size: 12,
+                            color: Colors.orange.withValues(alpha: 0.8),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ],
