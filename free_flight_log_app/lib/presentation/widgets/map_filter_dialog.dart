@@ -182,27 +182,12 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                     _buildTopTwoColumnSection(),
                     const SizedBox(height: 16),
 
-                    // Single Exclude header for all three columns
+                    // Divider line (no title)
                     Opacity(
                       opacity: _airspaceEnabled ? 1.0 : 0.3,
-                      child: Column(
-                        children: [
-                          Center(
-                            child: Text(
-                              'Exclude',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.orange.withValues(alpha: 0.9),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Container(
-                            height: 1,
-                            color: Colors.orange.withValues(alpha: 0.3),
-                          ),
-                        ],
+                      child: Container(
+                        height: 1,
+                        color: Colors.grey.withValues(alpha: 0.3),
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -504,12 +489,15 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Airspace Types',
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
+        Tooltip(
+          message: 'Exclude these Airspace Types from the airspace overlay',
+          child: const Text(
+            'Exclude Airspace Types',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
           ),
         ),
         const SizedBox(height: 4),
@@ -631,12 +619,15 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'ICAO Classes',
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
+        Tooltip(
+          message: 'Exclude these Airspace Classes from the airspace overlay',
+          child: const Text(
+            'Exclude ICAO Classes',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
           ),
         ),
         const SizedBox(height: 4),
