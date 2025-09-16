@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/airspace_geojson_service.dart';
 import '../../data/models/airspace_enums.dart';
 
@@ -23,7 +24,28 @@ class AirspaceInfoPopup extends StatefulWidget {
 }
 
 class _AirspaceInfoPopupState extends State<AirspaceInfoPopup> {
+  static const String _filterPrefKey = 'airspace_show_filtered_items';
   bool _showFilteredItems = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFilterPreference();
+  }
+
+  Future<void> _loadFilterPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _showFilteredItems = prefs.getBool(_filterPrefKey) ?? true;
+      });
+    }
+  }
+
+  Future<void> _saveFilterPreference(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_filterPrefKey, value);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -129,6 +151,7 @@ class _AirspaceInfoPopupState extends State<AirspaceInfoPopup> {
                             setState(() {
                               _showFilteredItems = !_showFilteredItems;
                             });
+                            _saveFilterPreference(_showFilteredItems);
                           },
                           child: Container(
                             padding: const EdgeInsets.all(4),
