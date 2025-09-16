@@ -102,10 +102,19 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   AirspaceData? _hoveredAirspace;
   fm.Polygon? _highlightedPolygon;
 
+  // Debouncing for render logs
+  DateTime? _lastRenderLog;
+  int _lastSiteCount = -1;
+  double _lastZoom = -1;
+
+  // Track current zoom level to avoid accessing MapController in build
+  late double _currentZoom;
+
   
   @override
   void initState() {
     super.initState();
+    _currentZoom = widget.initialZoom; // Initialize with the initial zoom
     _loadAirspaceStatus();
     // Delay airspace loading until after the first frame to ensure MapController is ready
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -120,10 +129,15 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
     // Check if sites were just enabled - reload site data
     if (oldWidget.sitesEnabled != widget.sitesEnabled) {
-      if (widget.sitesEnabled && widget.onBoundsChanged != null && _mapController.camera != null) {
-        // Sites were just enabled - reload site data for current bounds
-        final bounds = _mapController.camera.visibleBounds;
-        widget.onBoundsChanged!(bounds);
+      if (widget.sitesEnabled && widget.onBoundsChanged != null) {
+        try {
+          // Sites were just enabled - reload site data for current bounds
+          final bounds = _mapController.camera.visibleBounds;
+          widget.onBoundsChanged!(bounds);
+        } catch (e) {
+          // Map controller might not be ready yet
+          LoggingService.info('MapController not ready when enabling sites');
+        }
       }
     }
 
@@ -169,8 +183,13 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   void _onMapReady() {
     // Initial load of sites when map is ready
     if (widget.onBoundsChanged != null) {
-      final bounds = _mapController.camera.visibleBounds;
-      widget.onBoundsChanged!(bounds);
+      try {
+        final bounds = _mapController.camera.visibleBounds;
+        widget.onBoundsChanged!(bounds);
+      } catch (e) {
+        // Map controller might not be fully ready yet, skip this load
+        LoggingService.info('MapController not ready in _onMapReady, will load on first move');
+      }
     }
   }
   
@@ -183,8 +202,13 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
       // Reload site data
       if (widget.onBoundsChanged != null) {
-        final bounds = _mapController.camera.visibleBounds;
-        widget.onBoundsChanged!(bounds);
+        try {
+          final bounds = _mapController.camera.visibleBounds;
+          widget.onBoundsChanged!(bounds);
+        } catch (e) {
+          // Map controller might not be ready yet
+          LoggingService.info('MapController not ready when applying filters');
+        }
       }
 
       // Reload airspace data for new viewport
@@ -482,8 +506,8 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
             // Create highlighted polygon with 60% opacity
             _highlightedPolygon = fm.Polygon(
               points: polygonPoints,
-              color: lowestAirspace.icaoClass?.fillColor.withValues(alpha: 0.6) ??
-                     Colors.grey.withValues(alpha: 0.6),
+              color: lowestAirspace.icaoClass?.fillColor.withOpacity(0.6) ??
+                     Colors.grey.withOpacity(0.6),
               borderColor: lowestAirspace.icaoClass?.borderColor ?? Colors.grey,
               borderStrokeWidth: 2.0,
             );
@@ -581,7 +605,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.3),
+                color: Colors.black.withOpacity(0.3),
                 spreadRadius: 1,
                 blurRadius: 3,
                 offset: const Offset(0, 1),
@@ -698,15 +722,15 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                     constraints: const BoxConstraints(maxHeight: 300),
                     margin: const EdgeInsets.only(top: 2),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.85),
+                      color: Colors.black.withOpacity(0.85),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.1),
+                        color: Colors.white.withOpacity(0.1),
                         width: 1,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.4),
+                          color: Colors.black.withOpacity(0.4),
                           blurRadius: 12,
                           offset: const Offset(0, 4),
                         ),
@@ -721,10 +745,10 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.05),
+                              color: Colors.white.withOpacity(0.05),
                               border: Border(
                                 bottom: BorderSide(
-                                  color: Colors.white.withValues(alpha: 0.1),
+                                  color: Colors.white.withOpacity(0.1),
                                   width: 1,
                                 ),
                               ),
@@ -734,7 +758,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                                 Text(
                                   '${widget.searchResults.length} site${widget.searchResults.length == 1 ? '' : 's'} found',
                                   style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.7),
+                                    color: Colors.white.withOpacity(0.7),
                                     fontSize: 12,
                                     fontWeight: FontWeight.w500,
                                   ),
@@ -761,7 +785,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                               separatorBuilder: (context, index) => Container(
                                 height: 1,
                                 margin: const EdgeInsets.symmetric(horizontal: 16),
-                                color: Colors.white.withValues(alpha: 0.05),
+                                color: Colors.white.withOpacity(0.05),
                               ),
                               itemBuilder: (context, index) {
                                 final site = widget.searchResults[index];
@@ -818,8 +842,8 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                                         _searchFocusNode.requestFocus();
                                       });
                                     },
-                                    highlightColor: Colors.white.withValues(alpha: 0.1),
-                                    splashColor: Colors.white.withValues(alpha: 0.05),
+                                    highlightColor: Colors.white.withOpacity(0.1),
+                                    splashColor: Colors.white.withOpacity(0.05),
                                     canRequestFocus: false, // Prevent stealing focus from search bar
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -830,7 +854,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                                             width: 36,
                                             height: 36,
                                             decoration: BoxDecoration(
-                                              color: Colors.deepPurple.withValues(alpha: 0.2),
+                                              color: Colors.deepPurple.withOpacity(0.2),
                                               borderRadius: BorderRadius.circular(8),
                                             ),
                                             child: const Icon(
@@ -869,7 +893,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                                                       Text(
                                                         site.country!,
                                                         style: TextStyle(
-                                                          color: Colors.white.withValues(alpha: 0.6),
+                                                          color: Colors.white.withOpacity(0.6),
                                                           fontSize: 12,
                                                         ),
                                                       ),
@@ -878,7 +902,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                                                       Text(
                                                         '• $distanceText',
                                                         style: TextStyle(
-                                                          color: Colors.white.withValues(alpha: 0.5),
+                                                          color: Colors.white.withOpacity(0.5),
                                                           fontSize: 12,
                                                         ),
                                                       ),
@@ -891,7 +915,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                                           // Arrow indicator
                                           Icon(
                                             Icons.arrow_forward_ios,
-                                            color: Colors.white.withValues(alpha: 0.3),
+                                            color: Colors.white.withOpacity(0.3),
                                             size: 14,
                                           ),
                                         ],
@@ -915,15 +939,15 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                     margin: const EdgeInsets.only(top: 2),
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.85),
+                      color: Colors.black.withOpacity(0.85),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.1),
+                        color: Colors.white.withOpacity(0.1),
                         width: 1,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.4),
+                          color: Colors.black.withOpacity(0.4),
                           blurRadius: 12,
                           offset: const Offset(0, 4),
                         ),
@@ -1020,16 +1044,21 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     }).length;
     final newSites = widget.sites.length - flownSites;
     
-    LoggingService.structured('NEARBY_SITES_MAP_RENDER', {
-      'local_site_count': flownSites,
-      'api_site_count': newSites,
-      'has_user_position': widget.userPosition != null,
-      'has_center_position': widget.centerPosition != null,
-      'initial_zoom': widget.initialZoom,
-      'map_provider': widget.mapProvider.shortName,
-      'airspace_layer_count': _airspaceLayers.length,
-      'airspace_loading': _airspaceLoading,
-    });
+    // Only log significant changes or every 5 seconds
+    final totalSites = widget.sites.length;
+    final currentZoom = _currentZoom; // Use state variable instead of MapController
+    final now = DateTime.now();
+    final shouldLog = _lastRenderLog == null ||
+        now.difference(_lastRenderLog!).inSeconds >= 5 ||
+        totalSites != _lastSiteCount ||
+        (currentZoom - _lastZoom).abs() > 0.5;
+
+    if (shouldLog) {
+      LoggingService.info('[MAP] ${widget.sites.length} sites, ${_airspaceLayers.isNotEmpty ? "airspaces loaded" : "no airspaces"}');
+      _lastRenderLog = now;
+      _lastSiteCount = totalSites;
+      _lastZoom = currentZoom;
+    }
 
     return Stack(
       children: [
@@ -1046,6 +1075,12 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               maxZoom: widget.mapProvider.maxZoom.toDouble(),
               onMapReady: _onMapReady,
               onMapEvent: _onMapEvent,
+              onPositionChanged: (position, hasGesture) {
+                // Update current zoom when map position changes
+                setState(() {
+                  _currentZoom = position.zoom ?? widget.initialZoom;
+                });
+              },
               interactionOptions: const fm.InteractionOptions(
                 flags: fm.InteractiveFlag.all,
               ),
@@ -1125,7 +1160,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.3),
+                    color: Colors.black.withOpacity(0.3),
                     blurRadius: 4,
                     offset: const Offset(0, 2),
                   ),

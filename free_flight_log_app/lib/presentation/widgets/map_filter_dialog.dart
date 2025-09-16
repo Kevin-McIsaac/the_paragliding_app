@@ -132,7 +132,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.3),
+              color: Colors.black.withOpacity(0.3),
               blurRadius: 16,
               offset: const Offset(0, 8),
             ),
@@ -187,7 +187,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                       opacity: _airspaceEnabled ? 1.0 : 0.3,
                       child: Container(
                         height: 1,
-                        color: Colors.grey.withValues(alpha: 0.3),
+                        color: Colors.grey.withOpacity(0.3),
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -730,12 +730,15 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-        const Text(
-          'Elevation',
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
+        Tooltip(
+          message: 'Exclude airspace with lower altitude above this elevation (in feet)',
+          child: const Text(
+            'Elevation',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
           ),
         ),
         const SizedBox(height: 4),
@@ -756,34 +759,46 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
               const SizedBox(width: 4),
               // Vertical slider
               Expanded(
-                child: RotatedBox(
-                  quarterTurns: 3,
-                  child: SizedBox(
-                    width: 144,
-                    child: SliderTheme(
-                    data: SliderThemeData(
-                      trackHeight: 2,
-                      thumbColor: Colors.blue,
-                      activeTrackColor: Colors.blue,
-                      inactiveTrackColor: Colors.white24,
-                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                      overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-                      tickMarkShape: const RoundSliderTickMarkShape(tickMarkRadius: 1),
-                      activeTickMarkColor: Colors.blue,
-                      inactiveTickMarkColor: Colors.white54,
-                    ),
-                    child: Slider(
-                      value: _maxAltitudeFt,
-                      min: 0,
-                      max: 30000,
-                      onChanged: (value) {
-                        setState(() {
-                          _maxAltitudeFt = value;
-                          _applyFiltersDebounced();
-                        });
-                      },
-                    ),
-                    ),
+                child: Padding(
+                  padding: EdgeInsets.zero, // Remove padding to align slider with labels
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          RotatedBox(
+                            quarterTurns: 3,
+                            child: SliderTheme(
+                              data: SliderThemeData(
+                                trackHeight: 2,
+                                thumbColor: Colors.blue,
+                                activeTrackColor: Colors.blue,
+                                inactiveTrackColor: Colors.white24,
+                                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 0),
+                                overlayShape: const RoundSliderOverlayShape(overlayRadius: 0),
+                                tickMarkShape: const RoundSliderTickMarkShape(tickMarkRadius: 1),
+                                activeTickMarkColor: Colors.blue,
+                                inactiveTickMarkColor: Colors.white54,
+                              ),
+                              child: SizedBox(
+                                width: constraints.maxHeight, // Use the actual available height
+                                child: Slider(
+                                  value: _maxAltitudeFt,
+                                  min: 0,
+                                  max: 30000,
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _maxAltitudeFt = value;
+                                      _applyFiltersDebounced();
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
               ),
