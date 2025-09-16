@@ -357,11 +357,8 @@ class AirspaceGeoJsonService {
       url += '&apiKey=$apiKey';
     }
 
-    LoggingService.structured('AIRSPACE_API_REQUEST', {
-      'url': url,
-      'bbox': '${bounds.west},${bounds.south},${bounds.east},${bounds.north}',
-      'has_api_key': apiKey != null && apiKey.isNotEmpty,
-    });
+    // Simplified actionable log
+    LoggingService.info('[AIRSPACE] Fetching from API for bounds: ${bounds.west.toStringAsFixed(2)},${bounds.south.toStringAsFixed(2)},${bounds.east.toStringAsFixed(2)},${bounds.north.toStringAsFixed(2)}');
 
     try {
       // Prepare headers with multiple authentication methods
@@ -380,11 +377,10 @@ class AirspaceGeoJsonService {
 
       stopwatch.stop();
 
-      LoggingService.structured('AIRSPACE_API_RESPONSE', {
-        'status_code': response.statusCode,
-        'content_length': response.body.length,
-        'content_type': response.headers['content-type'],
-      });
+      // Only log if there's an issue
+      if (response.statusCode != 200) {
+        LoggingService.error('[AIRSPACE] API returned status ${response.statusCode}', null, null);
+      }
 
       if (response.statusCode == 200) {
         // Count airspaces for performance logging
@@ -527,11 +523,8 @@ class AirspaceGeoJsonService {
       ],
     };
 
-    LoggingService.structured('AIRSPACE_SAMPLE_DATA', {
-      'feature_count': (sampleGeoJson['features'] as List).length,
-      'bounds': '${bounds.west},${bounds.south},${bounds.east},${bounds.north}',
-      'note': 'Using demo airspace data for testing',
-    });
+    // Simple notification for demo mode
+    LoggingService.info('[AIRSPACE] Using demo data with ${(sampleGeoJson['features'] as List).length} features');
 
     return json.encode(sampleGeoJson);
   }
@@ -832,31 +825,16 @@ class AirspaceGeoJsonService {
           // For clipped polygons, keep original boundaries for tooltip hit testing
           identificationPolygons = polygonsWithAltitude.map((p) => p.data).toList();
 
-          LoggingService.structured('AIRSPACE_ALTITUDE_SORTING_AND_CLIPPING', {
-            'clipping_enabled': true,
-            'polygons_sorted': polygonsWithAltitude.length,
-            'clipped_polygons_output': polygons.length,
-            'sort_order': 'lowest_altitude_first_for_clipping',
-            'altitude_range_feet': polygonsWithAltitude.isNotEmpty ? {
-              'lowest': polygonsWithAltitude.first.data.airspaceData.getLowerAltitudeInFeet(),
-              'highest': polygonsWithAltitude.last.data.airspaceData.getLowerAltitudeInFeet(),
-            } : null,
-          });
+          // Simple actionable log
+          LoggingService.info('[AIRSPACE] Sorted ${polygonsWithAltitude.length} polygons by altitude for clipping');
         } else {
           // No clipping - keep original polygons but maintain altitude-based rendering order
           // Polygons are already in the list from the filtering loop above
           // They are sorted by altitude, so lower altitude airspaces render first (bottom layer)
           // Higher altitude airspaces render last (top layer, most visible)
 
-          LoggingService.structured('AIRSPACE_ALTITUDE_SORTING_NO_CLIPPING', {
-            'clipping_enabled': false,
-            'polygon_count': polygons.length,
-            'sort_order': 'lowest_altitude_first_for_rendering',
-            'altitude_range_feet': polygonsWithAltitude.isNotEmpty ? {
-              'lowest': polygonsWithAltitude.first.data.airspaceData.getLowerAltitudeInFeet(),
-              'highest': polygonsWithAltitude.last.data.airspaceData.getLowerAltitudeInFeet(),
-            } : null,
-          });
+          // Simple actionable log
+          LoggingService.info('[AIRSPACE] Sorted ${polygons.length} polygons by altitude');
         }
 
         // IMPORTANT: Keep polygon order from sorting (lowest altitude first)
@@ -869,14 +847,16 @@ class AirspaceGeoJsonService {
       final boundsKey = _generateBoundsKeyFromGeoJson(featureCollection);
       AirspaceIdentificationService.instance.updateAirspacePolygons(allIdentificationPolygons, boundsKey);
 
-      // Log filtering summary
-      LoggingService.structured('AIRSPACE_FILTERING_SUMMARY', {
-        'total_features_from_api': featureCollection.features.length,
-        'features_after_filtering': polygons.length,
-        'included_types': excludedTypes.keys.where((k) => excludedTypes[k] == false).map((k) => k.abbreviation).toList(),
-        'included_classes': excludedIcaoClasses.keys.where((k) => excludedIcaoClasses[k] == false).map((k) => k.abbreviation).toList(),
-        'max_altitude_ft': maxAltitudeFt,
-      });
+      // Actionable filtering summary
+      final excludedTypeList = excludedTypes.keys.where((k) => excludedTypes[k] == true).map((k) => k.abbreviation).toList();
+      final excludedClassList = excludedIcaoClasses.keys.where((k) => excludedIcaoClasses[k] == true).map((k) => k.abbreviation).toList();
+      if (excludedTypeList.isNotEmpty || excludedClassList.isNotEmpty || maxAltitudeFt < double.infinity) {
+        final filtered = featureCollection.features.length - polygons.length;
+        String msg = '[AIRSPACE] Filtered $filtered of ${featureCollection.features.length} features';
+        if (excludedClassList.isNotEmpty) msg += ' (excluded: ${excludedClassList.join(",")})';
+        if (maxAltitudeFt < double.infinity) msg += ' (max alt: ${maxAltitudeFt.toInt()}ft)';
+        LoggingService.info(msg);
+      }
 
       LoggingService.structured('GEOJSON_PARSING', {
         'features_count': featureCollection.features.length,
@@ -891,12 +871,7 @@ class AirspaceGeoJsonService {
       // Add airspace statistics logging (for debugging)
       _logAirspaceStatistics(featureCollection);
 
-      LoggingService.structured('AIRSPACE_FILTERING_RESULTS', {
-        'total_features': featureCollection.features.length,
-        'filtered_polygons': polygons.length,
-        'visible_included_types_count': visibleIncludedTypes.length,
-        'visible_included_types': visibleIncludedTypes.toList(),
-      });
+      // Remove verbose result logging - already covered above
 
       return polygons;
 
@@ -950,19 +925,7 @@ class AirspaceGeoJsonService {
     // Update the visible types for legend filtering (convert int to AirspaceType)
     _currentVisibleTypes = visibleTypes.map((type) => AirspaceType.fromCode(type)).toSet();
 
-    LoggingService.structured('AIRSPACE_STATISTICS', {
-      'mapped_types': typeStats,
-      'original_types': originalTypeStats,
-      'visible_types_count': visibleTypes.length,
-      'visible_types': visibleTypes.toList(),
-      'coverage_bounds': {
-        'min_lat': minLat.toStringAsFixed(3),
-        'max_lat': maxLat.toStringAsFixed(3),
-        'min_lon': minLon.toStringAsFixed(3),
-        'max_lon': maxLon.toStringAsFixed(3),
-        'area_degrees': ((maxLat - minLat) * (maxLon - minLon)).toStringAsFixed(2),
-      },
-    });
+    // Statistics logging removed - not actionable for development
   }
 
   _PolygonResult? _createPolygonFromGeometry(geo.Geometry geometry, Map<String, dynamic>? properties, double opacity) {
@@ -1371,16 +1334,7 @@ class AirspaceGeoJsonService {
         style: style,
       );
 
-      // Log bounding box filtering efficiency
-      if (totalComparisons > 0) {
-        LoggingService.debug('BOUNDS_FILTERING', {
-          'airspace': airspaceData.name,
-          'potential_clippers': totalComparisons,
-          'actual_clippers': clippingPolygons.length,
-          'skipped_bounds': skippedDueToBounds,
-          'bounds_efficiency': (skippedDueToBounds / totalComparisons * 100).round(),
-        });
-      }
+      // Remove verbose per-airspace logging - will summarize at the end instead
 
       // Track if this airspace was completely clipped away
       if (clippedResults.isEmpty && currentPoints.isNotEmpty) {
@@ -1391,17 +1345,8 @@ class AirspaceGeoJsonService {
       clippedPolygons.addAll(clippedResults);
     }
 
-    LoggingService.structured('AIRSPACE_CLIPPING_COMPLETE', {
-      'total_airspaces': polygonsWithAltitude.length,
-      'visible_airspaces': visibleAirspaces.length,
-      'output_clipped_polygons': clippedPolygons.length,
-      'completely_clipped_count': completelyClippedCount,
-      'completely_clipped_names': completelyClippedNames,
-      'viewport_filter_reduction': polygonsWithAltitude.length > 0 ?
-        ((polygonsWithAltitude.length - visibleAirspaces.length) / polygonsWithAltitude.length * 100).round() : 0,
-      'clipping_efficiency': visibleAirspaces.length > 0 ?
-        (clippedPolygons.length / visibleAirspaces.length) : 0,
-    });
+    // Simplified actionable log for Claude Code
+    LoggingService.info('[AIRSPACE] Clipped ${clippedPolygons.length} airspaces for viewport');
 
     return clippedPolygons;
   }

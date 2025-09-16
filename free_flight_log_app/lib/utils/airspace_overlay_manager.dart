@@ -248,20 +248,18 @@ class AirspaceOverlayManager {
       processingStopwatch.stop();
       stopwatch.stop();
 
-      LoggingService.performance(
-        'Airspace Processing',
-        Duration(milliseconds: processingStopwatch.elapsedMilliseconds),
-        'polygons=${polygons.length}, viewport=${bounds.west},${bounds.south},${bounds.east},${bounds.north}'
-      );
+      // Performance warning if processing is slow
+      final totalTime = stopwatch.elapsedMilliseconds;
+      final processingTime = processingStopwatch.elapsedMilliseconds;
 
-      LoggingService.structured('AIRSPACE_FETCH_SUCCESS', {
-        'polygon_count': polygons.length,
-        'geojson_size': geoJsonString.length,
-        'excluded_types_count': excludedTypes.values.where((excluded) => excluded).length,
-        'total_types_count': excludedTypes.length,
-        'total_time_ms': stopwatch.elapsedMilliseconds,
-        'processing_time_ms': processingStopwatch.elapsedMilliseconds,
-      });
+      if (totalTime > 1000) {
+        LoggingService.info('[PERF WARNING] Airspace processing took ${totalTime}ms (threshold: 1000ms)');
+      } else if (processingTime > 500) {
+        LoggingService.info('[PERF WARNING] Airspace parsing took ${processingTime}ms (threshold: 500ms)');
+      }
+
+      // Simple success log
+      LoggingService.info('[AIRSPACE] Loaded ${polygons.length} airspaces in ${totalTime}ms');
 
       return polygons;
 

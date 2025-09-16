@@ -2,15 +2,15 @@ import 'package:flutter/material.dart';
 import '../../services/airspace_geojson_service.dart';
 import '../../data/models/airspace_enums.dart';
 
-/// Widget that displays airspace information in a floating tooltip
+/// Widget that displays airspace information in a floating popup panel
 /// Positioned near the cursor/touch location on the map
-class AirspaceTooltipWidget extends StatelessWidget {
+class AirspaceInfoPopup extends StatelessWidget {
   final List<AirspaceData> airspaces;
   final Offset position;
   final Size screenSize;
   final VoidCallback? onClose;
 
-  const AirspaceTooltipWidget({
+  const AirspaceInfoPopup({
     super.key,
     required this.airspaces,
     required this.position,
@@ -266,17 +266,26 @@ class AirspaceTooltipWidget extends StatelessWidget {
                   Tooltip(
                     preferBelow: false,
                     margin: const EdgeInsets.symmetric(horizontal: 30),
+                    verticalOffset: -8,
+                    waitDuration: const Duration(milliseconds: 500),
                     decoration: BoxDecoration(
-                      color: const Color(0xE6000000),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                      color: const Color(0xFF1E1E1E),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.white24),
                     ),
-                    textStyle: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w400,
+                    richMessage: TextSpan(
+                      children: [
+                        WidgetSpan(
+                          child: Container(
+                            constraints: const BoxConstraints(maxWidth: 250),
+                            child: Text(
+                              airspace.icaoClass!.tooltip,
+                              style: const TextStyle(color: Colors.white, fontSize: 13),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    message: airspace.icaoClass!.tooltip,
                     child: Text(
                       '${_getDisplayIcaoClassAbbreviation(airspace.icaoClass!)},',
                       style: TextStyle(

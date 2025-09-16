@@ -72,7 +72,6 @@ enum AirspaceType {
   /// Get all types that should be hidden by default (large coverage areas)
   static Set<AirspaceType> get defaultHiddenTypes => {
     AirspaceType.fir,
-    AirspaceType.uir,
     AirspaceType.other,
   };
 
@@ -87,7 +86,7 @@ enum IcaoClass {
     0,
     'A',
     'Class A',
-    'IFR only. All flights receive ATC service and separation',
+    'IFR only. High-level, restrictive airspace primarily for commercial and passenger jets, requiring advanced IFR clearance. All flights receive air traffic control service and are separated from all other traffic',
     Color(0xFFFF0000),  // Red border
     Color(0x1AFF0000),  // 10% opacity red fill
   ),
@@ -95,7 +94,7 @@ enum IcaoClass {
     1,
     'B',
     'Class B',
-    'IFR/VFR. All flights receive ATC service and separation',
+    'IFR and VFR. Airspace surrounding major airports, with specific requirements for IFR and VFR flight, including clearance and ATC services. All flights receive air traffic control service and are separated from all other traffic',
     Color(0xFFFFA500),  // Orange border
     Color(0x1AFFA500),  // 10% opacity orange fill
   ),
@@ -103,7 +102,7 @@ enum IcaoClass {
     2,
     'C',
     'Class C',
-    'IFR/VFR. All receive ATC, IFR separated from all',
+    'IFR and VFR. Airspace surrounding major airports, with specific requirements for IFR and VFR flight, including clearance and ATC services. All flights receive air traffic control service. IFR flights are separated from other IFR and VFR flights. VFR flights are separated from IFR flights and receive traffic information on other VFR flights',
     Color(0xFFFFD700),  // Yellow/Gold border
     Color(0x1AFFD700),  // 10% opacity yellow fill
   ),
@@ -111,7 +110,7 @@ enum IcaoClass {
     3,
     'D',
     'Class D',
-    'IFR/VFR. All receive ATC, IFR separated from IFR only',
+    'IFR and VFR. Airspace surrounding major airports, with specific requirements for IFR and VFR flight, including clearance and ATC services. All flights receive air traffic control service. IFR flights are separated from other IFR flights and receive traffic information on VFR flights. VFR flights receive traffic information on all other traffic',
     Color(0xFF0080FF),  // Blue border
     Color(0x1A0080FF),  // 10% opacity blue fill
   ),
@@ -119,7 +118,7 @@ enum IcaoClass {
     4,
     'E',
     'Class E',
-    'IFR/VFR. IFR receives ATC service and separation',
+    'IFR and VFR. Mid-level, en route controlled airspace with less stringent rules than lower classes. IFR flights receive air traffic control service and are separated from other IFR flights. All flights receive traffic information as far as practical. VFR flights do not receive separation service',
     Color(0xFFA0522D),  // Sienna/Brown border
     Color(0x4DA0522D),  // 30% opacity sienna fill
   ),
@@ -127,7 +126,7 @@ enum IcaoClass {
     5,
     'F',
     'Class F',
-    'IFR/VFR. Advisory service, not widely implemented',
+    'IFR and VFR. IFR flights receive air traffic advisory service and all flights receive flight information service if requested. Class F is not implemented in many countries',
     Color(0xFF00CED1),  // Cyan/Turquoise border
     Color(0x1A00CED1),  // 10% opacity cyan fill
   ),
@@ -135,7 +134,7 @@ enum IcaoClass {
     6,
     'G',
     'Class G',
-    'Uncontrolled airspace, flight information only',
+    'Uncontrolled. Pilots are responsible for "see and avoid" and maintaining separation, as ATC services and separation are not provided. Only flight information service provided if requested. No separation service provided',
     Color(0xFF00C000),  // Green border
     Color(0x1A00C000),  // 10% opacity green fill
   ),
@@ -175,9 +174,7 @@ enum IcaoClass {
 
   /// Get all classes that should be hidden by default
   static Set<IcaoClass> get defaultHiddenClasses => {
-    IcaoClass.classA, // High altitude, primarily commercial
-    IcaoClass.classE, // Less critical for VFR
-    IcaoClass.classF, // Not widely implemented
+    // Empty set - all ICAO classes visible by default
   };
 
   /// Check if this class should be hidden by default

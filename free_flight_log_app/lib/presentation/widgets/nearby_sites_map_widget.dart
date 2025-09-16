@@ -1,6 +1,7 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map/flutter_map.dart' as fm;
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../data/models/paragliding_site.dart';
@@ -15,7 +16,8 @@ import '../../services/openaip_service.dart';
 import '../../services/airspace_geojson_service.dart';
 import '../../data/models/airspace_enums.dart';
 import '../../services/airspace_identification_service.dart';
-import '../widgets/airspace_tooltip_widget.dart';
+import '../widgets/airspace_info_popup.dart';
+import '../widgets/airspace_hover_tooltip.dart';
 import '../widgets/map_filter_fab.dart';
 import '../widgets/map_legend_widget.dart';
 
@@ -24,13 +26,13 @@ class NearbySitesMapWidget extends StatefulWidget {
   final Map<String, bool> siteFlightStatus;
   final Position? userPosition;
   final LatLng? centerPosition;
-  final LatLngBounds? boundsToFit; // Optional bounds for exact map fitting
+  final fm.LatLngBounds? boundsToFit; // Optional bounds for exact map fitting
   final double initialZoom;
   final MapProvider mapProvider;
   final bool isLegendExpanded;
   final VoidCallback onToggleLegend;
   final Function(ParaglidingSite)? onSiteSelected;
-  final Function(LatLngBounds)? onBoundsChanged;
+  final Function(fm.LatLngBounds)? onBoundsChanged;
   final String searchQuery;
   final Function(String) onSearchChanged;
   final VoidCallback onRefreshLocation;
@@ -78,7 +80,7 @@ class NearbySitesMapWidget extends StatefulWidget {
 }
 
 class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
-  final MapController _mapController = MapController();
+  final fm.MapController _mapController = fm.MapController();
   final FocusNode _searchFocusNode = FocusNode();
   final AirspaceOverlayManager _airspaceManager = AirspaceOverlayManager.instance;
   
@@ -93,10 +95,26 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   Offset? _tooltipPosition;
   bool _showTooltip = false;
 
+  // Hover state
+  Timer? _hoverDebounceTimer;
+  LatLng? _hoverPosition;
+  Offset? _hoverScreenPosition;
+  AirspaceData? _hoveredAirspace;
+  fm.Polygon? _highlightedPolygon;
+
+  // Debouncing for render logs
+  DateTime? _lastRenderLog;
+  int _lastSiteCount = -1;
+  double _lastZoom = -1;
+
+  // Track current zoom level to avoid accessing MapController in build
+  late double _currentZoom;
+
   
   @override
   void initState() {
     super.initState();
+    _currentZoom = widget.initialZoom; // Initialize with the initial zoom
     _loadAirspaceStatus();
     // Delay airspace loading until after the first frame to ensure MapController is ready
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -111,10 +129,15 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
     // Check if sites were just enabled - reload site data
     if (oldWidget.sitesEnabled != widget.sitesEnabled) {
-      if (widget.sitesEnabled && widget.onBoundsChanged != null && _mapController.camera != null) {
-        // Sites were just enabled - reload site data for current bounds
-        final bounds = _mapController.camera.visibleBounds;
-        widget.onBoundsChanged!(bounds);
+      if (widget.sitesEnabled && widget.onBoundsChanged != null) {
+        try {
+          // Sites were just enabled - reload site data for current bounds
+          final bounds = _mapController.camera.visibleBounds;
+          widget.onBoundsChanged!(bounds);
+        } catch (e) {
+          // Map controller might not be ready yet
+          LoggingService.info('MapController not ready when enabling sites');
+        }
       }
     }
 
@@ -133,7 +156,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         oldWidget.boundsToFit != widget.boundsToFit) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _mapController.fitCamera(
-          CameraFit.bounds(
+          fm.CameraFit.bounds(
             bounds: widget.boundsToFit!,
             padding: const EdgeInsets.all(20), // Small padding for visibility
           ),
@@ -153,28 +176,39 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   void dispose() {
     _searchFocusNode.dispose();
     _mapController.dispose();
+    _hoverDebounceTimer?.cancel();
     super.dispose();
   }
 
   void _onMapReady() {
     // Initial load of sites when map is ready
     if (widget.onBoundsChanged != null) {
-      final bounds = _mapController.camera.visibleBounds;
-      widget.onBoundsChanged!(bounds);
+      try {
+        final bounds = _mapController.camera.visibleBounds;
+        widget.onBoundsChanged!(bounds);
+      } catch (e) {
+        // Map controller might not be fully ready yet, skip this load
+        LoggingService.info('MapController not ready in _onMapReady, will load on first move');
+      }
     }
   }
   
-  void _onMapEvent(MapEvent event) {
+  void _onMapEvent(fm.MapEvent event) {
     // React to all movement and zoom end events to reload sites and airspace
-    if (event is MapEventMoveEnd ||
-        event is MapEventFlingAnimationEnd ||
-        event is MapEventDoubleTapZoomEnd ||
-        event is MapEventScrollWheelZoom) {
+    if (event is fm.MapEventMoveEnd ||
+        event is fm.MapEventFlingAnimationEnd ||
+        event is fm.MapEventDoubleTapZoomEnd ||
+        event is fm.MapEventScrollWheelZoom) {
 
       // Reload site data
       if (widget.onBoundsChanged != null) {
-        final bounds = _mapController.camera.visibleBounds;
-        widget.onBoundsChanged!(bounds);
+        try {
+          final bounds = _mapController.camera.visibleBounds;
+          widget.onBoundsChanged!(bounds);
+        } catch (e) {
+          // Map controller might not be ready yet
+          LoggingService.info('MapController not ready when applying filters');
+        }
       }
 
       // Reload airspace data for new viewport
@@ -319,6 +353,8 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         _hideTooltip();
       } else {
         // Show tooltip for all airspaces (filtered and unfiltered)
+        // Clear hover state when showing popup
+        _clearHover();
         setState(() {
           _tooltipAirspaces = allAirspaces;
           _tooltipPosition = screenPosition;
@@ -414,6 +450,88 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     }
   }
 
+  /// Handle hover over map to show lightweight tooltip
+  void _handleHover(Offset screenPosition) {
+    if (!_airspaceEnabled || _showTooltip) return; // Don't show hover when popup is open
+
+    // Debounce hover detection to avoid excessive calculations
+    _hoverDebounceTimer?.cancel();
+    _hoverDebounceTimer = Timer(const Duration(milliseconds: 100), () async {
+      // Convert screen position to map coordinates
+      final renderBox = context.findRenderObject() as RenderBox?;
+      if (renderBox == null) return;
+
+      try {
+        // Get map point from screen position
+        final localPosition = renderBox.globalToLocal(screenPosition);
+        // Use custom offset to handle the coordinate conversion
+        final mapPoint = _mapController.camera.offsetToCrs(
+          Offset(localPosition.dx, localPosition.dy),
+        );
+
+        // Identify airspaces at hover point
+        final airspaces = AirspaceIdentificationService.instance.identifyAirspacesAtPoint(mapPoint);
+
+        // Filter out excluded airspaces
+        final excludedTypes = await OpenAipService.instance.getExcludedAirspaceTypes();
+        final excludedClasses = await OpenAipService.instance.getExcludedIcaoClasses();
+
+        final visibleAirspaces = airspaces.where((airspace) {
+          final isTypeExcluded = excludedTypes[airspace.type] == true;
+          final isClassExcluded = excludedClasses[airspace.icaoClass ?? IcaoClass.none] == true;
+          final isElevationExcluded = airspace.getLowerAltitudeInFeet() > widget.maxAltitudeFt;
+          return !isTypeExcluded && !isClassExcluded && !isElevationExcluded;
+        }).toList();
+
+        if (visibleAirspaces.isEmpty) {
+          _clearHover();
+          return;
+        }
+
+        // Sort by lower altitude to get the lowest airspace
+        visibleAirspaces.sort((a, b) =>
+          a.getLowerAltitudeInFeet().compareTo(b.getLowerAltitudeInFeet()));
+
+        final lowestAirspace = visibleAirspaces.first;
+
+        // Get polygon for highlighting
+        final polygonPoints = AirspaceIdentificationService.instance.getPolygonForAirspace(lowestAirspace);
+
+        if (polygonPoints != null && mounted) {
+          setState(() {
+            _hoveredAirspace = lowestAirspace;
+            _hoverPosition = mapPoint;
+            _hoverScreenPosition = screenPosition;
+
+            // Create highlighted polygon with 60% opacity
+            _highlightedPolygon = fm.Polygon(
+              points: polygonPoints,
+              color: lowestAirspace.icaoClass?.fillColor.withOpacity(0.6) ??
+                     Colors.grey.withOpacity(0.6),
+              borderColor: lowestAirspace.icaoClass?.borderColor ?? Colors.grey,
+              borderStrokeWidth: 2.0,
+            );
+          });
+        }
+      } catch (error) {
+        LoggingService.error('Error handling hover', error);
+      }
+    });
+  }
+
+  /// Clear hover state
+  void _clearHover() {
+    _hoverDebounceTimer?.cancel();
+    if (_hoveredAirspace != null && mounted) {
+      setState(() {
+        _hoveredAirspace = null;
+        _hoverPosition = null;
+        _hoverScreenPosition = null;
+        _highlightedPolygon = null;
+      });
+    }
+  }
+
 
 
 
@@ -439,7 +557,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   }
 
 
-  List<Marker> _buildSiteMarkers() {
+  List<fm.Marker> _buildSiteMarkers() {
     // Don't show site markers if sites are disabled
     if (!widget.sitesEnabled) {
       return [];
@@ -449,7 +567,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
       final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
       final hasFlights = widget.siteFlightStatus[siteKey] ?? false;
       
-      return Marker(
+      return fm.Marker(
         point: LatLng(site.latitude, site.longitude),
         width: 140,
         height: 80,
@@ -469,11 +587,11 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     }).toList();
   }
 
-  List<Marker> _buildUserLocationMarker() {
+  List<fm.Marker> _buildUserLocationMarker() {
     if (widget.userPosition == null) return [];
     
     return [
-      Marker(
+      fm.Marker(
         point: LatLng(widget.userPosition!.latitude, widget.userPosition!.longitude),
         width: 30,
         height: 30,
@@ -487,7 +605,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.3),
+                color: Colors.black.withOpacity(0.3),
                 spreadRadius: 1,
                 blurRadius: 3,
                 offset: const Offset(0, 1),
@@ -604,15 +722,15 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                     constraints: const BoxConstraints(maxHeight: 300),
                     margin: const EdgeInsets.only(top: 2),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.85),
+                      color: Colors.black.withOpacity(0.85),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.1),
+                        color: Colors.white.withOpacity(0.1),
                         width: 1,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.4),
+                          color: Colors.black.withOpacity(0.4),
                           blurRadius: 12,
                           offset: const Offset(0, 4),
                         ),
@@ -627,10 +745,10 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.05),
+                              color: Colors.white.withOpacity(0.05),
                               border: Border(
                                 bottom: BorderSide(
-                                  color: Colors.white.withValues(alpha: 0.1),
+                                  color: Colors.white.withOpacity(0.1),
                                   width: 1,
                                 ),
                               ),
@@ -640,7 +758,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                                 Text(
                                   '${widget.searchResults.length} site${widget.searchResults.length == 1 ? '' : 's'} found',
                                   style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.7),
+                                    color: Colors.white.withOpacity(0.7),
                                     fontSize: 12,
                                     fontWeight: FontWeight.w500,
                                   ),
@@ -667,7 +785,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                               separatorBuilder: (context, index) => Container(
                                 height: 1,
                                 margin: const EdgeInsets.symmetric(horizontal: 16),
-                                color: Colors.white.withValues(alpha: 0.05),
+                                color: Colors.white.withOpacity(0.05),
                               ),
                               itemBuilder: (context, index) {
                                 final site = widget.searchResults[index];
@@ -724,8 +842,8 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                                         _searchFocusNode.requestFocus();
                                       });
                                     },
-                                    highlightColor: Colors.white.withValues(alpha: 0.1),
-                                    splashColor: Colors.white.withValues(alpha: 0.05),
+                                    highlightColor: Colors.white.withOpacity(0.1),
+                                    splashColor: Colors.white.withOpacity(0.05),
                                     canRequestFocus: false, // Prevent stealing focus from search bar
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -736,7 +854,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                                             width: 36,
                                             height: 36,
                                             decoration: BoxDecoration(
-                                              color: Colors.deepPurple.withValues(alpha: 0.2),
+                                              color: Colors.deepPurple.withOpacity(0.2),
                                               borderRadius: BorderRadius.circular(8),
                                             ),
                                             child: const Icon(
@@ -775,7 +893,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                                                       Text(
                                                         site.country!,
                                                         style: TextStyle(
-                                                          color: Colors.white.withValues(alpha: 0.6),
+                                                          color: Colors.white.withOpacity(0.6),
                                                           fontSize: 12,
                                                         ),
                                                       ),
@@ -784,7 +902,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                                                       Text(
                                                         '• $distanceText',
                                                         style: TextStyle(
-                                                          color: Colors.white.withValues(alpha: 0.5),
+                                                          color: Colors.white.withOpacity(0.5),
                                                           fontSize: 12,
                                                         ),
                                                       ),
@@ -797,7 +915,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                                           // Arrow indicator
                                           Icon(
                                             Icons.arrow_forward_ios,
-                                            color: Colors.white.withValues(alpha: 0.3),
+                                            color: Colors.white.withOpacity(0.3),
                                             size: 14,
                                           ),
                                         ],
@@ -821,15 +939,15 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                     margin: const EdgeInsets.only(top: 2),
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.85),
+                      color: Colors.black.withOpacity(0.85),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.1),
+                        color: Colors.white.withOpacity(0.1),
                         width: 1,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.4),
+                          color: Colors.black.withOpacity(0.4),
                           blurRadius: 12,
                           offset: const Offset(0, 4),
                         ),
@@ -926,80 +1044,112 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     }).length;
     final newSites = widget.sites.length - flownSites;
     
-    LoggingService.structured('NEARBY_SITES_MAP_RENDER', {
-      'local_site_count': flownSites,
-      'api_site_count': newSites,
-      'has_user_position': widget.userPosition != null,
-      'has_center_position': widget.centerPosition != null,
-      'initial_zoom': widget.initialZoom,
-      'map_provider': widget.mapProvider.shortName,
-      'airspace_layer_count': _airspaceLayers.length,
-      'airspace_loading': _airspaceLoading,
-    });
+    // Only log significant changes or every 5 seconds
+    final totalSites = widget.sites.length;
+    final currentZoom = _currentZoom; // Use state variable instead of MapController
+    final now = DateTime.now();
+    final shouldLog = _lastRenderLog == null ||
+        now.difference(_lastRenderLog!).inSeconds >= 5 ||
+        totalSites != _lastSiteCount ||
+        (currentZoom - _lastZoom).abs() > 0.5;
+
+    if (shouldLog) {
+      LoggingService.info('[MAP] ${widget.sites.length} sites, ${_airspaceLayers.isNotEmpty ? "airspaces loaded" : "no airspaces"}');
+      _lastRenderLog = now;
+      _lastSiteCount = totalSites;
+      _lastZoom = currentZoom;
+    }
 
     return Stack(
       children: [
         // FlutterMap with native click handling for airspace tooltip
-        FlutterMap(
-          mapController: _mapController,
-          options: MapOptions(
-            initialCenter: _getInitialCenter(),
-            initialZoom: widget.initialZoom,
-            minZoom: 3.0,
-            maxZoom: widget.mapProvider.maxZoom.toDouble(),
-            onMapReady: _onMapReady,
-            onMapEvent: _onMapEvent,
-            interactionOptions: const InteractionOptions(
-              flags: InteractiveFlag.all,
+        MouseRegion(
+          onHover: (event) => _handleHover(event.position),
+          onExit: (_) => _clearHover(),
+          child: fm.FlutterMap(
+            mapController: _mapController,
+            options: fm.MapOptions(
+              initialCenter: _getInitialCenter(),
+              initialZoom: widget.initialZoom,
+              minZoom: 3.0,
+              maxZoom: widget.mapProvider.maxZoom.toDouble(),
+              onMapReady: _onMapReady,
+              onMapEvent: _onMapEvent,
+              onPositionChanged: (position, hasGesture) {
+                // Update current zoom when map position changes
+                setState(() {
+                  _currentZoom = position.zoom ?? widget.initialZoom;
+                });
+              },
+              interactionOptions: const fm.InteractionOptions(
+                flags: fm.InteractiveFlag.all,
+              ),
+              onTap: (tapPosition, point) {
+                // Handle airspace tooltip on click with proper coordinates
+                _handleAirspaceInteraction(tapPosition.global, point);
+
+                // Clear search when tapping the map
+                if (widget.searchQuery.isNotEmpty) {
+                  widget.onSearchChanged('');
+                }
+              },
             ),
-            onTap: (tapPosition, point) {
-              // Handle airspace tooltip on click with proper coordinates
-              _handleAirspaceInteraction(tapPosition.global, point);
+            children: [
+              // Map tiles layer
+              fm.TileLayer(
+                urlTemplate: widget.mapProvider.urlTemplate,
+                userAgentPackageName: 'com.example.free_flight_log_app',
+                maxZoom: widget.mapProvider.maxZoom.toDouble(),
+                tileProvider: MapTileProvider.createInstance(),
+                errorTileCallback: MapTileProvider.getErrorCallback(),
+              ),
 
-              // Clear search when tapping the map
-              if (widget.searchQuery.isNotEmpty) {
-                widget.onSearchChanged('');
-              }
-            },
-          ),
-              children: [
-                // Map tiles layer
-                TileLayer(
-                  urlTemplate: widget.mapProvider.urlTemplate,
-                  userAgentPackageName: 'com.example.free_flight_log_app',
-                  maxZoom: widget.mapProvider.maxZoom.toDouble(),
-                  tileProvider: MapTileProvider.createInstance(),
-                  errorTileCallback: MapTileProvider.getErrorCallback(),
-                ),
+              // Airspace overlay layers (between base map and markers)
+              ..._airspaceLayers,
 
-                // Airspace overlay layers (between base map and markers)
-                ..._airspaceLayers,
-
-                // Site markers layer
-                MarkerLayer(
-                  markers: [
-                    ..._buildUserLocationMarker(),
-                    ..._buildSiteMarkers(),
-                  ],
+              // Highlighted airspace layer (on top of other airspaces)
+              if (_highlightedPolygon != null) ...[
+                fm.PolygonLayer(
+                  polygons: [_highlightedPolygon!],
                 ),
               ],
-            ),
+
+              // Site markers layer
+              fm.MarkerLayer(
+                markers: [
+                  ..._buildUserLocationMarker(),
+                  ..._buildSiteMarkers(),
+                ],
+              ),
+            ],
+          ),
+        ),
 
         // Map overlays
         _buildAttribution(),
         _buildTopControlBar(),
 
-        // Airspace tooltip
-        if (_showTooltip && _tooltipPosition != null)
-          AirspaceTooltipWidget(
+        // Hover tooltip (lightweight, shows only when hovering)
+        if (_hoveredAirspace != null && _hoverScreenPosition != null && !_showTooltip) ...[
+          AirspaceHoverTooltip(
+            airspace: _hoveredAirspace!,
+            position: _hoverScreenPosition!,
+            screenSize: MediaQuery.of(context).size,
+          ),
+        ],
+
+        // Airspace info popup
+        if (_showTooltip && _tooltipPosition != null) ...[
+          AirspaceInfoPopup(
             airspaces: _tooltipAirspaces,
             position: _tooltipPosition!,
             screenSize: MediaQuery.of(context).size,
             onClose: _hideTooltip,
           ),
+        ],
 
         // Loading indicator for airspace refresh (non-blocking)
-        if (_airspaceLoading)
+        if (_airspaceLoading) ...[
           Positioned(
             top: 60, // Same position as sites loading
             right: 16, // Same position as sites loading
@@ -1010,7 +1160,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.3),
+                    color: Colors.black.withOpacity(0.3),
                     blurRadius: 4,
                     offset: const Offset(0, 2),
                   ),
@@ -1041,6 +1191,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               ),
             ),
           ),
+        ],
       ],
     );
   }

@@ -197,4 +197,18 @@ class AirspaceIdentificationService {
       'type_distribution': typeStats,
     };
   }
+
+  /// Get polygon points for a specific airspace (for highlighting)
+  /// Returns null if airspace not found in cache
+  List<LatLng>? getPolygonForAirspace(AirspaceData airspace) {
+    // Find matching airspace in cache by name and type
+    // (Can't use object equality as these are different instances)
+    for (final polygon in _airspacePolygons) {
+      if (polygon.airspaceData.name == airspace.name &&
+          polygon.airspaceData.type == airspace.type) {
+        return polygon.points;
+      }
+    }
+    return null;
+  }
 }

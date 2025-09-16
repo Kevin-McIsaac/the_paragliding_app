@@ -154,7 +154,27 @@ class _MapLegendWidgetState extends State<MapLegendWidget> with SingleTickerProv
                   return Column(
                     children: [
                       Tooltip(
-                        message: icaoClass.description,
+                        richMessage: TextSpan(
+                          children: [
+                            WidgetSpan(
+                              child: Container(
+                                constraints: const BoxConstraints(maxWidth: 250),
+                                child: Text(
+                                  icaoClass.description,
+                                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        preferBelow: false,
+                        verticalOffset: -8,
+                        waitDuration: const Duration(milliseconds: 500),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1E1E1E),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.white24),
+                        ),
                         child: _buildLegendItem(
                           null,
                           icaoClass.borderColor,

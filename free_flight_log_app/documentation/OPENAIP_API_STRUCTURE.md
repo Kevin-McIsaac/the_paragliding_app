@@ -85,21 +85,21 @@ OpenAIP uses International Civil Aviation Organization (ICAO) classifications. T
 
 #### Controlled Airspace (Classes A-E)
 
-- **Class A**: High-level, restrictive airspace primarily for commercial and passenger jets, requiring advanced IFR clearance. IFR only. All flights receive air traffic control service and are separated from all other traffic.
+- **Class A**: **IFR only**. High-level, restrictive airspace primarily for commercial and passenger jets, requiring advanced IFR clearance. All flights receive air traffic control service and are separated from all other traffic.
 
-- **Class B**: Airspace surrounding major airports, with specific requirements for IFR and VFR flight, including clearance and ATC services. IFR and VFR permitted. All flights receive air traffic control service and are separated from all other traffic.
+- **Class B**: **IFR and VFR**. Airspace surrounding major airports, with specific requirements for IFR and VFR flight, including clearance and ATC services. All flights receive air traffic control service and are separated from all other traffic.
 
-- **Class C**: Airspace surrounding major airports, with specific requirements for IFR and VFR flight, including clearance and ATC services. IFR and VFR permitted. All flights receive air traffic control service. IFR flights are separated from other IFR and VFR flights. VFR flights are separated from IFR flights and receive traffic information on other VFR flights.
+- **Class C**: **IFR and VFR**. Airspace surrounding major airports, with specific requirements for IFR and VFR flight, including clearance and ATC services. All flights receive air traffic control service. IFR flights are separated from other IFR and VFR flights. VFR flights are separated from IFR flights and receive traffic information on other VFR flights.
 
-- **Class D**: Airspace surrounding major airports, with specific requirements for IFR and VFR flight, including clearance and ATC services. IFR and VFR permitted. All flights receive air traffic control service. IFR flights are separated from other IFR flights and receive traffic information on VFR flights. VFR flights receive traffic information on all other traffic.
+- **Class D**: **IFR and VFR**. Airspace surrounding major airports, with specific requirements for IFR and VFR flight, including clearance and ATC services. All flights receive air traffic control service. IFR flights are separated from other IFR flights and receive traffic information on VFR flights. VFR flights receive traffic information on all other traffic.
 
-- **Class E**: Mid-level, en route controlled airspace open to both IFR and VFR aircraft, with less stringent rules than lower classes. IFR and VFR permitted. IFR flights receive air traffic control service and are separated from other IFR flights. All flights receive traffic information as far as practical. VFR flights do not receive separation service.
+- **Class E**: **IFR and VFR**. Mid-level, en route controlled airspace with less stringent rules than lower classes. IFR flights receive air traffic control service and are separated from other IFR flights. All flights receive traffic information as far as practical. VFR flights do not receive separation service.
 
 #### Uncontrolled Airspace (Classes F-G)
 
-- **Class F**: IFR and VFR permitted. IFR flights receive air traffic advisory service and all flights receive flight information service if requested. Class F is not implemented in many countries.
+- **Class F**: **IFR and VFR**. IFR flights receive air traffic advisory service and all flights receive flight information service if requested. Class F is not implemented in many countries.
 
-- **Class G**: Uncontrolled airspace where pilots are responsible for "see and avoid" and maintaining separation, as ATC services and separation are not provided. Only flight information service provided if requested. No separation service provided.
+- **Class G**: **Uncontrolled**. Pilots are responsible for "see and avoid" and maintaining separation, as ATC services and separation are not provided. Only flight information service provided if requested. No separation service provided.
 
 #### Special Use Airspace (SUA)
 
