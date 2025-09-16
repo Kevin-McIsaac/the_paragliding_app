@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/airspace_geojson_service.dart';
 import '../../data/models/airspace_enums.dart';
 
 /// Widget that displays airspace information in a floating popup panel
 /// Positioned near the cursor/touch location on the map
-class AirspaceInfoPopup extends StatelessWidget {
+class AirspaceInfoPopup extends StatefulWidget {
   final List<AirspaceData> airspaces;
   final Offset position;
   final Size screenSize;
@@ -19,21 +20,57 @@ class AirspaceInfoPopup extends StatelessWidget {
   });
 
   @override
+  State<AirspaceInfoPopup> createState() => _AirspaceInfoPopupState();
+}
+
+class _AirspaceInfoPopupState extends State<AirspaceInfoPopup> {
+  static const String _filterPrefKey = 'airspace_show_filtered_items';
+  bool _showFilteredItems = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFilterPreference();
+  }
+
+  Future<void> _loadFilterPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _showFilteredItems = prefs.getBool(_filterPrefKey) ?? true;
+      });
+    }
+  }
+
+  Future<void> _saveFilterPreference(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_filterPrefKey, value);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (airspaces.isEmpty) return const SizedBox.shrink();
+    if (widget.airspaces.isEmpty) return const SizedBox.shrink();
+
+    // Filter airspaces based on toggle state
+    final displayedAirspaces = _showFilteredItems
+        ? widget.airspaces
+        : widget.airspaces.where((a) => !a.isCurrentlyFiltered).toList();
+
+    // Check if there are any filtered items
+    final hasFilteredItems = widget.airspaces.any((a) => a.isCurrentlyFiltered);
 
     // Calculate tooltip dimensions
     const double tooltipWidth = 220.0;
     // Dynamic height based on content, with reasonable limits
-    final double maxTooltipHeight = (screenSize.height * 0.8).clamp(400.0, 600.0);
+    final double maxTooltipHeight = (widget.screenSize.height * 0.8).clamp(400.0, 600.0);
     const double padding = 8.0;
 
     // Determine optimal position to avoid screen edges
     final tooltipPosition = _calculateOptimalPosition(
-      position,
+      widget.position,
       tooltipWidth,
       maxTooltipHeight,
-      screenSize,
+      widget.screenSize,
       padding,
     );
 
@@ -91,21 +128,54 @@ class AirspaceInfoPopup extends StatelessWidget {
                       size: 16,
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      airspaces.length == 1
-                          ? 'Airspace'
-                          : '${airspaces.length} Airspaces',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                    Expanded(
+                      child: Text(
+                        displayedAirspaces.length == 1
+                            ? 'Airspace'
+                            : '${displayedAirspaces.length} Airspaces',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                    const Spacer(),
+                    // Toggle button for filtered items
+                    if (hasFilteredItems)
+                      Tooltip(
+                        message: _showFilteredItems
+                            ? 'Hide filtered airspaces'
+                            : 'Show all airspaces',
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _showFilteredItems = !_showFilteredItems;
+                            });
+                            _saveFilterPreference(_showFilteredItems);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            margin: const EdgeInsets.only(right: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(
+                              _showFilteredItems
+                                  ? Icons.visibility
+                                  : Icons.visibility_off,
+                              color: _showFilteredItems
+                                  ? Colors.white
+                                  : Colors.orange.withValues(alpha: 0.8),
+                              size: 16,
+                            ),
+                          ),
+                        ),
+                      ),
                     // Close button for mobile users
-                    if (onClose != null)
+                    if (widget.onClose != null)
                       GestureDetector(
-                        onTap: onClose,
+                        onTap: widget.onClose,
                         child: Container(
                           padding: const EdgeInsets.all(4),
                           margin: const EdgeInsets.only(left: 8),
@@ -131,9 +201,9 @@ class AirspaceInfoPopup extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      for (int index = 0; index < airspaces.length; index++) ...[
-                        _buildAirspaceItem(airspaces[index]),
-                        if (index < airspaces.length - 1) Container(
+                      for (int index = 0; index < displayedAirspaces.length; index++) ...[
+                        _buildAirspaceItem(displayedAirspaces[index]),
+                        if (index < displayedAirspaces.length - 1) Container(
                           height: 1,
                           margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
                           color: Colors.white.withValues(alpha: 0.2),
