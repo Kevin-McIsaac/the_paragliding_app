@@ -15,7 +15,7 @@ import '../../services/openaip_service.dart';
 import '../../services/airspace_geojson_service.dart';
 import '../../data/models/airspace_enums.dart';
 import '../../services/airspace_identification_service.dart';
-import '../widgets/airspace_tooltip_widget.dart';
+import '../widgets/airspace_info_popup.dart';
 import '../widgets/map_filter_fab.dart';
 import '../widgets/map_legend_widget.dart';
 
@@ -989,9 +989,9 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         _buildAttribution(),
         _buildTopControlBar(),
 
-        // Airspace tooltip
+        // Airspace info popup
         if (_showTooltip && _tooltipPosition != null)
-          AirspaceTooltipWidget(
+          AirspaceInfoPopup(
             airspaces: _tooltipAirspaces,
             position: _tooltipPosition!,
             screenSize: MediaQuery.of(context).size,

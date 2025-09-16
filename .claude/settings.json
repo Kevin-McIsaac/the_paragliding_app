@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(flutter_contoller_enhanced:*)"
+      "Bash(flutter_controller_enhanced:*)",
+      "Update"
     ],
     "deny": [],
     "ask": []

@@ -8,22 +8,32 @@ _flutter_controller_enhanced() {
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    
-    # Main commands
-    opts="run r R q quit status logs clear-logs monitor restart cleanup"
-    
+
+    # Main commands (including all from v2.1)
+    opts="run r R q quit status logs clear-logs monitor restart cleanup screenshot ss health wait-ready"
+
     # Flutter devices (common ones)
-    devices="emulator-5554 chrome linux macos windows android ios"
-    
+    devices="emulator-5554 emulator-5556 chrome linux macos windows android ios"
+
     case "${prev}" in
         run|restart)
             # Complete with device names for run and restart commands
             COMPREPLY=($(compgen -W "${devices}" -- ${cur}))
             return 0
             ;;
+        screenshot|ss)
+            # Complete with device names for screenshot commands
+            COMPREPLY=($(compgen -W "${devices}" -- ${cur}))
+            return 0
+            ;;
         logs)
             # Complete with common line numbers for logs command
-            COMPREPLY=($(compgen -W "10 25 50 100 200 500" -- ${cur}))
+            COMPREPLY=($(compgen -W "10 25 50 100 200 500 1000" -- ${cur}))
+            return 0
+            ;;
+        wait-ready)
+            # Complete with common timeout values in seconds
+            COMPREPLY=($(compgen -W "10 15 30 60 120" -- ${cur}))
             return 0
             ;;
         *)

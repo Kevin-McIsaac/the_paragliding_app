@@ -2,15 +2,15 @@ import 'package:flutter/material.dart';
 import '../../services/airspace_geojson_service.dart';
 import '../../data/models/airspace_enums.dart';
 
-/// Widget that displays airspace information in a floating tooltip
+/// Widget that displays airspace information in a floating popup panel
 /// Positioned near the cursor/touch location on the map
-class AirspaceTooltipWidget extends StatelessWidget {
+class AirspaceInfoPopup extends StatelessWidget {
   final List<AirspaceData> airspaces;
   final Offset position;
   final Size screenSize;
   final VoidCallback? onClose;
 
-  const AirspaceTooltipWidget({
+  const AirspaceInfoPopup({
     super.key,
     required this.airspaces,
     required this.position,

@@ -483,7 +483,7 @@ case "$1" in
         wait_for_flutter_ready "$2"
         ;;
     *)
-        echo "Enhanced Flutter Controller v2.1"
+        echo "Enhanced Flutter Controller v2.2"
         echo "Usage: $0 {command} [options]"
         echo ""
         echo "Commands:"
