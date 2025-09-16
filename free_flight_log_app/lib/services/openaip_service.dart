@@ -7,13 +7,10 @@ import '../data/models/airspace_enums.dart';
 /// Note: As of May 2023, OpenAIP consolidated all layers into a single 'openaip' layer
 enum OpenAipLayer {
   // Single consolidated layer (current format)
-  openaip('openaip', 'OpenAIP Data', 'Consolidated airspaces, airports, and navigation data'),
-  
+  openaip('openaip', 'OpenAIP Data', 'Consolidated airspaces'),
+
   // Legacy layer names (for UI compatibility, but all map to 'openaip')
-  airspaces('openaip', 'Airspaces', 'Controlled and restricted airspace zones'),
-  airports('openaip', 'Airports', 'Airport locations and information'),
-  navaids('openaip', 'Navigation Aids', 'VOR, NDB, and other navigation aids'),
-  reportingPoints('openaip', 'Reporting Points', 'VFR reporting points');
+  airspaces('openaip', 'Airspaces', 'Controlled and restricted airspace zones');
 
   const OpenAipLayer(this.urlPath, this.displayName, this.description);
   
@@ -39,9 +36,6 @@ class OpenAipService {
   // Preferences keys
   static const String _apiKeyKey = 'openaip_api_key';
   static const String _airspaceEnabledKey = 'openaip_airspace_enabled';
-  static const String _airportsEnabledKey = 'openaip_airports_enabled';
-  static const String _navaidsEnabledKey = 'openaip_navaids_enabled';
-  static const String _reportingPointsEnabledKey = 'openaip_reporting_points_enabled';
   static const String _overlayOpacityKey = 'openaip_overlay_opacity';
 
   // Individual airspace type preferences
@@ -56,9 +50,6 @@ class OpenAipService {
   // Default values
   static const double _defaultOpacity = 0.15; // 15% optimal for airspace visibility
   static const bool _defaultAirspaceEnabled = false;
-  static const bool _defaultAirportsEnabled = false;
-  static const bool _defaultNavaidsEnabled = false;
-  static const bool _defaultReportingPointsEnabled = false;
   static const bool _defaultClippingEnabled = true; // Default to enabled for backwards compatibility
 
   // Default airspace type exclusions (false = include/show, true = exclude/hide)
@@ -154,65 +145,11 @@ class OpenAipService {
     });
   }
   
-  /// Get visibility state for airports layer
-  Future<bool> isAirportsEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!prefs.containsKey(_airportsEnabledKey)) {
-      await prefs.setBool(_airportsEnabledKey, _defaultAirportsEnabled);
-      return _defaultAirportsEnabled;
-    }
-    return prefs.getBool(_airportsEnabledKey) ?? _defaultAirportsEnabled;
-  }
   
-  /// Set visibility state for airports layer
-  Future<void> setAirportsEnabled(bool enabled) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_airportsEnabledKey, enabled);
-    LoggingService.structured('OPENAIP_LAYER_TOGGLE', {
-      'layer': 'airports',
-      'enabled': enabled,
-    });
-  }
   
-  /// Get visibility state for navaids layer
-  Future<bool> isNavaidsEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!prefs.containsKey(_navaidsEnabledKey)) {
-      await prefs.setBool(_navaidsEnabledKey, _defaultNavaidsEnabled);
-      return _defaultNavaidsEnabled;
-    }
-    return prefs.getBool(_navaidsEnabledKey) ?? _defaultNavaidsEnabled;
-  }
   
-  /// Set visibility state for navaids layer
-  Future<void> setNavaidsEnabled(bool enabled) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_navaidsEnabledKey, enabled);
-    LoggingService.structured('OPENAIP_LAYER_TOGGLE', {
-      'layer': 'navaids',
-      'enabled': enabled,
-    });
-  }
   
-  /// Get visibility state for reporting points layer
-  Future<bool> isReportingPointsEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!prefs.containsKey(_reportingPointsEnabledKey)) {
-      await prefs.setBool(_reportingPointsEnabledKey, _defaultReportingPointsEnabled);
-      return _defaultReportingPointsEnabled;
-    }
-    return prefs.getBool(_reportingPointsEnabledKey) ?? _defaultReportingPointsEnabled;
-  }
   
-  /// Set visibility state for reporting points layer
-  Future<void> setReportingPointsEnabled(bool enabled) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_reportingPointsEnabledKey, enabled);
-    LoggingService.structured('OPENAIP_LAYER_TOGGLE', {
-      'layer': 'reporting_points',
-      'enabled': enabled,
-    });
-  }
 
   /// Get clipping state for airspace layer
   Future<bool> isClippingEnabled() async {
@@ -237,46 +174,25 @@ class OpenAipService {
   Future<bool> isLayerEnabled(OpenAipLayer layer) async {
     switch (layer) {
       case OpenAipLayer.openaip:
-        // For consolidated layer, return true if any individual layer is enabled
-        return await isAirspaceEnabled() || await isAirportsEnabled() || await isNavaidsEnabled() || await isReportingPointsEnabled();
+        // For consolidated layer, return true if airspace is enabled
+        return await isAirspaceEnabled();
       case OpenAipLayer.airspaces:
         return isAirspaceEnabled();
-      case OpenAipLayer.airports:
-        return isAirportsEnabled();
-      case OpenAipLayer.navaids:
-        return isNavaidsEnabled();
-      case OpenAipLayer.reportingPoints:
-        return isReportingPointsEnabled();
     }
   }
 
   // Convenience methods for individual layer state access
   Future<bool> getAirspaceEnabled() => isAirspaceEnabled();
-  Future<bool> getAirportsEnabled() => isAirportsEnabled();
-  Future<bool> getNavaidsEnabled() => isNavaidsEnabled();
-  Future<bool> getReportingPointsEnabled() => isReportingPointsEnabled();
   
   /// Set enabled state for a specific layer
   Future<void> setLayerEnabled(OpenAipLayer layer, bool enabled) async {
     switch (layer) {
       case OpenAipLayer.openaip:
-        // For consolidated layer, enable/disable all individual layers
+        // For consolidated layer, enable/disable airspace
         await setAirspaceEnabled(enabled);
-        await setAirportsEnabled(enabled);
-        await setNavaidsEnabled(enabled);
-        await setReportingPointsEnabled(enabled);
         break;
       case OpenAipLayer.airspaces:
         await setAirspaceEnabled(enabled);
-        break;
-      case OpenAipLayer.airports:
-        await setAirportsEnabled(enabled);
-        break;
-      case OpenAipLayer.navaids:
-        await setNavaidsEnabled(enabled);
-        break;
-      case OpenAipLayer.reportingPoints:
-        await setReportingPointsEnabled(enabled);
         break;
     }
   }
@@ -325,9 +241,6 @@ class OpenAipService {
     // Remove all OpenAIP preferences
     await prefs.remove(_apiKeyKey);
     await prefs.remove(_airspaceEnabledKey);
-    await prefs.remove(_airportsEnabledKey);
-    await prefs.remove(_navaidsEnabledKey);
-    await prefs.remove(_reportingPointsEnabledKey);
     await prefs.remove(_overlayOpacityKey);
     await prefs.remove(_airspaceTypesExcludedKey);
     await prefs.remove(_icaoClassesExcludedKey);
@@ -503,9 +416,6 @@ class OpenAipService {
     return {
       'has_api_key': await hasApiKey(),
       'airspace_enabled': await isAirspaceEnabled(),
-      'airports_enabled': await isAirportsEnabled(),
-      'navaids_enabled': await isNavaidsEnabled(),
-      'reporting_points_enabled': await isReportingPointsEnabled(),
       'airspace_clipping_enabled': await isClippingEnabled(),
       'overlay_opacity': await getOverlayOpacity(),
       'excluded_airspace_types': excludedTypes,

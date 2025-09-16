@@ -25,9 +25,6 @@ class _AirspaceControlsWidgetState extends State<AirspaceControlsWidget> {
   
   // Layer state
   bool _airspaceEnabled = false;
-  bool _airportsEnabled = false;
-  bool _navaidsEnabled = false;
-  bool _reportingPointsEnabled = false;
   double _opacity = 0.6;
   bool _hasApiKey = false;
 
@@ -51,9 +48,6 @@ class _AirspaceControlsWidgetState extends State<AirspaceControlsWidget> {
       if (mounted) {
         setState(() {
           _airspaceEnabled = settings['airspace_enabled'] ?? false;
-          _airportsEnabled = settings['airports_enabled'] ?? false;
-          _navaidsEnabled = settings['navaids_enabled'] ?? false;
-          _reportingPointsEnabled = settings['reporting_points_enabled'] ?? false;
           _opacity = settings['overlay_opacity'] ?? 0.6;
           _hasApiKey = settings['has_api_key'] ?? false;
           _airspaceTypes = airspaceTypes;
@@ -83,44 +77,6 @@ class _AirspaceControlsWidgetState extends State<AirspaceControlsWidget> {
     }
   }
 
-  Future<void> _updateAirportsEnabled(bool enabled) async {
-    try {
-      await _openAipService.setAirportsEnabled(enabled);
-
-      if (mounted) {
-        setState(() => _airportsEnabled = enabled);
-        _deferCallback();
-      }
-    } catch (error, stackTrace) {
-      LoggingService.error('Failed to update airports enabled state', error, stackTrace);
-    }
-  }
-
-  Future<void> _updateNavaidsEnabled(bool enabled) async {
-    try {
-      await _openAipService.setNavaidsEnabled(enabled);
-
-      if (mounted) {
-        setState(() => _navaidsEnabled = enabled);
-        _deferCallback();
-      }
-    } catch (error, stackTrace) {
-      LoggingService.error('Failed to update navaids enabled state', error, stackTrace);
-    }
-  }
-
-  Future<void> _updateReportingPointsEnabled(bool enabled) async {
-    try {
-      await _openAipService.setReportingPointsEnabled(enabled);
-
-      if (mounted) {
-        setState(() => _reportingPointsEnabled = enabled);
-        _deferCallback();
-      }
-    } catch (error, stackTrace) {
-      LoggingService.error('Failed to update reporting points enabled state', error, stackTrace);
-    }
-  }
 
   void _deferCallback() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -181,7 +137,7 @@ class _AirspaceControlsWidgetState extends State<AirspaceControlsWidget> {
   }
 
   bool _hasEnabledLayers() {
-    return _airspaceEnabled || _airportsEnabled || _navaidsEnabled || _reportingPointsEnabled;
+    return _airspaceEnabled;
   }
 
   @override
@@ -313,24 +269,6 @@ class _AirspaceControlsWidgetState extends State<AirspaceControlsWidget> {
                   
                   // Layer toggles
                   _buildHierarchicalAirspaceToggle(),
-                  _buildLayerToggle(
-                    'Airports',
-                    _airportsEnabled,
-                    Colors.blue,
-                    (value) => _updateAirportsEnabled(value),
-                  ),
-                  _buildLayerToggle(
-                    'Navigation Aids',
-                    _navaidsEnabled,
-                    Colors.green,
-                    (value) => _updateNavaidsEnabled(value),
-                  ),
-                  _buildLayerToggle(
-                    'Reporting Points',
-                    _reportingPointsEnabled,
-                    Colors.purple,
-                    (value) => _updateReportingPointsEnabled(value),
-                  ),
 
 
                   // Opacity controls (optimized for airspace visibility)
