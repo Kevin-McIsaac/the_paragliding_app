@@ -110,6 +110,13 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   // Track current zoom level to avoid accessing MapController in build
   late double _currentZoom;
 
+  // Unified map update debouncing
+  Timer? _mapUpdateDebouncer;
+  fm.LatLngBounds? _lastProcessedBounds;
+  static const double _boundsThreshold = 0.001;
+  static const int _debounceDurationMs = 750;
+  bool _isLoadingSites = false;
+
   
   @override
   void initState() {
@@ -129,15 +136,11 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
     // Check if sites were just enabled - reload site data
     if (oldWidget.sitesEnabled != widget.sitesEnabled) {
-      if (widget.sitesEnabled && widget.onBoundsChanged != null) {
-        try {
-          // Sites were just enabled - reload site data for current bounds
-          final bounds = _mapController.camera.visibleBounds;
-          widget.onBoundsChanged!(bounds);
-        } catch (e) {
-          // Map controller might not be ready yet
-          LoggingService.info('MapController not ready when enabling sites');
-        }
+      if (widget.sitesEnabled) {
+        // Sites were just enabled - reload all data for current bounds
+        // Clear last bounds to force a reload even if bounds are the same
+        _lastProcessedBounds = null;
+        _loadVisibleData();
       }
     }
 
@@ -177,20 +180,13 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     _searchFocusNode.dispose();
     _mapController.dispose();
     _hoverDebounceTimer?.cancel();
+    _mapUpdateDebouncer?.cancel();
     super.dispose();
   }
 
   void _onMapReady() {
-    // Initial load of sites when map is ready
-    if (widget.onBoundsChanged != null) {
-      try {
-        final bounds = _mapController.camera.visibleBounds;
-        widget.onBoundsChanged!(bounds);
-      } catch (e) {
-        // Map controller might not be fully ready yet, skip this load
-        LoggingService.info('MapController not ready in _onMapReady, will load on first move');
-      }
-    }
+    // Initial load of all data when map is ready
+    _loadVisibleData();
   }
   
   void _onMapEvent(fm.MapEvent event) {
@@ -200,22 +196,73 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         event is fm.MapEventDoubleTapZoomEnd ||
         event is fm.MapEventScrollWheelZoom) {
 
-      // Reload site data
-      if (widget.onBoundsChanged != null) {
-        try {
-          final bounds = _mapController.camera.visibleBounds;
-          widget.onBoundsChanged!(bounds);
-        } catch (e) {
-          // Map controller might not be ready yet
-          LoggingService.info('MapController not ready when applying filters');
-        }
-      }
-
-      // Reload airspace data for new viewport
-      _loadAirspaceLayers();
+      // Unified debounced handler for ALL bounds-based loading
+      _mapUpdateDebouncer?.cancel();
+      _mapUpdateDebouncer = Timer(
+        const Duration(milliseconds: _debounceDurationMs),
+        _loadVisibleData,
+      );
     }
   }
-  
+
+  /// Unified method to load all visible data (sites and airspace) with debouncing
+  void _loadVisibleData() {
+    if (!_isMapReady()) return;
+
+    final bounds = _mapController.camera.visibleBounds;
+
+    // Check threshold to avoid redundant loads
+    if (!_boundsChangedSignificantly(bounds)) return;
+
+    _lastProcessedBounds = bounds;
+
+    // Log the unified loading event
+    LoggingService.info('Loading visible data for bounds: ${bounds.west.toStringAsFixed(2)},${bounds.south.toStringAsFixed(2)},${bounds.east.toStringAsFixed(2)},${bounds.north.toStringAsFixed(2)}');
+
+    // Parallel load both sites and airspace
+    Future.wait([
+      _loadSitesForBounds(bounds),
+      _loadAirspaceLayers(),
+    ]);
+  }
+
+  /// Check if map controller is ready
+  bool _isMapReady() {
+    try {
+      _mapController.camera.center;
+      return true;
+    } catch (e) {
+      LoggingService.info('MapController not ready for data loading');
+      return false;
+    }
+  }
+
+  /// Check if bounds have changed significantly
+  bool _boundsChangedSignificantly(fm.LatLngBounds newBounds) {
+    if (_lastProcessedBounds == null) return true;
+
+    return (newBounds.north - _lastProcessedBounds!.north).abs() >= _boundsThreshold ||
+           (newBounds.south - _lastProcessedBounds!.south).abs() >= _boundsThreshold ||
+           (newBounds.east - _lastProcessedBounds!.east).abs() >= _boundsThreshold ||
+           (newBounds.west - _lastProcessedBounds!.west).abs() >= _boundsThreshold;
+  }
+
+  /// Load sites for the given bounds
+  Future<void> _loadSitesForBounds(fm.LatLngBounds bounds) async {
+    if (_isLoadingSites) return;
+
+    // Skip loading sites if they're disabled
+    if (!widget.sitesEnabled) {
+      LoggingService.info('Sites loading skipped - sites disabled');
+      return;
+    }
+
+    // Notify parent to handle site loading
+    if (widget.onBoundsChanged != null) {
+      widget.onBoundsChanged!(bounds);
+    }
+  }
+
   /// Load airspace overlay layers based on user preferences and current map view
   Future<void> _loadAirspaceLayers() async {
     if (_airspaceLoading) return;
