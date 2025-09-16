@@ -1,17 +1,18 @@
 # CLAUDE.md
 
 ## ⚡ Critical Rules (Read First)
+
 - **NEVER use `print()` statements** - Use `LoggingService` instead
 - **ALL flight data** must go through `FlightTrackLoader.loadFlightTrack()`
 - **All track data is zero-based and trimmed** when received from FlightTrackLoader
-- **ALWAYS run commands from `/home/kmcisaac/Projects/free_flight_log/free_flight_log_app`**
-- Use free maps in development, test on emulator by default
-- Run `flutter analyze` and fix errors before committing
+- **ALWAYS Use free maps in development, test on emulator by default**
+- **ALWAYS Run `flutter analyze` and fix errors after complex, multi-file changes**
 
 ## 🚀 Essential Commands
+
 ```bash
 # WORKING DIRECTORY: /home/kmcisaac/Projects/free_flight_log/free_flight_log_app
-flutter_controller_enhanced run        # Start app with logging
+flutter_controller_enhanced run        # Start app with logging. ALWAYS run in background
 flutter_controller_enhanced r          # Hot reload with readiness check (most used)
 flutter_controller_enhanced R          # Hot restart with readiness check (for state issues)
 flutter_controller_enhanced status     # Check app status with enhanced health info
@@ -20,19 +21,10 @@ flutter_controller_enhanced screenshot # Take screenshot (alias: ss)
 flutter_controller_enhanced q          # Quit app
 ```
 
-### Enhanced Commands (v2.1+)
-| Command | Shortcut | Description | Use When |
-|---------|----------|-------------|----------|
-| `screenshot [device]` | `ss` | Take adb screenshot | Debugging UI issues |
-| `health` | - | Comprehensive health check | Troubleshooting connection issues |
-| `wait-ready [timeout]` | - | Wait for Flutter readiness | Before critical operations |
-| `r` | - | Hot reload with validation | Code changes (most common) |
-| `R` | - | Hot restart with validation | State corruption or dependency changes |
-| `logs 50` | - | Show recent logs | Checking recent app behavior |
-
 ### Test & Quality Commands
+
 ```bash
-flutter analyze                        # Check for errors (run before commits)
+flutter analyze                       # Check for errors (run after complex, mult-file change)
 flutter test                          # Run all tests
 flutter test test/specific_test.dart  # Run specific test
 flutter_controller_enhanced cleanup   # Clean up processes if stuck
@@ -40,6 +32,7 @@ flutter_controller_enhanced health    # Check process/pipe/readiness status
 ```
 
 ## 📁 Key Files (Most Accessed)
+
 | File | Purpose | Usage Frequency |
 |------|---------|----------------|
 | `lib/main.dart` | App entry point | Low |
@@ -50,6 +43,7 @@ flutter_controller_enhanced health    # Check process/pipe/readiness status
 | `lib/presentation/screens/flight_detail_screen.dart` | Flight details | Medium |
 
 ## 📂 File Structure Quick Reference
+
 ```
 lib/
 ├── services/                    # Core business logic (MOST IMPORTANT)
@@ -82,6 +76,7 @@ lib/
 ```
 
 ## 🚨 Common Error Patterns & Solutions
+
 | Error | Cause | Solution |
 |-------|-------|----------|
 | `print()` used | Direct print call | Use `LoggingService.info()` instead |
@@ -93,37 +88,6 @@ lib/
 | Commands unresponsive | Pipe/readiness issues | Run `flutter_controller_enhanced health` |
 | Race conditions | Commands sent too early | Commands now auto-wait for readiness |
 
-## 🔧 Enhanced Troubleshooting (v2.1+)
-```bash
-# Enhanced diagnostics
-flutter_controller_enhanced health    # Comprehensive health check (PID/pipe/readiness)  
-flutter_controller_enhanced status    # Enhanced status with process/pipe validation
-flutter_controller_enhanced wait-ready 30  # Wait for Flutter to be ready (30s timeout)
-
-# App issues
-flutter_controller_enhanced cleanup   # Kill stuck processes + clean stale state
-flutter_controller_enhanced restart   # Force full restart
-flutter_controller_enhanced screenshot # Visual debugging
-
-# Development issues  
-flutter clean && flutter pub get     # Reset dependencies
-flutter analyze                      # Check code issues
-flutter doctor                       # Check Flutter setup
-
-# Database issues (DEV ONLY)
-# Clear app data: Android Settings → Apps → Free Flight Log → Storage → Clear Data
-```
-
-### Health Check Indicators
-```
-Health Check Results:
-  PID alive: ✓        # Process is running
-  Pipe responsive: ✓   # Commands can be sent
-  Flutter ready: ✓     # App accepts commands
-```
-- **All ✓**: System healthy, commands will work
-- **Any ✗**: Issue detected, see status for details
-
 ## Project Overview
 
 Free Flight Log is a free, Android-first, cross-platform application for logging, reporting, and visualizing paraglider, hang glider, and microlight flights.
@@ -134,15 +98,17 @@ Free Flight Log is a free, Android-first, cross-platform application for logging
 
 **Documentation**: [Architecture](documentation/TECHNICAL_DESIGN.md) | [Requirements](documentation/FUNCTIONAL_SPECIFICATION.md)
 
-## 🤖 Claude Code Integration
+## Claude Code Integration
 
 ### Log Files for Monitoring
+
 - **Output**: `/tmp/flutter_controller/flutter_output.log` (full app output)
 - **Status**: `/tmp/flutter_controller/flutter_status` (running/stopped)
 - **PID**: `/tmp/flutter_controller/flutter.pid` (process tracking)
 - **Screenshots**: `/tmp/flutter_controller/screenshots/` (also copied to `/tmp/`)
 
 ### Claude-Specific Patterns
+
 ```dart
 // File navigation format for Claude
 LoggingService.info('Error in flight loading'); // Outputs: at=flight_service.dart:142
@@ -164,6 +130,7 @@ try {
 ```
 
 ### Testing Integration  
+
 ```bash
 # Run tests with Claude-readable output
 flutter test --reporter=expanded          # Detailed test output
@@ -179,23 +146,25 @@ genhtml coverage/lcov.info -o coverage/html/
 ## Development Principles
 
 ### Core Rules
+
 - **Keep it Simple**: Choose simple, proven solutions over complex architectures
 - **State Management**: Simple StatefulWidget with direct database access
 - **Database**: Simple management - <10 tables, largest <5000 rows
-- **Idiomatic**: Use language/tool-native approaches (Flutter, Cesium, JavaScript)
+- **Idiomatic**: Use idomatic language/tool-native approaches (Flutter, Cesium, JavaScript)
 - **WebView Constraints**: No ES6 modules, single JS context
 - **Error Recovery**: Add fallbacks for external services
 
 ### Testing & Performance
+
 - Add Claude-readable logging for debugging and performance
-- Run analyzer to check for errors
-- Test after implementing features
+- Run analyzer to check for errors after complex multi-file changes
 - Measure performance before optimizing
 - Default to emulator for testing
 
 ## ✅❌ Code Patterns & Anti-Patterns
 
 ### Logging (ALWAYS use LoggingService)
+
 ```dart
 import 'package:free_flight_log/services/logging_service.dart';
 
@@ -212,6 +181,7 @@ developer.log('Developer log');      // Use LoggingService.info() instead
 ```
 
 ### Flight Data (Single Source of Truth)
+
 ```dart
 // ✅ Always use FlightTrackLoader
 final igcFile = await FlightTrackLoader.loadFlightTrack(flight);
@@ -225,6 +195,7 @@ final customTrimmed = trackPoints.sublist(10, -10); // Wrong indexing!
 ```
 
 ### Database Operations
+
 ```dart
 // ✅ Use DatabaseService methods
 final flights = await DatabaseService.instance.getAllFlights();
@@ -236,6 +207,7 @@ db.rawQuery('SELECT * FROM flights'); // Use typed methods instead
 ```
 
 ### Widget Creation Patterns
+
 ```dart
 // ✅ Follow existing widget patterns
 AppStatCard.flightList(
@@ -260,6 +232,7 @@ ExpansionTile(...);         // Use AppExpansionCard instead
 ```
 
 ### State Management
+
 ```dart
 // ✅ Simple StatefulWidget pattern (project standard)
 class FlightListScreen extends StatefulWidget {
@@ -287,14 +260,16 @@ class _FlightListScreenState extends State<FlightListScreen> {
 ```
 
 ### Log Format (Claude-optimized)
+
 ```
 [I][+1.2s] App startup completed | at=splash_screen.dart:32
 [D][+5.1s] [IGC_IMPORT] file=flight.igc | points=1091 | at=igc_import_service.dart:85
 [P][+2.1s] Database Query | 156ms | flights loaded | at=database_service.dart:245
 ```
-**Benefits**: 60-70% log reduction, file:line navigation, operation correlation
+
 
 ### Data Flow
+
 ```
 IGC File (Full/Archival) → Detection → Store Full Indices → Load Trimmed → App Uses Zero-Based
 ```
@@ -304,6 +279,7 @@ IGC File (Full/Archival) → Detection → Store Full Indices → Load Trimmed �
 ## 📊 Performance Guidelines & Thresholds
 
 ### Database Performance
+
 | Operation | Target Time | Alert Threshold | Notes |
 |-----------|-------------|-----------------|-------|
 | Load all flights | <200ms | >500ms | ~5000 flights max |
@@ -311,7 +287,8 @@ IGC File (Full/Archival) → Detection → Store Full Indices → Load Trimmed �
 | IGC file loading | <1s | >3s | Includes parsing + trimming |
 | Database startup | <300ms | >1s | App launch impact |
 
-### UI Performance 
+### UI Performance
+
 | Component | Target | Alert | Notes |
 |-----------|--------|-------|-------|
 | Hot reload | <2s | >5s | Code changes |
@@ -320,12 +297,14 @@ IGC File (Full/Archival) → Detection → Store Full Indices → Load Trimmed �
 | Widget rebuilds | Minimal | Excessive | Use `const` constructors |
 
 ### Memory Guidelines
+
 - **IGC File Cache**: Max 10 files in `FlightTrackLoader` LRU cache
 - **Database Connections**: Use single instance via `DatabaseService`
 - **Widget State**: Clear heavy objects in `dispose()`
 - **Image Memory**: Lazy load screenshots, compress if >1MB
 
 ### Optimization Tips
+
 ```dart
 // ✅ Efficient list building
 ListView.builder(
@@ -352,6 +331,7 @@ setState(() {}); // In build() method - causes infinite rebuilds
 ## 🔍 Quick Reference Tables
 
 ### Database Tables (Core Schema)
+
 | Table | Primary Key | Key Columns | Purpose |
 |-------|-------------|-------------|---------|
 | `flights` | `id` | `date`, `site_id`, `wing_id` | Flight records |
@@ -360,6 +340,7 @@ setState(() {}); // In build() method - causes infinite rebuilds
 | `igc_files` | `flight_id` | `filename`, `track_points` | Track data |
 
 ### Common File Operations
+
 | Task | File/Service | Method | Notes |
 |------|-------------|--------|-------|
 | Load flight data | `FlightTrackLoader` | `loadFlightTrack(flight)` | Single source of truth |
@@ -368,6 +349,7 @@ setState(() {}); // In build() method - causes infinite rebuilds
 | Logging | `LoggingService` | `info()`, `error()`, `structured()` | Claude-optimized |
 
 ### Widget Quick Reference
+
 | UI Pattern | Widget | Usage |
 |------------|--------|--------|
 | Statistics display | `AppStatCard.flightList()` | Flight counts, totals |
@@ -376,44 +358,16 @@ setState(() {}); // In build() method - causes infinite rebuilds
 | Loading states | `AppLoadingSkeleton` | Data fetching |
 | Error display | `AppErrorState` | Error handling with retry |
 
-### DTD Connection (Claude Code Integration)
-1. **Start Flutter app**: `flutter_controller_enhanced run`
-2. **Copy DTD URI**: From IDE or `flutter_controller_enhanced status`  
-3. **Connect in Claude**: Use "Copy DTD Uri to clipboard" suggestion
-4. **Hot reload**: `flutter_controller_enhanced r` (most common)
-5. **Monitor logs**: `flutter_controller_enhanced logs 50`
-
-### Enhanced State Management (v2.1+)
-The flutter_controller_enhanced now provides robust state checking and automatic recovery:
-
-#### State Validation Layers
-1. **PID Check**: Verifies process is alive
-2. **Pipe Responsiveness**: Tests command delivery capability  
-3. **Flutter Readiness**: Confirms app accepts commands
-4. **Automatic Recovery**: Cleans stale state files
-
-#### Command Safety Features
-- **Pre-validation**: `r` and `R` commands check readiness before sending
-- **Timeout Protection**: Commands fail gracefully if system unresponsive
-- **Race Condition Prevention**: Auto-wait for Flutter startup completion
-- **Error Recovery**: Stale state cleanup on crash detection
-
-#### Screenshot Integration
-```bash
-flutter_controller_enhanced screenshot        # Default emulator
-flutter_controller_enhanced ss emulator-5556 # Specific device
-# Files saved to: /tmp/flutter_controller/screenshots/
-# Latest copy: /tmp/screenshot.png (for easy Claude access)
-```
-
 ## Database Development
 
 ### Pre-Release Strategy
+
 - **No Migrations**: Clear app data for schema changes during development
 - **v1.0 Baseline**: Current schema in `database_helper.dart`
 - **Developer Workflow**: Clear data → Hot restart → Re-import test data
 
 ### Schema Change Process
+
 1. Clear app data: Settings → Apps → Free Flight Log → Storage → Clear Data
 2. Hot restart app to recreate database
 3. Re-import test data
@@ -421,18 +375,21 @@ flutter_controller_enhanced ss emulator-5556 # Specific device
 ## Key Calculations & Data
 
 ### Flight Calculations
+
 - **Altitude**: Always use GPS
 - **Speed**: GPS with time between readings
 - **Climb Rate**: Pressure if available, otherwise GPS with time deltas
 - **Calculate**: Both instantaneous and 15s trailing average climb rates
 
 ### Timestamp Handling
+
 - **IGC**: UTC time (HHMMSS) → Detect timezone from GPS → Convert to local
 - **Display**: Local timezone of launch location
 - **Database**: ISO8601 date + HH:MM times + timezone offset
 - **Cesium**: ISO8601 with timezone (e.g., "2025-07-11T11:03:56.000+02:00")
 
 ### External Dependencies
+
 - **Maps**: Assume quotas exist, default to free providers (OpenStreetMap)
 - **GPS**: Primary data source for all calculations
 - **IGC Files**: Immutable once imported, parse once and store results
@@ -440,21 +397,25 @@ flutter_controller_enhanced ss emulator-5556 # Specific device
 ## 🌐 OpenAIP API Integration
 
 ### Overview
+
 Free Flight Log integrates with OpenAIP Core API for aviation data overlays including airspaces, airports, navigation aids, and reporting points.
 
 ### API Endpoints & Authentication
+
 ```
 Base URL: https://api.core.openaip.net/api
 Authentication: API key as query parameter (?apiKey=xxx)
 ```
 
 **Working Endpoints:**
+
 - `/api/airspaces` - Controlled airspace polygons (CTR, TMA, CTA, danger areas, etc.)
 - `/api/airports` - Airport point data with details and frequencies
 - `/api/navaids` - Navigation aids (VOR, NDB, DME, waypoints)
 - `/api/reporting-points` - VFR reporting points with altitude restrictions
 
 ### Request Format
+
 ```http
 GET /api/{endpoint}?bbox=west,south,east,north&limit=500&apiKey={key}
 Headers:
@@ -463,7 +424,9 @@ Headers:
 ```
 
 ### Response Format
+
 All endpoints return GeoJSON FeatureCollection with:
+
 ```json
 {
   "type": "FeatureCollection",
@@ -480,12 +443,14 @@ All endpoints return GeoJSON FeatureCollection with:
 ### Code Integration
 
 **Service Architecture:**
+
 - `AirspaceGeoJsonService` - Handles airspace polygons and styling
 - `AviationDataService` - Handles airports, navaids, reporting points
 - `AirspaceOverlayManager` - Coordinates all aviation data layers
 - `OpenAipService` - Manages API keys and layer preferences
 
 **Key Implementation Points:**
+
 ```dart
 // ✅ Correct authentication (URL parameter, not headers)
 final url = 'https://api.core.openaip.net/api/airports'
@@ -502,12 +467,14 @@ final airports = await AviationDataService.instance.fetchAirports(bounds);
 ```
 
 ### Visual Representation
+
 - **Airspaces**: Semi-transparent polygons with type-specific colors
 - **Airports**: Circular markers with airplane icons, sized by category
 - **Navaids**: Symbol markers (⬡ VOR, ● NDB, ◇ DME, ◉ Waypoints)
 - **Reporting Points**: Triangle markers with altitude restriction tooltips
 
 ### Troubleshooting
+
 | Issue | Cause | Solution |
 |-------|--------|----------|
 | 401 Auth Failed | Invalid API key | Check OpenAIP account, verify key |
@@ -516,7 +483,9 @@ final airports = await AviationDataService.instance.fetchAirports(bounds);
 | Headers auth failure | Wrong auth method | Use query parameter, not headers |
 
 ### Logging Integration
+
 All API calls generate structured logs:
+
 ```
 [AIRPORTS_API_REQUEST] url=*** | bounds=*** | has_api_key=true
 [AIRPORTS_API_SUCCESS] airports_count=15 | cache_key=***
@@ -525,6 +494,7 @@ All API calls generate structured logs:
 ## 🚀 Development Workflow (Claude-Optimized)
 
 ### Standard Development Process
+
 1. **Start**: `flutter_controller_enhanced run` from correct directory
 2. **Code**: Follow existing patterns, use `LoggingService` for debugging
 3. **Test**: `flutter_controller_enhanced r` for hot reload
@@ -533,6 +503,7 @@ All API calls generate structured logs:
 6. **Commit**: Only when user explicitly requests
 
 ### Common Task Patterns
+
 | Task | Commands | Notes |
 |------|----------|-------|
 | Fix hot reload issues | `health` → `cleanup` → `restart` | Enhanced diagnostics first |
@@ -543,14 +514,17 @@ All API calls generate structured logs:
 | Force readiness wait | `wait-ready 30` | Before critical operations |
 
 ### File Navigation for Claude
+
 Use format `file_path:line_number` in logs:
+
 - `flight_service.dart:142` - Easy navigation
 - `database_service.dart:67` - Clickable in IDE
 - `logging_service.dart:28` - Jump to source
 
 ---
 
-📚 **Detailed Documentation**: 
+📚 **Detailed Documentation**:
+
 - [IGC Data Trimming](docs/IGC_TRIMMING.md) - Track data processing
 - [Database Schema](docs/DATABASE.md) - Complete table definitions
 - [Timestamp Processing](docs/TIMESTAMPS.md) - UTC/local conversion
