@@ -1032,7 +1032,11 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   }
 
   Widget _buildAttribution() {
-    return MapControls.buildAttribution(provider: widget.mapProvider);
+    return MapControls.buildAttribution(
+      provider: widget.mapProvider,
+      showAirspaceAttribution: _airspaceLayers.isNotEmpty,
+      showSitesAttribution: widget.sites.isNotEmpty,
+    );
   }
 
   @override

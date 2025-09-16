@@ -108,9 +108,11 @@ class MapControls {
     );
   }
 
-  /// Build standardized attribution widget
+  /// Build standardized attribution widget with support for multiple data sources
   static Widget buildAttribution({
     required MapProvider provider,
+    bool showAirspaceAttribution = false,
+    bool showSitesAttribution = false,
   }) {
     return Positioned(
       bottom: 8,
@@ -120,12 +122,46 @@ class MapControls {
         decoration: _standardAttributionDecoration.copyWith(
           color: Colors.grey[900]!.withValues(alpha: 0.8),
         ),
-        child: GestureDetector(
-          onTap: () => _launchAttributionUrl(provider),
-          child: Text(
-            provider.attribution,
-            style: const TextStyle(fontSize: 8, color: Colors.white70),
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Map provider attribution
+            GestureDetector(
+              onTap: () => _launchAttributionUrl(provider),
+              child: Text(
+                'Maps: ${provider.attribution}',
+                style: const TextStyle(fontSize: 8, color: Colors.white70),
+              ),
+            ),
+            // Airspace attribution
+            if (showAirspaceAttribution) ...[
+              const Text(
+                ' | ',
+                style: TextStyle(fontSize: 8, color: Colors.white54),
+              ),
+              GestureDetector(
+                onTap: () => _launchDataSourceUrl('openaip'),
+                child: const Text(
+                  'Airspace: OpenAIP.net',
+                  style: TextStyle(fontSize: 8, color: Colors.white70),
+                ),
+              ),
+            ],
+            // Sites attribution
+            if (showSitesAttribution) ...[
+              const Text(
+                ' | ',
+                style: TextStyle(fontSize: 8, color: Colors.white54),
+              ),
+              GestureDetector(
+                onTap: () => _launchDataSourceUrl('paraglidingearth'),
+                child: const Text(
+                  'Sites: paraglidingearth.com',
+                  style: TextStyle(fontSize: 8, color: Colors.white70),
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -151,6 +187,28 @@ class MapControls {
       await launchUrl(uri, mode: LaunchMode.platformDefault);
     } catch (e) {
       LoggingService.error('MapControls: Could not launch attribution URL', e);
+    }
+  }
+
+  /// Launch URL for data source attribution
+  static Future<void> _launchDataSourceUrl(String source) async {
+    String url;
+    switch (source) {
+      case 'openaip':
+        url = 'https://www.openaip.net';
+        break;
+      case 'paraglidingearth':
+        url = 'https://www.paraglidingearth.com';
+        break;
+      default:
+        return;
+    }
+
+    final uri = Uri.parse(url);
+    try {
+      await launchUrl(uri, mode: LaunchMode.platformDefault);
+    } catch (e) {
+      LoggingService.error('MapControls: Could not launch data source URL', e);
     }
   }
 
