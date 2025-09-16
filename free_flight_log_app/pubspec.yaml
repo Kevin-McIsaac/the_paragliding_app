@@ -48,6 +48,7 @@ dependencies:
   receive_sharing_intent: ^1.8.1  # Handle IGC files shared from other apps
   fl_chart: ^1.0.0         # Charts for altitude/climb rate
   intl: ^0.20.2             # Date/time formatting
+  multi_dropdown: ^3.0.1    # Multi-select dropdown with search and chips
   path: ^1.8.0              # Database path utilities
   path_provider: ^2.1.5     # App directory paths - bug fixes & stability
   timezone: ^0.10.1         # Timezone database and lookup

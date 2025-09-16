@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../services/logging_service.dart';
 import '../../utils/map_provider.dart';
 import '../../data/models/airspace_enums.dart';
+import 'package:multi_dropdown/multi_dropdown.dart';
 
 /// Filter dialog for controlling map layer visibility
 /// Supports sites toggle, airspace type filtering, ICAO class filtering, altitude filtering, and clipping
@@ -43,6 +44,10 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
 
   Timer? _debounceTimer;
 
+  // Controllers for multi_dropdown
+  late final MultiSelectController<String> _typesController;
+  late final MultiSelectController<String> _classesController;
+
   // Dynamic generation of all airspace types from enum
   static Map<String, String> get _typeDescriptions {
     final Map<String, String> descriptions = {};
@@ -82,14 +87,45 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
     for (final icaoClass in _classDescriptions.keys) {
       _icaoClasses[icaoClass] ??= false;
     }
+
+    // Initialize controllers with selected items
+    _typesController = MultiSelectController<String>();
+    _classesController = MultiSelectController<String>();
+
+    // Set initial selected items (those that are hidden)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final hiddenTypes = _airspaceTypes.entries
+          .where((e) => e.value)
+          .map((e) => e.key)
+          .toList();
+      final hiddenClasses = _icaoClasses.entries
+          .where((e) => e.value)
+          .map((e) => e.key)
+          .toList();
+
+      // Set initial selected items using the controller methods
+      for (final key in hiddenTypes) {
+        final index = _typeDescriptions.keys.toList().indexOf(key);
+        if (index >= 0) {
+          _typesController.selectAtIndex(index);
+        }
+      }
+      for (final key in hiddenClasses) {
+        final index = _classDescriptions.keys.toList().indexOf(key);
+        if (index >= 0) {
+          _classesController.selectAtIndex(index);
+        }
+      }
+    });
   }
+
 
   @override
   Widget build(BuildContext context) {
     return Dialog(
       backgroundColor: Colors.transparent,
       child: Container(
-        width: MediaQuery.of(context).size.width > 320 ? 280 : MediaQuery.of(context).size.width * 0.9,
+        width: MediaQuery.of(context).size.width > 350 ? 320 : MediaQuery.of(context).size.width * 0.9,
         constraints: const BoxConstraints(maxHeight: 500),
         decoration: BoxDecoration(
           color: const Color(0xFF1E1E1E),
@@ -171,39 +207,35 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                     ),
                     const SizedBox(height: 6),
 
-                    // Three-column layout: Types | Classes | Altitude
+                    // Two-column layout: (Types + Classes) | Altitude
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Types column
+                        // Left column: Types and Classes stacked
                         Expanded(
-                          flex: 1,
+                          flex: 7,  // Much wider column (78% width)
                           child: Opacity(
                             opacity: _airspaceEnabled ? 1.0 : 0.3,
                             child: IgnorePointer(
                               ignoring: !_airspaceEnabled,
-                              child: _buildTypesColumn(),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  // Airspace Types
+                                  _buildTypesColumn(),
+                                  const SizedBox(height: 12),
+                                  // ICAO Classes
+                                  _buildClassesColumn(),
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 12),
 
-                        // Classes column
+                        // Right column: Altitude
                         Expanded(
-                          flex: 1,
-                          child: Opacity(
-                            opacity: _airspaceEnabled ? 1.0 : 0.3,
-                            child: IgnorePointer(
-                              ignoring: !_airspaceEnabled,
-                              child: _buildClassesColumn(),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-
-                        // Altitude column
-                        Expanded(
-                          flex: 1,
+                          flex: 2,  // Narrower column (33% width)
                           child: Opacity(
                             opacity: _airspaceEnabled ? 1.0 : 0.3,
                             child: IgnorePointer(
@@ -460,185 +492,262 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
   }
 
   Widget _buildTypesColumn() {
+    // Create dropdown items from airspace types - show only abbreviations
+    final typeItems = _typeDescriptions.entries.map((entry) {
+      final abbrev = entry.key;
+      return DropdownItem<String>(
+        label: abbrev,  // Only show abbreviation
+        value: abbrev,
+      );
+    }).toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            const Text(
-              'Types',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-              ),
-            ),
-            const Spacer(),
-            // Select All / Clear All buttons
-            GestureDetector(
-              onTap: () {
-                setState(() {
-                  final allSelected = _airspaceTypes.values.every((selected) => selected == true);
-                  for (final key in _airspaceTypes.keys) {
-                    _airspaceTypes[key] = !allSelected;
-                  }
-                  _applyFiltersDebounced();
-                });
-              },
-              child: Text(
-                _airspaceTypes.values.every((selected) => selected == true) ? 'Clear' : 'All',
-                style: const TextStyle(
-                  color: Colors.blue,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
+        const Text(
+          'Airspace Types',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
         ),
-        const SizedBox(height: 8),
-        Container(
-          height: 144,
-          child: SingleChildScrollView(
-            child: Column(
-              children: _typeDescriptions.entries.map((entry) {
-                return Tooltip(
-                  message: entry.value,
-                  textStyle: const TextStyle(color: Colors.white, fontSize: 12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1E1E1E),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: Colors.white24),
-                  ),
-                  child: InkWell(
-                    onTap: () {
-                      setState(() {
-                        _airspaceTypes[entry.key] = !(_airspaceTypes[entry.key] ?? false);
-                        _applyFiltersDebounced();
-                      });
-                    },
-                    borderRadius: BorderRadius.circular(4),
-                    child: Container(
-                      height: 18,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Transform.scale(
-                            scale: 0.6,
-                            child: Checkbox(
-                              value: _airspaceTypes[entry.key] ?? false,
-                              onChanged: (value) {
-                                setState(() {
-                                  _airspaceTypes[entry.key] = value ?? false;
-                                  _applyFiltersDebounced();
-                                });
-                              },
-                              activeColor: Colors.blue,
-                              checkColor: Colors.white,
-                              side: const BorderSide(color: Colors.white54),
-                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                          ),
-                          Expanded(
-                            child: Text(
-                              entry.key,
-                              style: const TextStyle(color: Colors.white, fontSize: 10),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
+        const SizedBox(height: 4),
+        MultiDropdown<String>(
+          controller: _typesController,
+          items: typeItems,
+          enabled: true,
+          searchEnabled: true,
+          itemBuilder: (item, index, onTap) {
+            return InkWell(
+              onTap: onTap,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        item.label,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: item.selected ? Colors.white : Colors.white70,
+                          fontWeight: item.selected ? FontWeight.w500 : FontWeight.normal,
+                        ),
                       ),
                     ),
-                  ),
-                );
-              }).toList(),
+                    if (item.selected)
+                      Icon(
+                        Icons.check,
+                        size: 12,
+                        color: Colors.blue,
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+          chipDecoration: ChipDecoration(
+            backgroundColor: Colors.blue.withOpacity(0.2),
+            labelStyle: const TextStyle(color: Colors.white, fontSize: 9),
+            deleteIcon: const Icon(Icons.close, size: 10, color: Colors.white70),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.blue.withOpacity(0.5)),
+            wrap: true,
+            spacing: 2,
+            runSpacing: 2,
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          ),
+          fieldDecoration: FieldDecoration(
+            hintText: 'Select types to hide',
+            hintStyle: const TextStyle(color: Colors.white54, fontSize: 10),
+            backgroundColor: Colors.black.withOpacity(0.3),
+            border: OutlineInputBorder(
+              borderSide: const BorderSide(color: Colors.white54),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderSide: const BorderSide(color: Colors.blue),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            suffixIcon: const Icon(Icons.arrow_drop_down, color: Colors.white70, size: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            showClearIcon: false,
+          ),
+          dropdownDecoration: DropdownDecoration(
+            backgroundColor: const Color(0xFF2C2C2C),
+            marginTop: 1,
+            maxHeight: 280,
+            borderRadius: BorderRadius.circular(6),
+            elevation: 4,
+          ),
+          dropdownItemDecoration: DropdownItemDecoration(
+            selectedBackgroundColor: Colors.blue.withOpacity(0.3),
+            selectedTextColor: Colors.white,
+            textColor: Colors.white70,
+          ),
+          searchDecoration: SearchFieldDecoration(
+            hintText: 'Search...',
+            searchIcon: const Icon(Icons.search, color: Colors.white54, size: 14),
+            border: OutlineInputBorder(
+              borderSide: const BorderSide(color: Colors.white24),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderSide: const BorderSide(color: Colors.blue),
+              borderRadius: BorderRadius.circular(4),
             ),
           ),
+          onSelectionChange: (selectedItems) {
+            // Convert to Map<String, bool> (true = hidden)
+            final newTypes = Map<String, bool>.from(_airspaceTypes);
+            // First, set all to false (visible)
+            for (final key in newTypes.keys) {
+              newTypes[key] = false;
+            }
+            // Then set selected items to true (hidden)
+            for (final item in selectedItems) {
+              newTypes[item] = true;
+            }
+            setState(() {
+              _airspaceTypes = newTypes;
+              _applyFiltersDebounced();
+            });
+          },
         ),
       ],
     );
   }
 
   Widget _buildClassesColumn() {
+    // Create dropdown items from ICAO classes
+    final classItems = _classDescriptions.entries.map((entry) {
+      final className = entry.key;
+      return DropdownItem<String>(
+        label: className,
+        value: className,
+      );
+    }).toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Classes',
+          'ICAO Classes',
           style: TextStyle(
-            fontSize: 13,
+            fontSize: 11,
             fontWeight: FontWeight.w600,
             color: Colors.white,
           ),
         ),
-        const SizedBox(height: 8),
-        ..._classDescriptions.entries.map((entry) {
-          return Tooltip(
-            message: entry.value,
-            textStyle: const TextStyle(color: Colors.white, fontSize: 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E1E1E),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: Colors.white24),
-            ),
-            child: InkWell(
-              onTap: () {
-                setState(() {
-                  _icaoClasses[entry.key] = !(_icaoClasses[entry.key] ?? false);
-                  // Apply changes immediately
-                  _applyFiltersDebounced();
-                });
-              },
-              borderRadius: BorderRadius.circular(4),
+        const SizedBox(height: 4),
+        MultiDropdown<String>(
+          controller: _classesController,
+          items: classItems,
+          enabled: true,
+          searchEnabled: false, // Less items, no need for search
+          itemBuilder: (item, index, onTap) {
+            return InkWell(
+              onTap: onTap,
               child: Container(
-                height: 18,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 child: Row(
-                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Transform.scale(
-                      scale: 0.6,
-                      child: Checkbox(
-                        value: _icaoClasses[entry.key] ?? false,
-                        onChanged: (value) {
-                          setState(() {
-                            _icaoClasses[entry.key] = value ?? false;
-                            // Apply changes immediately
-                            _applyFiltersDebounced();
-                          });
-                        },
-                        activeColor: Colors.blue,
-                        checkColor: Colors.white,
-                        side: const BorderSide(color: Colors.white54),
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    Expanded(
+                      child: Text(
+                        item.label,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: item.selected ? Colors.white : Colors.white70,
+                          fontWeight: item.selected ? FontWeight.w500 : FontWeight.normal,
+                        ),
                       ),
                     ),
-                    Text(
-                      entry.key,
-                      style: const TextStyle(color: Colors.white, fontSize: 10),
-                    ),
+                    if (item.selected)
+                      Icon(
+                        Icons.check,
+                        size: 12,
+                        color: Colors.orange,
+                      ),
                   ],
                 ),
               ),
+            );
+          },
+          chipDecoration: ChipDecoration(
+            backgroundColor: Colors.orange.withOpacity(0.2),
+            labelStyle: const TextStyle(color: Colors.white, fontSize: 9),
+            deleteIcon: const Icon(Icons.close, size: 10, color: Colors.white70),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.orange.withOpacity(0.5)),
+            wrap: true,
+            spacing: 2,
+            runSpacing: 2,
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          ),
+          fieldDecoration: FieldDecoration(
+            hintText: 'Select classes to hide',
+            hintStyle: const TextStyle(color: Colors.white54, fontSize: 10),
+            backgroundColor: Colors.black.withOpacity(0.3),
+            border: OutlineInputBorder(
+              borderSide: const BorderSide(color: Colors.white54),
+              borderRadius: BorderRadius.circular(6),
             ),
-          );
-        }).toList(),
+            focusedBorder: OutlineInputBorder(
+              borderSide: const BorderSide(color: Colors.blue),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            suffixIcon: const Icon(Icons.arrow_drop_down, color: Colors.white70, size: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            showClearIcon: false,
+          ),
+          dropdownDecoration: DropdownDecoration(
+            backgroundColor: const Color(0xFF2C2C2C),
+            marginTop: 1,
+            maxHeight: 240,
+            borderRadius: BorderRadius.circular(6),
+            elevation: 4,
+          ),
+          dropdownItemDecoration: DropdownItemDecoration(
+            selectedBackgroundColor: Colors.orange.withOpacity(0.3),
+            selectedTextColor: Colors.white,
+            textColor: Colors.white70,
+          ),
+          onSelectionChange: (selectedItems) {
+            // Convert to Map<String, bool> (true = hidden)
+            final newClasses = Map<String, bool>.from(_icaoClasses);
+            // First, set all to false (visible)
+            for (final key in newClasses.keys) {
+              newClasses[key] = false;
+            }
+            // Then set selected items to true (hidden)
+            for (final item in selectedItems) {
+              newClasses[item] = true;
+            }
+            setState(() {
+              _icaoClasses = newClasses;
+              _applyFiltersDebounced();
+            });
+          },
+        ),
       ],
     );
   }
 
   Widget _buildAltitudeColumn() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
         const Text(
           'Elevation',
           style: TextStyle(
-            fontSize: 13,
+            fontSize: 11,
             fontWeight: FontWeight.w600,
             color: Colors.white,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 4),
         SizedBox(
           height: 144,
           child: Row(
@@ -655,11 +764,12 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
               ),
               const SizedBox(width: 4),
               // Vertical slider
-              RotatedBox(
-                quarterTurns: 3,
-                child: SizedBox(
-                  width: 144,
-                  child: SliderTheme(
+              Expanded(
+                child: RotatedBox(
+                  quarterTurns: 3,
+                  child: SizedBox(
+                    width: 144,
+                    child: SliderTheme(
                     data: SliderThemeData(
                       trackHeight: 2,
                       thumbColor: Colors.blue,
@@ -675,7 +785,6 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                       value: _maxAltitudeFt,
                       min: 0,
                       max: 30000,
-                      divisions: 3, // For tick marks at 10k intervals
                       onChanged: (value) {
                         setState(() {
                           _maxAltitudeFt = value;
@@ -683,29 +792,37 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                         });
                       },
                     ),
+                    ),
                   ),
                 ),
               ),
               const SizedBox(width: 4),
               // Current value display
-              Text(
-                '${(_maxAltitudeFt / 1000).toStringAsFixed(0)} k',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w500,
+              SizedBox(
+                width: 25,
+                child: Text(
+                  '${(_maxAltitudeFt / 1000).toStringAsFixed(0)} k',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
               ),
             ],
           ),
         ),
       ],
+      ),
     );
   }
 
   @override
   void dispose() {
     _debounceTimer?.cancel();
+    _typesController.dispose();
+    _classesController.dispose();
     super.dispose();
   }
 

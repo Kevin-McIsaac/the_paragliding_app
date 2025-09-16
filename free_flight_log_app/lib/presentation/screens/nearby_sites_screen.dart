@@ -79,7 +79,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   // Filter state for sites and airspace
   bool _sitesEnabled = true; // Controls site loading and display
   bool _airspaceEnabled = true; // Controls airspace loading and display
-  double _maxAltitudeFt = 15000.0; // Default altitude filter
+  double _maxAltitudeFt = 10000.0; // Default altitude filter
   int _filterUpdateCounter = 0; // Increments when any filter changes to trigger map refresh
   Map<IcaoClass, bool> _excludedIcaoClasses = {}; // Current ICAO class filter state
   final OpenAipService _openAipService = OpenAipService.instance;
@@ -696,13 +696,14 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         // Disable airspace completely
         await _openAipService.setAirspaceEnabled(false);
 
-        // Clear local ICAO classes state
-        setState(() {
-          _excludedIcaoClasses = {};
-        });
+        // Note: We preserve _excludedIcaoClasses in memory so filters are retained
+        // when airspace is re-enabled. This provides better UX for quick toggles.
 
         if (previousAirspaceEnabled) {
-          LoggingService.action('MapFilter', 'airspace_disabled');
+          LoggingService.action('MapFilter', 'airspace_disabled', {
+            'preserved_filter_count': _excludedIcaoClasses.values.where((v) => v).length,
+            'filters_preserved': true,
+          });
         }
       }
 

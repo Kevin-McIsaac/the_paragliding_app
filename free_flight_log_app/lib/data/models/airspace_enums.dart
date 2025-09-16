@@ -72,7 +72,6 @@ enum AirspaceType {
   /// Get all types that should be hidden by default (large coverage areas)
   static Set<AirspaceType> get defaultHiddenTypes => {
     AirspaceType.fir,
-    AirspaceType.uir,
     AirspaceType.other,
   };
 
@@ -175,9 +174,7 @@ enum IcaoClass {
 
   /// Get all classes that should be hidden by default
   static Set<IcaoClass> get defaultHiddenClasses => {
-    IcaoClass.classA, // High altitude, primarily commercial
-    IcaoClass.classE, // Less critical for VFR
-    IcaoClass.classF, // Not widely implemented
+    // Empty set - all ICAO classes visible by default
   };
 
   /// Check if this class should be hidden by default
