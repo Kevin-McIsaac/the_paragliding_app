@@ -1040,53 +1040,53 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
           child: fm.FlutterMap(
             mapController: _mapController,
             options: fm.MapOptions(
-            initialCenter: _getInitialCenter(),
-            initialZoom: widget.initialZoom,
-            minZoom: 3.0,
-            maxZoom: widget.mapProvider.maxZoom.toDouble(),
-            onMapReady: _onMapReady,
-            onMapEvent: _onMapEvent,
-            interactionOptions: const fm.InteractionOptions(
-              flags: fm.InteractiveFlag.all,
+              initialCenter: _getInitialCenter(),
+              initialZoom: widget.initialZoom,
+              minZoom: 3.0,
+              maxZoom: widget.mapProvider.maxZoom.toDouble(),
+              onMapReady: _onMapReady,
+              onMapEvent: _onMapEvent,
+              interactionOptions: const fm.InteractionOptions(
+                flags: fm.InteractiveFlag.all,
+              ),
+              onTap: (tapPosition, point) {
+                // Handle airspace tooltip on click with proper coordinates
+                _handleAirspaceInteraction(tapPosition.global, point);
+
+                // Clear search when tapping the map
+                if (widget.searchQuery.isNotEmpty) {
+                  widget.onSearchChanged('');
+                }
+              },
             ),
-            onTap: (tapPosition, point) {
-              // Handle airspace tooltip on click with proper coordinates
-              _handleAirspaceInteraction(tapPosition.global, point);
+            children: [
+              // Map tiles layer
+              fm.TileLayer(
+                urlTemplate: widget.mapProvider.urlTemplate,
+                userAgentPackageName: 'com.example.free_flight_log_app',
+                maxZoom: widget.mapProvider.maxZoom.toDouble(),
+                tileProvider: MapTileProvider.createInstance(),
+                errorTileCallback: MapTileProvider.getErrorCallback(),
+              ),
 
-              // Clear search when tapping the map
-              if (widget.searchQuery.isNotEmpty) {
-                widget.onSearchChanged('');
-              }
-            },
-          ),
-              children: [
-                // Map tiles layer
-                fm.TileLayer(
-                  urlTemplate: widget.mapProvider.urlTemplate,
-                  userAgentPackageName: 'com.example.free_flight_log_app',
-                  maxZoom: widget.mapProvider.maxZoom.toDouble(),
-                  tileProvider: MapTileProvider.createInstance(),
-                  errorTileCallback: MapTileProvider.getErrorCallback(),
-                ),
+              // Airspace overlay layers (between base map and markers)
+              ..._airspaceLayers,
 
-                // Airspace overlay layers (between base map and markers)
-                ..._airspaceLayers,
-
-                // Highlighted airspace layer (on top of other airspaces)
-                if (_highlightedPolygon != null)
-                  fm.PolygonLayer(
-                    polygons: [_highlightedPolygon!],
-                  ),
-
-                // Site markers layer
-                fm.MarkerLayer(
-                  markers: [
-                    ..._buildUserLocationMarker(),
-                    ..._buildSiteMarkers(),
-                  ],
+              // Highlighted airspace layer (on top of other airspaces)
+              if (_highlightedPolygon != null) ...[
+                fm.PolygonLayer(
+                  polygons: [_highlightedPolygon!],
                 ),
               ],
-            ),
+
+              // Site markers layer
+              fm.MarkerLayer(
+                markers: [
+                  ..._buildUserLocationMarker(),
+                  ..._buildSiteMarkers(),
+                ],
+              ),
+            ],
           ),
         ),
 
@@ -1095,24 +1095,26 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         _buildTopControlBar(),
 
         // Hover tooltip (lightweight, shows only when hovering)
-        if (_hoveredAirspace != null && _hoverScreenPosition != null && !_showTooltip)
+        if (_hoveredAirspace != null && _hoverScreenPosition != null && !_showTooltip) ...[
           AirspaceHoverTooltip(
             airspace: _hoveredAirspace!,
             position: _hoverScreenPosition!,
             screenSize: MediaQuery.of(context).size,
           ),
+        ],
 
         // Airspace info popup
-        if (_showTooltip && _tooltipPosition != null)
+        if (_showTooltip && _tooltipPosition != null) ...[
           AirspaceInfoPopup(
             airspaces: _tooltipAirspaces,
             position: _tooltipPosition!,
             screenSize: MediaQuery.of(context).size,
             onClose: _hideTooltip,
           ),
+        ],
 
         // Loading indicator for airspace refresh (non-blocking)
-        if (_airspaceLoading)
+        if (_airspaceLoading) ...[
           Positioned(
             top: 60, // Same position as sites loading
             right: 16, // Same position as sites loading
@@ -1154,6 +1156,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               ),
             ),
           ),
+        ],
       ],
     );
   }
