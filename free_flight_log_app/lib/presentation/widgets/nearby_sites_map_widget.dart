@@ -115,7 +115,12 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   fm.LatLngBounds? _lastProcessedBounds;
   static const double _boundsThreshold = 0.001;
   static const int _debounceDurationMs = 750;
+
+  // Separate loading states for parallel operations
   bool _isLoadingSites = false;
+  bool _isLoadingAirspace = false;
+  int? _loadedSiteCount;
+  int? _loadedAirspaceCount;
 
   
   @override
@@ -133,6 +138,14 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   @override
   void didUpdateWidget(NearbySitesMapWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
+
+    // Track site count changes
+    if (oldWidget.sites != widget.sites && widget.sites != null) {
+      setState(() {
+        _loadedSiteCount = widget.sites!.length;
+        _isLoadingSites = false; // Sites have been loaded
+      });
+    }
 
     // Check if sites were just enabled - reload site data
     if (oldWidget.sitesEnabled != widget.sitesEnabled) {
@@ -206,7 +219,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   }
 
   /// Unified method to load all visible data (sites and airspace) with debouncing
-  void _loadVisibleData() {
+  Future<void> _loadVisibleData() async {
     if (!_isMapReady()) return;
 
     final bounds = _mapController.camera.visibleBounds;
@@ -219,10 +232,24 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     // Log the unified loading event
     LoggingService.info('Loading visible data for bounds: ${bounds.west.toStringAsFixed(2)},${bounds.south.toStringAsFixed(2)},${bounds.east.toStringAsFixed(2)},${bounds.north.toStringAsFixed(2)}');
 
+    // Set loading states before starting parallel loads
+    setState(() {
+      _isLoadingSites = widget.sitesEnabled;
+      _isLoadingAirspace = _airspaceEnabled;
+      _loadedSiteCount = null;
+      _loadedAirspaceCount = null;
+    });
+
     // Parallel load both sites and airspace
-    Future.wait([
-      _loadSitesForBounds(bounds),
-      _loadAirspaceLayers(),
+    await Future.wait([
+      _loadSitesForBounds(bounds).then((_) {
+        // Loading state is cleared by the parent's onBoundsChanged callback
+      }),
+      _loadAirspaceLayers().then((_) {
+        setState(() {
+          _isLoadingAirspace = false;
+        });
+      }),
     ]);
   }
 
@@ -302,6 +329,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
           _airspaceLayers = layers;
           _airspaceLoading = false;
           _visibleAirspaceTypes = visibleTypes;
+          _loadedAirspaceCount = layers.length;
         });
 
         LoggingService.structured('AIRSPACE_LAYERS_LOADED', {
@@ -1199,44 +1227,45 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
           ),
         ],
 
-        // Loading indicator for airspace refresh (non-blocking)
-        if (_airspaceLoading) ...[
+        // Stacked progress list for parallel loading operations
+        if (_isLoadingSites || _isLoadingAirspace) ...[
           Positioned(
-            top: 60, // Same position as sites loading
-            right: 16, // Same position as sites loading
+            top: 60,
+            right: 16,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              constraints: BoxConstraints(maxWidth: 220),
               decoration: BoxDecoration(
                 color: Colors.black.withValues(alpha: 0.85),
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(0.3),
-                    blurRadius: 4,
+                    blurRadius: 6,
                     offset: const Offset(0, 2),
                   ),
                 ],
               ),
-              child: const Row(
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      color: Colors.white,
-                      strokeCap: StrokeCap.round,
-                    ),
+                  if (_isLoadingSites) _buildLoadingItem(
+                    'Loading sites',
+                    _loadedSiteCount,
+                    Icons.place,
+                    Colors.green,
                   ),
-                  SizedBox(width: 10),
-                  Text(
-                    'Loading airspace...',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
+                  if (_isLoadingSites && _isLoadingAirspace)
+                    Divider(
+                      height: 1,
+                      thickness: 0.5,
+                      color: Colors.white.withOpacity(0.2),
                     ),
+                  if (_isLoadingAirspace) _buildLoadingItem(
+                    'Loading airspace',
+                    _loadedAirspaceCount,
+                    Icons.layers,
+                    Colors.blue,
                   ),
                 ],
               ),
@@ -1281,5 +1310,46 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     };
 
     return typeMap[typeCode] ?? 'UNKNOWN';
+  }
+
+  /// Build individual loading item for the stacked progress list
+  Widget _buildLoadingItem(String label, int? count, IconData icon, Color iconColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: Row(
+        children: [
+          // Icon indicator
+          Icon(
+            icon,
+            size: 16,
+            color: iconColor.withOpacity(0.8),
+          ),
+          const SizedBox(width: 8),
+          // Loading spinner
+          SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.white70,
+              strokeCap: StrokeCap.round,
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Text label
+          Expanded(
+            child: Text(
+              count != null ? '$label ($count)' : '$label...',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
