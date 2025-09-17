@@ -5,13 +5,8 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../services/openaip_service.dart';
 import '../services/airspace_geojson_service.dart';
-import '../services/aviation_data_service.dart';
 import '../services/logging_service.dart';
 import '../data/models/airspace_enums.dart';
-import '../data/models/airport.dart';
-import '../data/models/navaid.dart';
-import '../data/models/reporting_point.dart';
-import '../utils/aviation_marker_utils.dart';
 
 /// Manages all OpenAIP aviation data overlay layers for flutter_map
 class AirspaceOverlayManager {
@@ -22,13 +17,9 @@ class AirspaceOverlayManager {
 
   final OpenAipService _openAipService = OpenAipService.instance;
   final AirspaceGeoJsonService _geoJsonService = AirspaceGeoJsonService.instance;
-  final AviationDataService _aviationDataService = AviationDataService.instance;
 
-  // Cache for aviation data markers
-  List<Airport> _cachedAirports = [];
-  List<Navaid> _cachedNavaids = [];
-  List<ReportingPoint> _cachedReportingPoints = [];
-  String? _lastBoundsKey;
+  // Cache for bounds tracking
+  String _lastBoundsKey = '';
 
   // Debouncing for map movement
   Timer? _debounceTimer;
@@ -145,15 +136,8 @@ class AirspaceOverlayManager {
       }
     }
 
-    // Update aviation data cache if bounds changed
-    if (_lastBoundsKey != boundsKey) {
-      await _updateAviationDataCache(bounds);
-      _lastBoundsKey = boundsKey;
-    }
-
-    // Build marker layers (on top of polygons)
-    final markerLayers = await _buildMarkerLayers();
-    layers.addAll(markerLayers);
+    // Update bounds tracking
+    _lastBoundsKey = boundsKey;
 
     return layers;
   }
@@ -161,7 +145,7 @@ class AirspaceOverlayManager {
   /// Check if request should be debounced based on bounds overlap
   bool _shouldDebounceRequest(LatLngBounds bounds, String boundsKey) {
     // If this is the first request or bounds are completely different, don't debounce
-    if (_lastBoundsKey == null) {
+    if (_lastBoundsKey.isEmpty) {
       return false;
     }
 
@@ -171,7 +155,7 @@ class AirspaceOverlayManager {
     }
 
     // Parse previous bounds
-    final lastParts = _lastBoundsKey!.split(',');
+    final lastParts = _lastBoundsKey.split(',');
     if (lastParts.length != 4) {
       return false; // Invalid previous bounds, don't debounce
     }
@@ -278,136 +262,18 @@ class AirspaceOverlayManager {
     }
   }
   
-  /// Update cached aviation data for the given bounds
-  Future<void> _updateAviationDataCache(LatLngBounds bounds) async {
-    final futures = <Future>[];
 
-    if (await _openAipService.getAirportsEnabled()) {
-      futures.add(_aviationDataService.fetchAirports(bounds).then((airports) {
-        _cachedAirports = airports;
-      }));
-    } else {
-      _cachedAirports = [];
-    }
 
-    if (await _openAipService.getNavaidsEnabled()) {
-      futures.add(_aviationDataService.fetchNavaids(bounds).then((navaids) {
-        _cachedNavaids = navaids;
-      }));
-    } else {
-      _cachedNavaids = [];
-    }
-
-    if (await _openAipService.getReportingPointsEnabled()) {
-      futures.add(_aviationDataService.fetchReportingPoints(bounds).then((points) {
-        _cachedReportingPoints = points;
-      }));
-    } else {
-      _cachedReportingPoints = [];
-    }
-
-    // Wait for all enabled data types to load
-    if (futures.isNotEmpty) {
-      await Future.wait(futures);
-    }
-
-    LoggingService.structured('AVIATION_DATA_CACHE_UPDATE', {
-      'airports': _cachedAirports.length,
-      'navaids': _cachedNavaids.length,
-      'reporting_points': _cachedReportingPoints.length,
-    });
-  }
-
-  /// Build marker layers for aviation data
-  Future<List<Widget>> _buildMarkerLayers() async {
-    final List<Widget> layers = [];
-    final List<Marker> allMarkers = [];
-
-    // Add airport markers
-    for (final airport in _cachedAirports) {
-      allMarkers.add(AviationMarkerUtils.buildAirportMarker(
-        airport: airport,
-        onTap: () => _onAirportTap(airport),
-      ));
-    }
-
-    // Add navaid markers
-    for (final navaid in _cachedNavaids) {
-      allMarkers.add(AviationMarkerUtils.buildNavaidMarker(
-        navaid: navaid,
-        onTap: () => _onNavaidTap(navaid),
-      ));
-    }
-
-    // Add reporting point markers
-    for (final point in _cachedReportingPoints) {
-      allMarkers.add(AviationMarkerUtils.buildReportingPointMarker(
-        reportingPoint: point,
-        onTap: () => _onReportingPointTap(point),
-      ));
-    }
-
-    if (allMarkers.isNotEmpty) {
-      layers.add(MarkerLayer(markers: allMarkers));
-
-      LoggingService.structured('AVIATION_MARKERS_BUILT', {
-        'total_markers': allMarkers.length,
-        'airports': _cachedAirports.length,
-        'navaids': _cachedNavaids.length,
-        'reporting_points': _cachedReportingPoints.length,
-      });
-    }
-
-    return layers;
-  }
-
-  /// Handle airport marker tap
-  void _onAirportTap(Airport airport) {
-    LoggingService.structured('AIRPORT_MARKER_TAP', {
-      'airport_id': airport.id,
-      'airport_name': airport.name,
-      'icao': airport.icaoCode,
-    });
-    // Additional tap handling can be added here
-  }
-
-  /// Handle navaid marker tap
-  void _onNavaidTap(Navaid navaid) {
-    LoggingService.structured('NAVAID_MARKER_TAP', {
-      'navaid_id': navaid.id,
-      'navaid_name': navaid.name,
-      'type': navaid.type.code,
-    });
-    // Additional tap handling can be added here
-  }
-
-  /// Handle reporting point marker tap
-  void _onReportingPointTap(ReportingPoint point) {
-    LoggingService.structured('REPORTING_POINT_MARKER_TAP', {
-      'point_id': point.id,
-      'point_name': point.name,
-      'type': point.type.code,
-    });
-    // Additional tap handling can be added here
-  }
 
   /// Check if any overlay layers are enabled
   Future<bool> hasEnabledLayers() async {
-    final airspaceEnabled = await _openAipService.getAirspaceEnabled();
-    final airportsEnabled = await _openAipService.getAirportsEnabled();
-    final navaidsEnabled = await _openAipService.getNavaidsEnabled();
-    final reportingPointsEnabled = await _openAipService.getReportingPointsEnabled();
-
-    return airspaceEnabled || airportsEnabled || navaidsEnabled || reportingPointsEnabled;
+    return await _openAipService.getAirspaceEnabled();
   }
 
   /// Get count of enabled layers
   Future<int> getEnabledLayerCount() async {
     int count = 0;
     if (await _openAipService.getAirspaceEnabled()) count++;
-    if (await _openAipService.getAirportsEnabled()) count++;
-    if (await _openAipService.getNavaidsEnabled()) count++;
-    if (await _openAipService.getReportingPointsEnabled()) count++;
     return count;
   }
   
@@ -451,14 +317,7 @@ class AirspaceOverlayManager {
       }
     }
 
-    // Add aviation data legends
-    final aviationLegendItems = AviationMarkerUtils.buildAviationLegendItems(
-      showAirports: await _openAipService.getAirportsEnabled() && _cachedAirports.isNotEmpty,
-      showNavaids: await _openAipService.getNavaidsEnabled() && _cachedNavaids.isNotEmpty,
-      showReportingPoints: await _openAipService.getReportingPointsEnabled() && _cachedReportingPoints.isNotEmpty,
-    );
-
-    legendItems.addAll(aviationLegendItems);
+    // No aviation data legends anymore
 
     if (legendItems.isEmpty) {
       return null;
@@ -553,10 +412,7 @@ class AirspaceOverlayManager {
   
   /// Clear cached aviation data
   void clearCache() {
-    _cachedAirports = [];
-    _cachedNavaids = [];
-    _cachedReportingPoints = [];
-    _lastBoundsKey = null;
+    _lastBoundsKey = '';
 
     // Clear debouncing state
     _debounceTimer?.cancel();
@@ -566,7 +422,6 @@ class AirspaceOverlayManager {
     _debouncedRequestsCount = 0;
     _cancelledRequestsCount = 0;
 
-    _aviationDataService.clearCaches();
     LoggingService.info('Aviation overlay cache and debouncing state cleared');
   }
 
@@ -586,20 +441,11 @@ class AirspaceOverlayManager {
   /// Get overlay status for logging/debugging
   Future<Map<String, dynamic>> getOverlayStatus() async {
     final airspaceEnabled = await _openAipService.getAirspaceEnabled();
-    final airportsEnabled = await _openAipService.getAirportsEnabled();
-    final navaidsEnabled = await _openAipService.getNavaidsEnabled();
-    final reportingPointsEnabled = await _openAipService.getReportingPointsEnabled();
     final opacity = await _openAipService.getOverlayOpacity();
     final hasApiKey = await _openAipService.hasApiKey();
 
     return {
       'airspace_enabled': airspaceEnabled,
-      'airports_enabled': airportsEnabled,
-      'navaids_enabled': navaidsEnabled,
-      'reporting_points_enabled': reportingPointsEnabled,
-      'cached_airports': _cachedAirports.length,
-      'cached_navaids': _cachedNavaids.length,
-      'cached_reporting_points': _cachedReportingPoints.length,
       'opacity': opacity,
       'has_api_key': hasApiKey,
       'dependencies_valid': validateDependencies(),

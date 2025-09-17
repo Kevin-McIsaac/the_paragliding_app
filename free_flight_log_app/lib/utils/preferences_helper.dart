@@ -27,17 +27,11 @@ class PreferencesHelper {
   // OpenAIP preferences
   static const String openAipApiKeyKey = 'openaip_api_key';
   static const String openAipAirspaceEnabledKey = 'openaip_airspace_enabled';
-  static const String openAipAirportsEnabledKey = 'openaip_airports_enabled';
-  static const String openAipNavaidsEnabledKey = 'openaip_navaids_enabled';
-  static const String openAipReportingPointsEnabledKey = 'openaip_reporting_points_enabled';
   static const String openAipOverlayOpacityKey = 'openaip_overlay_opacity';
   
   // Default values for OpenAIP
   static const double defaultOpenAipOverlayOpacity = 0.6;
   static const bool defaultOpenAipAirspaceEnabled = false;
-  static const bool defaultOpenAipAirportsEnabled = false;
-  static const bool defaultOpenAipNavaidsEnabled = false;
-  static const bool defaultOpenAipReportingPointsEnabled = false;
   
   // Takeoff/Landing Detection preferences
   static const String detectionSpeedThresholdKey = 'detection_speed_threshold';
@@ -350,49 +344,7 @@ class PreferencesHelper {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(openAipAirspaceEnabledKey, value);
   }
-  
-  static Future<bool> getOpenAipAirportsEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!prefs.containsKey(openAipAirportsEnabledKey)) {
-      await prefs.setBool(openAipAirportsEnabledKey, defaultOpenAipAirportsEnabled);
-      return defaultOpenAipAirportsEnabled;
-    }
-    return prefs.getBool(openAipAirportsEnabledKey) ?? defaultOpenAipAirportsEnabled;
-  }
-  
-  static Future<void> setOpenAipAirportsEnabled(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(openAipAirportsEnabledKey, value);
-  }
-  
-  static Future<bool> getOpenAipNavaidsEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!prefs.containsKey(openAipNavaidsEnabledKey)) {
-      await prefs.setBool(openAipNavaidsEnabledKey, defaultOpenAipNavaidsEnabled);
-      return defaultOpenAipNavaidsEnabled;
-    }
-    return prefs.getBool(openAipNavaidsEnabledKey) ?? defaultOpenAipNavaidsEnabled;
-  }
-  
-  static Future<void> setOpenAipNavaidsEnabled(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(openAipNavaidsEnabledKey, value);
-  }
-  
-  static Future<bool> getOpenAipReportingPointsEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!prefs.containsKey(openAipReportingPointsEnabledKey)) {
-      await prefs.setBool(openAipReportingPointsEnabledKey, defaultOpenAipReportingPointsEnabled);
-      return defaultOpenAipReportingPointsEnabled;
-    }
-    return prefs.getBool(openAipReportingPointsEnabledKey) ?? defaultOpenAipReportingPointsEnabled;
-  }
-  
-  static Future<void> setOpenAipReportingPointsEnabled(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(openAipReportingPointsEnabledKey, value);
-  }
-  
+
   static Future<double> getOpenAipOverlayOpacity() async {
     final prefs = await SharedPreferences.getInstance();
     if (!prefs.containsKey(openAipOverlayOpacityKey)) {

@@ -110,6 +110,18 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   // Track current zoom level to avoid accessing MapController in build
   late double _currentZoom;
 
+  // Unified map update debouncing
+  Timer? _mapUpdateDebouncer;
+  fm.LatLngBounds? _lastProcessedBounds;
+  static const double _boundsThreshold = 0.001;
+  static const int _debounceDurationMs = 750;
+
+  // Separate loading states for parallel operations
+  bool _isLoadingSites = false;
+  bool _isLoadingAirspace = false;
+  int? _loadedSiteCount;
+  int? _loadedAirspaceCount;
+
   
   @override
   void initState() {
@@ -127,17 +139,21 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   void didUpdateWidget(NearbySitesMapWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
 
+    // Track site count changes
+    if (oldWidget.sites != widget.sites && widget.sites != null) {
+      setState(() {
+        _loadedSiteCount = widget.sites!.length;
+        _isLoadingSites = false; // Sites have been loaded
+      });
+    }
+
     // Check if sites were just enabled - reload site data
     if (oldWidget.sitesEnabled != widget.sitesEnabled) {
-      if (widget.sitesEnabled && widget.onBoundsChanged != null) {
-        try {
-          // Sites were just enabled - reload site data for current bounds
-          final bounds = _mapController.camera.visibleBounds;
-          widget.onBoundsChanged!(bounds);
-        } catch (e) {
-          // Map controller might not be ready yet
-          LoggingService.info('MapController not ready when enabling sites');
-        }
+      if (widget.sitesEnabled) {
+        // Sites were just enabled - reload all data for current bounds
+        // Clear last bounds to force a reload even if bounds are the same
+        _lastProcessedBounds = null;
+        _loadVisibleData();
       }
     }
 
@@ -177,20 +193,13 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     _searchFocusNode.dispose();
     _mapController.dispose();
     _hoverDebounceTimer?.cancel();
+    _mapUpdateDebouncer?.cancel();
     super.dispose();
   }
 
   void _onMapReady() {
-    // Initial load of sites when map is ready
-    if (widget.onBoundsChanged != null) {
-      try {
-        final bounds = _mapController.camera.visibleBounds;
-        widget.onBoundsChanged!(bounds);
-      } catch (e) {
-        // Map controller might not be fully ready yet, skip this load
-        LoggingService.info('MapController not ready in _onMapReady, will load on first move');
-      }
-    }
+    // Initial load of all data when map is ready
+    _loadVisibleData();
   }
   
   void _onMapEvent(fm.MapEvent event) {
@@ -200,22 +209,85 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         event is fm.MapEventDoubleTapZoomEnd ||
         event is fm.MapEventScrollWheelZoom) {
 
-      // Reload site data
-      if (widget.onBoundsChanged != null) {
-        try {
-          final bounds = _mapController.camera.visibleBounds;
-          widget.onBoundsChanged!(bounds);
-        } catch (e) {
-          // Map controller might not be ready yet
-          LoggingService.info('MapController not ready when applying filters');
-        }
-      }
-
-      // Reload airspace data for new viewport
-      _loadAirspaceLayers();
+      // Unified debounced handler for ALL bounds-based loading
+      _mapUpdateDebouncer?.cancel();
+      _mapUpdateDebouncer = Timer(
+        const Duration(milliseconds: _debounceDurationMs),
+        _loadVisibleData,
+      );
     }
   }
-  
+
+  /// Unified method to load all visible data (sites and airspace) with debouncing
+  Future<void> _loadVisibleData() async {
+    if (!_isMapReady()) return;
+
+    final bounds = _mapController.camera.visibleBounds;
+
+    // Check threshold to avoid redundant loads
+    if (!_boundsChangedSignificantly(bounds)) return;
+
+    _lastProcessedBounds = bounds;
+
+    // Log the unified loading event
+    LoggingService.info('Loading visible data for bounds: ${bounds.west.toStringAsFixed(2)},${bounds.south.toStringAsFixed(2)},${bounds.east.toStringAsFixed(2)},${bounds.north.toStringAsFixed(2)}');
+
+    // Set loading states before starting parallel loads
+    setState(() {
+      _isLoadingSites = widget.sitesEnabled;
+      _isLoadingAirspace = _airspaceEnabled;
+      _loadedSiteCount = null;
+      _loadedAirspaceCount = null;
+    });
+
+    // Parallel load both sites and airspace
+    await Future.wait([
+      _loadSitesForBounds(bounds).then((_) {
+        // Loading state is cleared by the parent's onBoundsChanged callback
+      }),
+      _loadAirspaceLayers().then((_) {
+        setState(() {
+          _isLoadingAirspace = false;
+        });
+      }),
+    ]);
+  }
+
+  /// Check if map controller is ready
+  bool _isMapReady() {
+    try {
+      _mapController.camera.center;
+      return true;
+    } catch (e) {
+      LoggingService.info('MapController not ready for data loading');
+      return false;
+    }
+  }
+
+  /// Check if bounds have changed significantly
+  bool _boundsChangedSignificantly(fm.LatLngBounds newBounds) {
+    if (_lastProcessedBounds == null) return true;
+
+    return (newBounds.north - _lastProcessedBounds!.north).abs() >= _boundsThreshold ||
+           (newBounds.south - _lastProcessedBounds!.south).abs() >= _boundsThreshold ||
+           (newBounds.east - _lastProcessedBounds!.east).abs() >= _boundsThreshold ||
+           (newBounds.west - _lastProcessedBounds!.west).abs() >= _boundsThreshold;
+  }
+
+  /// Load sites for the given bounds
+  Future<void> _loadSitesForBounds(fm.LatLngBounds bounds) async {
+
+    // Skip loading sites if they're disabled
+    if (!widget.sitesEnabled) {
+      return;
+    }
+
+    // Notify parent to handle site loading
+    if (widget.onBoundsChanged != null) {
+      widget.onBoundsChanged!(bounds);
+    }
+  }
+
   /// Load airspace overlay layers based on user preferences and current map view
   Future<void> _loadAirspaceLayers() async {
     if (_airspaceLoading) return;
@@ -255,6 +327,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
           _airspaceLayers = layers;
           _airspaceLoading = false;
           _visibleAirspaceTypes = visibleTypes;
+          _loadedAirspaceCount = layers.length;
         });
 
         LoggingService.structured('AIRSPACE_LAYERS_LOADED', {
@@ -1152,44 +1225,45 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
           ),
         ],
 
-        // Loading indicator for airspace refresh (non-blocking)
-        if (_airspaceLoading) ...[
+        // Stacked progress list for parallel loading operations
+        if (_isLoadingSites || _isLoadingAirspace) ...[
           Positioned(
-            top: 60, // Same position as sites loading
-            right: 16, // Same position as sites loading
+            top: 60,
+            right: 16,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              constraints: BoxConstraints(maxWidth: 220),
               decoration: BoxDecoration(
                 color: Colors.black.withValues(alpha: 0.85),
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(0.3),
-                    blurRadius: 4,
+                    blurRadius: 6,
                     offset: const Offset(0, 2),
                   ),
                 ],
               ),
-              child: const Row(
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      color: Colors.white,
-                      strokeCap: StrokeCap.round,
-                    ),
+                  if (_isLoadingSites) _buildLoadingItem(
+                    'Loading sites',
+                    _loadedSiteCount,
+                    Icons.place,
+                    Colors.green,
                   ),
-                  SizedBox(width: 10),
-                  Text(
-                    'Loading airspace...',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
+                  if (_isLoadingSites && _isLoadingAirspace)
+                    Divider(
+                      height: 1,
+                      thickness: 0.5,
+                      color: Colors.white.withOpacity(0.2),
                     ),
+                  if (_isLoadingAirspace) _buildLoadingItem(
+                    'Loading airspace',
+                    _loadedAirspaceCount,
+                    Icons.layers,
+                    Colors.blue,
                   ),
                 ],
               ),
@@ -1234,5 +1308,46 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     };
 
     return typeMap[typeCode] ?? 'UNKNOWN';
+  }
+
+  /// Build individual loading item for the stacked progress list
+  Widget _buildLoadingItem(String label, int? count, IconData icon, Color iconColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: Row(
+        children: [
+          // Icon indicator
+          Icon(
+            icon,
+            size: 16,
+            color: iconColor.withOpacity(0.8),
+          ),
+          const SizedBox(width: 8),
+          // Loading spinner
+          SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.white70,
+              strokeCap: StrokeCap.round,
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Text label
+          Expanded(
+            child: Text(
+              count != null ? '$label ($count)' : '$label...',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

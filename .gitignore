@@ -6,3 +6,9 @@ free_flight_log_app/android/build/reports/problems/problems-report.html
 free_flight_log_app/coverage/
 free_flight_log_app.worktrees/
 Free Flight Log Dec 2022/
+
+# Personal notes and vim swap files
+Ideas.md
+*.swp
+*.swo
+*~
