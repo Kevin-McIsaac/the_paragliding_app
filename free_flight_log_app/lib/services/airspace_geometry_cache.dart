@@ -58,18 +58,11 @@ class AirspaceGeometryCache {
 
     try {
       final id = generateAirspaceId(feature);
-      LoggingService.debug('Storing geometry for airspace ID: $id');
-
-      // Log feature structure
-      LoggingService.debug('Feature keys: ${feature.keys.toList()}');
 
       // The OpenAIP API returns features with properties at the top level, not in a 'properties' field
       // Check if properties is a separate field (standard GeoJSON) or if properties are at top level (OpenAIP format)
       final rawProperties = feature['properties'];
       final rawGeometry = feature['geometry'];
-
-      LoggingService.debug('Raw properties type: ${rawProperties.runtimeType}');
-      LoggingService.debug('Raw geometry type: ${rawGeometry.runtimeType}');
 
       Map<String, dynamic> properties;
       if (rawProperties != null && rawProperties is Map) {
@@ -83,30 +76,21 @@ class AirspaceGeometryCache {
             properties[key] = feature[key];
           }
         }
-        LoggingService.debug('Extracted OpenAIP properties: name=${properties['name']}, type=${properties['type']}');
       }
 
       final geometry = rawGeometry is Map ? Map<String, dynamic>.from(rawGeometry) : <String, dynamic>{};
 
-      if (geometry.isNotEmpty) {
-        LoggingService.debug('Geometry type: ${geometry['type']}, has coordinates: ${geometry['coordinates'] != null}');
-      }
-
       // Parse polygons from GeoJSON
       final polygons = _parsePolygons(geometry);
       if (polygons.isEmpty) {
-        LoggingService.debug('Skipping airspace with no valid polygons: $id');
         return;
       }
-
-      LoggingService.debug('Parsed ${polygons.length} polygons for airspace $id');
 
       final geometryHash = generateGeometryHash(polygons);
 
       // Check if geometry already exists and is unchanged
       final existing = await getGeometry(id);
       if (existing != null && existing.geometryHash == geometryHash) {
-        LoggingService.debug('Geometry unchanged, skipping update: $id');
         _trackDuplicate(id);
         return;
       }
@@ -130,15 +114,111 @@ class AirspaceGeometryCache {
       // Store to disk only
       await _diskCache.putGeometry(cachedGeometry);
 
-      LoggingService.performance(
-        'Stored airspace geometry',
-        stopwatch.elapsed,
-        'id=$id, polygons=${polygons.length}, name=${cachedGeometry.name}, typeCode=${cachedGeometry.typeCode}',
-      );
-      LoggingService.info('Successfully stored airspace: $id (${cachedGeometry.name})');
+      // Only log slow operations or errors
+      if (stopwatch.elapsedMilliseconds > 50) {
+        LoggingService.performance(
+          'Stored airspace geometry',
+          stopwatch.elapsed,
+          'id=$id, polygons=${polygons.length}, name=${cachedGeometry.name}, typeCode=${cachedGeometry.typeCode}',
+        );
+      }
     } catch (e, stack) {
       LoggingService.error('Failed to store geometry', e, stack);
     }
+  }
+
+  /// Batch store multiple geometries efficiently
+  Future<void> putGeometryBatch(List<Map<String, dynamic>> features) async {
+    final stopwatch = Stopwatch()..start();
+    var newGeometries = 0;
+    var duplicates = 0;
+
+    // Collect all unique IDs to check
+    final Map<String, Map<String, dynamic>> featureMap = {};
+    final Set<String> idsToCheck = {};
+
+    for (final feature in features) {
+      try {
+        final id = generateAirspaceId(feature);
+        idsToCheck.add(id);
+        featureMap[id] = feature;
+      } catch (e, stack) {
+        LoggingService.error('Failed to generate ID for feature', e, stack);
+      }
+    }
+
+    // Batch check existing geometries (single disk query)
+    final existingIds = await _diskCache.getExistingIds(idsToCheck.toList());
+
+    // Process only new geometries
+    for (final entry in featureMap.entries) {
+      final id = entry.key;
+      final feature = entry.value;
+
+      if (!existingIds.contains(id)) {
+        // New geometry - process and store without redundant check
+        await _processAndStoreGeometry(id, feature);
+        newGeometries++;
+      } else {
+        duplicates++;
+        _trackDuplicate(id);
+      }
+    }
+
+    LoggingService.info(
+      '[BATCH_GEOMETRY_STORAGE] Processed ${features.length} features: $newGeometries new, $duplicates duplicates in ${stopwatch.elapsedMilliseconds}ms'
+    );
+  }
+
+  /// Helper method to process and store a single geometry without checking for existence
+  Future<void> _processAndStoreGeometry(String id, Map<String, dynamic> feature) async {
+    // Extract properties and geometry (handle both formats)
+    final rawProperties = feature['properties'];
+    final rawGeometry = feature['geometry'];
+
+    Map<String, dynamic> properties;
+    if (rawProperties != null && rawProperties is Map) {
+      // Standard GeoJSON format with properties field
+      properties = Map<String, dynamic>.from(rawProperties);
+    } else {
+      // OpenAIP format - extract all fields except geometry as properties
+      properties = <String, dynamic>{};
+      for (final key in feature.keys) {
+        if (key != 'geometry') {
+          properties[key] = feature[key];
+        }
+      }
+    }
+
+    final geometry = rawGeometry is Map ? Map<String, dynamic>.from(rawGeometry) : <String, dynamic>{};
+
+    // Parse polygons from GeoJSON
+    final polygons = _parsePolygons(geometry);
+    if (polygons.isEmpty) {
+      return;
+    }
+
+    // Calculate hash for geometry
+    final geometryHash = generateGeometryHash(polygons);
+
+    // Extract numeric type code - ensure it's stored as int
+    final typeCode = properties['type'] is int
+        ? properties['type'] as int
+        : (properties['type'] as num?)?.toInt() ?? 0;
+
+    // Create cached geometry object (matching the existing structure)
+    final cachedGeometry = CachedAirspaceGeometry(
+      id: id,
+      name: properties['name'] ?? 'Unknown',
+      typeCode: typeCode,
+      polygons: polygons,
+      properties: properties,
+      fetchTime: DateTime.now(),
+      geometryHash: geometryHash,
+    );
+
+    // Store to disk only
+    await _diskCache.putGeometry(cachedGeometry);
   }
 
   /// Retrieve an airspace geometry by ID
@@ -148,12 +228,10 @@ class AirspaceGeometryCache {
 
     if (geometry != null) {
       _diskHits++;
-      LoggingService.debug('Disk cache hit for geometry: $id');
       return geometry;
     }
 
     _diskMisses++;
-    LoggingService.debug('Cache miss for geometry: $id');
     return null;
   }
 

@@ -61,7 +61,6 @@ class AirspaceDiskCache {
       await db.rawQuery('PRAGMA synchronous = NORMAL');
     } catch (e) {
       // If PRAGMA commands fail, continue anyway - they're optimizations
-      LoggingService.debug('Could not set PRAGMA options: $e');
     }
   }
 
@@ -156,14 +155,48 @@ class AirspaceDiskCache {
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
 
-      LoggingService.performance(
-        'Stored airspace geometry',
-        stopwatch.elapsed,
-        'id=${geometry.id}, compressed=${compressed.length}, ratio=${(1 - compressed.length / uncompressedSize).toStringAsFixed(2)}',
-      );
+      // Only log slow operations
+      if (stopwatch.elapsedMilliseconds > 50) {
+        LoggingService.performance(
+          'Stored airspace geometry',
+          stopwatch.elapsed,
+          'id=${geometry.id}, compressed=${compressed.length}, ratio=${(1 - compressed.length / uncompressedSize).toStringAsFixed(2)}',
+        );
+      }
     } catch (e, stack) {
       LoggingService.error('Failed to store geometry', e, stack);
       rethrow;
+    }
+  }
+
+  /// Check which IDs already exist in the cache (batch operation)
+  Future<Set<String>> getExistingIds(List<String> ids) async {
+    if (ids.isEmpty) return {};
+
+    final db = await database;
+    final stopwatch = Stopwatch()..start();
+
+    try {
+      // Build placeholders for SQL IN clause
+      final placeholders = ids.map((_) => '?').join(',');
+
+      final results = await db.query(
+        _geometryTable,
+        columns: ['id'],
+        where: 'id IN ($placeholders)',
+        whereArgs: ids,
+      );
+
+      final existingIds = results.map((row) => row['id'] as String).toSet();
+
+      LoggingService.info(
+        '[BATCH_ID_CHECK] Checked ${ids.length} IDs, found ${existingIds.length} existing in ${stopwatch.elapsedMilliseconds}ms'
+      );
+
+      return existingIds;
+    } catch (e, stack) {
+      LoggingService.error('Failed to check existing IDs', e, stack);
+      return {};
     }
   }
 
@@ -180,7 +213,6 @@ class AirspaceDiskCache {
       );
 
       if (results.isEmpty) {
-        LoggingService.debug('Cache miss for geometry: $id');
         return null;
       }
 
@@ -200,11 +232,14 @@ class AirspaceDiskCache {
         whereArgs: [id],
       );
 
-      LoggingService.performance(
-        'Retrieved airspace geometry',
-        stopwatch.elapsed,
-        'id=$id, size=${compressed.length}',
-      );
+      // Only log slow operations
+      if (stopwatch.elapsedMilliseconds > 50) {
+        LoggingService.performance(
+          'Retrieved airspace geometry',
+          stopwatch.elapsed,
+          'id=$id, size=${compressed.length}',
+        );
+      }
 
       return geometry;
     } catch (e, stack) {
@@ -250,6 +285,7 @@ class AirspaceDiskCache {
         await batch.commit(noResult: true);
       }
 
+      // Always log batch operations
       LoggingService.performance(
         'Retrieved multiple geometries',
         stopwatch.elapsed,
@@ -283,8 +319,6 @@ class AirspaceDiskCache {
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
-
-      LoggingService.debug('Stored tile metadata: ${metadata.tileKey}, airspaces=${metadata.airspaceCount}');
     } catch (e, stack) {
       LoggingService.error('Failed to store tile metadata', e, stack);
     }
@@ -521,7 +555,6 @@ class AirspaceDiskCache {
         ''');
 
         currentSize = await getDatabaseSize();
-        LoggingService.debug('Cleanup progress: ${(currentSize / (1024 * 1024)).toStringAsFixed(1)}MB');
       }
 
       // Vacuum to reclaim space

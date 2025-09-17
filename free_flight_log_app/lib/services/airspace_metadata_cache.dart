@@ -59,19 +59,10 @@ class AirspaceMetadataCache {
       // Extract airspace IDs and store geometries
       final airspaceIds = <String>{};
 
-      // Log features being processed
-      LoggingService.debug('Processing ${features.length} features for tile $tileKey');
-
       for (final feature in features) {
         try {
           final id = _geometryCache.generateAirspaceId(feature);
           airspaceIds.add(id);
-
-          // Log feature details for debugging
-          final hasId = feature['_id'] != null;
-          final hasGeometry = feature['geometry'] != null;
-          final hasProperties = feature['properties'] != null;
-          LoggingService.debug('Storing airspace $id: hasId=$hasId, hasGeometry=$hasGeometry, hasProperties=$hasProperties');
 
           // Store geometry (will handle deduplication)
           await _geometryCache.putGeometry(feature);
@@ -121,8 +112,70 @@ class AirspaceMetadataCache {
     // Update memory cache
     _updateMemoryCache(tileKey, metadata);
     _emptyTileCount++;
+  }
 
-    LoggingService.debug('Marked tile as empty: $tileKey');
+  /// Batch process multiple tiles to avoid redundant geometry retrievals
+  Future<void> putMultipleTilesMetadata(Map<String, List<Map<String, dynamic>>> tilesFeatures) async {
+    final stopwatch = Stopwatch()..start();
+
+    // Step 1: Collect all unique features across all tiles
+    final Map<String, Map<String, dynamic>> uniqueFeatures = {};
+    final Map<String, Set<String>> tileAirspaceIds = {};
+
+    for (final entry in tilesFeatures.entries) {
+      final tileKey = entry.key;
+      final features = entry.value;
+      final airspaceIds = <String>{};
+
+      for (final feature in features) {
+        try {
+          final id = _geometryCache.generateAirspaceId(feature);
+          airspaceIds.add(id);
+
+          // Only add if not already collected
+          if (!uniqueFeatures.containsKey(id)) {
+            uniqueFeatures[id] = feature;
+          }
+        } catch (e, stack) {
+          LoggingService.error('Failed to process feature for tile $tileKey', e, stack);
+        }
+      }
+
+      tileAirspaceIds[tileKey] = airspaceIds;
+    }
+
+    // Step 2: Store all unique geometries in batch (avoids redundant checks)
+    if (uniqueFeatures.isNotEmpty) {
+      await _geometryCache.putGeometryBatch(uniqueFeatures.values.toList());
+    }
+
+    // Step 3: Store tile metadata for each tile
+    for (final entry in tileAirspaceIds.entries) {
+      final tileKey = entry.key;
+      final airspaceIds = entry.value;
+
+      final metadata = TileMetadata(
+        tileKey: tileKey,
+        airspaceIds: airspaceIds,
+        fetchTime: DateTime.now(),
+        airspaceCount: airspaceIds.length,
+        isEmpty: airspaceIds.isEmpty,
+      );
+
+      if (metadata.isEmpty) {
+        _emptyTileCount++;
+      }
+
+      // Store to disk
+      await _diskCache.putTileMetadata(metadata);
+
+      // Update memory cache
+      _updateMemoryCache(tileKey, metadata);
+    }
+
+    LoggingService.info(
+      '[BATCH_TILE_PROCESSING] Processed ${tilesFeatures.length} tiles with ${uniqueFeatures.length} unique features in ${stopwatch.elapsedMilliseconds}ms'
+    );
   }
 
   /// Get tile metadata
@@ -131,7 +184,6 @@ class AirspaceMetadataCache {
     if (_pendingFetches.containsKey(tileKey)) {
       final pendingTime = _pendingFetches[tileKey]!;
       if (DateTime.now().difference(pendingTime).inSeconds < 5) {
-        LoggingService.debug('Fetch already pending for tile: $tileKey');
         return null;
       }
     }
@@ -143,7 +195,6 @@ class AirspaceMetadataCache {
       final metadata = _memoryCache[tileKey]!;
 
       if (!metadata.isExpired) {
-        LoggingService.debug('Memory cache hit for tile: $tileKey, airspaces=${metadata.airspaceCount}');
         return metadata;
       }
     }
@@ -156,12 +207,9 @@ class AirspaceMetadataCache {
       _updateMemoryCache(tileKey, metadata);
 
       if (!metadata.isExpired) {
-        LoggingService.debug('Disk cache hit for tile: $tileKey, airspaces=${metadata.airspaceCount}');
         return metadata;
       }
     }
-
-    LoggingService.debug('Cache miss for tile: $tileKey');
     return null;
   }
 
@@ -293,7 +341,6 @@ class AirspaceMetadataCache {
     while (_accessOrder.length > _maxMemoryCacheSize) {
       final evictKey = _accessOrder.removeLast();
       _memoryCache.remove(evictKey);
-      LoggingService.debug('Evicted tile metadata from memory: $evictKey');
     }
   }
 
@@ -337,7 +384,7 @@ class AirspaceMetadataCache {
   /// Clear all cache (memory and disk)
   Future<void> clearAllCache() async {
     clearMemoryCache();
-    await _geometryCache.clearAllCache();
+    await _diskCache.clearCache();
     LoggingService.info('Cleared all airspace cache');
   }
 
@@ -411,7 +458,6 @@ class AirspaceMetadataCache {
     }
 
     if (tilesToPrefetch.isNotEmpty) {
-      LoggingService.debug('Prefetching ${tilesToPrefetch.length} adjacent tiles for $tileKey');
       // Note: Actual fetching would be done by the service layer
     }
   }

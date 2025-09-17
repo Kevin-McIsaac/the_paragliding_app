@@ -225,7 +225,7 @@ class AirspaceGeoJsonService {
 
   // Initialize performance monitoring
   void initialize() {
-    _performanceLogger.startPeriodicLogging(interval: const Duration(minutes: 5));
+    _performanceLogger.startPeriodicLogging(interval: const Duration(minutes: 2));
   }
 
   // Track currently visible airspace types
@@ -372,6 +372,9 @@ class AirspaceGeoJsonService {
     if (tilesToFetch.isNotEmpty) {
       final apiKey = await _openAipService.getApiKey();
 
+      // Collect tile data for batch processing
+      final Map<String, List<Map<String, dynamic>>> tileFeatures = {};
+
       // Fetch missing tiles in parallel
       final fetchFutures = tilesToFetch.map((tileKey) async {
         final tileBounds = _getTileBounds(tileKey);
@@ -433,15 +436,12 @@ class AirspaceGeoJsonService {
             LoggingService.info('Extracted ${features.length} features from API response');
 
             if (features.isEmpty) {
-              // Mark as empty tile
-              await _metadataCache.markTileEmpty(tileKey);
+              // Mark as empty tile (will be done in batch)
+              tileFeatures[tileKey] = [];
               emptyTiles++;
             } else {
-              // Store tile metadata and geometries
-              await _metadataCache.putTileMetadata(
-                tileKey: tileKey,
-                features: features,
-              );
+              // Collect features for batch processing
+              tileFeatures[tileKey] = features;
               tilesFromApi++;
             }
 
@@ -470,6 +470,11 @@ class AirspaceGeoJsonService {
 
       // Wait for all tile fetches to complete
       await Future.wait(fetchFutures);
+
+      // Batch process all tiles together to avoid redundant geometry retrievals
+      if (tileFeatures.isNotEmpty) {
+        await _metadataCache.putMultipleTilesMetadata(tileFeatures);
+      }
     }
 
     // Get all airspaces for the requested tiles
@@ -479,7 +484,6 @@ class AirspaceGeoJsonService {
 
     // Convert to GeoJSON
     final features = geometries.map((geometry) => _geometryToFeature(geometry)).toList();
-    LoggingService.debug('Converted ${features.length} geometries to GeoJSON features');
 
     final geoJson = {
       'type': 'FeatureCollection',
@@ -909,9 +913,6 @@ class AirspaceGeoJsonService {
         throw Exception('Airspace feature missing geometry');
       }
 
-      // Debug log the raw API data
-      LoggingService.debug('API feature properties: name=${properties['name']}, type=${properties['type']}, class=${properties['icaoClass']}');
-
       // Properties are already in the right format, just ensure type is numeric
       final cleanedProps = <String, dynamic>{
         'name': properties['name'] ?? 'Unknown Airspace',
@@ -939,9 +940,6 @@ class AirspaceGeoJsonService {
     // Convert altitude limits from numeric codes to text
     final upperLimit = _convertAltitudeLimit(item['upperLimit'] as Map<String, dynamic>?);
     final lowerLimit = _convertAltitudeLimit(item['lowerLimit'] as Map<String, dynamic>?);
-
-    // Debug log the raw API data
-    LoggingService.debug('API airspace data (top-level): name=${item['name']}, type=${item['type']}, class=${item['icaoClass']}');
 
     // Extract properties - keep numeric codes
     final properties = <String, dynamic>{
@@ -1617,23 +1615,9 @@ class AirspaceGeoJsonService {
         }
       }
 
-      // Track completely clipped airspaces
+      // Track completely clipped airspaces (don't log individually, will summarize later)
       if (results.isEmpty && subjectPoints.isNotEmpty) {
-        // Extract names of airspaces that caused the clipping
-        final clippingNames = clippingAirspaceData.map((data) =>
-          '${data.name} (${data.getLowerAltitudeInFeet()}-${data.getUpperAltitudeInFeet()}ft)'
-        ).toList();
-
-        LoggingService.warning('AIRSPACE_COMPLETELY_CLIPPED', {
-          'name': airspaceData.name,
-          'type': airspaceData.type,
-          'lower_alt': airspaceData.getLowerAltitudeInFeet(),
-          'upper_alt': airspaceData.getUpperAltitudeInFeet(),
-          'original_points': subjectPoints.length,
-          'clipped_by_count': clippingPolygons.length,
-          'clipped_by_names': clippingNames.join(', '),
-          'clipped_by_details': clippingNames,
-        });
+        // This will be tracked and summarized in the main clipping method
       }
 
       stopwatch.stop();
@@ -1783,6 +1767,11 @@ class AirspaceGeoJsonService {
       'time_by_type': clippingTimeByType,
     });
 
+    // Log summary of completely clipped airspaces if any
+    if (completelyClippedCount > 0) {
+      LoggingService.info('[CLIPPING_SUMMARY] $completelyClippedCount airspaces completely clipped: ${completelyClippedNames.take(5).join(", ")}${completelyClippedCount > 5 ? " ..." : ""}');
+    }
+
     // Simplified actionable log for Claude Code
     LoggingService.info('[AIRSPACE] Clipped ${clippedPolygons.length} airspaces in ${totalClippingTimeMs}ms');
 
@@ -1873,6 +1862,7 @@ class AirspaceGeoJsonService {
   /// Clear all cache
   Future<void> clearCache() async {
     await _metadataCache.clearAllCache();
+    await _geometryCache.clearAllCache();
     await _performanceLogger.logPerformanceSummary();
     LoggingService.info('Cleared all airspace cache data');
   }

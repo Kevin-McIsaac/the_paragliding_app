@@ -870,12 +870,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
 
     _showLoadingDialog('Clearing airspace cache...');
     try {
-      // Clear all cache layers - metadata, geometry, and disk
-      await AirspaceMetadataCache.instance.clearAllCache();
-      await AirspaceGeometryCache.instance.clearAllCache();
-      await AirspaceDiskCache.instance.clearCache();
-
-      // Also clear the old cache method
+      // Clear all cache layers through the service
       await AirspaceGeoJsonService.instance.clearCache();
 
       if (mounted) Navigator.of(context).pop(); // Close loading
