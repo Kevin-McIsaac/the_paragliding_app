@@ -692,6 +692,13 @@ class AirspaceGeoJsonService {
       List<AirspacePolygonData> allIdentificationPolygons = <AirspacePolygonData>[]; // For tooltip - includes ALL airspaces
       final Set<AirspaceType> visibleIncludedTypes = <AirspaceType>{}; // Track visible included types
 
+      // Filtering counters for summary logging
+      int filteredByType = 0;
+      int filteredByClass = 0;
+      int filteredByElevation = 0;
+      final Map<AirspaceType, int> filteredTypeDetails = {};
+      final Map<IcaoClass, int> filteredClassDetails = {};
+
       for (final feature in featureCollection.features) {
         final geometry = feature.geometry;
         final properties = feature.properties;
@@ -732,12 +739,8 @@ class AirspaceGeoJsonService {
           // Filter based on excluded airspace types - skip only if explicitly excluded
           // This logic ensures unmapped types are shown by default
           if (excludedTypes[airspaceData.type] == true) {
-            LoggingService.debug('AIRSPACE_FILTERED_TYPE', {
-              'name': airspaceData.name,
-              'type': airspaceData.type.abbreviation,
-              'reason': 'Type explicitly excluded',
-              'excluded_types': excludedTypes.keys.where((k) => excludedTypes[k] == true).map((k) => k.abbreviation).toList(),
-            });
+            filteredByType++;
+            filteredTypeDetails[airspaceData.type] = (filteredTypeDetails[airspaceData.type] ?? 0) + 1;
             continue; // Skip this airspace only if its type is explicitly excluded
           }
 
@@ -745,26 +748,15 @@ class AirspaceGeoJsonService {
           // Handle null ICAO class (treat as IcaoClass.none per OpenAIP spec)
           final icaoClassKey = airspaceData.icaoClass ?? IcaoClass.none;
           if (excludedIcaoClasses[icaoClassKey] == true) {
-            LoggingService.debug('AIRSPACE_FILTERED_CLASS', {
-              'name': airspaceData.name,
-              'type': airspaceData.type,
-              'icao_class': icaoClassKey,
-              'reason': 'ICAO class explicitly excluded',
-              'excluded_classes': excludedIcaoClasses.keys.where((k) => excludedIcaoClasses[k] == true).toList(),
-            });
+            filteredByClass++;
+            filteredClassDetails[icaoClassKey] = (filteredClassDetails[icaoClassKey] ?? 0) + 1;
             continue; // Skip this airspace only if its ICAO class is explicitly excluded
           }
 
           // Filter based on maximum elevation setting
           // Skip airspaces that START above the elevation filter
           if (airspaceData.getLowerAltitudeInFeet() > maxAltitudeFt) {
-            LoggingService.debug('AIRSPACE_FILTERED_ELEVATION', {
-              'name': airspaceData.name,
-              'type': airspaceData.type,
-              'lower_altitude': airspaceData.getLowerAltitudeInFeet(),
-              'max_altitude_filter': maxAltitudeFt,
-              'reason': 'Starts above elevation filter',
-            });
+            filteredByElevation++;
             continue; // Skip airspaces that start above the elevation filter
           }
 
@@ -847,7 +839,35 @@ class AirspaceGeoJsonService {
       final boundsKey = _generateBoundsKeyFromGeoJson(featureCollection);
       AirspaceIdentificationService.instance.updateAirspacePolygons(allIdentificationPolygons, boundsKey);
 
-      // Actionable filtering summary
+      // Log filtering summary if anything was filtered
+      final totalFiltered = filteredByType + filteredByClass + filteredByElevation;
+      if (totalFiltered > 0) {
+        // Build a concise summary message
+        final filterBreakdown = <String>[];
+        if (filteredByType > 0) {
+          final types = filteredTypeDetails.keys.map((t) => t.abbreviation).join(',');
+          filterBreakdown.add('type=$filteredByType ($types)');
+        }
+        if (filteredByClass > 0) {
+          final classes = filteredClassDetails.keys.map((c) => c.abbreviation).join(',');
+          filterBreakdown.add('class=$filteredByClass ($classes)');
+        }
+        if (filteredByElevation > 0) {
+          filterBreakdown.add('elevation=$filteredByElevation');
+        }
+
+        LoggingService.structured('AIRSPACE_FILTERING_SUMMARY', {
+          'total_features': featureCollection.features.length,
+          'total_filtered': totalFiltered,
+          'filtered_by_type': filteredByType,
+          'filtered_by_class': filteredByClass,
+          'filtered_by_elevation': filteredByElevation,
+          'remaining_polygons': polygons.length,
+          'breakdown': filterBreakdown.join(', '),
+        });
+      }
+
+      // Actionable filtering summary (existing summary for compatibility)
       final excludedTypeList = excludedTypes.keys.where((k) => excludedTypes[k] == true).map((k) => k.abbreviation).toList();
       final excludedClassList = excludedIcaoClasses.keys.where((k) => excludedIcaoClasses[k] == true).map((k) => k.abbreviation).toList();
       if (excludedTypeList.isNotEmpty || excludedClassList.isNotEmpty || maxAltitudeFt < double.infinity) {
