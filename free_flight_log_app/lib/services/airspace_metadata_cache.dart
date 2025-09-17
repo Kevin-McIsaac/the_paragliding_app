@@ -260,16 +260,53 @@ class AirspaceMetadataCache {
     return geometries;
   }
 
-  /// Check if tiles need fetching
+  /// Check if tiles need fetching - optimized batch version
   Future<List<String>> getTilesToFetch(List<String> tileKeys) async {
+    if (tileKeys.isEmpty) return [];
+
     final tilesToFetch = <String>[];
+    final tilesToCheck = <String>[];
 
+    // Step 1: Check memory cache first (very fast)
     for (final tileKey in tileKeys) {
-      final metadata = await getTileMetadata(tileKey);
+      // Check if fetch is already pending
+      if (_pendingFetches.containsKey(tileKey)) {
+        final pendingTime = _pendingFetches[tileKey]!;
+        if (DateTime.now().difference(pendingTime).inSeconds < 5) {
+          continue; // Skip this tile, fetch is already pending
+        }
+      }
 
-      if (metadata == null || metadata.isExpired) {
-        tilesToFetch.add(tileKey);
-        _pendingFetches[tileKey] = DateTime.now();
+      // Check memory cache
+      final cachedMetadata = _memoryCache[tileKey];
+      if (cachedMetadata != null && !cachedMetadata.isExpired) {
+        _cacheHits++;
+        _updateAccessOrder(tileKey);
+        continue; // This tile is cached and valid
+      }
+
+      // Need to check disk cache for this tile
+      tilesToCheck.add(tileKey);
+    }
+
+    // Step 2: Batch check disk cache for remaining tiles
+    if (tilesToCheck.isNotEmpty) {
+      _cacheMisses += tilesToCheck.length;
+
+      // Batch retrieve from disk
+      final diskMetadata = await _diskCache.getTileMetadataBatch(tilesToCheck);
+
+      for (final tileKey in tilesToCheck) {
+        final metadata = diskMetadata[tileKey];
+
+        if (metadata != null && !metadata.isExpired) {
+          // Update memory cache
+          _updateMemoryCache(tileKey, metadata);
+        } else {
+          // Need to fetch from API
+          tilesToFetch.add(tileKey);
+          _pendingFetches[tileKey] = DateTime.now();
+        }
       }
     }
 

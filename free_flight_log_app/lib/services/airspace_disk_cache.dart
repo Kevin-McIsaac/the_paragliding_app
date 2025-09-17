@@ -221,16 +221,8 @@ class AirspaceDiskCache {
       final json = _decompress(compressed);
       final geometry = CachedAirspaceGeometry.fromJson(jsonDecode(json));
 
-      // Update access statistics
-      await db.update(
-        _geometryTable,
-        {
-          'access_count': (row['access_count'] as int? ?? 0) + 1,
-          'last_accessed': DateTime.now().millisecondsSinceEpoch,
-        },
-        where: 'id = ?',
-        whereArgs: [id],
-      );
+      // REMOVED: Real-time access tracking to improve performance
+      // Access tracking is now deferred to batch operations
 
       // Only log slow operations
       if (stopwatch.elapsedMilliseconds > 50) {
@@ -273,17 +265,8 @@ class AirspaceDiskCache {
         }
       }
 
-      // Batch update access statistics
-      if (geometries.isNotEmpty) {
-        final batch = db.batch();
-        for (final id in ids) {
-          batch.rawUpdate(
-            'UPDATE $_geometryTable SET access_count = access_count + 1, last_accessed = ? WHERE id = ?',
-            [DateTime.now().millisecondsSinceEpoch, id],
-          );
-        }
-        await batch.commit(noResult: true);
-      }
+      // REMOVED: Batch access statistics update for performance
+      // Access tracking is now deferred or eliminated
 
       // Always log batch operations
       LoggingService.performance(
@@ -353,21 +336,70 @@ class AirspaceDiskCache {
             : null,
       );
 
-      // Update access statistics
-      await db.update(
-        _metadataTable,
-        {
-          'access_count': (row['access_count'] as int? ?? 0) + 1,
-          'last_accessed': DateTime.now().millisecondsSinceEpoch,
-        },
-        where: 'tile_key = ?',
-        whereArgs: [tileKey],
-      );
+      // REMOVED: Real-time access tracking to improve performance
+      // Access tracking is now deferred to batch operations
+      // The last_accessed field is still used for cleanup based on fetch_time
 
       return metadata;
     } catch (e, stack) {
       LoggingService.error('Failed to retrieve tile metadata', e, stack);
       return null;
+    }
+  }
+
+  /// Batch retrieve multiple tile metadata in a single query
+  Future<Map<String, TileMetadata>> getTileMetadataBatch(List<String> tileKeys) async {
+    if (tileKeys.isEmpty) return {};
+
+    final db = await database;
+    final stopwatch = Stopwatch()..start();
+    final metadataMap = <String, TileMetadata>{};
+
+    try {
+      // Create placeholders for IN clause
+      final placeholders = tileKeys.map((_) => '?').join(',');
+
+      final results = await db.query(
+        _metadataTable,
+        where: 'tile_key IN ($placeholders)',
+        whereArgs: tileKeys,
+      );
+
+      for (final row in results) {
+        try {
+          final metadata = TileMetadata(
+            tileKey: row['tile_key'] as String,
+            airspaceIds: Set<String>.from(
+              jsonDecode(row['airspace_ids'] as String) as List,
+            ),
+            fetchTime: DateTime.fromMillisecondsSinceEpoch(
+              row['fetch_time'] as int,
+            ),
+            airspaceCount: row['airspace_count'] as int,
+            isEmpty: (row['is_empty'] as int) == 1,
+            statistics: row['statistics'] != null
+                ? jsonDecode(row['statistics'] as String)
+                : null,
+          );
+          metadataMap[metadata.tileKey] = metadata;
+        } catch (e) {
+          LoggingService.error('Failed to parse tile metadata: ${row['tile_key']}', e, null);
+        }
+      }
+
+      // Log only if slow
+      if (stopwatch.elapsedMilliseconds > 50) {
+        LoggingService.performance(
+          'Batch retrieved tile metadata',
+          stopwatch.elapsed,
+          'requested=${tileKeys.length}, found=${metadataMap.length}',
+        );
+      }
+
+      return metadataMap;
+    } catch (e, stack) {
+      LoggingService.error('Failed to batch retrieve tile metadata', e, stack);
+      return {};
     }
   }
 
