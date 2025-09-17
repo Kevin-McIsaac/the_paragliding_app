@@ -9,6 +9,7 @@ import 'package:clipper2/clipper2.dart' as clipper;
 import '../services/logging_service.dart';
 import '../services/openaip_service.dart';
 import '../services/airspace_identification_service.dart';
+import '../services/airspace_tile_cache.dart';
 import '../data/models/airspace_enums.dart';
 
 /// Data structure for airspace information
@@ -210,6 +211,7 @@ class AirspaceGeoJsonService {
   AirspaceGeoJsonService._();
 
   final OpenAipService _openAipService = OpenAipService.instance;
+  final AirspaceTileCache _tileCache = AirspaceTileCache();
 
   // OpenAIP Core API configuration
   static const String _coreApiBase = 'https://api.core.openaip.net/api';
@@ -342,33 +344,105 @@ class AirspaceGeoJsonService {
     return fm.LatLngBounds(LatLng(south, west), LatLng(north, east));
   }
 
-  /// Fetch airspace data from OpenAIP Core API with fallback to sample data
+  /// Fetch airspace data from OpenAIP Core API with tile-based caching
   Future<String> fetchAirspaceGeoJson(fm.LatLngBounds bounds) async {
+    final overallStopwatch = Stopwatch()..start();
+
+    // Get tiles for viewport - returns cached and uncached tiles
+    final tileInfo = _tileCache.getTilesForViewport(bounds);
+
+    // If we have uncached tiles, fetch them
+    if (tileInfo.tilesToFetch.isNotEmpty) {
+      final apiKey = await _openAipService.getApiKey();
+
+      // Fetch missing tiles in parallel
+      final fetchFutures = tileInfo.tilesToFetch.map((tile) async {
+        final tileBounds = tileInfo.tileToBounds(tile.$1, tile.$2);
+        final tileStopwatch = Stopwatch()..start();
+
+        try {
+          // Build API URL for this tile
+          var url = '$_coreApiBase/airspaces'
+              '?bbox=${tileBounds.west},${tileBounds.south},${tileBounds.east},${tileBounds.north}'
+              '&limit=$_defaultLimit';
+
+          if (apiKey != null && apiKey.isNotEmpty) {
+            url += '&apiKey=$apiKey';
+          }
+
+          // Removed verbose per-tile fetch logging
+
+          final headers = <String, String>{
+            'Accept': 'application/json',
+            'User-Agent': 'FreeFlightLog/1.0',
+          };
+
+          final response = await http.get(
+            Uri.parse(url),
+            headers: headers,
+          ).timeout(_requestTimeout);
+
+          tileStopwatch.stop();
+
+          if (response.statusCode == 200) {
+            // Convert and cache the response
+            final geoJson = _convertToGeoJson(response.body);
+            _tileCache.cacheTile(tile.$1, tile.$2, geoJson);
+
+            // Removed per-tile success logging
+
+            return geoJson;
+          } else {
+            // Silent failure for individual tiles - will log summary later
+            // Return empty GeoJSON for failed tiles
+            return '{"type":"FeatureCollection","features":[]}';
+          }
+        } catch (error, stackTrace) {
+          LoggingService.error('Failed to fetch tile ${tile.$1}_${tile.$2}', error, stackTrace);
+          // Return empty GeoJSON for failed tiles
+          return '{"type":"FeatureCollection","features":[]}';
+        }
+      });
+
+      // Wait for all tile fetches to complete
+      final newResponses = await Future.wait(fetchFutures);
+      tileInfo.cachedResponses.addAll(newResponses);
+    }
+
+    // Merge all tile responses into one
+    final mergedGeoJson = _tileCache.mergeGeoJsonResponses(tileInfo.cachedResponses);
+
+    overallStopwatch.stop();
+
+    // Log overall performance with cache metrics
+    final cacheStats = _tileCache.getCacheStats();
+    LoggingService.performance(
+      'Airspace Fetch (Tiled)',
+      Duration(milliseconds: overallStopwatch.elapsedMilliseconds),
+      'cached=${tileInfo.cachedResponses.length - tileInfo.tilesToFetch.length}, fetched=${tileInfo.tilesToFetch.length}, hit_rate=${cacheStats['hit_rate_percent']}%'
+    );
+
+    return mergedGeoJson;
+  }
+
+  /// Legacy method for direct API fetch without caching (kept for fallback)
+  Future<String> _fetchDirectFromApi(fm.LatLngBounds bounds) async {
     final stopwatch = Stopwatch()..start();
     final apiKey = await _openAipService.getApiKey();
 
-    // Build API URL with optional API key as query parameter
     var url = '$_coreApiBase/airspaces'
         '?bbox=${bounds.west},${bounds.south},${bounds.east},${bounds.north}'
         '&limit=$_defaultLimit';
 
-    // Add API key as query parameter if available (common method)
     if (apiKey != null && apiKey.isNotEmpty) {
       url += '&apiKey=$apiKey';
     }
 
-    // Simplified actionable log
-    LoggingService.info('[AIRSPACE] Fetching from API for bounds: ${bounds.west.toStringAsFixed(2)},${bounds.south.toStringAsFixed(2)},${bounds.east.toStringAsFixed(2)},${bounds.north.toStringAsFixed(2)}');
-
     try {
-      // Prepare headers with multiple authentication methods
       final headers = <String, String>{
         'Accept': 'application/json',
         'User-Agent': 'FreeFlightLog/1.0',
       };
-
-      // OpenAIP 2024 simplified authentication - try query parameter method first
-      // (No additional headers needed for this method)
 
       final response = await http.get(
         Uri.parse(url),
@@ -377,54 +451,19 @@ class AirspaceGeoJsonService {
 
       stopwatch.stop();
 
-      // Only log if there's an issue
-      if (response.statusCode != 200) {
-        LoggingService.error('[AIRSPACE] API returned status ${response.statusCode}', null, null);
-      }
-
       if (response.statusCode == 200) {
-        // Count airspaces for performance logging
-        int airspaceCount = 0;
-        try {
-          final parsed = json.decode(response.body);
-          if (parsed['features'] != null) {
-            airspaceCount = (parsed['features'] as List).length;
-          }
-        } catch (e) {
-          // Ignore parse errors for counting
-        }
-
         LoggingService.performance(
-          'Airspace API Fetch',
+          'Direct API Fetch',
           Duration(milliseconds: stopwatch.elapsedMilliseconds),
-          'airspaces=$airspaceCount, cache_hit=false, bounds=${bounds.west},${bounds.south},${bounds.east},${bounds.north}'
+          'status=200'
         );
-
-        // Convert OpenAIP format to standard GeoJSON
         return _convertToGeoJson(response.body);
       } else {
-        LoggingService.performance(
-          'Airspace API Fetch (Failed)',
-          Duration(milliseconds: stopwatch.elapsedMilliseconds),
-          'status=${response.statusCode}, fallback_to_sample=true'
-        );
-
-        // For authentication errors or API failures, use sample data for demo purposes
-        LoggingService.info('API failed with status ${response.statusCode}, using sample airspace data for demo');
+        LoggingService.info('API failed with status ${response.statusCode}, using sample airspace data');
         return _getSampleGeoJson(bounds);
       }
-
     } catch (error, stackTrace) {
-      stopwatch.stop();
-
-      LoggingService.performance(
-        'Airspace API Fetch (Error)',
-        Duration(milliseconds: stopwatch.elapsedMilliseconds),
-        'error=true, fallback_to_sample=true'
-      );
-
-      LoggingService.error('Failed to fetch airspace data from OpenAIP, using sample data', error, stackTrace);
-      // Return sample data instead of failing completely
+      LoggingService.error('Failed to fetch airspace data', error, stackTrace);
       return _getSampleGeoJson(bounds);
     }
   }
@@ -684,8 +723,13 @@ class AirspaceGeoJsonService {
     bool enableClipping,
   ) async {
     try {
+      // Performance timing for each stage
+      final totalStopwatch = Stopwatch()..start();
+      final parsingStopwatch = Stopwatch()..start();
+
       // Use geobase to parse the GeoJSON data
       final featureCollection = geo.FeatureCollection.parse(geoJsonString);
+      parsingStopwatch.stop();
 
       List<fm.Polygon> polygons = <fm.Polygon>[];
       List<AirspacePolygonData> identificationPolygons = <AirspacePolygonData>[];
@@ -696,8 +740,12 @@ class AirspaceGeoJsonService {
       int filteredByType = 0;
       int filteredByClass = 0;
       int filteredByElevation = 0;
+      int filteredByViewport = 0;
       final Map<AirspaceType, int> filteredTypeDetails = {};
       final Map<IcaoClass, int> filteredClassDetails = {};
+
+      // Start filtering and polygon creation timing
+      final filteringStopwatch = Stopwatch()..start();
 
       for (final feature in featureCollection.features) {
         final geometry = feature.geometry;
@@ -781,6 +829,7 @@ class AirspaceGeoJsonService {
 
           // Skip if completely outside viewport (early bounds check)
           if (roughBounds != null && !_isInViewport(roughBounds, viewport)) {
+            filteredByViewport++;
             continue; // Skip this airspace - it's outside the viewport
           }
 
@@ -810,17 +859,23 @@ class AirspaceGeoJsonService {
         }
       }
 
+      filteringStopwatch.stop();
+
       // Log early viewport filtering performance
       LoggingService.structured('VIEWPORT_PRE_FILTERING', {
         'total_features': featureCollection.features.length,
         'viewport_visible': polygons.length,
+        'filtered_by_viewport': filteredByViewport,
         'filtered_out_early': featureCollection.features.length - polygons.length - filteredByType - filteredByClass - filteredByElevation,
         'viewport_bounds': '${viewport.south},${viewport.west},${viewport.north},${viewport.east}',
       });
 
       // Sort polygons by lower altitude: highest first, lowest last
       // This ensures lowest airspaces render on top (most visible)
+      final sortingStopwatch = Stopwatch();
       if (polygons.isNotEmpty && identificationPolygons.isNotEmpty) {
+        sortingStopwatch.start();
+
         // Create paired list of polygons with their altitude data
         final polygonsWithAltitude = <({fm.Polygon polygon, AirspacePolygonData data})>[];
         for (int i = 0; i < polygons.length; i++) {
@@ -836,10 +891,14 @@ class AirspaceGeoJsonService {
               .compareTo(b.data.airspaceData.getLowerAltitudeInFeet());
         });
 
+        sortingStopwatch.stop();
+
         if (enableClipping) {
           // Apply polygon clipping to remove overlapping areas
           // Note: viewport filtering already done above, so no need to filter again in clipping
+          final clippingStopwatch = Stopwatch()..start();
           final clippedPolygons = _applyPolygonClipping(polygonsWithAltitude, viewport);
+          clippingStopwatch.stop();
 
           // Convert clipped polygons back to flutter_map format
           polygons = _convertClippedPolygonsToFlutterMap(clippedPolygons, opacity);
@@ -847,7 +906,13 @@ class AirspaceGeoJsonService {
           // For clipped polygons, keep original boundaries for tooltip hit testing
           identificationPolygons = polygonsWithAltitude.map((p) => p.data).toList();
 
-          // Simple actionable log
+          // Performance log for clipping
+          LoggingService.structured('CLIPPING_PERFORMANCE', {
+            'polygons_input': polygonsWithAltitude.length,
+            'polygons_output': polygons.length,
+            'clipping_time_ms': clippingStopwatch.elapsedMilliseconds,
+          });
+
           LoggingService.info('[AIRSPACE] Sorted ${polygonsWithAltitude.length} polygons by altitude for clipping');
         } else {
           // No clipping - keep original polygons but maintain altitude-based rendering order
@@ -921,7 +986,21 @@ class AirspaceGeoJsonService {
       // Add airspace statistics logging (for debugging)
       _logAirspaceStatistics(featureCollection);
 
-      // Remove verbose result logging - already covered above
+      totalStopwatch.stop();
+
+      // Log detailed performance breakdown
+      LoggingService.structured('AIRSPACE_PARSING_PERFORMANCE', {
+        'total_time_ms': totalStopwatch.elapsedMilliseconds,
+        'parsing_time_ms': parsingStopwatch.elapsedMilliseconds,
+        'filtering_time_ms': filteringStopwatch.elapsedMilliseconds,
+        'sorting_time_ms': sortingStopwatch.elapsedMilliseconds,
+        'features_count': featureCollection.features.length,
+        'polygons_created': polygons.length,
+        'filtered_by_type': filteredByType,
+        'filtered_by_class': filteredByClass,
+        'filtered_by_elevation': filteredByElevation,
+        'filtered_by_viewport': filteredByViewport,
+      });
 
       return polygons;
 
@@ -1235,6 +1314,7 @@ class AirspaceGeoJsonService {
     required AirspaceData airspaceData,
     required AirspaceStyle style,
   }) {
+    final stopwatch = Stopwatch()..start();
     try {
       if (subjectPoints.isEmpty) {
         return [];
@@ -1304,13 +1384,19 @@ class AirspaceGeoJsonService {
         });
       }
 
-      LoggingService.structured('POLYGON_CLIPPING_OPERATION', {
-        'subject_points': subjectPoints.length,
-        'clipping_polygons': clippingPolygons.length,
-        'clipping_total_points': clippingPolygons.fold<int>(0, (sum, p) => sum + p.length),
-        'result_polygons': results.length,
-        'airspace_name': airspaceData.name,
-      });
+      stopwatch.stop();
+
+      // Only log slow clipping operations
+      if (stopwatch.elapsedMilliseconds > 10) {
+        LoggingService.structured('POLYGON_CLIPPING_OPERATION', {
+          'subject_points': subjectPoints.length,
+          'clipping_polygons': clippingPolygons.length,
+          'clipping_total_points': clippingPolygons.fold<int>(0, (sum, p) => sum + p.length),
+          'result_polygons': results.length,
+          'airspace_name': airspaceData.name,
+          'time_ms': stopwatch.elapsedMilliseconds,
+        });
+      }
 
       return results;
 
@@ -1335,6 +1421,12 @@ class AirspaceGeoJsonService {
     final List<_ClippedPolygonData> clippedPolygons = [];
     int completelyClippedCount = 0;
     List<String> completelyClippedNames = [];
+
+    // Track timing for clipping operations
+    int totalClippingTimeMs = 0;
+    int longestClippingTimeMs = 0;
+    String? longestClippingAirspace;
+    final Map<String, int> clippingTimeByType = {};
 
     LoggingService.structured('AIRSPACE_CLIPPING_START', {
       'input_polygons': polygonsWithAltitude.length,
@@ -1395,7 +1487,8 @@ class AirspaceGeoJsonService {
         }
       }
 
-      // Perform clipping operation
+      // Perform clipping operation with timing
+      final clippingStopwatch = Stopwatch()..start();
       final clippedResults = _subtractPolygonsFromSubject(
         subjectPoints: currentPoints,
         clippingPolygons: clippingPolygons,
@@ -1403,6 +1496,19 @@ class AirspaceGeoJsonService {
         airspaceData: airspaceData,
         style: style,
       );
+      clippingStopwatch.stop();
+
+      // Track timing statistics
+      final clippingTimeMs = clippingStopwatch.elapsedMilliseconds;
+      totalClippingTimeMs += clippingTimeMs;
+      if (clippingTimeMs > longestClippingTimeMs) {
+        longestClippingTimeMs = clippingTimeMs;
+        longestClippingAirspace = airspaceData.name;
+      }
+
+      // Aggregate by type
+      final typeKey = airspaceData.type.abbreviation;
+      clippingTimeByType[typeKey] = (clippingTimeByType[typeKey] ?? 0) + clippingTimeMs;
 
       // Remove verbose per-airspace logging - will summarize at the end instead
 
@@ -1415,8 +1521,18 @@ class AirspaceGeoJsonService {
       clippedPolygons.addAll(clippedResults);
     }
 
+    // Log detailed clipping performance
+    LoggingService.structured('CLIPPING_DETAILED_PERFORMANCE', {
+      'total_clipping_time_ms': totalClippingTimeMs,
+      'average_time_ms': visibleAirspaces.isNotEmpty ? (totalClippingTimeMs / visibleAirspaces.length).round() : 0,
+      'longest_time_ms': longestClippingTimeMs,
+      'longest_airspace': longestClippingAirspace,
+      'completely_clipped': completelyClippedCount,
+      'time_by_type': clippingTimeByType,
+    });
+
     // Simplified actionable log for Claude Code
-    LoggingService.info('[AIRSPACE] Clipped ${clippedPolygons.length} airspaces for viewport');
+    LoggingService.info('[AIRSPACE] Clipped ${clippedPolygons.length} airspaces in ${totalClippingTimeMs}ms');
 
     return clippedPolygons;
   }
