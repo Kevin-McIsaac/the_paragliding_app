@@ -276,20 +276,15 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
   /// Load sites for the given bounds
   Future<void> _loadSitesForBounds(fm.LatLngBounds bounds) async {
-    LoggingService.info('Widget _loadSitesForBounds called, _isLoadingSites=$_isLoadingSites, widget.sitesEnabled=${widget.sitesEnabled}, onBoundsChanged=${widget.onBoundsChanged != null}');
 
     // Skip loading sites if they're disabled
     if (!widget.sitesEnabled) {
-      LoggingService.info('Widget sites loading skipped - sites disabled');
       return;
     }
 
     // Notify parent to handle site loading
     if (widget.onBoundsChanged != null) {
-      LoggingService.info('Calling parent onBoundsChanged callback');
       widget.onBoundsChanged!(bounds);
-    } else {
-      LoggingService.warning('Widget onBoundsChanged callback is null!');
     }
   }
 

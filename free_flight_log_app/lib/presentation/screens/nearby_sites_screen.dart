@@ -451,15 +451,12 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   }
 
   Future<void> _loadSitesForBounds(LatLngBounds bounds) async {
-    LoggingService.info('_loadSitesForBounds called with bounds: ${bounds.west},${bounds.south},${bounds.east},${bounds.north}, _sitesEnabled=$_sitesEnabled');
     if (_isLoadingSites) {
-      LoggingService.info('Sites loading skipped - already loading');
       return;
     }
 
     // Skip loading sites if they're disabled
     if (!_sitesEnabled) {
-      LoggingService.info('Sites loading skipped - sites disabled');
       return;
     }
 
