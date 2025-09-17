@@ -14,6 +14,7 @@ import '../services/airspace_geometry_cache.dart';
 import '../services/airspace_performance_logger.dart';
 import '../data/models/airspace_cache_models.dart';
 import '../data/models/airspace_enums.dart';
+import '../utils/performance_monitor.dart';
 
 /// Data structure for airspace information
 class AirspaceData {
@@ -357,12 +358,19 @@ class AirspaceGeoJsonService {
   /// Fetch airspace data from OpenAIP Core API with hierarchical caching
   Future<String> fetchAirspaceGeoJson(fm.LatLngBounds bounds) async {
     final overallStopwatch = Stopwatch()..start();
+    final memoryBefore = PerformanceMonitor.getMemoryUsageMB();
+
+    // Timing breakdowns for viewport processing
+    final tileCalcStopwatch = Stopwatch()..start();
 
     // Calculate tiles for the viewport
     final tileKeys = _calculateTileKeys(bounds);
+    tileCalcStopwatch.stop();
 
     // Check which tiles need fetching
+    final cacheLookupStopwatch = Stopwatch()..start();
     final tilesToFetch = await _metadataCache.getTilesToFetch(tileKeys);
+    cacheLookupStopwatch.stop();
 
     var tilesFromCache = tileKeys.length - tilesToFetch.length;
     var tilesFromApi = 0;
@@ -478,12 +486,16 @@ class AirspaceGeoJsonService {
     }
 
     // Get all airspaces for the requested tiles
+    final geometryFetchStopwatch = Stopwatch()..start();
     final geometries = await _metadataCache.getAirspacesForTiles(tileKeys);
+    geometryFetchStopwatch.stop();
 
     LoggingService.info('Retrieved ${geometries.length} unique airspaces from cache for ${tileKeys.length} tiles');
 
     // Convert to GeoJSON
+    final conversionStopwatch = Stopwatch()..start();
     final features = geometries.map((geometry) => _geometryToFeature(geometry)).toList();
+    conversionStopwatch.stop();
 
     final geoJson = {
       'type': 'FeatureCollection',
@@ -493,6 +505,33 @@ class AirspaceGeoJsonService {
     final mergedGeoJson = json.encode(geoJson);
 
     overallStopwatch.stop();
+    final memoryAfter = PerformanceMonitor.getMemoryUsageMB();
+
+    // Log detailed viewport processing breakdown
+    LoggingService.structured('VIEWPORT_BREAKDOWN', {
+      'tile_calc_ms': tileCalcStopwatch.elapsedMilliseconds,
+      'cache_lookup_ms': cacheLookupStopwatch.elapsedMilliseconds,
+      'geometry_fetch_ms': geometryFetchStopwatch.elapsedMilliseconds,
+      'conversion_ms': conversionStopwatch.elapsedMilliseconds,
+      'api_fetch_ms': tilesToFetch.isEmpty ? 0 : (overallStopwatch.elapsedMilliseconds -
+          tileCalcStopwatch.elapsedMilliseconds -
+          cacheLookupStopwatch.elapsedMilliseconds -
+          geometryFetchStopwatch.elapsedMilliseconds -
+          conversionStopwatch.elapsedMilliseconds),
+      'total_ms': overallStopwatch.elapsedMilliseconds,
+      'tiles_requested': tileKeys.length,
+      'tiles_fetched': tilesToFetch.length,
+      'unique_airspaces': features.length,
+    });
+
+    // Log memory usage
+    LoggingService.structured('MEMORY_USAGE', {
+      'operation': 'airspace_viewport_load',
+      'before_mb': memoryBefore.toStringAsFixed(1),
+      'after_mb': memoryAfter.toStringAsFixed(1),
+      'delta_mb': (memoryAfter - memoryBefore).toStringAsFixed(1),
+      'airspaces_loaded': features.length,
+    });
 
     // Log viewport processing metrics
     _performanceLogger.logViewportProcessing(
@@ -1664,6 +1703,8 @@ class AirspaceGeoJsonService {
     String? longestClippingAirspace;
     final Map<String, int> clippingTimeByType = {};
 
+    final clippingMemoryBefore = PerformanceMonitor.getMemoryUsageMB();
+
     LoggingService.structured('AIRSPACE_CLIPPING_START', {
       'input_polygons': polygonsWithAltitude.length,
     });
@@ -1774,6 +1815,17 @@ class AirspaceGeoJsonService {
 
     // Simplified actionable log for Claude Code
     LoggingService.info('[AIRSPACE] Clipped ${clippedPolygons.length} airspaces in ${totalClippingTimeMs}ms');
+
+    // Log memory usage for clipping operation
+    final clippingMemoryAfter = PerformanceMonitor.getMemoryUsageMB();
+    LoggingService.structured('MEMORY_USAGE', {
+      'operation': 'polygon_clipping',
+      'before_mb': clippingMemoryBefore.toStringAsFixed(1),
+      'after_mb': clippingMemoryAfter.toStringAsFixed(1),
+      'delta_mb': (clippingMemoryAfter - clippingMemoryBefore).toStringAsFixed(1),
+      'polygons_clipped': clippedPolygons.length,
+      'input_polygons': polygonsWithAltitude.length,
+    });
 
     return clippedPolygons;
   }

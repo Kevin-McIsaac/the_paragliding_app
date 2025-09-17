@@ -20,6 +20,7 @@ import '../widgets/airspace_info_popup.dart';
 import '../widgets/airspace_hover_tooltip.dart';
 import '../widgets/map_filter_fab.dart';
 import '../widgets/map_legend_widget.dart';
+import '../../utils/performance_monitor.dart';
 
 class NearbySitesMapWidget extends StatefulWidget {
   final List<ParaglidingSite> sites;
@@ -203,6 +204,22 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   }
   
   void _onMapEvent(fm.MapEvent event) {
+    // Log frame performance during map interactions
+    if (event is fm.MapEventMove || event is fm.MapEventFlingAnimation) {
+      // Log frame jank during movement
+      final frameStats = PerformanceMonitor.getFrameRateStats();
+      final droppedFrames = frameStats['dropped_frames'] as int;
+      if (droppedFrames > 5) {
+        LoggingService.structured('FRAME_JANK', {
+          'dropped_frames': droppedFrames,
+          'total_frames': frameStats['total_frames'],
+          'fps': (frameStats['fps'] as double).toStringAsFixed(1),
+          'worst_frame_ms': (frameStats['avg_frame_time_ms'] as double).toStringAsFixed(1),
+          'context': event is fm.MapEventMove ? 'map_pan' : 'map_fling',
+        });
+      }
+    }
+
     // React to all movement and zoom end events to reload sites and airspace
     if (event is fm.MapEventMoveEnd ||
         event is fm.MapEventFlingAnimationEnd ||
@@ -213,7 +230,11 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
       _mapUpdateDebouncer?.cancel();
       _mapUpdateDebouncer = Timer(
         const Duration(milliseconds: _debounceDurationMs),
-        _loadVisibleData,
+        () {
+          // Log frame performance summary after map movement ends
+          PerformanceMonitor.logFrameRatePerformance();
+          _loadVisibleData();
+        },
       );
     }
   }
@@ -1114,6 +1135,12 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
   @override
   Widget build(BuildContext context) {
+    // Track widget rebuild
+    PerformanceMonitor.trackWidgetRebuild('NearbySitesMapWidget');
+
+    // Start timing the build
+    final buildStopwatch = Stopwatch()..start();
+
     // Count flown vs new sites for logging
     final flownSites = widget.sites.where((site) {
       final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
@@ -1137,7 +1164,14 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
       _lastZoom = currentZoom;
     }
 
-    return Stack(
+    // Track marker creation time
+    final markerStopwatch = Stopwatch()..start();
+    final userMarkers = _buildUserLocationMarker();
+    final siteMarkers = _buildSiteMarkers();
+    markerStopwatch.stop();
+
+    // Build the widget tree
+    final mapWidget = Stack(
       children: [
         // FlutterMap with native click handling for airspace tooltip
         MouseRegion(
@@ -1194,8 +1228,8 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               // Site markers layer
               fm.MarkerLayer(
                 markers: [
-                  ..._buildUserLocationMarker(),
-                  ..._buildSiteMarkers(),
+                  ...userMarkers,
+                  ...siteMarkers,
                 ],
               ),
             ],
@@ -1272,6 +1306,31 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         ],
       ],
     );
+
+    buildStopwatch.stop();
+
+    // Log rendering performance metrics if there's significant activity
+    if (_airspaceLayers.isNotEmpty || widget.sites.isNotEmpty) {
+      LoggingService.structured('RENDER_PERF', {
+        'widget': 'NearbySitesMapWidget',
+        'build_total_ms': buildStopwatch.elapsedMilliseconds,
+        'marker_creation_ms': markerStopwatch.elapsedMilliseconds,
+        'site_count': widget.sites.length,
+        'airspace_layers': _airspaceLayers.length,
+        'airspace_polygons': _airspaceLayers.isNotEmpty
+            ? _airspaceLayers.fold<int>(0, (sum, layer) {
+                if (layer is fm.PolygonLayer) {
+                  return sum + layer.polygons.length;
+                }
+                return sum;
+              })
+            : 0,
+        'user_markers': userMarkers.length,
+        'site_markers': siteMarkers.length,
+      });
+    }
+
+    return mapWidget;
   }
 
   /// Convert numeric type code to string type for filtering compatibility
