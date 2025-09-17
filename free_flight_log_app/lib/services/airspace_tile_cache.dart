@@ -5,9 +5,9 @@ import 'package:latlong2/latlong.dart';
 import 'logging_service.dart';
 
 /// Simple tile-based cache for airspace API responses
-/// Uses zoom level 8 tiles (~400km per tile) for efficient caching
+/// Uses zoom level 8 tiles (~150-200km per tile) for efficient caching
 class AirspaceTileCache {
-  static const int tileZoom = 8; // 256 tiles globally
+  static const int tileZoom = 8; // 65,536 tiles globally (256x256)
   static const Duration cacheDuration = Duration(hours: 24);
   static const int maxCacheSize = 200; // Maximum tiles to cache (~2.5MB memory)
 
