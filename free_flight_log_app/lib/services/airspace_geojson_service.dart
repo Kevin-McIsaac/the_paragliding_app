@@ -763,6 +763,27 @@ class AirspaceGeoJsonService {
           // Track this type as visible and included
           visibleIncludedTypes.add(airspaceData.type);
 
+          // PERFORMANCE OPTIMIZATION: Check viewport bounds BEFORE creating polygon objects
+          // Calculate rough bounds from geometry to avoid expensive polygon creation
+          fm.LatLngBounds? roughBounds;
+
+          if (geometry is geo.Polygon) {
+            roughBounds = _calculateRoughBoundsFromGeometry(geometry);
+          } else if (geometry is geo.MultiPolygon && geometry.polygons.isNotEmpty) {
+            roughBounds = _calculateRoughBoundsFromGeometry(geometry.polygons.first);
+          } else if (geometry is geo.GeometryCollection && geometry.geometries.isNotEmpty) {
+            // For collections, check first geometry
+            final firstGeom = geometry.geometries.first;
+            if (firstGeom is geo.Polygon) {
+              roughBounds = _calculateRoughBoundsFromGeometry(firstGeom);
+            }
+          }
+
+          // Skip if completely outside viewport (early bounds check)
+          if (roughBounds != null && !_isInViewport(roughBounds, viewport)) {
+            continue; // Skip this airspace - it's outside the viewport
+          }
+
           // Handle different geometry types
           if (geometry is geo.GeometryCollection) {
             // Handle geometry collections
@@ -789,6 +810,14 @@ class AirspaceGeoJsonService {
         }
       }
 
+      // Log early viewport filtering performance
+      LoggingService.structured('VIEWPORT_PRE_FILTERING', {
+        'total_features': featureCollection.features.length,
+        'viewport_visible': polygons.length,
+        'filtered_out_early': featureCollection.features.length - polygons.length - filteredByType - filteredByClass - filteredByElevation,
+        'viewport_bounds': '${viewport.south},${viewport.west},${viewport.north},${viewport.east}',
+      });
+
       // Sort polygons by lower altitude: highest first, lowest last
       // This ensures lowest airspaces render on top (most visible)
       if (polygons.isNotEmpty && identificationPolygons.isNotEmpty) {
@@ -809,6 +838,7 @@ class AirspaceGeoJsonService {
 
         if (enableClipping) {
           // Apply polygon clipping to remove overlapping areas
+          // Note: viewport filtering already done above, so no need to filter again in clipping
           final clippedPolygons = _applyPolygonClipping(polygonsWithAltitude, viewport);
 
           // Convert clipped polygons back to flutter_map format
@@ -1173,6 +1203,29 @@ class AirspaceGeoJsonService {
     return _boundingBoxesOverlap(airspaceBounds, viewport);
   }
 
+  /// Calculate rough bounding box from geometry without creating LatLng objects
+  /// This is a performance optimization to avoid expensive object creation
+  fm.LatLngBounds? _calculateRoughBoundsFromGeometry(geo.Polygon polygon) {
+    final exterior = polygon.exterior;
+    if (exterior == null || exterior.positions.isEmpty) {
+      return null;
+    }
+
+    double minLat = 90.0, maxLat = -90.0, minLon = 180.0, maxLon = -180.0;
+
+    for (final pos in exterior.positions) {
+      minLat = math.min(minLat, pos.y);
+      maxLat = math.max(maxLat, pos.y);
+      minLon = math.min(minLon, pos.x);
+      maxLon = math.max(maxLon, pos.x);
+    }
+
+    return fm.LatLngBounds(
+      LatLng(minLat, minLon),
+      LatLng(maxLat, maxLon),
+    );
+  }
+
   /// Subtract multiple polygons from a subject polygon using boolean difference
   /// Returns list of resulting polygons (may be empty, single, or multiple)
   List<_ClippedPolygonData> _subtractPolygonsFromSubject({
@@ -1287,26 +1340,23 @@ class AirspaceGeoJsonService {
       'input_polygons': polygonsWithAltitude.length,
     });
 
-    // STAGE 1: Filter to viewport-visible airspaces only
+    // STAGE 1: Viewport filtering already done in parseAirspaceGeoJson
+    // All polygons passed here are already within viewport bounds
+    // Just add bounds for overlap checking
     final List<({fm.Polygon polygon, AirspacePolygonData data, fm.LatLngBounds bounds})> visibleAirspaces = [];
 
     for (final polygon in polygonsWithAltitude) {
       final bounds = _calculateBoundingBox(polygon.data.points);
-      if (_isInViewport(bounds, viewport)) {
-        visibleAirspaces.add((
-          polygon: polygon.polygon,
-          data: polygon.data,
-          bounds: bounds, // Pre-calculate for Stage 2
-        ));
-      }
+      visibleAirspaces.add((
+        polygon: polygon.polygon,
+        data: polygon.data,
+        bounds: bounds, // Pre-calculate for Stage 2
+      ));
     }
 
-    LoggingService.structured('VIEWPORT_FILTERING', {
-      'total_airspaces': polygonsWithAltitude.length,
-      'visible_airspaces': visibleAirspaces.length,
-      'filtered_out': polygonsWithAltitude.length - visibleAirspaces.length,
-      'reduction_percent': polygonsWithAltitude.length > 0 ?
-        ((polygonsWithAltitude.length - visibleAirspaces.length) / polygonsWithAltitude.length * 100).round() : 0,
+    LoggingService.structured('CLIPPING_STAGE', {
+      'input_polygons': polygonsWithAltitude.length,
+      'polygons_to_clip': visibleAirspaces.length,
     });
 
     // Process each visible polygon from lowest to highest altitude
