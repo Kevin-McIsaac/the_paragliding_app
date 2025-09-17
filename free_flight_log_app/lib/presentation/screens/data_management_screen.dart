@@ -12,6 +12,9 @@ import '../../utils/card_expansion_manager.dart';
 import '../widgets/common/app_expansion_card.dart';
 import '../widgets/common/app_stat_row.dart';
 import '../../services/airspace_geojson_service.dart';
+import '../../services/airspace_metadata_cache.dart';
+import '../../services/airspace_geometry_cache.dart';
+import '../../services/airspace_disk_cache.dart';
 
 class DataManagementScreen extends StatefulWidget {
   final bool expandPremiumMaps;
@@ -867,6 +870,12 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
 
     _showLoadingDialog('Clearing airspace cache...');
     try {
+      // Clear all cache layers - metadata, geometry, and disk
+      await AirspaceMetadataCache.instance.clearAllCache();
+      await AirspaceGeometryCache.instance.clearAllCache();
+      await AirspaceDiskCache.instance.clearCache();
+
+      // Also clear the old cache method
       await AirspaceGeoJsonService.instance.clearCache();
 
       if (mounted) Navigator.of(context).pop(); // Close loading
@@ -875,7 +884,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
 
       _showSuccessDialog(
         'Cache Cleared',
-        'Airspace cache has been cleared successfully.',
+        'Airspace cache has been cleared successfully. Please navigate back to the map to reload airspaces.',
       );
     } catch (e, stackTrace) {
       if (mounted) Navigator.of(context).pop(); // Close loading
@@ -1148,7 +1157,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                     icon: Icons.layers,
                     title: 'Airspace Cache',
                     subtitle: _airspaceCacheStats != null
-                        ? '${_airspaceCacheStats!['summary']['total_unique_airspaces']} airspaces • ${_airspaceCacheStats!['summary']['memory_saved_mb']}MB saved'
+                        ? '${_airspaceCacheStats!['summary']['total_unique_airspaces']} airspaces • ${_airspaceCacheStats!['summary']['database_size_mb'] ?? '0.00'}MB database'
                         : 'Loading...',
                     expansionKey: 'airspace_cache',
                     expansionManager: _expansionManager,
@@ -1165,6 +1174,10 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                         AppStatRowGroup.dataManagement(
                           rows: [
                             AppStatRow.dataManagement(
+                              label: 'Database Size',
+                              value: '${_airspaceCacheStats!['summary']['database_size_mb'] ?? '0.00'}MB / 100MB',
+                            ),
+                            AppStatRow.dataManagement(
                               label: 'Unique Airspaces',
                               value: _airspaceCacheStats!['summary']['total_unique_airspaces'].toString(),
                             ),
@@ -1175,10 +1188,6 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                             AppStatRow.dataManagement(
                               label: 'Empty Tiles',
                               value: _airspaceCacheStats!['summary']['empty_tiles'].toString(),
-                            ),
-                            AppStatRow.dataManagement(
-                              label: 'Memory Saved',
-                              value: '${_airspaceCacheStats!['summary']['memory_saved_mb']}MB',
                             ),
                             AppStatRow.dataManagement(
                               label: 'Compression Ratio',
@@ -1195,7 +1204,8 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                         SizedBox(
                           width: double.infinity,
                           child: OutlinedButton.icon(
-                            onPressed: (_airspaceCacheStats!['summary']['total_unique_airspaces'] as int) > 0
+                            onPressed: (((_airspaceCacheStats!['summary']['total_unique_airspaces'] as int?) ?? 0) > 0 ||
+                                    ((_airspaceCacheStats!['summary']['total_cached_tiles'] as int?) ?? 0) > 0)
                                 ? _clearAirspaceCache
                                 : null,
                             icon: const Icon(Icons.cleaning_services),

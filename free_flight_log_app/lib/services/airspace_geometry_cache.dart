@@ -10,15 +10,9 @@ class AirspaceGeometryCache {
   static AirspaceGeometryCache? _instance;
   final AirspaceDiskCache _diskCache = AirspaceDiskCache.instance;
 
-  // In-memory LRU cache for frequently accessed geometries
-  final Map<String, CachedAirspaceGeometry> _memoryCache = {};
-  final List<String> _accessOrder = [];
-  static const int _maxMemoryCacheSize = 50; // Keep 50 most recent geometries
-
   // Statistics tracking
-  int _cacheHits = 0;
-  int _cacheMisses = 0;
   int _diskHits = 0;
+  int _diskMisses = 0;
   final Map<String, int> _duplicateCount = {};
 
   AirspaceGeometryCache._internal();
@@ -64,8 +58,39 @@ class AirspaceGeometryCache {
 
     try {
       final id = generateAirspaceId(feature);
-      final properties = feature['properties'] ?? {};
-      final geometry = feature['geometry'] ?? {};
+      LoggingService.debug('Storing geometry for airspace ID: $id');
+
+      // Log feature structure
+      LoggingService.debug('Feature keys: ${feature.keys.toList()}');
+
+      // The OpenAIP API returns features with properties at the top level, not in a 'properties' field
+      // Check if properties is a separate field (standard GeoJSON) or if properties are at top level (OpenAIP format)
+      final rawProperties = feature['properties'];
+      final rawGeometry = feature['geometry'];
+
+      LoggingService.debug('Raw properties type: ${rawProperties.runtimeType}');
+      LoggingService.debug('Raw geometry type: ${rawGeometry.runtimeType}');
+
+      Map<String, dynamic> properties;
+      if (rawProperties != null && rawProperties is Map) {
+        // Standard GeoJSON format with properties field
+        properties = Map<String, dynamic>.from(rawProperties);
+      } else {
+        // OpenAIP format - extract all fields except geometry as properties
+        properties = <String, dynamic>{};
+        for (final key in feature.keys) {
+          if (key != 'geometry') {
+            properties[key] = feature[key];
+          }
+        }
+        LoggingService.debug('Extracted OpenAIP properties: name=${properties['name']}, type=${properties['type']}');
+      }
+
+      final geometry = rawGeometry is Map ? Map<String, dynamic>.from(rawGeometry) : <String, dynamic>{};
+
+      if (geometry.isNotEmpty) {
+        LoggingService.debug('Geometry type: ${geometry['type']}, has coordinates: ${geometry['coordinates'] != null}');
+      }
 
       // Parse polygons from GeoJSON
       final polygons = _parsePolygons(geometry);
@@ -73,6 +98,8 @@ class AirspaceGeometryCache {
         LoggingService.debug('Skipping airspace with no valid polygons: $id');
         return;
       }
+
+      LoggingService.debug('Parsed ${polygons.length} polygons for airspace $id');
 
       final geometryHash = generateGeometryHash(polygons);
 
@@ -85,27 +112,30 @@ class AirspaceGeometryCache {
       }
 
       // Create cached geometry object
+      // Extract numeric type code - ensure it's stored as int
+      final typeCode = properties['type'] is int
+          ? properties['type'] as int
+          : (properties['type'] as num?)?.toInt() ?? 0;
+
       final cachedGeometry = CachedAirspaceGeometry(
         id: id,
         name: properties['name'] ?? 'Unknown',
-        type: properties['type'] ?? 'Unknown',
+        typeCode: typeCode,  // Store numeric type code
         polygons: polygons,
         properties: properties,
         fetchTime: DateTime.now(),
         geometryHash: geometryHash,
       );
 
-      // Store to disk
+      // Store to disk only
       await _diskCache.putGeometry(cachedGeometry);
-
-      // Update memory cache
-      _updateMemoryCache(id, cachedGeometry);
 
       LoggingService.performance(
         'Stored airspace geometry',
         stopwatch.elapsed,
-        'id=$id, polygons=${polygons.length}',
+        'id=$id, polygons=${polygons.length}, name=${cachedGeometry.name}, typeCode=${cachedGeometry.typeCode}',
       );
+      LoggingService.info('Successfully stored airspace: $id (${cachedGeometry.name})');
     } catch (e, stack) {
       LoggingService.error('Failed to store geometry', e, stack);
     }
@@ -113,25 +143,16 @@ class AirspaceGeometryCache {
 
   /// Retrieve an airspace geometry by ID
   Future<CachedAirspaceGeometry?> getGeometry(String id) async {
-    // Check memory cache first
-    if (_memoryCache.containsKey(id)) {
-      _cacheHits++;
-      _updateAccessOrder(id);
-      LoggingService.debug('Memory cache hit for geometry: $id');
-      return _memoryCache[id];
-    }
-
-    // Check disk cache
-    _cacheMisses++;
+    // Query disk cache directly
     final geometry = await _diskCache.getGeometry(id);
 
     if (geometry != null) {
       _diskHits++;
-      _updateMemoryCache(id, geometry);
       LoggingService.debug('Disk cache hit for geometry: $id');
       return geometry;
     }
 
+    _diskMisses++;
     LoggingService.debug('Cache miss for geometry: $id');
     return null;
   }
@@ -141,35 +162,17 @@ class AirspaceGeometryCache {
     if (ids.isEmpty) return [];
 
     final stopwatch = Stopwatch()..start();
-    final geometries = <CachedAirspaceGeometry>[];
-    final missingIds = <String>{};
 
-    // Check memory cache first
-    for (final id in ids) {
-      if (_memoryCache.containsKey(id)) {
-        geometries.add(_memoryCache[id]!);
-        _updateAccessOrder(id);
-        _cacheHits++;
-      } else {
-        missingIds.add(id);
-        _cacheMisses++;
-      }
-    }
+    // Fetch all from disk directly
+    final geometries = await _diskCache.getGeometries(ids);
 
-    // Fetch missing from disk
-    if (missingIds.isNotEmpty) {
-      final diskGeometries = await _diskCache.getGeometries(missingIds);
-      for (final geometry in diskGeometries) {
-        geometries.add(geometry);
-        _updateMemoryCache(geometry.id, geometry);
-        _diskHits++;
-      }
-    }
+    _diskHits += geometries.length;
+    _diskMisses += ids.length - geometries.length;
 
     LoggingService.performance(
       'Retrieved multiple geometries',
       stopwatch.elapsed,
-      'requested=${ids.length}, memory=${ids.length - missingIds.length}, disk=${geometries.length - (ids.length - missingIds.length)}',
+      'requested=${ids.length}, found=${geometries.length}',
     );
 
     return geometries;
@@ -192,10 +195,10 @@ class AirspaceGeometryCache {
           final points = <LatLng>[];
           for (final coord in ring) {
             if (coord is List && coord.length >= 2) {
-              points.add(LatLng(
-                (coord[1] as num).toDouble(),
-                (coord[0] as num).toDouble(),
-              ));
+              // Safely convert to double, handling both int and double values
+              final lat = (coord[1] is int) ? coord[1].toDouble() : coord[1] as double;
+              final lng = (coord[0] is int) ? coord[0].toDouble() : coord[0] as double;
+              points.add(LatLng(lat, lng));
             }
           }
           if (points.isNotEmpty) {
@@ -211,10 +214,10 @@ class AirspaceGeometryCache {
             final points = <LatLng>[];
             for (final coord in ring) {
               if (coord is List && coord.length >= 2) {
-                points.add(LatLng(
-                  (coord[1] as num).toDouble(),
-                  (coord[0] as num).toDouble(),
-                ));
+                // Safely convert to double, handling both int and double values
+                final lat = (coord[1] is int) ? coord[1].toDouble() : coord[1] as double;
+                final lng = (coord[0] is int) ? coord[0].toDouble() : coord[0] as double;
+                points.add(LatLng(lat, lng));
               }
             }
             if (points.isNotEmpty) {
@@ -228,28 +231,6 @@ class AirspaceGeometryCache {
     return polygons;
   }
 
-  /// Update memory cache with LRU eviction
-  void _updateMemoryCache(String id, CachedAirspaceGeometry geometry) {
-    // Remove from current position if exists
-    _accessOrder.remove(id);
-
-    // Add to front
-    _accessOrder.insert(0, id);
-    _memoryCache[id] = geometry;
-
-    // Evict if over limit
-    while (_accessOrder.length > _maxMemoryCacheSize) {
-      final evictId = _accessOrder.removeLast();
-      _memoryCache.remove(evictId);
-      LoggingService.debug('Evicted geometry from memory: $evictId');
-    }
-  }
-
-  /// Update access order for LRU
-  void _updateAccessOrder(String id) {
-    _accessOrder.remove(id);
-    _accessOrder.insert(0, id);
-  }
 
   /// Track duplicate airspace references
   void _trackDuplicate(String id) {
@@ -257,48 +238,40 @@ class AirspaceGeometryCache {
   }
 
   /// Get cache statistics
-  CacheStatistics getStatistics() {
-    final hitRate = (_cacheHits + _cacheMisses) > 0
-        ? _cacheHits / (_cacheHits + _cacheMisses)
+  Future<CacheStatistics> getStatistics() async {
+    final hitRate = (_diskHits + _diskMisses) > 0
+        ? _diskHits / (_diskHits + _diskMisses)
         : 0.0;
 
     final totalDuplicates = _duplicateCount.values.fold(0, (sum, count) => sum + count);
 
-    // Calculate memory usage
-    var memoryBytes = 0;
-    for (final geometry in _memoryCache.values) {
-      // Rough estimate: 100 bytes per point
-      final pointCount = geometry.polygons.fold(0, (sum, polygon) => sum + polygon.length);
-      memoryBytes += pointCount * 100;
-    }
+    // Get database statistics
+    final dbStats = await _diskCache.getStatisticsMap();
 
     return CacheStatistics(
-      totalGeometries: _memoryCache.length,
+      totalGeometries: dbStats['geometry_count'] ?? 0,
       totalTiles: 0, // Will be set by metadata cache
       emptyTiles: 0, // Will be set by metadata cache
       duplicatedAirspaces: totalDuplicates,
-      totalMemoryBytes: memoryBytes,
-      compressedBytes: 0, // Will be set by disk cache
-      averageCompressionRatio: 0, // Will be set by disk cache
+      totalMemoryBytes: dbStats['database_size_bytes'] ?? 0, // Use database size
+      compressedBytes: dbStats['total_compressed_size'] ?? 0,
+      averageCompressionRatio: (dbStats['avg_compression_ratio'] ?? 0).toDouble(),
       cacheHitRate: hitRate,
       lastUpdated: DateTime.now(),
     );
   }
 
-  /// Clear memory cache
-  void clearMemoryCache() {
-    _memoryCache.clear();
-    _accessOrder.clear();
-    _cacheHits = 0;
-    _cacheMisses = 0;
+  /// Clear statistics
+  void clearStatistics() {
     _diskHits = 0;
+    _diskMisses = 0;
     _duplicateCount.clear();
-    LoggingService.info('Cleared airspace geometry memory cache');
+    LoggingService.info('Cleared airspace geometry statistics');
   }
 
-  /// Clear all cache (memory and disk)
+  /// Clear all cache
   Future<void> clearAllCache() async {
-    clearMemoryCache();
+    clearStatistics();
     await _diskCache.clearCache();
     LoggingService.info('Cleared all airspace geometry cache');
   }
@@ -306,37 +279,16 @@ class AirspaceGeometryCache {
   /// Clean expired data
   Future<void> cleanExpiredData() async {
     await _diskCache.cleanExpiredData();
-
-    // Remove expired items from memory cache
-    final now = DateTime.now();
-    final expiredIds = <String>[];
-
-    for (final entry in _memoryCache.entries) {
-      if (entry.value.isExpired) {
-        expiredIds.add(entry.key);
-      }
-    }
-
-    for (final id in expiredIds) {
-      _memoryCache.remove(id);
-      _accessOrder.remove(id);
-    }
-
-    if (expiredIds.isNotEmpty) {
-      LoggingService.info('Removed ${expiredIds.length} expired geometries from memory cache');
-    }
   }
 
   /// Get cache performance metrics
   Map<String, dynamic> getPerformanceMetrics() {
     return {
-      'memoryHits': _cacheHits,
-      'memoryMisses': _cacheMisses,
       'diskHits': _diskHits,
-      'hitRate': (_cacheHits + _cacheMisses) > 0
-          ? (_cacheHits / (_cacheHits + _cacheMisses) * 100).toStringAsFixed(1)
+      'diskMisses': _diskMisses,
+      'hitRate': (_diskHits + _diskMisses) > 0
+          ? (_diskHits / (_diskHits + _diskMisses) * 100).toStringAsFixed(1)
           : '0.0',
-      'memoryCacheSize': _memoryCache.length,
       'duplicatesDetected': _duplicateCount.length,
       'totalDuplicateReferences': _duplicateCount.values.fold(0, (sum, count) => sum + count),
     };

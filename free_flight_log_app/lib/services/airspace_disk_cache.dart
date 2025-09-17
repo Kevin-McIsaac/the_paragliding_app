@@ -15,8 +15,13 @@ class AirspaceDiskCache {
   static const String _metadataTable = 'tile_metadata';
   static const String _statisticsTable = 'cache_statistics';
 
+  // Size limits
+  static const int maxDatabaseSizeMB = 100; // Maximum database size in MB
+  static const int cleanupBatchSize = 50; // Number of entries to delete per cleanup
+
   Database? _database;
   static AirspaceDiskCache? _instance;
+  String? _databasePath;
 
   AirspaceDiskCache._internal();
 
@@ -34,6 +39,7 @@ class AirspaceDiskCache {
   Future<Database> _initDatabase() async {
     final documentsDirectory = await getApplicationDocumentsDirectory();
     final path = join(documentsDirectory.path, _databaseName);
+    _databasePath = path;
 
     LoggingService.info('Initializing airspace cache database at: $path');
 
@@ -122,6 +128,9 @@ class AirspaceDiskCache {
 
   // Geometry cache operations
   Future<void> putGeometry(CachedAirspaceGeometry geometry) async {
+    // Check database size before inserting
+    await _enforceSizeLimit();
+
     final db = await database;
     final stopwatch = Stopwatch()..start();
 
@@ -135,7 +144,7 @@ class AirspaceDiskCache {
         {
           'id': geometry.id,
           'name': geometry.name,
-          'type': geometry.type,
+          'type': geometry.typeCode.toString(),  // Store typeCode as string for DB
           'compressed_data': compressed,
           'properties': jsonEncode(geometry.properties),
           'fetch_time': geometry.fetchTime.millisecondsSinceEpoch,
@@ -402,12 +411,15 @@ class AirspaceDiskCache {
       final totalTiles = metaRow['count'] as int? ?? 0;
       final emptyTiles = metaRow['empty_count'] as int? ?? 0;
 
+      // Get database file size
+      final dbSize = await getDatabaseSize();
+
       return CacheStatistics(
         totalGeometries: totalGeometries,
         totalTiles: totalTiles,
         emptyTiles: emptyTiles,
         duplicatedAirspaces: 0, // Will be calculated by the service
-        totalMemoryBytes: uncompressedBytes,
+        totalMemoryBytes: dbSize, // Use actual database size
         compressedBytes: compressedBytes,
         averageCompressionRatio: totalGeometries > 0
             ? 1.0 - (compressedBytes / uncompressedBytes)
@@ -421,19 +433,134 @@ class AirspaceDiskCache {
     }
   }
 
-  // Clear all cache
-  Future<void> clearCache() async {
+  // Get statistics as a simple map (for compatibility)
+  Future<Map<String, dynamic>> getStatisticsMap() async {
     final db = await database;
 
     try {
-      await db.delete(_geometryTable);
-      await db.delete(_metadataTable);
-      await db.delete(_statisticsTable);
+      // Get geometry statistics
+      final geometryStats = await db.rawQuery('''
+        SELECT
+          COUNT(*) as count,
+          SUM(compressed_size) as compressed,
+          SUM(uncompressed_size) as uncompressed
+        FROM $_geometryTable
+      ''');
+
+      final geoRow = geometryStats.first;
+      final dbSize = await getDatabaseSize();
+
+      return {
+        'geometry_count': geoRow['count'] as int? ?? 0,
+        'total_compressed_size': geoRow['compressed'] as int? ?? 0,
+        'total_uncompressed_size': geoRow['uncompressed'] as int? ?? 0,
+        'database_size_bytes': dbSize,
+        'database_size_mb': (dbSize / (1024 * 1024)).toStringAsFixed(2),
+        'max_size_mb': maxDatabaseSizeMB,
+        'avg_compression_ratio': (geoRow['count'] as int? ?? 0) > 0
+            ? 1.0 - ((geoRow['compressed'] as int? ?? 0) / (geoRow['uncompressed'] as int? ?? 1))
+            : 0,
+      };
+    } catch (e, stack) {
+      LoggingService.error('Failed to get statistics map', e, stack);
+      return {};
+    }
+  }
+
+  // Get current database size in bytes
+  Future<int> getDatabaseSize() async {
+    final path = _databasePath ?? join((await getApplicationDocumentsDirectory()).path, _databaseName);
+    final dbFile = File(path);
+    if (await dbFile.exists()) {
+      return await dbFile.length();
+    }
+    return 0;
+  }
+
+  // Check and enforce database size limit
+  Future<void> _enforceSizeLimit() async {
+    final currentSize = await getDatabaseSize();
+    final maxSizeBytes = maxDatabaseSizeMB * 1024 * 1024;
+
+    if (currentSize >= maxSizeBytes) { // Trigger cleanup at 100% of limit
+      LoggingService.info('Database size ${(currentSize / (1024 * 1024)).toStringAsFixed(1)}MB reached limit, performing cleanup');
+      await _performSizeCleanup();
+    }
+  }
+
+  // Perform cleanup to reduce database size to 80% of max
+  Future<void> _performSizeCleanup() async {
+    final db = await database;
+    final maxSizeBytes = maxDatabaseSizeMB * 1024 * 1024;
+    final targetSize = maxSizeBytes * 0.8; // Target 80% of max size
+
+    try {
+      var currentSize = await getDatabaseSize();
+      LoggingService.info('Starting cleanup: current ${(currentSize / (1024 * 1024)).toStringAsFixed(1)}MB, target ${(targetSize / (1024 * 1024)).toStringAsFixed(1)}MB');
+
+      // Keep deleting batches until we reach 80% of max size
+      while (currentSize > targetSize) {
+        // Delete oldest geometry entries based on last_accessed
+        await db.execute('''
+          DELETE FROM $_geometryTable
+          WHERE id IN (
+            SELECT id FROM $_geometryTable
+            ORDER BY last_accessed ASC
+            LIMIT $cleanupBatchSize
+          )
+        ''');
+
+        // Delete oldest tile metadata
+        await db.execute('''
+          DELETE FROM $_metadataTable
+          WHERE id IN (
+            SELECT id FROM $_metadataTable
+            ORDER BY fetch_time ASC
+            LIMIT $cleanupBatchSize
+          )
+        ''');
+
+        currentSize = await getDatabaseSize();
+        LoggingService.debug('Cleanup progress: ${(currentSize / (1024 * 1024)).toStringAsFixed(1)}MB');
+      }
+
+      // Vacuum to reclaim space
       await db.execute('VACUUM');
 
-      LoggingService.info('Cleared all airspace cache');
+      final newSize = await getDatabaseSize();
+      LoggingService.info('Cleanup complete, new size: ${(newSize / (1024 * 1024)).toStringAsFixed(1)}MB');
     } catch (e, stack) {
-      LoggingService.error('Failed to clear cache', e, stack);
+      LoggingService.error('Failed to perform size cleanup', e, stack);
+    }
+  }
+
+  // Clear all cache
+  Future<void> clearCache() async {
+    try {
+      LoggingService.info('Starting airspace disk cache clear');
+
+      // Close the database if it's open
+      if (_database != null) {
+        await _database!.close();
+        _database = null;
+        LoggingService.info('Closed airspace database');
+      }
+
+      // Delete the database file
+      final documentsDirectory = await getApplicationDocumentsDirectory();
+      final path = join(documentsDirectory.path, _databaseName);
+      final file = File(path);
+
+      if (await file.exists()) {
+        await file.delete();
+        LoggingService.info('Deleted airspace database file at: $path');
+      }
+
+      _databasePath = null;
+      // The database will be recreated on next access
+      LoggingService.info('Cleared airspace disk cache completely');
+    } catch (e, stack) {
+      LoggingService.error('Failed to clear disk cache', e, stack);
     }
   }
 

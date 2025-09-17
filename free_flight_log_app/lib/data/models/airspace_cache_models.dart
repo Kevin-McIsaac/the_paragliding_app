@@ -4,7 +4,7 @@ import 'package:latlong2/latlong.dart';
 class CachedAirspaceGeometry {
   final String id;
   final String name;
-  final String type;
+  final int typeCode;  // Store numeric type code instead of string
   final List<List<LatLng>> polygons;
   final Map<String, dynamic> properties;
   final DateTime fetchTime;
@@ -15,7 +15,7 @@ class CachedAirspaceGeometry {
   CachedAirspaceGeometry({
     required this.id,
     required this.name,
-    required this.type,
+    required this.typeCode,
     required this.polygons,
     required this.properties,
     required this.fetchTime,
@@ -28,7 +28,7 @@ class CachedAirspaceGeometry {
     return CachedAirspaceGeometry(
       id: json['id'] as String,
       name: json['name'] as String,
-      type: json['type'] as String,
+      typeCode: json['typeCode'] as int? ?? json['type'] as int? ?? 0,  // Handle old 'type' field for compatibility
       polygons: _parsePolygons(json['polygons']),
       properties: Map<String, dynamic>.from(json['properties'] ?? {}),
       fetchTime: DateTime.parse(json['fetchTime'] as String),
@@ -42,7 +42,7 @@ class CachedAirspaceGeometry {
     return {
       'id': id,
       'name': name,
-      'type': type,
+      'typeCode': typeCode,  // Store as numeric type code
       'polygons': _encodePolygons(polygons),
       'properties': properties,
       'fetchTime': fetchTime.toIso8601String(),
@@ -58,7 +58,10 @@ class CachedAirspaceGeometry {
         if (polygon is List) {
           return polygon.map((point) {
             if (point is List && point.length >= 2) {
-              return LatLng(point[1].toDouble(), point[0].toDouble());
+              // Safely convert to double, handling both int and double values
+              final lat = (point[1] is int) ? point[1].toDouble() : point[1] as double;
+              final lng = (point[0] is int) ? point[0].toDouble() : point[0] as double;
+              return LatLng(lat, lng);
             }
             return LatLng(0, 0);
           }).toList();

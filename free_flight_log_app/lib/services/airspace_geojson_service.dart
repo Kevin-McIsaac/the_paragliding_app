@@ -402,7 +402,35 @@ class AirspaceGeoJsonService {
           if (response.statusCode == 200) {
             // Parse and store response using hierarchical cache
             final data = json.decode(response.body);
+
+            // Comprehensive debugging of API response
+            LoggingService.info('API Response for tile $tileKey:');
+            LoggingService.info('Response body length: ${response.body.length} bytes');
+
+            if (data is Map) {
+              LoggingService.info('Response type: Map with keys: ${data.keys.toList()}');
+              if (data.containsKey('type')) {
+                LoggingService.info('GeoJSON type: ${data['type']}');
+              }
+              if (data.containsKey('features')) {
+                final features = data['features'];
+                if (features is List) {
+                  LoggingService.info('Features array length: ${features.length}');
+                  if (features.isNotEmpty) {
+                    final firstFeature = features.first;
+                    LoggingService.info('First feature keys: ${firstFeature.keys.toList()}');
+                    if (firstFeature['properties'] != null) {
+                      LoggingService.info('First feature properties: ${firstFeature['properties'].keys.toList()}');
+                    }
+                  }
+                }
+              }
+            } else if (data is List) {
+              LoggingService.info('Response type: List with ${data.length} items');
+            }
+
             final features = _extractFeatures(data);
+            LoggingService.info('Extracted ${features.length} features from API response');
 
             if (features.isEmpty) {
               // Mark as empty tile
@@ -447,8 +475,11 @@ class AirspaceGeoJsonService {
     // Get all airspaces for the requested tiles
     final geometries = await _metadataCache.getAirspacesForTiles(tileKeys);
 
+    LoggingService.info('Retrieved ${geometries.length} unique airspaces from cache for ${tileKeys.length} tiles');
+
     // Convert to GeoJSON
     final features = geometries.map((geometry) => _geometryToFeature(geometry)).toList();
+    LoggingService.debug('Converted ${features.length} geometries to GeoJSON features');
 
     final geoJson = {
       'type': 'FeatureCollection',
@@ -537,15 +568,50 @@ class AirspaceGeoJsonService {
   /// Extract features from API response
   List<Map<String, dynamic>> _extractFeatures(dynamic data) {
     List<dynamic> items;
-    if (data is Map<String, dynamic>) {
-      items = data['items'] ?? data['features'] ?? [data];
+    if (data is Map) {
+      // OpenAIP returns GeoJSON FeatureCollection with 'features' array
+      items = data['features'] ?? data['items'] ?? [];
     } else if (data is List) {
       items = data;
     } else {
+      LoggingService.warning('Unexpected API response type: ${data.runtimeType}');
       return [];
     }
 
-    return items.map<Map<String, dynamic>>((item) => item as Map<String, dynamic>).toList();
+    // Properly cast each feature to Map<String, dynamic>
+    final features = <Map<String, dynamic>>[];
+    for (final item in items) {
+      if (item is Map) {
+        // Deep cast the map to ensure all nested maps are properly typed
+        final feature = _deepCastMap(item);
+        features.add(feature);
+      }
+    }
+
+    return features;
+  }
+
+  /// Deep cast a dynamic map to Map<String, dynamic>
+  Map<String, dynamic> _deepCastMap(Map map) {
+    final result = <String, dynamic>{};
+    for (final entry in map.entries) {
+      final key = entry.key.toString();
+      final value = entry.value;
+
+      if (value is Map) {
+        result[key] = _deepCastMap(value);
+      } else if (value is List) {
+        result[key] = value.map((item) {
+          if (item is Map) {
+            return _deepCastMap(item);
+          }
+          return item;
+        }).toList();
+      } else {
+        result[key] = value;
+      }
+    }
+    return result;
   }
 
   /// Convert cached geometry to GeoJSON feature
@@ -555,13 +621,24 @@ class AirspaceGeoJsonService {
       return polygon.map((point) => [point.longitude, point.latitude]).toList();
     }).toList();
 
+    // Ensure the type field contains the numeric type code
+    final properties = Map<String, dynamic>.from(geometry.properties);
+    properties['type'] = geometry.typeCode; // Use the stored numeric type code
+
+    // Ensure ICAO class is available for AirspaceData creation
+    // The 'class' field should already be in properties from when we stored it,
+    // but ensure it's present for compatibility
+    if (!properties.containsKey('class') && properties.containsKey('icaoClass')) {
+      properties['class'] = properties['icaoClass'];
+    }
+
     return {
       'type': 'Feature',
       'geometry': {
         'type': geometry.polygons.length == 1 ? 'Polygon' : 'MultiPolygon',
         'coordinates': geometry.polygons.length == 1 ? coordinates : [coordinates],
       },
-      'properties': geometry.properties,
+      'properties': properties,
     };
   }
 
@@ -822,7 +899,38 @@ class AirspaceGeoJsonService {
       throw Exception('Invalid airspace item format');
     }
 
-    // Extract geometry
+    // If this is already a GeoJSON feature, extract properties from within
+    if (item['type'] == 'Feature' && item.containsKey('properties')) {
+      // Feature format from API - properties are nested
+      final properties = item['properties'] as Map<String, dynamic>;
+      final geometry = item['geometry'];
+
+      if (geometry == null) {
+        throw Exception('Airspace feature missing geometry');
+      }
+
+      // Debug log the raw API data
+      LoggingService.debug('API feature properties: name=${properties['name']}, type=${properties['type']}, class=${properties['icaoClass']}');
+
+      // Properties are already in the right format, just ensure type is numeric
+      final cleanedProps = <String, dynamic>{
+        'name': properties['name'] ?? 'Unknown Airspace',
+        'type': properties['type'] ?? 0,  // Keep numeric type code
+        'class': properties['icaoClass'],  // Keep numeric ICAO class code
+        'icaoClass': properties['icaoClass'],  // Also store with OpenAIP field name for compatibility
+        'upperLimit': _convertAltitudeLimit(properties['upperLimit'] as Map<String, dynamic>?),
+        'lowerLimit': _convertAltitudeLimit(properties['lowerLimit'] as Map<String, dynamic>?),
+        'country': properties['country'],
+      };
+
+      return {
+        'type': 'Feature',
+        'geometry': geometry,
+        'properties': cleanedProps,
+      };
+    }
+
+    // Old format - properties at top level (shouldn't happen with OpenAIP)
     final geometry = item['geometry'];
     if (geometry == null) {
       throw Exception('Airspace missing geometry');
@@ -832,11 +940,15 @@ class AirspaceGeoJsonService {
     final upperLimit = _convertAltitudeLimit(item['upperLimit'] as Map<String, dynamic>?);
     final lowerLimit = _convertAltitudeLimit(item['lowerLimit'] as Map<String, dynamic>?);
 
+    // Debug log the raw API data
+    LoggingService.debug('API airspace data (top-level): name=${item['name']}, type=${item['type']}, class=${item['icaoClass']}');
+
     // Extract properties - keep numeric codes
     final properties = <String, dynamic>{
       'name': item['name'] ?? 'Unknown Airspace',
       'type': item['type'] ?? 0,  // Keep numeric type code
       'class': item['icaoClass'],  // Keep numeric ICAO class code
+      'icaoClass': item['icaoClass'],  // Also store with OpenAIP field name for compatibility
       'upperLimit': upperLimit,
       'lowerLimit': lowerLimit,
       'country': item['country'],
@@ -1740,6 +1852,9 @@ class AirspaceGeoJsonService {
     final stats = await _metadataCache.getStatistics();
     final metrics = _metadataCache.getPerformanceMetrics();
 
+    // Calculate database size in MB
+    final databaseSizeMb = stats.totalMemoryBytes / 1024 / 1024;
+
     return {
       'statistics': stats.toJson(),
       'performance': metrics,
@@ -1747,6 +1862,7 @@ class AirspaceGeoJsonService {
         'total_unique_airspaces': stats.totalGeometries,
         'total_tiles_cached': stats.totalTiles,
         'empty_tiles': stats.emptyTiles,
+        'database_size_mb': databaseSizeMb.toStringAsFixed(2),
         'memory_saved_mb': (stats.memoryReductionPercent * stats.totalMemoryBytes / 100 / 1024 / 1024).toStringAsFixed(2),
         'compression_ratio': stats.averageCompressionRatio.toStringAsFixed(2),
         'cache_hit_rate': stats.cacheHitRate.toStringAsFixed(2),

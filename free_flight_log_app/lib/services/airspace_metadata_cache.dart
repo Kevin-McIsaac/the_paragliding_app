@@ -59,12 +59,25 @@ class AirspaceMetadataCache {
       // Extract airspace IDs and store geometries
       final airspaceIds = <String>{};
 
-      for (final feature in features) {
-        final id = _geometryCache.generateAirspaceId(feature);
-        airspaceIds.add(id);
+      // Log features being processed
+      LoggingService.debug('Processing ${features.length} features for tile $tileKey');
 
-        // Store geometry (will handle deduplication)
-        await _geometryCache.putGeometry(feature);
+      for (final feature in features) {
+        try {
+          final id = _geometryCache.generateAirspaceId(feature);
+          airspaceIds.add(id);
+
+          // Log feature details for debugging
+          final hasId = feature['_id'] != null;
+          final hasGeometry = feature['geometry'] != null;
+          final hasProperties = feature['properties'] != null;
+          LoggingService.debug('Storing airspace $id: hasId=$hasId, hasGeometry=$hasGeometry, hasProperties=$hasProperties');
+
+          // Store geometry (will handle deduplication)
+          await _geometryCache.putGeometry(feature);
+        } catch (e, stack) {
+          LoggingService.error('Failed to process feature for tile $tileKey', e, stack);
+        }
       }
 
       // Create tile metadata
@@ -293,7 +306,7 @@ class AirspaceMetadataCache {
   /// Get cache statistics
   Future<CacheStatistics> getStatistics() async {
     final diskStats = await _diskCache.getStatistics();
-    final geometryStats = _geometryCache.getStatistics();
+    final geometryStats = await _geometryCache.getStatistics();  // Now async
 
     return CacheStatistics(
       totalGeometries: geometryStats.totalGeometries,
