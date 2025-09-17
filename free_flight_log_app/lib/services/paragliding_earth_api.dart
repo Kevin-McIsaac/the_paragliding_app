@@ -22,17 +22,23 @@ class ParaglidingEarthApi {
   // Persistent HTTP client for connection pooling
   static http.Client? _httpClient;
   static int _requestCount = 0;
-  static const int _maxRequestsPerClient = 20; // Recreate after 20 requests
-  
+  static const int _maxRequestsPerClient = 50; // Increased to reduce recreation overhead
+  static DateTime? _clientCreatedAt;
+
   static http.Client get httpClient {
     if (_httpClient == null || _requestCount >= _maxRequestsPerClient) {
       // Close old client if exists
       if (_httpClient != null) {
-        LoggingService.info('ParaglidingEarthApi: Recreating HTTP client after $_requestCount requests');
+        final clientAge = _clientCreatedAt != null
+            ? DateTime.now().difference(_clientCreatedAt!).inSeconds
+            : 0;
+        LoggingService.info('ParaglidingEarthApi: Recreating HTTP client after $_requestCount requests (age: ${clientAge}s)');
         _httpClient!.close();
       }
       _httpClient = http.Client();
+      _clientCreatedAt = DateTime.now();
       _requestCount = 0;
+      LoggingService.info('[HTTP_CLIENT_CREATED] New client created for connection pooling');
     }
     return _httpClient!;
   }
@@ -257,8 +263,11 @@ class ParaglidingEarthApi {
     bool detailed = true,
   }) async {
     final stopwatch = Stopwatch()..start();
+    final timingBreakdown = <String, int>{};
 
     try {
+      // Track URL creation time
+      final urlStart = stopwatch.elapsedMilliseconds;
       final url = Uri.parse('$_baseUrl/getBoundingBoxSites.php').replace(
         queryParameters: {
           'north': north.toString(),
@@ -269,25 +278,62 @@ class ParaglidingEarthApi {
           if (detailed) 'style': 'detailled',
         },
       );
+      timingBreakdown['url_creation_ms'] = stopwatch.elapsedMilliseconds - urlStart;
 
       LoggingService.info('ParaglidingEarthApi: Fetching sites in bounds');
 
+      // Check if this is the first request (cold start)
+      final isFirstRequest = _requestCount == 0;
+      if (isFirstRequest) {
+        LoggingService.info('[COLD_START] First API request - expecting longer response time');
+      }
+
+      // Track DNS resolution separately for first request
+      if (isFirstRequest) {
+        final dnsStart = stopwatch.elapsedMilliseconds;
+        try {
+          await InternetAddress.lookup('www.paraglidingearth.com');
+          timingBreakdown['dns_lookup_ms'] = stopwatch.elapsedMilliseconds - dnsStart;
+          LoggingService.info('[DNS_TIMING] DNS lookup took ${timingBreakdown['dns_lookup_ms']}ms');
+        } catch (e) {
+          LoggingService.error('[DNS_ERROR] Failed to resolve paraglidingearth.com', e);
+        }
+      }
+
+      // Track HTTP request time
+      final httpStart = stopwatch.elapsedMilliseconds;
       final response = await httpClient.get(url).timeout(_timeout);
+      timingBreakdown['http_request_ms'] = stopwatch.elapsedMilliseconds - httpStart;
+
       _requestCount++; // Increment request counter
-      stopwatch.stop();
 
       if (response.statusCode == 200) {
+        // Track parsing time
+        final parseStart = stopwatch.elapsedMilliseconds;
         final sites = _parseGeoJsonResponse(response.body);
+        timingBreakdown['parse_response_ms'] = stopwatch.elapsedMilliseconds - parseStart;
+        stopwatch.stop();
+
+        // Log detailed timing breakdown
+        LoggingService.structured('API_TIMING_BREAKDOWN', {
+          'is_cold_start': isFirstRequest,
+          'request_number': _requestCount,
+          'total_ms': stopwatch.elapsedMilliseconds,
+          ...timingBreakdown,
+          'sites_count': sites.length,
+          'response_size_bytes': response.body.length,
+        });
 
         LoggingService.performance(
           'Paragliding Earth API',
           Duration(milliseconds: stopwatch.elapsedMilliseconds),
-          'sites=${sites.length}, bounds=$west,$south,$east,$north'
+          'sites=${sites.length}, bounds=$west,$south,$east,$north, cold_start=$isFirstRequest'
         );
 
         LoggingService.info('ParaglidingEarthApi: Found ${sites.length} sites in bounds');
         return sites;
       } else {
+        stopwatch.stop();
         LoggingService.performance(
           'Paragliding Earth API (Failed)',
           Duration(milliseconds: stopwatch.elapsedMilliseconds),
