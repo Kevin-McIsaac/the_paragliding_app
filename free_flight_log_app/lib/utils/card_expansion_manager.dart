@@ -170,6 +170,7 @@ class CardExpansionManagers {
       'database_stats': false,
       'backup_status': false,
       'map_cache': false,
+      'airspace_cache': false,
       'igc_cleanup': false,
       'api_test': false,
       'premium_maps': false,

@@ -1,0 +1,405 @@
+import '../services/logging_service.dart';
+import '../services/airspace_disk_cache.dart';
+import '../services/airspace_geometry_cache.dart';
+import '../data/models/airspace_cache_models.dart';
+
+/// Manages tile-to-airspace ID mappings
+class AirspaceMetadataCache {
+  static AirspaceMetadataCache? _instance;
+  final AirspaceDiskCache _diskCache = AirspaceDiskCache.instance;
+  final AirspaceGeometryCache _geometryCache = AirspaceGeometryCache.instance;
+
+  // In-memory cache for tile metadata
+  final Map<String, TileMetadata> _memoryCache = {};
+  final List<String> _accessOrder = [];
+  static const int _maxMemoryCacheSize = 200; // Keep metadata for 200 tiles
+
+  // Statistics tracking
+  int _cacheHits = 0;
+  int _cacheMisses = 0;
+  int _emptyTileCount = 0;
+  final Map<String, DateTime> _pendingFetches = {};
+
+  AirspaceMetadataCache._internal();
+
+  static AirspaceMetadataCache get instance {
+    _instance ??= AirspaceMetadataCache._internal();
+    return _instance!;
+  }
+
+  /// Generate tile key from zoom, x, y coordinates
+  String generateTileKey(int zoom, int x, int y) {
+    return '${zoom}_${x}_$y';
+  }
+
+  /// Parse tile key into components
+  Map<String, int>? parseTileKey(String tileKey) {
+    final parts = tileKey.split('_');
+    if (parts.length != 3) return null;
+
+    try {
+      return {
+        'zoom': int.parse(parts[0]),
+        'x': int.parse(parts[1]),
+        'y': int.parse(parts[2]),
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Store tile metadata with airspace IDs
+  Future<void> putTileMetadata({
+    required String tileKey,
+    required List<Map<String, dynamic>> features,
+  }) async {
+    final stopwatch = Stopwatch()..start();
+
+    try {
+      // Extract airspace IDs and store geometries
+      final airspaceIds = <String>{};
+
+      for (final feature in features) {
+        final id = _geometryCache.generateAirspaceId(feature);
+        airspaceIds.add(id);
+
+        // Store geometry (will handle deduplication)
+        await _geometryCache.putGeometry(feature);
+      }
+
+      // Create tile metadata
+      final metadata = TileMetadata(
+        tileKey: tileKey,
+        airspaceIds: airspaceIds,
+        fetchTime: DateTime.now(),
+        airspaceCount: airspaceIds.length,
+        isEmpty: airspaceIds.isEmpty,
+        statistics: _generateTileStatistics(features),
+      );
+
+      // Track empty tiles
+      if (metadata.isEmpty) {
+        _emptyTileCount++;
+      }
+
+      // Store to disk
+      await _diskCache.putTileMetadata(metadata);
+
+      // Update memory cache
+      _updateMemoryCache(tileKey, metadata);
+
+      LoggingService.performance(
+        'Stored tile metadata',
+        stopwatch.elapsed,
+        'tile=$tileKey, airspaces=${airspaceIds.length}, empty=${metadata.isEmpty}',
+      );
+    } catch (e, stack) {
+      LoggingService.error('Failed to store tile metadata', e, stack);
+    }
+  }
+
+  /// Mark a tile as empty
+  Future<void> markTileEmpty(String tileKey) async {
+    final metadata = TileMetadata.empty(tileKey);
+
+    // Store to disk
+    await _diskCache.putTileMetadata(metadata);
+
+    // Update memory cache
+    _updateMemoryCache(tileKey, metadata);
+    _emptyTileCount++;
+
+    LoggingService.debug('Marked tile as empty: $tileKey');
+  }
+
+  /// Get tile metadata
+  Future<TileMetadata?> getTileMetadata(String tileKey) async {
+    // Check if fetch is already pending
+    if (_pendingFetches.containsKey(tileKey)) {
+      final pendingTime = _pendingFetches[tileKey]!;
+      if (DateTime.now().difference(pendingTime).inSeconds < 5) {
+        LoggingService.debug('Fetch already pending for tile: $tileKey');
+        return null;
+      }
+    }
+
+    // Check memory cache first
+    if (_memoryCache.containsKey(tileKey)) {
+      _cacheHits++;
+      _updateAccessOrder(tileKey);
+      final metadata = _memoryCache[tileKey]!;
+
+      if (!metadata.isExpired) {
+        LoggingService.debug('Memory cache hit for tile: $tileKey, airspaces=${metadata.airspaceCount}');
+        return metadata;
+      }
+    }
+
+    // Check disk cache
+    _cacheMisses++;
+    final metadata = await _diskCache.getTileMetadata(tileKey);
+
+    if (metadata != null) {
+      _updateMemoryCache(tileKey, metadata);
+
+      if (!metadata.isExpired) {
+        LoggingService.debug('Disk cache hit for tile: $tileKey, airspaces=${metadata.airspaceCount}');
+        return metadata;
+      }
+    }
+
+    LoggingService.debug('Cache miss for tile: $tileKey');
+    return null;
+  }
+
+  /// Get airspaces for a tile
+  Future<List<CachedAirspaceGeometry>> getAirspacesForTile(String tileKey) async {
+    final metadata = await getTileMetadata(tileKey);
+
+    if (metadata == null || metadata.isEmpty) {
+      return [];
+    }
+
+    // Fetch geometries for all airspace IDs
+    return await _geometryCache.getGeometries(metadata.airspaceIds);
+  }
+
+  /// Get airspaces for multiple tiles
+  Future<List<CachedAirspaceGeometry>> getAirspacesForTiles(List<String> tileKeys) async {
+    if (tileKeys.isEmpty) return [];
+
+    final stopwatch = Stopwatch()..start();
+    final allAirspaceIds = <String>{};
+    var emptyTiles = 0;
+    var cachedTiles = 0;
+
+    // Collect all unique airspace IDs from tiles
+    for (final tileKey in tileKeys) {
+      final metadata = await getTileMetadata(tileKey);
+
+      if (metadata != null) {
+        cachedTiles++;
+        if (metadata.isEmpty) {
+          emptyTiles++;
+        } else {
+          allAirspaceIds.addAll(metadata.airspaceIds);
+        }
+      }
+    }
+
+    // Fetch all unique geometries
+    final geometries = await _geometryCache.getGeometries(allAirspaceIds);
+
+    LoggingService.performance(
+      'Retrieved airspaces for tiles',
+      stopwatch.elapsed,
+      'tiles=${tileKeys.length}, cached=$cachedTiles, empty=$emptyTiles, unique_airspaces=${allAirspaceIds.length}',
+    );
+
+    return geometries;
+  }
+
+  /// Check if tiles need fetching
+  Future<List<String>> getTilesToFetch(List<String> tileKeys) async {
+    final tilesToFetch = <String>[];
+
+    for (final tileKey in tileKeys) {
+      final metadata = await getTileMetadata(tileKey);
+
+      if (metadata == null || metadata.isExpired) {
+        tilesToFetch.add(tileKey);
+        _pendingFetches[tileKey] = DateTime.now();
+      }
+    }
+
+    return tilesToFetch;
+  }
+
+  /// Clear pending fetch marker
+  void clearPendingFetch(String tileKey) {
+    _pendingFetches.remove(tileKey);
+  }
+
+  /// Generate statistics for a tile
+  Map<String, dynamic> _generateTileStatistics(List<Map<String, dynamic>> features) {
+    final typeCount = <String, int>{};
+    var totalPoints = 0;
+
+    for (final feature in features) {
+      final properties = feature['properties'] ?? {};
+      final type = properties['type'] ?? 'Unknown';
+      typeCount[type] = (typeCount[type] ?? 0) + 1;
+
+      // Count geometry points
+      final geometry = feature['geometry'] ?? {};
+      final coordinates = geometry['coordinates'];
+      if (coordinates is List) {
+        totalPoints += _countCoordinates(coordinates);
+      }
+    }
+
+    return {
+      'types': typeCount,
+      'totalPoints': totalPoints,
+      'avgPointsPerAirspace': features.isNotEmpty
+          ? (totalPoints / features.length).round()
+          : 0,
+    };
+  }
+
+  /// Count coordinates in nested arrays
+  int _countCoordinates(List coordinates) {
+    var count = 0;
+
+    void countRecursive(dynamic item) {
+      if (item is List) {
+        if (item.isNotEmpty && item[0] is num) {
+          count++;
+        } else {
+          for (final subItem in item) {
+            countRecursive(subItem);
+          }
+        }
+      }
+    }
+
+    countRecursive(coordinates);
+    return count;
+  }
+
+  /// Update memory cache with LRU eviction
+  void _updateMemoryCache(String tileKey, TileMetadata metadata) {
+    // Remove from current position if exists
+    _accessOrder.remove(tileKey);
+
+    // Add to front
+    _accessOrder.insert(0, tileKey);
+    _memoryCache[tileKey] = metadata;
+
+    // Evict if over limit
+    while (_accessOrder.length > _maxMemoryCacheSize) {
+      final evictKey = _accessOrder.removeLast();
+      _memoryCache.remove(evictKey);
+      LoggingService.debug('Evicted tile metadata from memory: $evictKey');
+    }
+  }
+
+  /// Update access order for LRU
+  void _updateAccessOrder(String tileKey) {
+    _accessOrder.remove(tileKey);
+    _accessOrder.insert(0, tileKey);
+  }
+
+  /// Get cache statistics
+  Future<CacheStatistics> getStatistics() async {
+    final diskStats = await _diskCache.getStatistics();
+    final geometryStats = _geometryCache.getStatistics();
+
+    return CacheStatistics(
+      totalGeometries: geometryStats.totalGeometries,
+      totalTiles: _memoryCache.length,
+      emptyTiles: _emptyTileCount,
+      duplicatedAirspaces: geometryStats.duplicatedAirspaces,
+      totalMemoryBytes: diskStats.totalMemoryBytes,
+      compressedBytes: diskStats.compressedBytes,
+      averageCompressionRatio: diskStats.averageCompressionRatio,
+      cacheHitRate: (_cacheHits + _cacheMisses) > 0
+          ? _cacheHits / (_cacheHits + _cacheMisses)
+          : 0.0,
+      lastUpdated: DateTime.now(),
+    );
+  }
+
+  /// Clear memory cache
+  void clearMemoryCache() {
+    _memoryCache.clear();
+    _accessOrder.clear();
+    _pendingFetches.clear();
+    _cacheHits = 0;
+    _cacheMisses = 0;
+    _emptyTileCount = 0;
+    LoggingService.info('Cleared tile metadata memory cache');
+  }
+
+  /// Clear all cache (memory and disk)
+  Future<void> clearAllCache() async {
+    clearMemoryCache();
+    await _geometryCache.clearAllCache();
+    LoggingService.info('Cleared all airspace cache');
+  }
+
+  /// Clean expired data
+  Future<void> cleanExpiredData() async {
+    await _diskCache.cleanExpiredData();
+    await _geometryCache.cleanExpiredData();
+
+    // Remove expired items from memory cache
+    final expiredKeys = <String>[];
+
+    for (final entry in _memoryCache.entries) {
+      if (entry.value.isExpired) {
+        expiredKeys.add(entry.key);
+      }
+    }
+
+    for (final key in expiredKeys) {
+      _memoryCache.remove(key);
+      _accessOrder.remove(key);
+    }
+
+    if (expiredKeys.isNotEmpty) {
+      LoggingService.info('Removed ${expiredKeys.length} expired tiles from memory cache');
+    }
+  }
+
+  /// Get performance metrics
+  Map<String, dynamic> getPerformanceMetrics() {
+    final geometryMetrics = _geometryCache.getPerformanceMetrics();
+
+    return {
+      'tileCache': {
+        'memoryHits': _cacheHits,
+        'memoryMisses': _cacheMisses,
+        'hitRate': (_cacheHits + _cacheMisses) > 0
+            ? (_cacheHits / (_cacheHits + _cacheMisses) * 100).toStringAsFixed(1)
+            : '0.0',
+        'memoryCacheSize': _memoryCache.length,
+        'emptyTiles': _emptyTileCount,
+        'pendingFetches': _pendingFetches.length,
+      },
+      'geometryCache': geometryMetrics,
+    };
+  }
+
+  /// Prefetch adjacent tiles
+  Future<void> prefetchAdjacentTiles(String tileKey, {int radius = 1}) async {
+    final components = parseTileKey(tileKey);
+    if (components == null) return;
+
+    final zoom = components['zoom']!;
+    final x = components['x']!;
+    final y = components['y']!;
+
+    final tilesToPrefetch = <String>[];
+
+    // Generate adjacent tile keys
+    for (var dx = -radius; dx <= radius; dx++) {
+      for (var dy = -radius; dy <= radius; dy++) {
+        if (dx == 0 && dy == 0) continue; // Skip current tile
+
+        final adjacentKey = generateTileKey(zoom, x + dx, y + dy);
+        final metadata = _memoryCache[adjacentKey];
+
+        // Only prefetch if not already cached or expired
+        if (metadata == null || metadata.isExpired) {
+          tilesToPrefetch.add(adjacentKey);
+        }
+      }
+    }
+
+    if (tilesToPrefetch.isNotEmpty) {
+      LoggingService.debug('Prefetching ${tilesToPrefetch.length} adjacent tiles for $tileKey');
+      // Note: Actual fetching would be done by the service layer
+    }
+  }
+}

@@ -9,7 +9,10 @@ import 'package:clipper2/clipper2.dart' as clipper;
 import '../services/logging_service.dart';
 import '../services/openaip_service.dart';
 import '../services/airspace_identification_service.dart';
-import '../services/airspace_tile_cache.dart';
+import '../services/airspace_metadata_cache.dart';
+import '../services/airspace_geometry_cache.dart';
+import '../services/airspace_performance_logger.dart';
+import '../data/models/airspace_cache_models.dart';
 import '../data/models/airspace_enums.dart';
 
 /// Data structure for airspace information
@@ -211,12 +214,19 @@ class AirspaceGeoJsonService {
   AirspaceGeoJsonService._();
 
   final OpenAipService _openAipService = OpenAipService.instance;
-  final AirspaceTileCache _tileCache = AirspaceTileCache();
+  final AirspaceMetadataCache _metadataCache = AirspaceMetadataCache.instance;
+  final AirspaceGeometryCache _geometryCache = AirspaceGeometryCache.instance;
+  final AirspacePerformanceLogger _performanceLogger = AirspacePerformanceLogger.instance;
 
   // OpenAIP Core API configuration
   static const String _coreApiBase = 'https://api.core.openaip.net/api';
   static const int _defaultLimit = 500;
   static const Duration _requestTimeout = Duration(seconds: 30);
+
+  // Initialize performance monitoring
+  void initialize() {
+    _performanceLogger.startPeriodicLogging(interval: const Duration(minutes: 5));
+  }
 
   // Track currently visible airspace types
   Set<AirspaceType> _currentVisibleTypes = <AirspaceType>{};
@@ -344,20 +354,27 @@ class AirspaceGeoJsonService {
     return fm.LatLngBounds(LatLng(south, west), LatLng(north, east));
   }
 
-  /// Fetch airspace data from OpenAIP Core API with tile-based caching
+  /// Fetch airspace data from OpenAIP Core API with hierarchical caching
   Future<String> fetchAirspaceGeoJson(fm.LatLngBounds bounds) async {
     final overallStopwatch = Stopwatch()..start();
 
-    // Get tiles for viewport - returns cached and uncached tiles
-    final tileInfo = _tileCache.getTilesForViewport(bounds);
+    // Calculate tiles for the viewport
+    final tileKeys = _calculateTileKeys(bounds);
 
-    // If we have uncached tiles, fetch them
-    if (tileInfo.tilesToFetch.isNotEmpty) {
+    // Check which tiles need fetching
+    final tilesToFetch = await _metadataCache.getTilesToFetch(tileKeys);
+
+    var tilesFromCache = tileKeys.length - tilesToFetch.length;
+    var tilesFromApi = 0;
+    var emptyTiles = 0;
+
+    // Fetch missing tiles from API
+    if (tilesToFetch.isNotEmpty) {
       final apiKey = await _openAipService.getApiKey();
 
       // Fetch missing tiles in parallel
-      final fetchFutures = tileInfo.tilesToFetch.map((tile) async {
-        final tileBounds = tileInfo.tileToBounds(tile.$1, tile.$2);
+      final fetchFutures = tilesToFetch.map((tileKey) async {
+        final tileBounds = _getTileBounds(tileKey);
         final tileStopwatch = Stopwatch()..start();
 
         try {
@@ -369,8 +386,6 @@ class AirspaceGeoJsonService {
           if (apiKey != null && apiKey.isNotEmpty) {
             url += '&apiKey=$apiKey';
           }
-
-          // Removed verbose per-tile fetch logging
 
           final headers = <String, String>{
             'Accept': 'application/json',
@@ -385,44 +400,169 @@ class AirspaceGeoJsonService {
           tileStopwatch.stop();
 
           if (response.statusCode == 200) {
-            // Convert and cache the response
-            final geoJson = _convertToGeoJson(response.body);
-            _tileCache.cacheTile(tile.$1, tile.$2, geoJson);
+            // Parse and store response using hierarchical cache
+            final data = json.decode(response.body);
+            final features = _extractFeatures(data);
 
-            // Removed per-tile success logging
+            if (features.isEmpty) {
+              // Mark as empty tile
+              await _metadataCache.markTileEmpty(tileKey);
+              emptyTiles++;
+            } else {
+              // Store tile metadata and geometries
+              await _metadataCache.putTileMetadata(
+                tileKey: tileKey,
+                features: features,
+              );
+              tilesFromApi++;
+            }
 
-            return geoJson;
+            // Log API request performance
+            _performanceLogger.logApiRequest(
+              endpoint: 'airspaces',
+              duration: tileStopwatch.elapsed,
+              resultCount: features.length,
+              bounds: '${tileBounds.west},${tileBounds.south},${tileBounds.east},${tileBounds.north}',
+            );
+
+            // Clear pending fetch marker
+            _metadataCache.clearPendingFetch(tileKey);
+
+            return features;
           } else {
-            // Silent failure for individual tiles - will log summary later
-            // Return empty GeoJSON for failed tiles
-            return '{"type":"FeatureCollection","features":[]}';
+            _metadataCache.clearPendingFetch(tileKey);
+            return <Map<String, dynamic>>[];
           }
         } catch (error, stackTrace) {
-          LoggingService.error('Failed to fetch tile ${tile.$1}_${tile.$2}', error, stackTrace);
-          // Return empty GeoJSON for failed tiles
-          return '{"type":"FeatureCollection","features":[]}';
+          LoggingService.error('Failed to fetch tile $tileKey', error, stackTrace);
+          _metadataCache.clearPendingFetch(tileKey);
+          return <Map<String, dynamic>>[];
         }
       });
 
       // Wait for all tile fetches to complete
-      final newResponses = await Future.wait(fetchFutures);
-      tileInfo.cachedResponses.addAll(newResponses);
+      await Future.wait(fetchFutures);
     }
 
-    // Merge all tile responses into one
-    final mergedGeoJson = _tileCache.mergeGeoJsonResponses(tileInfo.cachedResponses);
+    // Get all airspaces for the requested tiles
+    final geometries = await _metadataCache.getAirspacesForTiles(tileKeys);
+
+    // Convert to GeoJSON
+    final features = geometries.map((geometry) => _geometryToFeature(geometry)).toList();
+
+    final geoJson = {
+      'type': 'FeatureCollection',
+      'features': features,
+    };
+
+    final mergedGeoJson = json.encode(geoJson);
 
     overallStopwatch.stop();
 
-    // Log overall performance with cache metrics
-    final cacheStats = _tileCache.getCacheStats();
+    // Log viewport processing metrics
+    _performanceLogger.logViewportProcessing(
+      tilesRequested: tileKeys.length,
+      tilesCached: tilesFromCache,
+      tilesEmpty: emptyTiles,
+      uniqueAirspaces: features.length,
+      totalDuration: overallStopwatch.elapsed,
+    );
+
+    // Log overall performance
     LoggingService.performance(
-      'Airspace Fetch (Tiled)',
-      Duration(milliseconds: overallStopwatch.elapsedMilliseconds),
-      'cached=${tileInfo.cachedResponses.length - tileInfo.tilesToFetch.length}, fetched=${tileInfo.tilesToFetch.length}, hit_rate=${cacheStats['hit_rate_percent']}%'
+      'Airspace Fetch (Hierarchical)',
+      overallStopwatch.elapsed,
+      'tiles=${tileKeys.length}, cached=$tilesFromCache, fetched=$tilesFromApi, airspaces=${features.length}',
     );
 
     return mergedGeoJson;
+  }
+
+  /// Calculate tile keys for the viewport
+  List<String> _calculateTileKeys(fm.LatLngBounds bounds) {
+    final zoom = 8; // Fixed zoom level for now, could be dynamic
+    final tiles = <String>[];
+
+    // Calculate tile bounds
+    final minX = _lonToTileX(bounds.west, zoom);
+    final maxX = _lonToTileX(bounds.east, zoom);
+    final minY = _latToTileY(bounds.north, zoom);
+    final maxY = _latToTileY(bounds.south, zoom);
+
+    for (var x = minX; x <= maxX; x++) {
+      for (var y = minY; y <= maxY; y++) {
+        tiles.add(_metadataCache.generateTileKey(zoom, x, y));
+      }
+    }
+
+    return tiles;
+  }
+
+  /// Convert longitude to tile X coordinate
+  int _lonToTileX(double lon, int zoom) {
+    return ((lon + 180.0) / 360.0 * math.pow(2, zoom)).floor();
+  }
+
+  /// Convert latitude to tile Y coordinate
+  int _latToTileY(double lat, int zoom) {
+    final latRad = lat * (math.pi / 180.0);
+    return ((1.0 - math.log(math.tan(latRad) + 1.0 / math.cos(latRad)) / math.pi) / 2.0 * math.pow(2, zoom)).floor();
+  }
+
+  /// Helper function for hyperbolic sine (not available in dart:math)
+  double _sinh(double x) {
+    return (math.exp(x) - math.exp(-x)) / 2;
+  }
+
+  /// Get tile bounds from tile key
+  fm.LatLngBounds _getTileBounds(String tileKey) {
+    final components = _metadataCache.parseTileKey(tileKey);
+    if (components == null) {
+      return fm.LatLngBounds(LatLng(-90, -180), LatLng(90, 180));
+    }
+
+    final zoom = components['zoom']!;
+    final x = components['x']!;
+    final y = components['y']!;
+
+    final n = math.pow(2, zoom);
+    final west = x / n * 360.0 - 180.0;
+    final east = (x + 1) / n * 360.0 - 180.0;
+    final north = math.atan(_sinh(math.pi * (1 - 2 * y / n))) * 180.0 / math.pi;
+    final south = math.atan(_sinh(math.pi * (1 - 2 * (y + 1) / n))) * 180.0 / math.pi;
+
+    return fm.LatLngBounds(LatLng(south, west), LatLng(north, east));
+  }
+
+  /// Extract features from API response
+  List<Map<String, dynamic>> _extractFeatures(dynamic data) {
+    List<dynamic> items;
+    if (data is Map<String, dynamic>) {
+      items = data['items'] ?? data['features'] ?? [data];
+    } else if (data is List) {
+      items = data;
+    } else {
+      return [];
+    }
+
+    return items.map<Map<String, dynamic>>((item) => item as Map<String, dynamic>).toList();
+  }
+
+  /// Convert cached geometry to GeoJSON feature
+  Map<String, dynamic> _geometryToFeature(CachedAirspaceGeometry geometry) {
+    // Convert polygons to GeoJSON coordinates
+    final coordinates = geometry.polygons.map((polygon) {
+      return polygon.map((point) => [point.longitude, point.latitude]).toList();
+    }).toList();
+
+    return {
+      'type': 'Feature',
+      'geometry': {
+        'type': geometry.polygons.length == 1 ? 'Polygon' : 'MultiPolygon',
+        'coordinates': geometry.polygons.length == 1 ? coordinates : [coordinates],
+      },
+      'properties': geometry.properties,
+    };
   }
 
   /// Legacy method for direct API fetch without caching (kept for fallback)
@@ -1591,5 +1731,49 @@ class AirspaceGeoJsonService {
     }
 
     return '${minLat.toStringAsFixed(2)},${minLon.toStringAsFixed(2)},${maxLat.toStringAsFixed(2)},${maxLon.toStringAsFixed(2)}';
+  }
+
+  // Cache management methods
+
+  /// Get cache statistics
+  Future<Map<String, dynamic>> getCacheStatistics() async {
+    final stats = await _metadataCache.getStatistics();
+    final metrics = _metadataCache.getPerformanceMetrics();
+
+    return {
+      'statistics': stats.toJson(),
+      'performance': metrics,
+      'summary': {
+        'total_unique_airspaces': stats.totalGeometries,
+        'total_tiles_cached': stats.totalTiles,
+        'empty_tiles': stats.emptyTiles,
+        'memory_saved_mb': (stats.memoryReductionPercent * stats.totalMemoryBytes / 100 / 1024 / 1024).toStringAsFixed(2),
+        'compression_ratio': stats.averageCompressionRatio.toStringAsFixed(2),
+        'cache_hit_rate': stats.cacheHitRate.toStringAsFixed(2),
+      },
+    };
+  }
+
+  /// Clear all cache
+  Future<void> clearCache() async {
+    await _metadataCache.clearAllCache();
+    await _performanceLogger.logPerformanceSummary();
+    LoggingService.info('Cleared all airspace cache data');
+  }
+
+  /// Clean expired cache data
+  Future<void> cleanExpiredCache() async {
+    await _metadataCache.cleanExpiredData();
+    LoggingService.info('Cleaned expired airspace cache data');
+  }
+
+  /// Log cache efficiency report
+  Future<void> logCacheEfficiency() async {
+    await _performanceLogger.logCacheEfficiency();
+  }
+
+  /// Dispose resources
+  void dispose() {
+    _performanceLogger.dispose();
   }
 }
