@@ -451,24 +451,30 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   }
 
   Future<void> _loadSitesForBounds(LatLngBounds bounds) async {
-    if (_isLoadingSites) return;
+    LoggingService.info('_loadSitesForBounds called with bounds: ${bounds.west},${bounds.south},${bounds.east},${bounds.north}, _sitesEnabled=$_sitesEnabled');
+    if (_isLoadingSites) {
+      LoggingService.info('Sites loading skipped - already loading');
+      return;
+    }
 
     // Skip loading sites if they're disabled
     if (!_sitesEnabled) {
       LoggingService.info('Sites loading skipped - sites disabled');
       return;
     }
-    
+
     // Create a unique key for these bounds to prevent duplicate requests
     final boundsKey = '${bounds.north.toStringAsFixed(6)}_${bounds.south.toStringAsFixed(6)}_${bounds.east.toStringAsFixed(6)}_${bounds.west.toStringAsFixed(6)}';
     if (_lastLoadedBoundsKey == boundsKey) {
+      LoggingService.info('Sites loading skipped - same bounds already loaded');
       return; // Same bounds already loaded
     }
-    
+
     setState(() {
       _isLoadingSites = true;
     });
-    
+
+    LoggingService.info('Starting site load for bounds: $boundsKey');
     try {
       // 1. Load local sites from DB to check flight status
       final dbStopwatch = Stopwatch()..start();
