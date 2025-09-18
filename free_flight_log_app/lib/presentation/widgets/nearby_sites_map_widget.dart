@@ -834,6 +834,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: TextFormField(
+                          key: const ValueKey('search_field'),
                           focusNode: _searchFocusNode,
                           initialValue: widget.searchQuery,
                           onChanged: widget.onSearchChanged,
@@ -1202,6 +1203,14 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
   @override
   Widget build(BuildContext context) {
+    // Maintain search focus when results appear
+    if (widget.searchResults.isNotEmpty && widget.searchQuery.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_searchFocusNode.canRequestFocus && !_searchFocusNode.hasFocus) {
+          _searchFocusNode.requestFocus();
+        }
+      });
+    }
     // Track widget rebuild
     PerformanceMonitor.trackWidgetRebuild('NearbySitesMapWidget');
 
