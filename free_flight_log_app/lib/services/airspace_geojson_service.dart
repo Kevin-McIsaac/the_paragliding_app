@@ -163,9 +163,30 @@ class AirspaceData {
 
     // Format numeric values
     final valueStr = value is num ? value.round().toString() : value.toString();
-    final referenceStr = reference.isNotEmpty ? ' $reference' : '';
 
-    return '$valueStr$unit$referenceStr';
+    // Handle unit formatting (convert codes to readable units)
+    String unitStr = '';
+    if (unit == 1 || unit == 'ft') {
+      unitStr = 'ft';
+    } else if (unit == 2 || unit == 'm') {
+      unitStr = 'm';
+    } else if (unit == 6 || unit == 'FL') {
+      unitStr = 'FL';
+    } else if (unit is String && unit.isNotEmpty) {
+      unitStr = unit; // Use string unit as-is
+    }
+
+    // Handle reference formatting (convert codes to readable references)
+    String refStr = '';
+    if (reference == 1 || reference == 'AMSL') {
+      refStr = ' AMSL';
+    } else if (reference == 2 || reference == 'AGL') {
+      refStr = ' AGL';
+    } else if (reference is String && reference.isNotEmpty && reference != '0') {
+      refStr = ' $reference';
+    }
+
+    return '$valueStr$unitStr$refStr'.trim();
   }
 
   String get upperAltitude => formatAltitude(upperLimit);
