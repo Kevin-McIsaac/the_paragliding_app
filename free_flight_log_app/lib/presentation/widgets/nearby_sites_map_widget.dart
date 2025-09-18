@@ -119,6 +119,10 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   int? _loadedSiteCount;
   int? _loadedAirspaceCount;
 
+  // Track user interaction to prevent auto-centering
+  bool _hasUserInteracted = false;
+  bool _isInitialLoad = true;
+
   
   @override
   void initState() {
@@ -176,11 +180,13 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         );
       });
     }
-    // Priority 2: Fallback to center/zoom for normal navigation
-    else if (widget.centerPosition != null && 
-             oldWidget.centerPosition != widget.centerPosition) {
+    // Priority 2: Only auto-center on initial load or if user hasn't interacted
+    else if (widget.centerPosition != null &&
+             oldWidget.centerPosition != widget.centerPosition &&
+             (_isInitialLoad || !_hasUserInteracted)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _mapController.move(widget.centerPosition!, widget.initialZoom);
+        _isInitialLoad = false;
       });
     }
   }
@@ -199,6 +205,14 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   }
   
   void _onMapEvent(fm.MapEvent event) {
+    // Track user interaction with the map
+    if (event.source == fm.MapEventSource.dragEnd ||
+        event.source == fm.MapEventSource.multiFingerEnd ||
+        event.source == fm.MapEventSource.flingAnimationController ||
+        event.source == fm.MapEventSource.scrollWheel) {
+      _hasUserInteracted = true;
+    }
+
     // Log frame performance during map interactions
     if (event is fm.MapEventMove || event is fm.MapEventFlingAnimation) {
       // Log frame jank during movement
@@ -1107,7 +1121,14 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
           
           // Location button
           GestureDetector(
-            onTap: widget.isLocationLoading ? null : widget.onRefreshLocation,
+            onTap: widget.isLocationLoading ? null : () {
+              // Reset interaction flag to allow auto-centering on refresh
+              setState(() {
+                _hasUserInteracted = false;
+                _isInitialLoad = false;
+              });
+              widget.onRefreshLocation();
+            },
             child: Container(
               height: 40,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),

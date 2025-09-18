@@ -5,135 +5,110 @@ import '../data/models/site.dart';
 import 'logging_service.dart';
 import 'database_service.dart';
 
+/// Simplified location service with cleaner fallback strategy
+///
+/// Reduces complexity by using only essential location features:
+/// 1. Current GPS location (with timeout)
+/// 2. Last known location (from cache)
+/// 3. Perth fallback (for new users)
+/// Location status enum for clearer state management
+enum LocationStatus {
+  available,    // GPS location successfully obtained
+  denied,       // Permission denied by user
+  disabled,     // Location services disabled
+  timeout,      // Location request timed out
+  error,        // Other error occurred
+  cached,       // Using cached/last known location
+  fallback,     // Using fallback location
+}
+
 class LocationService {
   static LocationService? _instance;
   static LocationService get instance => _instance ??= LocationService._();
-  
+
   LocationService._();
-  
-  Position? _lastKnownPosition;
-  DateTime? _lastPositionTime;
-  static const Duration _positionCacheTimeout = Duration(minutes: 5);
-  
-  // Perth, Western Australia coordinates as fallback
-  static const double _perthLatitude = -31.9505;
-  static const double _perthLongitude = 115.8605;
-  
-  // SharedPreferences keys for persistent location storage
-  static const String _lastLatKey = 'last_known_latitude';
-  static const String _lastLngKey = 'last_known_longitude';
-  static const String _lastTimeKey = 'last_known_time';
-  
-  /// Check if location services are enabled and permissions are granted
-  Future<bool> isLocationAvailable() async {
-    try {
-      // Check if location services are enabled
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        LoggingService.info('Location services are disabled');
-        return false;
-      }
 
-      // Check location permissions
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        LoggingService.info('Location permission denied, requesting permission');
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          LoggingService.info('Location permission denied by user');
-          return false;
-        }
-      }
-      
-      if (permission == LocationPermission.deniedForever) {
-        LoggingService.info('Location permission permanently denied');
-        return false;
-      }
+  // Simple in-memory cache
+  Position? _cachedPosition;
+  DateTime? _cacheTime;
+  static const Duration _cacheTimeout = Duration(minutes: 10);
 
-      return true;
-    } catch (e, stackTrace) {
-      LoggingService.error('Error checking location availability', e, stackTrace);
-      return false;
+  // Perth coordinates as fallback
+  static const double _perthLat = -31.9505;
+  static const double _perthLng = 115.8605;
+
+  // SharedPreferences keys
+  static const String _lastLatKey = 'last_latitude';
+  static const String _lastLngKey = 'last_longitude';
+  static const String _lastTimeKey = 'last_time';
+
+  /// Get current location with simplified fallback
+  Future<LocationResult> getCurrentLocation() async {
+    // Try cached position first
+    if (_isCacheValid()) {
+      LoggingService.info('Using cached location');
+      return LocationResult(_cachedPosition!, LocationStatus.cached);
     }
-  }
 
-  /// Get current device position with caching
-  Future<Position?> getCurrentPosition() async {
+    // Try current GPS location
     try {
-      // Return cached position if still valid
-      if (_lastKnownPosition != null && 
-          _lastPositionTime != null &&
-          DateTime.now().difference(_lastPositionTime!) < _positionCacheTimeout) {
-        LoggingService.info('Using cached position');
-        return _lastKnownPosition;
+      final hasPermission = await _checkLocationPermission();
+      if (!hasPermission) {
+        return await _getFallbackLocation(LocationStatus.denied);
       }
 
-      if (!await isLocationAvailable()) {
-        LoggingService.info('Location not available');
-        return null;
-      }
-
-      LoggingService.structured('LOCATION_REQUEST', {
-        'has_cached_position': _lastKnownPosition != null,
-        'cache_age_seconds': _lastPositionTime != null 
-            ? DateTime.now().difference(_lastPositionTime!).inSeconds
-            : null,
-      });
-
-      final stopwatch = Stopwatch()..start();
-      
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 5), // Increased from 3 to 5 seconds
+          timeLimit: Duration(seconds: 8), // Reasonable timeout
         ),
       );
-      
-      stopwatch.stop();
-      
-      _lastKnownPosition = position;
-      _lastPositionTime = DateTime.now();
-      
-      // Save position to persistent storage
-      await _savePositionToPersistentStorage(position);
-      
-      LoggingService.performance(
-        'Get Current Position',
-        Duration(milliseconds: stopwatch.elapsedMilliseconds),
-        'location acquired',
-      );
-      
-      LoggingService.structured('LOCATION_ACQUIRED', {
+
+      // Cache the new position
+      _cachedPosition = position;
+      _cacheTime = DateTime.now();
+      await _saveLastKnownLocation(position);
+
+      LoggingService.structured('LOCATION_SUCCESS', {
         'latitude': position.latitude.toStringAsFixed(6),
         'longitude': position.longitude.toStringAsFixed(6),
         'accuracy': position.accuracy.toStringAsFixed(1),
-        'duration_ms': stopwatch.elapsedMilliseconds,
       });
 
-      return position;
-    } catch (e, stackTrace) {
-      LoggingService.error('Error getting current position', e, stackTrace);
+      return LocationResult(position, LocationStatus.available);
 
-      // If we have a cached position, return it as fallback
-      if (_lastKnownPosition != null) {
-        final age = DateTime.now().difference(_lastPositionTime!);
-        LoggingService.structured('LOCATION_FALLBACK', {
-          'error_type': e.runtimeType.toString(),
-          'cached_age_minutes': age.inMinutes,
-          'latitude': _lastKnownPosition!.latitude.toStringAsFixed(6),
-          'longitude': _lastKnownPosition!.longitude.toStringAsFixed(6),
-        });
-        return _lastKnownPosition;
+    } catch (e) {
+      LoggingService.warning('GPS location failed: $e');
+
+      // Try last known location
+      final lastKnown = await _getLastKnownLocation();
+      if (lastKnown != null) {
+        LoggingService.info('Using last known location');
+        return LocationResult(lastKnown, LocationStatus.cached);
       }
 
-      return null;
+      // Fall back to Perth
+      return await _getFallbackLocation(LocationStatus.error);
     }
+  }
+
+  /// Get location for initial app startup (never fails)
+  Future<Position> getInitialLocation() async {
+    final result = await getCurrentLocation();
+    return result.position;
+  }
+
+  /// Clear location cache to force fresh GPS lookup
+  void clearCache() {
+    _cachedPosition = null;
+    _cacheTime = null;
+    LoggingService.info('Location cache cleared');
   }
 
   /// Calculate distance between two points using Haversine formula
   double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
     const double earthRadius = 6371000; // Earth's radius in meters
-    
+
     double lat1Rad = lat1 * (math.pi / 180);
     double lat2Rad = lat2 * (math.pi / 180);
     double deltaLatRad = (lat2 - lat1) * (math.pi / 180);
@@ -142,9 +117,9 @@ class LocationService {
     double a = math.sin(deltaLatRad / 2) * math.sin(deltaLatRad / 2) +
                math.cos(lat1Rad) * math.cos(lat2Rad) *
                math.sin(deltaLonRad / 2) * math.sin(deltaLonRad / 2);
-    
+
     double c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
-    
+
     return earthRadius * c; // Distance in meters
   }
 
@@ -154,8 +129,6 @@ class LocationService {
     Position position,
     double maxDistanceMeters,
   ) {
-    final stopwatch = Stopwatch()..start();
-    
     final sitesWithDistance = sites.map((site) {
       final distance = calculateDistance(
         position.latitude,
@@ -164,47 +137,14 @@ class LocationService {
         site.longitude,
       );
       return SiteDistance(site: site, distanceMeters: distance);
-    }).where((siteDistance) => 
+    }).where((siteDistance) =>
         siteDistance.distanceMeters <= maxDistanceMeters
     ).toList();
 
     // Sort by distance, closest first
     sitesWithDistance.sort((a, b) => a.distanceMeters.compareTo(b.distanceMeters));
-    
-    stopwatch.stop();
-    
-    LoggingService.performance(
-      'Filter Sites by Distance',
-      Duration(milliseconds: stopwatch.elapsedMilliseconds),
-      '${sitesWithDistance.length} sites within ${maxDistanceMeters / 1000}km',
-    );
-    
-    LoggingService.structured('SITES_FILTERED_BY_DISTANCE', {
-      'total_sites': sites.length,
-      'filtered_sites': sitesWithDistance.length,
-      'max_distance_km': maxDistanceMeters / 1000,
-      'filter_time_ms': stopwatch.elapsedMilliseconds,
-      'position': {
-        'lat': position.latitude.toStringAsFixed(6),
-        'lng': position.longitude.toStringAsFixed(6),
-      },
-    });
 
     return sitesWithDistance;
-  }
-
-  /// Get sites within a radius, sorted by distance
-  Future<List<SiteDistance>> getNearbySites(
-    List<Site> allSites,
-    double radiusKm,
-  ) async {
-    final position = await getCurrentPosition();
-    if (position == null) {
-      LoggingService.info('No position available for nearby sites');
-      return [];
-    }
-
-    return filterSitesByDistance(allSites, position, radiusKm * 1000);
   }
 
   /// Format distance for display
@@ -216,46 +156,62 @@ class LocationService {
     }
   }
 
-  /// Clear cached position (useful for forcing fresh location)
-  void clearCache() {
-    _lastKnownPosition = null;
-    _lastPositionTime = null;
-    LoggingService.info('Location cache cleared');
+  // Private helper methods
+
+  bool _isCacheValid() {
+    return _cachedPosition != null &&
+           _cacheTime != null &&
+           DateTime.now().difference(_cacheTime!) < _cacheTimeout;
   }
 
-  /// Save position to persistent storage
-  Future<void> _savePositionToPersistentStorage(Position position) async {
+  Future<bool> _checkLocationPermission() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setDouble(_lastLatKey, position.latitude);
-      await prefs.setDouble(_lastLngKey, position.longitude);
-      await prefs.setInt(_lastTimeKey, DateTime.now().millisecondsSinceEpoch);
-      LoggingService.info('Position saved to persistent storage');
+      // Check if location services are enabled
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        LoggingService.info('Location services disabled');
+        return false;
+      }
+
+      // Check and request permission
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          LoggingService.info('Location permission denied');
+          return false;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        LoggingService.info('Location permission permanently denied');
+        return false;
+      }
+
+      return true;
     } catch (e) {
-      LoggingService.error('Failed to save position to persistent storage', e);
+      LoggingService.error('Error checking location permission', e);
+      return false;
     }
   }
 
-  /// Load position from persistent storage
-  Future<Position?> _loadPositionFromPersistentStorage() async {
+  Future<Position?> _getLastKnownLocation() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final lat = prefs.getDouble(_lastLatKey);
       final lng = prefs.getDouble(_lastLngKey);
       final timeMs = prefs.getInt(_lastTimeKey);
-      
+
       if (lat != null && lng != null && timeMs != null) {
         final savedTime = DateTime.fromMillisecondsSinceEpoch(timeMs);
         final age = DateTime.now().difference(savedTime);
-        
-        // Only use persistent location if it's less than 7 days old
+
+        // Use last known location if less than 7 days old
         if (age.inDays < 7) {
-          LoggingService.info('Loaded position from persistent storage (${age.inHours}h old)');
           return Position(
             latitude: lat,
             longitude: lng,
             timestamp: savedTime,
-            accuracy: 100.0, // Default accuracy for persistent position
+            accuracy: 100.0,
             altitude: 0.0,
             altitudeAccuracy: 0.0,
             heading: 0.0,
@@ -266,38 +222,35 @@ class LocationService {
         }
       }
     } catch (e) {
-      LoggingService.error('Failed to load position from persistent storage', e);
+      LoggingService.error('Failed to get last known location', e);
     }
     return null;
   }
 
-  /// Get last known position or Perth fallback (synchronous)
-  Future<Position> getLastKnownOrDefault() async {
-    // Try memory cache first
-    if (_lastKnownPosition != null && 
-        _lastPositionTime != null &&
-        DateTime.now().difference(_lastPositionTime!) < _positionCacheTimeout) {
-      LoggingService.info('Using cached position from memory');
-      return _lastKnownPosition!;
+  Future<void> _saveLastKnownLocation(Position position) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble(_lastLatKey, position.latitude);
+      await prefs.setDouble(_lastLngKey, position.longitude);
+      await prefs.setInt(_lastTimeKey, DateTime.now().millisecondsSinceEpoch);
+    } catch (e) {
+      LoggingService.error('Failed to save last known location', e);
     }
-    
-    // Try persistent storage
-    final persistentPosition = await _loadPositionFromPersistentStorage();
-    if (persistentPosition != null) {
-      return persistentPosition;
-    }
-    
-    // Try first site in database
+  }
+
+  Future<LocationResult> _getFallbackLocation(LocationStatus status) async {
+    // Try user's first flight site as fallback
     try {
       final sites = await DatabaseService.instance.getAllSites();
       if (sites.isNotEmpty) {
         final firstSite = sites.first;
-        LoggingService.info('Using first site from database: ${firstSite.name}');
-        return Position(
+        LoggingService.info('Using first flight site as fallback: ${firstSite.name}');
+
+        final position = Position(
           latitude: firstSite.latitude,
           longitude: firstSite.longitude,
           timestamp: DateTime.now(),
-          accuracy: 500.0, // Moderate accuracy to indicate this is from database
+          accuracy: 1000.0, // Large accuracy to indicate fallback
           altitude: 0.0,
           altitudeAccuracy: 0.0,
           heading: 0.0,
@@ -305,18 +258,20 @@ class LocationService {
           speed: 0.0,
           speedAccuracy: 0.0,
         );
+
+        return LocationResult(position, status);
       }
     } catch (e) {
-      LoggingService.error('Failed to get first site from database', e);
+      LoggingService.error('Failed to get site fallback', e);
     }
-    
-    // Final fallback to Perth, Western Australia
-    LoggingService.info('Using Perth fallback coordinates');
-    return Position(
-      latitude: _perthLatitude,
-      longitude: _perthLongitude,
+
+    // Final fallback to Perth
+    LoggingService.info('Using Perth fallback location');
+    final position = Position(
+      latitude: _perthLat,
+      longitude: _perthLng,
       timestamp: DateTime.now(),
-      accuracy: 1000.0, // Large accuracy to indicate this is a fallback
+      accuracy: 10000.0, // Very large accuracy for fallback
       altitude: 0.0,
       altitudeAccuracy: 0.0,
       heading: 0.0,
@@ -324,6 +279,39 @@ class LocationService {
       speed: 0.0,
       speedAccuracy: 0.0,
     );
+
+    return LocationResult(position, LocationStatus.fallback);
+  }
+}
+
+/// Result class that includes both position and status
+class LocationResult {
+  final Position position;
+  final LocationStatus status;
+
+  const LocationResult(this.position, this.status);
+
+  bool get isGpsLocation => status == LocationStatus.available;
+  bool get isCachedLocation => status == LocationStatus.cached;
+  bool get isFallbackLocation => status == LocationStatus.fallback;
+
+  String get statusMessage {
+    switch (status) {
+      case LocationStatus.available:
+        return 'GPS location acquired';
+      case LocationStatus.cached:
+        return 'Using last known location';
+      case LocationStatus.denied:
+        return 'Location permission denied';
+      case LocationStatus.disabled:
+        return 'Location services disabled';
+      case LocationStatus.timeout:
+        return 'Location request timed out';
+      case LocationStatus.error:
+        return 'Location error occurred';
+      case LocationStatus.fallback:
+        return 'Using fallback location';
+    }
   }
 }
 
@@ -331,11 +319,11 @@ class LocationService {
 class SiteDistance {
   final Site site;
   final double distanceMeters;
-  
+
   const SiteDistance({
     required this.site,
     required this.distanceMeters,
   });
-  
+
   String get formattedDistance => LocationService.formatDistance(distanceMeters);
 }
