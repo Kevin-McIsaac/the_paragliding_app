@@ -194,22 +194,24 @@ class _AirspaceInfoPopupState extends State<AirspaceInfoPopup> {
                 ),
               ),
 
-              // Airspace list (no scrolling - all items visible)
+              // Airspace list (scrollable when content overflows)
               Flexible(
                 child: Padding(
                   padding: const EdgeInsets.only(left: 8, right: 12, top: 8, bottom: 8),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (int index = 0; index < displayedAirspaces.length; index++) ...[
-                        _buildAirspaceItem(displayedAirspaces[index]),
-                        if (index < displayedAirspaces.length - 1) Container(
-                          height: 1,
-                          margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-                          color: Colors.white.withValues(alpha: 0.2),
-                        ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (int index = 0; index < displayedAirspaces.length; index++) ...[
+                          _buildAirspaceItem(displayedAirspaces[index]),
+                          if (index < displayedAirspaces.length - 1) Container(
+                            height: 1,
+                            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                            color: Colors.white.withValues(alpha: 0.2),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),
