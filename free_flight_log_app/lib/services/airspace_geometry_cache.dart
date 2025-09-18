@@ -4,13 +4,21 @@ import 'package:latlong2/latlong.dart';
 import '../services/logging_service.dart';
 import '../services/airspace_disk_cache.dart';
 import '../data/models/airspace_cache_models.dart';
+import '../utils/performance_monitor.dart';
 
-/// Manages deduplicated airspace geometry storage
+/// Manages deduplicated airspace geometry storage with memory cache
 class AirspaceGeometryCache {
   static AirspaceGeometryCache? _instance;
   final AirspaceDiskCache _diskCache = AirspaceDiskCache.instance;
 
+  // In-memory LRU cache for fast access
+  final Map<String, CachedAirspaceGeometry> _memoryCache = {};
+  final List<String> _accessOrder = [];
+  static const int _maxMemoryCacheSize = 500000; // Cache up to 500000 geometries in memory (increased for better performance)
+
   // Statistics tracking
+  int _memoryHits = 0;
+  int _memoryMisses = 0;
   int _diskHits = 0;
   int _diskMisses = 0;
   final Map<String, int> _duplicateCount = {};
@@ -221,13 +229,45 @@ class AirspaceGeometryCache {
     await _diskCache.putGeometry(cachedGeometry);
   }
 
-  /// Retrieve an airspace geometry by ID
+  /// Retrieve an airspace geometry by ID with memory cache
   Future<CachedAirspaceGeometry?> getGeometry(String id) async {
-    // Query disk cache directly
+    final stopwatch = Stopwatch()..start();
+
+    // Check memory cache first
+    if (_memoryCache.containsKey(id)) {
+      _memoryHits++;
+      _updateAccessOrder(id);
+      final cached = _memoryCache[id]!;
+
+      // Log memory cache hit for performance monitoring
+      if (stopwatch.elapsedMilliseconds > 1) {
+        LoggingService.performance(
+          '[MEMORY_CACHE_HIT]',
+          stopwatch.elapsed,
+          'id=$id',
+        );
+      }
+      return cached;
+    }
+
+    _memoryMisses++;
+
+    // Query disk cache
     final geometry = await _diskCache.getGeometry(id);
 
     if (geometry != null) {
       _diskHits++;
+      // Add to memory cache
+      _addToMemoryCache(id, geometry);
+
+      // Only log slow disk cache hits (>10ms)
+      if (stopwatch.elapsedMilliseconds > 10) {
+        LoggingService.performance(
+          '[DISK_CACHE_HIT_SLOW]',
+          stopwatch.elapsed,
+          'id=$id',
+        );
+      }
       return geometry;
     }
 
@@ -235,25 +275,85 @@ class AirspaceGeometryCache {
     return null;
   }
 
-  /// Retrieve multiple geometries by IDs
+  /// Retrieve multiple geometries by IDs with memory cache
   Future<List<CachedAirspaceGeometry>> getGeometries(Set<String> ids) async {
     if (ids.isEmpty) return [];
 
     final stopwatch = Stopwatch()..start();
+    final memoryBefore = PerformanceMonitor.getMemoryUsageMB();
+    final geometries = <CachedAirspaceGeometry>[];
+    final idsToFetchFromDisk = <String>{};
 
-    // Fetch all from disk directly
-    final geometries = await _diskCache.getGeometries(ids);
+    // Step 1: Check memory cache first
+    for (final id in ids) {
+      if (_memoryCache.containsKey(id)) {
+        _memoryHits++;
+        _updateAccessOrder(id);
+        geometries.add(_memoryCache[id]!);
+      } else {
+        _memoryMisses++;
+        idsToFetchFromDisk.add(id);
+      }
+    }
 
-    _diskHits += geometries.length;
-    _diskMisses += ids.length - geometries.length;
+    // Step 2: Fetch missing from disk if needed
+    if (idsToFetchFromDisk.isNotEmpty) {
+      final diskGeometries = await _diskCache.getGeometries(idsToFetchFromDisk);
+
+      // Add disk results to memory cache
+      for (final geometry in diskGeometries) {
+        _diskHits++;
+        _addToMemoryCache(geometry.id, geometry);
+        geometries.add(geometry);
+      }
+
+      _diskMisses += idsToFetchFromDisk.length - diskGeometries.length;
+    }
+
+    final memoryAfter = PerformanceMonitor.getMemoryUsageMB();
 
     LoggingService.performance(
-      'Retrieved multiple geometries',
+      '[BATCH_GEOMETRY_FETCH_WITH_CACHE]',
       stopwatch.elapsed,
-      'requested=${ids.length}, found=${geometries.length}',
+      'requested=${ids.length}, memory_hits=${ids.length - idsToFetchFromDisk.length}, disk_fetched=${idsToFetchFromDisk.length}, found=${geometries.length}',
     );
 
+    // Log memory usage for large batch operations
+    if (ids.length > 200) {
+      LoggingService.structured('MEMORY_USAGE', {
+        'operation': 'batch_geometry_fetch',
+        'before_mb': memoryBefore.toStringAsFixed(1),
+        'after_mb': memoryAfter.toStringAsFixed(1),
+        'delta_mb': (memoryAfter - memoryBefore).toStringAsFixed(1),
+        'geometries_loaded': geometries.length,
+        'cache_size': _memoryCache.length,
+        'cache_limit': _maxMemoryCacheSize,
+      });
+    }
+
     return geometries;
+  }
+
+  /// Add geometry to memory cache with LRU eviction
+  void _addToMemoryCache(String id, CachedAirspaceGeometry geometry) {
+    // Remove from current position if exists
+    _accessOrder.remove(id);
+
+    // Add to front
+    _accessOrder.insert(0, id);
+    _memoryCache[id] = geometry;
+
+    // Evict if over limit
+    while (_accessOrder.length > _maxMemoryCacheSize) {
+      final evictId = _accessOrder.removeLast();
+      _memoryCache.remove(evictId);
+    }
+  }
+
+  /// Update access order for LRU
+  void _updateAccessOrder(String id) {
+    _accessOrder.remove(id);
+    _accessOrder.insert(0, id);
   }
 
   /// Parse polygons from GeoJSON geometry
@@ -341,6 +441,8 @@ class AirspaceGeometryCache {
 
   /// Clear statistics
   void clearStatistics() {
+    _memoryHits = 0;
+    _memoryMisses = 0;
     _diskHits = 0;
     _diskMisses = 0;
     _duplicateCount.clear();
@@ -350,8 +452,28 @@ class AirspaceGeometryCache {
   /// Clear all cache
   Future<void> clearAllCache() async {
     clearStatistics();
+    clearMemoryCache();
     await _diskCache.clearCache();
-    LoggingService.info('Cleared all airspace geometry cache');
+    LoggingService.info('Cleared all airspace geometry cache (memory and disk)');
+  }
+
+  /// Clear memory cache only
+  void clearMemoryCache() {
+    final entriesRemoved = _memoryCache.length;
+    _memoryCache.clear();
+    _accessOrder.clear();
+    LoggingService.info('Cleared geometry memory cache: $entriesRemoved entries removed');
+
+    // Verify cache is empty
+    if (_memoryCache.isEmpty && _accessOrder.isEmpty) {
+      LoggingService.info('[MEMORY_CACHE_CLEAR_VERIFIED] Memory cache successfully cleared');
+    } else {
+      LoggingService.error(
+        'Memory cache not fully cleared: cache=${_memoryCache.length}, order=${_accessOrder.length}',
+        null,
+        null,
+      );
+    }
   }
 
   /// Clean expired data
@@ -361,14 +483,33 @@ class AirspaceGeometryCache {
 
   /// Get cache performance metrics
   Map<String, dynamic> getPerformanceMetrics() {
+    final totalMemoryOps = _memoryHits + _memoryMisses;
+    final totalDiskOps = _diskHits + _diskMisses;
+
     return {
-      'diskHits': _diskHits,
-      'diskMisses': _diskMisses,
-      'hitRate': (_diskHits + _diskMisses) > 0
-          ? (_diskHits / (_diskHits + _diskMisses) * 100).toStringAsFixed(1)
-          : '0.0',
-      'duplicatesDetected': _duplicateCount.length,
-      'totalDuplicateReferences': _duplicateCount.values.fold(0, (sum, count) => sum + count),
+      'memory': {
+        'hits': _memoryHits,
+        'misses': _memoryMisses,
+        'hitRate': totalMemoryOps > 0
+            ? (_memoryHits / totalMemoryOps * 100).toStringAsFixed(1)
+            : '0.0',
+        'cacheSize': _memoryCache.length,
+        'maxSize': _maxMemoryCacheSize,
+      },
+      'disk': {
+        'hits': _diskHits,
+        'misses': _diskMisses,
+        'hitRate': totalDiskOps > 0
+            ? (_diskHits / totalDiskOps * 100).toStringAsFixed(1)
+            : '0.0',
+      },
+      'overall': {
+        'hitRate': (totalMemoryOps + totalDiskOps) > 0
+            ? ((_memoryHits + _diskHits) / (totalMemoryOps + totalDiskOps) * 100).toStringAsFixed(1)
+            : '0.0',
+        'duplicatesDetected': _duplicateCount.length,
+        'totalDuplicateReferences': _duplicateCount.values.fold(0, (sum, count) => sum + count),
+      },
     };
   }
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -11,6 +12,7 @@ import '../services/openaip_service.dart';
 import '../services/airspace_identification_service.dart';
 import '../services/airspace_metadata_cache.dart';
 import '../services/airspace_geometry_cache.dart';
+import '../services/airspace_disk_cache.dart';
 import '../services/airspace_performance_logger.dart';
 import '../data/models/airspace_cache_models.dart';
 import '../data/models/airspace_enums.dart';
@@ -221,7 +223,7 @@ class AirspaceGeoJsonService {
 
   // OpenAIP Core API configuration
   static const String _coreApiBase = 'https://api.core.openaip.net/api';
-  static const int _defaultLimit = 500;
+  static const int _defaultLimit = 1000; // Maximum allowed by OpenAIP API
   static const Duration _requestTimeout = Duration(seconds: 30);
 
   // Initialize performance monitoring
@@ -330,13 +332,14 @@ class AirspaceGeoJsonService {
     double latRange, lngRange;
 
     if (zoom < 7) {
-      // Very wide area - country level
-      latRange = 10.0;
-      lngRange = 15.0;
+      // Very wide area - country/continent level
+      // Increased ranges to ensure full coverage including outlying areas like Tasmania
+      latRange = 20.0;  // Covers ±20° from center (was 10.0)
+      lngRange = 30.0;  // Covers ±30° from center (was 15.0)
     } else if (zoom < 10) {
       // Regional level
-      latRange = 5.0;
-      lngRange = 7.0;
+      latRange = 10.0;  // Increased from 5.0
+      lngRange = 15.0;  // Increased from 7.0
     } else if (zoom < 13) {
       // Local area
       latRange = 2.0;
@@ -389,86 +392,35 @@ class AirspaceGeoJsonService {
         final tileStopwatch = Stopwatch()..start();
 
         try {
-          // Build API URL for this tile
-          var url = '$_coreApiBase/airspaces'
-              '?bbox=${tileBounds.west},${tileBounds.south},${tileBounds.east},${tileBounds.north}'
-              '&limit=$_defaultLimit';
-
-          if (apiKey != null && apiKey.isNotEmpty) {
-            url += '&apiKey=$apiKey';
-          }
-
-          final headers = <String, String>{
-            'Accept': 'application/json',
-            'User-Agent': 'FreeFlightLog/1.0',
-          };
-
-          final response = await http.get(
-            Uri.parse(url),
-            headers: headers,
-          ).timeout(_requestTimeout);
+          // Fetch all pages for this tile using pagination
+          final allFeatures = await _fetchAllPagesForTile(tileBounds, apiKey, tileKey);
 
           tileStopwatch.stop();
 
-          if (response.statusCode == 200) {
-            // Parse and store response using hierarchical cache
-            final data = json.decode(response.body);
+          LoggingService.info('Extracted ${allFeatures.length} features from paginated API response for tile $tileKey');
 
-            // Comprehensive debugging of API response
-            LoggingService.info('API Response for tile $tileKey:');
-            LoggingService.info('Response body length: ${response.body.length} bytes');
-
-            if (data is Map) {
-              LoggingService.info('Response type: Map with keys: ${data.keys.toList()}');
-              if (data.containsKey('type')) {
-                LoggingService.info('GeoJSON type: ${data['type']}');
-              }
-              if (data.containsKey('features')) {
-                final features = data['features'];
-                if (features is List) {
-                  LoggingService.info('Features array length: ${features.length}');
-                  if (features.isNotEmpty) {
-                    final firstFeature = features.first;
-                    LoggingService.info('First feature keys: ${firstFeature.keys.toList()}');
-                    if (firstFeature['properties'] != null) {
-                      LoggingService.info('First feature properties: ${firstFeature['properties'].keys.toList()}');
-                    }
-                  }
-                }
-              }
-            } else if (data is List) {
-              LoggingService.info('Response type: List with ${data.length} items');
-            }
-
-            final features = _extractFeatures(data);
-            LoggingService.info('Extracted ${features.length} features from API response');
-
-            if (features.isEmpty) {
-              // Mark as empty tile (will be done in batch)
-              tileFeatures[tileKey] = [];
-              emptyTiles++;
-            } else {
-              // Collect features for batch processing
-              tileFeatures[tileKey] = features;
-              tilesFromApi++;
-            }
-
-            // Log API request performance
-            _performanceLogger.logApiRequest(
-              endpoint: 'airspaces',
-              duration: tileStopwatch.elapsed,
-              resultCount: features.length,
-              bounds: '${tileBounds.west},${tileBounds.south},${tileBounds.east},${tileBounds.north}',
-            );
-
-            // Clear pending fetch marker
-            _metadataCache.clearPendingFetch(tileKey);
-
-            return features;
+          if (allFeatures.isEmpty) {
+            // Mark as empty tile (will be done in batch)
+            tileFeatures[tileKey] = [];
+            emptyTiles++;
           } else {
-            _metadataCache.clearPendingFetch(tileKey);
-            return <Map<String, dynamic>>[];
+            // Collect features for batch processing
+            tileFeatures[tileKey] = allFeatures;
+            tilesFromApi++;
           }
+
+          // Log API request performance
+          _performanceLogger.logApiRequest(
+            endpoint: 'airspaces',
+            duration: tileStopwatch.elapsed,
+            resultCount: allFeatures.length,
+            bounds: '${tileBounds.west},${tileBounds.south},${tileBounds.east},${tileBounds.north}',
+          );
+
+          // Clear pending fetch marker
+          _metadataCache.clearPendingFetch(tileKey);
+
+          return allFeatures;
         } catch (error, stackTrace) {
           LoggingService.error('Failed to fetch tile $tileKey', error, stackTrace);
           _metadataCache.clearPendingFetch(tileKey);
@@ -683,6 +635,239 @@ class AirspaceGeoJsonService {
       },
       'properties': properties,
     };
+  }
+
+  /// Fetch all pages for a single tile using pagination
+  Future<List<Map<String, dynamic>>> _fetchAllPagesForTile(
+    fm.LatLngBounds tileBounds,
+    String? apiKey,
+    String tileKey,
+  ) async {
+    final allFeatures = <Map<String, dynamic>>[];
+    int page = 1;
+    int totalPages = 0;
+    int totalApiCalls = 0;
+    final paginationStopwatch = Stopwatch()..start();
+
+    LoggingService.structured('AIRSPACE_PAGINATION_START', {
+      'tile_key': tileKey,
+      'bounds': '${tileBounds.west},${tileBounds.south},${tileBounds.east},${tileBounds.north}',
+    });
+
+    do {
+      // Build API URL with pagination
+      var url = '$_coreApiBase/airspaces'
+          '?bbox=${tileBounds.west},${tileBounds.south},${tileBounds.east},${tileBounds.north}'
+          '&limit=$_defaultLimit&page=$page';
+
+      if (apiKey != null && apiKey.isNotEmpty) {
+        url += '&apiKey=$apiKey';
+      }
+
+      final headers = <String, String>{
+        'Accept': 'application/json',
+        'User-Agent': 'FreeFlightLog/1.0',
+      };
+
+      LoggingService.structured('AIRSPACE_API_REQUEST', {
+        'url': url.replaceAll(RegExp(r'apiKey=[^&]*'), 'apiKey=***'),
+        'page': page,
+        'limit': _defaultLimit,
+        'bounds': '${tileBounds.west},${tileBounds.south},${tileBounds.east},${tileBounds.north}',
+        'has_api_key': apiKey != null && apiKey.isNotEmpty,
+      });
+
+      final pageStopwatch = Stopwatch()..start();
+      final response = await _makeRequestWithRetry(url, headers, page, tileKey);
+      pageStopwatch.stop();
+      totalApiCalls++;
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final features = _extractFeatures(data);
+
+        // Log page details
+        LoggingService.structured('AIRSPACE_API_SUCCESS', {
+          'page': page,
+          'features_count': features.length,
+          'response_time_ms': pageStopwatch.elapsedMilliseconds,
+          'tile_key': tileKey,
+        });
+
+        allFeatures.addAll(features);
+
+        // If we got fewer features than the limit, we've reached the last page
+        if (features.length < _defaultLimit) {
+          totalPages = page;
+          break;
+        }
+
+        page++;
+      } else {
+        LoggingService.error('API request failed',
+          'HTTP ${response.statusCode}: ${response.reasonPhrase}',
+          StackTrace.current);
+        break;
+      }
+
+      // Safety check: prevent infinite loops in case of API issues
+      if (page > 10) { // Reasonable limit: 10 pages × 1000 = 10,000 airspaces per tile
+        LoggingService.warning('Pagination safety limit reached for tile $tileKey (10 pages)');
+        totalPages = page - 1;
+        break;
+      }
+    } while (true);
+
+    paginationStopwatch.stop();
+
+    LoggingService.structured('AIRSPACE_PAGINATION_COMPLETE', {
+      'tile_key': tileKey,
+      'total_pages': totalPages,
+      'total_features': allFeatures.length,
+      'total_api_calls': totalApiCalls,
+      'total_time_ms': paginationStopwatch.elapsedMilliseconds,
+      'avg_time_per_page_ms': totalApiCalls > 0 ? (paginationStopwatch.elapsedMilliseconds / totalApiCalls).round() : 0,
+    });
+
+    // Log a warning if we found a lot of airspaces (indicates high density area)
+    if (allFeatures.length > 2000) {
+      LoggingService.warning('High airspace density detected in tile $tileKey: ${allFeatures.length} airspaces');
+    }
+
+    return allFeatures;
+  }
+
+  /// Make HTTP request with retry logic and exponential backoff
+  Future<http.Response> _makeRequestWithRetry(
+    String url,
+    Map<String, String> headers,
+    int page,
+    String tileKey,
+  ) async {
+    const maxRetries = 3;
+    const baseDelayMs = 1000; // Start with 1 second
+
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        LoggingService.structured('API_REQUEST_ATTEMPT', {
+          'url': url.replaceAll(RegExp(r'apiKey=[^&]*'), 'apiKey=***'),
+          'attempt': attempt,
+          'max_retries': maxRetries,
+          'page': page,
+          'tile_key': tileKey,
+        });
+
+        final response = await http.get(
+          Uri.parse(url),
+          headers: headers,
+        ).timeout(_requestTimeout);
+
+        // Success case
+        if (response.statusCode == 200) {
+          if (attempt > 1) {
+            LoggingService.structured('API_REQUEST_SUCCESS_AFTER_RETRY', {
+              'attempt': attempt,
+              'page': page,
+              'tile_key': tileKey,
+            });
+          }
+          return response;
+        }
+
+        // Handle rate limiting (429)
+        if (response.statusCode == 429) {
+          final retryAfter = response.headers['retry-after'];
+          final waitTime = retryAfter != null ? int.tryParse(retryAfter) ?? 5 : 5;
+
+          LoggingService.structured('API_RATE_LIMITED', {
+            'status_code': response.statusCode,
+            'retry_after_seconds': waitTime,
+            'attempt': attempt,
+            'page': page,
+            'tile_key': tileKey,
+          });
+
+          if (attempt < maxRetries) {
+            await Future.delayed(Duration(seconds: waitTime));
+            continue;
+          }
+        }
+
+        // Other HTTP errors
+        if (attempt < maxRetries) {
+          final delayMs = baseDelayMs * (1 << (attempt - 1)); // Exponential backoff: 1s, 2s, 4s
+
+          LoggingService.structured('API_REQUEST_FAILED_RETRYING', {
+            'status_code': response.statusCode,
+            'reason_phrase': response.reasonPhrase,
+            'attempt': attempt,
+            'max_retries': maxRetries,
+            'retry_delay_ms': delayMs,
+            'page': page,
+            'tile_key': tileKey,
+          });
+
+          await Future.delayed(Duration(milliseconds: delayMs));
+          continue;
+        }
+
+        // Final attempt failed
+        LoggingService.structured('API_REQUEST_FAILED_FINAL', {
+          'status_code': response.statusCode,
+          'reason_phrase': response.reasonPhrase,
+          'total_attempts': attempt,
+          'page': page,
+          'tile_key': tileKey,
+        });
+
+        return response;
+
+      } on TimeoutException catch (e) {
+        if (attempt < maxRetries) {
+          final delayMs = baseDelayMs * (1 << (attempt - 1)); // Exponential backoff
+
+          LoggingService.structured('API_REQUEST_TIMEOUT_RETRYING', {
+            'timeout_ms': _requestTimeout.inMilliseconds,
+            'attempt': attempt,
+            'max_retries': maxRetries,
+            'retry_delay_ms': delayMs,
+            'page': page,
+            'tile_key': tileKey,
+          });
+
+          await Future.delayed(Duration(milliseconds: delayMs));
+          continue;
+        }
+
+        // Final timeout
+        LoggingService.error('API request timeout after $maxRetries attempts', e, StackTrace.current);
+        rethrow;
+
+      } catch (e) {
+        if (attempt < maxRetries) {
+          final delayMs = baseDelayMs * (1 << (attempt - 1)); // Exponential backoff
+
+          LoggingService.structured('API_REQUEST_ERROR_RETRYING', {
+            'error': e.toString(),
+            'attempt': attempt,
+            'max_retries': maxRetries,
+            'retry_delay_ms': delayMs,
+            'page': page,
+            'tile_key': tileKey,
+          });
+
+          await Future.delayed(Duration(milliseconds: delayMs));
+          continue;
+        }
+
+        // Final error
+        LoggingService.error('API request failed after $maxRetries attempts', e, StackTrace.current);
+        rethrow;
+      }
+    }
+
+    // This shouldn't be reached, but just in case
+    throw Exception('Request failed after $maxRetries attempts');
   }
 
   /// Legacy method for direct API fetch without caching (kept for fallback)
@@ -1893,6 +2078,9 @@ class AirspaceGeoJsonService {
     final stats = await _metadataCache.getStatistics();
     final metrics = _metadataCache.getPerformanceMetrics();
 
+    // Get database version from disk cache
+    final dbVersion = await AirspaceDiskCache.instance.getDatabaseVersion();
+
     // Calculate database size in MB
     final databaseSizeMb = stats.totalMemoryBytes / 1024 / 1024;
 
@@ -1904,6 +2092,7 @@ class AirspaceGeoJsonService {
         'total_tiles_cached': stats.totalTiles,
         'empty_tiles': stats.emptyTiles,
         'database_size_mb': databaseSizeMb.toStringAsFixed(2),
+        'database_version': dbVersion,
         'memory_saved_mb': (stats.memoryReductionPercent * stats.totalMemoryBytes / 100 / 1024 / 1024).toStringAsFixed(2),
         'compression_ratio': stats.averageCompressionRatio.toStringAsFixed(2),
         'cache_hit_rate': stats.cacheHitRate.toStringAsFixed(2),

@@ -12,7 +12,7 @@ class AirspaceMetadataCache {
   // In-memory cache for tile metadata
   final Map<String, TileMetadata> _memoryCache = {};
   final List<String> _accessOrder = [];
-  static const int _maxMemoryCacheSize = 200; // Keep metadata for 200 tiles
+  static const int _maxMemoryCacheSize = 20000; // Keep metadata for 20000 tiles
 
   // Statistics tracking
   int _cacheHits = 0;
@@ -233,28 +233,72 @@ class AirspaceMetadataCache {
     final allAirspaceIds = <String>{};
     var emptyTiles = 0;
     var cachedTiles = 0;
+    var memoryHits = 0;
+    var diskHits = 0;
 
-    // Collect all unique airspace IDs from tiles
+    // Step 1: Check memory cache for tiles (fastest)
+    final tilesToCheckOnDisk = <String>[];
     for (final tileKey in tileKeys) {
-      final metadata = await getTileMetadata(tileKey);
-
-      if (metadata != null) {
+      final cachedMetadata = _memoryCache[tileKey];
+      if (cachedMetadata != null && !cachedMetadata.isExpired) {
+        _cacheHits++;
+        memoryHits++;
+        _updateAccessOrder(tileKey);
         cachedTiles++;
-        if (metadata.isEmpty) {
+
+        if (cachedMetadata.isEmpty) {
           emptyTiles++;
         } else {
-          allAirspaceIds.addAll(metadata.airspaceIds);
+          allAirspaceIds.addAll(cachedMetadata.airspaceIds);
         }
+      } else {
+        tilesToCheckOnDisk.add(tileKey);
       }
     }
 
-    // Fetch all unique geometries
+    // Step 2: Batch fetch remaining tiles from disk (single query)
+    if (tilesToCheckOnDisk.isNotEmpty) {
+      final diskStopwatch = Stopwatch()..start();
+      final diskMetadata = await _diskCache.getTileMetadataBatch(tilesToCheckOnDisk);
+      diskStopwatch.stop();
+
+      diskHits = diskMetadata.length;
+      _cacheMisses += tilesToCheckOnDisk.length - diskHits;
+
+      // Process disk results
+      for (final tileKey in tilesToCheckOnDisk) {
+        final metadata = diskMetadata[tileKey];
+
+        if (metadata != null && !metadata.isExpired) {
+          // Update memory cache
+          _updateMemoryCache(tileKey, metadata);
+          cachedTiles++;
+
+          if (metadata.isEmpty) {
+            emptyTiles++;
+          } else {
+            allAirspaceIds.addAll(metadata.airspaceIds);
+          }
+        }
+      }
+
+      // Log disk fetch performance if slow
+      if (diskStopwatch.elapsedMilliseconds > 20) {
+        LoggingService.performance(
+          '[BATCH_TILE_METADATA_FETCH]',
+          diskStopwatch.elapsed,
+          'requested=${tilesToCheckOnDisk.length}, found=$diskHits',
+        );
+      }
+    }
+
+    // Step 3: Fetch all unique geometries
     final geometries = await _geometryCache.getGeometries(allAirspaceIds);
 
     LoggingService.performance(
       'Retrieved airspaces for tiles',
       stopwatch.elapsed,
-      'tiles=${tileKeys.length}, cached=$cachedTiles, empty=$emptyTiles, unique_airspaces=${allAirspaceIds.length}',
+      'tiles=${tileKeys.length}, cached=$cachedTiles, empty=$emptyTiles, unique_airspaces=${allAirspaceIds.length}, memory_hits=$memoryHits, disk_hits=$diskHits',
     );
 
     return geometries;
