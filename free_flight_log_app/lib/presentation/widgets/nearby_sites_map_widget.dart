@@ -586,6 +586,8 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
           fontSize: 12,
           fontWeight: FontWeight.bold,
         ),
+        // Force label to render at polygon center
+        labelPlacement: fm.PolygonLabelPlacement.centroid,
       );
     });
   }
