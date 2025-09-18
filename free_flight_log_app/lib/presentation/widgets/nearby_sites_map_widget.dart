@@ -452,7 +452,10 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         // Show tooltip for all airspaces (filtered and unfiltered)
         // Store selected airspace for highlighting
         _selectedAirspace = lowestAirspace;
-        _createHighlightedPolygon(lowestAirspace);
+
+        // Find the actual clipped polygon that was clicked
+        final clickedPolygonPoints = _findClickedPolygonPoints(mapPoint);
+        _createHighlightedPolygon(lowestAirspace, clickedPolygonPoints);
         setState(() {
           _tooltipAirspaces = visibleAirspaces;
           _tooltipPosition = screenPosition;
@@ -560,11 +563,43 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     }
   }
 
+  /// Test if a point is inside a polygon using ray casting algorithm
+  bool _pointInPolygon(LatLng point, List<LatLng> polygon) {
+    bool inside = false;
+    int len = polygon.length;
+    for (int i = 0, j = len - 1; i < len; j = i++) {
+      if ((polygon[i].latitude > point.latitude) != (polygon[j].latitude > point.latitude) &&
+          point.longitude < (polygon[j].longitude - polygon[i].longitude) *
+          (point.latitude - polygon[i].latitude) /
+          (polygon[j].latitude - polygon[i].latitude) + polygon[i].longitude) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
+
+  /// Find the clipped polygon points that contain the click point from rendered layers
+  List<LatLng>? _findClickedPolygonPoints(LatLng clickPoint) {
+    // Iterate through rendered airspace layers
+    for (final layer in _airspaceLayers) {
+      if (layer is fm.PolygonLayer) {
+        for (final polygon in layer.polygons) {
+          // Check if this polygon contains the click point
+          if (_pointInPolygon(clickPoint, polygon.points)) {
+            return polygon.points; // Return the clipped polygon points
+          }
+        }
+      }
+    }
+    return null;
+  }
+
   /// Create a highlighted polygon for the selected airspace
-  void _createHighlightedPolygon(AirspaceData airspace) {
-    // Get polygon points from identification service
-    final polygonPoints = AirspaceIdentificationService.instance.getPolygonForAirspace(airspace);
-    if (polygonPoints == null || polygonPoints.isEmpty) return;
+  void _createHighlightedPolygon(AirspaceData airspace, [List<LatLng>? polygonPoints]) {
+    // Use provided points or fallback to full polygon from identification service
+    final points = polygonPoints ??
+        AirspaceIdentificationService.instance.getPolygonForAirspace(airspace);
+    if (points == null || points.isEmpty) return;
 
     // Get the airspace style
     final style = AirspaceGeoJsonService.instance.getStyleForAirspace(airspace);
@@ -575,7 +610,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
     setState(() {
       _highlightedPolygon = fm.Polygon(
-        points: polygonPoints,
+        points: points,
         color: style.fillColor.withValues(alpha: enhancedOpacity),
         borderColor: style.borderColor,
         borderStrokeWidth: style.borderWidth * 1.5,
