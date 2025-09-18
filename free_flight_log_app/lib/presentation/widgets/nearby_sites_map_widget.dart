@@ -113,6 +113,11 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   static const double _boundsThreshold = 0.001;
   static const int _debounceDurationMs = 750;
 
+  // Widget rebuild debouncing
+  Timer? _rebuildDebouncer;
+  double? _pendingZoom;
+  static const int _rebuildDebounceMs = 150;
+
   // Separate loading states for parallel operations
   bool _isLoadingSites = false;
   bool _isLoadingAirspace = false;
@@ -196,6 +201,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     _searchFocusNode.dispose();
     _mapController.dispose();
     _mapUpdateDebouncer?.cancel();
+    _rebuildDebouncer?.cancel();
     super.dispose();
   }
 
@@ -773,15 +779,18 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
       top: 8,
       left: 8,
       right: 8,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Legend with ICAO classes
-          MapLegendWidget(
-            isMergeMode: false, // Merge mode not relevant for this widget
-            sitesEnabled: widget.sitesEnabled,
-            excludedIcaoClasses: widget.excludedIcaoClasses,
-          ),
+      child: RepaintBoundary(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Legend with ICAO classes wrapped in RepaintBoundary
+            RepaintBoundary(
+              child: MapLegendWidget(
+                isMergeMode: false, // Merge mode not relevant for this widget
+                sitesEnabled: widget.sitesEnabled,
+                excludedIcaoClasses: widget.excludedIcaoClasses,
+              ),
+            ),
           
           const SizedBox(width: 8),
           
@@ -1175,7 +1184,8 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
           if (widget.onShowMapFilter != null)
             const SizedBox(width: 12),
 
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1228,8 +1238,9 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     // Build the widget tree
     final mapWidget = Stack(
       children: [
-        // FlutterMap with native click handling for airspace tooltip
-        fm.FlutterMap(
+        // Wrap expensive map in RepaintBoundary to isolate repaints
+        RepaintBoundary(
+          child: fm.FlutterMap(
             mapController: _mapController,
             options: fm.MapOptions(
               initialCenter: _getInitialCenter(),
@@ -1239,10 +1250,20 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               onMapReady: _onMapReady,
               onMapEvent: _onMapEvent,
               onPositionChanged: (position, hasGesture) {
-                // Update current zoom when map position changes
-                setState(() {
-                  _currentZoom = position.zoom ?? widget.initialZoom;
-                });
+                // Debounce widget rebuilds for smooth performance
+                _pendingZoom = position.zoom ?? widget.initialZoom;
+
+                _rebuildDebouncer?.cancel();
+                _rebuildDebouncer = Timer(
+                  const Duration(milliseconds: _rebuildDebounceMs),
+                  () {
+                    if (mounted && _pendingZoom != null) {
+                      setState(() {
+                        _currentZoom = _pendingZoom!;
+                      });
+                    }
+                  },
+                );
               },
               interactionOptions: const fm.InteractionOptions(
                 flags: fm.InteractiveFlag.all,
@@ -1286,6 +1307,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               ),
             ],
           ),
+        ),
 
         // Map overlays
         _buildAttribution(),
