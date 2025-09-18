@@ -383,57 +383,100 @@ class AirspaceGeoJsonService {
     if (tilesToFetch.isNotEmpty) {
       final apiKey = await _openAipService.getApiKey();
 
-      // Collect tile data for batch processing
-      final Map<String, List<Map<String, dynamic>>> tileFeatures = {};
+      // EXPERIMENTAL: Batch API call optimization
+      // Make a single API call for the entire area covered by all tiles
+      // Then map features back to their respective tiles
 
-      // Fetch missing tiles in parallel
-      final fetchFutures = tilesToFetch.map((tileKey) async {
-        final tileBounds = _getTileBounds(tileKey);
-        final tileStopwatch = Stopwatch()..start();
-
-        try {
-          // Fetch all pages for this tile using pagination
-          final allFeatures = await _fetchAllPagesForTile(tileBounds, apiKey, tileKey);
-
-          tileStopwatch.stop();
-
-          LoggingService.info('Extracted ${allFeatures.length} features from paginated API response for tile $tileKey');
-
-          if (allFeatures.isEmpty) {
-            // Mark as empty tile (will be done in batch)
-            tileFeatures[tileKey] = [];
-            emptyTiles++;
-          } else {
-            // Collect features for batch processing
-            tileFeatures[tileKey] = allFeatures;
-            tilesFromApi++;
-          }
-
-          // Log API request performance
-          _performanceLogger.logApiRequest(
-            endpoint: 'airspaces',
-            duration: tileStopwatch.elapsed,
-            resultCount: allFeatures.length,
-            bounds: '${tileBounds.west},${tileBounds.south},${tileBounds.east},${tileBounds.north}',
-          );
-
-          // Clear pending fetch marker
-          _metadataCache.clearPendingFetch(tileKey);
-
-          return allFeatures;
-        } catch (error, stackTrace) {
-          LoggingService.error('Failed to fetch tile $tileKey', error, stackTrace);
-          _metadataCache.clearPendingFetch(tileKey);
-          return <Map<String, dynamic>>[];
-        }
+      LoggingService.structured('BATCH_API_EXPERIMENT', {
+        'tiles_to_fetch': tilesToFetch.length,
+        'tile_keys': tilesToFetch,
       });
 
-      // Wait for all tile fetches to complete
-      await Future.wait(fetchFutures);
+      // Calculate the combined bounding box for all tiles
+      final combinedBounds = _calculateCombinedBounds(tilesToFetch);
 
-      // Batch process all tiles together to avoid redundant geometry retrievals
-      if (tileFeatures.isNotEmpty) {
-        await _metadataCache.putMultipleTilesMetadata(tileFeatures);
+      LoggingService.structured('BATCH_BOUNDS_CALCULATED', {
+        'individual_tiles': tilesToFetch.length,
+        'combined_bounds': '${combinedBounds.west},${combinedBounds.south},${combinedBounds.east},${combinedBounds.north}',
+      });
+
+      // Make a single API call for the entire combined area
+      final batchStopwatch = Stopwatch()..start();
+
+      try {
+        // Fetch all features for the combined area
+        final allFeatures = await _fetchAllPagesForTile(combinedBounds, apiKey, 'batch_${tilesToFetch.length}');
+        batchStopwatch.stop();
+
+        LoggingService.structured('BATCH_API_COMPLETE', {
+          'duration_ms': batchStopwatch.elapsedMilliseconds,
+          'features_retrieved': allFeatures.length,
+          'tiles_covered': tilesToFetch.length,
+          'ms_per_tile': tilesToFetch.isNotEmpty ? (batchStopwatch.elapsedMilliseconds / tilesToFetch.length).round() : 0,
+        });
+
+        // Map features back to their respective tiles
+        final Map<String, List<Map<String, dynamic>>> tileFeatures = {};
+
+        // Initialize empty lists for each tile
+        for (final tileKey in tilesToFetch) {
+          tileFeatures[tileKey] = [];
+        }
+
+        // Distribute features to their respective tiles based on location
+        for (final feature in allFeatures) {
+          // Determine which tile(s) this feature belongs to
+          final featureTiles = _determineFeatureTiles(feature, tilesToFetch);
+
+          // Add feature to each relevant tile
+          for (final tileKey in featureTiles) {
+            if (tileFeatures.containsKey(tileKey)) {
+              tileFeatures[tileKey]!.add(feature);
+            }
+          }
+        }
+
+        // Count tiles and log distribution
+        for (final entry in tileFeatures.entries) {
+          if (entry.value.isEmpty) {
+            emptyTiles++;
+          } else {
+            tilesFromApi++;
+          }
+        }
+
+        LoggingService.structured('BATCH_DISTRIBUTION_COMPLETE', {
+          'total_features': allFeatures.length,
+          'tiles_with_data': tilesFromApi,
+          'empty_tiles': emptyTiles,
+          'distribution': tileFeatures.map((k, v) => MapEntry(k, v.length)),
+        });
+
+        // Clear pending fetch markers
+        for (final tileKey in tilesToFetch) {
+          _metadataCache.clearPendingFetch(tileKey);
+        }
+
+        // Batch process all tiles together to avoid redundant geometry retrievals
+        if (tileFeatures.isNotEmpty) {
+          await _metadataCache.putMultipleTilesMetadata(tileFeatures);
+        }
+
+        // Log API request performance
+        _performanceLogger.logApiRequest(
+          endpoint: 'airspaces_batch',
+          duration: batchStopwatch.elapsed,
+          resultCount: allFeatures.length,
+          bounds: '${combinedBounds.west},${combinedBounds.south},${combinedBounds.east},${combinedBounds.north}',
+        );
+
+      } catch (error, stackTrace) {
+        LoggingService.error('Failed to fetch batch tiles', error, stackTrace);
+
+        // Clear all pending fetch markers on error
+        for (final tileKey in tilesToFetch) {
+          _metadataCache.clearPendingFetch(tileKey);
+        }
       }
     }
 
@@ -442,7 +485,7 @@ class AirspaceGeoJsonService {
     final geometries = await _metadataCache.getAirspacesForTiles(tileKeys);
     geometryFetchStopwatch.stop();
 
-    LoggingService.info('Retrieved ${geometries.length} unique airspaces from cache for ${tileKeys.length} tiles');
+    // Summary logged in VIEWPORT_PROCESSING instead
 
     // Convert to GeoJSON
     final conversionStopwatch = Stopwatch()..start();
@@ -560,6 +603,101 @@ class AirspaceGeoJsonService {
     return fm.LatLngBounds(LatLng(south, west), LatLng(north, east));
   }
 
+  /// Calculate combined bounding box for multiple tiles
+  fm.LatLngBounds _calculateCombinedBounds(List<String> tileKeys) {
+    if (tileKeys.isEmpty) {
+      return fm.LatLngBounds(LatLng(-90, -180), LatLng(90, 180));
+    }
+
+    double minLat = 90.0;
+    double maxLat = -90.0;
+    double minLng = 180.0;
+    double maxLng = -180.0;
+
+    for (final tileKey in tileKeys) {
+      final tileBounds = _getTileBounds(tileKey);
+      minLat = math.min(minLat, tileBounds.south);
+      maxLat = math.max(maxLat, tileBounds.north);
+      minLng = math.min(minLng, tileBounds.west);
+      maxLng = math.max(maxLng, tileBounds.east);
+    }
+
+    return fm.LatLngBounds(LatLng(minLat, minLng), LatLng(maxLat, maxLng));
+  }
+
+  /// Determine which tiles a feature belongs to based on its geometry
+  List<String> _determineFeatureTiles(Map<String, dynamic> feature, List<String> tileKeys) {
+    final geometry = feature['geometry'];
+    if (geometry == null || geometry is! Map) {
+      return [];
+    }
+
+    final type = geometry['type'] as String?;
+    final coordinates = geometry['coordinates'];
+    if (type == null || coordinates == null) {
+      return [];
+    }
+
+    // Extract bounds of the feature
+    double minLat = 90.0, maxLat = -90.0, minLng = 180.0, maxLng = -180.0;
+
+    if (type == 'Polygon' && coordinates is List) {
+      // Process single polygon
+      for (final ring in coordinates) {
+        if (ring is List) {
+          for (final point in ring) {
+            if (point is List && point.length >= 2) {
+              final lng = point[0] as num;
+              final lat = point[1] as num;
+              minLat = math.min(minLat, lat.toDouble());
+              maxLat = math.max(maxLat, lat.toDouble());
+              minLng = math.min(minLng, lng.toDouble());
+              maxLng = math.max(maxLng, lng.toDouble());
+            }
+          }
+        }
+      }
+    } else if (type == 'MultiPolygon' && coordinates is List) {
+      // Process multiple polygons
+      for (final polygon in coordinates) {
+        if (polygon is List) {
+          for (final ring in polygon) {
+            if (ring is List) {
+              for (final point in ring) {
+                if (point is List && point.length >= 2) {
+                  final lng = point[0] as num;
+                  final lat = point[1] as num;
+                  minLat = math.min(minLat, lat.toDouble());
+                  maxLat = math.max(maxLat, lat.toDouble());
+                  minLng = math.min(minLng, lng.toDouble());
+                  maxLng = math.max(maxLng, lng.toDouble());
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Check which tiles this feature overlaps with
+    final overlappingTiles = <String>[];
+    final featureBounds = fm.LatLngBounds(LatLng(minLat, minLng), LatLng(maxLat, maxLng));
+
+    for (final tileKey in tileKeys) {
+      final tileBounds = _getTileBounds(tileKey);
+
+      // Check if feature bounds overlaps with tile bounds
+      if (!(featureBounds.south > tileBounds.north ||
+            featureBounds.north < tileBounds.south ||
+            featureBounds.west > tileBounds.east ||
+            featureBounds.east < tileBounds.west)) {
+        overlappingTiles.add(tileKey);
+      }
+    }
+
+    return overlappingTiles;
+  }
+
   /// Extract features from API response
   List<Map<String, dynamic>> _extractFeatures(dynamic data) {
     List<dynamic> items;
@@ -649,10 +787,7 @@ class AirspaceGeoJsonService {
     int totalApiCalls = 0;
     final paginationStopwatch = Stopwatch()..start();
 
-    LoggingService.structured('AIRSPACE_PAGINATION_START', {
-      'tile_key': tileKey,
-      'bounds': '${tileBounds.west},${tileBounds.south},${tileBounds.east},${tileBounds.north}',
-    });
+    // Pagination tracking without verbose logging
 
     do {
       // Build API URL with pagination
@@ -669,13 +804,7 @@ class AirspaceGeoJsonService {
         'User-Agent': 'FreeFlightLog/1.0',
       };
 
-      LoggingService.structured('AIRSPACE_API_REQUEST', {
-        'url': url.replaceAll(RegExp(r'apiKey=[^&]*'), 'apiKey=***'),
-        'page': page,
-        'limit': _defaultLimit,
-        'bounds': '${tileBounds.west},${tileBounds.south},${tileBounds.east},${tileBounds.north}',
-        'has_api_key': apiKey != null && apiKey.isNotEmpty,
-      });
+      // API request logging reduced to errors only
 
       final pageStopwatch = Stopwatch()..start();
       final response = await _makeRequestWithRetry(url, headers, page, tileKey);
@@ -687,12 +816,7 @@ class AirspaceGeoJsonService {
         final features = _extractFeatures(data);
 
         // Log page details
-        LoggingService.structured('AIRSPACE_API_SUCCESS', {
-          'page': page,
-          'features_count': features.length,
-          'response_time_ms': pageStopwatch.elapsedMilliseconds,
-          'tile_key': tileKey,
-        });
+        // Success tracked silently unless there's an issue
 
         allFeatures.addAll(features);
 
@@ -720,14 +844,10 @@ class AirspaceGeoJsonService {
 
     paginationStopwatch.stop();
 
-    LoggingService.structured('AIRSPACE_PAGINATION_COMPLETE', {
-      'tile_key': tileKey,
-      'total_pages': totalPages,
-      'total_features': allFeatures.length,
-      'total_api_calls': totalApiCalls,
-      'total_time_ms': paginationStopwatch.elapsedMilliseconds,
-      'avg_time_per_page_ms': totalApiCalls > 0 ? (paginationStopwatch.elapsedMilliseconds / totalApiCalls).round() : 0,
-    });
+    // Log only if pagination took multiple pages or was slow
+    if (totalPages > 1 || paginationStopwatch.elapsedMilliseconds > 1000) {
+      LoggingService.debug('Pagination complete: $totalPages pages, ${allFeatures.length} features in ${paginationStopwatch.elapsedMilliseconds}ms');
+    }
 
     // Log a warning if we found a lot of airspaces (indicates high density area)
     if (allFeatures.length > 2000) {
@@ -749,13 +869,10 @@ class AirspaceGeoJsonService {
 
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        LoggingService.structured('API_REQUEST_ATTEMPT', {
-          'url': url.replaceAll(RegExp(r'apiKey=[^&]*'), 'apiKey=***'),
-          'attempt': attempt,
-          'max_retries': maxRetries,
-          'page': page,
-          'tile_key': tileKey,
-        });
+        // Only log on first attempt or final retry
+        if (attempt == 1 || attempt == maxRetries) {
+          LoggingService.debug('API request attempt $attempt/$maxRetries for tile $tileKey');
+        }
 
         final response = await http.get(
           Uri.parse(url),
@@ -765,11 +882,7 @@ class AirspaceGeoJsonService {
         // Success case
         if (response.statusCode == 200) {
           if (attempt > 1) {
-            LoggingService.structured('API_REQUEST_SUCCESS_AFTER_RETRY', {
-              'attempt': attempt,
-              'page': page,
-              'tile_key': tileKey,
-            });
+            LoggingService.debug('API request succeeded after $attempt attempts for tile $tileKey');
           }
           return response;
         }
@@ -797,28 +910,17 @@ class AirspaceGeoJsonService {
         if (attempt < maxRetries) {
           final delayMs = baseDelayMs * (1 << (attempt - 1)); // Exponential backoff: 1s, 2s, 4s
 
-          LoggingService.structured('API_REQUEST_FAILED_RETRYING', {
-            'status_code': response.statusCode,
-            'reason_phrase': response.reasonPhrase,
-            'attempt': attempt,
-            'max_retries': maxRetries,
-            'retry_delay_ms': delayMs,
-            'page': page,
-            'tile_key': tileKey,
-          });
+          // Only log if this is becoming a pattern
+          if (attempt == 2) {
+            LoggingService.debug('API request failed with ${response.statusCode}, retrying...');
+          }
 
           await Future.delayed(Duration(milliseconds: delayMs));
           continue;
         }
 
         // Final attempt failed
-        LoggingService.structured('API_REQUEST_FAILED_FINAL', {
-          'status_code': response.statusCode,
-          'reason_phrase': response.reasonPhrase,
-          'total_attempts': attempt,
-          'page': page,
-          'tile_key': tileKey,
-        });
+        LoggingService.warning('API request failed after $attempt attempts: ${response.statusCode} for tile $tileKey');
 
         return response;
 
@@ -826,14 +928,9 @@ class AirspaceGeoJsonService {
         if (attempt < maxRetries) {
           final delayMs = baseDelayMs * (1 << (attempt - 1)); // Exponential backoff
 
-          LoggingService.structured('API_REQUEST_TIMEOUT_RETRYING', {
-            'timeout_ms': _requestTimeout.inMilliseconds,
-            'attempt': attempt,
-            'max_retries': maxRetries,
-            'retry_delay_ms': delayMs,
-            'page': page,
-            'tile_key': tileKey,
-          });
+          if (attempt == 2) {
+            LoggingService.debug('API request timeout, retrying...');
+          }
 
           await Future.delayed(Duration(milliseconds: delayMs));
           continue;
@@ -847,14 +944,9 @@ class AirspaceGeoJsonService {
         if (attempt < maxRetries) {
           final delayMs = baseDelayMs * (1 << (attempt - 1)); // Exponential backoff
 
-          LoggingService.structured('API_REQUEST_ERROR_RETRYING', {
-            'error': e.toString(),
-            'attempt': attempt,
-            'max_retries': maxRetries,
-            'retry_delay_ms': delayMs,
-            'page': page,
-            'tile_key': tileKey,
-          });
+          if (attempt == 2) {
+            LoggingService.debug('API request error: ${e.toString().split('\n').first}, retrying...');
+          }
 
           await Future.delayed(Duration(milliseconds: delayMs));
           continue;

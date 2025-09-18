@@ -1152,7 +1152,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                     icon: Icons.layers,
                     title: 'Airspace Cache',
                     subtitle: _airspaceCacheStats != null
-                        ? '${_airspaceCacheStats!['summary']['total_unique_airspaces']} airspaces • ${_airspaceCacheStats!['summary']['database_size_mb'] ?? '0.00'}MB database'
+                        ? '${_airspaceCacheStats!['summary']['total_unique_airspaces']} airspaces • ${_airspaceCacheStats!['summary']['database_size_mb'] ?? '0.00'}MB database • Schema v${_airspaceCacheStats!['summary']['database_version'] ?? 'Unknown'}'
                         : 'Loading...',
                     expansionKey: 'airspace_cache',
                     expansionManager: _expansionManager,
@@ -1168,6 +1168,10 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                       if (_airspaceCacheStats != null) ...[
                         AppStatRowGroup.dataManagement(
                           rows: [
+                            AppStatRow.dataManagement(
+                              label: 'Database Schema Version',
+                              value: 'v${_airspaceCacheStats!['summary']['database_version'] ?? 'Unknown'}',
+                            ),
                             AppStatRow.dataManagement(
                               label: 'Database Size',
                               value: '${_airspaceCacheStats!['summary']['database_size_mb'] ?? '0.00'}MB / 100MB',
@@ -1199,10 +1203,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                         SizedBox(
                           width: double.infinity,
                           child: OutlinedButton.icon(
-                            onPressed: (((_airspaceCacheStats!['summary']['total_unique_airspaces'] as int?) ?? 0) > 0 ||
-                                    ((_airspaceCacheStats!['summary']['total_cached_tiles'] as int?) ?? 0) > 0)
-                                ? _clearAirspaceCache
-                                : null,
+                            onPressed: _clearAirspaceCache, // Always enabled
                             icon: const Icon(Icons.cleaning_services),
                             label: const Text('Clear Airspace Cache'),
                             style: OutlinedButton.styleFrom(

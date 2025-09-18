@@ -14,7 +14,7 @@ class AirspaceGeometryCache {
   // In-memory LRU cache for fast access
   final Map<String, CachedAirspaceGeometry> _memoryCache = {};
   final List<String> _accessOrder = [];
-  static const int _maxMemoryCacheSize = 500000; // Cache up to 500000 geometries in memory (increased for better performance)
+  static const int _maxMemoryCacheSize = 50000; // Cache up to 50000 geometries in memory (optimized based on actual usage)
 
   // Statistics tracking
   int _memoryHits = 0;

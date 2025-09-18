@@ -330,13 +330,15 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         return;
       }
 
-      // Get current map center and zoom for GeoJSON request
+      // Get actual viewport bounds instead of calculated expanded bounds
+      final visibleBounds = _mapController.camera.visibleBounds;
       final center = _mapController.camera.center;
       final zoom = _mapController.camera.zoom;
 
       final layers = await _airspaceManager.buildEnabledOverlayLayers(
         center: center,
         zoom: zoom,
+        visibleBounds: visibleBounds,  // Pass actual viewport bounds
         maxAltitudeFt: widget.maxAltitudeFt,
       );
 
