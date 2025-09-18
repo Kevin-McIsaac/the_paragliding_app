@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../utils/preferences_helper.dart';
 import '../../utils/ui_utils.dart';
 import '../../services/logging_service.dart';
+import '../widgets/airspace_country_selector.dart';
 
 class PreferencesScreen extends StatefulWidget {
   const PreferencesScreen({super.key});
@@ -295,7 +296,15 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   },
                 ),
               ]),
-              
+
+              // Airspace Countries
+              _buildSection('Airspace Data', [
+                SizedBox(
+                  height: 450, // Increased height to show more countries
+                  child: const AirspaceCountrySelector(),
+                ),
+              ]),
+
               // Flight Detection Settings
               _buildSection('Flight Detection', [
                 _buildDropdownRow<double>(

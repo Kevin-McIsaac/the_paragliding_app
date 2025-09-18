@@ -11,6 +11,10 @@ import '../../services/logging_service.dart';
 import '../../utils/card_expansion_manager.dart';
 import '../widgets/common/app_expansion_card.dart';
 import '../widgets/common/app_stat_row.dart';
+import '../../services/airspace_geojson_service.dart';
+import '../../services/airspace_metadata_cache.dart';
+import '../../services/airspace_geometry_cache.dart';
+import '../../services/airspace_disk_cache.dart';
 
 class DataManagementScreen extends StatefulWidget {
   final bool expandPremiumMaps;
@@ -37,6 +41,9 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
   bool _isCesiumTokenValidated = false;
   bool _isValidatingCesium = false;
 
+  // Airspace cache state
+  Map<String, dynamic>? _airspaceCacheStats;
+
   @override
   void initState() {
     super.initState();
@@ -55,6 +62,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
     _loadDatabaseStats();
     _loadBackupDiagnostics();
     _loadCesiumToken();
+    _loadAirspaceCacheStats();
   }
 
   Future<void> _loadDatabaseStats() async {
@@ -839,6 +847,47 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
   }
 
 
+  Future<void> _loadAirspaceCacheStats() async {
+    try {
+      final stats = await AirspaceGeoJsonService.instance.getCacheStatistics();
+      if (mounted) {
+        setState(() {
+          _airspaceCacheStats = stats;
+        });
+      }
+    } catch (e, stackTrace) {
+      LoggingService.error('Failed to load airspace cache stats', e, stackTrace);
+    }
+  }
+
+  Future<void> _clearAirspaceCache() async {
+    final confirmed = await _showConfirmationDialog(
+      'Clear Airspace Cache',
+      'This will clear all cached airspace data. The cache will be rebuilt as you view different areas on the map.\n\nThis action cannot be undone.',
+    );
+
+    if (!confirmed) return;
+
+    _showLoadingDialog('Clearing airspace cache...');
+    try {
+      // Clear all cache layers through the service
+      await AirspaceGeoJsonService.instance.clearCache();
+
+      if (mounted) Navigator.of(context).pop(); // Close loading
+
+      await _loadAirspaceCacheStats(); // Reload stats
+
+      _showSuccessDialog(
+        'Cache Cleared',
+        'Airspace cache has been cleared successfully. Please navigate back to the map to reload airspaces.',
+      );
+    } catch (e, stackTrace) {
+      if (mounted) Navigator.of(context).pop(); // Close loading
+      LoggingService.error('Failed to clear airspace cache', e, stackTrace);
+      _showErrorDialog('Error', 'Failed to clear airspace cache: $e');
+    }
+  }
+
   Future<void> _showBackupDiagnostics() async {
     _showLoadingDialog('Loading backup diagnostics...');
 
@@ -1095,7 +1144,83 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                       ),
                     ],
                   ),
-                  
+
+                  const SizedBox(height: 24),
+
+                  // Airspace Cache (New Hierarchical Cache)
+                  AppExpansionCard.dataManagement(
+                    icon: Icons.layers,
+                    title: 'Airspace Cache',
+                    subtitle: _airspaceCacheStats != null
+                        ? '${_airspaceCacheStats!['summary']['total_unique_airspaces']} airspaces • ${_airspaceCacheStats!['summary']['database_size_mb'] ?? '0.00'}MB database • Schema v${_airspaceCacheStats!['summary']['database_version'] ?? 'Unknown'}'
+                        : 'Loading...',
+                    expansionKey: 'airspace_cache',
+                    expansionManager: _expansionManager,
+                    onExpansionChanged: (expanded) {
+                      setState(() {
+                        _expansionManager.setState('airspace_cache', expanded);
+                      });
+                      if (expanded) {
+                        _loadAirspaceCacheStats(); // Refresh when expanded
+                      }
+                    },
+                    children: [
+                      if (_airspaceCacheStats != null) ...[
+                        AppStatRowGroup.dataManagement(
+                          rows: [
+                            AppStatRow.dataManagement(
+                              label: 'Database Schema Version',
+                              value: 'v${_airspaceCacheStats!['summary']['database_version'] ?? 'Unknown'}',
+                            ),
+                            AppStatRow.dataManagement(
+                              label: 'Database Size',
+                              value: '${_airspaceCacheStats!['summary']['database_size_mb'] ?? '0.00'}MB / 100MB',
+                            ),
+                            AppStatRow.dataManagement(
+                              label: 'Unique Airspaces',
+                              value: _airspaceCacheStats!['summary']['total_unique_airspaces'].toString(),
+                            ),
+                            AppStatRow.dataManagement(
+                              label: 'Cached Tiles',
+                              value: _airspaceCacheStats!['summary']['total_tiles_cached'].toString(),
+                            ),
+                            AppStatRow.dataManagement(
+                              label: 'Empty Tiles',
+                              value: _airspaceCacheStats!['summary']['empty_tiles'].toString(),
+                            ),
+                            AppStatRow.dataManagement(
+                              label: 'Compression Ratio',
+                              value: '${(_airspaceCacheStats!['summary']['compression_ratio'] as String).substring(0, 4)}x',
+                            ),
+                            AppStatRow.dataManagement(
+                              label: 'Cache Hit Rate',
+                              value: '${(double.parse(_airspaceCacheStats!['summary']['cache_hit_rate']) * 100).toStringAsFixed(1)}%',
+                            ),
+                          ],
+                          padding: EdgeInsets.zero,
+                        ),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _clearAirspaceCache, // Always enabled
+                            icon: const Icon(Icons.cleaning_services),
+                            label: const Text('Clear Airspace Cache'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.blue,
+                            ),
+                          ),
+                        ),
+                      ] else
+                        const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(16.0),
+                            child: CircularProgressIndicator(),
+                          ),
+                        ),
+                    ],
+                  ),
+
                   const SizedBox(height: 24),
 
                   // Android Backup Status

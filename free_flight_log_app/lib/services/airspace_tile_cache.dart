@@ -9,7 +9,7 @@ import 'logging_service.dart';
 class AirspaceTileCache {
   static const int tileZoom = 8; // 65,536 tiles globally (256x256)
   static const Duration cacheDuration = Duration(hours: 24);
-  static const int maxCacheSize = 200; // Maximum tiles to cache (~2.5MB memory)
+  static const int maxCacheSize = 20000; // Maximum tiles to cache (~250MB memory)
 
   // Cache structure: tileKey → (timestamp, GeoJSON response)
   final Map<String, (DateTime timestamp, String response)> _tileCache = {};

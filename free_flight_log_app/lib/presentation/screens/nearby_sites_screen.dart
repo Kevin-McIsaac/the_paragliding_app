@@ -22,6 +22,7 @@ import '../widgets/map_filter_dialog.dart';
 import '../widgets/common/app_error_state.dart';
 import '../widgets/common/app_empty_state.dart';
 import '../../services/openaip_service.dart';
+import '../../utils/performance_monitor.dart';
 
 
 class NearbySitesScreen extends StatefulWidget {
@@ -472,6 +473,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     });
 
     LoggingService.info('Starting site load for bounds: $boundsKey');
+    final totalStopwatch = Stopwatch()..start();
+    final memoryBefore = PerformanceMonitor.getMemoryUsageMB();
+
     try {
       // 1. Load local sites from DB to check flight status
       final dbStopwatch = Stopwatch()..start();
@@ -508,9 +512,10 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       );
       
       // 3. For each local site, try to find its corresponding API data
+      final dedupStopwatch = Stopwatch()..start();
       final unifiedSites = <ParaglidingSite>[];
       final siteFlightStatus = <String, bool>{};
-      
+
       // Add API sites with flight status checking
       for (final apiSite in apiSites) {
         final siteKey = SiteUtils.createSiteKey(apiSite.latitude, apiSite.longitude);
@@ -544,7 +549,10 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         siteFlightStatus[siteKey] = true; // Local site has flights
         unifiedSites.add(minimalApiSite);
       }
-      
+      dedupStopwatch.stop();
+
+      // 4. UI update
+      final uiUpdateStopwatch = Stopwatch()..start();
       if (mounted) {
         setState(() {
           _allSites = unifiedSites;
@@ -560,9 +568,28 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           // Update displayed sites with the new bounds data
           _updateDisplayedSites();
         });
-        
+        uiUpdateStopwatch.stop();
+
         // Mark these bounds as loaded to prevent duplicate requests
         _lastLoadedBoundsKey = boundsKey;
+
+        // Log detailed site loading breakdown
+        totalStopwatch.stop();
+        final memoryAfter = PerformanceMonitor.getMemoryUsageMB();
+
+        LoggingService.structured('SITES_BREAKDOWN', {
+          'db_query_ms': dbStopwatch.elapsedMilliseconds,
+          'api_call_ms': apiStopwatch.elapsedMilliseconds,
+          'dedup_ms': dedupStopwatch.elapsedMilliseconds,
+          'ui_update_ms': uiUpdateStopwatch.elapsedMilliseconds,
+          'total_ms': totalStopwatch.elapsedMilliseconds,
+          'local_sites': localSites.length,
+          'api_sites': apiSites.length,
+          'unified_sites': unifiedSites.length,
+          'memory_before_mb': memoryBefore.toStringAsFixed(1),
+          'memory_after_mb': memoryAfter.toStringAsFixed(1),
+          'memory_delta_mb': (memoryAfter - memoryBefore).toStringAsFixed(1),
+        });
         
         LoggingService.structured('BOUNDS_SITES_LOADED', {
           'local_sites_count': localSites.length,

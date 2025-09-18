@@ -49,15 +49,18 @@ class AirspaceIdentificationService {
       }
     }
 
+    // Removed verbose AIRSPACE_IDENTIFICATION logging to reduce noise
+    // Only log if identification is very slow (>100ms)
     final duration = DateTime.now().difference(start);
-
-    LoggingService.structured('AIRSPACE_IDENTIFICATION', {
-      'point': '${point.latitude},${point.longitude}',
-      'polygons_checked': _airspacePolygons.length,
-      'airspaces_found': containingAirspaces.length,
-      'duration_ms': duration.inMicroseconds / 1000,
-      'airspace_types': containingAirspaces.map((a) => a.type).toList(),
-    });
+    if (duration.inMilliseconds > 100) {
+      LoggingService.structured('AIRSPACE_IDENTIFICATION_SLOW', {
+        'point': '${point.latitude},${point.longitude}',
+        'polygons_checked': _airspacePolygons.length,
+        'airspaces_found': containingAirspaces.length,
+        'duration_ms': duration.inMicroseconds / 1000,
+        'airspace_types': containingAirspaces.map((a) => a.type).toList(),
+      });
+    }
 
     // Sort by lower altitude first, then upper altitude if lower altitudes are equal
     containingAirspaces.sort((a, b) {

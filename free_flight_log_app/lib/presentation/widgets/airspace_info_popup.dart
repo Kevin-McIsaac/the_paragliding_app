@@ -451,7 +451,7 @@ class _AirspaceInfoPopupState extends State<AirspaceInfoPopup> {
 
     // Handle flight levels
     final unitLower = unit.toString().toLowerCase();
-    if (unitLower == 'fl' || unitLower.contains('flight')) {
+    if (unitLower == 'fl' || unitLower.contains('flight') || unit == 6) {
       return 'FL$valueStr';
     }
 
@@ -459,10 +459,14 @@ class _AirspaceInfoPopupState extends State<AirspaceInfoPopup> {
     String unitStr = '';
     String refStr = '';
 
-    if (unitLower.contains('ft') || unitLower.contains('feet')) {
+    // Check for OpenAIP unit codes first, then string units
+    if (unit == 1 || unitLower.contains('ft') || unitLower.contains('feet')) {
       unitStr = ' ft';
-    } else if (unitLower.contains('m') && !unitLower.contains('ft')) {
+    } else if (unit == 2 || (unitLower.contains('m') && !unitLower.contains('ft'))) {
       unitStr = ' m';
+    } else if (unit.toString().isNotEmpty && unit != 0) {
+      // Fallback: add the unit as-is if it's not empty or zero
+      unitStr = ' ${unit.toString()}';
     }
 
     // Handle reference (AGL, AMSL, etc.)

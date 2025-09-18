@@ -17,9 +17,9 @@ import '../../services/airspace_geojson_service.dart';
 import '../../data/models/airspace_enums.dart';
 import '../../services/airspace_identification_service.dart';
 import '../widgets/airspace_info_popup.dart';
-import '../widgets/airspace_hover_tooltip.dart';
 import '../widgets/map_filter_fab.dart';
 import '../widgets/map_legend_widget.dart';
+import '../../utils/performance_monitor.dart';
 
 class NearbySitesMapWidget extends StatefulWidget {
   final List<ParaglidingSite> sites;
@@ -95,12 +95,9 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   Offset? _tooltipPosition;
   bool _showTooltip = false;
 
-  // Hover state
-  Timer? _hoverDebounceTimer;
-  LatLng? _hoverPosition;
-  Offset? _hoverScreenPosition;
-  AirspaceData? _hoveredAirspace;
-  fm.Polygon? _highlightedPolygon;
+  // Selected airspace state
+  AirspaceData? _selectedAirspace;
+  List<fm.Polygon> _highlightedPolygons = [];
 
   // Debouncing for render logs
   DateTime? _lastRenderLog;
@@ -192,7 +189,6 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   void dispose() {
     _searchFocusNode.dispose();
     _mapController.dispose();
-    _hoverDebounceTimer?.cancel();
     _mapUpdateDebouncer?.cancel();
     super.dispose();
   }
@@ -203,6 +199,22 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   }
   
   void _onMapEvent(fm.MapEvent event) {
+    // Log frame performance during map interactions
+    if (event is fm.MapEventMove || event is fm.MapEventFlingAnimation) {
+      // Log frame jank during movement
+      final frameStats = PerformanceMonitor.getFrameRateStats();
+      final droppedFrames = frameStats['dropped_frames'] as int;
+      if (droppedFrames > 5) {
+        LoggingService.structured('FRAME_JANK', {
+          'dropped_frames': droppedFrames,
+          'total_frames': frameStats['total_frames'],
+          'fps': (frameStats['fps'] as double).toStringAsFixed(1),
+          'worst_frame_ms': (frameStats['avg_frame_time_ms'] as double).toStringAsFixed(1),
+          'context': event is fm.MapEventMove ? 'map_pan' : 'map_fling',
+        });
+      }
+    }
+
     // React to all movement and zoom end events to reload sites and airspace
     if (event is fm.MapEventMoveEnd ||
         event is fm.MapEventFlingAnimationEnd ||
@@ -213,7 +225,11 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
       _mapUpdateDebouncer?.cancel();
       _mapUpdateDebouncer = Timer(
         const Duration(milliseconds: _debounceDurationMs),
-        _loadVisibleData,
+        () {
+          // Log frame performance summary after map movement ends
+          PerformanceMonitor.logFrameRatePerformance();
+          _loadVisibleData();
+        },
       );
     }
   }
@@ -309,13 +325,15 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         return;
       }
 
-      // Get current map center and zoom for GeoJSON request
+      // Get actual viewport bounds instead of calculated expanded bounds
+      final visibleBounds = _mapController.camera.visibleBounds;
       final center = _mapController.camera.center;
       final zoom = _mapController.camera.zoom;
 
       final layers = await _airspaceManager.buildEnabledOverlayLayers(
         center: center,
         zoom: zoom,
+        visibleBounds: visibleBounds,  // Pass actual viewport bounds
         maxAltitudeFt: widget.maxAltitudeFt,
       );
 
@@ -412,8 +430,11 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     // Update filter status for all identified airspaces
     await _updateAirspaceFilterStatus(allAirspaces);
 
-    // Sort all airspaces by lower altitude limit (ascending), then by upper altitude limit (ascending)
-    allAirspaces.sort((a, b) {
+    // Filter to only visible airspaces (not hidden by current filter settings)
+    final visibleAirspaces = allAirspaces.where((airspace) => !airspace.isCurrentlyFiltered).toList();
+
+    // Sort visible airspaces by lower altitude limit (ascending), then by upper altitude limit (ascending)
+    visibleAirspaces.sort((a, b) {
       int lowerCompare = a.getLowerAltitudeInFeet().compareTo(b.getLowerAltitudeInFeet());
       if (lowerCompare != 0) return lowerCompare;
       return a.getUpperAltitudeInFeet().compareTo(b.getUpperAltitudeInFeet());
@@ -424,19 +445,50 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
       if (_showTooltip && _tooltipPosition != null && _isSimilarPosition(screenPosition, _tooltipPosition!)) {
         // Toggle: hide tooltip if clicking the same area
         _hideTooltip();
-      } else {
-        // Show tooltip for all airspaces (filtered and unfiltered)
-        // Clear hover state when showing popup
-        _clearHover();
+      } else if (visibleAirspaces.isNotEmpty) {
+        // Get the lowest altitude visible airspace for highlighting
+        final lowestAirspace = visibleAirspaces.first;
+        final lowestAltitude = lowestAirspace.getLowerAltitudeInFeet();
+
+        // Find all visible airspaces with the same lowest altitude
+        final airspacesToHighlight = visibleAirspaces.where((airspace) =>
+          airspace.getLowerAltitudeInFeet() == lowestAltitude).toList();
+
+        // Store selected airspace for reference
+        _selectedAirspace = lowestAirspace;
+
+        // Clear existing highlights before adding new ones
+        _highlightedPolygons.clear();
+
+        // Find all clipped polygons at the click point
+        final allClickedPolygons = _findAllClickedPolygonPoints(mapPoint);
+
+        // Highlight all airspaces with the same lowest altitude
+        for (int i = 0; i < airspacesToHighlight.length; i++) {
+          final airspace = airspacesToHighlight[i];
+          // Use indexed polygon from the found list, or null if not enough polygons
+          final polygonPoints = i < allClickedPolygons.length ? allClickedPolygons[i] : null;
+          _createHighlightedPolygon(airspace, polygonPoints, i);
+        }
+
         setState(() {
-          _tooltipAirspaces = allAirspaces;
+          _tooltipAirspaces = allAirspaces; // Show all airspaces (including filtered)
           _tooltipPosition = screenPosition;
           _showTooltip = true;
         });
+      } else {
+        // Only filtered airspaces found - show tooltip but no highlighting
+        setState(() {
+          _tooltipAirspaces = allAirspaces; // Show all airspaces (including filtered)
+          _tooltipPosition = screenPosition;
+          _showTooltip = true;
+        });
+        _clearSelection(); // Clear any existing highlights
       }
     } else {
-      // No airspaces found, hide tooltip
+      // No airspaces found, hide tooltip and clear selection
       _hideTooltip();
+      _clearSelection();
     }
   }
 
@@ -521,89 +573,92 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         _tooltipPosition = null;
       });
     }
+    _clearSelection();
   }
 
-  /// Handle hover over map to show lightweight tooltip
-  void _handleHover(Offset screenPosition) {
-    if (!_airspaceEnabled || _showTooltip) return; // Don't show hover when popup is open
-
-    // Debounce hover detection to avoid excessive calculations
-    _hoverDebounceTimer?.cancel();
-    _hoverDebounceTimer = Timer(const Duration(milliseconds: 100), () async {
-      // Convert screen position to map coordinates
-      final renderBox = context.findRenderObject() as RenderBox?;
-      if (renderBox == null) return;
-
-      try {
-        // Get map point from screen position
-        final localPosition = renderBox.globalToLocal(screenPosition);
-        // Use custom offset to handle the coordinate conversion
-        final mapPoint = _mapController.camera.offsetToCrs(
-          Offset(localPosition.dx, localPosition.dy),
-        );
-
-        // Identify airspaces at hover point
-        final airspaces = AirspaceIdentificationService.instance.identifyAirspacesAtPoint(mapPoint);
-
-        // Filter out excluded airspaces
-        final excludedTypes = await OpenAipService.instance.getExcludedAirspaceTypes();
-        final excludedClasses = await OpenAipService.instance.getExcludedIcaoClasses();
-
-        final visibleAirspaces = airspaces.where((airspace) {
-          final isTypeExcluded = excludedTypes[airspace.type] == true;
-          final isClassExcluded = excludedClasses[airspace.icaoClass ?? IcaoClass.none] == true;
-          final isElevationExcluded = airspace.getLowerAltitudeInFeet() > widget.maxAltitudeFt;
-          return !isTypeExcluded && !isClassExcluded && !isElevationExcluded;
-        }).toList();
-
-        if (visibleAirspaces.isEmpty) {
-          _clearHover();
-          return;
-        }
-
-        // Sort by lower altitude to get the lowest airspace
-        visibleAirspaces.sort((a, b) =>
-          a.getLowerAltitudeInFeet().compareTo(b.getLowerAltitudeInFeet()));
-
-        final lowestAirspace = visibleAirspaces.first;
-
-        // Get polygon for highlighting
-        final polygonPoints = AirspaceIdentificationService.instance.getPolygonForAirspace(lowestAirspace);
-
-        if (polygonPoints != null && mounted) {
-          setState(() {
-            _hoveredAirspace = lowestAirspace;
-            _hoverPosition = mapPoint;
-            _hoverScreenPosition = screenPosition;
-
-            // Create highlighted polygon with 60% opacity
-            _highlightedPolygon = fm.Polygon(
-              points: polygonPoints,
-              color: lowestAirspace.icaoClass?.fillColor.withOpacity(0.6) ??
-                     Colors.grey.withOpacity(0.6),
-              borderColor: lowestAirspace.icaoClass?.borderColor ?? Colors.grey,
-              borderStrokeWidth: 2.0,
-            );
-          });
-        }
-      } catch (error) {
-        LoggingService.error('Error handling hover', error);
-      }
-    });
-  }
-
-  /// Clear hover state
-  void _clearHover() {
-    _hoverDebounceTimer?.cancel();
-    if (_hoveredAirspace != null && mounted) {
+  /// Clear the selected airspace and highlighted polygons
+  void _clearSelection() {
+    if (mounted) {
       setState(() {
-        _hoveredAirspace = null;
-        _hoverPosition = null;
-        _hoverScreenPosition = null;
-        _highlightedPolygon = null;
+        _selectedAirspace = null;
+        _highlightedPolygons.clear();
       });
     }
   }
+
+  /// Test if a point is inside a polygon using ray casting algorithm
+  bool _pointInPolygon(LatLng point, List<LatLng> polygon) {
+    bool inside = false;
+    int len = polygon.length;
+    for (int i = 0, j = len - 1; i < len; j = i++) {
+      if ((polygon[i].latitude > point.latitude) != (polygon[j].latitude > point.latitude) &&
+          point.longitude < (polygon[j].longitude - polygon[i].longitude) *
+          (point.latitude - polygon[i].latitude) /
+          (polygon[j].latitude - polygon[i].latitude) + polygon[i].longitude) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
+
+  /// Find all clipped polygon points that contain the click point from rendered layers
+  List<List<LatLng>> _findAllClickedPolygonPoints(LatLng clickPoint) {
+    final foundPolygons = <List<LatLng>>[];
+    // Iterate through rendered airspace layers
+    for (final layer in _airspaceLayers) {
+      if (layer is fm.PolygonLayer) {
+        for (final polygon in layer.polygons) {
+          // Check if this polygon contains the click point
+          if (_pointInPolygon(clickPoint, polygon.points)) {
+            foundPolygons.add(polygon.points); // Add all clipped polygon points
+          }
+        }
+      }
+    }
+    return foundPolygons;
+  }
+
+  /// Create a highlighted polygon for the selected airspace and add it to the list
+  void _createHighlightedPolygon(AirspaceData airspace, [List<LatLng>? polygonPoints, int labelIndex = 0]) {
+    // Use provided points or fallback to full polygon from identification service
+    final points = polygonPoints ??
+        AirspaceIdentificationService.instance.getPolygonForAirspace(airspace);
+    if (points == null || points.isEmpty) return;
+
+    // Get the airspace style
+    final style = AirspaceGeoJsonService.instance.getStyleForAirspace(airspace);
+
+    // Calculate enhanced opacity (2x with minimum 0.3 for visibility)
+    final baseOpacity = style.fillColor.a / 255.0;
+    final enhancedOpacity = math.max(0.3, (baseOpacity * 2.0).clamp(0.0, 0.6));
+
+    // For multiple labels, add an index indicator to distinguish them
+    final labelSuffix = labelIndex > 0 ? ' [${labelIndex + 1}]' : '';
+
+    final highlightedPolygon = fm.Polygon(
+      points: points,
+      color: style.fillColor.withValues(alpha: enhancedOpacity),
+      borderColor: style.borderColor,
+      borderStrokeWidth: style.borderWidth * 1.5,
+      // Add label with airspace information and index suffix
+      label: '${airspace.name}$labelSuffix\n'
+             '${airspace.type.abbreviation}'
+             '${airspace.icaoClass != null ? ", ${airspace.icaoClass!.displayName}" : ""}'
+             ', ${airspace.lowerAltitude} - ${airspace.upperAltitude}',
+      labelStyle: const TextStyle(
+        color: Colors.black,
+        fontSize: 12,
+        fontWeight: FontWeight.bold,
+      ),
+      // Use centroid placement for all labels
+      labelPlacement: fm.PolygonLabelPlacement.centroid,
+    );
+
+    setState(() {
+      _highlightedPolygons.add(highlightedPolygon);
+    });
+  }
+
 
 
 
@@ -1114,6 +1169,12 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
   @override
   Widget build(BuildContext context) {
+    // Track widget rebuild
+    PerformanceMonitor.trackWidgetRebuild('NearbySitesMapWidget');
+
+    // Start timing the build
+    final buildStopwatch = Stopwatch()..start();
+
     // Count flown vs new sites for logging
     final flownSites = widget.sites.where((site) {
       final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
@@ -1137,13 +1198,17 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
       _lastZoom = currentZoom;
     }
 
-    return Stack(
+    // Track marker creation time
+    final markerStopwatch = Stopwatch()..start();
+    final userMarkers = _buildUserLocationMarker();
+    final siteMarkers = _buildSiteMarkers();
+    markerStopwatch.stop();
+
+    // Build the widget tree
+    final mapWidget = Stack(
       children: [
         // FlutterMap with native click handling for airspace tooltip
-        MouseRegion(
-          onHover: (event) => _handleHover(event.position),
-          onExit: (_) => _clearHover(),
-          child: fm.FlutterMap(
+        fm.FlutterMap(
             mapController: _mapController,
             options: fm.MapOptions(
               initialCenter: _getInitialCenter(),
@@ -1185,35 +1250,26 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               ..._airspaceLayers,
 
               // Highlighted airspace layer (on top of other airspaces)
-              if (_highlightedPolygon != null) ...[
+              if (_highlightedPolygons.isNotEmpty) ...[
                 fm.PolygonLayer(
-                  polygons: [_highlightedPolygon!],
+                  polygons: _highlightedPolygons,
                 ),
               ],
 
               // Site markers layer
               fm.MarkerLayer(
                 markers: [
-                  ..._buildUserLocationMarker(),
-                  ..._buildSiteMarkers(),
+                  ...userMarkers,
+                  ...siteMarkers,
                 ],
               ),
             ],
           ),
-        ),
 
         // Map overlays
         _buildAttribution(),
         _buildTopControlBar(),
 
-        // Hover tooltip (lightweight, shows only when hovering)
-        if (_hoveredAirspace != null && _hoverScreenPosition != null && !_showTooltip) ...[
-          AirspaceHoverTooltip(
-            airspace: _hoveredAirspace!,
-            position: _hoverScreenPosition!,
-            screenSize: MediaQuery.of(context).size,
-          ),
-        ],
 
         // Airspace info popup
         if (_showTooltip && _tooltipPosition != null) ...[
@@ -1272,6 +1328,32 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         ],
       ],
     );
+
+    buildStopwatch.stop();
+
+    // Only log slow builds (>20ms) to reduce noise
+    final buildTime = buildStopwatch.elapsedMilliseconds;
+    if (buildTime > 20) {
+      LoggingService.structured('RENDER_PERF_SLOW', {
+        'widget': 'NearbySitesMapWidget',
+        'build_total_ms': buildTime,
+        'marker_creation_ms': markerStopwatch.elapsedMilliseconds,
+        'site_count': widget.sites.length,
+        'airspace_layers': _airspaceLayers.length,
+        'airspace_polygons': _airspaceLayers.isNotEmpty
+            ? _airspaceLayers.fold<int>(0, (sum, layer) {
+                if (layer is fm.PolygonLayer) {
+                  return sum + layer.polygons.length;
+                }
+                return sum;
+              })
+            : 0,
+        'user_markers': userMarkers.length,
+        'site_markers': siteMarkers.length,
+      });
+    }
+
+    return mapWidget;
   }
 
   /// Convert numeric type code to string type for filtering compatibility

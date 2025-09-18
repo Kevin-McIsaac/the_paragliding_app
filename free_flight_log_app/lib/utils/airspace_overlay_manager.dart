@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map/flutter_map.dart' as fm;
 import 'package:latlong2/latlong.dart';
 import '../services/openaip_service.dart';
 import '../services/airspace_geojson_service.dart';
@@ -32,13 +32,15 @@ class AirspaceOverlayManager {
   Future<List<Widget>> buildEnabledOverlayLayers({
     required LatLng center,
     required double zoom,
+    fm.LatLngBounds? visibleBounds,  // Accept actual viewport bounds
     double maxAltitudeFt = 30000.0,
   }) async {
     // Generate unique request ID for this request
     final requestId = 'req_${++_requestCounter}_${DateTime.now().millisecondsSinceEpoch}';
     _currentRequestId = requestId;
 
-    final bounds = _geoJsonService.calculateBoundingBox(center, zoom);
+    // Use actual viewport bounds if provided, otherwise calculate from center/zoom
+    final bounds = visibleBounds ?? _geoJsonService.calculateBoundingBox(center, zoom);
     final boundsKey = '${bounds.south},${bounds.west},${bounds.north},${bounds.east}';
 
     // Check if bounds overlap with cached data to avoid unnecessary work
@@ -102,7 +104,7 @@ class AirspaceOverlayManager {
   Future<List<Widget>> _buildLayersInternal(
     LatLng center,
     double zoom,
-    LatLngBounds bounds,
+    fm.LatLngBounds bounds,
     String boundsKey,
     String requestId,
     double maxAltitudeFt,
@@ -122,10 +124,10 @@ class AirspaceOverlayManager {
     if (await _openAipService.getAirspaceEnabled()) {
       try {
         final opacity = await _openAipService.getOverlayOpacity();
-        final polygons = await _buildAirspacePolygons(center, zoom, opacity, maxAltitudeFt);
+        final polygons = await _buildAirspacePolygons(bounds, opacity, maxAltitudeFt);
 
         if (polygons.isNotEmpty) {
-          final polygonLayer = PolygonLayer(
+          final polygonLayer = fm.PolygonLayer(
             polygons: polygons,
             polygonCulling: true,
           );
@@ -143,7 +145,7 @@ class AirspaceOverlayManager {
   }
 
   /// Check if request should be debounced based on bounds overlap
-  bool _shouldDebounceRequest(LatLngBounds bounds, String boundsKey) {
+  bool _shouldDebounceRequest(fm.LatLngBounds bounds, String boundsKey) {
     // If this is the first request or bounds are completely different, don't debounce
     if (_lastBoundsKey.isEmpty) {
       return false;
@@ -161,7 +163,7 @@ class AirspaceOverlayManager {
     }
 
     try {
-      final lastBounds = LatLngBounds(
+      final lastBounds = fm.LatLngBounds(
         LatLng(double.parse(lastParts[0]), double.parse(lastParts[1])), // SW
         LatLng(double.parse(lastParts[2]), double.parse(lastParts[3])), // NE
       );
@@ -178,7 +180,7 @@ class AirspaceOverlayManager {
   }
 
   /// Calculate overlap percentage between two bounds
-  double _calculateBoundsOverlap(LatLngBounds bounds1, LatLngBounds bounds2) {
+  double _calculateBoundsOverlap(fm.LatLngBounds bounds1, fm.LatLngBounds bounds2) {
     // Calculate intersection bounds
     final intersectionSouth = math.max(bounds1.south, bounds2.south);
     final intersectionNorth = math.min(bounds1.north, bounds2.north);
@@ -201,24 +203,30 @@ class AirspaceOverlayManager {
   }
 
   /// Build airspace polygons from GeoJSON data
-  Future<List<Polygon>> _buildAirspacePolygons(LatLng center, double zoom, double opacity, double maxAltitudeFt) async {
+  Future<List<fm.Polygon>> _buildAirspacePolygons(fm.LatLngBounds bounds, double opacity, double maxAltitudeFt) async {
     final stopwatch = Stopwatch()..start();
 
     try {
-      // Calculate bounding box for API request
-      final bounds = _geoJsonService.calculateBoundingBox(center, zoom);
+      // Use the bounds passed from buildEnabledOverlayLayers
 
       LoggingService.structured('AIRSPACE_FETCH_START', {
         'bounds': '${bounds.west},${bounds.south},${bounds.east},${bounds.north}',
-        'zoom': zoom,
       });
 
-      // Fetch GeoJSON data from OpenAIP
-      final geoJsonString = await _geoJsonService.fetchAirspaceGeoJson(bounds);
-
       // Get excluded airspace types and ICAO classes for filtering (now enum-based)
-      final excludedTypes = await _openAipService.getExcludedAirspaceTypes();
-      final excludedClasses = await _openAipService.getExcludedIcaoClasses();
+      final excludedTypesMap = await _openAipService.getExcludedAirspaceTypes();
+      final excludedClassesMap = await _openAipService.getExcludedIcaoClasses();
+
+      // Convert Maps to Sets of excluded items
+      final excludedTypes = excludedTypesMap.entries
+          .where((entry) => entry.value)
+          .map((entry) => entry.key)
+          .toSet();
+
+      final excludedClasses = excludedClassesMap.entries
+          .where((entry) => entry.value)
+          .map((entry) => entry.key)  // Keep as IcaoClass enum for proper type matching
+          .toSet();
 
       // Get clipping preference
       final clippingEnabled = await _openAipService.isClippingEnabled();
@@ -226,8 +234,15 @@ class AirspaceOverlayManager {
       // Time the airspace processing/clipping step
       final processingStopwatch = Stopwatch()..start();
 
-      // Parse GeoJSON and convert to styled polygons (filtered by excluded types and classes)
-      final polygons = await _geoJsonService.parseAirspaceGeoJson(geoJsonString, opacity, excludedTypes, excludedClasses, bounds, maxAltitudeFt, clippingEnabled);
+      // Fetch and process airspace polygons directly (optimized path - no GeoJSON conversion)
+      final polygons = await _geoJsonService.fetchAirspacePolygonsDirect(
+        bounds,
+        opacity,
+        excludedTypes,
+        excludedClasses,
+        maxAltitudeFt,
+        clippingEnabled,
+      );
 
       processingStopwatch.stop();
       stopwatch.stop();
@@ -402,7 +417,7 @@ class AirspaceOverlayManager {
   static bool validateDependencies() {
     try {
       // Check if flutter_map and GeoJSON dependencies are available
-      PolygonLayer;
+      fm.PolygonLayer;
       return true;
     } catch (e) {
       LoggingService.error('AirspaceOverlayManager dependency validation failed', e);
