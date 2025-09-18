@@ -1311,11 +1311,12 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
     buildStopwatch.stop();
 
-    // Log rendering performance metrics if there's significant activity
-    if (_airspaceLayers.isNotEmpty || widget.sites.isNotEmpty) {
-      LoggingService.structured('RENDER_PERF', {
+    // Only log slow builds (>20ms) to reduce noise
+    final buildTime = buildStopwatch.elapsedMilliseconds;
+    if (buildTime > 20) {
+      LoggingService.structured('RENDER_PERF_SLOW', {
         'widget': 'NearbySitesMapWidget',
-        'build_total_ms': buildStopwatch.elapsedMilliseconds,
+        'build_total_ms': buildTime,
         'marker_creation_ms': markerStopwatch.elapsedMilliseconds,
         'site_count': widget.sites.length,
         'airspace_layers': _airspaceLayers.length,

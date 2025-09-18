@@ -235,12 +235,14 @@ class AirspaceDiskCache {
     // Convert to bytes
     final bytes = floatArray.buffer.asUint8List();
 
-    // Performance and data flow logging
-    LoggingService.performance(
-      '[ENCODE_BINARY_SUCCESS]',
-      stopwatch.elapsed,
-      'polygons=${polygons.length}, points=$totalPoints, bytes=${bytes.length}, offsets=${polygonOffsets.length}',
-    );
+    // Only log if encoding takes significant time (>5ms)
+    if (stopwatch.elapsedMilliseconds > 5) {
+      LoggingService.performance(
+        '[ENCODE_BINARY_SLOW]',
+        stopwatch.elapsed,
+        'polygons=${polygons.length}, points=$totalPoints, bytes=${bytes.length}, offsets=${polygonOffsets.length}',
+      );
+    }
 
     return (bytes, polygonOffsets);
   }
@@ -486,6 +488,76 @@ class AirspaceDiskCache {
     }
   }
 
+  /// Batch insert multiple geometries in a single transaction
+  Future<void> putGeometryBatch(List<CachedAirspaceGeometry> geometries) async {
+    if (geometries.isEmpty) return;
+
+    final db = await database;
+    final stopwatch = Stopwatch()..start();
+
+    try {
+      // Use a batch for maximum performance
+      final batch = db.batch();
+
+      for (final geometry in geometries) {
+        // Encode coordinates as binary
+        final (coordinatesBinary, polygonOffsets) = _encodeCoordinatesBinary(geometry.polygons);
+
+        // Calculate bounds for spatial queries
+        final bounds = _calculateBounds(geometry.polygons);
+
+        // Extract altitude and activity from properties
+        final lower = geometry.properties['lowerLimitReference'] as double?;
+        final upper = geometry.properties['upperLimitReference'] as double?;
+        final activity = geometry.properties['activity'] as int?;
+
+        // Count coordinates
+        int coordinateCount = 0;
+        for (final polygon in geometry.polygons) {
+          coordinateCount += polygon.length;
+        }
+
+        batch.insert(
+          _geometryTable,
+          {
+            'id': geometry.id,
+            'name': geometry.name,
+            'type_code': geometry.typeCode,
+            'coordinates_binary': coordinatesBinary,
+            'polygon_offsets': jsonEncode(polygonOffsets),
+            'properties': jsonEncode(geometry.properties),
+            'lower': lower,
+            'upper': upper,
+            'activity': activity,
+            'bounds_west': bounds['west'],
+            'bounds_south': bounds['south'],
+            'bounds_east': bounds['east'],
+            'bounds_north': bounds['north'],
+            'fetch_time': geometry.fetchTime.millisecondsSinceEpoch,
+            'geometry_hash': geometry.geometryHash,
+            'coordinate_count': coordinateCount,
+            'polygon_count': geometry.polygons.length,
+            'last_accessed': DateTime.now().millisecondsSinceEpoch,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+
+      // Commit all inserts at once with noResult for better performance
+      await batch.commit(noResult: true);
+
+      stopwatch.stop();
+      LoggingService.performance(
+        '[BATCH_GEOMETRY_INSERT]',
+        stopwatch.elapsed,
+        'count=${geometries.length}',
+      );
+    } catch (e, stack) {
+      LoggingService.error('Failed to batch insert geometries', e, stack);
+      rethrow;
+    }
+  }
+
   Future<CachedAirspaceGeometry?> getGeometry(String id) async {
     final db = await database;
     final stopwatch = Stopwatch()..start();
@@ -528,12 +600,12 @@ class AirspaceDiskCache {
         uncompressedSize: (row['coordinate_count'] as int) * 8, // 2 floats * 4 bytes
       );
 
-      // Only log slow retrieval operations (>10ms)
-      if (stopwatch.elapsedMilliseconds > 10) {
+      // Only log very slow retrieval operations (>50ms) to reduce noise
+      if (stopwatch.elapsedMilliseconds > 50) {
         LoggingService.performance(
           '[GET_GEOMETRY_SLOW]',
           stopwatch.elapsed,
-          'id=$id, name=${geometry.name}, polygons=${polygons.length}',
+          'id=$id, name=${geometry.name}',
         );
       }
 
@@ -880,7 +952,7 @@ class AirspaceDiskCache {
       whereArgs: [countryCode],
     );
 
-    // Insert new mappings in batch
+    // Insert new mappings in batch (use IGNORE to handle duplicates)
     final batch = db.batch();
     for (final airspaceId in airspaceIds) {
       batch.insert(
@@ -889,6 +961,7 @@ class AirspaceDiskCache {
           'country_code': countryCode,
           'airspace_id': airspaceId,
         },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
       );
     }
     await batch.commit(noResult: true);

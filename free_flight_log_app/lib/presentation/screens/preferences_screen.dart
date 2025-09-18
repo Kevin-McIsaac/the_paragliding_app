@@ -300,7 +300,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
               // Airspace Countries
               _buildSection('Airspace Data', [
                 SizedBox(
-                  height: 300, // Fixed height for the country selector
+                  height: 450, // Increased height to show more countries
                   child: const AirspaceCountrySelector(),
                 ),
               ]),

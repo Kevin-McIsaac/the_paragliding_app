@@ -252,15 +252,24 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
     final isDownloading = _downloadingCountry == country.info.code;
 
     return ListTile(
+      dense: true, // Make tiles more compact
+      visualDensity: VisualDensity.compact, // Reduce vertical padding
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 0.0), // Reduce padding
       leading: Checkbox(
         value: country.isSelected,
         onChanged: isDownloading ? null : (_) => _toggleCountry(country),
       ),
-      title: Text(country.info.name),
+      title: Text(
+        country.info.name,
+        style: const TextStyle(fontSize: 14), // Slightly smaller font
+      ),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(_getStatusText(country)),
+          Text(
+            _getStatusText(country),
+            style: const TextStyle(fontSize: 12), // Smaller subtitle font
+          ),
           if (isDownloading && _downloadProgress != null)
             LinearProgressIndicator(
               value: _downloadProgress,
@@ -273,12 +282,18 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
         children: [
           if (country.status == DownloadStatus.updateAvailable)
             IconButton(
+              iconSize: 20, // Smaller icons
+              padding: const EdgeInsets.all(4),
+              constraints: const BoxConstraints(),
               icon: const Icon(Icons.update, color: Colors.orange),
               onPressed: () => _updateCountry(country),
               tooltip: 'Update available',
             ),
           if (country.isDownloaded)
             IconButton(
+              iconSize: 20, // Smaller icons
+              padding: const EdgeInsets.all(4),
+              constraints: const BoxConstraints(),
               icon: const Icon(Icons.delete_outline, color: Colors.red),
               onPressed: () async {
                 final confirm = await showDialog<bool>(
@@ -310,6 +325,9 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
             ),
           if (!country.isDownloaded && country.isSelected && !isDownloading)
             IconButton(
+              iconSize: 20, // Smaller icons
+              padding: const EdgeInsets.all(4),
+              constraints: const BoxConstraints(),
               icon: const Icon(Icons.download, color: Colors.blue),
               onPressed: () => _downloadCountry(country.info.code),
               tooltip: 'Download',

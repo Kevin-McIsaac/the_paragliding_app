@@ -451,20 +451,20 @@ class AirspaceMetadataCache {
     });
 
     try {
-      // Extract airspace IDs and store geometries
+      // Extract airspace IDs
       final airspaceIds = <String>[];
 
       for (final feature in features) {
         try {
           final id = _geometryCache.generateAirspaceId(feature);
           airspaceIds.add(id);
-
-          // Store geometry (will handle deduplication)
-          await _geometryCache.putGeometry(feature);
         } catch (e, stack) {
-          LoggingService.error('Failed to process feature for country $countryCode', e, stack);
+          LoggingService.error('Failed to generate ID for feature in country $countryCode', e, stack);
         }
       }
+
+      // Store all geometries in batch - much faster than individual inserts
+      await _geometryCache.putGeometryBatch(features);
 
       // Store country metadata
       await _diskCache.putCountryMetadata(
@@ -504,14 +504,8 @@ class AirspaceMetadataCache {
     // Get all airspace IDs for the selected countries
     final airspaceIds = await _diskCache.getAirspaceIdsForCountries(countryCodes);
 
-    // Fetch all geometries
-    final geometries = <CachedAirspaceGeometry>[];
-    for (final id in airspaceIds) {
-      final geometry = await _geometryCache.getGeometry(id);
-      if (geometry != null) {
-        geometries.add(geometry);
-      }
-    }
+    // Fetch all geometries using batch operation
+    final geometries = await _geometryCache.getGeometries(airspaceIds.toSet());
 
     stopwatch.stop();
     LoggingService.performance(

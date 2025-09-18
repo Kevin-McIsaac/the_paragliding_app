@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
@@ -361,14 +362,10 @@ class AirspaceGeoJsonService {
     return fm.LatLngBounds(LatLng(south, west), LatLng(north, east));
   }
 
-  /// Enable or disable country mode
+  /// Enable or disable country mode (deprecated - now auto-detected)
+  @Deprecated('Country mode is now automatically detected based on loaded countries')
   Future<void> setCountryMode(bool enabled) async {
-    _useCountryMode = enabled;
-    if (enabled) {
-      LoggingService.info('Switched to country-based airspace caching mode');
-    } else {
-      LoggingService.info('Switched to tile-based airspace caching mode');
-    }
+    // No-op: mode is now automatically determined
   }
 
   /// Check if any countries are loaded
@@ -377,17 +374,78 @@ class AirspaceGeoJsonService {
     return countries.isNotEmpty;
   }
 
-  /// Fetch airspace data - uses country mode if countries are loaded, otherwise tile mode
+  /// Fetch airspace data as GeoJSON string (deprecated - use fetchAirspacePolygonsDirect)
+  @Deprecated('Use fetchAirspacePolygonsDirect for better performance')
   Future<String> fetchAirspaceGeoJson(fm.LatLngBounds bounds) async {
-    // Check if we should use country mode
+    // Only support country mode now - tile mode removed
     final hasCountries = await hasLoadedCountries();
-    if (hasCountries) {
-      _useCountryMode = true;
-      return _fetchAirspaceFromCountries(bounds);
-    } else {
-      _useCountryMode = false;
-      return _fetchAirspaceFromTiles(bounds);
+    if (!hasCountries) {
+      LoggingService.warning('No countries loaded, returning empty GeoJSON');
+      return '{"type":"FeatureCollection","features":[]}';
     }
+    _useCountryMode = true;
+    return _fetchAirspaceFromCountries(bounds);
+  }
+
+  /// Fetch airspace polygons directly without GeoJSON conversion (optimized)
+  Future<List<fm.Polygon>> fetchAirspacePolygonsDirect(
+    fm.LatLngBounds bounds,
+    double opacity,
+    Set<AirspaceType> excludedTypes,
+    Set<String> excludedClasses,
+    double maxAltitudeFt,
+    bool enableClipping,
+  ) async {
+    final overallStopwatch = Stopwatch()..start();
+    final memoryBefore = PerformanceMonitor.getMemoryUsageMB();
+
+    LoggingService.structured('DIRECT_POLYGON_FETCH', {
+      'bounds': '${bounds.west},${bounds.south},${bounds.east},${bounds.north}',
+      'max_altitude_ft': maxAltitudeFt,
+      'clipping_enabled': enableClipping,
+    });
+
+    // Check if we have loaded countries
+    final countries = await AirspaceDiskCache.instance.getCachedCountries();
+    if (countries.isEmpty) {
+      LoggingService.warning('No countries loaded for airspace display');
+      return [];
+    }
+
+    // Get airspaces for viewport from loaded countries
+    final geometries = await _metadataCache.getAirspacesForViewport(
+      countryCodes: countries,
+      west: bounds.west,
+      south: bounds.south,
+      east: bounds.east,
+      north: bounds.north,
+    );
+
+    // Convert directly to Flutter Map polygons
+    final processingStopwatch = Stopwatch()..start();
+    final polygons = await _processGeometriesToPolygons(
+      geometries,
+      opacity,
+      excludedTypes,
+      excludedClasses,
+      bounds,
+      maxAltitudeFt,
+      enableClipping,
+    );
+    processingStopwatch.stop();
+
+    overallStopwatch.stop();
+    final memoryAfter = PerformanceMonitor.getMemoryUsageMB();
+
+    LoggingService.structured('DIRECT_POLYGON_COMPLETE', {
+      'countries': countries.length,
+      'total_ms': overallStopwatch.elapsedMilliseconds,
+      'processing_ms': processingStopwatch.elapsedMilliseconds,
+      'polygon_count': polygons.length,
+      'memory_delta_mb': (memoryAfter - memoryBefore).toStringAsFixed(1),
+    });
+
+    return polygons;
   }
 
   /// Fetch airspace data from loaded countries
@@ -415,9 +473,26 @@ class AirspaceGeoJsonService {
       north: bounds.north,
     );
 
-    // Convert to GeoJSON
+    // Build GeoJSON features from cached geometries
     final conversionStopwatch = Stopwatch()..start();
-    final features = geometries.map((geometry) => _geometryToFeature(geometry)).toList();
+    final features = <Map<String, dynamic>>[];
+
+    for (final geometry in geometries) {
+      // Convert polygons to GeoJSON coordinates format
+      for (final polygon in geometry.polygons) {
+        if (polygon.isNotEmpty) {
+          final coords = polygon.map((point) => [point.longitude, point.latitude]).toList();
+          features.add({
+            'type': 'Feature',
+            'geometry': {
+              'type': 'Polygon',
+              'coordinates': [coords],
+            },
+            'properties': geometry.properties,
+          });
+        }
+      }
+    }
     conversionStopwatch.stop();
 
     final geoJson = {
@@ -448,751 +523,13 @@ class AirspaceGeoJsonService {
   }
 
   /// Fetch airspace data from OpenAIP Core API with hierarchical caching (tile mode)
+  @Deprecated('Tile-based fetching is no longer supported - use country mode')
   Future<String> _fetchAirspaceFromTiles(fm.LatLngBounds bounds) async {
-    final overallStopwatch = Stopwatch()..start();
-    final memoryBefore = PerformanceMonitor.getMemoryUsageMB();
-
-    // Timing breakdowns for viewport processing
-    final tileCalcStopwatch = Stopwatch()..start();
-
-    // Calculate tiles for the viewport
-    final tileKeys = _calculateTileKeys(bounds);
-    tileCalcStopwatch.stop();
-
-    // Check which tiles need fetching
-    final cacheLookupStopwatch = Stopwatch()..start();
-    final tilesToFetch = await _metadataCache.getTilesToFetch(tileKeys);
-    cacheLookupStopwatch.stop();
-
-    var tilesFromCache = tileKeys.length - tilesToFetch.length;
-    var tilesFromApi = 0;
-    var emptyTiles = 0;
-
-    // Fetch missing tiles from API
-    if (tilesToFetch.isNotEmpty) {
-      final apiKey = await _openAipService.getApiKey();
-
-      // EXPERIMENTAL: Batch API call optimization
-      // Make a single API call for the entire area covered by all tiles
-      // Then map features back to their respective tiles
-
-      LoggingService.structured('BATCH_API_EXPERIMENT', {
-        'tiles_to_fetch': tilesToFetch.length,
-        'tile_keys': tilesToFetch,
-      });
-
-      // Calculate the combined bounding box for all tiles
-      final combinedBounds = _calculateCombinedBounds(tilesToFetch);
-
-      LoggingService.structured('BATCH_BOUNDS_CALCULATED', {
-        'individual_tiles': tilesToFetch.length,
-        'combined_bounds': '${combinedBounds.west},${combinedBounds.south},${combinedBounds.east},${combinedBounds.north}',
-      });
-
-      // Make a single API call for the entire combined area
-      final batchStopwatch = Stopwatch()..start();
-
-      try {
-        // Fetch all features for the combined area
-        final allFeatures = await _fetchAllPagesForTile(combinedBounds, apiKey, 'batch_${tilesToFetch.length}');
-        batchStopwatch.stop();
-
-        LoggingService.structured('BATCH_API_COMPLETE', {
-          'duration_ms': batchStopwatch.elapsedMilliseconds,
-          'features_retrieved': allFeatures.length,
-          'tiles_covered': tilesToFetch.length,
-          'ms_per_tile': tilesToFetch.isNotEmpty ? (batchStopwatch.elapsedMilliseconds / tilesToFetch.length).round() : 0,
-        });
-
-        // Map features back to their respective tiles
-        final Map<String, List<Map<String, dynamic>>> tileFeatures = {};
-
-        // Initialize empty lists for each tile
-        for (final tileKey in tilesToFetch) {
-          tileFeatures[tileKey] = [];
-        }
-
-        // Distribute features to their respective tiles based on location
-        for (final feature in allFeatures) {
-          // Determine which tile(s) this feature belongs to
-          final featureTiles = _determineFeatureTiles(feature, tilesToFetch);
-
-          // Add feature to each relevant tile
-          for (final tileKey in featureTiles) {
-            if (tileFeatures.containsKey(tileKey)) {
-              tileFeatures[tileKey]!.add(feature);
-            }
-          }
-        }
-
-        // Count tiles and log distribution
-        for (final entry in tileFeatures.entries) {
-          if (entry.value.isEmpty) {
-            emptyTiles++;
-          } else {
-            tilesFromApi++;
-          }
-        }
-
-        LoggingService.structured('BATCH_DISTRIBUTION_COMPLETE', {
-          'total_features': allFeatures.length,
-          'tiles_with_data': tilesFromApi,
-          'empty_tiles': emptyTiles,
-          'distribution': tileFeatures.map((k, v) => MapEntry(k, v.length)),
-        });
-
-        // Clear pending fetch markers
-        for (final tileKey in tilesToFetch) {
-          _metadataCache.clearPendingFetch(tileKey);
-        }
-
-        // Batch process all tiles together to avoid redundant geometry retrievals
-        if (tileFeatures.isNotEmpty) {
-          await _metadataCache.putMultipleTilesMetadata(tileFeatures);
-        }
-
-        // Log API request performance
-        _performanceLogger.logApiRequest(
-          endpoint: 'airspaces_batch',
-          duration: batchStopwatch.elapsed,
-          resultCount: allFeatures.length,
-          bounds: '${combinedBounds.west},${combinedBounds.south},${combinedBounds.east},${combinedBounds.north}',
-        );
-
-      } catch (error, stackTrace) {
-        LoggingService.error('Failed to fetch batch tiles', error, stackTrace);
-
-        // Clear all pending fetch markers on error
-        for (final tileKey in tilesToFetch) {
-          _metadataCache.clearPendingFetch(tileKey);
-        }
-      }
-    }
-
-    // Get all airspaces for the requested tiles
-    final geometryFetchStopwatch = Stopwatch()..start();
-    final geometries = await _metadataCache.getAirspacesForTiles(tileKeys);
-    geometryFetchStopwatch.stop();
-
-    // Summary logged in VIEWPORT_PROCESSING instead
-
-    // Convert to GeoJSON
-    final conversionStopwatch = Stopwatch()..start();
-    final features = geometries.map((geometry) => _geometryToFeature(geometry)).toList();
-    conversionStopwatch.stop();
-
-    final geoJson = {
-      'type': 'FeatureCollection',
-      'features': features,
-    };
-
-    final mergedGeoJson = json.encode(geoJson);
-
-    overallStopwatch.stop();
-    final memoryAfter = PerformanceMonitor.getMemoryUsageMB();
-
-    // Log detailed viewport processing breakdown
-    LoggingService.structured('VIEWPORT_BREAKDOWN', {
-      'tile_calc_ms': tileCalcStopwatch.elapsedMilliseconds,
-      'cache_lookup_ms': cacheLookupStopwatch.elapsedMilliseconds,
-      'geometry_fetch_ms': geometryFetchStopwatch.elapsedMilliseconds,
-      'conversion_ms': conversionStopwatch.elapsedMilliseconds,
-      'api_fetch_ms': tilesToFetch.isEmpty ? 0 : (overallStopwatch.elapsedMilliseconds -
-          tileCalcStopwatch.elapsedMilliseconds -
-          cacheLookupStopwatch.elapsedMilliseconds -
-          geometryFetchStopwatch.elapsedMilliseconds -
-          conversionStopwatch.elapsedMilliseconds),
-      'total_ms': overallStopwatch.elapsedMilliseconds,
-      'tiles_requested': tileKeys.length,
-      'tiles_fetched': tilesToFetch.length,
-      'unique_airspaces': features.length,
-    });
-
-    // Log memory usage
-    LoggingService.structured('MEMORY_USAGE', {
-      'operation': 'airspace_viewport_load',
-      'before_mb': memoryBefore.toStringAsFixed(1),
-      'after_mb': memoryAfter.toStringAsFixed(1),
-      'delta_mb': (memoryAfter - memoryBefore).toStringAsFixed(1),
-      'airspaces_loaded': features.length,
-    });
-
-    // Log viewport processing metrics
-    _performanceLogger.logViewportProcessing(
-      tilesRequested: tileKeys.length,
-      tilesCached: tilesFromCache,
-      tilesEmpty: emptyTiles,
-      uniqueAirspaces: features.length,
-      totalDuration: overallStopwatch.elapsed,
-    );
-
-    // Log overall performance
-    LoggingService.performance(
-      'Airspace Fetch (Hierarchical)',
-      overallStopwatch.elapsed,
-      'tiles=${tileKeys.length}, cached=$tilesFromCache, fetched=$tilesFromApi, airspaces=${features.length}',
-    );
-
-    return mergedGeoJson;
+    // Tile-based fetching has been removed - only country mode is supported
+    throw UnsupportedError('Tile-based fetching is no longer supported. Please download country data.');
   }
 
-  /// Calculate tile keys for the viewport
-  List<String> _calculateTileKeys(fm.LatLngBounds bounds) {
-    final zoom = 8; // Fixed zoom level for now, could be dynamic
-    final tiles = <String>[];
-
-    // Calculate tile bounds
-    final minX = _lonToTileX(bounds.west, zoom);
-    final maxX = _lonToTileX(bounds.east, zoom);
-    final minY = _latToTileY(bounds.north, zoom);
-    final maxY = _latToTileY(bounds.south, zoom);
-
-    for (var x = minX; x <= maxX; x++) {
-      for (var y = minY; y <= maxY; y++) {
-        tiles.add(_metadataCache.generateTileKey(zoom, x, y));
-      }
-    }
-
-    return tiles;
-  }
-
-  /// Convert longitude to tile X coordinate
-  int _lonToTileX(double lon, int zoom) {
-    return ((lon + 180.0) / 360.0 * math.pow(2, zoom)).floor();
-  }
-
-  /// Convert latitude to tile Y coordinate
-  int _latToTileY(double lat, int zoom) {
-    final latRad = lat * (math.pi / 180.0);
-    return ((1.0 - math.log(math.tan(latRad) + 1.0 / math.cos(latRad)) / math.pi) / 2.0 * math.pow(2, zoom)).floor();
-  }
-
-  /// Helper function for hyperbolic sine (not available in dart:math)
-  double _sinh(double x) {
-    return (math.exp(x) - math.exp(-x)) / 2;
-  }
-
-  /// Get tile bounds from tile key
-  fm.LatLngBounds _getTileBounds(String tileKey) {
-    final components = _metadataCache.parseTileKey(tileKey);
-    if (components == null) {
-      return fm.LatLngBounds(LatLng(-90, -180), LatLng(90, 180));
-    }
-
-    final zoom = components['zoom']!;
-    final x = components['x']!;
-    final y = components['y']!;
-
-    final n = math.pow(2, zoom);
-    final west = x / n * 360.0 - 180.0;
-    final east = (x + 1) / n * 360.0 - 180.0;
-    final north = math.atan(_sinh(math.pi * (1 - 2 * y / n))) * 180.0 / math.pi;
-    final south = math.atan(_sinh(math.pi * (1 - 2 * (y + 1) / n))) * 180.0 / math.pi;
-
-    return fm.LatLngBounds(LatLng(south, west), LatLng(north, east));
-  }
-
-  /// Calculate combined bounding box for multiple tiles
-  fm.LatLngBounds _calculateCombinedBounds(List<String> tileKeys) {
-    if (tileKeys.isEmpty) {
-      return fm.LatLngBounds(LatLng(-90, -180), LatLng(90, 180));
-    }
-
-    double minLat = 90.0;
-    double maxLat = -90.0;
-    double minLng = 180.0;
-    double maxLng = -180.0;
-
-    for (final tileKey in tileKeys) {
-      final tileBounds = _getTileBounds(tileKey);
-      minLat = math.min(minLat, tileBounds.south);
-      maxLat = math.max(maxLat, tileBounds.north);
-      minLng = math.min(minLng, tileBounds.west);
-      maxLng = math.max(maxLng, tileBounds.east);
-    }
-
-    return fm.LatLngBounds(LatLng(minLat, minLng), LatLng(maxLat, maxLng));
-  }
-
-  /// Determine which tiles a feature belongs to based on its geometry
-  List<String> _determineFeatureTiles(Map<String, dynamic> feature, List<String> tileKeys) {
-    final geometry = feature['geometry'];
-    if (geometry == null || geometry is! Map) {
-      return [];
-    }
-
-    final type = geometry['type'] as String?;
-    final coordinates = geometry['coordinates'];
-    if (type == null || coordinates == null) {
-      return [];
-    }
-
-    // Extract bounds of the feature
-    double minLat = 90.0, maxLat = -90.0, minLng = 180.0, maxLng = -180.0;
-
-    if (type == 'Polygon' && coordinates is List) {
-      // Process single polygon
-      for (final ring in coordinates) {
-        if (ring is List) {
-          for (final point in ring) {
-            if (point is List && point.length >= 2) {
-              final lng = point[0] as num;
-              final lat = point[1] as num;
-              minLat = math.min(minLat, lat.toDouble());
-              maxLat = math.max(maxLat, lat.toDouble());
-              minLng = math.min(minLng, lng.toDouble());
-              maxLng = math.max(maxLng, lng.toDouble());
-            }
-          }
-        }
-      }
-    } else if (type == 'MultiPolygon' && coordinates is List) {
-      // Process multiple polygons
-      for (final polygon in coordinates) {
-        if (polygon is List) {
-          for (final ring in polygon) {
-            if (ring is List) {
-              for (final point in ring) {
-                if (point is List && point.length >= 2) {
-                  final lng = point[0] as num;
-                  final lat = point[1] as num;
-                  minLat = math.min(minLat, lat.toDouble());
-                  maxLat = math.max(maxLat, lat.toDouble());
-                  minLng = math.min(minLng, lng.toDouble());
-                  maxLng = math.max(maxLng, lng.toDouble());
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // Check which tiles this feature overlaps with
-    final overlappingTiles = <String>[];
-    final featureBounds = fm.LatLngBounds(LatLng(minLat, minLng), LatLng(maxLat, maxLng));
-
-    for (final tileKey in tileKeys) {
-      final tileBounds = _getTileBounds(tileKey);
-
-      // Check if feature bounds overlaps with tile bounds
-      if (!(featureBounds.south > tileBounds.north ||
-            featureBounds.north < tileBounds.south ||
-            featureBounds.west > tileBounds.east ||
-            featureBounds.east < tileBounds.west)) {
-        overlappingTiles.add(tileKey);
-      }
-    }
-
-    return overlappingTiles;
-  }
-
-  /// Extract features from API response
-  List<Map<String, dynamic>> _extractFeatures(dynamic data) {
-    List<dynamic> items;
-    if (data is Map) {
-      // OpenAIP returns GeoJSON FeatureCollection with 'features' array
-      items = data['features'] ?? data['items'] ?? [];
-    } else if (data is List) {
-      items = data;
-    } else {
-      LoggingService.warning('Unexpected API response type: ${data.runtimeType}');
-      return [];
-    }
-
-    // Properly cast each feature to Map<String, dynamic>
-    final features = <Map<String, dynamic>>[];
-    for (final item in items) {
-      if (item is Map) {
-        // Deep cast the map to ensure all nested maps are properly typed
-        final feature = _deepCastMap(item);
-        features.add(feature);
-      }
-    }
-
-    return features;
-  }
-
-  /// Deep cast a dynamic map to Map<String, dynamic>
-  Map<String, dynamic> _deepCastMap(Map map) {
-    final result = <String, dynamic>{};
-    for (final entry in map.entries) {
-      final key = entry.key.toString();
-      final value = entry.value;
-
-      if (value is Map) {
-        result[key] = _deepCastMap(value);
-      } else if (value is List) {
-        result[key] = value.map((item) {
-          if (item is Map) {
-            return _deepCastMap(item);
-          }
-          return item;
-        }).toList();
-      } else {
-        result[key] = value;
-      }
-    }
-    return result;
-  }
-
-  /// Convert cached geometry to GeoJSON feature
-  Map<String, dynamic> _geometryToFeature(CachedAirspaceGeometry geometry) {
-    // Convert polygons to GeoJSON coordinates
-    final coordinates = geometry.polygons.map((polygon) {
-      return polygon.map((point) => [point.longitude, point.latitude]).toList();
-    }).toList();
-
-    // Ensure the type field contains the numeric type code
-    final properties = Map<String, dynamic>.from(geometry.properties);
-    properties['type'] = geometry.typeCode; // Use the stored numeric type code
-
-    // Ensure ICAO class is available for AirspaceData creation
-    // The 'class' field should already be in properties from when we stored it,
-    // but ensure it's present for compatibility
-    if (!properties.containsKey('class') && properties.containsKey('icaoClass')) {
-      properties['class'] = properties['icaoClass'];
-    }
-
-    return {
-      'type': 'Feature',
-      'geometry': {
-        'type': geometry.polygons.length == 1 ? 'Polygon' : 'MultiPolygon',
-        'coordinates': geometry.polygons.length == 1 ? coordinates : [coordinates],
-      },
-      'properties': properties,
-    };
-  }
-
-  /// Fetch all pages for a single tile using pagination
-  Future<List<Map<String, dynamic>>> _fetchAllPagesForTile(
-    fm.LatLngBounds tileBounds,
-    String? apiKey,
-    String tileKey,
-  ) async {
-    final allFeatures = <Map<String, dynamic>>[];
-    int page = 1;
-    int totalPages = 0;
-    int totalApiCalls = 0;
-    final paginationStopwatch = Stopwatch()..start();
-
-    // Pagination tracking without verbose logging
-
-    do {
-      // Build API URL with pagination
-      var url = '$_coreApiBase/airspaces'
-          '?bbox=${tileBounds.west},${tileBounds.south},${tileBounds.east},${tileBounds.north}'
-          '&limit=$_defaultLimit&page=$page';
-
-      if (apiKey != null && apiKey.isNotEmpty) {
-        url += '&apiKey=$apiKey';
-      }
-
-      final headers = <String, String>{
-        'Accept': 'application/json',
-        'User-Agent': 'FreeFlightLog/1.0',
-      };
-
-      // API request logging reduced to errors only
-
-      final pageStopwatch = Stopwatch()..start();
-      final response = await _makeRequestWithRetry(url, headers, page, tileKey);
-      pageStopwatch.stop();
-      totalApiCalls++;
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final features = _extractFeatures(data);
-
-        // Log page details
-        // Success tracked silently unless there's an issue
-
-        allFeatures.addAll(features);
-
-        // If we got fewer features than the limit, we've reached the last page
-        if (features.length < _defaultLimit) {
-          totalPages = page;
-          break;
-        }
-
-        page++;
-      } else {
-        LoggingService.error('API request failed',
-          'HTTP ${response.statusCode}: ${response.reasonPhrase}',
-          StackTrace.current);
-        break;
-      }
-
-      // Safety check: prevent infinite loops in case of API issues
-      if (page > 10) { // Reasonable limit: 10 pages × 1000 = 10,000 airspaces per tile
-        LoggingService.warning('Pagination safety limit reached for tile $tileKey (10 pages)');
-        totalPages = page - 1;
-        break;
-      }
-    } while (true);
-
-    paginationStopwatch.stop();
-
-    // Log only if pagination took multiple pages or was slow
-    if (totalPages > 1 || paginationStopwatch.elapsedMilliseconds > 1000) {
-      LoggingService.debug('Pagination complete: $totalPages pages, ${allFeatures.length} features in ${paginationStopwatch.elapsedMilliseconds}ms');
-    }
-
-    // Log a warning if we found a lot of airspaces (indicates high density area)
-    if (allFeatures.length > 2000) {
-      LoggingService.warning('High airspace density detected in tile $tileKey: ${allFeatures.length} airspaces');
-    }
-
-    return allFeatures;
-  }
-
-  /// Make HTTP request with retry logic and exponential backoff
-  Future<http.Response> _makeRequestWithRetry(
-    String url,
-    Map<String, String> headers,
-    int page,
-    String tileKey,
-  ) async {
-    const maxRetries = 3;
-    const baseDelayMs = 1000; // Start with 1 second
-
-    for (int attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        // Only log on first attempt or final retry
-        if (attempt == 1 || attempt == maxRetries) {
-          LoggingService.debug('API request attempt $attempt/$maxRetries for tile $tileKey');
-        }
-
-        final response = await http.get(
-          Uri.parse(url),
-          headers: headers,
-        ).timeout(_requestTimeout);
-
-        // Success case
-        if (response.statusCode == 200) {
-          if (attempt > 1) {
-            LoggingService.debug('API request succeeded after $attempt attempts for tile $tileKey');
-          }
-          return response;
-        }
-
-        // Handle rate limiting (429)
-        if (response.statusCode == 429) {
-          final retryAfter = response.headers['retry-after'];
-          final waitTime = retryAfter != null ? int.tryParse(retryAfter) ?? 5 : 5;
-
-          LoggingService.structured('API_RATE_LIMITED', {
-            'status_code': response.statusCode,
-            'retry_after_seconds': waitTime,
-            'attempt': attempt,
-            'page': page,
-            'tile_key': tileKey,
-          });
-
-          if (attempt < maxRetries) {
-            await Future.delayed(Duration(seconds: waitTime));
-            continue;
-          }
-        }
-
-        // Other HTTP errors
-        if (attempt < maxRetries) {
-          final delayMs = baseDelayMs * (1 << (attempt - 1)); // Exponential backoff: 1s, 2s, 4s
-
-          // Only log if this is becoming a pattern
-          if (attempt == 2) {
-            LoggingService.debug('API request failed with ${response.statusCode}, retrying...');
-          }
-
-          await Future.delayed(Duration(milliseconds: delayMs));
-          continue;
-        }
-
-        // Final attempt failed
-        LoggingService.warning('API request failed after $attempt attempts: ${response.statusCode} for tile $tileKey');
-
-        return response;
-
-      } on TimeoutException catch (e) {
-        if (attempt < maxRetries) {
-          final delayMs = baseDelayMs * (1 << (attempt - 1)); // Exponential backoff
-
-          if (attempt == 2) {
-            LoggingService.debug('API request timeout, retrying...');
-          }
-
-          await Future.delayed(Duration(milliseconds: delayMs));
-          continue;
-        }
-
-        // Final timeout
-        LoggingService.error('API request timeout after $maxRetries attempts', e, StackTrace.current);
-        rethrow;
-
-      } catch (e) {
-        if (attempt < maxRetries) {
-          final delayMs = baseDelayMs * (1 << (attempt - 1)); // Exponential backoff
-
-          if (attempt == 2) {
-            LoggingService.debug('API request error: ${e.toString().split('\n').first}, retrying...');
-          }
-
-          await Future.delayed(Duration(milliseconds: delayMs));
-          continue;
-        }
-
-        // Final error
-        LoggingService.error('API request failed after $maxRetries attempts', e, StackTrace.current);
-        rethrow;
-      }
-    }
-
-    // This shouldn't be reached, but just in case
-    throw Exception('Request failed after $maxRetries attempts');
-  }
-
-  /// Legacy method for direct API fetch without caching (kept for fallback)
-  Future<String> _fetchDirectFromApi(fm.LatLngBounds bounds) async {
-    final stopwatch = Stopwatch()..start();
-    final apiKey = await _openAipService.getApiKey();
-
-    var url = '$_coreApiBase/airspaces'
-        '?bbox=${bounds.west},${bounds.south},${bounds.east},${bounds.north}'
-        '&limit=$_defaultLimit';
-
-    if (apiKey != null && apiKey.isNotEmpty) {
-      url += '&apiKey=$apiKey';
-    }
-
-    try {
-      final headers = <String, String>{
-        'Accept': 'application/json',
-        'User-Agent': 'FreeFlightLog/1.0',
-      };
-
-      final response = await http.get(
-        Uri.parse(url),
-        headers: headers,
-      ).timeout(_requestTimeout);
-
-      stopwatch.stop();
-
-      if (response.statusCode == 200) {
-        LoggingService.performance(
-          'Direct API Fetch',
-          Duration(milliseconds: stopwatch.elapsedMilliseconds),
-          'status=200'
-        );
-        return _convertToGeoJson(response.body);
-      } else {
-        LoggingService.info('API failed with status ${response.statusCode}, using sample airspace data');
-        return _getSampleGeoJson(bounds);
-      }
-    } catch (error, stackTrace) {
-      LoggingService.error('Failed to fetch airspace data', error, stackTrace);
-      return _getSampleGeoJson(bounds);
-    }
-  }
-
-  /// Get sample GeoJSON data for demonstration purposes
-  String _getSampleGeoJson(fm.LatLngBounds bounds) {
-    // Create sample airspaces around the Alps region (typical bounds: 45-47N, 5-9E)
-    // This will show different airspace types for demo purposes
-    final sampleGeoJson = {
-      'type': 'FeatureCollection',
-      'features': [
-        {
-          'type': 'Feature',
-          'geometry': {
-            'type': 'Polygon',
-            'coordinates': [[
-              [6.1, 45.85], // SW
-              [6.4, 45.85], // SE
-              [6.4, 46.05], // NE
-              [6.1, 46.05], // NW
-              [6.1, 45.85], // Close polygon
-            ]],
-          },
-          'properties': {
-            'name': 'Chamonix CTR (Demo)',
-            'type': 'CTR',
-            'class': 'D',
-            'upperLimit': {'value': 9500, 'unit': 'ft', 'reference': 'AMSL'},
-            'lowerLimit': {'value': 0, 'unit': 'ft', 'reference': 'GND'},
-            'country': 'FR',
-          },
-        },
-        {
-          'type': 'Feature',
-          'geometry': {
-            'type': 'Polygon',
-            'coordinates': [[
-              [6.0, 45.7], // SW
-              [6.6, 45.7], // SE
-              [6.6, 46.2], // NE
-              [6.0, 46.2], // NW
-              [6.0, 45.7], // Close polygon
-            ]],
-          },
-          'properties': {
-            'name': 'Geneva TMA (Demo)',
-            'type': 'TMA',
-            'class': 'C',
-            'upperLimit': {'value': 19500, 'unit': 'ft', 'reference': 'AMSL'},
-            'lowerLimit': {'value': 9500, 'unit': 'ft', 'reference': 'AMSL'},
-            'country': 'CH',
-          },
-        },
-        {
-          'type': 'Feature',
-          'geometry': {
-            'type': 'Polygon',
-            'coordinates': [[
-              [6.5, 45.9], // SW
-              [6.8, 45.9], // SE
-              [6.8, 46.1], // NE
-              [6.5, 46.1], // NW
-              [6.5, 45.9], // Close polygon
-            ]],
-          },
-          'properties': {
-            'name': 'Restricted Area R-42 (Demo)',
-            'type': 'R',
-            'class': null,
-            'upperLimit': {'value': 12000, 'unit': 'ft', 'reference': 'AMSL'},
-            'lowerLimit': {'value': 0, 'unit': 'ft', 'reference': 'GND'},
-            'country': 'FR',
-          },
-        },
-        {
-          'type': 'Feature',
-          'geometry': {
-            'type': 'Polygon',
-            'coordinates': [[
-              [5.8, 45.6], // SW
-              [6.2, 45.6], // SE
-              [6.2, 45.9], // NE
-              [5.8, 45.9], // NW
-              [5.8, 45.6], // Close polygon
-            ]],
-          },
-          'properties': {
-            'name': 'Annecy CTA (Demo)',
-            'type': 'CTA',
-            'class': 'E',
-            'upperLimit': {'value': 9500, 'unit': 'ft', 'reference': 'AMSL'},
-            'lowerLimit': {'value': 4500, 'unit': 'ft', 'reference': 'AMSL'},
-            'country': 'FR',
-          },
-        },
-      ],
-    };
-
-    // Simple notification for demo mode
-    LoggingService.info('[AIRSPACE] Using demo data with ${(sampleGeoJson['features'] as List).length} features');
-
-    return json.encode(sampleGeoJson);
-  }
+  // [REMOVED: All tile-based helper methods below - they are no longer used]
 
   /// Convert OpenAIP response format to standard GeoJSON
   String _convertToGeoJson(String responseBody) {
@@ -1766,7 +1103,7 @@ class AirspaceGeoJsonService {
 
       final polygon = fm.Polygon(
         points: points,
-        color: style.fillColor.withValues(alpha: opacity),
+        color: style.fillColor,  // Use color directly from style (already has correct opacity)
         borderColor: style.borderColor,
         borderStrokeWidth: style.borderWidth,
       );
@@ -2027,9 +1364,9 @@ class AirspaceGeoJsonService {
 
       stopwatch.stop();
 
-      // Only log slow clipping operations
-      if (stopwatch.elapsedMilliseconds > 10) {
-        LoggingService.structured('POLYGON_CLIPPING_OPERATION', {
+      // Only log very slow clipping operations (>50ms) to reduce noise
+      if (stopwatch.elapsedMilliseconds > 50) {
+        LoggingService.structured('POLYGON_CLIPPING_SLOW', {
           'subject_points': subjectPoints.length,
           'clipping_polygons': clippingPolygons.length,
           'clipping_total_points': clippingPolygons.fold<int>(0, (sum, p) => sum + p.length),
@@ -2209,7 +1546,7 @@ class AirspaceGeoJsonService {
         final polygon = fm.Polygon(
           points: clippedData.outerPoints,
           holePointsList: clippedData.holes.isNotEmpty ? clippedData.holes : null,
-          color: clippedData.style.fillColor.withValues(alpha: opacity),
+          color: clippedData.style.fillColor,  // Use color directly from style (already has correct opacity)
           borderColor: clippedData.style.borderColor,
           borderStrokeWidth: clippedData.style.borderWidth,
           // Disable hole borders for cleaner appearance
@@ -2298,6 +1635,208 @@ class AirspaceGeoJsonService {
   /// Log cache efficiency report
   Future<void> logCacheEfficiency() async {
     await _performanceLogger.logCacheEfficiency();
+  }
+
+  /// Process cached geometries directly to Flutter Map polygons without GeoJSON conversion
+  Future<List<fm.Polygon>> _processGeometriesToPolygons(
+    List<CachedAirspaceGeometry> geometries,
+    double opacity,
+    Set<AirspaceType> excludedTypes,
+    Set<String> excludedClasses,
+    fm.LatLngBounds viewport,
+    double maxAltitudeFt,
+    bool enableClipping,
+  ) async {
+    final polygons = <fm.Polygon>[];
+    final identificationPolygons = <AirspacePolygonData>[];
+    final allIdentificationPolygons = <AirspacePolygonData>[];
+    final visibleIncludedTypes = <AirspaceType>{};
+
+    // For clipping support - collect polygons with their data
+    final polygonsWithData = <({fm.Polygon polygon, AirspacePolygonData data})>[];
+
+    // Filtering counters
+    int filteredByType = 0;
+    int filteredByClass = 0;
+    int filteredByElevation = 0;
+    int filteredByViewport = 0;
+
+    for (final geometry in geometries) {
+      // Extract properties
+      final properties = geometry.properties;
+
+      // Debug log properties for first geometry
+      if (geometries.indexOf(geometry) == 0) {
+        LoggingService.structured('GEOMETRY_PROPERTIES_DEBUG', {
+          'name': geometry.name,
+          'type_code': geometry.typeCode,
+          'properties_keys': properties.keys.toList(),
+          'properties': properties,
+        });
+      }
+
+      // Try both 'class' and 'icaoClass' field names for compatibility
+      final icaoClass = (properties['class'] ?? properties['icaoClass']) as int?;
+      final upperLimit = properties['upperLimit'] as Map<String, dynamic>?;
+      final lowerLimit = properties['lowerLimit'] as Map<String, dynamic>?;
+      final country = properties['country'] as String?;
+
+      // Create airspace data from geometry metadata
+      final airspaceData = AirspaceData(
+        name: geometry.name,
+        type: AirspaceType.fromCode(geometry.typeCode),
+        icaoClass: icaoClass != null ? IcaoClass.fromCode(icaoClass) : null,
+        upperLimit: upperLimit,
+        lowerLimit: lowerLimit,
+        country: country,
+      );
+
+      // Process all polygon parts
+      final allPoints = <LatLng>[];
+      for (final polygon in geometry.polygons) {
+        if (polygon.isNotEmpty) {
+          allPoints.addAll(polygon);
+          // Just use first polygon for now (TODO: handle multi-polygon properly)
+          break;
+        }
+      }
+
+      // Add to all identification polygons (for tooltip)
+      allIdentificationPolygons.add(AirspacePolygonData(
+        points: allPoints,
+        airspaceData: airspaceData,
+      ));
+
+      // Apply filters
+      final airspaceType = AirspaceType.fromCode(geometry.typeCode);
+      if (excludedTypes.contains(airspaceType)) {
+        filteredByType++;
+        continue;
+      }
+
+      // Filter by ICAO class
+      final icaoClassEnum = icaoClass != null ? IcaoClass.fromCode(icaoClass) : IcaoClass.none;
+      final icaoClassStr = icaoClassEnum.toString().split('.').last;
+      if (excludedClasses.contains(icaoClassStr)) {
+        filteredByClass++;
+        continue;
+      }
+
+      // Filter by elevation
+      if (airspaceData.getLowerAltitudeInFeet() > maxAltitudeFt) {
+        filteredByElevation++;
+        continue;
+      }
+
+      // Check if polygon is within viewport (basic bounds check)
+      if (allPoints.isNotEmpty) {
+        bool inViewport = false;
+        for (final point in allPoints) {
+          if (point.latitude >= viewport.south &&
+              point.latitude <= viewport.north &&
+              point.longitude >= viewport.west &&
+              point.longitude <= viewport.east) {
+            inViewport = true;
+            break;
+          }
+        }
+        if (!inViewport) {
+          filteredByViewport++;
+          continue;
+        }
+      }
+
+      // Add to visible types
+      visibleIncludedTypes.add(airspaceType);
+
+      // Add to identification polygons (for airspace detection)
+      identificationPolygons.add(AirspacePolygonData(
+        points: allPoints,
+        airspaceData: airspaceData,
+      ));
+
+      // Create Flutter Map polygon with styling
+      // Use ICAO class-based styling first, then fall back to type-based styling
+      final style = getStyleForAirspace(airspaceData);
+
+      // Debug logging for first polygon only
+      if (polygonsWithData.isEmpty) {
+        LoggingService.structured('POLYGON_OPACITY_DEBUG', {
+          'style_fill_color': style.fillColor.toString(),
+          'style_border_color': style.borderColor.toString(),
+          'airspace_type': airspaceType.toString(),
+          'icao_class': airspaceData.icaoClass?.toString() ?? 'none',
+          'using_icao_style': airspaceData.icaoClass != null,
+        });
+      }
+
+      final polygon = fm.Polygon(
+        points: allPoints,
+        borderStrokeWidth: style.borderWidth,
+        borderColor: style.borderColor,
+        color: style.fillColor,  // Use color directly from style (already has correct opacity)
+        // Labels removed for cleaner visualization
+      );
+
+      // Store polygon with its data for clipping
+      polygonsWithData.add((
+        polygon: polygon,
+        data: AirspacePolygonData(
+          points: allPoints,
+          airspaceData: airspaceData,
+        ),
+      ));
+    }
+
+    // Sort and clip polygons if enabled
+    if (polygonsWithData.isNotEmpty) {
+      // Sort by lower altitude: lowest first (ascending order) for rendering and clipping
+      polygonsWithData.sort((a, b) {
+        return a.data.airspaceData.getLowerAltitudeInFeet()
+            .compareTo(b.data.airspaceData.getLowerAltitudeInFeet());
+      });
+
+      if (enableClipping) {
+        // Apply polygon clipping to remove overlapping areas
+        final clippingStopwatch = Stopwatch()..start();
+        final clippedPolygons = _applyPolygonClipping(polygonsWithData, viewport);
+        clippingStopwatch.stop();
+
+        // Convert clipped polygons back to flutter_map format
+        polygons.addAll(_convertClippedPolygonsToFlutterMap(clippedPolygons, opacity));
+
+        LoggingService.structured('DIRECT_CLIPPING_PERFORMANCE', {
+          'polygons_input': polygonsWithData.length,
+          'polygons_output': polygons.length,
+          'clipping_time_ms': clippingStopwatch.elapsedMilliseconds,
+        });
+      } else {
+        // No clipping - just extract polygons in sorted order
+        for (final item in polygonsWithData) {
+          polygons.add(item.polygon);
+        }
+      }
+
+      LoggingService.info('[AIRSPACE] Processed ${polygons.length} polygons${enableClipping ? " with clipping" : ""}');
+    }
+
+    // Update identification service with all polygons (including filtered)
+    final boundsKey = '${viewport.west},${viewport.south},${viewport.east},${viewport.north}';
+    AirspaceIdentificationService.instance.updateAirspacePolygons(allIdentificationPolygons, boundsKey);
+
+    // Update visible types
+    _currentVisibleTypes = visibleIncludedTypes;
+
+    LoggingService.structured('DIRECT_POLYGON_FILTERING', {
+      'total_geometries': geometries.length,
+      'filtered_by_type': filteredByType,
+      'filtered_by_class': filteredByClass,
+      'filtered_by_elevation': filteredByElevation,
+      'filtered_by_viewport': filteredByViewport,
+      'polygons_rendered': polygons.length,
+    });
+
+    return polygons;
   }
 
   /// Dispose resources

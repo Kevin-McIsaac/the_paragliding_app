@@ -213,12 +213,20 @@ class AirspaceOverlayManager {
         'bounds': '${bounds.west},${bounds.south},${bounds.east},${bounds.north}',
       });
 
-      // Fetch GeoJSON data from OpenAIP
-      final geoJsonString = await _geoJsonService.fetchAirspaceGeoJson(bounds);
-
       // Get excluded airspace types and ICAO classes for filtering (now enum-based)
-      final excludedTypes = await _openAipService.getExcludedAirspaceTypes();
-      final excludedClasses = await _openAipService.getExcludedIcaoClasses();
+      final excludedTypesMap = await _openAipService.getExcludedAirspaceTypes();
+      final excludedClassesMap = await _openAipService.getExcludedIcaoClasses();
+
+      // Convert Maps to Sets of excluded items
+      final excludedTypes = excludedTypesMap.entries
+          .where((entry) => entry.value)
+          .map((entry) => entry.key)
+          .toSet();
+
+      final excludedClasses = excludedClassesMap.entries
+          .where((entry) => entry.value)
+          .map((entry) => entry.key.abbreviation)  // Convert IcaoClass enum to string abbreviation (A, B, C, etc.)
+          .toSet();
 
       // Get clipping preference
       final clippingEnabled = await _openAipService.isClippingEnabled();
@@ -226,8 +234,15 @@ class AirspaceOverlayManager {
       // Time the airspace processing/clipping step
       final processingStopwatch = Stopwatch()..start();
 
-      // Parse GeoJSON and convert to styled polygons (filtered by excluded types and classes)
-      final polygons = await _geoJsonService.parseAirspaceGeoJson(geoJsonString, opacity, excludedTypes, excludedClasses, bounds, maxAltitudeFt, clippingEnabled);
+      // Fetch and process airspace polygons directly (optimized path - no GeoJSON conversion)
+      final polygons = await _geoJsonService.fetchAirspacePolygonsDirect(
+        bounds,
+        opacity,
+        excludedTypes,
+        excludedClasses,
+        maxAltitudeFt,
+        clippingEnabled,
+      );
 
       processingStopwatch.stop();
       stopwatch.stop();
