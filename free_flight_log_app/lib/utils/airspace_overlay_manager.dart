@@ -225,7 +225,7 @@ class AirspaceOverlayManager {
 
       final excludedClasses = excludedClassesMap.entries
           .where((entry) => entry.value)
-          .map((entry) => entry.key.abbreviation)  // Convert IcaoClass enum to string abbreviation (A, B, C, etc.)
+          .map((entry) => entry.key)  // Keep as IcaoClass enum for proper type matching
           .toSet();
 
       // Get clipping preference

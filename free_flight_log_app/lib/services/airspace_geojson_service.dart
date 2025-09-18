@@ -413,7 +413,7 @@ class AirspaceGeoJsonService {
     fm.LatLngBounds bounds,
     double opacity,
     Set<AirspaceType> excludedTypes,
-    Set<String> excludedClasses,
+    Set<IcaoClass> excludedClasses,
     double maxAltitudeFt,
     bool enableClipping,
   ) async {
@@ -1663,7 +1663,7 @@ class AirspaceGeoJsonService {
     List<CachedAirspaceGeometry> geometries,
     double opacity,
     Set<AirspaceType> excludedTypes,
-    Set<String> excludedClasses,
+    Set<IcaoClass> excludedClasses,
     fm.LatLngBounds viewport,
     double maxAltitudeFt,
     bool enableClipping,
@@ -1737,8 +1737,7 @@ class AirspaceGeoJsonService {
 
       // Filter by ICAO class
       final icaoClassEnum = icaoClass != null ? IcaoClass.fromCode(icaoClass) : IcaoClass.none;
-      final icaoClassStr = icaoClassEnum.toString().split('.').last;
-      if (excludedClasses.contains(icaoClassStr)) {
+      if (excludedClasses.contains(icaoClassEnum)) {
         filteredByClass++;
         continue;
       }

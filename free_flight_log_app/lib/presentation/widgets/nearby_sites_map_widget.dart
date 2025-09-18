@@ -97,7 +97,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
   // Selected airspace state
   AirspaceData? _selectedAirspace;
-  fm.Polygon? _highlightedPolygon;
+  List<fm.Polygon> _highlightedPolygons = [];
 
   // Debouncing for render logs
   DateTime? _lastRenderLog;
@@ -440,27 +440,50 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
       return a.getUpperAltitudeInFeet().compareTo(b.getUpperAltitudeInFeet());
     });
 
-    if (visibleAirspaces.isNotEmpty) {
-      // Get the lowest altitude visible airspace for highlighting
-      final lowestAirspace = visibleAirspaces.first;
-
+    if (allAirspaces.isNotEmpty) {
       // Check if clicking near the same position (toggle behavior)
       if (_showTooltip && _tooltipPosition != null && _isSimilarPosition(screenPosition, _tooltipPosition!)) {
         // Toggle: hide tooltip if clicking the same area
         _hideTooltip();
-      } else {
-        // Show tooltip for all airspaces (filtered and unfiltered)
-        // Store selected airspace for highlighting
+      } else if (visibleAirspaces.isNotEmpty) {
+        // Get the lowest altitude visible airspace for highlighting
+        final lowestAirspace = visibleAirspaces.first;
+        final lowestAltitude = lowestAirspace.getLowerAltitudeInFeet();
+
+        // Find all visible airspaces with the same lowest altitude
+        final airspacesToHighlight = visibleAirspaces.where((airspace) =>
+          airspace.getLowerAltitudeInFeet() == lowestAltitude).toList();
+
+        // Store selected airspace for reference
         _selectedAirspace = lowestAirspace;
 
-        // Find the actual clipped polygon that was clicked
-        final clickedPolygonPoints = _findClickedPolygonPoints(mapPoint);
-        _createHighlightedPolygon(lowestAirspace, clickedPolygonPoints);
+        // Clear existing highlights before adding new ones
+        _highlightedPolygons.clear();
+
+        // Find all clipped polygons at the click point
+        final allClickedPolygons = _findAllClickedPolygonPoints(mapPoint);
+
+        // Highlight all airspaces with the same lowest altitude
+        for (int i = 0; i < airspacesToHighlight.length; i++) {
+          final airspace = airspacesToHighlight[i];
+          // Use indexed polygon from the found list, or null if not enough polygons
+          final polygonPoints = i < allClickedPolygons.length ? allClickedPolygons[i] : null;
+          _createHighlightedPolygon(airspace, polygonPoints, i);
+        }
+
         setState(() {
-          _tooltipAirspaces = visibleAirspaces;
+          _tooltipAirspaces = allAirspaces; // Show all airspaces (including filtered)
           _tooltipPosition = screenPosition;
           _showTooltip = true;
         });
+      } else {
+        // Only filtered airspaces found - show tooltip but no highlighting
+        setState(() {
+          _tooltipAirspaces = allAirspaces; // Show all airspaces (including filtered)
+          _tooltipPosition = screenPosition;
+          _showTooltip = true;
+        });
+        _clearSelection(); // Clear any existing highlights
       }
     } else {
       // No airspaces found, hide tooltip and clear selection
@@ -553,12 +576,12 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     _clearSelection();
   }
 
-  /// Clear the selected airspace and highlighted polygon
+  /// Clear the selected airspace and highlighted polygons
   void _clearSelection() {
     if (mounted) {
       setState(() {
         _selectedAirspace = null;
-        _highlightedPolygon = null;
+        _highlightedPolygons.clear();
       });
     }
   }
@@ -578,24 +601,25 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     return inside;
   }
 
-  /// Find the clipped polygon points that contain the click point from rendered layers
-  List<LatLng>? _findClickedPolygonPoints(LatLng clickPoint) {
+  /// Find all clipped polygon points that contain the click point from rendered layers
+  List<List<LatLng>> _findAllClickedPolygonPoints(LatLng clickPoint) {
+    final foundPolygons = <List<LatLng>>[];
     // Iterate through rendered airspace layers
     for (final layer in _airspaceLayers) {
       if (layer is fm.PolygonLayer) {
         for (final polygon in layer.polygons) {
           // Check if this polygon contains the click point
           if (_pointInPolygon(clickPoint, polygon.points)) {
-            return polygon.points; // Return the clipped polygon points
+            foundPolygons.add(polygon.points); // Add all clipped polygon points
           }
         }
       }
     }
-    return null;
+    return foundPolygons;
   }
 
-  /// Create a highlighted polygon for the selected airspace
-  void _createHighlightedPolygon(AirspaceData airspace, [List<LatLng>? polygonPoints]) {
+  /// Create a highlighted polygon for the selected airspace and add it to the list
+  void _createHighlightedPolygon(AirspaceData airspace, [List<LatLng>? polygonPoints, int labelIndex = 0]) {
     // Use provided points or fallback to full polygon from identification service
     final points = polygonPoints ??
         AirspaceIdentificationService.instance.getPolygonForAirspace(airspace);
@@ -608,25 +632,30 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     final baseOpacity = style.fillColor.a / 255.0;
     final enhancedOpacity = math.max(0.3, (baseOpacity * 2.0).clamp(0.0, 0.6));
 
+    // For multiple labels, add an index indicator to distinguish them
+    final labelSuffix = labelIndex > 0 ? ' [${labelIndex + 1}]' : '';
+
+    final highlightedPolygon = fm.Polygon(
+      points: points,
+      color: style.fillColor.withValues(alpha: enhancedOpacity),
+      borderColor: style.borderColor,
+      borderStrokeWidth: style.borderWidth * 1.5,
+      // Add label with airspace information and index suffix
+      label: '${airspace.name}$labelSuffix\n'
+             '${airspace.type.abbreviation}'
+             '${airspace.icaoClass != null ? ", ${airspace.icaoClass!.displayName}" : ""}'
+             ', ${airspace.lowerAltitude} - ${airspace.upperAltitude}',
+      labelStyle: const TextStyle(
+        color: Colors.black,
+        fontSize: 12,
+        fontWeight: FontWeight.bold,
+      ),
+      // Use centroid placement for all labels
+      labelPlacement: fm.PolygonLabelPlacement.centroid,
+    );
+
     setState(() {
-      _highlightedPolygon = fm.Polygon(
-        points: points,
-        color: style.fillColor.withValues(alpha: enhancedOpacity),
-        borderColor: style.borderColor,
-        borderStrokeWidth: style.borderWidth * 1.5,
-        // Add label with airspace information
-        label: '${airspace.name}\n'
-               '${airspace.type.abbreviation}'
-               '${airspace.icaoClass != null ? ", ${airspace.icaoClass!.displayName}" : ""}'
-               ', ${airspace.lowerAltitude} - ${airspace.upperAltitude}',
-        labelStyle: const TextStyle(
-          color: Colors.black,
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-        ),
-        // Force label to render at polygon center
-        labelPlacement: fm.PolygonLabelPlacement.centroid,
-      );
+      _highlightedPolygons.add(highlightedPolygon);
     });
   }
 
@@ -1221,9 +1250,9 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               ..._airspaceLayers,
 
               // Highlighted airspace layer (on top of other airspaces)
-              if (_highlightedPolygon != null) ...[
+              if (_highlightedPolygons.isNotEmpty) ...[
                 fm.PolygonLayer(
-                  polygons: [_highlightedPolygon!],
+                  polygons: _highlightedPolygons,
                 ),
               ],
 
