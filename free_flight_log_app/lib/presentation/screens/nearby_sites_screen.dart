@@ -314,9 +314,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           else
             _buildMapContent(),
 
-          // Loading overlay
-          if (_controller.sitesLoading)
-            _buildLoadingOverlay(),
         ],
       ),
     );
@@ -342,50 +339,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     );
   }
 
-
-  Widget _buildLoadingOverlay() {
-    return Positioned(
-      top: 60,
-      right: 16,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.black.withAlpha(217),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withAlpha(77),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.5,
-                color: Colors.white,
-                strokeCap: StrokeCap.round,
-              ),
-            ),
-            SizedBox(width: 10),
-            Text(
-              'Loading nearby sites...',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 /// Optimized wrapper to prevent excessive rebuilds of map widget
