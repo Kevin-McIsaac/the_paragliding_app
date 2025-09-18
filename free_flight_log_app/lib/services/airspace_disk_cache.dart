@@ -11,10 +11,12 @@ import '../data/models/airspace_cache_models.dart';
 
 class AirspaceDiskCache {
   static const String _databaseName = 'airspace_cache.db';
-  static const int _databaseVersion = 2; // Version 2: Binary storage with native columns
+  static const int _databaseVersion = 3; // Version 3: Country-based storage
 
   static const String _geometryTable = 'airspace_geometries';
-  static const String _metadataTable = 'tile_metadata';
+  static const String _metadataTable = 'tile_metadata'; // Keep for compatibility
+  static const String _countryMetadataTable = 'country_metadata'; // New table
+  static const String _countryMappingTable = 'country_airspace_mapping'; // New table
   static const String _statisticsTable = 'cache_statistics';
 
   // Size limits
@@ -109,7 +111,7 @@ class AirspaceDiskCache {
       )
     ''');
 
-    // Tile metadata table
+    // Tile metadata table (keep for compatibility)
     await db.execute('''
       CREATE TABLE $_metadataTable (
         tile_key TEXT PRIMARY KEY,
@@ -120,6 +122,31 @@ class AirspaceDiskCache {
         statistics TEXT,
         access_count INTEGER DEFAULT 0,
         last_accessed INTEGER
+      )
+    ''');
+
+    // Country metadata table (new for country-based storage)
+    await db.execute('''
+      CREATE TABLE $_countryMetadataTable (
+        country_code TEXT PRIMARY KEY,
+        airspace_count INTEGER NOT NULL,
+        fetch_time INTEGER NOT NULL,
+        etag TEXT,
+        last_modified TEXT,
+        version INTEGER DEFAULT 1,
+        size_bytes INTEGER,
+        last_accessed INTEGER
+      )
+    ''');
+
+    // Country to airspace mapping table
+    await db.execute('''
+      CREATE TABLE $_countryMappingTable (
+        country_code TEXT NOT NULL,
+        airspace_id TEXT NOT NULL,
+        PRIMARY KEY (country_code, airspace_id),
+        FOREIGN KEY (country_code) REFERENCES $_countryMetadataTable(country_code) ON DELETE CASCADE,
+        FOREIGN KEY (airspace_id) REFERENCES $_geometryTable(id) ON DELETE CASCADE
       )
     ''');
 
@@ -139,6 +166,10 @@ class AirspaceDiskCache {
     await db.execute('CREATE INDEX idx_geometry_altitude ON $_geometryTable(lower, upper)');
     await db.execute('CREATE INDEX idx_metadata_fetch_time ON $_metadataTable(fetch_time)');
     await db.execute('CREATE INDEX idx_metadata_empty ON $_metadataTable(is_empty)');
+    // New indices for country-based queries
+    await db.execute('CREATE INDEX idx_country_mapping_country ON $_countryMappingTable(country_code)');
+    await db.execute('CREATE INDEX idx_country_mapping_airspace ON $_countryMappingTable(airspace_id)');
+    await db.execute('CREATE INDEX idx_country_metadata_fetch ON $_countryMetadataTable(fetch_time)');
   }
 
   // Compression utilities
@@ -804,6 +835,134 @@ class AirspaceDiskCache {
       LoggingService.error('Failed to get statistics', e, stack);
       return CacheStatistics.empty();
     }
+  }
+
+  // Country-based methods
+
+  /// Store country metadata
+  Future<void> putCountryMetadata({
+    required String countryCode,
+    required int airspaceCount,
+    String? etag,
+    String? lastModified,
+    int? sizeBytes,
+  }) async {
+    final db = await database;
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    await db.insert(
+      _countryMetadataTable,
+      {
+        'country_code': countryCode,
+        'airspace_count': airspaceCount,
+        'fetch_time': now,
+        'etag': etag,
+        'last_modified': lastModified,
+        'version': 1,
+        'size_bytes': sizeBytes,
+        'last_accessed': now,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// Store country to airspace mappings
+  Future<void> putCountryMappings({
+    required String countryCode,
+    required List<String> airspaceIds,
+  }) async {
+    final db = await database;
+
+    // Delete existing mappings for this country
+    await db.delete(
+      _countryMappingTable,
+      where: 'country_code = ?',
+      whereArgs: [countryCode],
+    );
+
+    // Insert new mappings in batch
+    final batch = db.batch();
+    for (final airspaceId in airspaceIds) {
+      batch.insert(
+        _countryMappingTable,
+        {
+          'country_code': countryCode,
+          'airspace_id': airspaceId,
+        },
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
+  /// Get airspace IDs for a country
+  Future<List<String>> getCountryAirspaceIds(String countryCode) async {
+    final db = await database;
+
+    final results = await db.query(
+      _countryMappingTable,
+      columns: ['airspace_id'],
+      where: 'country_code = ?',
+      whereArgs: [countryCode],
+    );
+
+    return results.map((row) => row['airspace_id'] as String).toList();
+  }
+
+  /// Get airspace IDs for multiple countries
+  Future<Set<String>> getAirspaceIdsForCountries(List<String> countryCodes) async {
+    if (countryCodes.isEmpty) return {};
+
+    final db = await database;
+    final placeholders = List.filled(countryCodes.length, '?').join(',');
+
+    final results = await db.rawQuery('''
+      SELECT DISTINCT airspace_id
+      FROM $_countryMappingTable
+      WHERE country_code IN ($placeholders)
+    ''', countryCodes);
+
+    return results.map((row) => row['airspace_id'] as String).toSet();
+  }
+
+  /// Delete country data
+  Future<void> deleteCountryData(String countryCode) async {
+    final db = await database;
+
+    // Delete country metadata (cascades to mappings)
+    await db.delete(
+      _countryMetadataTable,
+      where: 'country_code = ?',
+      whereArgs: [countryCode],
+    );
+
+    // Clean up orphaned geometries
+    await cleanOrphanedGeometries();
+  }
+
+  /// Clean up geometries not referenced by any country
+  Future<void> cleanOrphanedGeometries() async {
+    final db = await database;
+
+    await db.execute('''
+      DELETE FROM $_geometryTable
+      WHERE id NOT IN (
+        SELECT DISTINCT airspace_id
+        FROM $_countryMappingTable
+      )
+    ''');
+  }
+
+  /// Get list of cached countries
+  Future<List<String>> getCachedCountries() async {
+    final db = await database;
+
+    final results = await db.query(
+      _countryMetadataTable,
+      columns: ['country_code'],
+      orderBy: 'country_code',
+    );
+
+    return results.map((row) => row['country_code'] as String).toList();
   }
 
   // Get statistics as a simple map (for compatibility)

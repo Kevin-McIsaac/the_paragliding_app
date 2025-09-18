@@ -9,10 +9,15 @@ class AirspaceMetadataCache {
   final AirspaceDiskCache _diskCache = AirspaceDiskCache.instance;
   final AirspaceGeometryCache _geometryCache = AirspaceGeometryCache.instance;
 
-  // In-memory cache for tile metadata
+  // In-memory cache for tile metadata (keeping for backward compatibility)
   final Map<String, TileMetadata> _memoryCache = {};
   final List<String> _accessOrder = [];
   static const int _maxMemoryCacheSize = 20000; // Keep metadata for 20000 tiles
+
+  // In-memory cache for country metadata
+  final Map<String, Set<String>> _countryAirspaceCache = {};
+  final List<String> _countryAccessOrder = [];
+  static const int _maxCountryCacheSize = 30; // Cache up to 30 countries
 
   // Statistics tracking
   int _cacheHits = 0;
@@ -429,6 +434,173 @@ class AirspaceMetadataCache {
   void _updateAccessOrder(String tileKey) {
     _accessOrder.remove(tileKey);
     _accessOrder.insert(0, tileKey);
+  }
+
+  // Country-based methods
+
+  /// Store airspaces for a country
+  Future<void> putCountryAirspaces({
+    required String countryCode,
+    required List<Map<String, dynamic>> features,
+  }) async {
+    final stopwatch = Stopwatch()..start();
+
+    LoggingService.structured('COUNTRY_CACHE_STORE', {
+      'country': countryCode,
+      'features': features.length,
+    });
+
+    try {
+      // Extract airspace IDs and store geometries
+      final airspaceIds = <String>[];
+
+      for (final feature in features) {
+        try {
+          final id = _geometryCache.generateAirspaceId(feature);
+          airspaceIds.add(id);
+
+          // Store geometry (will handle deduplication)
+          await _geometryCache.putGeometry(feature);
+        } catch (e, stack) {
+          LoggingService.error('Failed to process feature for country $countryCode', e, stack);
+        }
+      }
+
+      // Store country metadata
+      await _diskCache.putCountryMetadata(
+        countryCode: countryCode,
+        airspaceCount: airspaceIds.length,
+        sizeBytes: null, // Will be calculated later
+      );
+
+      // Store country to airspace mappings
+      await _diskCache.putCountryMappings(
+        countryCode: countryCode,
+        airspaceIds: airspaceIds,
+      );
+
+      // Update memory cache
+      _updateCountryCache(countryCode, airspaceIds.toSet());
+
+      stopwatch.stop();
+      LoggingService.performance(
+        'Stored country airspaces',
+        stopwatch.elapsed,
+        'country=$countryCode, airspaces=${airspaceIds.length}',
+      );
+    } catch (e, stack) {
+      LoggingService.error('Failed to store country airspaces', e, stack);
+    }
+  }
+
+  /// Get airspaces for selected countries
+  Future<List<CachedAirspaceGeometry>> getAirspacesForCountries(List<String> countryCodes) async {
+    if (countryCodes.isEmpty) {
+      return [];
+    }
+
+    final stopwatch = Stopwatch()..start();
+
+    // Get all airspace IDs for the selected countries
+    final airspaceIds = await _diskCache.getAirspaceIdsForCountries(countryCodes);
+
+    // Fetch all geometries
+    final geometries = <CachedAirspaceGeometry>[];
+    for (final id in airspaceIds) {
+      final geometry = await _geometryCache.getGeometry(id);
+      if (geometry != null) {
+        geometries.add(geometry);
+      }
+    }
+
+    stopwatch.stop();
+    LoggingService.performance(
+      'Retrieved country airspaces',
+      stopwatch.elapsed,
+      'countries=${countryCodes.length}, airspaces=${geometries.length}',
+    );
+
+    return geometries;
+  }
+
+  /// Get airspaces for viewport from loaded countries
+  Future<List<CachedAirspaceGeometry>> getAirspacesForViewport({
+    required List<String> countryCodes,
+    required double west,
+    required double south,
+    required double east,
+    required double north,
+  }) async {
+    if (countryCodes.isEmpty) {
+      return [];
+    }
+
+    final stopwatch = Stopwatch()..start();
+
+    // Get all geometries for the countries
+    final allGeometries = await getAirspacesForCountries(countryCodes);
+
+    // Filter by viewport bounds
+    final viewportGeometries = allGeometries.where((geometry) {
+      // Check if any polygon overlaps with viewport
+      for (final polygon in geometry.polygons) {
+        if (polygon.isNotEmpty) {
+          double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+
+          for (final point in polygon) {
+            minLat = minLat < point.latitude ? minLat : point.latitude;
+            maxLat = maxLat > point.latitude ? maxLat : point.latitude;
+            minLng = minLng < point.longitude ? minLng : point.longitude;
+            maxLng = maxLng > point.longitude ? maxLng : point.longitude;
+          }
+
+          // Check for overlap
+          if (!(minLat > north || maxLat < south || minLng > east || maxLng < west)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }).toList();
+
+    stopwatch.stop();
+    LoggingService.performance(
+      'Filtered viewport airspaces',
+      stopwatch.elapsed,
+      'total=${allGeometries.length}, viewport=${viewportGeometries.length}',
+    );
+
+    return viewportGeometries;
+  }
+
+  /// Update country cache with LRU eviction
+  void _updateCountryCache(String countryCode, Set<String> airspaceIds) {
+    // Remove from current position if exists
+    _countryAccessOrder.remove(countryCode);
+
+    // Add to front
+    _countryAccessOrder.insert(0, countryCode);
+    _countryAirspaceCache[countryCode] = airspaceIds;
+
+    // Evict if over limit
+    while (_countryAccessOrder.length > _maxCountryCacheSize) {
+      final evictKey = _countryAccessOrder.removeLast();
+      _countryAirspaceCache.remove(evictKey);
+    }
+  }
+
+  /// Delete country data
+  Future<void> deleteCountryData(String countryCode) async {
+    LoggingService.info('Deleting country data from cache: $countryCode');
+
+    // Remove from memory cache
+    _countryAirspaceCache.remove(countryCode);
+    _countryAccessOrder.remove(countryCode);
+
+    // Remove from disk cache
+    await _diskCache.deleteCountryData(countryCode);
+
+    LoggingService.info('Successfully deleted country data: $countryCode');
   }
 
   /// Get cache statistics

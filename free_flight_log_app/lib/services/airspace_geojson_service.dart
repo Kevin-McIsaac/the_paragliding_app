@@ -221,6 +221,9 @@ class AirspaceGeoJsonService {
   final AirspaceGeometryCache _geometryCache = AirspaceGeometryCache.instance;
   final AirspacePerformanceLogger _performanceLogger = AirspacePerformanceLogger.instance;
 
+  // Country-based caching mode
+  bool _useCountryMode = false; // Will be set based on whether countries are loaded
+
   // OpenAIP Core API configuration
   static const String _coreApiBase = 'https://api.core.openaip.net/api';
   static const int _defaultLimit = 1000; // Maximum allowed by OpenAIP API
@@ -358,8 +361,94 @@ class AirspaceGeoJsonService {
     return fm.LatLngBounds(LatLng(south, west), LatLng(north, east));
   }
 
-  /// Fetch airspace data from OpenAIP Core API with hierarchical caching
+  /// Enable or disable country mode
+  Future<void> setCountryMode(bool enabled) async {
+    _useCountryMode = enabled;
+    if (enabled) {
+      LoggingService.info('Switched to country-based airspace caching mode');
+    } else {
+      LoggingService.info('Switched to tile-based airspace caching mode');
+    }
+  }
+
+  /// Check if any countries are loaded
+  Future<bool> hasLoadedCountries() async {
+    final countries = await AirspaceDiskCache.instance.getCachedCountries();
+    return countries.isNotEmpty;
+  }
+
+  /// Fetch airspace data - uses country mode if countries are loaded, otherwise tile mode
   Future<String> fetchAirspaceGeoJson(fm.LatLngBounds bounds) async {
+    // Check if we should use country mode
+    final hasCountries = await hasLoadedCountries();
+    if (hasCountries) {
+      _useCountryMode = true;
+      return _fetchAirspaceFromCountries(bounds);
+    } else {
+      _useCountryMode = false;
+      return _fetchAirspaceFromTiles(bounds);
+    }
+  }
+
+  /// Fetch airspace data from loaded countries
+  Future<String> _fetchAirspaceFromCountries(fm.LatLngBounds bounds) async {
+    final overallStopwatch = Stopwatch()..start();
+    final memoryBefore = PerformanceMonitor.getMemoryUsageMB();
+
+    LoggingService.structured('COUNTRY_MODE_FETCH', {
+      'bounds': '${bounds.west},${bounds.south},${bounds.east},${bounds.north}',
+    });
+
+    // Get list of loaded countries
+    final countries = await AirspaceDiskCache.instance.getCachedCountries();
+    if (countries.isEmpty) {
+      LoggingService.warning('No countries loaded, returning empty GeoJSON');
+      return '{"type":"FeatureCollection","features":[]}';
+    }
+
+    // Get airspaces for viewport from loaded countries
+    final geometries = await _metadataCache.getAirspacesForViewport(
+      countryCodes: countries,
+      west: bounds.west,
+      south: bounds.south,
+      east: bounds.east,
+      north: bounds.north,
+    );
+
+    // Convert to GeoJSON
+    final conversionStopwatch = Stopwatch()..start();
+    final features = geometries.map((geometry) => _geometryToFeature(geometry)).toList();
+    conversionStopwatch.stop();
+
+    final geoJson = {
+      'type': 'FeatureCollection',
+      'features': features,
+    };
+
+    final mergedGeoJson = json.encode(geoJson);
+
+    overallStopwatch.stop();
+    final memoryAfter = PerformanceMonitor.getMemoryUsageMB();
+
+    LoggingService.structured('COUNTRY_MODE_COMPLETE', {
+      'countries': countries.length,
+      'total_ms': overallStopwatch.elapsedMilliseconds,
+      'unique_airspaces': features.length,
+      'conversion_ms': conversionStopwatch.elapsedMilliseconds,
+      'memory_delta_mb': (memoryAfter - memoryBefore).toStringAsFixed(1),
+    });
+
+    LoggingService.performance(
+      'Airspace Fetch (Country Mode)',
+      overallStopwatch.elapsed,
+      'countries=${countries.length}, airspaces=${features.length}',
+    );
+
+    return mergedGeoJson;
+  }
+
+  /// Fetch airspace data from OpenAIP Core API with hierarchical caching (tile mode)
+  Future<String> _fetchAirspaceFromTiles(fm.LatLngBounds bounds) async {
     final overallStopwatch = Stopwatch()..start();
     final memoryBefore = PerformanceMonitor.getMemoryUsageMB();
 
