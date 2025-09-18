@@ -6,12 +6,16 @@ class MapLegendWidget extends StatefulWidget {
   final bool isMergeMode;
   final bool sitesEnabled;
   final Map<IcaoClass, bool> excludedIcaoClasses;
+  final bool isExpanded;
+  final VoidCallback? onToggleExpanded;
 
   const MapLegendWidget({
     super.key,
     this.isMergeMode = false,
     this.sitesEnabled = true,
     this.excludedIcaoClasses = const {},
+    this.isExpanded = true,
+    this.onToggleExpanded,
   });
 
   @override
@@ -19,7 +23,6 @@ class MapLegendWidget extends StatefulWidget {
 }
 
 class _MapLegendWidgetState extends State<MapLegendWidget> with SingleTickerProviderStateMixin {
-  bool _isExpanded = true;
   late AnimationController _animationController;
   late Animation<double> _expandAnimation;
 
@@ -34,8 +37,22 @@ class _MapLegendWidgetState extends State<MapLegendWidget> with SingleTickerProv
       parent: _animationController,
       curve: Curves.easeInOut,
     );
-    if (_isExpanded) {
+    if (widget.isExpanded) {
       _animationController.value = 1.0;
+    }
+  }
+
+  @override
+  void didUpdateWidget(MapLegendWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isExpanded != oldWidget.isExpanded) {
+      if (mounted) {
+        if (widget.isExpanded) {
+          _animationController.forward();
+        } else {
+          _animationController.reverse();
+        }
+      }
     }
   }
 
@@ -46,14 +63,9 @@ class _MapLegendWidgetState extends State<MapLegendWidget> with SingleTickerProv
   }
 
   void _toggleExpanded() {
-    setState(() {
-      _isExpanded = !_isExpanded;
-      if (_isExpanded) {
-        _animationController.forward();
-      } else {
-        _animationController.reverse();
-      }
-    });
+    if (widget.onToggleExpanded != null) {
+      widget.onToggleExpanded!();
+    }
   }
 
   @override
@@ -77,7 +89,7 @@ class _MapLegendWidgetState extends State<MapLegendWidget> with SingleTickerProv
         ),
         child: Padding(
           // Conditional padding: less when collapsed to match search bar height
-          padding: _isExpanded
+          padding: widget.isExpanded
               ? const EdgeInsets.all(12.0)
               : const EdgeInsets.symmetric(horizontal: 12.0, vertical: 10.0),
           child: Column(
@@ -103,7 +115,7 @@ class _MapLegendWidgetState extends State<MapLegendWidget> with SingleTickerProv
                       ),
                       const SizedBox(width: 4),
                       Icon(
-                        _isExpanded ? Icons.expand_less : Icons.expand_more,
+                        widget.isExpanded ? Icons.expand_less : Icons.expand_more,
                         color: Colors.white70,
                         size: 16,
                       ),

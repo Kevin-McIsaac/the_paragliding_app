@@ -174,7 +174,9 @@ enum IcaoClass {
 
   /// Get all classes that should be hidden by default
   static Set<IcaoClass> get defaultHiddenClasses => {
-    // Empty set - all ICAO classes visible by default
+    IcaoClass.classE,
+    IcaoClass.classF,
+    IcaoClass.classG,
   };
 
   /// Check if this class should be hidden by default

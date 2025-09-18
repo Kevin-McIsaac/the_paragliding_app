@@ -274,6 +274,15 @@ class NearbySitesController extends ChangeNotifier {
 
   /// Perform search with debouncing
   Timer? _searchTimer;
+  ParaglidingSite? _autoSelectedSite;
+
+  /// Get and clear any auto-selected site (UI should handle this)
+  ParaglidingSite? consumeAutoSelectedSite() {
+    final site = _autoSelectedSite;
+    _autoSelectedSite = null;
+    return site;
+  }
+
   void _performSearch(String query) {
     _searchTimer?.cancel();
     _searchTimer = Timer(const Duration(milliseconds: 300), () async {
@@ -285,8 +294,22 @@ class NearbySitesController extends ChangeNotifier {
         _searchResults = results.take(15).toList();
 
         // Auto-select single result
-        if (_searchResults.length == 1) {
-          _pinnedSite = _searchResults.first;
+        if (_searchResults.length == 1 && query.isNotEmpty) {
+          // Automatically select the single result and clear search
+          final site = _searchResults.first;
+          _pinnedSite = site;
+          _searchQuery = '';  // Clear search to show we've selected it
+          _searchResults = [];  // Clear results since we've selected
+          _isSearching = false;
+          _autoSelectedSite = site;  // Mark for UI to handle
+          _updateDisplayedSites();
+          notifyListeners();
+
+          LoggingService.action('NearbySites', 'auto_selected_single_result', {
+            'site_name': site.name,
+            'country': site.country,
+          });
+          return;  // Exit early since we've handled everything
         }
 
         _isSearching = false;

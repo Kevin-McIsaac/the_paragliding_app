@@ -39,10 +39,12 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   // Constants
   static const String _mapProviderKey = 'nearby_sites_map_provider';
   static const String _legendExpandedKey = 'nearby_sites_legend_expanded';
+  static const String _sitesEnabledKey = 'nearby_sites_sites_enabled';
 
   @override
   void initState() {
     super.initState();
+    LoggingService.info('NearbySitesScreen initState called');
     _controller.addListener(_onControllerChanged);
     _loadPreferences();
     _loadFilterSettings();
@@ -51,6 +53,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
   @override
   void dispose() {
+    LoggingService.info('NearbySitesScreen dispose called');
     _controller.removeListener(_onControllerChanged);
     _controller.dispose();
     super.dispose();
@@ -58,6 +61,12 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
   void _onControllerChanged() {
     if (mounted) {
+      // Check for auto-selected site and jump to it
+      final autoSelected = _controller.consumeAutoSelectedSite();
+      if (autoSelected != null) {
+        _jumpToSite(autoSelected);
+      }
+
       setState(() {
         // UI will rebuild based on controller state changes
       });
@@ -69,11 +78,19 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       final prefs = await SharedPreferences.getInstance();
       final providerIndex = prefs.getInt(_mapProviderKey) ?? MapProvider.openStreetMap.index;
       final legendExpanded = prefs.getBool(_legendExpandedKey) ?? false;
+      final sitesEnabled = prefs.getBool(_sitesEnabledKey) ?? true;
+
+      // Load airspace enabled state from OpenAipService (it handles its own persistence)
+      final airspaceEnabled = await _openAipService.isAirspaceEnabled();
+
+      LoggingService.info('Loading preferences - legend: $legendExpanded, sites: $sitesEnabled, airspace: $airspaceEnabled');
 
       if (mounted) {
         setState(() {
           _selectedMapProvider = MapProvider.values[providerIndex];
           _isLegendExpanded = legendExpanded;
+          _sitesEnabled = sitesEnabled;
+          _airspaceEnabled = airspaceEnabled;
         });
       }
     } catch (e) {
@@ -99,9 +116,12 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       _isLegendExpanded = !_isLegendExpanded;
     });
 
+    LoggingService.info('Toggling legend - new state: $_isLegendExpanded');
+
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_legendExpandedKey, _isLegendExpanded);
+      LoggingService.info('Saved legend state to preferences: $_isLegendExpanded');
     } catch (e) {
       LoggingService.error('Failed to save legend preference', e);
     }
@@ -227,8 +247,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt(_mapProviderKey, mapProvider.index);
+      await prefs.setBool(_sitesEnabledKey, sitesEnabled);
     } catch (e) {
-      LoggingService.error('Failed to save map provider preference', e);
+      LoggingService.error('Failed to save map preferences', e);
     }
 
     // Update service settings
@@ -293,10 +314,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           else
             _buildMapContent(),
 
-          // Search results overlay
-          if (_controller.hasSearchResults)
-            _buildSearchOverlay(),
-
           // Loading overlay
           if (_controller.sitesLoading)
             _buildLoadingOverlay(),
@@ -325,72 +342,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     );
   }
 
-  Widget _buildSearchOverlay() {
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: Material(
-        elevation: 8,
-        child: Container(
-          constraints: const BoxConstraints(maxHeight: 300),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black26,
-                blurRadius: 8,
-                offset: Offset(0, 2),
-              ),
-            ],
-          ),
-          child: _controller.isSearching
-            ? const Padding(
-                padding: EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    SizedBox(width: 12),
-                    Text('Searching sites...'),
-                  ],
-                ),
-              )
-            : ListView.builder(
-                shrinkWrap: true,
-                itemCount: _controller.searchResults.length,
-                itemBuilder: (context, index) {
-                  final site = _controller.searchResults[index];
-                  return ListTile(
-                    leading: CircleAvatar(
-                      radius: 16,
-                      backgroundColor: Theme.of(context).primaryColor.withAlpha(25),
-                      child: Text(
-                        site.country?.toUpperCase().substring(0, 2) ?? '??',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).primaryColor,
-                        ),
-                      ),
-                    ),
-                    title: Text(
-                      site.name,
-                      style: const TextStyle(fontWeight: FontWeight.w500),
-                    ),
-                    subtitle: Text(site.country ?? 'Unknown'),
-                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                    onTap: () => _onSearchResultSelected(site),
-                  );
-                },
-              ),
-        ),
-      ),
-    );
-  }
 
   Widget _buildLoadingOverlay() {
     return Positioned(

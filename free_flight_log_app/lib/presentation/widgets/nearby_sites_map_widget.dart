@@ -789,6 +789,8 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                 isMergeMode: false, // Merge mode not relevant for this widget
                 sitesEnabled: widget.sitesEnabled,
                 excludedIcaoClasses: widget.excludedIcaoClasses,
+                isExpanded: widget.isLegendExpanded,
+                onToggleExpanded: widget.onToggleLegend,
               ),
             ),
           

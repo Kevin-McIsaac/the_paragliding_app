@@ -347,7 +347,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
           child: InkWell(
             onTap: () => setState(() {
               _sitesEnabled = !_sitesEnabled;
-              _applyFiltersDebounced();
+              _applyFiltersImmediately();
             }),
             borderRadius: BorderRadius.circular(4),
             child: Container(
@@ -361,7 +361,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                       value: _sitesEnabled,
                       onChanged: (value) => setState(() {
                         _sitesEnabled = value ?? true;
-                        _applyFiltersDebounced();
+                        _applyFiltersImmediately();
                       }),
                       activeColor: Colors.blue,
                       checkColor: Colors.white,
@@ -391,7 +391,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
           child: InkWell(
             onTap: () => setState(() {
               _airspaceEnabled = !_airspaceEnabled;
-              _applyFiltersDebounced();
+              _applyFiltersImmediately();
             }),
             borderRadius: BorderRadius.circular(4),
             child: Container(
@@ -405,7 +405,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                       value: _airspaceEnabled,
                       onChanged: (value) => setState(() {
                         _airspaceEnabled = value ?? true;
-                        _applyFiltersDebounced();
+                        _applyFiltersImmediately();
                       }),
                       activeColor: Colors.blue,
                       checkColor: Colors.white,
