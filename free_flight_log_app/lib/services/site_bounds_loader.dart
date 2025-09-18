@@ -197,7 +197,7 @@ class SiteBoundsLoader {
   /// Load flight counts for sites in bounds
   Future<Map<int?, int?>> _loadFlightCountsForBounds(LatLngBounds bounds) async {
     try {
-      // Get all sites in bounds with their flight counts
+      // Get all sites in bounds
       final sites = await DatabaseService.instance.getSitesInBounds(
         north: bounds.north,
         south: bounds.south,
@@ -206,12 +206,19 @@ class SiteBoundsLoader {
       );
 
       final counts = <int?, int?>{};
+
+      // For each site, get the actual flight count from the database
       for (final site in sites) {
-        if (site.id != null && site.flightCount != null && site.flightCount! > 0) {
-          counts[site.id] = site.flightCount;
+        if (site.id != null) {
+          // Count flights for this site
+          final flightCount = await DatabaseService.instance.getFlightCountForSite(site.id!);
+          if (flightCount > 0) {
+            counts[site.id] = flightCount;
+          }
         }
       }
 
+      LoggingService.info('SiteBoundsLoader: Loaded flight counts for ${counts.length} sites');
       return counts;
     } catch (error, stackTrace) {
       LoggingService.error('SiteBoundsLoader: Failed to load flight counts', error, stackTrace);
