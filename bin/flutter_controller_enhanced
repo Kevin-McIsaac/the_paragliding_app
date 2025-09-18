@@ -195,8 +195,7 @@ setup_flutter_pipe() {
     [[ ! -p "$PIPE" ]] && mkfifo "$PIPE"
     
     # Change to Flutter app directory
-    cd ../free_flight_log_app ||
-    cd /home/kmcisaac/Projects/free_flight_log/free_flight_log_app || {
+    cd ./free_flight_log_app ||
         log_message "ERROR: Cannot change to Flutter app directory"
         update_status "ERROR"
         return 1
