@@ -430,16 +430,19 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     // Update filter status for all identified airspaces
     await _updateAirspaceFilterStatus(allAirspaces);
 
-    // Sort all airspaces by lower altitude limit (ascending), then by upper altitude limit (ascending)
-    allAirspaces.sort((a, b) {
+    // Filter to only visible airspaces (not hidden by current filter settings)
+    final visibleAirspaces = allAirspaces.where((airspace) => !airspace.isCurrentlyFiltered).toList();
+
+    // Sort visible airspaces by lower altitude limit (ascending), then by upper altitude limit (ascending)
+    visibleAirspaces.sort((a, b) {
       int lowerCompare = a.getLowerAltitudeInFeet().compareTo(b.getLowerAltitudeInFeet());
       if (lowerCompare != 0) return lowerCompare;
       return a.getUpperAltitudeInFeet().compareTo(b.getUpperAltitudeInFeet());
     });
 
-    if (allAirspaces.isNotEmpty) {
-      // Get the lowest altitude airspace for highlighting
-      final lowestAirspace = allAirspaces.first;
+    if (visibleAirspaces.isNotEmpty) {
+      // Get the lowest altitude visible airspace for highlighting
+      final lowestAirspace = visibleAirspaces.first;
 
       // Check if clicking near the same position (toggle behavior)
       if (_showTooltip && _tooltipPosition != null && _isSimilarPosition(screenPosition, _tooltipPosition!)) {
@@ -451,7 +454,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         _selectedAirspace = lowestAirspace;
         _createHighlightedPolygon(lowestAirspace);
         setState(() {
-          _tooltipAirspaces = allAirspaces;
+          _tooltipAirspaces = visibleAirspaces;
           _tooltipPosition = screenPosition;
           _showTooltip = true;
         });
