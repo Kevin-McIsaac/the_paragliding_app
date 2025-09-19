@@ -77,6 +77,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   // Filter state for sites and airspace
   bool _sitesEnabled = true; // Controls site loading and display
   bool _airspaceEnabled = true; // Controls airspace loading and display
+  bool _hasActiveFilters = false; // Cached value to avoid FutureBuilder rebuilds
   double _maxAltitudeFt = 10000.0; // Default altitude filter
   int _filterUpdateCounter = 0; // Increments when any filter changes to trigger map refresh
   Map<IcaoClass, bool> _excludedIcaoClasses = {}; // Current ICAO class filter state
@@ -89,6 +90,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     _initializeSearchManager();
     _loadPreferences();
     _loadFilterSettings();
+    _updateActiveFiltersState(); // Initialize the cached active filters state
     _loadData();
   }
 
@@ -358,6 +360,13 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     _showSiteDetailsDialog(paraglidingSite: site);
   }
 
+  // Callback for search result selection (prevents creating new function on every build)
+  void _onSearchResultSelected(ParaglidingSite site) {
+    _searchManager.selectSearchResult(site);
+    // Also jump to location for smooth UX
+    _jumpToLocation(site);
+  }
+
   void _toggleLegend() async {
     setState(() {
       _isLegendExpanded = !_isLegendExpanded;
@@ -564,6 +573,24 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     }
   }
 
+  // Update the cached active filters state
+  void _updateActiveFiltersState() async {
+    try {
+      final types = await _openAipService.getExcludedAirspaceTypes();
+      final classes = await _openAipService.getExcludedIcaoClasses();
+
+      // Consider filters active if any type/class is disabled or sites are disabled
+      final hasDisabledTypes = types.values.contains(false);
+      final hasDisabledClasses = classes.values.contains(false);
+
+      setState(() {
+        _hasActiveFilters = !_sitesEnabled || hasDisabledTypes || hasDisabledClasses;
+      });
+    } catch (e) {
+      LoggingService.error('Failed to update active filters state', e);
+    }
+  }
+
   /// Handle filter apply from dialog
   void _handleFilterApply(bool sitesEnabled, bool airspaceEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled, MapProvider mapProvider) async {
     try {
@@ -663,6 +690,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         'max_altitude_ft': maxAltitudeFt,
         'map_provider': mapProvider.displayName,
       });
+
+      // Update the cached active filters state
+      _updateActiveFiltersState();
     } catch (error, stackTrace) {
       LoggingService.error('Failed to apply map filters', error, stackTrace);
     }
@@ -678,23 +708,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     }
   }
 
-  /// Check if filters are currently active (for FAB indicator)
-  Future<bool> _hasActiveFilters() async {
-    try {
-      // Check if any airspace types or classes are disabled from defaults
-      final types = await _openAipService.getExcludedAirspaceTypes();
-      final classes = await _openAipService.getExcludedIcaoClasses();
-
-      // Consider filters active if any type/class is disabled or sites are disabled
-      final hasDisabledTypes = types.values.contains(false);
-      final hasDisabledClasses = classes.values.contains(false);
-
-      return !_sitesEnabled || hasDisabledTypes || hasDisabledClasses;
-    } catch (error) {
-      LoggingService.error('Failed to check active filters', error);
-      return false; // Assume no active filters on error
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -714,44 +727,34 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                   )
                 : Stack(
                       children: [
-                        // Map
-                        FutureBuilder<bool>(
-                          future: _hasActiveFilters(),
-                          builder: (context, snapshot) {
-                            final hasActiveFilters = snapshot.data ?? false;
-                            return NearbySitesMapWidget(
-                              key: _mapWidgetKey, // Force rebuild when airspace settings change
-                              sites: _displayedSites,
-                              siteFlightStatus: _siteFlightStatus,
-                              userPosition: _userPosition,
-                              centerPosition: _mapCenterPosition,
-                              boundsToFit: _boundsToFit,
-                              initialZoom: _mapZoom,
-                              mapProvider: _selectedMapProvider,
-                              isLegendExpanded: _isLegendExpanded,
-                              onToggleLegend: _toggleLegend,
-                              onSiteSelected: _onSiteSelected,
-                              onBoundsChanged: _onBoundsChanged,
-                              searchQuery: _searchManager.state.query,
-                              onSearchChanged: _searchManager.onSearchQueryChanged,
-                              onRefreshLocation: _onRefreshLocation,
-                              isLocationLoading: _isLocationLoading,
-                              searchResults: _searchManager.state.results,
-                              isSearching: _searchManager.state.isSearching,
-                              onSearchResultSelected: (site) {
-                                _searchManager.selectSearchResult(site);
-                                // Also jump to location for smooth UX
-                                _jumpToLocation(site);
-                              },
-                              onShowMapFilter: _showMapFilterDialog,
-                              hasActiveFilters: hasActiveFilters,
-                              sitesEnabled: _sitesEnabled,
-                              airspaceEnabled: _airspaceEnabled,
-                              maxAltitudeFt: _maxAltitudeFt,
-                              filterUpdateCounter: _filterUpdateCounter,
-                              excludedIcaoClasses: _excludedIcaoClasses,
-                            );
-                          },
+                        // Map - removed FutureBuilder to prevent unnecessary rebuilds
+                        NearbySitesMapWidget(
+                          key: _mapWidgetKey, // Force rebuild when airspace settings change
+                          sites: _displayedSites,
+                          siteFlightStatus: _siteFlightStatus,
+                          userPosition: _userPosition,
+                          centerPosition: _mapCenterPosition,
+                          boundsToFit: _boundsToFit,
+                          initialZoom: _mapZoom,
+                          mapProvider: _selectedMapProvider,
+                          isLegendExpanded: _isLegendExpanded,
+                          onToggleLegend: _toggleLegend,
+                          onSiteSelected: _onSiteSelected,
+                          onBoundsChanged: _onBoundsChanged,
+                          searchQuery: _searchManager.state.query,
+                          onSearchChanged: _searchManager.onSearchQueryChanged,
+                          onRefreshLocation: _onRefreshLocation,
+                          isLocationLoading: _isLocationLoading,
+                          searchResults: _searchManager.state.results,
+                          isSearching: _searchManager.state.isSearching,
+                          onSearchResultSelected: _onSearchResultSelected,
+                          onShowMapFilter: _showMapFilterDialog,
+                          hasActiveFilters: _hasActiveFilters,
+                          sitesEnabled: _sitesEnabled,
+                          airspaceEnabled: _airspaceEnabled,
+                          maxAltitudeFt: _maxAltitudeFt,
+                          filterUpdateCounter: _filterUpdateCounter,
+                          excludedIcaoClasses: _excludedIcaoClasses,
                         ),
 
                         // Auto-dismissing location notification
