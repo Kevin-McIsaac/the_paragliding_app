@@ -530,3 +530,6 @@ Use format `file_path:line_number` in logs:
 - [Timestamp Processing](docs/TIMESTAMPS.md) - UTC/local conversion
 - at the end of complex set of changes use flutter analyze to find errors
 - use adb screenshots on emulator
+- Call sites in local DB "Flown Sites" and sites from PGE API "New Sites"
+- Call sites in local DB "Flown Sites" and sites from PGE API "New Sites"
+- always run flutter_controller_enhanced in background

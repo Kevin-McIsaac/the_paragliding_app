@@ -195,8 +195,7 @@ setup_flutter_pipe() {
     [[ ! -p "$PIPE" ]] && mkfifo "$PIPE"
     
     # Change to Flutter app directory
-    cd ../free_flight_log_app ||
-    cd /home/kmcisaac/Projects/free_flight_log/free_flight_log_app || {
+    cd ./free_flight_log_app || {
         log_message "ERROR: Cannot change to Flutter app directory"
         update_status "ERROR"
         return 1
@@ -341,47 +340,152 @@ check_flutter_status() {
     esac
 }
 
+# Pre-command check to ensure Flutter is in the right state
+pre_command_check() {
+    local cmd="$1"
+    local auto_start=${2:-false}
+
+    # Get current status
+    local status="UNKNOWN"
+    local pid_exists=false
+    local pipe_responsive=false
+
+    if [[ -f "$STATUS_FILE" ]]; then
+        IFS='|' read -r status _ < "$STATUS_FILE"
+    fi
+
+    # Check if PID exists and is alive
+    if [[ -f "$PID_FILE" ]]; then
+        local pid=$(cat "$PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            pid_exists=true
+        else
+            log_message "Detected dead process (PID: $pid), cleaning up..."
+            clean_stale_state "Dead process detected"
+            status="STOPPED"
+        fi
+    fi
+
+    # Check pipe responsiveness
+    if [[ -p "$PIPE" ]]; then
+        if check_pipe_responsiveness; then
+            pipe_responsive=true
+        fi
+    fi
+
+    # Decision logic based on command and status
+    case "$status" in
+        "RUNNING"|"HOT_RELOAD"|"HOT_RESTART"|"HOT_RELOAD_REQUESTED"|"HOT_RESTART_REQUESTED")
+            if [[ "$pid_exists" == true ]] && [[ "$pipe_responsive" == true ]]; then
+                log_message "Flutter is ready for command: $cmd"
+                return 0
+            elif [[ "$pid_exists" == true ]] && [[ "$pipe_responsive" == false ]]; then
+                echo "⚠ Flutter process is running but unresponsive"
+                echo "Try: flutter_controller_enhanced cleanup && flutter_controller_enhanced run"
+                return 1
+            else
+                echo "⚠ Flutter status shows running but process is dead"
+                clean_stale_state "Inconsistent state"
+                if [[ "$auto_start" == true ]] && [[ "$cmd" =~ ^[rR]$ ]]; then
+                    echo "Auto-starting Flutter..."
+                    setup_flutter_pipe "emulator-5554"
+                    if wait_for_flutter_ready 30; then
+                        return 0
+                    fi
+                fi
+                return 1
+            fi
+            ;;
+        "STARTING")
+            echo "Flutter is starting up, waiting for readiness..."
+            if wait_for_flutter_ready 30; then
+                return 0
+            else
+                echo "⚠ Flutter failed to become ready"
+                return 1
+            fi
+            ;;
+        "STOPPED"|"CRASHED"|"ERROR")
+            if [[ "$auto_start" == true ]] && [[ "$cmd" =~ ^[rR]$ ]]; then
+                echo "Flutter is not running. Auto-starting..."
+                cleanup_flutter_process  # Clean up any remnants
+                setup_flutter_pipe "emulator-5554"
+                if wait_for_flutter_ready 30; then
+                    return 0
+                else
+                    echo "⚠ Failed to auto-start Flutter"
+                    return 1
+                fi
+            else
+                echo "ERROR: Flutter is not running (status: $status)"
+                echo "Run: flutter_controller_enhanced run"
+                return 1
+            fi
+            ;;
+        "UNRESPONSIVE")
+            echo "⚠ Flutter is unresponsive. Attempting recovery..."
+            cleanup_flutter_process
+            if [[ "$auto_start" == true ]]; then
+                setup_flutter_pipe "emulator-5554"
+                if wait_for_flutter_ready 30; then
+                    return 0
+                fi
+            fi
+            echo "Recovery failed. Please run: flutter_controller_enhanced cleanup && flutter_controller_enhanced run"
+            return 1
+            ;;
+        *)
+            echo "⚠ Unknown Flutter status: $status"
+            if [[ "$auto_start" == true ]] && [[ "$cmd" =~ ^[rR]$ ]]; then
+                echo "Attempting to start Flutter..."
+                cleanup_flutter_process
+                setup_flutter_pipe "emulator-5554"
+                if wait_for_flutter_ready 30; then
+                    return 0
+                fi
+            fi
+            return 1
+            ;;
+    esac
+}
+
 send_flutter_command() {
     local cmd="$1"
     local validate_ready=${2:-true}
-    
-    if [[ ! -p "$PIPE" ]]; then
-        echo "ERROR: Flutter pipe not found. Is Flutter running?"
-        return 1
-    fi
-    
-    # Validate readiness for critical commands
-    if [[ "$validate_ready" == true ]] && [[ "$cmd" =~ ^[rR]$ ]]; then
-        if ! check_pipe_responsiveness; then
-            echo "ERROR: Flutter pipe is unresponsive. Command not sent."
+    local auto_start=${3:-false}
+
+    # Pre-command validation
+    if [[ "$validate_ready" == true ]]; then
+        if ! pre_command_check "$cmd" "$auto_start"; then
             return 1
         fi
-        
-        # For hot reload/restart, ensure Flutter is ready
-        if ! wait_for_flutter_ready 10; then
-            echo "WARNING: Flutter may not be ready. Sending command anyway..."
-        fi
     fi
-    
+
+    # Ensure pipe exists after pre-command check
+    if [[ ! -p "$PIPE" ]]; then
+        echo "ERROR: Flutter pipe not found after validation"
+        return 1
+    fi
+
     log_message "Sending command: $cmd"
-    
+
     # Send command with error handling
     if ! echo "$cmd" > "$PIPE" 2>/dev/null; then
         log_message "ERROR: Failed to send command to pipe"
         echo "ERROR: Failed to send command. Pipe may be broken."
         return 1
     fi
-    
+
     case "$cmd" in
         "r") update_status "HOT_RELOAD_REQUESTED" ;;
         "R") update_status "HOT_RESTART_REQUESTED" ;;
-        "q") 
+        "q")
             update_status "QUIT_REQUESTED"
             sleep 3
             cleanup_flutter_process
             ;;
     esac
-    
+
     return 0
 }
 
@@ -429,28 +533,12 @@ case "$1" in
         setup_flutter_pipe "$2"
         ;;
     "r")
-        # Check if running, auto-start if needed
-        if ! check_flutter_status >/dev/null 2>&1; then
-            log_message "WARNING: Flutter is not running. Starting Flutter first..."
-            cleanup_flutter_process  # Clean up any stale files
-            setup_flutter_pipe "emulator-5554"
-            sleep 3  # Give Flutter time to start
-        else
-            rotate_logs
-        fi
-        send_flutter_command "r"
+        # Hot reload with auto-start if needed
+        send_flutter_command "r" true true
         ;;
     "R")
-        # Check if running, auto-start if needed
-        if ! check_flutter_status >/dev/null 2>&1; then
-            log_message "WARNING: Flutter is not running. Starting Flutter first..."
-            cleanup_flutter_process  # Clean up any stale files
-            setup_flutter_pipe "emulator-5554"
-            sleep 3  # Give Flutter time to start
-        else
-            rotate_logs
-        fi
-        send_flutter_command "R"
+        # Hot restart with auto-start if needed
+        send_flutter_command "R" true true
         ;;
     "q"|"quit")
         send_flutter_command "q"

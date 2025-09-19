@@ -6,12 +6,16 @@ class MapLegendWidget extends StatefulWidget {
   final bool isMergeMode;
   final bool sitesEnabled;
   final Map<IcaoClass, bool> excludedIcaoClasses;
+  final bool? isExpanded; // External state (optional)
+  final VoidCallback? onToggleExpanded; // External callback (optional)
 
   const MapLegendWidget({
     super.key,
     this.isMergeMode = false,
     this.sitesEnabled = true,
     this.excludedIcaoClasses = const {},
+    this.isExpanded,
+    this.onToggleExpanded,
   });
 
   @override
@@ -19,13 +23,16 @@ class MapLegendWidget extends StatefulWidget {
 }
 
 class _MapLegendWidgetState extends State<MapLegendWidget> with SingleTickerProviderStateMixin {
-  bool _isExpanded = true;
+  late bool _isExpanded;
   late AnimationController _animationController;
   late Animation<double> _expandAnimation;
+
+  bool get isExpanded => widget.isExpanded ?? _isExpanded;
 
   @override
   void initState() {
     super.initState();
+    _isExpanded = widget.isExpanded ?? true; // Use external state if provided, otherwise default to true
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 200),
       vsync: this,
@@ -34,8 +41,21 @@ class _MapLegendWidgetState extends State<MapLegendWidget> with SingleTickerProv
       parent: _animationController,
       curve: Curves.easeInOut,
     );
-    if (_isExpanded) {
+    if (isExpanded) {
       _animationController.value = 1.0;
+    }
+  }
+
+  @override
+  void didUpdateWidget(MapLegendWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Update animation when external state changes
+    if (widget.isExpanded != oldWidget.isExpanded && widget.isExpanded != null) {
+      if (widget.isExpanded!) {
+        _animationController.forward();
+      } else {
+        _animationController.reverse();
+      }
     }
   }
 
@@ -46,14 +66,22 @@ class _MapLegendWidgetState extends State<MapLegendWidget> with SingleTickerProv
   }
 
   void _toggleExpanded() {
-    setState(() {
-      _isExpanded = !_isExpanded;
-      if (_isExpanded) {
-        _animationController.forward();
-      } else {
-        _animationController.reverse();
-      }
-    });
+    if (widget.onToggleExpanded != null) {
+      // Use external callback if provided
+      widget.onToggleExpanded!();
+    } else {
+      // Otherwise manage state internally
+      setState(() {
+        _isExpanded = !_isExpanded;
+      });
+    }
+
+    // Always update animation based on current state
+    if (isExpanded) {
+      _animationController.forward();
+    } else {
+      _animationController.reverse();
+    }
   }
 
   @override
@@ -77,7 +105,7 @@ class _MapLegendWidgetState extends State<MapLegendWidget> with SingleTickerProv
         ),
         child: Padding(
           // Conditional padding: less when collapsed to match search bar height
-          padding: _isExpanded
+          padding: isExpanded
               ? const EdgeInsets.all(12.0)
               : const EdgeInsets.symmetric(horizontal: 12.0, vertical: 10.0),
           child: Column(
@@ -102,10 +130,14 @@ class _MapLegendWidgetState extends State<MapLegendWidget> with SingleTickerProv
                         ),
                       ),
                       const SizedBox(width: 4),
-                      Icon(
-                        _isExpanded ? Icons.expand_less : Icons.expand_more,
-                        color: Colors.white70,
-                        size: 16,
+                      AnimatedRotation(
+                        turns: isExpanded ? 0.25 : 0.0,
+                        duration: const Duration(milliseconds: 200),
+                        child: const Icon(
+                          Icons.chevron_right,
+                          size: 16,
+                          color: Colors.white70,
+                        ),
                       ),
                     ],
                   ),
@@ -127,13 +159,13 @@ class _MapLegendWidgetState extends State<MapLegendWidget> with SingleTickerProv
                 _buildLegendItem(
                   Icons.location_on,
                   Colors.blue,
-                  'Local sites (DB)',
+                  'Flown Sites',
                 ),
                 const SizedBox(height: 2),
                 _buildLegendItem(
                   Icons.location_on,
                   Colors.green,
-                  'API sites',
+                  'New Sites',
                 ),
               ],
 

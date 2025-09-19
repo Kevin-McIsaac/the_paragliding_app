@@ -14,15 +14,14 @@ import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
 import '../../services/nearby_sites_search_state.dart';
 import '../../services/nearby_sites_search_manager.dart';
+import '../../services/site_bounds_loader.dart';
+import '../../data/models/unified_site.dart';
 import '../../utils/map_provider.dart';
 import '../../utils/site_utils.dart';
 import '../widgets/nearby_sites_map_widget.dart';
-import '../widgets/airspace_controls_widget.dart';
 import '../widgets/map_filter_dialog.dart';
 import '../widgets/common/app_error_state.dart';
-import '../widgets/common/app_empty_state.dart';
 import '../../services/openaip_service.dart';
-import '../../utils/performance_monitor.dart';
 
 
 class NearbySitesScreen extends StatefulWidget {
@@ -33,17 +32,15 @@ class NearbySitesScreen extends StatefulWidget {
 }
 
 class _NearbySitesScreenState extends State<NearbySitesScreen> {
-  final DatabaseService _databaseService = DatabaseService.instance;
   final LocationService _locationService = LocationService.instance;
-  final ParaglidingEarthApi _paraglidingEarthApi = ParaglidingEarthApi.instance;
   
   // Constants for bounds-based loading (copied from EditSiteScreen)
   static const double _boundsThreshold = 0.001;
-  static const int _debounceDurationMs = 750; // Increased debounce to reduce API calls
+  static const int _debounceDurationMs = 500; // Standardized debounce time for all maps
   
-  // Unified state variables - all sites are ParaglidingSite objects from API
-  List<ParaglidingSite> _allSites = [];
-  List<ParaglidingSite> _displayedSites = [];
+  // Unified state variables using new UnifiedSite model
+  List<UnifiedSite> _allUnifiedSites = [];
+  List<ParaglidingSite> _displayedSites = [];  // Keep as ParaglidingSite for widget compatibility
   Map<String, bool> _siteFlightStatus = {}; // Key: "lat,lng", Value: hasFlights
   Position? _userPosition;
   bool _isLoading = false;
@@ -164,7 +161,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       
       // Sites will be loaded dynamically via bounds-based loading
       // Initialize empty unified structure
-      _allSites = [];
+      _allUnifiedSites = [];
       _displayedSites = [];
       _siteFlightStatus = {};
       
@@ -275,9 +272,12 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
   void _updateDisplayedSites() {
     final stopwatch = Stopwatch()..start();
-    
+
+    // Convert UnifiedSites to ParaglidingSites for backward compatibility
+    final paraglidingSites = _allUnifiedSites.map((s) => s.toParaglidingSite()).toList();
+
     // Use SearchManager's computed property for cleaner logic
-    List<ParaglidingSite> filteredSites = _searchManager.getDisplayedSites(_allSites);
+    List<ParaglidingSite> filteredSites = _searchManager.getDisplayedSites(paraglidingSites);
     
     // Add pinned site if we have one and it's not already in the list
     final pinnedSite = _searchManager.state.pinnedSite;
@@ -371,22 +371,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     }
   }
 
-  void _selectMapProvider(MapProvider provider) async {
-    setState(() {
-      _selectedMapProvider = provider;
-    });
-    
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(_mapProviderKey, provider.index);
-    } catch (e) {
-      LoggingService.error('Failed to save map provider preference', e);
-    }
-    
-    LoggingService.action('NearbySites', 'map_provider_changed', {
-      'provider': provider.shortName,
-    });
-  }
 
   /// Jump to a location without dismissing search results
   void _jumpToLocation(ParaglidingSite site, {bool keepSearchActive = false}) {
@@ -472,129 +456,47 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       _isLoadingSites = true;
     });
 
-    LoggingService.info('Starting site load for bounds: $boundsKey');
-    final totalStopwatch = Stopwatch()..start();
-    final memoryBefore = PerformanceMonitor.getMemoryUsageMB();
+    LoggingService.info('Starting site load for bounds using SiteBoundsLoader: $boundsKey');
 
     try {
-      // 1. Load local sites from DB to check flight status
-      final dbStopwatch = Stopwatch()..start();
-      final localSites = await _databaseService.getSitesInBounds(
-        north: bounds.north,
-        south: bounds.south,
-        east: bounds.east,
-        west: bounds.west,
-      );
-      dbStopwatch.stop();
-
-      LoggingService.performance(
-        'Sites DB Query',
-        Duration(milliseconds: dbStopwatch.elapsedMilliseconds),
-        'sites=${localSites.length}'
+      // Use the new unified SiteBoundsLoader
+      final result = await SiteBoundsLoader.instance.loadSitesForBounds(
+        bounds,
+        apiLimit: 50,
+        includeFlightCounts: true,
       );
 
-      // 2. Load API sites within bounds
-      final apiStopwatch = Stopwatch()..start();
-      final apiSites = await _paraglidingEarthApi.getSitesInBounds(
-        bounds.north,
-        bounds.south,
-        bounds.east,
-        bounds.west,
-        limit: 50,
-        detailed: false,
-      );
-      apiStopwatch.stop();
-
-      LoggingService.performance(
-        'Sites API Fetch',
-        Duration(milliseconds: apiStopwatch.elapsedMilliseconds),
-        'sites=${apiSites.length}, bounds=${bounds.west},${bounds.south},${bounds.east},${bounds.north}'
-      );
-      
-      // 3. For each local site, try to find its corresponding API data
-      final dedupStopwatch = Stopwatch()..start();
-      final unifiedSites = <ParaglidingSite>[];
-      final siteFlightStatus = <String, bool>{};
-
-      // Add API sites with flight status checking
-      for (final apiSite in apiSites) {
-        final siteKey = SiteUtils.createSiteKey(apiSite.latitude, apiSite.longitude);
-        
-        // Check if this API site matches any local site (has been flown)
-        final hasFlights = localSites.any((localSite) =>
-          (localSite.latitude - apiSite.latitude).abs() < 0.000001 &&
-          (localSite.longitude - apiSite.longitude).abs() < 0.000001);
-          
-        siteFlightStatus[siteKey] = hasFlights;
-        unifiedSites.add(apiSite);
-      }
-      
-      // 4. For local sites not found in API, create minimal representations
-      for (final localSite in localSites) {
-        final siteKey = SiteUtils.createSiteKey(localSite.latitude, localSite.longitude);
-        
-        // Skip if already found in API sites
-        if (siteFlightStatus.containsKey(siteKey)) continue;
-        
-        // Create a minimal ParaglidingSite from local data without API lookup
-        final minimalApiSite = ParaglidingSite(
-          name: localSite.name,
-          latitude: localSite.latitude,
-          longitude: localSite.longitude,
-          altitude: localSite.altitude?.toInt(),
-          siteType: 'launch', // Default to launch for local sites
-          country: localSite.country ?? '',
-          // Other fields will be null/empty
-        );
-        siteFlightStatus[siteKey] = true; // Local site has flights
-        unifiedSites.add(minimalApiSite);
-      }
-      dedupStopwatch.stop();
-
-      // 4. UI update
-      final uiUpdateStopwatch = Stopwatch()..start();
       if (mounted) {
         setState(() {
-          _allSites = unifiedSites;
-          _siteFlightStatus = siteFlightStatus;
+          // Store unified sites
+          _allUnifiedSites = result.sites;
+
+          // Build flight status map for backward compatibility
+          _siteFlightStatus = {};
+          for (final site in result.sites) {
+            final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
+            _siteFlightStatus[siteKey] = site.hasFlights;
+          }
+
           _isLoadingSites = false;
-          
+
           // Clear pinned site only if not from auto-jump or search is no longer active
           if (!_searchManager.state.pinnedSiteIsFromAutoJump || _searchManager.state.query.isEmpty) {
             // Note: SearchManager handles pinned site clearing internally
             // No need to manually clear here anymore
           }
-          
+
           // Update displayed sites with the new bounds data
           _updateDisplayedSites();
         });
-        uiUpdateStopwatch.stop();
 
         // Mark these bounds as loaded to prevent duplicate requests
         _lastLoadedBoundsKey = boundsKey;
 
-        // Log detailed site loading breakdown
-        totalStopwatch.stop();
-        final memoryAfter = PerformanceMonitor.getMemoryUsageMB();
-
-        LoggingService.structured('SITES_BREAKDOWN', {
-          'db_query_ms': dbStopwatch.elapsedMilliseconds,
-          'api_call_ms': apiStopwatch.elapsedMilliseconds,
-          'dedup_ms': dedupStopwatch.elapsedMilliseconds,
-          'ui_update_ms': uiUpdateStopwatch.elapsedMilliseconds,
-          'total_ms': totalStopwatch.elapsedMilliseconds,
-          'local_sites': localSites.length,
-          'api_sites': apiSites.length,
-          'unified_sites': unifiedSites.length,
-          'memory_before_mb': memoryBefore.toStringAsFixed(1),
-          'memory_after_mb': memoryAfter.toStringAsFixed(1),
-          'memory_delta_mb': (memoryAfter - memoryBefore).toStringAsFixed(1),
-        });
-        
         LoggingService.structured('BOUNDS_SITES_LOADED', {
-          'local_sites_count': localSites.length,
-          'api_sites_count': apiSites.length,
-          'unified_sites_count': unifiedSites.length,
+          'total_sites': result.sites.length,
+          'flown_sites': result.flownSites.length,
+          'new_sites': result.newSites.length,
           'bounds_key': boundsKey,
         });
       }
@@ -682,7 +584,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         // Sites were disabled - clear displayed sites and reset the bounds key
         setState(() {
           _displayedSites.clear();
-          _allSites.clear();
+          _allUnifiedSites.clear();
           _lastLoadedBoundsKey = ''; // Clear the bounds key so sites reload when re-enabled
         });
         LoggingService.action('MapFilter', 'sites_disabled', {'cleared_sites_count': _displayedSites.length});
@@ -828,7 +730,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                               mapProvider: _selectedMapProvider,
                               isLegendExpanded: _isLegendExpanded,
                               onToggleLegend: _toggleLegend,
-                                              onSiteSelected: _onSiteSelected,
+                              onSiteSelected: _onSiteSelected,
                               onBoundsChanged: _onBoundsChanged,
                               searchQuery: _searchManager.state.query,
                               onSearchChanged: _searchManager.onSearchQueryChanged,
@@ -844,57 +746,14 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                               onShowMapFilter: _showMapFilterDialog,
                               hasActiveFilters: hasActiveFilters,
                               sitesEnabled: _sitesEnabled,
+                              airspaceEnabled: _airspaceEnabled,
                               maxAltitudeFt: _maxAltitudeFt,
                               filterUpdateCounter: _filterUpdateCounter,
                               excludedIcaoClasses: _excludedIcaoClasses,
                             );
                           },
                         ),
-                        
-                        // Loading overlay for dynamic site loading
-                        if (_isLoadingSites)
-                          Positioned(
-                            top: 60, // Moved down to avoid controls
-                            right: 16, // Positioned on right for better visibility
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.85),
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.3),
-                                    blurRadius: 4,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.5,
-                                      color: Colors.white,
-                                      strokeCap: StrokeCap.round,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  const Text(
-                                    'Loading nearby sites...',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        
+
                         // Auto-dismissing location notification
                         if (_showLocationNotification)
                           Positioned(
