@@ -112,6 +112,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
   // Unified map update debouncing
   Timer? _mapUpdateDebouncer;
+  Timer? _performanceMonitorThrottle;
   fm.LatLngBounds? _lastProcessedBounds;
   static const double _boundsThreshold = 0.001;
   static const int _debounceDurationMs = 750;
@@ -240,6 +241,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     _searchFocusNode.dispose();
     _mapController.dispose();
     _mapUpdateDebouncer?.cancel();
+    _performanceMonitorThrottle?.cancel();
     super.dispose();
   }
 
@@ -249,20 +251,25 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   }
   
   void _onMapEvent(fm.MapEvent event) {
-    // Log frame performance during map interactions
+    // Throttle frame performance monitoring during map interactions to reduce overhead
     if (event is fm.MapEventMove || event is fm.MapEventFlingAnimation) {
-      // Log frame jank during movement
-      final frameStats = PerformanceMonitor.getFrameRateStats();
-      final droppedFrames = frameStats['dropped_frames'] as int;
-      if (droppedFrames > 5) {
-        LoggingService.structured('FRAME_JANK', {
-          'dropped_frames': droppedFrames,
-          'total_frames': frameStats['total_frames'],
-          'fps': (frameStats['fps'] as double).toStringAsFixed(1),
-          'worst_frame_ms': (frameStats['avg_frame_time_ms'] as double).toStringAsFixed(1),
-          'context': event is fm.MapEventMove ? 'map_pan' : 'map_fling',
-        });
-      }
+      // Cancel any existing throttle timer
+      _performanceMonitorThrottle?.cancel();
+
+      // Throttle frame monitoring to once per 200ms to reduce overhead
+      _performanceMonitorThrottle = Timer(const Duration(milliseconds: 200), () {
+        final frameStats = PerformanceMonitor.getFrameRateStats();
+        final droppedFrames = frameStats['dropped_frames'] as int;
+        if (droppedFrames > 5) {
+          LoggingService.structured('FRAME_JANK', {
+            'dropped_frames': droppedFrames,
+            'total_frames': frameStats['total_frames'],
+            'fps': (frameStats['fps'] as double).toStringAsFixed(1),
+            'worst_frame_ms': (frameStats['avg_frame_time_ms'] as double).toStringAsFixed(1),
+            'context': event is fm.MapEventMove ? 'map_pan' : 'map_fling',
+          });
+        }
+      });
     }
 
     // React to all movement and zoom end events to reload sites and airspace
@@ -1288,7 +1295,9 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     final mapWidget = Stack(
       children: [
         // FlutterMap with native click handling for airspace tooltip
-        fm.FlutterMap(
+        // Wrapped in RepaintBoundary to isolate map repaints from widget tree
+        RepaintBoundary(
+          child: fm.FlutterMap(
             mapController: _mapController,
             options: fm.MapOptions(
               initialCenter: _getInitialCenter(),
@@ -1344,8 +1353,9 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               ),
             ],
           ),
+        ),
 
-        // Map overlays
+        // Map overlays - must remain direct children of Stack due to Positioned widgets
         _buildAttribution(),
         _buildTopControlBar(),
 
