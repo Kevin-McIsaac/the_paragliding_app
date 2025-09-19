@@ -517,7 +517,8 @@ class AirspaceMetadataCache {
     return geometries;
   }
 
-  /// Get airspaces for viewport from loaded countries
+  /// Get airspaces for viewport using optimized spatial query
+  /// This replaces the old method that loaded all countries then filtered
   Future<List<CachedAirspaceGeometry>> getAirspacesForViewport({
     required List<String> countryCodes,
     required double west,
@@ -531,38 +532,33 @@ class AirspaceMetadataCache {
 
     final stopwatch = Stopwatch()..start();
 
-    // Get all geometries for the countries
-    final allGeometries = await getAirspacesForCountries(countryCodes);
-
-    // Filter by viewport bounds
-    final viewportGeometries = allGeometries.where((geometry) {
-      // Check if any polygon overlaps with viewport
-      for (final polygon in geometry.polygons) {
-        if (polygon.isNotEmpty) {
-          double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
-
-          for (final point in polygon) {
-            minLat = minLat < point.latitude ? minLat : point.latitude;
-            maxLat = maxLat > point.latitude ? maxLat : point.latitude;
-            minLng = minLng < point.longitude ? minLng : point.longitude;
-            maxLng = maxLng > point.longitude ? maxLng : point.longitude;
-          }
-
-          // Check for overlap
-          if (!(minLat > north || maxLat < south || minLng > east || maxLng < west)) {
-            return true;
-          }
-        }
-      }
-      return false;
-    }).toList();
+    // Use the new spatial index query - this does viewport filtering at the DB level
+    final viewportGeometries = await _diskCache.getGeometriesInBounds(
+      west: west,
+      south: south,
+      east: east,
+      north: north,
+      countryCodes: countryCodes,
+    );
 
     stopwatch.stop();
+
+    // Log the new optimized performance
     LoggingService.performance(
-      'Filtered viewport airspaces',
+      '[SPATIAL_VIEWPORT_QUERY]',
       stopwatch.elapsed,
-      'total=${allGeometries.length}, viewport=${viewportGeometries.length}',
+      'countries=${countryCodes.length}, viewport_geometries=${viewportGeometries.length}',
     );
+
+    // Update country cache for loaded geometries
+    for (final countryCode in countryCodes) {
+      final countryIds = viewportGeometries
+          .map((g) => g.id)
+          .toSet();
+      if (countryIds.isNotEmpty) {
+        _updateCountryCache(countryCode, countryIds);
+      }
+    }
 
     return viewportGeometries;
   }

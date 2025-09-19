@@ -11,7 +11,7 @@ import '../data/models/airspace_cache_models.dart';
 
 class AirspaceDiskCache {
   static const String _databaseName = 'airspace_cache.db';
-  static const int _databaseVersion = 3; // Version 3: Country-based storage
+  static const int _databaseVersion = 5; // Version 5: Optimized spatial indexing without R-tree
 
   static const String _geometryTable = 'airspace_geometries';
   static const String _metadataTable = 'tile_metadata'; // Keep for compatibility
@@ -159,10 +159,17 @@ class AirspaceDiskCache {
       )
     ''');
 
+    // Create optimized spatial indices for bounding box queries
+    // Using compound index for efficient spatial queries without R-tree
+    await db.execute('CREATE INDEX idx_geometry_spatial ON $_geometryTable(bounds_west, bounds_east, bounds_south, bounds_north)');
+    await db.execute('CREATE INDEX idx_geometry_bounds_west ON $_geometryTable(bounds_west)');
+    await db.execute('CREATE INDEX idx_geometry_bounds_east ON $_geometryTable(bounds_east)');
+    await db.execute('CREATE INDEX idx_geometry_bounds_south ON $_geometryTable(bounds_south)');
+    await db.execute('CREATE INDEX idx_geometry_bounds_north ON $_geometryTable(bounds_north)');
+
     // Create indices for performance - optimized for native columns
     await db.execute('CREATE INDEX idx_geometry_type_code ON $_geometryTable(type_code)');
     await db.execute('CREATE INDEX idx_geometry_fetch_time ON $_geometryTable(fetch_time)');
-    await db.execute('CREATE INDEX idx_geometry_bounds ON $_geometryTable(bounds_west, bounds_south, bounds_east, bounds_north)');
     await db.execute('CREATE INDEX idx_geometry_altitude ON $_geometryTable(lower, upper)');
     await db.execute('CREATE INDEX idx_metadata_fetch_time ON $_metadataTable(fetch_time)');
     await db.execute('CREATE INDEX idx_metadata_empty ON $_metadataTable(is_empty)');
@@ -688,6 +695,119 @@ class AirspaceDiskCache {
       return geometries;
     } catch (e, stack) {
       LoggingService.error('Failed to retrieve geometries', e, stack);
+      return [];
+    }
+  }
+
+  /// Get geometries within spatial bounds using optimized compound index
+  /// This method uses standard SQLite with indexed columns for spatial queries
+  Future<List<CachedAirspaceGeometry>> getGeometriesInBounds({
+    required double west,
+    required double south,
+    required double east,
+    required double north,
+    List<String>? countryCodes,
+    int? typeCode,
+  }) async {
+    final db = await database;
+    final stopwatch = Stopwatch()..start();
+    final queryStopwatch = Stopwatch();
+    final decodeStopwatch = Stopwatch();
+
+    try {
+      // Build the spatial query using indexed bounds columns
+      queryStopwatch.start();
+
+      final conditions = <String>[];
+      final args = <dynamic>[];
+
+      // Spatial bounds conditions - uses indexed columns for fast filtering
+      conditions.add('bounds_west <= ?');
+      args.add(east);
+      conditions.add('bounds_east >= ?');
+      args.add(west);
+      conditions.add('bounds_south <= ?');
+      args.add(north);
+      conditions.add('bounds_north >= ?');
+      args.add(south);
+
+      if (typeCode != null) {
+        conditions.add('type_code = ?');
+        args.add(typeCode);
+      }
+
+      // Build the query based on country filter
+      String query;
+      if (countryCodes != null && countryCodes.isNotEmpty) {
+        query = '''
+          SELECT DISTINCT g.*
+          FROM $_geometryTable g
+          JOIN $_countryMappingTable cm ON g.id = cm.airspace_id
+          WHERE ${conditions.join(' AND ')}
+            AND cm.country_code IN (${countryCodes.map((_) => '?').join(',')})
+        ''';
+        args.addAll(countryCodes);
+      } else {
+        query = '''
+          SELECT * FROM $_geometryTable
+          WHERE ${conditions.join(' AND ')}
+        ''';
+      }
+
+      final results = await db.rawQuery(query, args);
+      queryStopwatch.stop();
+
+      LoggingService.info('[SPATIAL_INDEX_QUERY] Found ${results.length} geometries in bounds | query_ms=${queryStopwatch.elapsedMilliseconds}');
+
+      if (results.isEmpty) {
+        return [];
+      }
+
+      // Decode geometries
+      decodeStopwatch.start();
+      final geometries = <CachedAirspaceGeometry>[];
+
+      for (final row in results) {
+        try {
+          final coordinatesBinary = row['coordinates_binary'] as Uint8List;
+          final polygonOffsetsJson = row['polygon_offsets'] as String;
+          final propertiesJson = row['properties'] as String;
+
+          final polygonOffsets = (jsonDecode(polygonOffsetsJson) as List).cast<int>();
+          final properties = jsonDecode(propertiesJson) as Map<String, dynamic>;
+          final polygons = _decodeCoordinatesBinaryOptimized(coordinatesBinary, polygonOffsets);
+
+          final geometry = CachedAirspaceGeometry(
+            id: row['id'] as String,
+            name: row['name'] as String,
+            typeCode: row['type_code'] as int,
+            polygons: polygons,
+            properties: properties,
+            fetchTime: DateTime.fromMillisecondsSinceEpoch(row['fetch_time'] as int),
+            geometryHash: row['geometry_hash'] as String,
+            compressedSize: coordinatesBinary.length,
+            uncompressedSize: (row['coordinate_count'] as int) * 8,
+          );
+
+          geometries.add(geometry);
+        } catch (e) {
+          LoggingService.error('Failed to parse geometry: ${row['id']}', e, null);
+        }
+      }
+
+      decodeStopwatch.stop();
+
+      // Log performance metrics
+      LoggingService.performance(
+        '[SPATIAL_QUERY_COMPLETE]',
+        stopwatch.elapsed,
+        'query_results=${results.length}, returned=${geometries.length}, '
+        'query_ms=${queryStopwatch.elapsedMilliseconds}, decode_ms=${decodeStopwatch.elapsedMilliseconds}',
+      );
+
+      return geometries;
+    } catch (e, stack) {
+      LoggingService.error('Failed to query geometries in bounds', e, stack);
       return [];
     }
   }
