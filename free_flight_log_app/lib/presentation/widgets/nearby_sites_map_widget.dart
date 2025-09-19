@@ -116,6 +116,10 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   static const double _boundsThreshold = 0.001;
   static const int _debounceDurationMs = 750;
 
+  // Cached markers to avoid recreation on every build
+  List<fm.Marker>? _cachedSiteMarkers;
+  String? _cachedSiteMarkersKey;
+
   // Separate loading states for parallel operations
   bool _isLoadingSites = false;
   bool _isLoadingAirspace = false;
@@ -141,6 +145,37 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   @override
   void didUpdateWidget(NearbySitesMapWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
+
+    // Diagnostic logging for rebuild triggers
+    final List<String> changes = [];
+    if (oldWidget.sites != widget.sites) {
+      changes.add('sites(${oldWidget.sites.length}→${widget.sites.length})');
+    }
+    if (oldWidget.siteFlightStatus != widget.siteFlightStatus) {
+      changes.add('siteFlightStatus');
+    }
+    if (oldWidget.userPosition != widget.userPosition) {
+      changes.add('userPosition');
+    }
+    if (oldWidget.centerPosition != widget.centerPosition) {
+      changes.add('centerPosition');
+    }
+    if (oldWidget.searchQuery != widget.searchQuery) {
+      changes.add('searchQuery(${oldWidget.searchQuery}→${widget.searchQuery})');
+    }
+    if (oldWidget.airspaceEnabled != widget.airspaceEnabled) {
+      changes.add('airspaceEnabled(${oldWidget.airspaceEnabled}→${widget.airspaceEnabled})');
+    }
+    if (oldWidget.filterUpdateCounter != widget.filterUpdateCounter) {
+      changes.add('filterUpdateCounter(${oldWidget.filterUpdateCounter}→${widget.filterUpdateCounter})');
+    }
+
+    if (changes.isNotEmpty) {
+      LoggingService.structured('MAP_WIDGET_UPDATE', {
+        'changes': changes.join(', '),
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      });
+    }
 
     // Track site count changes
     if (oldWidget.sites != widget.sites && widget.sites != null) {
@@ -717,10 +752,22 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
       return [];
     }
 
-    return widget.sites.map((site) {
+    // Create cache key from sites data and flight status
+    final cacheKey = '${widget.sites.length}_${widget.siteFlightStatus.length}_${widget.sitesEnabled}';
+
+    // Return cached markers if data hasn't changed
+    if (_cachedSiteMarkersKey == cacheKey && _cachedSiteMarkers != null) {
+      LoggingService.info('[PERFORMANCE] Using cached site markers');
+      return _cachedSiteMarkers!;
+    }
+
+    LoggingService.info('[PERFORMANCE] Building new site markers (cache miss)');
+
+    // Build new markers
+    _cachedSiteMarkers = widget.sites.map((site) {
       final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
       final hasFlights = widget.siteFlightStatus[siteKey] ?? false;
-      
+
       return fm.Marker(
         point: LatLng(site.latitude, site.longitude),
         width: 140,
@@ -739,6 +786,11 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         ),
       );
     }).toList();
+
+    // Update cache key
+    _cachedSiteMarkersKey = cacheKey;
+
+    return _cachedSiteMarkers!;
   }
 
   List<fm.Marker> _buildUserLocationMarker() {
@@ -1246,10 +1298,9 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               onMapReady: _onMapReady,
               onMapEvent: _onMapEvent,
               onPositionChanged: (position, hasGesture) {
-                // Update current zoom when map position changes
-                setState(() {
-                  _currentZoom = position.zoom ?? widget.initialZoom;
-                });
+                // Track zoom without rebuilding widget
+                // Only update internal state, no setState needed
+                _currentZoom = position.zoom ?? widget.initialZoom;
               },
               interactionOptions: const fm.InteractionOptions(
                 flags: fm.InteractiveFlag.all,
