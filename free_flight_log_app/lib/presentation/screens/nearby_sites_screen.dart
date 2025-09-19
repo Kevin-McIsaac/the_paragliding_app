@@ -52,14 +52,18 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   
   // Map provider state
   MapProvider _selectedMapProvider = MapProvider.openStreetMap;
-  
+
   // Key to force map widget refresh when airspace settings change
   Key _mapWidgetKey = UniqueKey();
   static const String _mapProviderKey = 'nearby_sites_map_provider';
-  
+
   // Legend state
   bool _isLegendExpanded = false;
   static const String _legendExpandedKey = 'nearby_sites_legend_expanded';
+
+  // Preference keys for filter states
+  static const String _sitesEnabledKey = 'nearby_sites_sites_enabled';
+  static const String _airspaceEnabledKey = 'nearby_sites_airspace_enabled';
   
   // Bounds-based loading state (copied from EditSiteScreen)
   Timer? _debounceTimer;
@@ -74,7 +78,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   Timer? _locationNotificationTimer;
   late final NearbySitesSearchManager _searchManager;
 
-  // Filter state for sites and airspace
+  // Filter state for sites and airspace (defaults, will be loaded from preferences)
   bool _sitesEnabled = true; // Controls site loading and display
   bool _airspaceEnabled = true; // Controls airspace loading and display
   bool _hasActiveFilters = false; // Cached value to avoid FutureBuilder rebuilds
@@ -121,11 +125,15 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       final prefs = await SharedPreferences.getInstance();
       final providerIndex = prefs.getInt(_mapProviderKey) ?? MapProvider.openStreetMap.index;
       final legendExpanded = prefs.getBool(_legendExpandedKey) ?? false;
+      final sitesEnabled = prefs.getBool(_sitesEnabledKey) ?? true;
+      final airspaceEnabled = prefs.getBool(_airspaceEnabledKey) ?? true;
 
       if (mounted) {
         setState(() {
           _selectedMapProvider = MapProvider.values[providerIndex];
           _isLegendExpanded = legendExpanded;
+          _sitesEnabled = sitesEnabled;
+          _airspaceEnabled = airspaceEnabled;
         });
       }
     } catch (e) {
@@ -605,6 +613,11 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         _maxAltitudeFt = maxAltitudeFt;
         _selectedMapProvider = mapProvider;
       });
+
+      // Save the enabled states to preferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_sitesEnabledKey, sitesEnabled);
+      await prefs.setBool(_airspaceEnabledKey, airspaceEnabled);
 
       // Handle sites visibility changes
       if (!sitesEnabled && previousSitesEnabled) {
