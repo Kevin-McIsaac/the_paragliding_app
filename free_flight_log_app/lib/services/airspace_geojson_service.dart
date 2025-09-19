@@ -1427,10 +1427,20 @@ class AirspaceGeoJsonService {
     String? longestClippingAirspace;
     final Map<String, int> clippingTimeByType = {};
 
+    // Enhanced metrics for optimization tracking
+    int theoreticalComparisons = 0;
+    int actualComparisons = 0;
+    int altitudeRejections = 0;
+    int boundsRejections = 0;
+    int actualClippingOperations = 0;
+    int emptyClippingLists = 0;
+    final setupStopwatch = Stopwatch()..start();
+
     final clippingMemoryBefore = PerformanceMonitor.getMemoryUsageMB();
 
     LoggingService.structured('AIRSPACE_CLIPPING_START', {
       'input_polygons': polygonsWithAltitude.length,
+      'strategy': 'Linear O(n²)',
     });
 
     // STAGE 1: Viewport filtering already done in parseAirspaceGeoJson
@@ -1447,9 +1457,37 @@ class AirspaceGeoJsonService {
       ));
     }
 
+    // OPTIMIZATION: Sort by altitude (lowest first) for early exit
+    final sortStopwatch = Stopwatch()..start();
+    visibleAirspaces.sort((a, b) {
+      final altA = a.data.airspaceData.getLowerAltitudeInFeet();
+      final altB = b.data.airspaceData.getLowerAltitudeInFeet();
+      return altA.compareTo(altB);
+    });
+    sortStopwatch.stop();
+
+    setupStopwatch.stop();
+
+    // STAGE 3 OPTIMIZATION: Pre-extract frequently accessed data for better cache locality
+    // Accessing data from contiguous arrays is faster than following object references
+    final List<int> altitudeArray = List<int>.generate(
+      visibleAirspaces.length,
+      (i) => visibleAirspaces[i].data.airspaceData.getLowerAltitudeInFeet(),
+      growable: false,
+    );
+
+    // Calculate theoretical comparisons (n*(n-1)/2)
+    final n = visibleAirspaces.length;
+    theoreticalComparisons = (n * (n - 1)) ~/ 2;
+
     LoggingService.structured('CLIPPING_STAGE', {
       'input_polygons': polygonsWithAltitude.length,
       'polygons_to_clip': visibleAirspaces.length,
+      'theoretical_comparisons': theoreticalComparisons,
+      'setup_time_ms': setupStopwatch.elapsedMilliseconds,
+      'sort_time_ms': sortStopwatch.elapsedMilliseconds,
+      'sorted_by_altitude': true,
+      'stage_3_cache_optimized': true,
     });
 
     // Process each visible polygon from lowest to highest altitude
@@ -1465,27 +1503,55 @@ class AirspaceGeoJsonService {
       // Collect all lower-altitude polygons as clipping masks
       final List<List<LatLng>> clippingPolygons = [];
       final List<AirspaceData> clippingAirspaceData = [];
-      int skippedDueToBounds = 0;
-      int totalComparisons = 0;
+
+      // Local comparison metrics
+      int localComparisons = 0;
+      int localAltitudeRejections = 0;
+      int localBoundsRejections = 0;
+      int earlyExitSavings = 0;
+
+      // STAGE 3: Use pre-extracted altitude from array (better cache locality)
+      final currentAltitude = altitudeArray[i];
 
       for (int j = 0; j < i; j++) {
         final lowerAirspace = visibleAirspaces[j];
-        totalComparisons++;
+        localComparisons++;
+        actualComparisons++;
 
-        // STAGE 2: Skip if bounding boxes don't overlap
-        if (!_boundingBoxesOverlap(currentBounds, lowerAirspace.bounds)) {
-          skippedDueToBounds++;
+        // STAGE 3 OPTIMIZATION: Access altitude from contiguous array (cache-friendly)
+        final lowerAltitude = altitudeArray[j];
+
+        // Early exit - all remaining polygons are at same or higher altitude
+        if (lowerAltitude >= currentAltitude) {
+          // Count how many comparisons we're saving
+          earlyExitSavings = i - j - 1;
+          actualComparisons -= earlyExitSavings; // Adjust for saved comparisons
+          localAltitudeRejections++;
+          altitudeRejections++;
+          break; // EARLY EXIT - no need to check remaining polygons
+        }
+
+        // STAGE 2 OPTIMIZATION: Inline bounding box check (avoid function call overhead)
+        // Direct comparison is faster than function call
+        final lowerBounds = lowerAirspace.bounds;
+        if (currentBounds.east < lowerBounds.west ||
+            currentBounds.west > lowerBounds.east ||
+            currentBounds.north < lowerBounds.south ||
+            currentBounds.south > lowerBounds.north) {
+          localBoundsRejections++;
+          boundsRejections++;
           continue;
         }
 
-        final lowerAltitude = lowerAirspace.data.airspaceData.getLowerAltitudeInFeet();
-        final currentAltitude = airspaceData.getLowerAltitudeInFeet();
+        clippingPolygons.add(lowerAirspace.data.points);
+        clippingAirspaceData.add(lowerAirspace.data.airspaceData);
+      }
 
-        // Only clip against polygons that are actually lower
-        if (lowerAltitude < currentAltitude) {
-          clippingPolygons.add(lowerAirspace.data.points);
-          clippingAirspaceData.add(lowerAirspace.data.airspaceData);
-        }
+      // Track if we're doing actual clipping
+      if (clippingPolygons.isEmpty) {
+        emptyClippingLists++;
+      } else {
+        actualClippingOperations++;
       }
 
       // Perform clipping operation with timing
@@ -1522,14 +1588,29 @@ class AirspaceGeoJsonService {
       clippedPolygons.addAll(clippedResults);
     }
 
-    // Log detailed clipping performance
+    // Calculate comparison efficiency
+    final double comparisonReduction = theoreticalComparisons > 0
+        ? ((theoreticalComparisons - actualComparisons) / theoreticalComparisons * 100)
+        : 0.0;
+
+    // Log detailed clipping performance with enhanced metrics
     LoggingService.structured('CLIPPING_DETAILED_PERFORMANCE', {
+      'strategy': 'Linear O(n²) Search',
       'total_clipping_time_ms': totalClippingTimeMs,
+      'overall_time_ms': setupStopwatch.elapsedMilliseconds + totalClippingTimeMs,
+      'setup_time_ms': setupStopwatch.elapsedMilliseconds,
       'average_time_ms': visibleAirspaces.isNotEmpty ? (totalClippingTimeMs / visibleAirspaces.length).round() : 0,
       'longest_time_ms': longestClippingTimeMs,
       'longest_airspace': longestClippingAirspace,
       'completely_clipped': completelyClippedCount,
       'time_by_type': clippingTimeByType,
+      'total_comparisons': actualComparisons,
+      'theoretical_comparisons': theoreticalComparisons,
+      'comparison_reduction_%': comparisonReduction.toStringAsFixed(1),
+      'altitude_rejections': altitudeRejections,
+      'bounds_rejections': boundsRejections,
+      'actual_clipping_operations': actualClippingOperations,
+      'empty_clipping_lists': emptyClippingLists,
     });
 
     // Log summary of completely clipped airspaces if any
