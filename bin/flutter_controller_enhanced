@@ -194,13 +194,6 @@ setup_flutter_pipe() {
     [[ -e "$PIPE" && ! -p "$PIPE" ]] && rm "$PIPE"
     [[ ! -p "$PIPE" ]] && mkfifo "$PIPE"
     
-    # Change to Flutter app directory
-    cd ./free_flight_log_app || {
-        log_message "ERROR: Cannot change to Flutter app directory"
-        update_status "ERROR"
-        return 1
-    }
-    
     # Save the working directory for status display
     echo "$PWD" > "$WORKDIR_FILE"
     
@@ -210,8 +203,19 @@ setup_flutter_pipe() {
     # Start Flutter with comprehensive logging
     {
         tail -f "$PIPE" | flutter run -d "$device" 2>&1 | while IFS= read -r line; do
+            # Filter out dependency resolution noise
+            case "$line" in
+                "Resolving dependencies..."*|\
+                "Downloading packages..."*|\
+                "Got dependencies!"*|\
+                *"available)"*)
+                    # Skip dependency resolution output - don't log or echo
+                    continue
+                    ;;
+            esac
+
             echo "$line" | tee -a "$LOG_FILE"
-            
+
             # Monitor for specific events
             case "$line" in
                 *"Flutter run key commands"*)
