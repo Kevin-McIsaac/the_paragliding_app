@@ -18,6 +18,7 @@ import '../../utils/site_marker_utils.dart';
 import '../../utils/map_provider.dart';
 import '../../utils/site_utils.dart';
 import '../../utils/map_tile_provider.dart';
+import '../widgets/common/map_loading_overlay.dart';
 
 
 class EditSiteScreen extends StatefulWidget {
@@ -562,41 +563,14 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   }
 
 
-  /// Build the loading indicator
+  /// Build the loading indicator using the common widget
   Widget? _buildLoadingIndicator() {
     if (!_isLoadingSites) return null;
-    
-    return Positioned(
-      bottom: 16,
-      left: 0,
-      right: 0,
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.black87,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              ),
-              SizedBox(width: 8),
-              Text(
-                'Loading sites...',
-                style: TextStyle(color: Colors.white, fontSize: 12),
-              ),
-            ],
-          ),
-        ),
-      ),
+
+    return MapLoadingOverlay.single(
+      label: 'Loading sites',
+      icon: Icons.place,
+      iconColor: Colors.green,
     );
   }
 

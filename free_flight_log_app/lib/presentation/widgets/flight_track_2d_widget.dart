@@ -23,6 +23,7 @@ import '../../utils/ui_utils.dart';
 import '../../utils/map_provider.dart';
 import '../../utils/map_tile_provider.dart';
 import '../screens/flight_track_3d_fullscreen.dart';
+import 'common/map_loading_overlay.dart';
 
 
 class FlightTrack2DWidget extends StatefulWidget {
@@ -1654,49 +1655,12 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               ),
             ),
           ),
-          // Bottom center loading indicator like Site Maps
+          // Loading indicator using the common widget
           if (_showLoadingIndicator)
-            Positioned(
-              bottom: 16,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.95),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.2),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Loading sites...',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+            MapLoadingOverlay.single(
+              label: 'Loading sites',
+              icon: Icons.place,
+              iconColor: Colors.green,
             ),
           // Time display overlay for selected point
           ValueListenableBuilder<int?>(

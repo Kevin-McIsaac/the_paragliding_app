@@ -15,22 +15,22 @@ class DatabaseHelper {
   Future<Database> get database async => _database ??= await _initDatabase();
 
   /// Initialize database with v1.0 schema
-  /// 
+  ///
   /// PRE-RELEASE STRATEGY: No migrations needed since app hasn't been released.
   /// All schema changes during development require clearing app data.
-  /// 
+  ///
   /// POST-RELEASE STRATEGY: Start migrations from v2 when app is released.
   /// This ensures a clean baseline for production users.
   Future<Database> _initDatabase() async {
     String path = join(await getDatabasesPath(), _databaseName);
     LoggingService.database('INIT', 'Opening database at: $path');
-    
+
     final db = await openDatabase(
       path,
       version: _databaseVersion,
       onCreate: _onCreate,
     );
-    
+
     return db;
   }
 
@@ -151,14 +151,24 @@ class DatabaseHelper {
       // 4. Index for wing aliases lookup
       await db.execute('CREATE INDEX IF NOT EXISTS idx_wing_aliases_wing_id ON wing_aliases(wing_id)');
       await db.execute('CREATE INDEX IF NOT EXISTS idx_wing_aliases_alias_name ON wing_aliases(alias_name)');
-      
+
+      // 5. Spatial indexes for sites table to optimize bounding box queries
+      // These are critical for getSitesInBounds() performance
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_sites_latitude ON sites(latitude)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_sites_longitude ON sites(longitude)');
+      // Composite index for the most common spatial query pattern
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_sites_lat_lon ON sites(latitude, longitude)');
+
+      // 6. Index for site name searches
+      // Used in searchSitesByName() for autocomplete and site search features
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_sites_name ON sites(name)');
+
       LoggingService.database('INDEX', 'Successfully created essential indexes');
     } catch (e) {
       LoggingService.error('DatabaseHelper: Failed to create indexes', e);
       rethrow;
     }
   }
-
 
   /// Force recreation of the database (use when migration fails)
   Future<void> recreateDatabase() async {

@@ -19,6 +19,7 @@ import '../../services/airspace_identification_service.dart';
 import '../widgets/airspace_info_popup.dart';
 import '../widgets/map_filter_fab.dart';
 import '../widgets/map_legend_widget.dart';
+import '../widgets/common/map_loading_overlay.dart';
 import '../../utils/performance_monitor.dart';
 
 class NearbySitesMapWidget extends StatefulWidget {
@@ -1308,51 +1309,26 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
           ),
         ],
 
-        // Stacked progress list for parallel loading operations
-        if (_isLoadingSites || _isLoadingAirspace) ...[
-          Positioned(
-            top: 60,
-            right: 16,
-            child: Container(
-              constraints: BoxConstraints(maxWidth: 220),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.85),
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.3),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_isLoadingSites) _buildLoadingItem(
-                    'Loading sites',
-                    _loadedSiteCount,
-                    Icons.place,
-                    Colors.green,
-                  ),
-                  if (_isLoadingSites && _isLoadingAirspace)
-                    Divider(
-                      height: 1,
-                      thickness: 0.5,
-                      color: Colors.white.withOpacity(0.2),
-                    ),
-                  if (_isLoadingAirspace) _buildLoadingItem(
-                    'Loading airspace',
-                    _loadedAirspaceCount,
-                    Icons.layers,
-                    Colors.blue,
-                  ),
-                ],
-              ),
-            ),
+        // Loading overlay for parallel loading operations
+        if (_isLoadingSites || _isLoadingAirspace)
+          MapLoadingOverlay.multiple(
+            items: [
+              if (_isLoadingSites)
+                MapLoadingItem(
+                  label: 'Loading sites',
+                  icon: Icons.place,
+                  iconColor: Colors.green,
+                  count: _loadedSiteCount,
+                ),
+              if (_isLoadingAirspace)
+                MapLoadingItem(
+                  label: 'Loading airspace',
+                  icon: Icons.layers,
+                  iconColor: Colors.blue,
+                  count: _loadedAirspaceCount,
+                ),
+            ],
           ),
-        ],
       ],
     );
 
@@ -1419,44 +1395,4 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     return typeMap[typeCode] ?? 'UNKNOWN';
   }
 
-  /// Build individual loading item for the stacked progress list
-  Widget _buildLoadingItem(String label, int? count, IconData icon, Color iconColor) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      child: Row(
-        children: [
-          // Icon indicator
-          Icon(
-            icon,
-            size: 16,
-            color: iconColor.withOpacity(0.8),
-          ),
-          const SizedBox(width: 8),
-          // Loading spinner
-          SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: Colors.white70,
-              strokeCap: StrokeCap.round,
-            ),
-          ),
-          const SizedBox(width: 10),
-          // Text label
-          Expanded(
-            child: Text(
-              count != null ? '$label ($count)' : '$label...',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
