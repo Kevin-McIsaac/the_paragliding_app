@@ -43,6 +43,7 @@ class NearbySitesMapWidget extends StatefulWidget {
   final VoidCallback? onShowMapFilter;
   final bool hasActiveFilters;
   final bool sitesEnabled;
+  final bool airspaceEnabled; // Add prop for airspace enabled state
   final double maxAltitudeFt;
   final int filterUpdateCounter;
   final Map<IcaoClass, bool> excludedIcaoClasses;
@@ -70,6 +71,7 @@ class NearbySitesMapWidget extends StatefulWidget {
     this.onShowMapFilter,
     this.hasActiveFilters = false,
     this.sitesEnabled = true,
+    this.airspaceEnabled = true, // Default to true if not provided
     this.maxAltitudeFt = 15000.0,
     this.filterUpdateCounter = 0,
     this.excludedIcaoClasses = const {},
@@ -87,7 +89,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   // Airspace overlay state
   List<Widget> _airspaceLayers = [];
   bool _airspaceLoading = false;
-  bool _airspaceEnabled = false;
+  // Remove internal _airspaceEnabled state - use widget.airspaceEnabled instead
   Set<AirspaceType> _visibleAirspaceTypes = {};
 
   // Airspace tooltip state
@@ -124,11 +126,14 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   void initState() {
     super.initState();
     _currentZoom = widget.initialZoom; // Initialize with the initial zoom
-    _loadAirspaceStatus();
-    // Delay airspace loading until after the first frame to ensure MapController is ready
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadAirspaceLayers();
-    });
+    // Only load airspace if enabled
+    if (widget.airspaceEnabled) {
+      _loadAirspaceStatus();
+      // Delay airspace loading until after the first frame to ensure MapController is ready
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _loadAirspaceLayers();
+      });
+    }
   }
 
 
@@ -156,10 +161,19 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
     // Check if filter properties changed and reload overlays if needed
     if (oldWidget.sitesEnabled != widget.sitesEnabled ||
+        oldWidget.airspaceEnabled != widget.airspaceEnabled ||
         oldWidget.maxAltitudeFt != widget.maxAltitudeFt ||
         oldWidget.filterUpdateCounter != widget.filterUpdateCounter) {
       // Reload overlays with new filter settings
-      _loadAirspaceLayers();
+      if (widget.airspaceEnabled) {
+        _loadAirspaceLayers();
+      } else {
+        // Clear airspace layers if disabled
+        setState(() {
+          _airspaceLayers = [];
+          _airspaceLoading = false;
+        });
+      }
       // Refresh tooltip with updated filter status if currently open
       _refreshTooltipIfOpen();
     }
@@ -251,22 +265,36 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     // Set loading states before starting parallel loads
     setState(() {
       _isLoadingSites = widget.sitesEnabled;
-      _isLoadingAirspace = _airspaceEnabled;
+      _isLoadingAirspace = widget.airspaceEnabled; // Use prop instead of internal state
       _loadedSiteCount = null;
       _loadedAirspaceCount = null;
     });
 
-    // Parallel load both sites and airspace
-    await Future.wait([
-      _loadSitesForBounds(bounds).then((_) {
-        // Loading state is cleared by the parent's onBoundsChanged callback
-      }),
-      _loadAirspaceLayers().then((_) {
-        setState(() {
-          _isLoadingAirspace = false;
-        });
-      }),
-    ]);
+    // Build list of futures to load in parallel
+    final futures = <Future>[];
+
+    if (widget.sitesEnabled) {
+      futures.add(
+        _loadSitesForBounds(bounds).then((_) {
+          // Loading state is cleared by the parent's onBoundsChanged callback
+        }),
+      );
+    }
+
+    if (widget.airspaceEnabled) {
+      futures.add(
+        _loadAirspaceLayers().then((_) {
+          setState(() {
+            _isLoadingAirspace = false;
+          });
+        }),
+      );
+    }
+
+    // Load in parallel if there are any futures
+    if (futures.isNotEmpty) {
+      await Future.wait(futures);
+    }
   }
 
   /// Check if map controller is ready
@@ -306,7 +334,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
   /// Load airspace overlay layers based on user preferences and current map view
   Future<void> _loadAirspaceLayers() async {
-    if (_airspaceLoading) return;
+    if (_airspaceLoading || !widget.airspaceEnabled) return;
 
     setState(() {
       _airspaceLoading = true;
@@ -372,12 +400,9 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   /// Load airspace status for legend display
   Future<void> _loadAirspaceStatus() async {
     try {
-      final enabled = await OpenAipService.instance.isAirspaceEnabled();
-      if (mounted) {
-        setState(() {
-          _airspaceEnabled = enabled;
-        });
-      }
+      // No longer need to track internal state - using widget.airspaceEnabled
+      // Just load the status for display purposes
+      await OpenAipService.instance.isAirspaceEnabled();
     } catch (error, stackTrace) {
       LoggingService.error('Failed to load airspace status', error, stackTrace);
     }
@@ -422,7 +447,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
   /// Handle click for airspace identification
   void _handleAirspaceInteraction(Offset screenPosition, LatLng mapPoint) async {
-    if (!_airspaceEnabled) return;
+    if (!widget.airspaceEnabled) return;
 
     // Identify airspaces at the point (using map coordinates from FlutterMap)
     final allAirspaces = AirspaceIdentificationService.instance.identifyAirspacesAtPoint(mapPoint);

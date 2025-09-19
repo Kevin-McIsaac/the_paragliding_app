@@ -53,6 +53,8 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   static const double _altitudePaddingFactor = 0.1;
   static const int _chartIntervalMinutes = 15;
   static const int _chartIntervalMs = _chartIntervalMinutes * 60 * 1000;
+  static const double _boundsThreshold = 0.001; // Minimum change in degrees to trigger reload
+  static const int _debounceDurationMs = 750; // Standardized debounce time for all maps
   
   List<IgcPoint> _trackPoints = [];
   List<IgcPoint> _faiTrianglePoints = [];
@@ -70,6 +72,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   bool _isLoadingSites = false;
   bool _showLoadingIndicator = false;
   String? _lastLoadedBoundsKey;
+  LatLngBounds? _currentBounds; // Track current bounds for threshold check
   
   @override
   void initState() {
@@ -536,15 +539,42 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
 
 
 
-  /// Debounced site loading when map bounds change
-  void _onMapPositionChanged() {
-    _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
-      if (mounted) {
-        final bounds = _mapController.camera.visibleBounds;
-        _loadSitesForBounds(bounds);
+  /// Handle map events for bounds-based loading
+  void _onMapEvent(MapEvent event) {
+    // React to all movement and zoom end events to reload sites
+    if (event is MapEventMoveEnd ||
+        event is MapEventFlingAnimationEnd ||
+        event is MapEventDoubleTapZoomEnd ||
+        event is MapEventScrollWheelZoom) {
+
+      _debounceTimer?.cancel();
+      _debounceTimer = Timer(const Duration(milliseconds: _debounceDurationMs), () {
+        if (mounted) {
+          _updateMapBounds();
+        }
+      });
+    }
+  }
+
+  /// Update map bounds and load sites if bounds changed significantly
+  void _updateMapBounds() {
+    final newBounds = _mapController.camera.visibleBounds;
+
+    // Check if bounds have changed significantly
+    if (_currentBounds != null) {
+      final deltaLat = (newBounds.north - _currentBounds!.north).abs() +
+                       (newBounds.south - _currentBounds!.south).abs();
+      final deltaLng = (newBounds.east - _currentBounds!.east).abs() +
+                       (newBounds.west - _currentBounds!.west).abs();
+
+      if (deltaLat < _boundsThreshold && deltaLng < _boundsThreshold) {
+        // Bounds haven't changed significantly, skip loading
+        return;
       }
-    });
+    }
+
+    _currentBounds = newBounds;
+    _loadSitesForBounds(newBounds);
   }
 
   double _calculateClimbRate(IgcPoint point1, IgcPoint point2) {
@@ -1549,11 +1579,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
               maxZoom: _selectedMapProvider.maxZoom.toDouble(),
               onMapReady: _fitMapToBounds,
               onTap: (tapPosition, point) => _onMapTapped(point),
-              onPositionChanged: (position, hasGesture) {
-                if (hasGesture) {
-                  _onMapPositionChanged();
-                }
-              },
+              onMapEvent: _onMapEvent,
             ),
             children: [
               TileLayer(

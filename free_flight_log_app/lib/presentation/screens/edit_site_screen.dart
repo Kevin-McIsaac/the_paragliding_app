@@ -10,8 +10,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/site.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/flight.dart';
+import '../../data/models/unified_site.dart';
 import '../../services/database_service.dart';
-import '../../services/paragliding_earth_api.dart';
+import '../../services/site_bounds_loader.dart';
 import '../../services/logging_service.dart';
 import '../../utils/site_marker_utils.dart';
 import '../../utils/map_provider.dart';
@@ -45,7 +46,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   // Use shared constants from SiteMarkerUtils
   static const double _siteMarkerSize = SiteMarkerUtils.siteMarkerSize;
   static const double _boundsThreshold = 0.001;
-  static const int _debounceDurationMs = 500;
+  static const int _debounceDurationMs = 750; // Standardized debounce time for all maps
   static const double _launchRadiusMeters = 500.0;
   
   // Common UI shadows
@@ -61,8 +62,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   );
   
   // Site markers state
-  List<Site> _localSites = [];
-  List<ParaglidingSite> _apiSites = [];
+  List<UnifiedSite> _unifiedSites = [];
   List<Flight> _launches = [];
   Timer? _debounceTimer;
   
@@ -83,19 +83,15 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   Site? _currentlyDraggedSite;
   dynamic _hoveredTargetSite; // Can be Site or ParaglidingSite
   
-  // Flight count cache for tooltips
-  Map<int, int> _siteFlightCounts = {};
-  
   // Services
   final DatabaseService _databaseService = DatabaseService.instance;
-  final ParaglidingEarthApi _apiService = ParaglidingEarthApi.instance;
+  final SiteBoundsLoader _siteBoundsLoader = SiteBoundsLoader.instance;
 
   @override
   void initState() {
     super.initState();
     _loadMapProviderPreference();
     _loadLegendState();
-    _loadFlightCounts(); // Load flight counts for sites
     _checkAndShowHelpOnFirstVisit(); // Show help dialog on first visit
     
     // Start cache refresh timer for debug overlay (debug mode only)
@@ -683,53 +679,35 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   
   Future<void> _loadSitesForBounds(LatLngBounds bounds) async {
     if (_isLoadingSites) return;
-    
+
     // Create a unique key for these bounds to prevent duplicate requests
     final boundsKey = '${bounds.north.toStringAsFixed(6)}_${bounds.south.toStringAsFixed(6)}_${bounds.east.toStringAsFixed(6)}_${bounds.west.toStringAsFixed(6)}';
     if (_lastLoadedBoundsKey == boundsKey) {
       return; // Same bounds already loaded
     }
-    
+
     setState(() {
       _isLoadingSites = true;
     });
-    
+
     try {
-      // Load local sites
-      final localSitesFuture = _databaseService.getSitesInBounds(
-        north: bounds.north,
-        south: bounds.south,
-        east: bounds.east,
-        west: bounds.west,
+      // Use unified site loader
+      final result = await _siteBoundsLoader.loadSitesForBounds(
+        bounds,
+        apiLimit: 50,
+        includeFlightCounts: true,
       );
-      
-      // Load API sites
-      final apiSitesFuture = _apiService.getSitesInBounds(
-        bounds.north,
-        bounds.south,
-        bounds.east,
-        bounds.west,
-        limit: 50,
-      );
-      
-      // Wait for both to complete
-      final results = await Future.wait([
-        localSitesFuture,
-        apiSitesFuture,
-      ]);
-      
+
       if (mounted) {
         setState(() {
-          _localSites = results[0] as List<Site>;
-          _apiSites = results[1] as List<ParaglidingSite>;
+          _unifiedSites = result.sites;
           _isLoadingSites = false;
         });
-        
+
         // Mark these bounds as loaded to prevent duplicate requests
         _lastLoadedBoundsKey = boundsKey;
-        
-        // Load flight counts for the newly loaded sites
-        _loadFlightCounts();
+
+        LoggingService.info('EditSiteScreen: Loaded ${result.sites.length} unified sites (${result.localSites.length} local, ${result.apiOnlySites.length} API)');
       }
     } catch (e) {
       LoggingService.error('EditSiteScreen: Error loading sites', e);
@@ -746,31 +724,10 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   void _clearMapDataCache() {
     _lastLoadedBoundsKey = null;
     _lastLoadedLaunchesBoundsKey = null;
-    _siteFlightCounts.clear(); // Clear flight count cache too
+    // Clear the unified site loader cache too
+    _siteBoundsLoader.clearCache();
   }
   
-  /// Load flight counts for local sites
-  Future<void> _loadFlightCounts() async {
-    try {
-      final Map<int, int> flightCounts = {};
-      
-      // Load flight counts for all local sites
-      for (final site in _localSites) {
-        if (site.id != null) {
-          final count = await _databaseService.getFlightCountForSite(site.id!);
-          flightCounts[site.id!] = count;
-        }
-      }
-      
-      if (mounted) {
-        setState(() {
-          _siteFlightCounts = flightCounts;
-        });
-      }
-    } catch (e) {
-      LoggingService.error('EditSiteScreen: Error loading flight counts', e);
-    }
-  }
   
 
   /// Load all launches in the current viewport bounds
@@ -843,8 +800,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       final launchPoint = LatLng(launch.launchLatitude!, launch.launchLongitude!);
       final distanceToNewPoint = _calculateDistance(newPoint, launchPoint);
       
-      // Check against all existing sites
-      for (final site in _localSites) {
+      // Check against all existing local sites
+      for (final site in _unifiedSites.where((s) => s.isLocalSite)) {
         final sitePoint = LatLng(site.latitude, site.longitude);
         final distanceToExistingSite = _calculateDistance(sitePoint, launchPoint);
         if (distanceToExistingSite <= distanceToNewPoint) {
@@ -887,35 +844,20 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     String? nearestCountry;
     double? nearestDistance;
     
-    // Check local sites first
-    for (final site in _localSites) {
-      if (site.country == null || site.country!.isEmpty) {
+    // Check all unified sites
+    for (final site in _unifiedSites) {
+      final siteCountry = site.country;
+
+      if (siteCountry == null || siteCountry.isEmpty) {
         continue;
       }
-      
+
       final sitePoint = LatLng(site.latitude, site.longitude);
       final distance = _calculateDistance(point, sitePoint);
-      
+
       if (nearestDistance == null || distance < nearestDistance) {
-        nearestCountry = site.country;
+        nearestCountry = siteCountry;
         nearestDistance = distance;
-      }
-    }
-    
-    // Check API sites if no local site found
-    if (nearestCountry == null) {
-      for (final site in _apiSites) {
-        if (site.country == null || site.country!.isEmpty) {
-          continue;
-        }
-        
-        final sitePoint = LatLng(site.latitude, site.longitude);
-        final distance = _calculateDistance(point, sitePoint);
-        
-        if (nearestDistance == null || distance < nearestDistance) {
-          nearestCountry = site.country;
-          nearestDistance = distance;
-        }
       }
     }
     
@@ -1152,7 +1094,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           if (_currentBounds != null) {
             await _loadSitesForBounds(_currentBounds!);
           }
-          await _loadFlightCounts(); // Refresh flight counts
         }
       } catch (e) {
         LoggingService.error('EditSiteScreen: Error updating site', e);
@@ -1209,7 +1150,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       if (mounted) {
         _clearMapDataCache();
         _updateMapBounds();
-        await _loadFlightCounts(); // Refresh flight counts
         
         // Now open the edit dialog for the newly created site
         await _showSiteEditDialog(createdSite);
@@ -1291,22 +1231,25 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   /// Build the drag markers layer containing all draggable site markers
   DragMarkers _buildDragMarkersLayer() {
     List<DragMarker> dragMarkers = [];
-    
-    // Add local sites markers
-    dragMarkers.addAll(_localSites.map(_buildLocalSiteDragMarker));
-    
-    // Add API sites markers (excluding duplicates)
-    dragMarkers.addAll(_apiSites
-        .where((site) => !SiteUtils.isDuplicateApiSite(site, _localSites))
-        .map(_buildApiSiteDragMarker));
-    
+
+    // Build markers from unified sites
+    for (final site in _unifiedSites) {
+      if (site.isLocalSite) {
+        final localSite = site.toLocalSite();
+        dragMarkers.add(_buildLocalSiteDragMarker(localSite, site.flightCount));
+      } else {
+        final apiSite = site.toParaglidingSite();
+        dragMarkers.add(_buildApiSiteDragMarker(apiSite));
+      }
+    }
+
     return DragMarkers(markers: dragMarkers);
   }
 
 
   /// Build local site drag marker (blue, draggable)
-  DragMarker _buildLocalSiteDragMarker(Site site) {
-    final launchCount = site.id != null ? _siteFlightCounts[site.id!] : null;
+  DragMarker _buildLocalSiteDragMarker(Site site, int flightCount) {
+    final launchCount = flightCount > 0 ? flightCount : null;
     
     return DragMarker(
       point: LatLng(site.latitude, site.longitude),
@@ -1523,23 +1466,17 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     // Use marker visual size for hit detection
     const double hitRadius = 18.0; // Half of 36px marker size
     
-    // Check local sites (flown sites)
-    for (final site in _localSites) {
-      final sitePixel = camera.projectAtZoom(LatLng(site.latitude, site.longitude), camera.zoom);
+    // Check all unified sites
+    for (final unifiedSite in _unifiedSites) {
+      final sitePixel = camera.projectAtZoom(LatLng(unifiedSite.latitude, unifiedSite.longitude), camera.zoom);
       final distance = (dropPixel - sitePixel).distance;
       if (distance <= hitRadius) {
-        return site;
-      }
-    }
-    
-    // Check API sites (new sites) 
-    for (final site in _apiSites) {
-      if (SiteUtils.isDuplicateApiSite(site, _localSites)) continue; // Skip duplicates
-      
-      final sitePixel = camera.projectAtZoom(LatLng(site.latitude, site.longitude), camera.zoom);
-      final distance = (dropPixel - sitePixel).distance;
-      if (distance <= hitRadius) {
-        return site;
+        // Return the appropriate site type
+        if (unifiedSite.isLocalSite) {
+          return unifiedSite.toLocalSite();
+        } else {
+          return unifiedSite.toParaglidingSite();
+        }
       }
     }
     
