@@ -46,7 +46,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   // Use shared constants from SiteMarkerUtils
   static const double _siteMarkerSize = SiteMarkerUtils.siteMarkerSize;
   static const double _boundsThreshold = 0.001;
-  static const int _debounceDurationMs = 750; // Standardized debounce time for all maps
+  static const int _debounceDurationMs = 500; // Standardized debounce time for all maps
   static const double _launchRadiusMeters = 500.0;
   
   // Common UI shadows

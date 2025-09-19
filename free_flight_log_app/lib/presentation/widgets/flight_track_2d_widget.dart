@@ -54,7 +54,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   static const int _chartIntervalMinutes = 15;
   static const int _chartIntervalMs = _chartIntervalMinutes * 60 * 1000;
   static const double _boundsThreshold = 0.001; // Minimum change in degrees to trigger reload
-  static const int _debounceDurationMs = 750; // Standardized debounce time for all maps
+  static const int _debounceDurationMs = 500; // Standardized debounce time for all maps
   
   List<IgcPoint> _trackPoints = [];
   List<IgcPoint> _faiTrianglePoints = [];

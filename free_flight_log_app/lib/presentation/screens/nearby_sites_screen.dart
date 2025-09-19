@@ -36,7 +36,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   
   // Constants for bounds-based loading (copied from EditSiteScreen)
   static const double _boundsThreshold = 0.001;
-  static const int _debounceDurationMs = 750; // Increased debounce to reduce API calls
+  static const int _debounceDurationMs = 500; // Standardized debounce time for all maps
   
   // Unified state variables using new UnifiedSite model
   List<UnifiedSite> _allUnifiedSites = [];
@@ -753,51 +753,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                             );
                           },
                         ),
-                        
-                        // Loading overlay for dynamic site loading
-                        if (_isLoadingSites)
-                          Positioned(
-                            top: 60, // Moved down to avoid controls
-                            right: 16, // Positioned on right for better visibility
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.85),
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.3),
-                                    blurRadius: 4,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.5,
-                                      color: Colors.white,
-                                      strokeCap: StrokeCap.round,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  const Text(
-                                    'Loading nearby sites...',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        
+
                         // Auto-dismissing location notification
                         if (_showLocationNotification)
                           Positioned(
