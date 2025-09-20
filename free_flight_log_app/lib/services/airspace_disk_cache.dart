@@ -96,8 +96,8 @@ class AirspaceDiskCache {
         type_code INTEGER NOT NULL,
 
         -- Spatial data (binary for efficiency)
-        coordinates_binary BLOB NOT NULL,  -- Float32 array
-        polygon_offsets TEXT NOT NULL,     -- JSON array of indices
+        coordinates_binary BLOB NOT NULL,  -- Int32 array (scaled by 10^7)
+        polygon_offsets BLOB NOT NULL,     -- Int32 array of point indices
         bounds_west REAL NOT NULL,
         bounds_south REAL NOT NULL,
         bounds_east REAL NOT NULL,
@@ -224,9 +224,9 @@ class AirspaceDiskCache {
   }
 
   // Binary encoding utilities for coordinates
-  /// Encodes polygon coordinates as a binary Float32 array
-  /// Returns the binary data and polygon offsets
-  (Uint8List, List<int>) _encodeCoordinatesBinary(List<List<LatLng>> polygons) {
+  /// Encodes polygon coordinates as Int32 arrays for direct Clipper2 compatibility
+  /// Returns the coordinate data and polygon offsets as binary blobs
+  (Uint8List, Uint8List) _encodeCoordinatesInt32(List<List<LatLng>> polygons) {
     final stopwatch = Stopwatch()..start();
 
     // Calculate total size needed
@@ -256,39 +256,132 @@ class AirspaceDiskCache {
       );
     }
 
-    // Removed verbose per-polygon logging - logged in batch operations instead
+    // Allocate Int32 arrays
+    final coordArray = Int32List(totalPoints * 2);
+    final offsetArray = Int32List(polygons.length);
 
-    // Allocate Float32List (4 bytes per float, 2 floats per point)
-    final floatArray = Float32List(totalPoints * 2);
-    final polygonOffsets = <int>[];
+    // Single pass encoding with pre-scaled integers for Clipper2
+    int coordIndex = 0;
+    for (int i = 0; i < polygons.length; i++) {
+      offsetArray[i] = coordIndex ~/ 2; // Store point index
 
-    int index = 0;
-    for (final polygon in polygons) {
-      polygonOffsets.add(index ~/ 2); // Store point index, not float index
-
+      final polygon = polygons[i];
       for (final point in polygon) {
-        floatArray[index++] = point.longitude;
-        floatArray[index++] = point.latitude;
+        // Scale to Int32 with precision factor 10^7 (1.11cm precision)
+        coordArray[coordIndex++] = (point.longitude * 10000000).round();
+        coordArray[coordIndex++] = (point.latitude * 10000000).round();
       }
     }
 
     // Convert to bytes
-    final bytes = floatArray.buffer.asUint8List();
+    final coordBytes = coordArray.buffer.asUint8List();
+    final offsetBytes = offsetArray.buffer.asUint8List();
 
     // Only log if encoding takes significant time (>5ms)
     if (stopwatch.elapsedMilliseconds > 5) {
       LoggingService.performance(
-        '[ENCODE_BINARY_SLOW]',
+        '[ENCODE_INT32_SLOW]',
         stopwatch.elapsed,
-        'polygons=${polygons.length}, points=$totalPoints, bytes=${bytes.length}, offsets=${polygonOffsets.length}',
+        'polygons=${polygons.length}, points=$totalPoints, coordBytes=${coordBytes.length}, offsetBytes=${offsetBytes.length}',
       );
     }
 
-    return (bytes, polygonOffsets);
+    return (coordBytes, offsetBytes);
   }
 
-  /// Decodes binary Float32 array back to polygon coordinates
+  // Keep old Float32 version for compatibility during migration
+  (Uint8List, List<int>) _encodeCoordinatesBinary(List<List<LatLng>> polygons) {
+    final (coordBytes, offsetBytes) = _encodeCoordinatesInt32(polygons);
+    // Convert offset bytes back to list for compatibility
+    final offsets = Int32List.view(offsetBytes.buffer).toList();
+    return (coordBytes, offsets);
+  }
+
+  /// Decodes Int32 coordinate and offset arrays back to polygon coordinates
+  List<List<LatLng>> _decodeCoordinatesInt32(Uint8List coordBlob, Uint8List offsetBlob) {
+    final stopwatch = Stopwatch()..start();
+
+    // Validate input
+    if (coordBlob.length % 4 != 0 || offsetBlob.length % 4 != 0) {
+      LoggingService.error(
+        'Invalid binary data: coord bytes ${coordBlob.length} or offset bytes ${offsetBlob.length} not divisible by 4',
+        null,
+        null,
+      );
+      return [];
+    }
+
+    // CRITICAL: Copy to aligned buffer to avoid alignment issues
+    // SQLite returns BLOBs as views at arbitrary offsets that may not be 4-byte aligned
+    final alignedCoords = Uint8List.fromList(coordBlob);
+    final alignedOffsets = Uint8List.fromList(offsetBlob);
+
+    final coords = Int32List.view(
+      alignedCoords.buffer,
+      0,
+      alignedCoords.length ~/ 4,
+    );
+    final offsets = Int32List.view(
+      alignedOffsets.buffer,
+      0,
+      alignedOffsets.length ~/ 4,
+    );
+
+    final polygons = <List<LatLng>>[];
+
+    for (int i = 0; i < offsets.length; i++) {
+      final startIdx = offsets[i] * 2; // Convert point index to coord index
+      final endIdx = (i + 1 < offsets.length)
+          ? offsets[i + 1] * 2
+          : coords.length;
+
+      // Validate indices
+      if (startIdx < 0 || endIdx > coords.length || startIdx > endIdx) {
+        LoggingService.error(
+          'Invalid polygon indices: start=$startIdx, end=$endIdx, array length=${coords.length}',
+          null,
+          null,
+        );
+        continue;
+      }
+
+      final polygon = <LatLng>[];
+      for (int j = startIdx; j < endIdx; j += 2) {
+        // Decode from Int32 with scale factor 10^7
+        polygon.add(LatLng(
+          coords[j + 1] / 10000000.0,  // latitude
+          coords[j] / 10000000.0,       // longitude
+        ));
+      }
+
+      if (polygon.isNotEmpty) {
+        polygons.add(polygon);
+      }
+    }
+
+    // Only log if decoding takes significant time (>5ms)
+    if (stopwatch.elapsedMilliseconds > 5) {
+      LoggingService.performance(
+        '[DECODE_INT32_SLOW]',
+        stopwatch.elapsed,
+        'polygons=${polygons.length}, coordBytes=${coordBlob.length}, offsetBytes=${offsetBlob.length}',
+      );
+    }
+
+    return polygons;
+  }
+
+  // Keep old Float32 version for compatibility during migration
   List<List<LatLng>> _decodeCoordinatesBinary(Uint8List bytes, List<int> polygonOffsets) {
+    // Convert List<int> offsets to Uint8List for new method
+    final offsetArray = Int32List.fromList(polygonOffsets);
+    final offsetBytes = offsetArray.buffer.asUint8List();
+
+    return _decodeCoordinatesInt32(bytes, offsetBytes);
+  }
+
+  // Legacy Float32 decode method (to be removed after migration)
+  List<List<LatLng>> _decodeCoordinatesFloat32(Uint8List bytes, List<int> polygonOffsets) {
     final stopwatch = Stopwatch()..start();
 
     // Validate input
@@ -310,8 +403,6 @@ class AirspaceDiskCache {
       0,  // New buffer starts at offset 0 (guaranteed aligned)
       alignedBytes.length ~/ 4,  // Number of floats (4 bytes per float)
     );
-
-    // Removed verbose per-decode logging - logged in batch operations instead
 
     final polygons = <List<LatLng>>[];
 
@@ -468,8 +559,8 @@ class AirspaceDiskCache {
     // Removed verbose per-geometry logging - logged in batch operations instead
 
     try {
-      // Encode coordinates as binary
-      final (coordinatesBinary, polygonOffsets) = _encodeCoordinatesBinary(geometry.polygons);
+      // Encode coordinates as Int32 binary with binary offsets
+      final (coordinatesBinary, offsetsBinary) = _encodeCoordinatesInt32(geometry.polygons);
 
       // Calculate bounds for spatial queries
       final bounds = _calculateBounds(geometry.polygons);
@@ -524,7 +615,7 @@ class AirspaceDiskCache {
 
           // Spatial data
           'coordinates_binary': coordinatesBinary,
-          'polygon_offsets': jsonEncode(polygonOffsets),
+          'polygon_offsets': offsetsBinary,
           'bounds_west': bounds['west'],
           'bounds_south': bounds['south'],
           'bounds_east': bounds['east'],
@@ -617,8 +708,8 @@ class AirspaceDiskCache {
       final batch = db.batch();
 
       for (final geometry in geometries) {
-        // Encode coordinates as binary
-        final (coordinatesBinary, polygonOffsets) = _encodeCoordinatesBinary(geometry.polygons);
+        // Encode coordinates as Int32 binary with binary offsets
+        final (coordinatesBinary, offsetsBinary) = _encodeCoordinatesInt32(geometry.polygons);
 
         // Calculate bounds for spatial queries
         final bounds = _calculateBounds(geometry.polygons);
@@ -673,7 +764,7 @@ class AirspaceDiskCache {
 
             // Spatial data
             'coordinates_binary': coordinatesBinary,
-            'polygon_offsets': jsonEncode(polygonOffsets),
+            'polygon_offsets': offsetsBinary,
             'bounds_west': bounds['west'],
             'bounds_south': bounds['south'],
             'bounds_east': bounds['east'],
@@ -745,14 +836,13 @@ class AirspaceDiskCache {
 
       final row = results.first;
 
-      // Decode binary coordinates
+      // Decode Int32 coordinates and offsets
       final coordinatesBinary = row['coordinates_binary'] as Uint8List;
-      final polygonOffsets = (jsonDecode(row['polygon_offsets'] as String) as List)
-          .cast<int>();
+      final offsetsBinary = row['polygon_offsets'] as Uint8List;
 
       // Removed verbose per-geometry decode logging
 
-      final polygons = _decodeCoordinatesBinary(coordinatesBinary, polygonOffsets);
+      final polygons = _decodeCoordinatesInt32(coordinatesBinary, offsetsBinary);
 
       // Reconstruct geometry from native columns
       final geometry = CachedAirspaceGeometry(
@@ -956,10 +1046,9 @@ class AirspaceDiskCache {
       for (final row in results) {
         try {
           final coordinatesBinary = row['coordinates_binary'] as Uint8List;
-          final polygonOffsetsJson = row['polygon_offsets'] as String;
+          final offsetsBinary = row['polygon_offsets'] as Uint8List;
 
-          final polygonOffsets = (jsonDecode(polygonOffsetsJson) as List).cast<int>();
-          final polygons = _decodeCoordinatesBinaryOptimized(coordinatesBinary, polygonOffsets);
+          final polygons = _decodeCoordinatesInt32(coordinatesBinary, offsetsBinary);
 
           // Reconstruct properties from native columns
           final properties = <String, dynamic>{};

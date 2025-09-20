@@ -1269,6 +1269,77 @@ class AirspaceGeoJsonService {
     return path.map((point) => _clipperToLatLng(point)).toList();
   }
 
+  /// Helper class for direct Int32 to Clipper2 conversion
+  class ClipperData {
+    final Int32List coords;
+    final Int32List offsets;
+
+    ClipperData(this.coords, this.offsets);
+
+    /// Create paths without intermediate LatLng objects
+    List<clipper.Path64> toPaths() {
+      final paths = <clipper.Path64>[];
+
+      for (int i = 0; i < offsets.length; i++) {
+        final startIdx = offsets[i] * 2;
+        final endIdx = (i + 1 < offsets.length)
+            ? offsets[i + 1] * 2
+            : coords.length;
+
+        // Pre-allocate path capacity for better performance
+        final pathLength = (endIdx - startIdx) ~/ 2;
+        final path = List<clipper.Point64>.filled(pathLength, clipper.Point64(0, 0));
+
+        int pathIndex = 0;
+        for (int j = startIdx; j < endIdx; j += 2) {
+          // Direct Int32 to Point64 (auto-promotes to Int64)
+          path[pathIndex++] = clipper.Point64(coords[j], coords[j + 1]);
+        }
+
+        paths.add(path);
+      }
+
+      return paths;
+    }
+
+    /// Get single polygon for subject
+    clipper.Path64 getPath(int index) {
+      final startIdx = offsets[index] * 2;
+      final endIdx = (index + 1 < offsets.length)
+          ? offsets[index + 1] * 2
+          : coords.length;
+
+      final path = <clipper.Point64>[];
+      for (int i = startIdx; i < endIdx; i += 2) {
+        path.add(clipper.Point64(coords[i], coords[i + 1]));
+      }
+      return path;
+    }
+
+    /// Convert to LatLng for display (only when needed)
+    List<List<LatLng>> toLatLngPolygons() {
+      final polygons = <List<LatLng>>[];
+
+      for (int i = 0; i < offsets.length; i++) {
+        final startIdx = offsets[i] * 2;
+        final endIdx = (i + 1 < offsets.length)
+            ? offsets[i + 1] * 2
+            : coords.length;
+
+        final polygon = <LatLng>[];
+        for (int j = startIdx; j < endIdx; j += 2) {
+          polygon.add(LatLng(
+            coords[j + 1] / _coordPrecision,  // lat
+            coords[j] / _coordPrecision,       // lng
+          ));
+        }
+        polygons.add(polygon);
+      }
+
+      return polygons;
+    }
+  }
+
   /// Calculate bounding box for a list of LatLng points
   fm.LatLngBounds _calculateBoundingBox(List<LatLng> points) {
     if (points.isEmpty) {
