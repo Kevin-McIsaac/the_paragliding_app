@@ -2001,23 +2001,18 @@ class AirspaceGeoJsonService {
       );
 
       // Process all polygon parts - handle both LatLng polygons and ClipperData
-      final allPoints = <LatLng>[];
+      List<LatLng> allPoints;
       if (geometry.clipperData != null) {
         // When using ClipperData, convert to LatLng only for display
         // The actual clipping will use the ClipperData directly
         final polygons = geometry.clipperData!.toLatLngPolygons();
-        if (polygons.isNotEmpty) {
-          allPoints.addAll(polygons.first);
-        }
-      } else if (geometry.polygons != null) {
+        allPoints = polygons.isNotEmpty ? polygons.first : const [];
+      } else if (geometry.polygons != null && geometry.polygons!.isNotEmpty) {
         // Traditional path with LatLng polygons
-        for (final polygon in geometry.polygons!) {
-          if (polygon.isNotEmpty) {
-            allPoints.addAll(polygon);
-            // Just use first polygon for now (TODO: handle multi-polygon properly)
-            break;
-          }
-        }
+        // Just use first polygon for now (TODO: handle multi-polygon properly)
+        allPoints = geometry.polygons!.first;
+      } else {
+        allPoints = const [];
       }
 
       // Add to all identification polygons (for tooltip)
@@ -2181,16 +2176,21 @@ class ClipperData {
         ? offsets[index + 1] * 2
         : coords.length;
 
-    final path = <clipper.Point64>[];
+    // Pre-allocate path with known size
+    final pointCount = (endIdx - startIdx) ~/ 2;
+    final path = List<clipper.Point64>.filled(pointCount, clipper.Point64(0, 0));
+
+    int pointIndex = 0;
     for (int i = startIdx; i < endIdx; i += 2) {
-      path.add(clipper.Point64(coords[i], coords[i + 1]));
+      path[pointIndex++] = clipper.Point64(coords[i], coords[i + 1]);
     }
     return path;
   }
 
   /// Convert to LatLng for display (only when needed)
   List<List<LatLng>> toLatLngPolygons() {
-    final polygons = <List<LatLng>>[];
+    // Pre-allocate list with known size
+    final polygons = List<List<LatLng>>.filled(offsets.length, const []);
 
     for (int i = 0; i < offsets.length; i++) {
       final startIdx = offsets[i] * 2;
@@ -2198,14 +2198,18 @@ class ClipperData {
           ? offsets[i + 1] * 2
           : coords.length;
 
-      final polygon = <LatLng>[];
+      // Pre-allocate polygon with known size
+      final pointCount = (endIdx - startIdx) ~/ 2;
+      final polygon = List<LatLng>.filled(pointCount, const LatLng(0, 0));
+
+      int pointIndex = 0;
       for (int j = startIdx; j < endIdx; j += 2) {
-        polygon.add(LatLng(
+        polygon[pointIndex++] = LatLng(
           coords[j + 1] / _coordPrecision,  // lat
           coords[j] / _coordPrecision,       // lng
-        ));
+        );
       }
-      polygons.add(polygon);
+      polygons[i] = polygon;
     }
 
     return polygons;

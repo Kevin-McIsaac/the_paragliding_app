@@ -349,9 +349,12 @@ class AirspaceDiskCache {
       alignedOffsets.length ~/ 4,
     );
 
-    final polygons = <List<LatLng>>[];
+    // Pre-allocate polygons list with known size
+    final polygonCount = offsets.length;
+    final polygons = List<List<LatLng>>.filled(polygonCount, const []);
+    const double scaleFactor = 10000000.0; // Extract constant
 
-    for (int i = 0; i < offsets.length; i++) {
+    for (int i = 0; i < polygonCount; i++) {
       final startIdx = offsets[i] * 2; // Convert point index to coord index
       final endIdx = (i + 1 < offsets.length)
           ? offsets[i + 1] * 2
@@ -367,17 +370,21 @@ class AirspaceDiskCache {
         continue;
       }
 
-      final polygon = <LatLng>[];
+      // Pre-allocate polygon with known size
+      final pointCount = (endIdx - startIdx) ~/ 2;
+      final polygon = List<LatLng>.filled(pointCount, const LatLng(0, 0));
+
+      int pointIndex = 0;
       for (int j = startIdx; j < endIdx; j += 2) {
         // Decode from Int32 with scale factor 10^7
-        polygon.add(LatLng(
-          coords[j + 1] / 10000000.0,  // latitude
-          coords[j] / 10000000.0,       // longitude
-        ));
+        polygon[pointIndex++] = LatLng(
+          coords[j + 1] / scaleFactor,  // latitude
+          coords[j] / scaleFactor,       // longitude
+        );
       }
 
-      if (polygon.isNotEmpty) {
-        polygons.add(polygon);
+      if (pointCount > 0) {
+        polygons[i] = polygon;
       }
     }
 
