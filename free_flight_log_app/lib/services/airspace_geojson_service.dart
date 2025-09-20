@@ -27,6 +27,7 @@ class AirspaceData {
   final Map<String, dynamic>? upperLimit;
   final Map<String, dynamic>? lowerLimit;
   final String? country;
+  final int? lowerAltitudeFt; // Pre-computed altitude from database
 
   /// Indicates if this airspace is currently filtered out by user settings
   /// Used to show visual distinction in tooltips
@@ -39,11 +40,15 @@ class AirspaceData {
     this.upperLimit,
     this.lowerLimit,
     this.country,
+    this.lowerAltitudeFt,
   });
 
   /// Convert lower altitude limit to feet for sorting purposes
   /// GND = 0, ft AMSL = direct value, FL = value × 100
   int getLowerAltitudeInFeet() {
+    // Use pre-computed value if available
+    if (lowerAltitudeFt != null) return lowerAltitudeFt!;
+
     if (lowerLimit == null) return 999999; // Put unknown altitudes at the end
 
     final value = lowerLimit!['value'];
@@ -433,13 +438,21 @@ class AirspaceGeoJsonService {
       return [];
     }
 
-    // Get airspaces for viewport from loaded countries
+    // Convert excluded types to integer codes for SQL filtering
+    final excludedTypeCodes = excludedTypes.map((type) => type.code).toSet();
+    final excludedClassCodes = excludedClasses.map((cls) => cls.code).toSet();
+
+    // Get airspaces with SQL-level filtering
     final geometries = await _metadataCache.getAirspacesForViewport(
       countryCodes: countries,
       west: bounds.west,
       south: bounds.south,
       east: bounds.east,
       north: bounds.north,
+      excludedTypes: excludedTypeCodes,
+      excludedClasses: excludedClassCodes,
+      maxAltitudeFt: maxAltitudeFt,
+      orderByAltitude: enableClipping, // Order by altitude when clipping is enabled
     );
 
     // Convert directly to Flutter Map polygons
@@ -1757,11 +1770,7 @@ class AirspaceGeoJsonService {
     // For clipping support - collect polygons with their data
     final polygonsWithData = <({fm.Polygon polygon, AirspacePolygonData data})>[];
 
-    // Filtering counters
-    int filteredByType = 0;
-    int filteredByClass = 0;
-    int filteredByElevation = 0;
-    int filteredByViewport = 0;
+    // SQL already handles filtering - no need for counters
 
     for (final geometry in geometries) {
       // Extract properties
@@ -1791,6 +1800,7 @@ class AirspaceGeoJsonService {
         upperLimit: upperLimit,
         lowerLimit: lowerLimit,
         country: country,
+        lowerAltitudeFt: geometry.lowerAltitudeFt,  // Use pre-computed altitude
       );
 
       // Process all polygon parts
@@ -1809,43 +1819,9 @@ class AirspaceGeoJsonService {
         airspaceData: airspaceData,
       ));
 
-      // Apply filters
+      // SQL already filtered by type, class, elevation, and viewport
+      // No need to filter again - just track the visible type
       final airspaceType = AirspaceType.fromCode(geometry.typeCode);
-      if (excludedTypes.contains(airspaceType)) {
-        filteredByType++;
-        continue;
-      }
-
-      // Filter by ICAO class
-      final icaoClassEnum = icaoClass != null ? IcaoClass.fromCode(icaoClass) : IcaoClass.none;
-      if (excludedClasses.contains(icaoClassEnum)) {
-        filteredByClass++;
-        continue;
-      }
-
-      // Filter by elevation
-      if (airspaceData.getLowerAltitudeInFeet() > maxAltitudeFt) {
-        filteredByElevation++;
-        continue;
-      }
-
-      // Check if polygon is within viewport (basic bounds check)
-      if (allPoints.isNotEmpty) {
-        bool inViewport = false;
-        for (final point in allPoints) {
-          if (point.latitude >= viewport.south &&
-              point.latitude <= viewport.north &&
-              point.longitude >= viewport.west &&
-              point.longitude <= viewport.east) {
-            inViewport = true;
-            break;
-          }
-        }
-        if (!inViewport) {
-          filteredByViewport++;
-          continue;
-        }
-      }
 
       // Add to visible types
       visibleIncludedTypes.add(airspaceType);
@@ -1891,11 +1867,14 @@ class AirspaceGeoJsonService {
 
     // Sort and clip polygons if enabled
     if (polygonsWithData.isNotEmpty) {
-      // Sort by lower altitude: lowest first (ascending order) for rendering and clipping
-      polygonsWithData.sort((a, b) {
-        return a.data.airspaceData.getLowerAltitudeInFeet()
-            .compareTo(b.data.airspaceData.getLowerAltitudeInFeet());
-      });
+      // SQL already sorted by altitude when enableClipping is true
+      if (!enableClipping) {
+        // Only sort if SQL didn't already sort for us
+        polygonsWithData.sort((a, b) {
+          return a.data.airspaceData.getLowerAltitudeInFeet()
+              .compareTo(b.data.airspaceData.getLowerAltitudeInFeet());
+        });
+      }
 
       if (enableClipping) {
         // Apply polygon clipping to remove overlapping areas
@@ -1930,10 +1909,10 @@ class AirspaceGeoJsonService {
 
     LoggingService.structured('DIRECT_POLYGON_FILTERING', {
       'total_geometries': geometries.length,
-      'filtered_by_type': filteredByType,
-      'filtered_by_class': filteredByClass,
-      'filtered_by_elevation': filteredByElevation,
-      'filtered_by_viewport': filteredByViewport,
+      'filtered_by_type': 0,  // Filtering now done in SQL
+      'filtered_by_class': 0,  // Filtering now done in SQL
+      'filtered_by_elevation': 0,  // Filtering now done in SQL
+      'filtered_by_viewport': 0,  // Filtering now done in SQL
       'polygons_rendered': polygons.length,
     });
 

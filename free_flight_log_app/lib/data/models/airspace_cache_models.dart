@@ -11,6 +11,7 @@ class CachedAirspaceGeometry {
   final String geometryHash;
   final int compressedSize;
   final int uncompressedSize;
+  final int? lowerAltitudeFt;  // Pre-computed altitude from database
 
   CachedAirspaceGeometry({
     required this.id,
@@ -22,6 +23,7 @@ class CachedAirspaceGeometry {
     required this.geometryHash,
     this.compressedSize = 0,
     this.uncompressedSize = 0,
+    this.lowerAltitudeFt,
   });
 
   factory CachedAirspaceGeometry.fromJson(Map<String, dynamic> json) {
@@ -35,6 +37,7 @@ class CachedAirspaceGeometry {
       geometryHash: json['geometryHash'] as String,
       compressedSize: json['compressedSize'] ?? 0,
       uncompressedSize: json['uncompressedSize'] ?? 0,
+      lowerAltitudeFt: json['lowerAltitudeFt'] as int?,
     );
   }
 
@@ -49,6 +52,7 @@ class CachedAirspaceGeometry {
       'geometryHash': geometryHash,
       'compressedSize': compressedSize,
       'uncompressedSize': uncompressedSize,
+      'lowerAltitudeFt': lowerAltitudeFt,
     };
   }
 

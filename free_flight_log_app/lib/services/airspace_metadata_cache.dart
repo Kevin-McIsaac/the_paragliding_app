@@ -517,14 +517,18 @@ class AirspaceMetadataCache {
     return geometries;
   }
 
-  /// Get airspaces for viewport using optimized spatial query
-  /// This replaces the old method that loaded all countries then filtered
+  /// Get airspaces for viewport using optimized spatial query with filtering
+  /// All filtering is performed at the database level for optimal performance
   Future<List<CachedAirspaceGeometry>> getAirspacesForViewport({
     required List<String> countryCodes,
     required double west,
     required double south,
     required double east,
     required double north,
+    Set<int>? excludedTypes,
+    Set<int>? excludedClasses,
+    double? maxAltitudeFt,
+    bool orderByAltitude = false,
   }) async {
     if (countryCodes.isEmpty) {
       return [];
@@ -532,13 +536,17 @@ class AirspaceMetadataCache {
 
     final stopwatch = Stopwatch()..start();
 
-    // Use the new spatial index query - this does viewport filtering at the DB level
+    // Use the enhanced spatial query with SQL-level filtering
     final viewportGeometries = await _diskCache.getGeometriesInBounds(
       west: west,
       south: south,
       east: east,
       north: north,
       countryCodes: countryCodes,
+      excludedTypes: excludedTypes,
+      excludedClasses: excludedClasses,
+      maxAltitudeFt: maxAltitudeFt,
+      orderByAltitude: orderByAltitude,
     );
 
     stopwatch.stop();
