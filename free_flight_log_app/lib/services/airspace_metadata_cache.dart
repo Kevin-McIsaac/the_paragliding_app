@@ -116,7 +116,6 @@ class AirspaceMetadataCache {
     Set<int>? excludedClasses,
     double? maxAltitudeFt,
     bool orderByAltitude = false,
-    bool useClipperData = false,  // Pass through flag for ClipperData mode
   }) async {
     if (countryCodes.isEmpty) {
       return [];
@@ -135,7 +134,6 @@ class AirspaceMetadataCache {
       excludedClasses: excludedClasses,
       maxAltitudeFt: maxAltitudeFt,
       orderByAltitude: orderByAltitude,
-      useClipperData: useClipperData,  // Forward the flag to disk cache
     );
 
     stopwatch.stop();

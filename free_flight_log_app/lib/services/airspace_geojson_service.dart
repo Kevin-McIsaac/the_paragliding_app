@@ -453,7 +453,6 @@ class AirspaceGeoJsonService {
       excludedClasses: excludedClassCodes,
       maxAltitudeFt: maxAltitudeFt,
       orderByAltitude: enableClipping, // Order by altitude when clipping is enabled
-      useClipperData: enableClipping, // Use direct Int32 data for clipping
     );
 
     // Convert directly to Flutter Map polygons
@@ -513,13 +512,9 @@ class AirspaceGeoJsonService {
     final features = <Map<String, dynamic>>[];
 
     for (final geometry in geometries) {
-      // Convert polygons to GeoJSON coordinates format
-      // This path is for GeoJSON export, so we should have polygons
-      if (geometry.polygons == null) {
-        LoggingService.warning('Skipping geometry without polygons in GeoJSON conversion: ${geometry.id}');
-        continue;
-      }
-      for (final polygon in geometry.polygons!) {
+      // Convert ClipperData to GeoJSON coordinates format
+      final polygons = geometry.clipperData.toLatLngPolygons();
+      for (final polygon in polygons) {
         if (polygon.isNotEmpty) {
           final coords = polygon.map((point) => [point.longitude, point.latitude]).toList();
           features.add({
@@ -2003,20 +1998,10 @@ class AirspaceGeoJsonService {
         lowerAltitudeFt: geometry.lowerAltitudeFt,  // Use pre-computed altitude
       );
 
-      // Process all polygon parts - handle both LatLng polygons and ClipperData
-      List<LatLng> allPoints;
-      if (geometry.clipperData != null) {
-        // When using ClipperData, convert to LatLng only for display
-        // The actual clipping will use the ClipperData directly
-        final polygons = geometry.clipperData!.toLatLngPolygons();
-        allPoints = polygons.isNotEmpty ? polygons.first : const [];
-      } else if (geometry.polygons != null && geometry.polygons!.isNotEmpty) {
-        // Traditional path with LatLng polygons
-        // Just use first polygon for now (TODO: handle multi-polygon properly)
-        allPoints = geometry.polygons!.first;
-      } else {
-        allPoints = const [];
-      }
+      // Always use ClipperData and convert to LatLng only for display
+      // The actual clipping will use the ClipperData directly
+      final polygons = geometry.clipperData.toLatLngPolygons();
+      final List<LatLng> allPoints = polygons.isNotEmpty ? polygons.first : const [];
 
       // Add to all identification polygons (for tooltip)
       allIdentificationPolygons.add(AirspacePolygonData(
@@ -2145,6 +2130,31 @@ class ClipperData {
   static const double _coordPrecision = 10000000.0; // 10^7 for 1.11cm precision
 
   ClipperData(this.coords, this.offsets);
+
+  /// Create ClipperData from LatLng polygons
+  factory ClipperData.fromLatLngPolygons(List<List<LatLng>> polygons) {
+    // Calculate total points and create offsets
+    int totalPoints = 0;
+    for (final polygon in polygons) {
+      totalPoints += polygon.length;
+    }
+
+    final coords = Int32List(totalPoints * 2);
+    final offsets = Int32List(polygons.length);
+
+    int coordIdx = 0;
+    int offsetIdx = 0;
+
+    for (final polygon in polygons) {
+      offsets[offsetIdx++] = coordIdx ~/ 2;
+      for (final point in polygon) {
+        coords[coordIdx++] = (point.longitude * _coordPrecision).round();
+        coords[coordIdx++] = (point.latitude * _coordPrecision).round();
+      }
+    }
+
+    return ClipperData(coords, offsets);
+  }
 
   /// Create paths without intermediate LatLng objects
   List<clipper.Path64> toPaths() {

@@ -192,6 +192,38 @@ class AirspaceDiskCache {
     return utf8.decode(bytes);
   }
 
+  /// Extract binary data directly from ClipperData
+  (Uint8List, Uint8List) _extractBinaryFromClipperData(ClipperData clipperData) {
+    // ClipperData already stores Int32 coordinates - just convert to bytes
+    final coordBytes = clipperData.coords.buffer.asUint8List();
+    final offsetBytes = clipperData.offsets.buffer.asUint8List();
+    return (coordBytes, offsetBytes);
+  }
+
+  /// Calculate bounds from ClipperData
+  Map<String, double> _calculateBoundsFromClipperData(ClipperData clipperData) {
+    double minLat = 90.0, maxLat = -90.0;
+    double minLng = 180.0, maxLng = -180.0;
+
+    // Iterate through coordinates (they're stored as lng,lat pairs in Int32)
+    for (int i = 0; i < clipperData.coords.length; i += 2) {
+      final lng = clipperData.coords[i] / 10000000.0;  // Convert back to degrees
+      final lat = clipperData.coords[i + 1] / 10000000.0;
+
+      minLat = lat < minLat ? lat : minLat;
+      maxLat = lat > maxLat ? lat : maxLat;
+      minLng = lng < minLng ? lng : minLng;
+      maxLng = lng > maxLng ? lng : maxLng;
+    }
+
+    return {
+      'west': minLng,
+      'south': minLat,
+      'east': maxLng,
+      'north': maxLat,
+    };
+  }
+
   // Binary encoding utilities for coordinates
   /// Encodes polygon coordinates as Int32 arrays for direct Clipper2 compatibility
   /// Returns the coordinate data and polygon offsets as binary blobs
@@ -430,16 +462,11 @@ class AirspaceDiskCache {
     // Removed verbose per-geometry logging - logged in batch operations instead
 
     try {
-      // For insertion, we require polygons (ClipperData is only for reading)
-      if (geometry.polygons == null) {
-        throw ArgumentError('Cannot insert geometry without polygons');
-      }
-
-      // Encode coordinates as Int32 binary with binary offsets
-      final (coordinatesBinary, offsetsBinary) = _encodeCoordinatesInt32(geometry.polygons!);
+      // Extract binary data directly from ClipperData
+      final (coordinatesBinary, offsetsBinary) = _extractBinaryFromClipperData(geometry.clipperData);
 
       // Calculate bounds for spatial queries
-      final bounds = _calculateBounds(geometry.polygons!);
+      final bounds = _calculateBoundsFromClipperData(geometry.clipperData);
 
       // Extract altitude limits (complex objects)
       final lowerLimit = geometry.properties['lowerLimit'] as Map<String, dynamic>?;
@@ -475,11 +502,8 @@ class AirspaceDiskCache {
       extraProperties.remove('activity');
       extraProperties.remove('country');
 
-      // Count coordinates
-      int coordinateCount = 0;
-      for (final polygon in geometry.polygons!) {
-        coordinateCount += polygon.length;
-      }
+      // Count coordinates from ClipperData
+      final coordinateCount = geometry.clipperData.coords.length ~/ 2;
 
       await db.insert(
         _geometryTable,
@@ -518,7 +542,7 @@ class AirspaceDiskCache {
           'fetch_time': geometry.fetchTime.millisecondsSinceEpoch,
           'geometry_hash': geometry.geometryHash,
           'coordinate_count': coordinateCount,
-          'polygon_count': geometry.polygons!.length,
+          'polygon_count': geometry.clipperData.offsets.length,
           'last_accessed': DateTime.now().millisecondsSinceEpoch,
 
           // Minimal JSON for remaining properties
@@ -584,17 +608,11 @@ class AirspaceDiskCache {
       final batch = db.batch();
 
       for (final geometry in geometries) {
-        // For insertion, we require polygons (ClipperData is only for reading)
-        if (geometry.polygons == null) {
-          LoggingService.warning('Skipping geometry without polygons: ${geometry.id}');
-          continue;
-        }
-
-        // Encode coordinates as Int32 binary with binary offsets
-        final (coordinatesBinary, offsetsBinary) = _encodeCoordinatesInt32(geometry.polygons!);
+        // Extract binary data directly from ClipperData
+        final (coordinatesBinary, offsetsBinary) = _extractBinaryFromClipperData(geometry.clipperData);
 
         // Calculate bounds for spatial queries
-        final bounds = _calculateBounds(geometry.polygons!);
+        final bounds = _calculateBoundsFromClipperData(geometry.clipperData);
 
         // Extract altitude limits (complex objects)
         final lowerLimit = geometry.properties['lowerLimit'] as Map<String, dynamic>?;
@@ -630,11 +648,8 @@ class AirspaceDiskCache {
         extraProperties.remove('activity');
         extraProperties.remove('country');
 
-        // Count coordinates
-        int coordinateCount = 0;
-        for (final polygon in geometry.polygons!) {
-          coordinateCount += polygon.length;
-        }
+        // Count coordinates from ClipperData
+        final coordinateCount = geometry.clipperData.coords.length ~/ 2;
 
         batch.insert(
           _geometryTable,
@@ -673,7 +688,7 @@ class AirspaceDiskCache {
             'fetch_time': geometry.fetchTime.millisecondsSinceEpoch,
             'geometry_hash': geometry.geometryHash,
             'coordinate_count': coordinateCount,
-            'polygon_count': geometry.polygons!.length,
+            'polygon_count': geometry.clipperData.offsets.length,
             'last_accessed': DateTime.now().millisecondsSinceEpoch,
 
             // Minimal JSON for remaining properties
@@ -724,14 +739,15 @@ class AirspaceDiskCache {
 
       // Removed verbose per-geometry decode logging
 
-      final polygons = _decodeCoordinatesInt32(coordinatesBinary, offsetsBinary);
+      // Always use ClipperData for optimal performance
+      final clipperData = _createClipperData(coordinatesBinary, offsetsBinary);
 
       // Reconstruct geometry from native columns
       final geometry = CachedAirspaceGeometry(
         id: row['id'] as String,
         name: row['name'] as String,
         typeCode: row['type_code'] as int,
-        polygons: polygons,
+        clipperData: clipperData,
         properties: jsonDecode(row['properties'] as String) as Map<String, dynamic>,
         fetchTime: DateTime.fromMillisecondsSinceEpoch(row['fetch_time'] as int),
         geometryHash: row['geometry_hash'] as String,
@@ -796,13 +812,15 @@ class AirspaceDiskCache {
           // Convert List<int> offsets to Uint8List for Int32 decode
           final offsetArray = Int32List.fromList(polygonOffsets);
           final offsetBytes = offsetArray.buffer.asUint8List();
-          final polygons = _decodeCoordinatesInt32(coordinatesBinary, offsetBytes);
+
+          // Always use ClipperData for optimal performance
+          final clipperData = _createClipperData(coordinatesBinary, offsetBytes);
 
           final geometry = CachedAirspaceGeometry(
             id: row['id'] as String,
             name: row['name'] as String,
             typeCode: row['type_code'] as int,
-            polygons: polygons,
+            clipperData: clipperData,
             properties: properties,
             fetchTime: DateTime.fromMillisecondsSinceEpoch(row['fetch_time'] as int),
             geometryHash: row['geometry_hash'] as String,
@@ -848,7 +866,6 @@ class AirspaceDiskCache {
     Set<int>? excludedClasses,
     double? maxAltitudeFt,
     bool orderByAltitude = false,
-    bool useClipperData = false,  // New parameter to return ClipperData instead of LatLng polygons
   }) async {
     final db = await database;
     final stopwatch = Stopwatch()..start();
@@ -934,19 +951,8 @@ class AirspaceDiskCache {
           final coordinatesBinary = row['coordinates_binary'] as Uint8List;
           final offsetsBinary = row['polygon_offsets'] as Uint8List;
 
-          // Create either ClipperData or LatLng polygons based on useClipperData flag
-          final List<List<LatLng>>? polygons;
-          final ClipperData? clipperData;
-
-          if (useClipperData) {
-            // Direct ClipperData creation for optimal clipping performance
-            clipperData = _createClipperData(coordinatesBinary, offsetsBinary);
-            polygons = null;
-          } else {
-            // Traditional LatLng polygons for display
-            polygons = _decodeCoordinatesInt32(coordinatesBinary, offsetsBinary);
-            clipperData = null;
-          }
+          // Always use ClipperData for optimal performance
+          final clipperData = _createClipperData(coordinatesBinary, offsetsBinary);
 
           // Reconstruct properties from native columns
           final properties = <String, dynamic>{};
@@ -988,7 +994,6 @@ class AirspaceDiskCache {
             id: row['id'] as String,
             name: row['name'] as String,
             typeCode: row['type_code'] as int,
-            polygons: polygons,
             clipperData: clipperData,
             properties: properties,
             fetchTime: DateTime.fromMillisecondsSinceEpoch(row['fetch_time'] as int),
