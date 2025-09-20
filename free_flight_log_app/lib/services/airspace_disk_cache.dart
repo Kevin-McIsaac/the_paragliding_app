@@ -7,16 +7,16 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:latlong2/latlong.dart';
 import '../services/logging_service.dart';
+import '../services/airspace_geojson_service.dart' show ClipperData;
 import '../data/models/airspace_cache_models.dart';
 
 class AirspaceDiskCache {
   static const String _databaseName = 'airspace_cache.db';
-  static const int _databaseVersion = 6; // Version 6: Expanded native columns for direct pipeline optimization
+  static const int _databaseVersion = 7; // Version 7: Removed redundant indexes and tile table
 
   static const String _geometryTable = 'airspace_geometries';
-  static const String _metadataTable = 'tile_metadata'; // Keep for compatibility
-  static const String _countryMetadataTable = 'country_metadata'; // New table
-  static const String _countryMappingTable = 'country_airspace_mapping'; // New table
+  static const String _countryMetadataTable = 'country_metadata';
+  static const String _countryMappingTable = 'country_airspace_mapping';
   static const String _statisticsTable = 'cache_statistics';
 
   // Size limits
@@ -96,8 +96,8 @@ class AirspaceDiskCache {
         type_code INTEGER NOT NULL,
 
         -- Spatial data (binary for efficiency)
-        coordinates_binary BLOB NOT NULL,  -- Float32 array
-        polygon_offsets TEXT NOT NULL,     -- JSON array of indices
+        coordinates_binary BLOB NOT NULL,  -- Int32 array (scaled by 10^7)
+        polygon_offsets BLOB NOT NULL,     -- Int32 array of point indices
         bounds_west REAL NOT NULL,
         bounds_south REAL NOT NULL,
         bounds_east REAL NOT NULL,
@@ -132,21 +132,7 @@ class AirspaceDiskCache {
       )
     ''');
 
-    // Tile metadata table (keep for compatibility)
-    await db.execute('''
-      CREATE TABLE $_metadataTable (
-        tile_key TEXT PRIMARY KEY,
-        airspace_ids TEXT NOT NULL,
-        fetch_time INTEGER NOT NULL,
-        airspace_count INTEGER NOT NULL,
-        is_empty INTEGER NOT NULL,
-        statistics TEXT,
-        access_count INTEGER DEFAULT 0,
-        last_accessed INTEGER
-      )
-    ''');
-
-    // Country metadata table (new for country-based storage)
+    // Country metadata table (for country-based storage)
     await db.execute('''
       CREATE TABLE $_countryMetadataTable (
         country_code TEXT PRIMARY KEY,
@@ -180,33 +166,16 @@ class AirspaceDiskCache {
       )
     ''');
 
-    // Create optimized spatial indices for bounding box queries
-    // Using compound index for efficient spatial queries without R-tree
+    // Create essential indices only (reduced from 17 to 7)
+    // Spatial compound index for bounding box queries (replaces 4 individual indexes)
     await db.execute('CREATE INDEX idx_geometry_spatial ON $_geometryTable(bounds_west, bounds_east, bounds_south, bounds_north)');
-    await db.execute('CREATE INDEX idx_geometry_bounds_west ON $_geometryTable(bounds_west)');
-    await db.execute('CREATE INDEX idx_geometry_bounds_east ON $_geometryTable(bounds_east)');
-    await db.execute('CREATE INDEX idx_geometry_bounds_south ON $_geometryTable(bounds_south)');
-    await db.execute('CREATE INDEX idx_geometry_bounds_north ON $_geometryTable(bounds_north)');
 
-    // Create optimized indices for direct pipeline
-    // Filtering indices
+    // Essential filtering indices
     await db.execute('CREATE INDEX idx_geometry_lower_altitude ON $_geometryTable(lower_altitude_ft)');
     await db.execute('CREATE INDEX idx_geometry_type_code ON $_geometryTable(type_code)');
     await db.execute('CREATE INDEX idx_geometry_icao_class ON $_geometryTable(icao_class)');
-    await db.execute('CREATE INDEX idx_geometry_country ON $_geometryTable(country)');
-    await db.execute('CREATE INDEX idx_geometry_fetch_time ON $_geometryTable(fetch_time)');
 
-    // Compound index for common filter pattern
-    await db.execute('CREATE INDEX idx_geometry_filter_combined ON $_geometryTable(lower_altitude_ft, type_code, icao_class)');
-
-    // Optimized compound index for spatial + altitude queries (most common pattern)
-    // This covers the typical query: bounds check + altitude filter + sorting
-    await db.execute('CREATE INDEX idx_geometry_spatial_altitude ON $_geometryTable(lower_altitude_ft, bounds_west, bounds_east, bounds_south, bounds_north)');
-
-    // Metadata indices
-    await db.execute('CREATE INDEX idx_metadata_fetch_time ON $_metadataTable(fetch_time)');
-    await db.execute('CREATE INDEX idx_metadata_empty ON $_metadataTable(is_empty)');
-    // New indices for country-based queries
+    // Country-based query indices
     await db.execute('CREATE INDEX idx_country_mapping_country ON $_countryMappingTable(country_code)');
     await db.execute('CREATE INDEX idx_country_mapping_airspace ON $_countryMappingTable(airspace_id)');
     await db.execute('CREATE INDEX idx_country_metadata_fetch ON $_countryMetadataTable(fetch_time)');
@@ -224,9 +193,9 @@ class AirspaceDiskCache {
   }
 
   // Binary encoding utilities for coordinates
-  /// Encodes polygon coordinates as a binary Float32 array
-  /// Returns the binary data and polygon offsets
-  (Uint8List, List<int>) _encodeCoordinatesBinary(List<List<LatLng>> polygons) {
+  /// Encodes polygon coordinates as Int32 arrays for direct Clipper2 compatibility
+  /// Returns the coordinate data and polygon offsets as binary blobs
+  (Uint8List, Uint8List) _encodeCoordinatesInt32(List<List<LatLng>> polygons) {
     final stopwatch = Stopwatch()..start();
 
     // Calculate total size needed
@@ -256,157 +225,150 @@ class AirspaceDiskCache {
       );
     }
 
-    // Removed verbose per-polygon logging - logged in batch operations instead
+    // Allocate Int32 arrays
+    final coordArray = Int32List(totalPoints * 2);
+    final offsetArray = Int32List(polygons.length);
 
-    // Allocate Float32List (4 bytes per float, 2 floats per point)
-    final floatArray = Float32List(totalPoints * 2);
-    final polygonOffsets = <int>[];
+    // Single pass encoding with pre-scaled integers for Clipper2
+    int coordIndex = 0;
+    for (int i = 0; i < polygons.length; i++) {
+      offsetArray[i] = coordIndex ~/ 2; // Store point index
 
-    int index = 0;
-    for (final polygon in polygons) {
-      polygonOffsets.add(index ~/ 2); // Store point index, not float index
-
+      final polygon = polygons[i];
       for (final point in polygon) {
-        floatArray[index++] = point.longitude;
-        floatArray[index++] = point.latitude;
+        // Scale to Int32 with precision factor 10^7 (1.11cm precision)
+        coordArray[coordIndex++] = (point.longitude * 10000000).round();
+        coordArray[coordIndex++] = (point.latitude * 10000000).round();
       }
     }
 
     // Convert to bytes
-    final bytes = floatArray.buffer.asUint8List();
+    final coordBytes = coordArray.buffer.asUint8List();
+    final offsetBytes = offsetArray.buffer.asUint8List();
 
     // Only log if encoding takes significant time (>5ms)
     if (stopwatch.elapsedMilliseconds > 5) {
       LoggingService.performance(
-        '[ENCODE_BINARY_SLOW]',
+        '[ENCODE_INT32_SLOW]',
         stopwatch.elapsed,
-        'polygons=${polygons.length}, points=$totalPoints, bytes=${bytes.length}, offsets=${polygonOffsets.length}',
+        'polygons=${polygons.length}, points=$totalPoints, coordBytes=${coordBytes.length}, offsetBytes=${offsetBytes.length}',
       );
     }
 
-    return (bytes, polygonOffsets);
+    return (coordBytes, offsetBytes);
   }
 
-  /// Decodes binary Float32 array back to polygon coordinates
-  List<List<LatLng>> _decodeCoordinatesBinary(Uint8List bytes, List<int> polygonOffsets) {
+  // Keep old Float32 version for compatibility during migration
+  (Uint8List, List<int>) _encodeCoordinatesBinary(List<List<LatLng>> polygons) {
+    final (coordBytes, offsetBytes) = _encodeCoordinatesInt32(polygons);
+    // Convert offset bytes back to list for compatibility
+    final offsets = Int32List.view(offsetBytes.buffer).toList();
+    return (coordBytes, offsets);
+  }
+
+  /// Create ClipperData directly from database BLOBs without LatLng conversion
+  ClipperData _createClipperData(Uint8List coordBlob, Uint8List offsetBlob) {
+    // CRITICAL: Copy to aligned buffer to avoid alignment issues
+    // SQLite returns BLOBs as views at arbitrary offsets that may not be 4-byte aligned
+    final alignedCoords = Uint8List.fromList(coordBlob);
+    final alignedOffsets = Uint8List.fromList(offsetBlob);
+
+    final coords = Int32List.view(
+      alignedCoords.buffer,
+      0,
+      alignedCoords.length ~/ 4,
+    );
+    final offsets = Int32List.view(
+      alignedOffsets.buffer,
+      0,
+      alignedOffsets.length ~/ 4,
+    );
+
+    return ClipperData(coords, offsets);
+  }
+
+  /// Decodes Int32 coordinate and offset arrays back to polygon coordinates
+  List<List<LatLng>> _decodeCoordinatesInt32(Uint8List coordBlob, Uint8List offsetBlob) {
     final stopwatch = Stopwatch()..start();
 
     // Validate input
-    if (bytes.length % 4 != 0) {
+    if (coordBlob.length % 4 != 0 || offsetBlob.length % 4 != 0) {
       LoggingService.error(
-        'Invalid binary data: byte length ${bytes.length} not divisible by 4',
+        'Invalid binary data: coord bytes ${coordBlob.length} or offset bytes ${offsetBlob.length} not divisible by 4',
         null,
         null,
       );
       return [];
     }
 
-    // CRITICAL FIX: Copy to aligned buffer to avoid alignment issues
+    // CRITICAL: Copy to aligned buffer to avoid alignment issues
     // SQLite returns BLOBs as views at arbitrary offsets that may not be 4-byte aligned
-    // Float32List requires 4-byte alignment, so we copy to a new aligned buffer
-    final alignedBytes = Uint8List.fromList(bytes);
-    final floatArray = Float32List.view(
-      alignedBytes.buffer,
-      0,  // New buffer starts at offset 0 (guaranteed aligned)
-      alignedBytes.length ~/ 4,  // Number of floats (4 bytes per float)
+    final alignedCoords = Uint8List.fromList(coordBlob);
+    final alignedOffsets = Uint8List.fromList(offsetBlob);
+
+    final coords = Int32List.view(
+      alignedCoords.buffer,
+      0,
+      alignedCoords.length ~/ 4,
+    );
+    final offsets = Int32List.view(
+      alignedOffsets.buffer,
+      0,
+      alignedOffsets.length ~/ 4,
     );
 
-    // Removed verbose per-decode logging - logged in batch operations instead
+    // Pre-allocate polygons list with known size
+    final polygonCount = offsets.length;
+    final polygons = List<List<LatLng>>.filled(polygonCount, const []);
+    const double scaleFactor = 10000000.0; // Extract constant
 
-    final polygons = <List<LatLng>>[];
-
-    for (int i = 0; i < polygonOffsets.length; i++) {
-      final startIdx = polygonOffsets[i] * 2; // Convert point index to float index
-      final endIdx = (i + 1 < polygonOffsets.length)
-          ? polygonOffsets[i + 1] * 2
-          : floatArray.length;
+    for (int i = 0; i < polygonCount; i++) {
+      final startIdx = offsets[i] * 2; // Convert point index to coord index
+      final endIdx = (i + 1 < offsets.length)
+          ? offsets[i + 1] * 2
+          : coords.length;
 
       // Validate indices
-      if (startIdx < 0 || startIdx > floatArray.length || endIdx > floatArray.length) {
+      if (startIdx < 0 || endIdx > coords.length || startIdx > endIdx) {
         LoggingService.error(
-          'Invalid polygon indices: start=$startIdx, end=$endIdx, array=${floatArray.length}',
+          'Invalid polygon indices: start=$startIdx, end=$endIdx, array length=${coords.length}',
           null,
           null,
         );
         continue;
       }
 
-      final polygon = <LatLng>[];
+      // Pre-allocate polygon with known size
+      final pointCount = (endIdx - startIdx) ~/ 2;
+      final polygon = List<LatLng>.filled(pointCount, const LatLng(0, 0));
+
+      int pointIndex = 0;
       for (int j = startIdx; j < endIdx; j += 2) {
-        final lat = floatArray[j + 1];
-        final lng = floatArray[j];
-
-        // Validate coordinates
-        if (lat.isNaN || lng.isNaN || lat.abs() > 90 || lng.abs() > 180) {
-          LoggingService.error(
-            'Invalid coordinates: lat=$lat, lng=$lng at index $j',
-            null,
-            null,
-          );
-          continue;
-        }
-
-        polygon.add(LatLng(lat, lng));
+        // Decode from Int32 with scale factor 10^7
+        polygon[pointIndex++] = LatLng(
+          coords[j + 1] / scaleFactor,  // latitude
+          coords[j] / scaleFactor,       // longitude
+        );
       }
 
-      if (polygon.isNotEmpty) {
-        polygons.add(polygon);
+      if (pointCount > 0) {
+        polygons[i] = polygon;
       }
     }
 
-    // Only log slow decode operations (>5ms)
+    // Only log if decoding takes significant time (>5ms)
     if (stopwatch.elapsedMilliseconds > 5) {
-      final totalPoints = polygons.fold(0, (sum, p) => sum + p.length);
       LoggingService.performance(
-        '[BINARY_DECODE_SLOW]',
+        '[DECODE_INT32_SLOW]',
         stopwatch.elapsed,
-        'polygons=${polygons.length}, points=$totalPoints',
+        'polygons=${polygons.length}, coordBytes=${coordBlob.length}, offsetBytes=${offsetBlob.length}',
       );
     }
 
     return polygons;
   }
 
-  /// Optimized binary decoding with reduced allocations (for batch operations)
-  List<List<LatLng>> _decodeCoordinatesBinaryOptimized(Uint8List bytes, List<int> polygonOffsets) {
-    // Validate input
-    if (bytes.length % 4 != 0) return [];
-
-    // Reuse aligned buffer approach but optimize for batch operations
-    final alignedBytes = Uint8List.fromList(bytes);
-    final floatArray = Float32List.view(alignedBytes.buffer, 0, alignedBytes.length ~/ 4);
-
-    // Build polygons list with efficient allocation
-    final polygons = <List<LatLng>>[];
-
-    for (int i = 0; i < polygonOffsets.length; i++) {
-      final startIdx = polygonOffsets[i] * 2;
-      final endIdx = (i + 1 < polygonOffsets.length)
-          ? polygonOffsets[i + 1] * 2
-          : floatArray.length;
-
-      // Validate indices with quick bounds check
-      if (startIdx < 0 || endIdx > floatArray.length) continue;
-
-      final polygon = <LatLng>[];
-
-      for (int j = startIdx; j < endIdx; j += 2) {
-        final lng = floatArray[j];
-        final lat = floatArray[j + 1];
-
-        // Quick coordinate validation (avoid expensive isNaN checks)
-        if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-          polygon.add(LatLng(lat, lng));
-        }
-      }
-
-      if (polygon.isNotEmpty) {
-        polygons.add(polygon);
-      }
-    }
-
-    return polygons;
-  }
+  // REMOVED: Legacy Float32 decode methods - now always use Int32
 
   /// Calculate bounds from polygons
   Map<String, double> _calculateBounds(List<List<LatLng>> polygons) {
@@ -468,11 +430,16 @@ class AirspaceDiskCache {
     // Removed verbose per-geometry logging - logged in batch operations instead
 
     try {
-      // Encode coordinates as binary
-      final (coordinatesBinary, polygonOffsets) = _encodeCoordinatesBinary(geometry.polygons);
+      // For insertion, we require polygons (ClipperData is only for reading)
+      if (geometry.polygons == null) {
+        throw ArgumentError('Cannot insert geometry without polygons');
+      }
+
+      // Encode coordinates as Int32 binary with binary offsets
+      final (coordinatesBinary, offsetsBinary) = _encodeCoordinatesInt32(geometry.polygons!);
 
       // Calculate bounds for spatial queries
-      final bounds = _calculateBounds(geometry.polygons);
+      final bounds = _calculateBounds(geometry.polygons!);
 
       // Extract altitude limits (complex objects)
       final lowerLimit = geometry.properties['lowerLimit'] as Map<String, dynamic>?;
@@ -510,7 +477,7 @@ class AirspaceDiskCache {
 
       // Count coordinates
       int coordinateCount = 0;
-      for (final polygon in geometry.polygons) {
+      for (final polygon in geometry.polygons!) {
         coordinateCount += polygon.length;
       }
 
@@ -524,7 +491,7 @@ class AirspaceDiskCache {
 
           // Spatial data
           'coordinates_binary': coordinatesBinary,
-          'polygon_offsets': jsonEncode(polygonOffsets),
+          'polygon_offsets': offsetsBinary,
           'bounds_west': bounds['west'],
           'bounds_south': bounds['south'],
           'bounds_east': bounds['east'],
@@ -551,7 +518,7 @@ class AirspaceDiskCache {
           'fetch_time': geometry.fetchTime.millisecondsSinceEpoch,
           'geometry_hash': geometry.geometryHash,
           'coordinate_count': coordinateCount,
-          'polygon_count': geometry.polygons.length,
+          'polygon_count': geometry.polygons!.length,
           'last_accessed': DateTime.now().millisecondsSinceEpoch,
 
           // Minimal JSON for remaining properties
@@ -617,11 +584,17 @@ class AirspaceDiskCache {
       final batch = db.batch();
 
       for (final geometry in geometries) {
-        // Encode coordinates as binary
-        final (coordinatesBinary, polygonOffsets) = _encodeCoordinatesBinary(geometry.polygons);
+        // For insertion, we require polygons (ClipperData is only for reading)
+        if (geometry.polygons == null) {
+          LoggingService.warning('Skipping geometry without polygons: ${geometry.id}');
+          continue;
+        }
+
+        // Encode coordinates as Int32 binary with binary offsets
+        final (coordinatesBinary, offsetsBinary) = _encodeCoordinatesInt32(geometry.polygons!);
 
         // Calculate bounds for spatial queries
-        final bounds = _calculateBounds(geometry.polygons);
+        final bounds = _calculateBounds(geometry.polygons!);
 
         // Extract altitude limits (complex objects)
         final lowerLimit = geometry.properties['lowerLimit'] as Map<String, dynamic>?;
@@ -659,7 +632,7 @@ class AirspaceDiskCache {
 
         // Count coordinates
         int coordinateCount = 0;
-        for (final polygon in geometry.polygons) {
+        for (final polygon in geometry.polygons!) {
           coordinateCount += polygon.length;
         }
 
@@ -673,7 +646,7 @@ class AirspaceDiskCache {
 
             // Spatial data
             'coordinates_binary': coordinatesBinary,
-            'polygon_offsets': jsonEncode(polygonOffsets),
+            'polygon_offsets': offsetsBinary,
             'bounds_west': bounds['west'],
             'bounds_south': bounds['south'],
             'bounds_east': bounds['east'],
@@ -700,7 +673,7 @@ class AirspaceDiskCache {
             'fetch_time': geometry.fetchTime.millisecondsSinceEpoch,
             'geometry_hash': geometry.geometryHash,
             'coordinate_count': coordinateCount,
-            'polygon_count': geometry.polygons.length,
+            'polygon_count': geometry.polygons!.length,
             'last_accessed': DateTime.now().millisecondsSinceEpoch,
 
             // Minimal JSON for remaining properties
@@ -745,14 +718,13 @@ class AirspaceDiskCache {
 
       final row = results.first;
 
-      // Decode binary coordinates
+      // Decode Int32 coordinates and offsets
       final coordinatesBinary = row['coordinates_binary'] as Uint8List;
-      final polygonOffsets = (jsonDecode(row['polygon_offsets'] as String) as List)
-          .cast<int>();
+      final offsetsBinary = row['polygon_offsets'] as Uint8List;
 
       // Removed verbose per-geometry decode logging
 
-      final polygons = _decodeCoordinatesBinary(coordinatesBinary, polygonOffsets);
+      final polygons = _decodeCoordinatesInt32(coordinatesBinary, offsetsBinary);
 
       // Reconstruct geometry from native columns
       final geometry = CachedAirspaceGeometry(
@@ -821,7 +793,10 @@ class AirspaceDiskCache {
             continue;
           }
 
-          final polygons = _decodeCoordinatesBinaryOptimized(coordinatesBinary, polygonOffsets);
+          // Convert List<int> offsets to Uint8List for Int32 decode
+          final offsetArray = Int32List.fromList(polygonOffsets);
+          final offsetBytes = offsetArray.buffer.asUint8List();
+          final polygons = _decodeCoordinatesInt32(coordinatesBinary, offsetBytes);
 
           final geometry = CachedAirspaceGeometry(
             id: row['id'] as String,
@@ -873,6 +848,7 @@ class AirspaceDiskCache {
     Set<int>? excludedClasses,
     double? maxAltitudeFt,
     bool orderByAltitude = false,
+    bool useClipperData = false,  // New parameter to return ClipperData instead of LatLng polygons
   }) async {
     final db = await database;
     final stopwatch = Stopwatch()..start();
@@ -956,10 +932,21 @@ class AirspaceDiskCache {
       for (final row in results) {
         try {
           final coordinatesBinary = row['coordinates_binary'] as Uint8List;
-          final polygonOffsetsJson = row['polygon_offsets'] as String;
+          final offsetsBinary = row['polygon_offsets'] as Uint8List;
 
-          final polygonOffsets = (jsonDecode(polygonOffsetsJson) as List).cast<int>();
-          final polygons = _decodeCoordinatesBinaryOptimized(coordinatesBinary, polygonOffsets);
+          // Create either ClipperData or LatLng polygons based on useClipperData flag
+          final List<List<LatLng>>? polygons;
+          final ClipperData? clipperData;
+
+          if (useClipperData) {
+            // Direct ClipperData creation for optimal clipping performance
+            clipperData = _createClipperData(coordinatesBinary, offsetsBinary);
+            polygons = null;
+          } else {
+            // Traditional LatLng polygons for display
+            polygons = _decodeCoordinatesInt32(coordinatesBinary, offsetsBinary);
+            clipperData = null;
+          }
 
           // Reconstruct properties from native columns
           final properties = <String, dynamic>{};
@@ -1002,6 +989,7 @@ class AirspaceDiskCache {
             name: row['name'] as String,
             typeCode: row['type_code'] as int,
             polygons: polygons,
+            clipperData: clipperData,
             properties: properties,
             fetchTime: DateTime.fromMillisecondsSinceEpoch(row['fetch_time'] as int),
             geometryHash: row['geometry_hash'] as String,
@@ -1033,125 +1021,24 @@ class AirspaceDiskCache {
     }
   }
 
-  // Tile metadata operations
-  Future<void> putTileMetadata(TileMetadata metadata) async {
-    final db = await database;
+  // Tile metadata operations - deprecated but kept as stubs for compatibility
+  // These methods do nothing and will be removed after refactoring AirspaceMetadataCache
 
-    try {
-      await db.insert(
-        _metadataTable,
-        {
-          'tile_key': metadata.tileKey,
-          'airspace_ids': jsonEncode(metadata.airspaceIds.toList()),
-          'fetch_time': metadata.fetchTime.millisecondsSinceEpoch,
-          'airspace_count': metadata.airspaceCount,
-          'is_empty': metadata.isEmpty ? 1 : 0,
-          'statistics': metadata.statistics != null
-              ? jsonEncode(metadata.statistics)
-              : null,
-          'last_accessed': DateTime.now().millisecondsSinceEpoch,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-    } catch (e, stack) {
-      LoggingService.error('Failed to store tile metadata', e, stack);
-    }
+  Future<void> putTileMetadata(TileMetadata metadata) async {
+    // Deprecated - tiles are no longer used
+    // This is a stub for compatibility
   }
 
   Future<TileMetadata?> getTileMetadata(String tileKey) async {
-    final db = await database;
-
-    try {
-      final results = await db.query(
-        _metadataTable,
-        where: 'tile_key = ?',
-        whereArgs: [tileKey],
-        limit: 1,
-      );
-
-      if (results.isEmpty) return null;
-
-      final row = results.first;
-      final metadata = TileMetadata(
-        tileKey: row['tile_key'] as String,
-        airspaceIds: Set<String>.from(
-          jsonDecode(row['airspace_ids'] as String) as List,
-        ),
-        fetchTime: DateTime.fromMillisecondsSinceEpoch(
-          row['fetch_time'] as int,
-        ),
-        airspaceCount: row['airspace_count'] as int,
-        isEmpty: (row['is_empty'] as int) == 1,
-        statistics: row['statistics'] != null
-            ? jsonDecode(row['statistics'] as String)
-            : null,
-      );
-
-      // REMOVED: Real-time access tracking to improve performance
-      // Access tracking is now deferred to batch operations
-      // The last_accessed field is still used for cleanup based on fetch_time
-
-      return metadata;
-    } catch (e, stack) {
-      LoggingService.error('Failed to retrieve tile metadata', e, stack);
-      return null;
-    }
+    // Deprecated - tiles are no longer used
+    // Return null to indicate no cached data
+    return null;
   }
 
-  /// Batch retrieve multiple tile metadata in a single query
   Future<Map<String, TileMetadata>> getTileMetadataBatch(List<String> tileKeys) async {
-    if (tileKeys.isEmpty) return {};
-
-    final db = await database;
-    final stopwatch = Stopwatch()..start();
-    final metadataMap = <String, TileMetadata>{};
-
-    try {
-      // Create placeholders for IN clause
-      final placeholders = tileKeys.map((_) => '?').join(',');
-
-      final results = await db.query(
-        _metadataTable,
-        where: 'tile_key IN ($placeholders)',
-        whereArgs: tileKeys,
-      );
-
-      for (final row in results) {
-        try {
-          final metadata = TileMetadata(
-            tileKey: row['tile_key'] as String,
-            airspaceIds: Set<String>.from(
-              jsonDecode(row['airspace_ids'] as String) as List,
-            ),
-            fetchTime: DateTime.fromMillisecondsSinceEpoch(
-              row['fetch_time'] as int,
-            ),
-            airspaceCount: row['airspace_count'] as int,
-            isEmpty: (row['is_empty'] as int) == 1,
-            statistics: row['statistics'] != null
-                ? jsonDecode(row['statistics'] as String)
-                : null,
-          );
-          metadataMap[metadata.tileKey] = metadata;
-        } catch (e) {
-          LoggingService.error('Failed to parse tile metadata: ${row['tile_key']}', e, null);
-        }
-      }
-
-      // Log only if slow
-      if (stopwatch.elapsedMilliseconds > 50) {
-        LoggingService.performance(
-          'Batch retrieved tile metadata',
-          stopwatch.elapsed,
-          'requested=${tileKeys.length}, found=${metadataMap.length}',
-        );
-      }
-
-      return metadataMap;
-    } catch (e, stack) {
-      LoggingService.error('Failed to batch retrieve tile metadata', e, stack);
-      return {};
-    }
+    // Deprecated - tiles are no longer used
+    // Return empty map to indicate no cached data
+    return {};
   }
 
   // Cache maintenance
@@ -1171,26 +1058,15 @@ class AirspaceDiskCache {
         whereArgs: [geometryExpiry],
       );
 
-      // Clean expired metadata (24 hours)
-      final metadataExpiry = DateTime.now()
-          .subtract(const Duration(hours: 24))
-          .millisecondsSinceEpoch;
-
-      final deletedMetadata = await db.delete(
-        _metadataTable,
-        where: 'fetch_time < ?',
-        whereArgs: [metadataExpiry],
-      );
-
       // Vacuum database to reclaim space
-      if (deletedGeometries > 0 || deletedMetadata > 0) {
+      if (deletedGeometries > 0) {
         await db.execute('VACUUM');
       }
 
       LoggingService.performance(
         'Cleaned expired cache',
         stopwatch.elapsed,
-        'geometries=$deletedGeometries, metadata=$deletedMetadata',
+        'geometries=$deletedGeometries',
       );
     } catch (e, stack) {
       LoggingService.error('Failed to clean cache', e, stack);
@@ -1211,30 +1087,19 @@ class AirspaceDiskCache {
         FROM $_geometryTable
       ''');
 
-      // Get metadata statistics
-      final metadataStats = await db.rawQuery('''
-        SELECT
-          COUNT(*) as count,
-          SUM(is_empty) as empty_count
-        FROM $_metadataTable
-      ''');
-
       final geoRow = geometryStats.first;
-      final metaRow = metadataStats.first;
 
       final totalGeometries = geoRow['count'] as int? ?? 0;
       final compressedBytes = geoRow['compressed'] as int? ?? 0;
       final uncompressedBytes = geoRow['uncompressed'] as int? ?? 0;
-      final totalTiles = metaRow['count'] as int? ?? 0;
-      final emptyTiles = metaRow['empty_count'] as int? ?? 0;
 
       // Get database file size
       final dbSize = await getDatabaseSize();
 
       return CacheStatistics(
         totalGeometries: totalGeometries,
-        totalTiles: totalTiles,
-        emptyTiles: emptyTiles,
+        totalTiles: 0, // Tiles are deprecated
+        emptyTiles: 0, // Tiles are deprecated
         duplicatedAirspaces: 0, // Will be calculated by the service
         totalMemoryBytes: dbSize, // Use actual database size
         compressedBytes: compressedBytes,
@@ -1379,6 +1244,37 @@ class AirspaceDiskCache {
     return results.map((row) => row['country_code'] as String).toList();
   }
 
+  /// Get detailed country metadata with airspace counts
+  Future<List<Map<String, dynamic>>> getCountryDetails() async {
+    final db = await database;
+
+    try {
+      final results = await db.rawQuery('''
+        SELECT
+          cm.country_code,
+          cm.airspace_count,
+          cm.fetch_time,
+          cm.size_bytes,
+          COUNT(map.airspace_id) as actual_count
+        FROM $_countryMetadataTable cm
+        LEFT JOIN $_countryMappingTable map ON cm.country_code = map.country_code
+        GROUP BY cm.country_code
+        ORDER BY cm.country_code
+      ''');
+
+      return results.map((row) => {
+        'country_code': row['country_code'] as String,
+        'airspace_count': row['airspace_count'] as int? ?? 0,
+        'actual_count': row['actual_count'] as int? ?? 0,
+        'fetch_time': row['fetch_time'] as int?,
+        'size_bytes': row['size_bytes'] as int?,
+      }).toList();
+    } catch (e, stack) {
+      LoggingService.error('Failed to get country details', e, stack);
+      return [];
+    }
+  }
+
   // Get statistics as a simple map (for compatibility)
   Future<Map<String, dynamic>> getStatisticsMap() async {
     final db = await database;
@@ -1464,16 +1360,6 @@ class AirspaceDiskCache {
           WHERE id IN (
             SELECT id FROM $_geometryTable
             ORDER BY last_accessed ASC
-            LIMIT $cleanupBatchSize
-          )
-        ''');
-
-        // Delete oldest tile metadata
-        await db.execute('''
-          DELETE FROM $_metadataTable
-          WHERE id IN (
-            SELECT id FROM $_metadataTable
-            ORDER BY fetch_time ASC
             LIMIT $cleanupBatchSize
           )
         ''');

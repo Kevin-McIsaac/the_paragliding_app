@@ -443,6 +443,7 @@ class AirspaceGeoJsonService {
     final excludedClassCodes = excludedClasses.map((cls) => cls.code).toSet();
 
     // Get airspaces with SQL-level filtering
+    // Request ClipperData when clipping is enabled for optimal performance
     final geometries = await _metadataCache.getAirspacesForViewport(
       countryCodes: countries,
       west: bounds.west,
@@ -453,6 +454,7 @@ class AirspaceGeoJsonService {
       excludedClasses: excludedClassCodes,
       maxAltitudeFt: maxAltitudeFt,
       orderByAltitude: enableClipping, // Order by altitude when clipping is enabled
+      useClipperData: enableClipping, // Use direct Int32 data for clipping
     );
 
     // Convert directly to Flutter Map polygons
@@ -513,7 +515,12 @@ class AirspaceGeoJsonService {
 
     for (final geometry in geometries) {
       // Convert polygons to GeoJSON coordinates format
-      for (final polygon in geometry.polygons) {
+      // This path is for GeoJSON export, so we should have polygons
+      if (geometry.polygons == null) {
+        LoggingService.warning('Skipping geometry without polygons in GeoJSON conversion: ${geometry.id}');
+        continue;
+      }
+      for (final polygon in geometry.polygons!) {
         if (polygon.isNotEmpty) {
           final coords = polygon.map((point) => [point.longitude, point.latitude]).toList();
           features.add({
@@ -920,26 +927,8 @@ class AirspaceGeoJsonService {
         sortingStopwatch.stop();
 
         if (enableClipping) {
-          // Apply polygon clipping to remove overlapping areas
-          // Note: viewport filtering already done above, so no need to filter again in clipping
-          final clippingStopwatch = Stopwatch()..start();
-          final clippedPolygons = _applyPolygonClipping(polygonsWithAltitude, viewport);
-          clippingStopwatch.stop();
-
-          // Convert clipped polygons back to flutter_map format
-          polygons = _convertClippedPolygonsToFlutterMap(clippedPolygons, opacity);
-
-          // For clipped polygons, keep original boundaries for tooltip hit testing
-          identificationPolygons = polygonsWithAltitude.map((p) => p.data).toList();
-
-          // Performance log for clipping
-          LoggingService.structured('CLIPPING_PERFORMANCE', {
-            'polygons_input': polygonsWithAltitude.length,
-            'polygons_output': polygons.length,
-            'clipping_time_ms': clippingStopwatch.elapsedMilliseconds,
-          });
-
-          LoggingService.info('[AIRSPACE] Sorted ${polygonsWithAltitude.length} polygons by altitude for clipping');
+          // Clipping is not supported for GeoJSON path - use direct polygon fetch for clipping
+          LoggingService.warning('Clipping requested but not available in GeoJSON path');
         } else {
           // No clipping - keep original polygons but maintain altitude-based rendering order
           // Polygons are already in the list from the filtering loop above
@@ -1236,37 +1225,15 @@ class AirspaceGeoJsonService {
   // POLYGON CLIPPING METHODS
   // ==========================================================================
 
-  /// Coordinate conversion precision factor (10^7 for geographic coordinates)
-  static const double _coordPrecision = 10000000.0;
+  // REMOVED: Float64 conversion methods - now using ClipperData with direct Int32→Int64 conversion
 
-  /// Convert LatLng to clipper2's integer coordinate system
-  clipper.Point64 _latLngToClipper(LatLng point) {
-    return clipper.Point64(
-      (point.longitude * _coordPrecision).round(),
-      (point.latitude * _coordPrecision).round(),
-    );
-  }
-
-  /// Convert clipper2 integer coordinates back to LatLng
-  LatLng _clipperToLatLng(clipper.Point64 point) {
-    return LatLng(
-      point.y / _coordPrecision,
-      point.x / _coordPrecision,
-    );
-  }
-
-  /// Convert List<LatLng> to clipper2 Path64
-  clipper.Path64 _latLngListToClipperPath(List<LatLng> points) {
-    final path = <clipper.Point64>[];
-    for (final point in points) {
-      path.add(_latLngToClipper(point));
-    }
-    return path;
-  }
-
-  /// Convert clipper2 Path64 to List<LatLng>
+  /// Convert clipper2 Path64 to List<LatLng> for final display only
   List<LatLng> _clipperPathToLatLngList(clipper.Path64 path) {
-    return path.map((point) => _clipperToLatLng(point)).toList();
+    const double coordPrecision = 10000000.0;
+    return path.map((point) => LatLng(
+      point.y / coordPrecision,
+      point.x / coordPrecision,
+    )).toList();
   }
 
   /// Calculate bounding box for a list of LatLng points
@@ -1331,37 +1298,38 @@ class AirspaceGeoJsonService {
     );
   }
 
-  /// Subtract multiple polygons from a subject polygon using boolean difference
-  /// Returns list of resulting polygons (may be empty, single, or multiple)
-  List<_ClippedPolygonData> _subtractPolygonsFromSubject({
-    required List<LatLng> subjectPoints,
-    required List<List<LatLng>> clippingPolygons,
-    required List<AirspaceData> clippingAirspaceData,
+  /// Optimized version using ClipperData directly - no LatLng conversion
+  List<_ClippedPolygonData> _subtractPolygonsFromSubjectOptimized({
+    required ClipperData subjectData,
+    required int subjectIndex,
+    required List<ClipperData> clippingDataList,
+    required List<int> clippingIndices,
     required AirspaceData airspaceData,
     required AirspaceStyle style,
   }) {
     final stopwatch = Stopwatch()..start();
     try {
-      if (subjectPoints.isEmpty) {
+      // Get subject path directly from ClipperData
+      final subjectPath = subjectData.getPath(subjectIndex);
+      if (subjectPath == null || subjectPath.isEmpty) {
         return [];
       }
-
-      // Convert subject polygon to clipper format
-      final subjectPath = _latLngListToClipperPath(subjectPoints);
       final subjectPaths = <clipper.Path64>[subjectPath];
 
-      // Convert all clipping polygons to clipper format
+      // Get clipping paths directly from ClipperData
       final clipPaths = <clipper.Path64>[];
-      for (final clippingPoints in clippingPolygons) {
-        if (clippingPoints.isNotEmpty) {
-          clipPaths.add(_latLngListToClipperPath(clippingPoints));
+      for (int i = 0; i < clippingDataList.length; i++) {
+        final path = clippingDataList[i].getPath(clippingIndices[i]);
+        if (path != null && path.isNotEmpty) {
+          clipPaths.add(path);
         }
       }
 
-      // If no clipping polygons, return original
+      // If no clipping polygons, convert subject to LatLng and return
       if (clipPaths.isEmpty) {
+        final points = _clipperPathToLatLngList(subjectPath);
         return [_ClippedPolygonData(
-          outerPoints: subjectPoints,
+          outerPoints: points,
           holes: [],
           airspaceData: airspaceData,
           style: style,
@@ -1375,7 +1343,7 @@ class AirspaceGeoJsonService {
         fillRule: clipper.FillRule.nonZero,
       );
 
-      // Convert results back to LatLng
+      // Convert results back to LatLng for rendering
       final List<_ClippedPolygonData> results = [];
       for (final resultPath in solution) {
         if (resultPath.isNotEmpty) {
@@ -1383,7 +1351,7 @@ class AirspaceGeoJsonService {
           if (points.length >= 3) { // Valid polygon needs at least 3 points
             results.add(_ClippedPolygonData(
               outerPoints: points,
-              holes: [], // For now, we handle simple polygons
+              holes: [],
               airspaceData: airspaceData,
               style: style,
             ));
@@ -1391,19 +1359,13 @@ class AirspaceGeoJsonService {
         }
       }
 
-      // Track completely clipped airspaces (don't log individually, will summarize later)
-      if (results.isEmpty && subjectPoints.isNotEmpty) {
-        // This will be tracked and summarized in the main clipping method
-      }
-
       stopwatch.stop();
 
-      // Only log very slow clipping operations (>50ms) to reduce noise
+      // Only log very slow clipping operations (>50ms)
       if (stopwatch.elapsedMilliseconds > 50) {
         LoggingService.structured('POLYGON_CLIPPING_SLOW', {
-          'subject_points': subjectPoints.length,
-          'clipping_polygons': clippingPolygons.length,
-          'clipping_total_points': clippingPolygons.fold<int>(0, (sum, p) => sum + p.length),
+          'optimized': true,
+          'clipping_polygons': clipPaths.length,
           'result_polygons': results.length,
           'airspace_name': airspaceData.name,
           'time_ms': stopwatch.elapsedMilliseconds,
@@ -1413,10 +1375,11 @@ class AirspaceGeoJsonService {
       return results;
 
     } catch (error, stackTrace) {
-      LoggingService.error('Failed to perform polygon clipping operation', error, stackTrace);
-      // Return original polygon if clipping fails
+      LoggingService.error('Failed to perform optimized polygon clipping', error, stackTrace);
+      // Fallback: convert and return original
+      final points = subjectData.toLatLngPolygons()[subjectIndex];
       return [_ClippedPolygonData(
-        outerPoints: subjectPoints,
+        outerPoints: points,
         holes: [],
         airspaceData: airspaceData,
         style: style,
@@ -1424,9 +1387,247 @@ class AirspaceGeoJsonService {
     }
   }
 
-  /// Apply polygon clipping to eliminate overlapping airspace areas
-  /// Each airspace shows only the areas not covered by lower-altitude airspaces
-  List<_ClippedPolygonData> _applyPolygonClipping(
+  // REMOVED: _subtractPolygonsFromSubject method - now always use optimized ClipperData path
+
+  /// Optimized polygon clipping using ClipperData directly
+  List<_ClippedPolygonData> _applyPolygonClippingOptimized(
+    List<CachedAirspaceGeometry> geometries,
+    List<({fm.Polygon polygon, AirspacePolygonData data})> polygonsWithAltitude,
+    fm.LatLngBounds viewport,
+  ) {
+    LoggingService.info('[AIRSPACE_CLIPPING_START] input_polygons=${polygonsWithAltitude.length} | strategy=Optimized ClipperData');
+
+    final overallStopwatch = Stopwatch()..start();
+    final setupStopwatch = Stopwatch()..start();
+
+    final List<_ClippedPolygonData> clippedPolygons = [];
+
+    // Track performance metrics
+    int actualComparisons = 0;
+    int theoreticalComparisons = 0;
+    int totalClippingTimeMs = 0;
+    int longestClippingTimeMs = 0;
+    String longestClippingAirspace = '';
+    int completelyClippedCount = 0;
+    final List<String> completelyClippedNames = [];
+    final Map<String, int> clippingTimeByType = {};
+    int altitudeRejections = 0;
+    int boundsRejections = 0;
+    int actualClippingOperations = 0;
+    int emptyClippingLists = 0;
+
+    // Pre-process visible airspaces with ClipperData and bounds
+    final visibleAirspaces = <({
+      ClipperData? clipperData,
+      int polygonIndex,
+      AirspacePolygonData data,
+      fm.LatLngBounds bounds,
+    })>[];
+
+    // Build list with ClipperData or fallback points
+    for (int i = 0; i < geometries.length && i < polygonsWithAltitude.length; i++) {
+      final geometry = geometries[i];
+      final polygonData = polygonsWithAltitude[i];
+
+      // Calculate bounds for optimization
+      final bounds = _calculateBoundingBox(polygonData.data.points);
+
+      visibleAirspaces.add((
+        clipperData: geometry.clipperData,
+        polygonIndex: 0, // Assume single polygon per geometry for now
+        data: polygonData.data,
+        bounds: bounds,
+      ));
+    }
+
+    // Sort by altitude (lowest first) for early exit
+    visibleAirspaces.sort((a, b) {
+      final altA = a.data.airspaceData.getLowerAltitudeInFeet();
+      final altB = b.data.airspaceData.getLowerAltitudeInFeet();
+      return altA.compareTo(altB);
+    });
+
+    setupStopwatch.stop();
+
+    // Pre-extract altitude array for cache locality
+    final List<int> altitudeArray = List<int>.generate(
+      visibleAirspaces.length,
+      (i) => visibleAirspaces[i].data.airspaceData.getLowerAltitudeInFeet(),
+      growable: false,
+    );
+
+    // Calculate theoretical comparisons
+    final n = visibleAirspaces.length;
+    theoreticalComparisons = (n * (n - 1)) ~/ 2;
+
+    LoggingService.structured('CLIPPING_STAGE', {
+      'input_polygons': polygonsWithAltitude.length,
+      'polygons_to_clip': visibleAirspaces.length,
+      'theoretical_comparisons': theoreticalComparisons,
+      'setup_time_ms': setupStopwatch.elapsedMilliseconds,
+      'optimized': true,
+      'using_clipper_data': visibleAirspaces.any((v) => v.clipperData != null),
+    });
+
+    // Process each visible polygon from lowest to highest altitude
+    for (int i = 0; i < visibleAirspaces.length; i++) {
+      final current = visibleAirspaces[i];
+      final currentBounds = current.bounds;
+      final airspaceData = current.data.airspaceData;
+
+      // Get style for current airspace
+      final style = getStyleForAirspace(airspaceData);
+
+      // Collect clipping data
+      final clippingDataList = <ClipperData>[];
+      final clippingIndices = <int>[];
+      final clippingAirspaceData = <AirspaceData>[];
+
+      // Local comparison metrics
+      int localComparisons = 0;
+      int localAltitudeRejections = 0;
+      int localBoundsRejections = 0;
+
+      final currentAltitude = altitudeArray[i];
+
+      for (int j = 0; j < i; j++) {
+        final lowerAirspace = visibleAirspaces[j];
+        localComparisons++;
+        actualComparisons++;
+
+        final lowerAltitude = altitudeArray[j];
+
+        // Early exit - all remaining polygons are at same or higher altitude
+        if (lowerAltitude >= currentAltitude) {
+          localAltitudeRejections++;
+          altitudeRejections++;
+          break;
+        }
+
+        // Inline bounding box check
+        final lowerBounds = lowerAirspace.bounds;
+        if (currentBounds.east < lowerBounds.west ||
+            currentBounds.west > lowerBounds.east ||
+            currentBounds.north < lowerBounds.south ||
+            currentBounds.south > lowerBounds.north) {
+          localBoundsRejections++;
+          boundsRejections++;
+          continue;
+        }
+
+        // Add to clipping set - require ClipperData
+        if (lowerAirspace.clipperData != null) {
+          clippingDataList.add(lowerAirspace.clipperData!);
+          clippingIndices.add(lowerAirspace.polygonIndex);
+          clippingAirspaceData.add(lowerAirspace.data.airspaceData);
+        } else {
+          LoggingService.error('ClipperData missing for lower airspace', null, null);
+        }
+      }
+
+      // Track if we're doing actual clipping
+      if (clippingDataList.isEmpty) {
+        emptyClippingLists++;
+      } else {
+        actualClippingOperations++;
+      }
+
+      // Perform clipping operation with timing
+      final clippingStopwatch = Stopwatch()..start();
+      final List<_ClippedPolygonData> clippedResults;
+
+      // Always use optimized ClipperData path
+      if (current.clipperData != null) {
+        if (clippingDataList.isNotEmpty) {
+          // Perform clipping with ClipperData
+          clippedResults = _subtractPolygonsFromSubjectOptimized(
+            subjectData: current.clipperData!,
+            subjectIndex: current.polygonIndex,
+            clippingDataList: clippingDataList,
+            clippingIndices: clippingIndices,
+            airspaceData: airspaceData,
+            style: style,
+          );
+        } else {
+          // No clipping needed - convert directly to result
+          final points = current.clipperData!.toLatLngPolygons()[current.polygonIndex];
+          clippedResults = [_ClippedPolygonData(
+            outerPoints: points,
+            holes: [],
+            airspaceData: airspaceData,
+            style: style,
+          )];
+        }
+      } else {
+        // This should not happen if we're always using ClipperData from DB
+        LoggingService.error('Missing ClipperData for airspace', null, null);
+        clippedResults = [];
+      }
+      clippingStopwatch.stop();
+
+      // Track timing statistics
+      final clippingTimeMs = clippingStopwatch.elapsedMilliseconds;
+      totalClippingTimeMs += clippingTimeMs;
+      if (clippingTimeMs > longestClippingTimeMs) {
+        longestClippingTimeMs = clippingTimeMs;
+        longestClippingAirspace = airspaceData.name;
+      }
+
+      // Aggregate by type
+      final typeKey = airspaceData.type.abbreviation;
+      clippingTimeByType[typeKey] = (clippingTimeByType[typeKey] ?? 0) + clippingTimeMs;
+
+      // Track if completely clipped
+      if (clippedResults.isEmpty && current.data.points.isNotEmpty) {
+        completelyClippedCount++;
+        completelyClippedNames.add(airspaceData.name);
+      }
+
+      clippedPolygons.addAll(clippedResults);
+    }
+
+    overallStopwatch.stop();
+
+    // Calculate comparison efficiency
+    final double comparisonReduction = theoreticalComparisons > 0
+        ? ((theoreticalComparisons - actualComparisons) / theoreticalComparisons * 100)
+        : 0.0;
+
+    // Log detailed performance
+    LoggingService.structured('CLIPPING_DETAILED_PERFORMANCE', {
+      'strategy': 'Optimized ClipperData',
+      'total_clipping_time_ms': totalClippingTimeMs,
+      'overall_time_ms': overallStopwatch.elapsedMilliseconds,
+      'setup_time_ms': setupStopwatch.elapsedMilliseconds,
+      'average_time_ms': visibleAirspaces.isNotEmpty ? (totalClippingTimeMs / visibleAirspaces.length).round() : 0,
+      'longest_time_ms': longestClippingTimeMs,
+      'longest_airspace': longestClippingAirspace,
+      'completely_clipped': completelyClippedCount,
+      'time_by_type': clippingTimeByType,
+      'total_comparisons': actualComparisons,
+      'theoretical_comparisons': theoreticalComparisons,
+      'comparison_reduction_%': comparisonReduction.toStringAsFixed(1),
+      'altitude_rejections': altitudeRejections,
+      'bounds_rejections': boundsRejections,
+      'actual_clipping_operations': actualClippingOperations,
+      'empty_clipping_lists': emptyClippingLists,
+      'using_clipper_data': visibleAirspaces.any((v) => v.clipperData != null),
+    });
+
+    // Log summary if any were completely clipped
+    if (completelyClippedCount > 0) {
+      LoggingService.info('[CLIPPING_SUMMARY] $completelyClippedCount airspaces completely clipped: ${completelyClippedNames.take(5).join(", ")}${completelyClippedCount > 5 ? " ..." : ""}');
+    }
+
+    LoggingService.info('[AIRSPACE] Clipped ${clippedPolygons.length} airspaces in ${totalClippingTimeMs}ms');
+
+    return clippedPolygons;
+  }
+
+  // REMOVED: Non-optimized _applyPolygonClipping - always use optimized ClipperData path
+
+  /// Legacy polygon clipping method (kept for reference but not used)
+  List<_ClippedPolygonData> _applyPolygonClippingLegacy(
     List<({fm.Polygon polygon, AirspacePolygonData data})> polygonsWithAltitude,
     fm.LatLngBounds viewport,
   ) {
@@ -1569,13 +1770,9 @@ class AirspaceGeoJsonService {
 
       // Perform clipping operation with timing
       final clippingStopwatch = Stopwatch()..start();
-      final clippedResults = _subtractPolygonsFromSubject(
-        subjectPoints: currentPoints,
-        clippingPolygons: clippingPolygons,
-        clippingAirspaceData: clippingAirspaceData,
-        airspaceData: airspaceData,
-        style: style,
-      );
+      // Legacy method no longer used - we always use ClipperData now
+      final List<_ClippedPolygonData> clippedResults = [];
+      // final clippedResults = _subtractPolygonsFromSubject(...);
       clippingStopwatch.stop();
 
       // Track timing statistics
@@ -1714,8 +1911,18 @@ class AirspaceGeoJsonService {
     // Get database version from disk cache
     final dbVersion = await AirspaceDiskCache.instance.getDatabaseVersion();
 
+    // Get country details
+    final countryDetails = await AirspaceDiskCache.instance.getCountryDetails();
+    final cachedCountries = await AirspaceDiskCache.instance.getCachedCountries();
+
     // Calculate database size in MB
     final databaseSizeMb = stats.totalMemoryBytes / 1024 / 1024;
+
+    // Calculate total airspaces across all countries
+    int totalAirspacesInCountries = 0;
+    for (final country in countryDetails) {
+      totalAirspacesInCountries += (country['actual_count'] as int? ?? 0);
+    }
 
     return {
       'statistics': stats.toJson(),
@@ -1729,6 +1936,10 @@ class AirspaceGeoJsonService {
         'memory_saved_mb': (stats.memoryReductionPercent * stats.totalMemoryBytes / 100 / 1024 / 1024).toStringAsFixed(2),
         'compression_ratio': stats.averageCompressionRatio.toStringAsFixed(2),
         'cache_hit_rate': stats.cacheHitRate.toStringAsFixed(2),
+        'cached_countries': cachedCountries,
+        'country_count': cachedCountries.length,
+        'country_details': countryDetails,
+        'total_airspaces_in_countries': totalAirspacesInCountries,
       },
     };
   }
@@ -1803,14 +2014,19 @@ class AirspaceGeoJsonService {
         lowerAltitudeFt: geometry.lowerAltitudeFt,  // Use pre-computed altitude
       );
 
-      // Process all polygon parts
-      final allPoints = <LatLng>[];
-      for (final polygon in geometry.polygons) {
-        if (polygon.isNotEmpty) {
-          allPoints.addAll(polygon);
-          // Just use first polygon for now (TODO: handle multi-polygon properly)
-          break;
-        }
+      // Process all polygon parts - handle both LatLng polygons and ClipperData
+      List<LatLng> allPoints;
+      if (geometry.clipperData != null) {
+        // When using ClipperData, convert to LatLng only for display
+        // The actual clipping will use the ClipperData directly
+        final polygons = geometry.clipperData!.toLatLngPolygons();
+        allPoints = polygons.isNotEmpty ? polygons.first : const [];
+      } else if (geometry.polygons != null && geometry.polygons!.isNotEmpty) {
+        // Traditional path with LatLng polygons
+        // Just use first polygon for now (TODO: handle multi-polygon properly)
+        allPoints = geometry.polygons!.first;
+      } else {
+        allPoints = const [];
       }
 
       // Add to all identification polygons (for tooltip)
@@ -1879,7 +2095,14 @@ class AirspaceGeoJsonService {
       if (enableClipping) {
         // Apply polygon clipping to remove overlapping areas
         final clippingStopwatch = Stopwatch()..start();
-        final clippedPolygons = _applyPolygonClipping(polygonsWithData, viewport);
+
+        // Use optimized clipping if any geometry has ClipperData
+        final hasClipperData = geometries.any((g) => g.clipperData != null);
+        final List<_ClippedPolygonData> clippedPolygons;
+
+        // Always use optimized path with ClipperData
+        clippedPolygons = _applyPolygonClippingOptimized(geometries, polygonsWithData, viewport);
+
         clippingStopwatch.stop();
 
         // Convert clipped polygons back to flutter_map format
@@ -1889,6 +2112,7 @@ class AirspaceGeoJsonService {
           'polygons_input': polygonsWithData.length,
           'polygons_output': polygons.length,
           'clipping_time_ms': clippingStopwatch.elapsedMilliseconds,
+          'optimized': hasClipperData,
         });
       } else {
         // No clipping - just extract polygons in sorted order
@@ -1922,5 +2146,86 @@ class AirspaceGeoJsonService {
   /// Dispose resources
   void dispose() {
     _performanceLogger.dispose();
+  }
+}
+
+/// Helper class for direct Int32 to Clipper2 conversion
+class ClipperData {
+  final Int32List coords;
+  final Int32List offsets;
+  static const double _coordPrecision = 10000000.0; // 10^7 for 1.11cm precision
+
+  ClipperData(this.coords, this.offsets);
+
+  /// Create paths without intermediate LatLng objects
+  List<clipper.Path64> toPaths() {
+    final paths = <clipper.Path64>[];
+
+    for (int i = 0; i < offsets.length; i++) {
+      final startIdx = offsets[i] * 2;
+      final endIdx = (i + 1 < offsets.length)
+          ? offsets[i + 1] * 2
+          : coords.length;
+
+      // Pre-allocate path capacity for better performance
+      final pathLength = (endIdx - startIdx) ~/ 2;
+      final path = List<clipper.Point64>.filled(pathLength, clipper.Point64(0, 0));
+
+      int pathIndex = 0;
+      for (int j = startIdx; j < endIdx; j += 2) {
+        // Direct Int32 to Point64 (auto-promotes to Int64)
+        path[pathIndex++] = clipper.Point64(coords[j], coords[j + 1]);
+      }
+
+      paths.add(path);
+    }
+
+    return paths;
+  }
+
+  /// Get single polygon for subject
+  clipper.Path64 getPath(int index) {
+    final startIdx = offsets[index] * 2;
+    final endIdx = (index + 1 < offsets.length)
+        ? offsets[index + 1] * 2
+        : coords.length;
+
+    // Pre-allocate path with known size
+    final pointCount = (endIdx - startIdx) ~/ 2;
+    final path = List<clipper.Point64>.filled(pointCount, clipper.Point64(0, 0));
+
+    int pointIndex = 0;
+    for (int i = startIdx; i < endIdx; i += 2) {
+      path[pointIndex++] = clipper.Point64(coords[i], coords[i + 1]);
+    }
+    return path;
+  }
+
+  /// Convert to LatLng for display (only when needed)
+  List<List<LatLng>> toLatLngPolygons() {
+    // Pre-allocate list with known size
+    final polygons = List<List<LatLng>>.filled(offsets.length, const []);
+
+    for (int i = 0; i < offsets.length; i++) {
+      final startIdx = offsets[i] * 2;
+      final endIdx = (i + 1 < offsets.length)
+          ? offsets[i + 1] * 2
+          : coords.length;
+
+      // Pre-allocate polygon with known size
+      final pointCount = (endIdx - startIdx) ~/ 2;
+      final polygon = List<LatLng>.filled(pointCount, const LatLng(0, 0));
+
+      int pointIndex = 0;
+      for (int j = startIdx; j < endIdx; j += 2) {
+        polygon[pointIndex++] = LatLng(
+          coords[j + 1] / _coordPrecision,  // lat
+          coords[j] / _coordPrecision,       // lng
+        );
+      }
+      polygons[i] = polygon;
+    }
+
+    return polygons;
   }
 }
