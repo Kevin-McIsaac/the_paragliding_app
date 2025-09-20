@@ -12,12 +12,11 @@ import '../data/models/airspace_cache_models.dart';
 
 class AirspaceDiskCache {
   static const String _databaseName = 'airspace_cache.db';
-  static const int _databaseVersion = 6; // Version 6: Expanded native columns for direct pipeline optimization
+  static const int _databaseVersion = 7; // Version 7: Removed redundant indexes and tile table
 
   static const String _geometryTable = 'airspace_geometries';
-  static const String _metadataTable = 'tile_metadata'; // Keep for compatibility
-  static const String _countryMetadataTable = 'country_metadata'; // New table
-  static const String _countryMappingTable = 'country_airspace_mapping'; // New table
+  static const String _countryMetadataTable = 'country_metadata';
+  static const String _countryMappingTable = 'country_airspace_mapping';
   static const String _statisticsTable = 'cache_statistics';
 
   // Size limits
@@ -133,21 +132,7 @@ class AirspaceDiskCache {
       )
     ''');
 
-    // Tile metadata table (keep for compatibility)
-    await db.execute('''
-      CREATE TABLE $_metadataTable (
-        tile_key TEXT PRIMARY KEY,
-        airspace_ids TEXT NOT NULL,
-        fetch_time INTEGER NOT NULL,
-        airspace_count INTEGER NOT NULL,
-        is_empty INTEGER NOT NULL,
-        statistics TEXT,
-        access_count INTEGER DEFAULT 0,
-        last_accessed INTEGER
-      )
-    ''');
-
-    // Country metadata table (new for country-based storage)
+    // Country metadata table (for country-based storage)
     await db.execute('''
       CREATE TABLE $_countryMetadataTable (
         country_code TEXT PRIMARY KEY,
@@ -181,33 +166,16 @@ class AirspaceDiskCache {
       )
     ''');
 
-    // Create optimized spatial indices for bounding box queries
-    // Using compound index for efficient spatial queries without R-tree
+    // Create essential indices only (reduced from 17 to 7)
+    // Spatial compound index for bounding box queries (replaces 4 individual indexes)
     await db.execute('CREATE INDEX idx_geometry_spatial ON $_geometryTable(bounds_west, bounds_east, bounds_south, bounds_north)');
-    await db.execute('CREATE INDEX idx_geometry_bounds_west ON $_geometryTable(bounds_west)');
-    await db.execute('CREATE INDEX idx_geometry_bounds_east ON $_geometryTable(bounds_east)');
-    await db.execute('CREATE INDEX idx_geometry_bounds_south ON $_geometryTable(bounds_south)');
-    await db.execute('CREATE INDEX idx_geometry_bounds_north ON $_geometryTable(bounds_north)');
 
-    // Create optimized indices for direct pipeline
-    // Filtering indices
+    // Essential filtering indices
     await db.execute('CREATE INDEX idx_geometry_lower_altitude ON $_geometryTable(lower_altitude_ft)');
     await db.execute('CREATE INDEX idx_geometry_type_code ON $_geometryTable(type_code)');
     await db.execute('CREATE INDEX idx_geometry_icao_class ON $_geometryTable(icao_class)');
-    await db.execute('CREATE INDEX idx_geometry_country ON $_geometryTable(country)');
-    await db.execute('CREATE INDEX idx_geometry_fetch_time ON $_geometryTable(fetch_time)');
 
-    // Compound index for common filter pattern
-    await db.execute('CREATE INDEX idx_geometry_filter_combined ON $_geometryTable(lower_altitude_ft, type_code, icao_class)');
-
-    // Optimized compound index for spatial + altitude queries (most common pattern)
-    // This covers the typical query: bounds check + altitude filter + sorting
-    await db.execute('CREATE INDEX idx_geometry_spatial_altitude ON $_geometryTable(lower_altitude_ft, bounds_west, bounds_east, bounds_south, bounds_north)');
-
-    // Metadata indices
-    await db.execute('CREATE INDEX idx_metadata_fetch_time ON $_metadataTable(fetch_time)');
-    await db.execute('CREATE INDEX idx_metadata_empty ON $_metadataTable(is_empty)');
-    // New indices for country-based queries
+    // Country-based query indices
     await db.execute('CREATE INDEX idx_country_mapping_country ON $_countryMappingTable(country_code)');
     await db.execute('CREATE INDEX idx_country_mapping_airspace ON $_countryMappingTable(airspace_id)');
     await db.execute('CREATE INDEX idx_country_metadata_fetch ON $_countryMetadataTable(fetch_time)');
@@ -1053,125 +1021,24 @@ class AirspaceDiskCache {
     }
   }
 
-  // Tile metadata operations
-  Future<void> putTileMetadata(TileMetadata metadata) async {
-    final db = await database;
+  // Tile metadata operations - deprecated but kept as stubs for compatibility
+  // These methods do nothing and will be removed after refactoring AirspaceMetadataCache
 
-    try {
-      await db.insert(
-        _metadataTable,
-        {
-          'tile_key': metadata.tileKey,
-          'airspace_ids': jsonEncode(metadata.airspaceIds.toList()),
-          'fetch_time': metadata.fetchTime.millisecondsSinceEpoch,
-          'airspace_count': metadata.airspaceCount,
-          'is_empty': metadata.isEmpty ? 1 : 0,
-          'statistics': metadata.statistics != null
-              ? jsonEncode(metadata.statistics)
-              : null,
-          'last_accessed': DateTime.now().millisecondsSinceEpoch,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-    } catch (e, stack) {
-      LoggingService.error('Failed to store tile metadata', e, stack);
-    }
+  Future<void> putTileMetadata(TileMetadata metadata) async {
+    // Deprecated - tiles are no longer used
+    // This is a stub for compatibility
   }
 
   Future<TileMetadata?> getTileMetadata(String tileKey) async {
-    final db = await database;
-
-    try {
-      final results = await db.query(
-        _metadataTable,
-        where: 'tile_key = ?',
-        whereArgs: [tileKey],
-        limit: 1,
-      );
-
-      if (results.isEmpty) return null;
-
-      final row = results.first;
-      final metadata = TileMetadata(
-        tileKey: row['tile_key'] as String,
-        airspaceIds: Set<String>.from(
-          jsonDecode(row['airspace_ids'] as String) as List,
-        ),
-        fetchTime: DateTime.fromMillisecondsSinceEpoch(
-          row['fetch_time'] as int,
-        ),
-        airspaceCount: row['airspace_count'] as int,
-        isEmpty: (row['is_empty'] as int) == 1,
-        statistics: row['statistics'] != null
-            ? jsonDecode(row['statistics'] as String)
-            : null,
-      );
-
-      // REMOVED: Real-time access tracking to improve performance
-      // Access tracking is now deferred to batch operations
-      // The last_accessed field is still used for cleanup based on fetch_time
-
-      return metadata;
-    } catch (e, stack) {
-      LoggingService.error('Failed to retrieve tile metadata', e, stack);
-      return null;
-    }
+    // Deprecated - tiles are no longer used
+    // Return null to indicate no cached data
+    return null;
   }
 
-  /// Batch retrieve multiple tile metadata in a single query
   Future<Map<String, TileMetadata>> getTileMetadataBatch(List<String> tileKeys) async {
-    if (tileKeys.isEmpty) return {};
-
-    final db = await database;
-    final stopwatch = Stopwatch()..start();
-    final metadataMap = <String, TileMetadata>{};
-
-    try {
-      // Create placeholders for IN clause
-      final placeholders = tileKeys.map((_) => '?').join(',');
-
-      final results = await db.query(
-        _metadataTable,
-        where: 'tile_key IN ($placeholders)',
-        whereArgs: tileKeys,
-      );
-
-      for (final row in results) {
-        try {
-          final metadata = TileMetadata(
-            tileKey: row['tile_key'] as String,
-            airspaceIds: Set<String>.from(
-              jsonDecode(row['airspace_ids'] as String) as List,
-            ),
-            fetchTime: DateTime.fromMillisecondsSinceEpoch(
-              row['fetch_time'] as int,
-            ),
-            airspaceCount: row['airspace_count'] as int,
-            isEmpty: (row['is_empty'] as int) == 1,
-            statistics: row['statistics'] != null
-                ? jsonDecode(row['statistics'] as String)
-                : null,
-          );
-          metadataMap[metadata.tileKey] = metadata;
-        } catch (e) {
-          LoggingService.error('Failed to parse tile metadata: ${row['tile_key']}', e, null);
-        }
-      }
-
-      // Log only if slow
-      if (stopwatch.elapsedMilliseconds > 50) {
-        LoggingService.performance(
-          'Batch retrieved tile metadata',
-          stopwatch.elapsed,
-          'requested=${tileKeys.length}, found=${metadataMap.length}',
-        );
-      }
-
-      return metadataMap;
-    } catch (e, stack) {
-      LoggingService.error('Failed to batch retrieve tile metadata', e, stack);
-      return {};
-    }
+    // Deprecated - tiles are no longer used
+    // Return empty map to indicate no cached data
+    return {};
   }
 
   // Cache maintenance
@@ -1191,26 +1058,15 @@ class AirspaceDiskCache {
         whereArgs: [geometryExpiry],
       );
 
-      // Clean expired metadata (24 hours)
-      final metadataExpiry = DateTime.now()
-          .subtract(const Duration(hours: 24))
-          .millisecondsSinceEpoch;
-
-      final deletedMetadata = await db.delete(
-        _metadataTable,
-        where: 'fetch_time < ?',
-        whereArgs: [metadataExpiry],
-      );
-
       // Vacuum database to reclaim space
-      if (deletedGeometries > 0 || deletedMetadata > 0) {
+      if (deletedGeometries > 0) {
         await db.execute('VACUUM');
       }
 
       LoggingService.performance(
         'Cleaned expired cache',
         stopwatch.elapsed,
-        'geometries=$deletedGeometries, metadata=$deletedMetadata',
+        'geometries=$deletedGeometries',
       );
     } catch (e, stack) {
       LoggingService.error('Failed to clean cache', e, stack);
@@ -1231,30 +1087,19 @@ class AirspaceDiskCache {
         FROM $_geometryTable
       ''');
 
-      // Get metadata statistics
-      final metadataStats = await db.rawQuery('''
-        SELECT
-          COUNT(*) as count,
-          SUM(is_empty) as empty_count
-        FROM $_metadataTable
-      ''');
-
       final geoRow = geometryStats.first;
-      final metaRow = metadataStats.first;
 
       final totalGeometries = geoRow['count'] as int? ?? 0;
       final compressedBytes = geoRow['compressed'] as int? ?? 0;
       final uncompressedBytes = geoRow['uncompressed'] as int? ?? 0;
-      final totalTiles = metaRow['count'] as int? ?? 0;
-      final emptyTiles = metaRow['empty_count'] as int? ?? 0;
 
       // Get database file size
       final dbSize = await getDatabaseSize();
 
       return CacheStatistics(
         totalGeometries: totalGeometries,
-        totalTiles: totalTiles,
-        emptyTiles: emptyTiles,
+        totalTiles: 0, // Tiles are deprecated
+        emptyTiles: 0, // Tiles are deprecated
         duplicatedAirspaces: 0, // Will be calculated by the service
         totalMemoryBytes: dbSize, // Use actual database size
         compressedBytes: compressedBytes,
@@ -1515,16 +1360,6 @@ class AirspaceDiskCache {
           WHERE id IN (
             SELECT id FROM $_geometryTable
             ORDER BY last_accessed ASC
-            LIMIT $cleanupBatchSize
-          )
-        ''');
-
-        // Delete oldest tile metadata
-        await db.execute('''
-          DELETE FROM $_metadataTable
-          WHERE id IN (
-            SELECT id FROM $_metadataTable
-            ORDER BY fetch_time ASC
             LIMIT $cleanupBatchSize
           )
         ''');
