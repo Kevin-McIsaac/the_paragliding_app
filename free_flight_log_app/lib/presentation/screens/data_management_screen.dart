@@ -1181,12 +1181,12 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                               value: _airspaceCacheStats!['summary']['total_unique_airspaces'].toString(),
                             ),
                             AppStatRow.dataManagement(
-                              label: 'Cached Tiles',
-                              value: _airspaceCacheStats!['summary']['total_tiles_cached'].toString(),
+                              label: 'Cached Geometries',
+                              value: _airspaceCacheStats!['summary']['total_unique_airspaces'].toString(),
                             ),
                             AppStatRow.dataManagement(
-                              label: 'Empty Tiles',
-                              value: _airspaceCacheStats!['summary']['empty_tiles'].toString(),
+                              label: 'Total Polygons',
+                              value: (_airspaceCacheStats!['summary']['total_polygons'] ?? _airspaceCacheStats!['summary']['total_unique_airspaces'] ?? 0).toString(),
                             ),
                             AppStatRow.dataManagement(
                               label: 'Compression Ratio',

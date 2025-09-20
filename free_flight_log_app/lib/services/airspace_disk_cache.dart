@@ -11,7 +11,7 @@ import '../data/models/airspace_cache_models.dart';
 
 class AirspaceDiskCache {
   static const String _databaseName = 'airspace_cache.db';
-  static const int _databaseVersion = 5; // Version 5: Optimized spatial indexing without R-tree
+  static const int _databaseVersion = 6; // Version 6: Expanded native columns for direct pipeline optimization
 
   static const String _geometryTable = 'airspace_geometries';
   static const String _metadataTable = 'tile_metadata'; // Keep for compatibility
@@ -87,27 +87,48 @@ class AirspaceDiskCache {
   Future<void> _onCreate(Database db, int version) async {
     LoggingService.info('Creating airspace cache tables');
 
-    // Geometry table - Version 2 with binary coordinates and native columns
+    // Geometry table - Version 6 with expanded native columns for direct pipeline
     await db.execute('''
       CREATE TABLE $_geometryTable (
+        -- Core identifiers
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         type_code INTEGER NOT NULL,
-        coordinates_binary BLOB NOT NULL,  -- Binary Float32 array
-        polygon_offsets TEXT NOT NULL,      -- JSON array of polygon start indices
-        properties TEXT,                    -- JSON for additional properties
-        lower REAL,                        -- Native column for fast filtering
-        upper REAL,                        -- Native column for fast filtering
-        activity INTEGER,                   -- Native column (bitmask) for fast filtering
-        bounds_west REAL NOT NULL,          -- Native columns for spatial queries
+
+        -- Spatial data (binary for efficiency)
+        coordinates_binary BLOB NOT NULL,  -- Float32 array
+        polygon_offsets TEXT NOT NULL,     -- JSON array of indices
+        bounds_west REAL NOT NULL,
         bounds_south REAL NOT NULL,
         bounds_east REAL NOT NULL,
         bounds_north REAL NOT NULL,
+
+        -- Computed altitude fields (for fast filtering and sorting)
+        lower_altitude_ft INTEGER,         -- Lower limit in feet (computed)
+        upper_altitude_ft INTEGER,         -- Upper limit in feet (computed)
+
+        -- Raw altitude components
+        lower_value REAL,                  -- Raw lower value
+        lower_unit INTEGER,                -- Unit code (1=ft, 2=m, 6=FL)
+        lower_reference INTEGER,           -- Reference code (0=GND, 1=AMSL, 2=AGL)
+        upper_value REAL,                  -- Raw upper value
+        upper_unit INTEGER,                -- Unit code
+        upper_reference INTEGER,           -- Reference code
+
+        -- Classification fields
+        icao_class INTEGER,                -- ICAO class code (extracted)
+        activity INTEGER,                  -- Activity bitmask
+        country TEXT,                      -- Country code
+
+        -- Metadata
         fetch_time INTEGER NOT NULL,
         geometry_hash TEXT NOT NULL,
-        coordinate_count INTEGER NOT NULL,  -- Total number of coordinate pairs
-        polygon_count INTEGER NOT NULL,     -- Number of polygons
-        last_accessed INTEGER
+        coordinate_count INTEGER NOT NULL,
+        polygon_count INTEGER NOT NULL,
+        last_accessed INTEGER,
+
+        -- Minimal JSON for rarely-used fields
+        extra_properties TEXT              -- Remaining properties not extracted
       )
     ''');
 
@@ -167,10 +188,22 @@ class AirspaceDiskCache {
     await db.execute('CREATE INDEX idx_geometry_bounds_south ON $_geometryTable(bounds_south)');
     await db.execute('CREATE INDEX idx_geometry_bounds_north ON $_geometryTable(bounds_north)');
 
-    // Create indices for performance - optimized for native columns
+    // Create optimized indices for direct pipeline
+    // Filtering indices
+    await db.execute('CREATE INDEX idx_geometry_lower_altitude ON $_geometryTable(lower_altitude_ft)');
     await db.execute('CREATE INDEX idx_geometry_type_code ON $_geometryTable(type_code)');
+    await db.execute('CREATE INDEX idx_geometry_icao_class ON $_geometryTable(icao_class)');
+    await db.execute('CREATE INDEX idx_geometry_country ON $_geometryTable(country)');
     await db.execute('CREATE INDEX idx_geometry_fetch_time ON $_geometryTable(fetch_time)');
-    await db.execute('CREATE INDEX idx_geometry_altitude ON $_geometryTable(lower, upper)');
+
+    // Compound index for common filter pattern
+    await db.execute('CREATE INDEX idx_geometry_filter_combined ON $_geometryTable(lower_altitude_ft, type_code, icao_class)');
+
+    // Optimized compound index for spatial + altitude queries (most common pattern)
+    // This covers the typical query: bounds check + altitude filter + sorting
+    await db.execute('CREATE INDEX idx_geometry_spatial_altitude ON $_geometryTable(lower_altitude_ft, bounds_west, bounds_east, bounds_south, bounds_north)');
+
+    // Metadata indices
     await db.execute('CREATE INDEX idx_metadata_fetch_time ON $_metadataTable(fetch_time)');
     await db.execute('CREATE INDEX idx_metadata_empty ON $_metadataTable(is_empty)');
     // New indices for country-based queries
@@ -397,6 +430,33 @@ class AirspaceDiskCache {
     };
   }
 
+  /// Compute altitude in feet from raw value, unit, and reference
+  /// Returns 999999 for unknown altitudes (will sort to end)
+  int _computeAltitudeInFeet(dynamic value, int? unit, int? reference) {
+    // Handle special ground values or reference code 0 (GND)
+    if (reference == 0 || (value is String && value.toLowerCase() == 'gnd')) {
+      return 0;
+    }
+
+    // Handle numeric values with OpenAIP unit codes
+    if (value is num) {
+      // OpenAIP unit codes: 1=ft, 2=m, 6=FL
+      if (unit == 6) {
+        // Flight Level: FL090 = 9,000 feet
+        return (value * 100).round();
+      } else if (unit == 1) {
+        // Feet (AMSL or AGL - treat both as feet for sorting)
+        return value.round();
+      } else if (unit == 2) {
+        // Meters - convert to feet
+        return (value * 3.28084).round();
+      }
+    }
+
+    // Unknown altitude
+    return 999999;
+  }
+
   // Geometry cache operations - Version 2 with binary storage
   Future<void> putGeometry(CachedAirspaceGeometry geometry) async {
     // Check database size before inserting
@@ -414,10 +474,39 @@ class AirspaceDiskCache {
       // Calculate bounds for spatial queries
       final bounds = _calculateBounds(geometry.polygons);
 
-      // Extract altitude and activity from properties
-      final lower = geometry.properties['lowerLimitReference'] as double?;
-      final upper = geometry.properties['upperLimitReference'] as double?;
+      // Extract altitude limits (complex objects)
+      final lowerLimit = geometry.properties['lowerLimit'] as Map<String, dynamic>?;
+      final upperLimit = geometry.properties['upperLimit'] as Map<String, dynamic>?;
+
+      // Extract altitude components
+      final lowerValue = lowerLimit?['value'];
+      final lowerUnit = lowerLimit?['unit'] as int?;
+      final lowerReference = lowerLimit?['reference'] as int?;
+      final upperValue = upperLimit?['value'];
+      final upperUnit = upperLimit?['unit'] as int?;
+      final upperReference = upperLimit?['reference'] as int?;
+
+      // Compute altitude in feet for fast filtering
+      final lowerAltitudeFt = lowerLimit != null
+          ? _computeAltitudeInFeet(lowerValue, lowerUnit, lowerReference)
+          : null;
+      final upperAltitudeFt = upperLimit != null
+          ? _computeAltitudeInFeet(upperValue, upperUnit, upperReference)
+          : null;
+
+      // Extract classification fields
+      final icaoClass = (geometry.properties['class'] ?? geometry.properties['icaoClass']) as int?;
       final activity = geometry.properties['activity'] as int?;
+      final country = geometry.properties['country'] as String?;
+
+      // Create a copy of properties without the extracted fields for extra_properties
+      final extraProperties = Map<String, dynamic>.from(geometry.properties);
+      extraProperties.remove('lowerLimit');
+      extraProperties.remove('upperLimit');
+      extraProperties.remove('class');
+      extraProperties.remove('icaoClass');
+      extraProperties.remove('activity');
+      extraProperties.remove('country');
 
       // Count coordinates
       int coordinateCount = 0;
@@ -428,24 +517,45 @@ class AirspaceDiskCache {
       await db.insert(
         _geometryTable,
         {
+          // Core identifiers
           'id': geometry.id,
           'name': geometry.name,
           'type_code': geometry.typeCode,
+
+          // Spatial data
           'coordinates_binary': coordinatesBinary,
           'polygon_offsets': jsonEncode(polygonOffsets),
-          'properties': jsonEncode(geometry.properties),
-          'lower': lower,
-          'upper': upper,
-          'activity': activity,
           'bounds_west': bounds['west'],
           'bounds_south': bounds['south'],
           'bounds_east': bounds['east'],
           'bounds_north': bounds['north'],
+
+          // Computed altitude fields
+          'lower_altitude_ft': lowerAltitudeFt,
+          'upper_altitude_ft': upperAltitudeFt,
+
+          // Raw altitude components
+          'lower_value': lowerValue is num ? lowerValue.toDouble() : null,
+          'lower_unit': lowerUnit,
+          'lower_reference': lowerReference,
+          'upper_value': upperValue is num ? upperValue.toDouble() : null,
+          'upper_unit': upperUnit,
+          'upper_reference': upperReference,
+
+          // Classification fields
+          'icao_class': icaoClass,
+          'activity': activity,
+          'country': country,
+
+          // Metadata
           'fetch_time': geometry.fetchTime.millisecondsSinceEpoch,
           'geometry_hash': geometry.geometryHash,
           'coordinate_count': coordinateCount,
           'polygon_count': geometry.polygons.length,
           'last_accessed': DateTime.now().millisecondsSinceEpoch,
+
+          // Minimal JSON for remaining properties
+          'extra_properties': extraProperties.isNotEmpty ? jsonEncode(extraProperties) : null,
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
@@ -513,10 +623,39 @@ class AirspaceDiskCache {
         // Calculate bounds for spatial queries
         final bounds = _calculateBounds(geometry.polygons);
 
-        // Extract altitude and activity from properties
-        final lower = geometry.properties['lowerLimitReference'] as double?;
-        final upper = geometry.properties['upperLimitReference'] as double?;
+        // Extract altitude limits (complex objects)
+        final lowerLimit = geometry.properties['lowerLimit'] as Map<String, dynamic>?;
+        final upperLimit = geometry.properties['upperLimit'] as Map<String, dynamic>?;
+
+        // Extract altitude components
+        final lowerValue = lowerLimit?['value'];
+        final lowerUnit = lowerLimit?['unit'] as int?;
+        final lowerReference = lowerLimit?['reference'] as int?;
+        final upperValue = upperLimit?['value'];
+        final upperUnit = upperLimit?['unit'] as int?;
+        final upperReference = upperLimit?['reference'] as int?;
+
+        // Compute altitude in feet for fast filtering
+        final lowerAltitudeFt = lowerLimit != null
+            ? _computeAltitudeInFeet(lowerValue, lowerUnit, lowerReference)
+            : null;
+        final upperAltitudeFt = upperLimit != null
+            ? _computeAltitudeInFeet(upperValue, upperUnit, upperReference)
+            : null;
+
+        // Extract classification fields
+        final icaoClass = (geometry.properties['class'] ?? geometry.properties['icaoClass']) as int?;
         final activity = geometry.properties['activity'] as int?;
+        final country = geometry.properties['country'] as String?;
+
+        // Create a copy of properties without the extracted fields for extra_properties
+        final extraProperties = Map<String, dynamic>.from(geometry.properties);
+        extraProperties.remove('lowerLimit');
+        extraProperties.remove('upperLimit');
+        extraProperties.remove('class');
+        extraProperties.remove('icaoClass');
+        extraProperties.remove('activity');
+        extraProperties.remove('country');
 
         // Count coordinates
         int coordinateCount = 0;
@@ -527,24 +666,45 @@ class AirspaceDiskCache {
         batch.insert(
           _geometryTable,
           {
+            // Core identifiers
             'id': geometry.id,
             'name': geometry.name,
             'type_code': geometry.typeCode,
+
+            // Spatial data
             'coordinates_binary': coordinatesBinary,
             'polygon_offsets': jsonEncode(polygonOffsets),
-            'properties': jsonEncode(geometry.properties),
-            'lower': lower,
-            'upper': upper,
-            'activity': activity,
             'bounds_west': bounds['west'],
             'bounds_south': bounds['south'],
             'bounds_east': bounds['east'],
             'bounds_north': bounds['north'],
+
+            // Computed altitude fields
+            'lower_altitude_ft': lowerAltitudeFt,
+            'upper_altitude_ft': upperAltitudeFt,
+
+            // Raw altitude components
+            'lower_value': lowerValue is num ? lowerValue.toDouble() : null,
+            'lower_unit': lowerUnit,
+            'lower_reference': lowerReference,
+            'upper_value': upperValue is num ? upperValue.toDouble() : null,
+            'upper_unit': upperUnit,
+            'upper_reference': upperReference,
+
+            // Classification fields
+            'icao_class': icaoClass,
+            'activity': activity,
+            'country': country,
+
+            // Metadata
             'fetch_time': geometry.fetchTime.millisecondsSinceEpoch,
             'geometry_hash': geometry.geometryHash,
             'coordinate_count': coordinateCount,
             'polygon_count': geometry.polygons.length,
             'last_accessed': DateTime.now().millisecondsSinceEpoch,
+
+            // Minimal JSON for remaining properties
+            'extra_properties': extraProperties.isNotEmpty ? jsonEncode(extraProperties) : null,
           },
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
@@ -673,6 +833,7 @@ class AirspaceDiskCache {
             geometryHash: row['geometry_hash'] as String,
             compressedSize: coordinatesBinary.length,
             uncompressedSize: (row['coordinate_count'] as int) * 8,
+            lowerAltitudeFt: row['lower_altitude_ft'] as int?,
           );
 
           decodedGeometries.add(geometry);
@@ -699,8 +860,8 @@ class AirspaceDiskCache {
     }
   }
 
-  /// Get geometries within spatial bounds using optimized compound index
-  /// This method uses standard SQLite with indexed columns for spatial queries
+  /// Get geometries within spatial bounds with direct SQL filtering
+  /// This method performs all filtering at the database level for optimal performance
   Future<List<CachedAirspaceGeometry>> getGeometriesInBounds({
     required double west,
     required double south,
@@ -708,6 +869,10 @@ class AirspaceDiskCache {
     required double north,
     List<String>? countryCodes,
     int? typeCode,
+    Set<int>? excludedTypes,
+    Set<int>? excludedClasses,
+    double? maxAltitudeFt,
+    bool orderByAltitude = false,
   }) async {
     final db = await database;
     final stopwatch = Stopwatch()..start();
@@ -731,9 +896,25 @@ class AirspaceDiskCache {
       conditions.add('bounds_north >= ?');
       args.add(south);
 
+      // Type filtering
       if (typeCode != null) {
         conditions.add('type_code = ?');
         args.add(typeCode);
+      } else if (excludedTypes != null && excludedTypes.isNotEmpty) {
+        conditions.add('type_code NOT IN (${excludedTypes.map((_) => '?').join(',')})');
+        args.addAll(excludedTypes);
+      }
+
+      // ICAO class filtering
+      if (excludedClasses != null && excludedClasses.isNotEmpty) {
+        conditions.add('(icao_class IS NULL OR icao_class NOT IN (${excludedClasses.map((_) => '?').join(',')}))');
+        args.addAll(excludedClasses);
+      }
+
+      // Altitude filtering
+      if (maxAltitudeFt != null) {
+        conditions.add('(lower_altitude_ft IS NULL OR lower_altitude_ft <= ?)');
+        args.add(maxAltitudeFt);
       }
 
       // Build the query based on country filter
@@ -754,6 +935,11 @@ class AirspaceDiskCache {
         ''';
       }
 
+      // Add ORDER BY clause for clipping optimization
+      if (orderByAltitude) {
+        query += ' ORDER BY lower_altitude_ft ASC NULLS LAST';
+      }
+
       final results = await db.rawQuery(query, args);
       queryStopwatch.stop();
 
@@ -771,11 +957,45 @@ class AirspaceDiskCache {
         try {
           final coordinatesBinary = row['coordinates_binary'] as Uint8List;
           final polygonOffsetsJson = row['polygon_offsets'] as String;
-          final propertiesJson = row['properties'] as String;
 
           final polygonOffsets = (jsonDecode(polygonOffsetsJson) as List).cast<int>();
-          final properties = jsonDecode(propertiesJson) as Map<String, dynamic>;
           final polygons = _decodeCoordinatesBinaryOptimized(coordinatesBinary, polygonOffsets);
+
+          // Reconstruct properties from native columns
+          final properties = <String, dynamic>{};
+
+          // Add altitude limits if present
+          if (row['lower_value'] != null) {
+            properties['lowerLimit'] = {
+              'value': row['lower_value'],
+              'unit': row['lower_unit'],
+              'reference': row['lower_reference'],
+            };
+          }
+          if (row['upper_value'] != null) {
+            properties['upperLimit'] = {
+              'value': row['upper_value'],
+              'unit': row['upper_unit'],
+              'reference': row['upper_reference'],
+            };
+          }
+
+          // Add classification fields
+          if (row['icao_class'] != null) {
+            properties['icaoClass'] = row['icao_class'];
+          }
+          if (row['activity'] != null) {
+            properties['activity'] = row['activity'];
+          }
+          if (row['country'] != null) {
+            properties['country'] = row['country'];
+          }
+
+          // Add any extra properties if present
+          if (row['extra_properties'] != null) {
+            final extraProps = jsonDecode(row['extra_properties'] as String) as Map<String, dynamic>;
+            properties.addAll(extraProps);
+          }
 
           final geometry = CachedAirspaceGeometry(
             id: row['id'] as String,
@@ -787,6 +1007,7 @@ class AirspaceDiskCache {
             geometryHash: row['geometry_hash'] as String,
             compressedSize: coordinatesBinary.length,
             uncompressedSize: (row['coordinate_count'] as int) * 8,
+            lowerAltitudeFt: row['lower_altitude_ft'] as int?,
           );
 
           geometries.add(geometry);

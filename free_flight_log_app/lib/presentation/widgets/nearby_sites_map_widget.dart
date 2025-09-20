@@ -225,13 +225,22 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
             padding: const EdgeInsets.all(20), // Small padding for visibility
           ),
         );
+        // Load airspace and sites data for the new bounds
+        Future.delayed(const Duration(milliseconds: 100), () {
+          _loadVisibleData();
+        });
       });
     }
     // Priority 2: Fallback to center/zoom for normal navigation
-    else if (widget.centerPosition != null && 
+    else if (widget.centerPosition != null &&
              oldWidget.centerPosition != widget.centerPosition) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _mapController.move(widget.centerPosition!, widget.initialZoom);
+        // Load airspace and sites data for the new location
+        // Add slight delay to ensure map has finished moving
+        Future.delayed(const Duration(milliseconds: 100), () {
+          _loadVisibleData();
+        });
       });
     }
   }
