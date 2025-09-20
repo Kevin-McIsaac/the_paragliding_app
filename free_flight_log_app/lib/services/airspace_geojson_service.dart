@@ -443,6 +443,7 @@ class AirspaceGeoJsonService {
     final excludedClassCodes = excludedClasses.map((cls) => cls.code).toSet();
 
     // Get airspaces with SQL-level filtering
+    // Request ClipperData when clipping is enabled for optimal performance
     final geometries = await _metadataCache.getAirspacesForViewport(
       countryCodes: countries,
       west: bounds.west,
@@ -453,6 +454,7 @@ class AirspaceGeoJsonService {
       excludedClasses: excludedClassCodes,
       maxAltitudeFt: maxAltitudeFt,
       orderByAltitude: enableClipping, // Order by altitude when clipping is enabled
+      useClipperData: enableClipping, // Use direct Int32 data for clipping
     );
 
     // Convert directly to Flutter Map polygons
@@ -1803,13 +1805,23 @@ class AirspaceGeoJsonService {
         lowerAltitudeFt: geometry.lowerAltitudeFt,  // Use pre-computed altitude
       );
 
-      // Process all polygon parts
+      // Process all polygon parts - handle both LatLng polygons and ClipperData
       final allPoints = <LatLng>[];
-      for (final polygon in geometry.polygons) {
-        if (polygon.isNotEmpty) {
-          allPoints.addAll(polygon);
-          // Just use first polygon for now (TODO: handle multi-polygon properly)
-          break;
+      if (geometry.clipperData != null) {
+        // When using ClipperData, convert to LatLng only for display
+        // The actual clipping will use the ClipperData directly
+        final polygons = geometry.clipperData!.toLatLngPolygons();
+        if (polygons.isNotEmpty) {
+          allPoints.addAll(polygons.first);
+        }
+      } else if (geometry.polygons != null) {
+        // Traditional path with LatLng polygons
+        for (final polygon in geometry.polygons!) {
+          if (polygon.isNotEmpty) {
+            allPoints.addAll(polygon);
+            // Just use first polygon for now (TODO: handle multi-polygon properly)
+            break;
+          }
         }
       }
 

@@ -1,11 +1,13 @@
 import 'package:latlong2/latlong.dart';
+import '../../services/airspace_geojson_service.dart' show ClipperData;
 
 /// Represents a unique airspace geometry stored in the cache
 class CachedAirspaceGeometry {
   final String id;
   final String name;
   final int typeCode;  // Store numeric type code instead of string
-  final List<List<LatLng>> polygons;
+  final List<List<LatLng>>? polygons;  // Made optional - either polygons or clipperData
+  final ClipperData? clipperData;  // Alternative to polygons for direct clipping
   final Map<String, dynamic> properties;
   final DateTime fetchTime;
   final String geometryHash;
@@ -17,14 +19,15 @@ class CachedAirspaceGeometry {
     required this.id,
     required this.name,
     required this.typeCode,
-    required this.polygons,
+    this.polygons,  // Now optional
+    this.clipperData,  // New optional field
     required this.properties,
     required this.fetchTime,
     required this.geometryHash,
     this.compressedSize = 0,
     this.uncompressedSize = 0,
     this.lowerAltitudeFt,
-  });
+  }) : assert(polygons != null || clipperData != null, 'Either polygons or clipperData must be provided');
 
   factory CachedAirspaceGeometry.fromJson(Map<String, dynamic> json) {
     return CachedAirspaceGeometry(
@@ -46,7 +49,7 @@ class CachedAirspaceGeometry {
       'id': id,
       'name': name,
       'typeCode': typeCode,  // Store as numeric type code
-      'polygons': _encodePolygons(polygons),
+      'polygons': polygons != null ? _encodePolygons(polygons!) : null,
       'properties': properties,
       'fetchTime': fetchTime.toIso8601String(),
       'geometryHash': geometryHash,

@@ -985,6 +985,7 @@ class AirspaceDiskCache {
     Set<int>? excludedClasses,
     double? maxAltitudeFt,
     bool orderByAltitude = false,
+    bool useClipperData = false,  // New parameter to return ClipperData instead of LatLng polygons
   }) async {
     final db = await database;
     final stopwatch = Stopwatch()..start();
@@ -1070,7 +1071,19 @@ class AirspaceDiskCache {
           final coordinatesBinary = row['coordinates_binary'] as Uint8List;
           final offsetsBinary = row['polygon_offsets'] as Uint8List;
 
-          final polygons = _decodeCoordinatesInt32(coordinatesBinary, offsetsBinary);
+          // Create either ClipperData or LatLng polygons based on useClipperData flag
+          final List<List<LatLng>>? polygons;
+          final ClipperData? clipperData;
+
+          if (useClipperData) {
+            // Direct ClipperData creation for optimal clipping performance
+            clipperData = _createClipperData(coordinatesBinary, offsetsBinary);
+            polygons = null;
+          } else {
+            // Traditional LatLng polygons for display
+            polygons = _decodeCoordinatesInt32(coordinatesBinary, offsetsBinary);
+            clipperData = null;
+          }
 
           // Reconstruct properties from native columns
           final properties = <String, dynamic>{};
@@ -1113,6 +1126,7 @@ class AirspaceDiskCache {
             name: row['name'] as String,
             typeCode: row['type_code'] as int,
             polygons: polygons,
+            clipperData: clipperData,
             properties: properties,
             fetchTime: DateTime.fromMillisecondsSinceEpoch(row['fetch_time'] as int),
             geometryHash: row['geometry_hash'] as String,
