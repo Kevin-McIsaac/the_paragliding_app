@@ -1021,25 +1021,6 @@ class AirspaceDiskCache {
     }
   }
 
-  // Tile metadata operations - deprecated but kept as stubs for compatibility
-  // These methods do nothing and will be removed after refactoring AirspaceMetadataCache
-
-  Future<void> putTileMetadata(TileMetadata metadata) async {
-    // Deprecated - tiles are no longer used
-    // This is a stub for compatibility
-  }
-
-  Future<TileMetadata?> getTileMetadata(String tileKey) async {
-    // Deprecated - tiles are no longer used
-    // Return null to indicate no cached data
-    return null;
-  }
-
-  Future<Map<String, TileMetadata>> getTileMetadataBatch(List<String> tileKeys) async {
-    // Deprecated - tiles are no longer used
-    // Return empty map to indicate no cached data
-    return {};
-  }
 
   // Cache maintenance
   Future<void> cleanExpiredData() async {
@@ -1098,8 +1079,8 @@ class AirspaceDiskCache {
 
       return CacheStatistics(
         totalGeometries: totalGeometries,
-        totalTiles: 0, // Tiles are deprecated
-        emptyTiles: 0, // Tiles are deprecated
+        totalTiles: 0,
+        emptyTiles: 0,
         duplicatedAirspaces: 0, // Will be calculated by the service
         totalMemoryBytes: dbSize, // Use actual database size
         compressedBytes: compressedBytes,

@@ -98,69 +98,6 @@ class CachedAirspaceGeometry {
   }
 }
 
-/// Represents tile metadata that maps tiles to airspace IDs
-class TileMetadata {
-  final String tileKey;
-  final Set<String> airspaceIds;
-  final DateTime fetchTime;
-  final int airspaceCount;
-  final bool isEmpty;
-  final Map<String, dynamic>? statistics;
-
-  TileMetadata({
-    required this.tileKey,
-    required this.airspaceIds,
-    required this.fetchTime,
-    required this.airspaceCount,
-    required this.isEmpty,
-    this.statistics,
-  });
-
-  factory TileMetadata.empty(String tileKey) {
-    return TileMetadata(
-      tileKey: tileKey,
-      airspaceIds: {},
-      fetchTime: DateTime.now(),
-      airspaceCount: 0,
-      isEmpty: true,
-      statistics: null,
-    );
-  }
-
-  factory TileMetadata.fromJson(Map<String, dynamic> json) {
-    return TileMetadata(
-      tileKey: json['tileKey'] as String,
-      airspaceIds: Set<String>.from(json['airspaceIds'] ?? []),
-      fetchTime: DateTime.parse(json['fetchTime'] as String),
-      airspaceCount: json['airspaceCount'] ?? 0,
-      isEmpty: json['isEmpty'] ?? false,
-      statistics: json['statistics'] != null
-          ? Map<String, dynamic>.from(json['statistics'])
-          : null,
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'tileKey': tileKey,
-      'airspaceIds': airspaceIds.toList(),
-      'fetchTime': fetchTime.toIso8601String(),
-      'airspaceCount': airspaceCount,
-      'isEmpty': isEmpty,
-      'statistics': statistics,
-    };
-  }
-
-  bool get isExpired {
-    final age = DateTime.now().difference(fetchTime);
-    return age.inHours > 24;
-  }
-
-  int get estimatedSize {
-    // Rough estimate: 100 bytes base + 30 bytes per airspace ID
-    return 100 + (airspaceIds.length * 30);
-  }
-}
 
 /// Statistics for cache performance monitoring
 class CacheStatistics {
