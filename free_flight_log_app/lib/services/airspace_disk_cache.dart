@@ -581,11 +581,16 @@ class AirspaceDiskCache {
     // Removed verbose per-geometry logging - logged in batch operations instead
 
     try {
+      // For insertion, we require polygons (ClipperData is only for reading)
+      if (geometry.polygons == null) {
+        throw ArgumentError('Cannot insert geometry without polygons');
+      }
+
       // Encode coordinates as Int32 binary with binary offsets
-      final (coordinatesBinary, offsetsBinary) = _encodeCoordinatesInt32(geometry.polygons);
+      final (coordinatesBinary, offsetsBinary) = _encodeCoordinatesInt32(geometry.polygons!);
 
       // Calculate bounds for spatial queries
-      final bounds = _calculateBounds(geometry.polygons);
+      final bounds = _calculateBounds(geometry.polygons!);
 
       // Extract altitude limits (complex objects)
       final lowerLimit = geometry.properties['lowerLimit'] as Map<String, dynamic>?;
@@ -623,7 +628,7 @@ class AirspaceDiskCache {
 
       // Count coordinates
       int coordinateCount = 0;
-      for (final polygon in geometry.polygons) {
+      for (final polygon in geometry.polygons!) {
         coordinateCount += polygon.length;
       }
 
@@ -664,7 +669,7 @@ class AirspaceDiskCache {
           'fetch_time': geometry.fetchTime.millisecondsSinceEpoch,
           'geometry_hash': geometry.geometryHash,
           'coordinate_count': coordinateCount,
-          'polygon_count': geometry.polygons.length,
+          'polygon_count': geometry.polygons!.length,
           'last_accessed': DateTime.now().millisecondsSinceEpoch,
 
           // Minimal JSON for remaining properties
@@ -730,11 +735,17 @@ class AirspaceDiskCache {
       final batch = db.batch();
 
       for (final geometry in geometries) {
+        // For insertion, we require polygons (ClipperData is only for reading)
+        if (geometry.polygons == null) {
+          LoggingService.warning('Skipping geometry without polygons: ${geometry.id}');
+          continue;
+        }
+
         // Encode coordinates as Int32 binary with binary offsets
-        final (coordinatesBinary, offsetsBinary) = _encodeCoordinatesInt32(geometry.polygons);
+        final (coordinatesBinary, offsetsBinary) = _encodeCoordinatesInt32(geometry.polygons!);
 
         // Calculate bounds for spatial queries
-        final bounds = _calculateBounds(geometry.polygons);
+        final bounds = _calculateBounds(geometry.polygons!);
 
         // Extract altitude limits (complex objects)
         final lowerLimit = geometry.properties['lowerLimit'] as Map<String, dynamic>?;
@@ -772,7 +783,7 @@ class AirspaceDiskCache {
 
         // Count coordinates
         int coordinateCount = 0;
-        for (final polygon in geometry.polygons) {
+        for (final polygon in geometry.polygons!) {
           coordinateCount += polygon.length;
         }
 
@@ -813,7 +824,7 @@ class AirspaceDiskCache {
             'fetch_time': geometry.fetchTime.millisecondsSinceEpoch,
             'geometry_hash': geometry.geometryHash,
             'coordinate_count': coordinateCount,
-            'polygon_count': geometry.polygons.length,
+            'polygon_count': geometry.polygons!.length,
             'last_accessed': DateTime.now().millisecondsSinceEpoch,
 
             // Minimal JSON for remaining properties

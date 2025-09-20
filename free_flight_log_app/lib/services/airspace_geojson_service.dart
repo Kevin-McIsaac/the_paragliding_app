@@ -515,7 +515,12 @@ class AirspaceGeoJsonService {
 
     for (final geometry in geometries) {
       // Convert polygons to GeoJSON coordinates format
-      for (final polygon in geometry.polygons) {
+      // This path is for GeoJSON export, so we should have polygons
+      if (geometry.polygons == null) {
+        LoggingService.warning('Skipping geometry without polygons in GeoJSON conversion: ${geometry.id}');
+        continue;
+      }
+      for (final polygon in geometry.polygons!) {
         if (polygon.isNotEmpty) {
           final coords = polygon.map((point) => [point.longitude, point.latitude]).toList();
           features.add({
