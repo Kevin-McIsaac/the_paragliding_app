@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:latlong2/latlong.dart';
 import '../services/logging_service.dart';
+import '../services/airspace_geojson_service.dart' show ClipperData;
 import '../data/models/airspace_cache_models.dart';
 
 class AirspaceDiskCache {
@@ -295,6 +296,27 @@ class AirspaceDiskCache {
     // Convert offset bytes back to list for compatibility
     final offsets = Int32List.view(offsetBytes.buffer).toList();
     return (coordBytes, offsets);
+  }
+
+  /// Create ClipperData directly from database BLOBs without LatLng conversion
+  ClipperData _createClipperData(Uint8List coordBlob, Uint8List offsetBlob) {
+    // CRITICAL: Copy to aligned buffer to avoid alignment issues
+    // SQLite returns BLOBs as views at arbitrary offsets that may not be 4-byte aligned
+    final alignedCoords = Uint8List.fromList(coordBlob);
+    final alignedOffsets = Uint8List.fromList(offsetBlob);
+
+    final coords = Int32List.view(
+      alignedCoords.buffer,
+      0,
+      alignedCoords.length ~/ 4,
+    );
+    final offsets = Int32List.view(
+      alignedOffsets.buffer,
+      0,
+      alignedOffsets.length ~/ 4,
+    );
+
+    return ClipperData(coords, offsets);
   }
 
   /// Decodes Int32 coordinate and offset arrays back to polygon coordinates
