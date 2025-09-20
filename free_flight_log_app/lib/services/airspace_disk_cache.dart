@@ -393,133 +393,7 @@ class AirspaceDiskCache {
     return polygons;
   }
 
-  // Keep old Float32 version for compatibility during migration
-  List<List<LatLng>> _decodeCoordinatesBinary(Uint8List bytes, List<int> polygonOffsets) {
-    // Convert List<int> offsets to Uint8List for new method
-    final offsetArray = Int32List.fromList(polygonOffsets);
-    final offsetBytes = offsetArray.buffer.asUint8List();
-
-    return _decodeCoordinatesInt32(bytes, offsetBytes);
-  }
-
-  // Legacy Float32 decode method (to be removed after migration)
-  List<List<LatLng>> _decodeCoordinatesFloat32(Uint8List bytes, List<int> polygonOffsets) {
-    final stopwatch = Stopwatch()..start();
-
-    // Validate input
-    if (bytes.length % 4 != 0) {
-      LoggingService.error(
-        'Invalid binary data: byte length ${bytes.length} not divisible by 4',
-        null,
-        null,
-      );
-      return [];
-    }
-
-    // CRITICAL FIX: Copy to aligned buffer to avoid alignment issues
-    // SQLite returns BLOBs as views at arbitrary offsets that may not be 4-byte aligned
-    // Float32List requires 4-byte alignment, so we copy to a new aligned buffer
-    final alignedBytes = Uint8List.fromList(bytes);
-    final floatArray = Float32List.view(
-      alignedBytes.buffer,
-      0,  // New buffer starts at offset 0 (guaranteed aligned)
-      alignedBytes.length ~/ 4,  // Number of floats (4 bytes per float)
-    );
-
-    final polygons = <List<LatLng>>[];
-
-    for (int i = 0; i < polygonOffsets.length; i++) {
-      final startIdx = polygonOffsets[i] * 2; // Convert point index to float index
-      final endIdx = (i + 1 < polygonOffsets.length)
-          ? polygonOffsets[i + 1] * 2
-          : floatArray.length;
-
-      // Validate indices
-      if (startIdx < 0 || startIdx > floatArray.length || endIdx > floatArray.length) {
-        LoggingService.error(
-          'Invalid polygon indices: start=$startIdx, end=$endIdx, array=${floatArray.length}',
-          null,
-          null,
-        );
-        continue;
-      }
-
-      final polygon = <LatLng>[];
-      for (int j = startIdx; j < endIdx; j += 2) {
-        final lat = floatArray[j + 1];
-        final lng = floatArray[j];
-
-        // Validate coordinates
-        if (lat.isNaN || lng.isNaN || lat.abs() > 90 || lng.abs() > 180) {
-          LoggingService.error(
-            'Invalid coordinates: lat=$lat, lng=$lng at index $j',
-            null,
-            null,
-          );
-          continue;
-        }
-
-        polygon.add(LatLng(lat, lng));
-      }
-
-      if (polygon.isNotEmpty) {
-        polygons.add(polygon);
-      }
-    }
-
-    // Only log slow decode operations (>5ms)
-    if (stopwatch.elapsedMilliseconds > 5) {
-      final totalPoints = polygons.fold(0, (sum, p) => sum + p.length);
-      LoggingService.performance(
-        '[BINARY_DECODE_SLOW]',
-        stopwatch.elapsed,
-        'polygons=${polygons.length}, points=$totalPoints',
-      );
-    }
-
-    return polygons;
-  }
-
-  /// Optimized binary decoding with reduced allocations (for batch operations)
-  List<List<LatLng>> _decodeCoordinatesBinaryOptimized(Uint8List bytes, List<int> polygonOffsets) {
-    // Validate input
-    if (bytes.length % 4 != 0) return [];
-
-    // Reuse aligned buffer approach but optimize for batch operations
-    final alignedBytes = Uint8List.fromList(bytes);
-    final floatArray = Float32List.view(alignedBytes.buffer, 0, alignedBytes.length ~/ 4);
-
-    // Build polygons list with efficient allocation
-    final polygons = <List<LatLng>>[];
-
-    for (int i = 0; i < polygonOffsets.length; i++) {
-      final startIdx = polygonOffsets[i] * 2;
-      final endIdx = (i + 1 < polygonOffsets.length)
-          ? polygonOffsets[i + 1] * 2
-          : floatArray.length;
-
-      // Validate indices with quick bounds check
-      if (startIdx < 0 || endIdx > floatArray.length) continue;
-
-      final polygon = <LatLng>[];
-
-      for (int j = startIdx; j < endIdx; j += 2) {
-        final lng = floatArray[j];
-        final lat = floatArray[j + 1];
-
-        // Quick coordinate validation (avoid expensive isNaN checks)
-        if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-          polygon.add(LatLng(lat, lng));
-        }
-      }
-
-      if (polygon.isNotEmpty) {
-        polygons.add(polygon);
-      }
-    }
-
-    return polygons;
-  }
+  // REMOVED: Legacy Float32 decode methods - now always use Int32
 
   /// Calculate bounds from polygons
   Map<String, double> _calculateBounds(List<List<LatLng>> polygons) {
@@ -944,7 +818,10 @@ class AirspaceDiskCache {
             continue;
           }
 
-          final polygons = _decodeCoordinatesBinaryOptimized(coordinatesBinary, polygonOffsets);
+          // Convert List<int> offsets to Uint8List for Int32 decode
+          final offsetArray = Int32List.fromList(polygonOffsets);
+          final offsetBytes = offsetArray.buffer.asUint8List();
+          final polygons = _decodeCoordinatesInt32(coordinatesBinary, offsetBytes);
 
           final geometry = CachedAirspaceGeometry(
             id: row['id'] as String,
