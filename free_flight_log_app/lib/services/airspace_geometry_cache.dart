@@ -3,6 +3,7 @@ import 'package:crypto/crypto.dart';
 import 'package:latlong2/latlong.dart';
 import '../services/logging_service.dart';
 import '../services/airspace_disk_cache.dart';
+import '../services/airspace_geojson_service.dart' show ClipperData;
 import '../data/models/airspace_cache_models.dart';
 import '../utils/performance_monitor.dart';
 
@@ -109,11 +110,14 @@ class AirspaceGeometryCache {
           ? properties['type'] as int
           : (properties['type'] as num?)?.toInt() ?? 0;
 
+      // Convert LatLng polygons to ClipperData for optimal performance
+      final clipperData = ClipperData.fromLatLngPolygons(polygons);
+
       final cachedGeometry = CachedAirspaceGeometry(
         id: id,
         name: properties['name'] ?? 'Unknown',
         typeCode: typeCode,  // Store numeric type code
-        polygons: polygons,
+        clipperData: clipperData,
         properties: properties,
         fetchTime: DateTime.now(),
         geometryHash: geometryHash,
@@ -226,12 +230,15 @@ class AirspaceGeometryCache {
           ? properties['type'] as int
           : (properties['type'] as num?)?.toInt() ?? 0;
 
+      // Convert LatLng polygons to ClipperData for optimal performance
+      final clipperData = ClipperData.fromLatLngPolygons(polygons);
+
       // Create cached geometry object (matching the existing structure)
       return CachedAirspaceGeometry(
         id: id,
         name: properties['name'] ?? 'Unknown',
         typeCode: typeCode,
-        polygons: polygons,
+        clipperData: clipperData,
         properties: properties,
         fetchTime: DateTime.now(),
         geometryHash: geometryHash,
@@ -278,12 +285,15 @@ class AirspaceGeometryCache {
         ? properties['type'] as int
         : (properties['type'] as num?)?.toInt() ?? 0;
 
+    // Convert LatLng polygons to ClipperData for optimal performance
+    final clipperData = ClipperData.fromLatLngPolygons(polygons);
+
     // Create cached geometry object (matching the existing structure)
     final cachedGeometry = CachedAirspaceGeometry(
       id: id,
       name: properties['name'] ?? 'Unknown',
       typeCode: typeCode,
-      polygons: polygons,
+      clipperData: clipperData,
       properties: properties,
       fetchTime: DateTime.now(),
       geometryHash: geometryHash,

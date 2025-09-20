@@ -403,7 +403,6 @@ class AirspaceGeoJsonService {
   /// Fetch airspace data as GeoJSON string (deprecated - use fetchAirspacePolygonsDirect)
   @Deprecated('Use fetchAirspacePolygonsDirect for better performance')
   Future<String> fetchAirspaceGeoJson(fm.LatLngBounds bounds) async {
-    // Only support country mode now - tile mode removed
     final hasCountries = await hasLoadedCountries();
     if (!hasCountries) {
       LoggingService.warning('No countries loaded, returning empty GeoJSON');
@@ -454,7 +453,6 @@ class AirspaceGeoJsonService {
       excludedClasses: excludedClassCodes,
       maxAltitudeFt: maxAltitudeFt,
       orderByAltitude: enableClipping, // Order by altitude when clipping is enabled
-      useClipperData: enableClipping, // Use direct Int32 data for clipping
     );
 
     // Convert directly to Flutter Map polygons
@@ -514,13 +512,9 @@ class AirspaceGeoJsonService {
     final features = <Map<String, dynamic>>[];
 
     for (final geometry in geometries) {
-      // Convert polygons to GeoJSON coordinates format
-      // This path is for GeoJSON export, so we should have polygons
-      if (geometry.polygons == null) {
-        LoggingService.warning('Skipping geometry without polygons in GeoJSON conversion: ${geometry.id}');
-        continue;
-      }
-      for (final polygon in geometry.polygons!) {
+      // Convert ClipperData to GeoJSON coordinates format
+      final polygons = geometry.clipperData.toLatLngPolygons();
+      for (final polygon in polygons) {
         if (polygon.isNotEmpty) {
           final coords = polygon.map((point) => [point.longitude, point.latitude]).toList();
           features.add({
@@ -563,14 +557,6 @@ class AirspaceGeoJsonService {
     return mergedGeoJson;
   }
 
-  /// Fetch airspace data from OpenAIP Core API with hierarchical caching (tile mode)
-  @Deprecated('Tile-based fetching is no longer supported - use country mode')
-  Future<String> _fetchAirspaceFromTiles(fm.LatLngBounds bounds) async {
-    // Tile-based fetching has been removed - only country mode is supported
-    throw UnsupportedError('Tile-based fetching is no longer supported. Please download country data.');
-  }
-
-  // [REMOVED: All tile-based helper methods below - they are no longer used]
 
   /// Convert OpenAIP response format to standard GeoJSON
   String _convertToGeoJson(String responseBody) {
@@ -1929,8 +1915,6 @@ class AirspaceGeoJsonService {
       'performance': metrics,
       'summary': {
         'total_unique_airspaces': stats.totalGeometries,
-        'total_tiles_cached': stats.totalTiles,
-        'empty_tiles': stats.emptyTiles,
         'database_size_mb': databaseSizeMb.toStringAsFixed(2),
         'database_version': dbVersion,
         'memory_saved_mb': (stats.memoryReductionPercent * stats.totalMemoryBytes / 100 / 1024 / 1024).toStringAsFixed(2),
@@ -2014,20 +1998,10 @@ class AirspaceGeoJsonService {
         lowerAltitudeFt: geometry.lowerAltitudeFt,  // Use pre-computed altitude
       );
 
-      // Process all polygon parts - handle both LatLng polygons and ClipperData
-      List<LatLng> allPoints;
-      if (geometry.clipperData != null) {
-        // When using ClipperData, convert to LatLng only for display
-        // The actual clipping will use the ClipperData directly
-        final polygons = geometry.clipperData!.toLatLngPolygons();
-        allPoints = polygons.isNotEmpty ? polygons.first : const [];
-      } else if (geometry.polygons != null && geometry.polygons!.isNotEmpty) {
-        // Traditional path with LatLng polygons
-        // Just use first polygon for now (TODO: handle multi-polygon properly)
-        allPoints = geometry.polygons!.first;
-      } else {
-        allPoints = const [];
-      }
+      // Always use ClipperData and convert to LatLng only for display
+      // The actual clipping will use the ClipperData directly
+      final polygons = geometry.clipperData.toLatLngPolygons();
+      final List<LatLng> allPoints = polygons.isNotEmpty ? polygons.first : const [];
 
       // Add to all identification polygons (for tooltip)
       allIdentificationPolygons.add(AirspacePolygonData(
@@ -2156,6 +2130,31 @@ class ClipperData {
   static const double _coordPrecision = 10000000.0; // 10^7 for 1.11cm precision
 
   ClipperData(this.coords, this.offsets);
+
+  /// Create ClipperData from LatLng polygons
+  factory ClipperData.fromLatLngPolygons(List<List<LatLng>> polygons) {
+    // Calculate total points and create offsets
+    int totalPoints = 0;
+    for (final polygon in polygons) {
+      totalPoints += polygon.length;
+    }
+
+    final coords = Int32List(totalPoints * 2);
+    final offsets = Int32List(polygons.length);
+
+    int coordIdx = 0;
+    int offsetIdx = 0;
+
+    for (final polygon in polygons) {
+      offsets[offsetIdx++] = coordIdx ~/ 2;
+      for (final point in polygon) {
+        coords[coordIdx++] = (point.longitude * _coordPrecision).round();
+        coords[coordIdx++] = (point.latitude * _coordPrecision).round();
+      }
+    }
+
+    return ClipperData(coords, offsets);
+  }
 
   /// Create paths without intermediate LatLng objects
   List<clipper.Path64> toPaths() {
