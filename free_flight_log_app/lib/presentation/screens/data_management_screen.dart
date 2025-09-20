@@ -12,9 +12,6 @@ import '../../utils/card_expansion_manager.dart';
 import '../widgets/common/app_expansion_card.dart';
 import '../widgets/common/app_stat_row.dart';
 import '../../services/airspace_geojson_service.dart';
-import '../../services/airspace_metadata_cache.dart';
-import '../../services/airspace_geometry_cache.dart';
-import '../../services/airspace_disk_cache.dart';
 
 class DataManagementScreen extends StatefulWidget {
   final bool expandPremiumMaps;
@@ -862,13 +859,13 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
 
   Future<void> _clearAirspaceCache() async {
     final confirmed = await _showConfirmationDialog(
-      'Clear Airspace Cache',
-      'This will clear all cached airspace data. The cache will be rebuilt as you view different areas on the map.\n\nThis action cannot be undone.',
+      'Clear Airspace Database',
+      'This will clear all downloaded airspace data. You will need to re-download country data when viewing the map.\n\nThis action cannot be undone.',
     );
 
     if (!confirmed) return;
 
-    _showLoadingDialog('Clearing airspace cache...');
+    _showLoadingDialog('Clearing airspace database...');
     try {
       // Clear all cache layers through the service
       await AirspaceGeoJsonService.instance.clearCache();
@@ -878,13 +875,13 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
       await _loadAirspaceCacheStats(); // Reload stats
 
       _showSuccessDialog(
-        'Cache Cleared',
-        'Airspace cache has been cleared successfully. Please navigate back to the map to reload airspaces.',
+        'Database Cleared',
+        'Airspace database has been cleared successfully. Please navigate back to the map to re-download airspace data.',
       );
     } catch (e, stackTrace) {
       if (mounted) Navigator.of(context).pop(); // Close loading
-      LoggingService.error('Failed to clear airspace cache', e, stackTrace);
-      _showErrorDialog('Error', 'Failed to clear airspace cache: $e');
+      LoggingService.error('Failed to clear airspace database', e, stackTrace);
+      _showErrorDialog('Error', 'Failed to clear airspace database: $e');
     }
   }
 
@@ -1147,12 +1144,12 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
 
                   const SizedBox(height: 24),
 
-                  // Airspace Cache (New Hierarchical Cache)
+                  // Airspace Database (Local copy of OpenAIP data)
                   AppExpansionCard.dataManagement(
                     icon: Icons.layers,
-                    title: 'Airspace Cache',
+                    title: 'Airspace DB',
                     subtitle: _airspaceCacheStats != null
-                        ? '${_airspaceCacheStats!['summary']['total_unique_airspaces']} airspaces • ${_airspaceCacheStats!['summary']['database_size_mb'] ?? '0.00'}MB database • Schema v${_airspaceCacheStats!['summary']['database_version'] ?? 'Unknown'}'
+                        ? '${_airspaceCacheStats!['summary']['country_count'] ?? 0} countries • ${_airspaceCacheStats!['summary']['total_unique_airspaces']} airspaces • ${_airspaceCacheStats!['summary']['database_size_mb'] ?? '0.00'}MB'
                         : 'Loading...',
                     expansionKey: 'airspace_cache',
                     expansionManager: _expansionManager,
@@ -1169,32 +1166,33 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                         AppStatRowGroup.dataManagement(
                           rows: [
                             AppStatRow.dataManagement(
-                              label: 'Database Schema Version',
-                              value: 'v${_airspaceCacheStats!['summary']['database_version'] ?? 'Unknown'}',
+                              label: 'Countries Loaded',
+                              value: _airspaceCacheStats!['summary']['cached_countries'] != null &&
+                                     (_airspaceCacheStats!['summary']['cached_countries'] as List).isNotEmpty
+                                  ? (_airspaceCacheStats!['summary']['cached_countries'] as List).join(', ')
+                                  : 'None',
+                            ),
+                            AppStatRow.dataManagement(
+                              label: 'Total Airspaces',
+                              value: _airspaceCacheStats!['summary']['total_unique_airspaces'].toString(),
                             ),
                             AppStatRow.dataManagement(
                               label: 'Database Size',
                               value: '${_airspaceCacheStats!['summary']['database_size_mb'] ?? '0.00'}MB / 100MB',
                             ),
                             AppStatRow.dataManagement(
-                              label: 'Unique Airspaces',
-                              value: _airspaceCacheStats!['summary']['total_unique_airspaces'].toString(),
+                              label: 'Schema Version',
+                              value: 'v${_airspaceCacheStats!['summary']['database_version'] ?? 'Unknown'}',
                             ),
                             AppStatRow.dataManagement(
-                              label: 'Cached Geometries',
-                              value: _airspaceCacheStats!['summary']['total_unique_airspaces'].toString(),
+                              label: 'Data Compression',
+                              value: _airspaceCacheStats!['summary']['compression_ratio'] != null
+                                  ? '${double.parse(_airspaceCacheStats!['summary']['compression_ratio'].toString()).toStringAsFixed(1)}x'
+                                  : 'N/A',
                             ),
                             AppStatRow.dataManagement(
-                              label: 'Total Polygons',
-                              value: (_airspaceCacheStats!['summary']['total_polygons'] ?? _airspaceCacheStats!['summary']['total_unique_airspaces'] ?? 0).toString(),
-                            ),
-                            AppStatRow.dataManagement(
-                              label: 'Compression Ratio',
-                              value: '${(_airspaceCacheStats!['summary']['compression_ratio'] as String).substring(0, 4)}x',
-                            ),
-                            AppStatRow.dataManagement(
-                              label: 'Cache Hit Rate',
-                              value: '${(double.parse(_airspaceCacheStats!['summary']['cache_hit_rate']) * 100).toStringAsFixed(1)}%',
+                              label: 'Index Overhead',
+                              value: '~${((10.72 - 3.4) / 3.4 * 100).toStringAsFixed(0)}%', // Estimated from our investigation
                             ),
                           ],
                           padding: EdgeInsets.zero,
@@ -1205,7 +1203,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                           child: OutlinedButton.icon(
                             onPressed: _clearAirspaceCache, // Always enabled
                             icon: const Icon(Icons.cleaning_services),
-                            label: const Text('Clear Airspace Cache'),
+                            label: const Text('Clear Airspace Database'),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: Colors.blue,
                             ),

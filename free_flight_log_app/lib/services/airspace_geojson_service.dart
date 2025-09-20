@@ -1911,8 +1911,18 @@ class AirspaceGeoJsonService {
     // Get database version from disk cache
     final dbVersion = await AirspaceDiskCache.instance.getDatabaseVersion();
 
+    // Get country details
+    final countryDetails = await AirspaceDiskCache.instance.getCountryDetails();
+    final cachedCountries = await AirspaceDiskCache.instance.getCachedCountries();
+
     // Calculate database size in MB
     final databaseSizeMb = stats.totalMemoryBytes / 1024 / 1024;
+
+    // Calculate total airspaces across all countries
+    int totalAirspacesInCountries = 0;
+    for (final country in countryDetails) {
+      totalAirspacesInCountries += (country['actual_count'] as int? ?? 0);
+    }
 
     return {
       'statistics': stats.toJson(),
@@ -1926,6 +1936,10 @@ class AirspaceGeoJsonService {
         'memory_saved_mb': (stats.memoryReductionPercent * stats.totalMemoryBytes / 100 / 1024 / 1024).toStringAsFixed(2),
         'compression_ratio': stats.averageCompressionRatio.toStringAsFixed(2),
         'cache_hit_rate': stats.cacheHitRate.toStringAsFixed(2),
+        'cached_countries': cachedCountries,
+        'country_count': cachedCountries.length,
+        'country_details': countryDetails,
+        'total_airspaces_in_countries': totalAirspacesInCountries,
       },
     };
   }

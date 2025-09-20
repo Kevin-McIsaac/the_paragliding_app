@@ -1399,6 +1399,37 @@ class AirspaceDiskCache {
     return results.map((row) => row['country_code'] as String).toList();
   }
 
+  /// Get detailed country metadata with airspace counts
+  Future<List<Map<String, dynamic>>> getCountryDetails() async {
+    final db = await database;
+
+    try {
+      final results = await db.rawQuery('''
+        SELECT
+          cm.country_code,
+          cm.airspace_count,
+          cm.fetch_time,
+          cm.size_bytes,
+          COUNT(map.airspace_id) as actual_count
+        FROM $_countryMetadataTable cm
+        LEFT JOIN $_countryMappingTable map ON cm.country_code = map.country_code
+        GROUP BY cm.country_code
+        ORDER BY cm.country_code
+      ''');
+
+      return results.map((row) => {
+        'country_code': row['country_code'] as String,
+        'airspace_count': row['airspace_count'] as int? ?? 0,
+        'actual_count': row['actual_count'] as int? ?? 0,
+        'fetch_time': row['fetch_time'] as int?,
+        'size_bytes': row['size_bytes'] as int?,
+      }).toList();
+    } catch (e, stack) {
+      LoggingService.error('Failed to get country details', e, stack);
+      return [];
+    }
+  }
+
   // Get statistics as a simple map (for compatibility)
   Future<Map<String, dynamic>> getStatisticsMap() async {
     final db = await database;
