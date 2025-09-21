@@ -179,9 +179,9 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     }
 
     // Track site count changes
-    if (oldWidget.sites != widget.sites && widget.sites != null) {
+    if (oldWidget.sites != widget.sites) {
       setState(() {
-        _loadedSiteCount = widget.sites!.length;
+        _loadedSiteCount = widget.sites.length;
         _isLoadingSites = false; // Sites have been loaded
       });
     }
@@ -467,35 +467,6 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   }
 
   /// Convert numeric airspace types back to string abbreviations for legacy compatibility
-  Set<String> _convertNumericTypesToStrings(Set<int> numericTypes) {
-    const numericToString = {
-      0: 'Unknown',
-      1: 'A',
-      2: 'E',
-      3: 'C',
-      4: 'CTR',
-      5: 'E',
-      6: 'TMA',
-      7: 'G',
-      8: 'CTR',
-      9: 'TMA',
-      10: 'CTA',
-      11: 'R',
-      12: 'P',
-      13: 'ATZ',
-      14: 'D',
-      15: 'R',
-      16: 'TMA',
-      17: 'CTR',
-      18: 'R',
-      19: 'P',
-      20: 'D',
-      21: 'TMA',
-      26: 'CTA',
-    };
-
-    return numericTypes.map((type) => numericToString[type] ?? 'Unknown').toSet();
-  }
 
   /// Handle click for airspace identification
   void _handleAirspaceInteraction(Offset screenPosition, LatLng mapPoint) async {
@@ -728,7 +699,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         fontWeight: FontWeight.bold,
       ),
       // Use centroid placement for all labels
-      labelPlacement: fm.PolygonLabelPlacement.centroid,
+      labelPlacementCalculator: const fm.PolygonLabelPlacementCalculator.centroid(),
     );
 
     setState(() {
@@ -827,7 +798,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.3),
+                color: Colors.black.withValues(alpha:0.3),
                 spreadRadius: 1,
                 blurRadius: 3,
                 offset: const Offset(0, 1),
@@ -946,15 +917,15 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                     constraints: const BoxConstraints(maxHeight: 300),
                     margin: const EdgeInsets.only(top: 2),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.85),
+                      color: Colors.black.withValues(alpha:0.85),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: Colors.white.withOpacity(0.1),
+                        color: Colors.white.withValues(alpha:0.1),
                         width: 1,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.4),
+                          color: Colors.black.withValues(alpha:0.4),
                           blurRadius: 12,
                           offset: const Offset(0, 4),
                         ),
@@ -969,10 +940,10 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.05),
+                              color: Colors.white.withValues(alpha:0.05),
                               border: Border(
                                 bottom: BorderSide(
-                                  color: Colors.white.withOpacity(0.1),
+                                  color: Colors.white.withValues(alpha:0.1),
                                   width: 1,
                                 ),
                               ),
@@ -982,7 +953,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                                 Text(
                                   '${widget.searchResults.length} site${widget.searchResults.length == 1 ? '' : 's'} found',
                                   style: TextStyle(
-                                    color: Colors.white.withOpacity(0.7),
+                                    color: Colors.white.withValues(alpha:0.7),
                                     fontSize: 12,
                                     fontWeight: FontWeight.w500,
                                   ),
@@ -1009,7 +980,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                               separatorBuilder: (context, index) => Container(
                                 height: 1,
                                 margin: const EdgeInsets.symmetric(horizontal: 16),
-                                color: Colors.white.withOpacity(0.05),
+                                color: Colors.white.withValues(alpha:0.05),
                               ),
                               itemBuilder: (context, index) {
                                 final site = widget.searchResults[index];
@@ -1066,8 +1037,8 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                                         _searchFocusNode.requestFocus();
                                       });
                                     },
-                                    highlightColor: Colors.white.withOpacity(0.1),
-                                    splashColor: Colors.white.withOpacity(0.05),
+                                    highlightColor: Colors.white.withValues(alpha:0.1),
+                                    splashColor: Colors.white.withValues(alpha:0.05),
                                     canRequestFocus: false, // Prevent stealing focus from search bar
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -1078,7 +1049,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                                             width: 36,
                                             height: 36,
                                             decoration: BoxDecoration(
-                                              color: Colors.deepPurple.withOpacity(0.2),
+                                              color: Colors.deepPurple.withValues(alpha:0.2),
                                               borderRadius: BorderRadius.circular(8),
                                             ),
                                             child: const Icon(
@@ -1117,7 +1088,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                                                       Text(
                                                         site.country!,
                                                         style: TextStyle(
-                                                          color: Colors.white.withOpacity(0.6),
+                                                          color: Colors.white.withValues(alpha:0.6),
                                                           fontSize: 12,
                                                         ),
                                                       ),
@@ -1126,7 +1097,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                                                       Text(
                                                         '• $distanceText',
                                                         style: TextStyle(
-                                                          color: Colors.white.withOpacity(0.5),
+                                                          color: Colors.white.withValues(alpha:0.5),
                                                           fontSize: 12,
                                                         ),
                                                       ),
@@ -1139,7 +1110,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                                           // Arrow indicator
                                           Icon(
                                             Icons.arrow_forward_ios,
-                                            color: Colors.white.withOpacity(0.3),
+                                            color: Colors.white.withValues(alpha:0.3),
                                             size: 14,
                                           ),
                                         ],
@@ -1163,15 +1134,15 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                     margin: const EdgeInsets.only(top: 2),
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.85),
+                      color: Colors.black.withValues(alpha:0.85),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: Colors.white.withOpacity(0.1),
+                        color: Colors.white.withValues(alpha:0.1),
                         width: 1,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.4),
+                          color: Colors.black.withValues(alpha:0.4),
                           blurRadius: 12,
                           offset: const Offset(0, 4),
                         ),
@@ -1271,12 +1242,6 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     // Start timing the build
     final buildStopwatch = Stopwatch()..start();
 
-    // Count flown vs new sites for logging
-    final flownSites = widget.sites.where((site) {
-      final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
-      return widget.siteFlightStatus[siteKey] ?? false;
-    }).length;
-    final newSites = widget.sites.length - flownSites;
     
     // Only log significant changes or every 5 seconds
     final totalSites = widget.sites.length;
@@ -1318,7 +1283,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               onPositionChanged: (position, hasGesture) {
                 // Track zoom without rebuilding widget
                 // Only update internal state, no setState needed
-                _currentZoom = position.zoom ?? widget.initialZoom;
+                _currentZoom = position.zoom;
               },
               interactionOptions: const fm.InteractionOptions(
                 flags: fm.InteractiveFlag.all,
@@ -1429,40 +1394,5 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     return mapWidget;
   }
 
-  /// Convert numeric type code to string type for filtering compatibility
-  String _getTypeStringFromCode(int typeCode) {
-    // Map numeric codes back to the string types used by the filtering system
-    final typeMap = {
-      0: 'UNKNOWN',
-      1: 'A',
-      2: 'B',
-      3: 'C',
-      4: 'CTR',
-      5: 'E',
-      6: 'TMA',
-      7: 'G',
-      8: 'CTR',
-      9: 'TMA',
-      10: 'CTA',
-      11: 'R',
-      12: 'P',
-      13: 'CTR',  // ATZ mapped to CTR for filtering
-      14: 'D',
-      15: 'R',
-      16: 'TMA',
-      17: 'CTR',
-      18: 'R',
-      19: 'P',
-      20: 'D',
-      21: 'TMA',
-      22: 'CTA',
-      23: 'CTA',
-      24: 'CTA',
-      25: 'CTA',
-      26: 'CTA',
-    };
-
-    return typeMap[typeCode] ?? 'UNKNOWN';
-  }
 
 }

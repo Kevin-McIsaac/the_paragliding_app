@@ -1585,7 +1585,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                   // Database Management
                   AppExpansionCard.dataManagement(
                     icon: Icons.storage,
-                    title: 'Database Management',
+                    title: 'Flight DB',
                     subtitle: _dbStats != null 
                         ? '${_dbStats!['flights'] ?? 0} flights • ${_dbStats!['sites'] ?? 0} sites • ${_dbStats!['wings'] ?? 0} wings'
                         : 'Loading...',

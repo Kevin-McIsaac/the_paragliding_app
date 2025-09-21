@@ -58,7 +58,7 @@ class MapLoadingOverlay extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.3),
+              color: Colors.black.withValues(alpha: 0.3),
               blurRadius: 6,
               offset: const Offset(0, 2),
             ),
@@ -78,7 +78,7 @@ class MapLoadingOverlay extends StatelessWidget {
                     child: Divider(
                       height: 1,
                       thickness: 0.5,
-                      color: Colors.white.withOpacity(0.2),
+                      color: Colors.white.withValues(alpha: 0.2),
                     ),
                   ),
               ],
@@ -96,7 +96,7 @@ class MapLoadingOverlay extends StatelessWidget {
         Icon(
           item.icon,
           size: 16,
-          color: item.iconColor.withOpacity(0.8),
+          color: item.iconColor.withValues(alpha: 0.8),
         ),
         const SizedBox(width: 10),
         // Loading spinner

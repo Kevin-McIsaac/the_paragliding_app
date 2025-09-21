@@ -220,36 +220,6 @@ class SiteMarkerUtils {
     );
   }
 
-  /// Convert numeric airspace types back to string abbreviations for legacy compatibility
-  static Set<String> _convertNumericTypesToStrings(Set<int> numericTypes) {
-    const numericToString = {
-      0: 'Unknown',
-      1: 'A',
-      2: 'E',
-      3: 'C',
-      4: 'CTR',
-      5: 'E',
-      6: 'TMA',
-      7: 'G',
-      8: 'CTR',
-      9: 'TMA',
-      10: 'CTA',
-      11: 'R',
-      12: 'P',
-      13: 'ATZ',
-      14: 'D',
-      15: 'R',
-      16: 'TMA',
-      17: 'CTR',
-      18: 'R',
-      19: 'P',
-      20: 'D',
-      21: 'TMA',
-      26: 'CTA',
-    };
-
-    return numericTypes.map((type) => numericToString[type] ?? 'Unknown').toSet();
-  }
 
   /// Build airspace legend items with tooltips, optionally filtered by visible types
   static List<Widget> buildAirspaceLegendItems({Set<String>? visibleTypes}) {

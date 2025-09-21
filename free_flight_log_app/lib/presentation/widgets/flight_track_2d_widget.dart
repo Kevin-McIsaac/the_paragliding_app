@@ -8,8 +8,6 @@ import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/flight.dart';
-import '../../data/models/site.dart';
-import '../../data/models/paragliding_site.dart';
 import '../../data/models/igc_file.dart';
 import '../../data/models/unified_site.dart';
 import '../../services/database_service.dart';

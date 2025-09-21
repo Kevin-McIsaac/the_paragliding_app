@@ -182,15 +182,6 @@ class AirspaceDiskCache {
   }
 
   // Compression utilities
-  Uint8List _compress(String data) {
-    final bytes = utf8.encode(data);
-    return gzip.encode(bytes) as Uint8List;
-  }
-
-  String _decompress(Uint8List compressed) {
-    final bytes = gzip.decode(compressed);
-    return utf8.decode(bytes);
-  }
 
   /// Extract binary data directly from ClipperData
   (Uint8List, Uint8List) _extractBinaryFromClipperData(ClipperData clipperData) {
@@ -226,77 +217,7 @@ class AirspaceDiskCache {
 
   // Binary encoding utilities for coordinates
   /// Encodes polygon coordinates as Int32 arrays for direct Clipper2 compatibility
-  /// Returns the coordinate data and polygon offsets as binary blobs
-  (Uint8List, Uint8List) _encodeCoordinatesInt32(List<List<LatLng>> polygons) {
-    final stopwatch = Stopwatch()..start();
 
-    // Calculate total size needed
-    int totalPoints = 0;
-    int invalidPoints = 0;
-    for (final polygon in polygons) {
-      for (final point in polygon) {
-        // Validate point before encoding
-        if (point.latitude.isNaN || point.longitude.isNaN ||
-            point.latitude.abs() > 90 || point.longitude.abs() > 180) {
-          LoggingService.error(
-            'Invalid point during encoding: lat=${point.latitude}, lng=${point.longitude}',
-            null,
-            null,
-          );
-          invalidPoints++;
-        }
-      }
-      totalPoints += polygon.length;
-    }
-
-    if (invalidPoints > 0) {
-      LoggingService.error(
-        'Found $invalidPoints invalid points during encoding',
-        null,
-        null,
-      );
-    }
-
-    // Allocate Int32 arrays
-    final coordArray = Int32List(totalPoints * 2);
-    final offsetArray = Int32List(polygons.length);
-
-    // Single pass encoding with pre-scaled integers for Clipper2
-    int coordIndex = 0;
-    for (int i = 0; i < polygons.length; i++) {
-      offsetArray[i] = coordIndex ~/ 2; // Store point index
-
-      final polygon = polygons[i];
-      for (final point in polygon) {
-        // Scale to Int32 with precision factor 10^7 (1.11cm precision)
-        coordArray[coordIndex++] = (point.longitude * 10000000).round();
-        coordArray[coordIndex++] = (point.latitude * 10000000).round();
-      }
-    }
-
-    // Convert to bytes
-    final coordBytes = coordArray.buffer.asUint8List();
-    final offsetBytes = offsetArray.buffer.asUint8List();
-
-    // Only log if encoding takes significant time (>5ms)
-    if (stopwatch.elapsedMilliseconds > 5) {
-      LoggingService.performance(
-        '[ENCODE_INT32_SLOW]',
-        stopwatch.elapsed,
-        'polygons=${polygons.length}, points=$totalPoints, coordBytes=${coordBytes.length}, offsetBytes=${offsetBytes.length}',
-      );
-    }
-
-    return (coordBytes, offsetBytes);
-  }
-
-  // Keep old Float32 version for compatibility during migration
-  (Uint8List, List<int>) _encodeCoordinatesBinary(List<List<LatLng>> polygons) {
-    final (coordBytes, offsetBytes) = _encodeCoordinatesInt32(polygons);
-    // Convert offset bytes back to list for compatibility
-    final offsets = Int32List.view(offsetBytes.buffer).toList();
-    return (coordBytes, offsets);
-  }
 
   /// Create ClipperData directly from database BLOBs without LatLng conversion
   ClipperData _createClipperData(Uint8List coordBlob, Uint8List offsetBlob) {
@@ -319,110 +240,9 @@ class AirspaceDiskCache {
     return ClipperData(coords, offsets);
   }
 
-  /// Decodes Int32 coordinate and offset arrays back to polygon coordinates
-  List<List<LatLng>> _decodeCoordinatesInt32(Uint8List coordBlob, Uint8List offsetBlob) {
-    final stopwatch = Stopwatch()..start();
-
-    // Validate input
-    if (coordBlob.length % 4 != 0 || offsetBlob.length % 4 != 0) {
-      LoggingService.error(
-        'Invalid binary data: coord bytes ${coordBlob.length} or offset bytes ${offsetBlob.length} not divisible by 4',
-        null,
-        null,
-      );
-      return [];
-    }
-
-    // CRITICAL: Copy to aligned buffer to avoid alignment issues
-    // SQLite returns BLOBs as views at arbitrary offsets that may not be 4-byte aligned
-    final alignedCoords = Uint8List.fromList(coordBlob);
-    final alignedOffsets = Uint8List.fromList(offsetBlob);
-
-    final coords = Int32List.view(
-      alignedCoords.buffer,
-      0,
-      alignedCoords.length ~/ 4,
-    );
-    final offsets = Int32List.view(
-      alignedOffsets.buffer,
-      0,
-      alignedOffsets.length ~/ 4,
-    );
-
-    // Pre-allocate polygons list with known size
-    final polygonCount = offsets.length;
-    final polygons = List<List<LatLng>>.filled(polygonCount, const []);
-    const double scaleFactor = 10000000.0; // Extract constant
-
-    for (int i = 0; i < polygonCount; i++) {
-      final startIdx = offsets[i] * 2; // Convert point index to coord index
-      final endIdx = (i + 1 < offsets.length)
-          ? offsets[i + 1] * 2
-          : coords.length;
-
-      // Validate indices
-      if (startIdx < 0 || endIdx > coords.length || startIdx > endIdx) {
-        LoggingService.error(
-          'Invalid polygon indices: start=$startIdx, end=$endIdx, array length=${coords.length}',
-          null,
-          null,
-        );
-        continue;
-      }
-
-      // Pre-allocate polygon with known size
-      final pointCount = (endIdx - startIdx) ~/ 2;
-      final polygon = List<LatLng>.filled(pointCount, const LatLng(0, 0));
-
-      int pointIndex = 0;
-      for (int j = startIdx; j < endIdx; j += 2) {
-        // Decode from Int32 with scale factor 10^7
-        polygon[pointIndex++] = LatLng(
-          coords[j + 1] / scaleFactor,  // latitude
-          coords[j] / scaleFactor,       // longitude
-        );
-      }
-
-      if (pointCount > 0) {
-        polygons[i] = polygon;
-      }
-    }
-
-    // Only log if decoding takes significant time (>5ms)
-    if (stopwatch.elapsedMilliseconds > 5) {
-      LoggingService.performance(
-        '[DECODE_INT32_SLOW]',
-        stopwatch.elapsed,
-        'polygons=${polygons.length}, coordBytes=${coordBlob.length}, offsetBytes=${offsetBlob.length}',
-      );
-    }
-
-    return polygons;
-  }
 
   // REMOVED: Legacy Float32 decode methods - now always use Int32
 
-  /// Calculate bounds from polygons
-  Map<String, double> _calculateBounds(List<List<LatLng>> polygons) {
-    double minLat = 90.0, maxLat = -90.0;
-    double minLng = 180.0, maxLng = -180.0;
-
-    for (final polygon in polygons) {
-      for (final point in polygon) {
-        minLat = math.min(minLat, point.latitude);
-        maxLat = math.max(maxLat, point.latitude);
-        minLng = math.min(minLng, point.longitude);
-        maxLng = math.max(maxLng, point.longitude);
-      }
-    }
-
-    return {
-      'west': minLng,
-      'south': minLat,
-      'east': maxLng,
-      'north': maxLat,
-    };
-  }
 
   /// Compute altitude in feet from raw value, unit, and reference
   /// Returns 999999 for unknown altitudes (will sort to end)
