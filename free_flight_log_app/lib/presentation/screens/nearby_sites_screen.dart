@@ -8,7 +8,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../data/models/site.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/airspace_enums.dart';
-import '../../services/database_service.dart';
 import '../../services/location_service.dart';
 import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';

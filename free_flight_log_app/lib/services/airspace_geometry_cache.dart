@@ -249,59 +249,6 @@ class AirspaceGeometryCache {
     }
   }
 
-  /// Helper method to process and store a single geometry without checking for existence
-  Future<void> _processAndStoreGeometry(String id, Map<String, dynamic> feature) async {
-    // Extract properties and geometry (handle both formats)
-    final rawProperties = feature['properties'];
-    final rawGeometry = feature['geometry'];
-
-    Map<String, dynamic> properties;
-    if (rawProperties != null && rawProperties is Map) {
-      // Standard GeoJSON format with properties field
-      properties = Map<String, dynamic>.from(rawProperties);
-    } else {
-      // OpenAIP format - extract all fields except geometry as properties
-      properties = <String, dynamic>{};
-      for (final key in feature.keys) {
-        if (key != 'geometry') {
-          properties[key] = feature[key];
-        }
-      }
-    }
-
-    final geometry = rawGeometry is Map ? Map<String, dynamic>.from(rawGeometry) : <String, dynamic>{};
-
-    // Parse polygons from GeoJSON
-    final polygons = _parsePolygons(geometry);
-    if (polygons.isEmpty) {
-      return;
-    }
-
-    // Calculate hash for geometry
-    final geometryHash = generateGeometryHash(polygons);
-
-    // Extract numeric type code - ensure it's stored as int
-    final typeCode = properties['type'] is int
-        ? properties['type'] as int
-        : (properties['type'] as num?)?.toInt() ?? 0;
-
-    // Convert LatLng polygons to ClipperData for optimal performance
-    final clipperData = ClipperData.fromLatLngPolygons(polygons);
-
-    // Create cached geometry object (matching the existing structure)
-    final cachedGeometry = CachedAirspaceGeometry(
-      id: id,
-      name: properties['name'] ?? 'Unknown',
-      typeCode: typeCode,
-      clipperData: clipperData,
-      properties: properties,
-      fetchTime: DateTime.now(),
-      geometryHash: geometryHash,
-    );
-
-    // Store to disk only
-    await _diskCache.putGeometry(cachedGeometry);
-  }
 
   /// Retrieve an airspace geometry by ID with memory cache
   Future<CachedAirspaceGeometry?> getGeometry(String id) async {

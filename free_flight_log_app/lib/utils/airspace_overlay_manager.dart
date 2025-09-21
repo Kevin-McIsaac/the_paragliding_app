@@ -6,7 +6,6 @@ import 'package:latlong2/latlong.dart';
 import '../services/openaip_service.dart';
 import '../services/airspace_geojson_service.dart';
 import '../services/logging_service.dart';
-import '../data/models/airspace_enums.dart';
 
 /// Manages all OpenAIP aviation data overlay layers for flutter_map
 class AirspaceOverlayManager {
@@ -504,83 +503,4 @@ class AirspaceOverlayManager {
     return numericToString[typeCode];
   }
 
-  /// Convert string ICAO class keys to numeric ICAO class keys for airspace filtering
-  Map<int, bool> _convertStringClassesToNumeric(Map<String, bool> stringClasses) {
-    // Mapping from string ICAO classes to numeric codes used in OpenAIP data
-    const stringToNumeric = {
-      'A': 0,       // Class A
-      'B': 1,       // Class B
-      'C': 2,       // Class C
-      'D': 3,       // Class D
-      'E': 4,       // Class E
-      'F': 5,       // Class F
-      'G': 6,       // Class G
-      'None': 8,    // No ICAO class assigned
-    };
-
-    final numericClasses = <int, bool>{};
-
-    stringClasses.forEach((stringClass, enabled) {
-      final numericCode = stringToNumeric[stringClass];
-      if (numericCode != null) {
-        numericClasses[numericCode] = enabled;
-      }
-    });
-
-    return numericClasses;
-  }
-
-  /// Convert string type keys to numeric type keys for airspace filtering
-  Map<int, bool> _convertStringTypesToNumeric(Map<String, bool> stringTypes) {
-    // Mapping from string abbreviations to numeric codes
-    const stringToNumeric = {
-      'Unknown': 0,
-      'R': 1,       // Restricted (per OpenAIP doc)
-      'D': 2,       // Danger (per OpenAIP doc)
-      'CTR': 4,     // Control Zone
-      'TMA': 6,     // Terminal Control Area (also maps to 7)
-      'FIR': 10,    // Flight Information Region
-      'CTA': 26,    // Control Area
-      // Additional mappings for alternate codes
-      'P': 12,      // Prohibited (keeping existing)
-      'ATZ': 13,    // Aerodrome Traffic Zone (keeping existing)
-    };
-
-    final numericTypes = <int, bool>{};
-
-    stringTypes.forEach((stringType, enabled) {
-      final numericCode = stringToNumeric[stringType];
-      if (numericCode != null) {
-        numericTypes[numericCode] = enabled;
-
-        // Handle special mappings for types that have multiple numeric codes
-        if (stringType == 'CTR') {
-          // CTR maps to 4, 8, 13, and 17 (various control zone types)
-          numericTypes[8] = enabled;
-          numericTypes[13] = enabled;  // ATZ
-          numericTypes[17] = enabled;
-        } else if (stringType == 'TMA') {
-          // TMA maps to 6, 7, 9, 16, and 21
-          numericTypes[7] = enabled;   // Alternate TMA code
-          numericTypes[9] = enabled;
-          numericTypes[16] = enabled;
-          numericTypes[21] = enabled;
-        } else if (stringType == 'R') {
-          // Restricted can be 1, 11, 15, 18
-          numericTypes[11] = enabled;
-          numericTypes[15] = enabled;  // Military Restricted
-          numericTypes[18] = enabled;  // Temporary Restricted
-        } else if (stringType == 'D') {
-          // Danger can be 2, 14, 20
-          numericTypes[14] = enabled;
-          numericTypes[20] = enabled;  // Temporary Danger
-        } else if (stringType == 'P') {
-          // Prohibited can be 12, 19
-          numericTypes[19] = enabled;  // Temporary Prohibited
-        }
-      }
-    });
-
-    return numericTypes;
-  }
 }

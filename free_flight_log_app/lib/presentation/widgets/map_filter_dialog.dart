@@ -132,7 +132,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.3),
+              color: Colors.black.withValues(alpha: 0.3),
               blurRadius: 16,
               offset: const Offset(0, 8),
             ),
@@ -187,7 +187,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                       opacity: _airspaceEnabled ? 1.0 : 0.3,
                       child: Container(
                         height: 1,
-                        color: Colors.grey.withOpacity(0.3),
+                        color: Colors.grey.withValues(alpha: 0.3),
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -271,53 +271,57 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
           ),
         ),
         const SizedBox(height: 8),
-        ...MapProvider.values.map((provider) =>
-          InkWell(
-            onTap: () => setState(() {
-              _selectedMapProvider = provider;
-              _applyFiltersDebounced();
-            }),
-            borderRadius: BorderRadius.circular(4),
-            child: Container(
-              height: 24,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Transform.scale(
-                    scale: 0.7,
-                    child: Radio<MapProvider>(
-                      value: provider,
-                      groupValue: _selectedMapProvider,
-                      onChanged: (value) => setState(() {
-                        _selectedMapProvider = value!;
-                        _applyFiltersDebounced();
-                      }),
-                      activeColor: Colors.blue,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Flexible(
-                    child: Tooltip(
-                      message: provider.tooltip,
-                      textStyle: const TextStyle(color: Colors.white, fontSize: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1E1E1E),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: Colors.white24),
+        RadioGroup<MapProvider>(
+          groupValue: _selectedMapProvider,
+          onChanged: (value) => setState(() {
+            _selectedMapProvider = value!;
+            _applyFiltersDebounced();
+          }),
+          child: Column(
+            children: MapProvider.values.map((provider) =>
+              InkWell(
+                onTap: () => setState(() {
+                  _selectedMapProvider = provider;
+                  _applyFiltersDebounced();
+                }),
+                borderRadius: BorderRadius.circular(4),
+                child: Container(
+                  height: 24,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Transform.scale(
+                        scale: 0.7,
+                        child: Radio<MapProvider>(
+                          value: provider,
+                          activeColor: Colors.blue,
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
                       ),
-                      child: Text(
-                        provider.shortName,
-                        style: const TextStyle(color: Colors.white, fontSize: 12),
-                        overflow: TextOverflow.ellipsis,
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Tooltip(
+                          message: provider.tooltip,
+                          textStyle: const TextStyle(color: Colors.white, fontSize: 12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1E1E1E),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: Colors.white24),
+                          ),
+                          child: Text(
+                            provider.shortName,
+                            style: const TextStyle(color: Colors.white, fontSize: 12),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
+            ).toList(),
           ),
-        ).toList(),
+        ),
       ],
     );
   }
@@ -535,11 +539,11 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
             );
           },
           chipDecoration: ChipDecoration(
-            backgroundColor: Colors.blue.withOpacity(0.2),
+            backgroundColor: Colors.blue.withValues(alpha: 0.2),
             labelStyle: const TextStyle(color: Colors.white, fontSize: 9),
             deleteIcon: const Icon(Icons.close, size: 10, color: Colors.white70),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.blue.withOpacity(0.5)),
+            border: Border.all(color: Colors.blue.withValues(alpha: 0.5)),
             wrap: true,
             spacing: 2,
             runSpacing: 2,
@@ -548,7 +552,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
           fieldDecoration: FieldDecoration(
             hintText: 'Select types to hide',
             hintStyle: const TextStyle(color: Colors.white54, fontSize: 10),
-            backgroundColor: Colors.black.withOpacity(0.3),
+            backgroundColor: Colors.black.withValues(alpha: 0.3),
             border: OutlineInputBorder(
               borderSide: const BorderSide(color: Colors.white54),
               borderRadius: BorderRadius.circular(6),
@@ -569,7 +573,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
             elevation: 4,
           ),
           dropdownItemDecoration: DropdownItemDecoration(
-            selectedBackgroundColor: Colors.blue.withOpacity(0.3),
+            selectedBackgroundColor: Colors.blue.withValues(alpha: 0.3),
             selectedTextColor: Colors.white,
             textColor: Colors.white70,
           ),
@@ -665,11 +669,11 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
             );
           },
           chipDecoration: ChipDecoration(
-            backgroundColor: Colors.orange.withOpacity(0.2),
+            backgroundColor: Colors.orange.withValues(alpha: 0.2),
             labelStyle: const TextStyle(color: Colors.white, fontSize: 9),
             deleteIcon: const Icon(Icons.close, size: 10, color: Colors.white70),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.orange.withOpacity(0.5)),
+            border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
             wrap: true,
             spacing: 2,
             runSpacing: 2,
@@ -678,7 +682,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
           fieldDecoration: FieldDecoration(
             hintText: 'Select classes to hide',
             hintStyle: const TextStyle(color: Colors.white54, fontSize: 10),
-            backgroundColor: Colors.black.withOpacity(0.3),
+            backgroundColor: Colors.black.withValues(alpha: 0.3),
             border: OutlineInputBorder(
               borderSide: const BorderSide(color: Colors.white54),
               borderRadius: BorderRadius.circular(6),
@@ -699,7 +703,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
             elevation: 4,
           ),
           dropdownItemDecoration: DropdownItemDecoration(
-            selectedBackgroundColor: Colors.orange.withOpacity(0.3),
+            selectedBackgroundColor: Colors.orange.withValues(alpha: 0.3),
             selectedTextColor: Colors.white,
             textColor: Colors.white70,
           ),

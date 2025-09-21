@@ -3,13 +3,11 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_map/flutter_map.dart' as fm;
 import 'package:geobase/geobase.dart' as geo;
 import 'package:clipper2/clipper2.dart' as clipper;
 import '../services/logging_service.dart';
-import '../services/openaip_service.dart';
 import '../services/airspace_identification_service.dart';
 import '../services/airspace_metadata_cache.dart';
 import '../services/airspace_geometry_cache.dart';
@@ -327,18 +325,10 @@ class AirspaceGeoJsonService {
 
   AirspaceGeoJsonService._();
 
-  final OpenAipService _openAipService = OpenAipService.instance;
   final AirspaceMetadataCache _metadataCache = AirspaceMetadataCache.instance;
   final AirspaceGeometryCache _geometryCache = AirspaceGeometryCache.instance;
   final AirspacePerformanceLogger _performanceLogger = AirspacePerformanceLogger.instance;
 
-  // Country-based caching mode
-  bool _useCountryMode = false; // Will be set based on whether countries are loaded
-
-  // OpenAIP Core API configuration
-  static const String _coreApiBase = 'https://api.core.openaip.net/api';
-  static const int _defaultLimit = 1000; // Maximum allowed by OpenAIP API
-  static const Duration _requestTimeout = Duration(seconds: 30);
 
   // Initialize performance monitoring
   void initialize() {
@@ -492,7 +482,6 @@ class AirspaceGeoJsonService {
       LoggingService.warning('No countries loaded, returning empty GeoJSON');
       return '{"type":"FeatureCollection","features":[]}';
     }
-    _useCountryMode = true;
     return _fetchAirspaceFromCountries(bounds);
   }
 
@@ -642,57 +631,6 @@ class AirspaceGeoJsonService {
   }
 
 
-  /// Convert OpenAIP response format to standard GeoJSON
-  String _convertToGeoJson(String responseBody) {
-    try {
-      final data = json.decode(responseBody);
-
-      // Handle different response formats
-      List<dynamic> items;
-      if (data is Map<String, dynamic>) {
-        items = data['items'] ?? data['features'] ?? [data];
-      } else if (data is List) {
-        items = data;
-      } else {
-        throw Exception('Unexpected response format');
-      }
-
-      // Build GeoJSON FeatureCollection
-      final features = items.map((item) => _convertAirspaceToFeature(item)).toList();
-
-      final geoJson = {
-        'type': 'FeatureCollection',
-        'features': features,
-      };
-
-      final result = json.encode(geoJson);
-
-      LoggingService.structured('GEOJSON_CONVERSION', {
-        'input_items': items.length,
-        'output_features': features.length,
-        'output_size': result.length,
-      });
-
-      // Log sample airspace data to understand OpenAIP structure
-      if (items.isNotEmpty) {
-        final sample = items.first;
-        LoggingService.structured('OPENAIP_SAMPLE_AIRSPACE', {
-          'type': sample['type'],
-          'category': sample['category'],
-          'name': sample['name'],
-          'icaoClass': sample['icaoClass'],
-          'activity': sample['activity'],
-          'all_keys': sample.keys.toList(),
-        });
-      }
-
-      return result;
-
-    } catch (error, stackTrace) {
-      LoggingService.error('Failed to convert airspace data to GeoJSON', error, stackTrace);
-      rethrow;
-    }
-  }
 
   /// OpenAIP unit codes to aviation units mapping
   static const Map<int, String> _openAipUnits = {
@@ -708,109 +646,8 @@ class AirspaceGeoJsonService {
     2: 'STD',   // Standard (Flight Level)
   };
 
-  /// OpenAIP ICAO class codes to class letters mapping
-  static const Map<int, String> _openAipIcaoClasses = {
-    0: 'G',     // Class G
-    1: 'F',     // Class F
-    2: 'E',     // Class E
-    3: 'D',     // Class D
-    4: 'C',     // Class C
-    5: 'B',     // Class B
-    6: 'A',     // Class A
-  };
 
-  /// Convert OpenAIP numeric altitude limit to text format
-  Map<String, dynamic>? _convertAltitudeLimit(Map<String, dynamic>? limit) {
-    if (limit == null) return null;
 
-    final value = limit['value'];
-    final unitCode = limit['unit'];
-    final referenceCode = limit['referenceDatum'];
-
-    // Handle special values
-    if (value == 0 && referenceCode == 0) {
-      return {'value': 'GND', 'unit': '', 'reference': ''};
-    }
-
-    // Convert unit code to text
-    String unit = _openAipUnits[unitCode] ?? 'ft';
-
-    // Convert reference datum code to text
-    String reference = _openAipReferenceDatums[referenceCode] ?? 'AMSL';
-
-    // For flight levels, use standard format
-    if (unit == 'FL' || reference == 'STD') {
-      return {'value': value, 'unit': 'FL', 'reference': ''};
-    }
-
-    return {
-      'value': value,
-      'unit': unit,
-      'reference': reference,
-    };
-  }
-
-  /// Convert single airspace item to GeoJSON feature
-  Map<String, dynamic> _convertAirspaceToFeature(dynamic item) {
-    if (item is! Map<String, dynamic>) {
-      throw Exception('Invalid airspace item format');
-    }
-
-    // If this is already a GeoJSON feature, extract properties from within
-    if (item['type'] == 'Feature' && item.containsKey('properties')) {
-      // Feature format from API - properties are nested
-      final properties = item['properties'] as Map<String, dynamic>;
-      final geometry = item['geometry'];
-
-      if (geometry == null) {
-        throw Exception('Airspace feature missing geometry');
-      }
-
-      // Properties are already in the right format, just ensure type is numeric
-      final cleanedProps = <String, dynamic>{
-        'name': properties['name'] ?? 'Unknown Airspace',
-        'type': properties['type'] ?? 0,  // Keep numeric type code
-        'class': properties['icaoClass'],  // Keep numeric ICAO class code
-        'icaoClass': properties['icaoClass'],  // Also store with OpenAIP field name for compatibility
-        'upperLimit': _convertAltitudeLimit(properties['upperLimit'] as Map<String, dynamic>?),
-        'lowerLimit': _convertAltitudeLimit(properties['lowerLimit'] as Map<String, dynamic>?),
-        'country': properties['country'],
-      };
-
-      return {
-        'type': 'Feature',
-        'geometry': geometry,
-        'properties': cleanedProps,
-      };
-    }
-
-    // Old format - properties at top level (shouldn't happen with OpenAIP)
-    final geometry = item['geometry'];
-    if (geometry == null) {
-      throw Exception('Airspace missing geometry');
-    }
-
-    // Convert altitude limits from numeric codes to text
-    final upperLimit = _convertAltitudeLimit(item['upperLimit'] as Map<String, dynamic>?);
-    final lowerLimit = _convertAltitudeLimit(item['lowerLimit'] as Map<String, dynamic>?);
-
-    // Extract properties - keep numeric codes
-    final properties = <String, dynamic>{
-      'name': item['name'] ?? 'Unknown Airspace',
-      'type': item['type'] ?? 0,  // Keep numeric type code
-      'class': item['icaoClass'],  // Keep numeric ICAO class code
-      'icaoClass': item['icaoClass'],  // Also store with OpenAIP field name for compatibility
-      'upperLimit': upperLimit,
-      'lowerLimit': lowerLimit,
-      'country': item['country'],
-    };
-
-    return {
-      'type': 'Feature',
-      'geometry': geometry,
-      'properties': properties,
-    };
-  }
 
   /// Parse GeoJSON string and return styled polygons for flutter_map
   /// Also populates the AirspaceIdentificationService with polygon data
@@ -857,12 +694,12 @@ class AirspaceGeoJsonService {
         if (geometry != null) {
           // Create airspace data from properties
           final airspaceData = AirspaceData(
-            name: properties != null ? properties['name']?.toString() ?? 'Unknown Airspace' : 'Unknown Airspace',
-            type: AirspaceType.fromCode(properties != null ? (properties['type'] as int?) ?? 0 : 0),
-            icaoClass: IcaoClass.fromCode(properties != null ? properties['class'] as int? : null),
-            upperLimit: properties != null ? properties['upperLimit'] as Map<String, dynamic>? : null,
-            lowerLimit: properties != null ? properties['lowerLimit'] as Map<String, dynamic>? : null,
-            country: properties != null ? properties['country']?.toString() : null,
+            name: properties['name']?.toString() ?? 'Unknown Airspace',
+            type: AirspaceType.fromCode((properties['type'] as int?) ?? 0),
+            icaoClass: IcaoClass.fromCode(properties['class'] as int?),
+            upperLimit: properties['upperLimit'] as Map<String, dynamic>?,
+            lowerLimit: properties['lowerLimit'] as Map<String, dynamic>?,
+            country: properties['country']?.toString(),
           );
 
           // Always add to identification polygons first (for tooltip - regardless of filters)
@@ -1107,30 +944,29 @@ class AirspaceGeoJsonService {
 
     for (final feature in featureCollection.features) {
       final props = feature.properties;
-      if (props != null) {
-        // Count by mapped type
-        final originalType = props['type']?.toString() ?? 'null';
-        final typeValue = props['type'] as int? ?? 0;
-        final airspaceType = AirspaceType.fromCode(typeValue);
-        final mappedType = airspaceType.abbreviation;
 
-        typeStats[mappedType] = (typeStats[mappedType] ?? 0) + 1;
-        originalTypeStats[originalType] = (originalTypeStats[originalType] ?? 0) + 1;
+      // Count by mapped type
+      final originalType = props['type']?.toString() ?? 'null';
+      final typeValue = props['type'] as int? ?? 0;
+      final airspaceType = AirspaceType.fromCode(typeValue);
+      final mappedType = airspaceType.abbreviation;
 
-        // Track visible types for legend filtering (use numeric type)
-        final numericType = props['type'] as int? ?? 0;
-        visibleTypes.add(numericType);
+      typeStats[mappedType] = (typeStats[mappedType] ?? 0) + 1;
+      originalTypeStats[originalType] = (originalTypeStats[originalType] ?? 0) + 1;
 
-        // Calculate bounds for coverage area
-        final geometry = feature.geometry;
-        if (geometry is geo.Polygon) {
-          for (final ring in geometry.rings) {
-            for (final point in ring.positions) {
-              minLat = math.min(minLat, point.y);
-              maxLat = math.max(maxLat, point.y);
-              minLon = math.min(minLon, point.x);
-              maxLon = math.max(maxLon, point.x);
-            }
+      // Track visible types for legend filtering (use numeric type)
+      final numericType = props['type'] as int? ?? 0;
+      visibleTypes.add(numericType);
+
+      // Calculate bounds for coverage area
+      final geometry = feature.geometry;
+      if (geometry is geo.Polygon) {
+        for (final ring in geometry.rings) {
+          for (final point in ring.positions) {
+            minLat = math.min(minLat, point.y);
+            maxLat = math.max(maxLat, point.y);
+            minLon = math.min(minLon, point.x);
+            maxLon = math.max(maxLon, point.x);
           }
         }
       }
@@ -1250,16 +1086,6 @@ class AirspaceGeoJsonService {
     26: 'CTA',  // Control Terminal Area (CTA A, CTA C1-C7)
   };
 
-  /// Convert OpenAIP numeric type to our style key
-  String _mapOpenAipTypeToStyle(dynamic typeValue) {
-    if (typeValue is int) {
-      return _openAipTypeCodes[typeValue] ?? 'UNKNOWN';
-    } else if (typeValue is String) {
-      // Handle string types directly
-      return typeValue.toUpperCase();
-    }
-    return 'UNKNOWN';
-  }
 
   /// Get style for airspace data (ICAO class takes priority, fallback to type)
   AirspaceStyle getStyleForAirspace(AirspaceData airspaceData) {
@@ -1690,224 +1516,6 @@ class AirspaceGeoJsonService {
 
   // REMOVED: Non-optimized _applyPolygonClipping - always use optimized ClipperData path
 
-  /// Legacy polygon clipping method (kept for reference but not used)
-  List<_ClippedPolygonData> _applyPolygonClippingLegacy(
-    List<({fm.Polygon polygon, AirspacePolygonData data})> polygonsWithAltitude,
-    fm.LatLngBounds viewport,
-  ) {
-    final List<_ClippedPolygonData> clippedPolygons = [];
-    int completelyClippedCount = 0;
-    List<String> completelyClippedNames = [];
-
-    // Track timing for clipping operations
-    int totalClippingTimeMs = 0;
-    int longestClippingTimeMs = 0;
-    String? longestClippingAirspace;
-    final Map<String, int> clippingTimeByType = {};
-
-    // Enhanced metrics for optimization tracking
-    int theoreticalComparisons = 0;
-    int actualComparisons = 0;
-    int altitudeRejections = 0;
-    int boundsRejections = 0;
-    int actualClippingOperations = 0;
-    int emptyClippingLists = 0;
-    final setupStopwatch = Stopwatch()..start();
-
-    final clippingMemoryBefore = PerformanceMonitor.getMemoryUsageMB();
-
-    LoggingService.structured('AIRSPACE_CLIPPING_START', {
-      'input_polygons': polygonsWithAltitude.length,
-      'strategy': 'Linear O(n²)',
-    });
-
-    // STAGE 1: Viewport filtering already done in parseAirspaceGeoJson
-    // All polygons passed here are already within viewport bounds
-    // Just add bounds for overlap checking
-    final List<({fm.Polygon polygon, AirspacePolygonData data, fm.LatLngBounds bounds})> visibleAirspaces = [];
-
-    for (final polygon in polygonsWithAltitude) {
-      final bounds = _calculateBoundingBox(polygon.data.points);
-      visibleAirspaces.add((
-        polygon: polygon.polygon,
-        data: polygon.data,
-        bounds: bounds, // Pre-calculate for Stage 2
-      ));
-    }
-
-    // OPTIMIZATION: Sort by altitude (lowest first) for early exit
-    final sortStopwatch = Stopwatch()..start();
-    visibleAirspaces.sort((a, b) {
-      final altA = a.data.airspaceData.getLowerAltitudeInFeet();
-      final altB = b.data.airspaceData.getLowerAltitudeInFeet();
-      return altA.compareTo(altB);
-    });
-    sortStopwatch.stop();
-
-    setupStopwatch.stop();
-
-    // STAGE 3 OPTIMIZATION: Pre-extract frequently accessed data for better cache locality
-    // Accessing data from contiguous arrays is faster than following object references
-    final List<int> altitudeArray = List<int>.generate(
-      visibleAirspaces.length,
-      (i) => visibleAirspaces[i].data.airspaceData.getLowerAltitudeInFeet(),
-      growable: false,
-    );
-
-    // Calculate theoretical comparisons (n*(n-1)/2)
-    final n = visibleAirspaces.length;
-    theoreticalComparisons = (n * (n - 1)) ~/ 2;
-
-    LoggingService.structured('CLIPPING_STAGE', {
-      'input_polygons': polygonsWithAltitude.length,
-      'polygons_to_clip': visibleAirspaces.length,
-      'theoretical_comparisons': theoreticalComparisons,
-      'setup_time_ms': setupStopwatch.elapsedMilliseconds,
-      'sort_time_ms': sortStopwatch.elapsedMilliseconds,
-      'sorted_by_altitude': true,
-      'stage_3_cache_optimized': true,
-    });
-
-    // Process each visible polygon from lowest to highest altitude
-    for (int i = 0; i < visibleAirspaces.length; i++) {
-      final current = visibleAirspaces[i];
-      final currentPoints = current.data.points;
-      final airspaceData = current.data.airspaceData;
-      final currentBounds = current.bounds; // Pre-calculated
-
-      // Get style for current airspace (prioritizes ICAO class)
-      final style = getStyleForAirspace(airspaceData);
-
-      // Collect all lower-altitude polygons as clipping masks
-      final List<List<LatLng>> clippingPolygons = [];
-      final List<AirspaceData> clippingAirspaceData = [];
-
-      // Local comparison metrics
-      int localComparisons = 0;
-      int localAltitudeRejections = 0;
-      int localBoundsRejections = 0;
-      int earlyExitSavings = 0;
-
-      // STAGE 3: Use pre-extracted altitude from array (better cache locality)
-      final currentAltitude = altitudeArray[i];
-
-      for (int j = 0; j < i; j++) {
-        final lowerAirspace = visibleAirspaces[j];
-        localComparisons++;
-        actualComparisons++;
-
-        // STAGE 3 OPTIMIZATION: Access altitude from contiguous array (cache-friendly)
-        final lowerAltitude = altitudeArray[j];
-
-        // Early exit - all remaining polygons are at same or higher altitude
-        if (lowerAltitude >= currentAltitude) {
-          // Count how many comparisons we're saving
-          earlyExitSavings = i - j - 1;
-          actualComparisons -= earlyExitSavings; // Adjust for saved comparisons
-          localAltitudeRejections++;
-          altitudeRejections++;
-          break; // EARLY EXIT - no need to check remaining polygons
-        }
-
-        // STAGE 2 OPTIMIZATION: Inline bounding box check (avoid function call overhead)
-        // Direct comparison is faster than function call
-        final lowerBounds = lowerAirspace.bounds;
-        if (currentBounds.east < lowerBounds.west ||
-            currentBounds.west > lowerBounds.east ||
-            currentBounds.north < lowerBounds.south ||
-            currentBounds.south > lowerBounds.north) {
-          localBoundsRejections++;
-          boundsRejections++;
-          continue;
-        }
-
-        clippingPolygons.add(lowerAirspace.data.points);
-        clippingAirspaceData.add(lowerAirspace.data.airspaceData);
-      }
-
-      // Track if we're doing actual clipping
-      if (clippingPolygons.isEmpty) {
-        emptyClippingLists++;
-      } else {
-        actualClippingOperations++;
-      }
-
-      // Perform clipping operation with timing
-      final clippingStopwatch = Stopwatch()..start();
-      // Legacy method no longer used - we always use ClipperData now
-      final List<_ClippedPolygonData> clippedResults = [];
-      // final clippedResults = _subtractPolygonsFromSubject(...);
-      clippingStopwatch.stop();
-
-      // Track timing statistics
-      final clippingTimeMs = clippingStopwatch.elapsedMilliseconds;
-      totalClippingTimeMs += clippingTimeMs;
-      if (clippingTimeMs > longestClippingTimeMs) {
-        longestClippingTimeMs = clippingTimeMs;
-        longestClippingAirspace = airspaceData.name;
-      }
-
-      // Aggregate by type
-      final typeKey = airspaceData.type.abbreviation;
-      clippingTimeByType[typeKey] = (clippingTimeByType[typeKey] ?? 0) + clippingTimeMs;
-
-      // Remove verbose per-airspace logging - will summarize at the end instead
-
-      // Track if this airspace was completely clipped away
-      if (clippedResults.isEmpty && currentPoints.isNotEmpty) {
-        completelyClippedCount++;
-        completelyClippedNames.add(airspaceData.name);
-      }
-
-      clippedPolygons.addAll(clippedResults);
-    }
-
-    // Calculate comparison efficiency
-    final double comparisonReduction = theoreticalComparisons > 0
-        ? ((theoreticalComparisons - actualComparisons) / theoreticalComparisons * 100)
-        : 0.0;
-
-    // Log detailed clipping performance with enhanced metrics
-    LoggingService.structured('CLIPPING_DETAILED_PERFORMANCE', {
-      'strategy': 'Linear O(n²) Search',
-      'total_clipping_time_ms': totalClippingTimeMs,
-      'overall_time_ms': setupStopwatch.elapsedMilliseconds + totalClippingTimeMs,
-      'setup_time_ms': setupStopwatch.elapsedMilliseconds,
-      'average_time_ms': polygonsWithAltitude.isNotEmpty ? (totalClippingTimeMs / polygonsWithAltitude.length).round() : 0,
-      'longest_time_ms': longestClippingTimeMs,
-      'longest_airspace': longestClippingAirspace,
-      'completely_clipped': completelyClippedCount,
-      'time_by_type': clippingTimeByType,
-      'total_comparisons': actualComparisons,
-      'theoretical_comparisons': theoreticalComparisons,
-      'comparison_reduction_%': comparisonReduction.toStringAsFixed(1),
-      'altitude_rejections': altitudeRejections,
-      'bounds_rejections': boundsRejections,
-      'actual_clipping_operations': actualClippingOperations,
-      'empty_clipping_lists': emptyClippingLists,
-    });
-
-    // Log summary of completely clipped airspaces if any
-    if (completelyClippedCount > 0) {
-      LoggingService.info('[CLIPPING_SUMMARY] $completelyClippedCount airspaces completely clipped: ${completelyClippedNames.take(5).join(", ")}${completelyClippedCount > 5 ? " ..." : ""}');
-    }
-
-    // Simplified actionable log for Claude Code
-    LoggingService.info('[AIRSPACE] Clipped ${clippedPolygons.length} airspaces in ${totalClippingTimeMs}ms');
-
-    // Log memory usage for clipping operation
-    final clippingMemoryAfter = PerformanceMonitor.getMemoryUsageMB();
-    LoggingService.structured('MEMORY_USAGE', {
-      'operation': 'polygon_clipping',
-      'before_mb': clippingMemoryBefore.toStringAsFixed(1),
-      'after_mb': clippingMemoryAfter.toStringAsFixed(1),
-      'delta_mb': (clippingMemoryAfter - clippingMemoryBefore).toStringAsFixed(1),
-      'polygons_clipped': clippedPolygons.length,
-      'input_polygons': polygonsWithAltitude.length,
-    });
-
-    return clippedPolygons;
-  }
 
   /// Convert clipped polygon data to flutter_map Polygons
   List<fm.Polygon> _convertClippedPolygonsToFlutterMap(

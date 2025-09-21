@@ -16,7 +16,6 @@ import '../../services/site_bounds_loader.dart';
 import '../../services/logging_service.dart';
 import '../../utils/site_marker_utils.dart';
 import '../../utils/map_provider.dart';
-import '../../utils/site_utils.dart';
 import '../../utils/map_tile_provider.dart';
 import '../widgets/common/map_loading_overlay.dart';
 

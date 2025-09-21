@@ -242,8 +242,6 @@ class _AirspaceInfoPopupState extends State<AirspaceInfoPopup> {
     // Get ICAO class-based styling (prioritizes ICAO class over type)
     final style = AirspaceGeoJsonService.instance.getStyleForAirspace(airspace);
 
-    // Format compact details line (type, altitude, country)
-    final String compactDetails = _formatCompactDetails(airspace);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
@@ -395,21 +393,6 @@ class _AirspaceInfoPopupState extends State<AirspaceInfoPopup> {
     );
   }
 
-  /// Format altitude range for display
-  String _formatAltitudeRange(AirspaceData airspace) {
-    final lower = airspace.lowerAltitude;
-    final upper = airspace.upperAltitude;
-
-    if (lower == 'Unknown' && upper == 'Unknown') {
-      return '';
-    }
-
-    if (lower == upper) {
-      return 'Altitude: $lower';
-    }
-
-    return '$lower - $upper';
-  }
 
   /// Format altitude range with proper aviation units for compact display
   String _formatAltitudeRangeWithUnits(AirspaceData airspace) {
@@ -486,52 +469,9 @@ class _AirspaceInfoPopupState extends State<AirspaceInfoPopup> {
     return '$valueStr$unitStr$refStr';
   }
 
-  /// Format compact details line (type, icaoClass, altitude, country)
-  String _formatCompactDetails(AirspaceData airspace) {
-    final parts = <String>[];
-
-    // Add type abbreviation
-    parts.add(airspace.type.abbreviation);
-
-    // Add ICAO class abbreviation if available
-    if (airspace.icaoClass != null && airspace.icaoClass != IcaoClass.none) {
-      parts.add(airspace.icaoClass!.abbreviation);
-    }
-
-    // Add altitude range with units
-    final altitudeRange = _formatAltitudeRangeWithUnits(airspace);
-    if (altitudeRange.isNotEmpty) {
-      parts.add(altitudeRange);
-    }
-
-    // Add country name
-    final countryName = _getCountryName(airspace.country);
-    if (countryName.isNotEmpty) {
-      parts.add(countryName);
-    }
-
-    return parts.join(' ');
-  }
 
 
 
-  /// Get ICAO class full description from numeric code
-  String _getIcaoClassDescription(int? icaoClassCode) {
-    if (icaoClassCode == null) return 'No ICAO class information';
-
-    final icaoClassDescriptionMap = {
-      0: 'Class A - Controlled Airspace',
-      1: 'Class B - Controlled Airspace',
-      2: 'Class C - Controlled Airspace',
-      3: 'Class D - Controlled Airspace',
-      4: 'Class E - Controlled Airspace',
-      5: 'Class F - Advisory Airspace',
-      6: 'Class G - Uncontrolled Airspace',
-      8: 'No ICAO class assigned',
-    };
-
-    return icaoClassDescriptionMap[icaoClassCode] ?? 'Unknown ICAO class';
-  }
 
   /// Get country name from country code
   String _getCountryName(String? countryCode) {
@@ -613,73 +553,9 @@ class _AirspaceInfoPopupState extends State<AirspaceInfoPopup> {
     return Offset(x, y);
   }
 
-  /// Get type string from numeric code based on OpenAIP documentation
-  String _getTypeMappedString(int typeCode) {
-    final typeMap = {
-      0: 'Unknown',
-      1: 'Restricted',
-      2: 'Danger',
-      4: 'CTR',
-      6: 'TMA',
-      7: 'TMA',
-      10: 'FIR',
-      26: 'CTA',
-    };
 
-    return typeMap[typeCode] ?? typeCode.toString();
-  }
 
-  /// Get ICAO class string from numeric code based on OpenAIP documentation
-  String _getIcaoClassMappedString(int? icaoClassCode) {
-    if (icaoClassCode == null) return '';
 
-    final icaoClassMap = {
-      0: 'Class A',
-      1: 'Class B',
-      2: 'Class C',
-      3: 'Class D',
-      4: 'Class E',
-      5: 'Class F',
-      6: 'Class G',
-      8: 'None',
-    };
-
-    return icaoClassMap[icaoClassCode] ?? icaoClassCode.toString();
-  }
-
-  /// Get tooltip description for airspace type
-  String _getTypeTooltip(int typeCode) {
-    final typeTooltipMap = {
-      0: 'Unknown airspace type',
-      1: 'RESTRICTED - Restricted Area (entry restricted)',
-      2: 'DANGER - Danger Area (hazardous activities)',
-      4: 'CTR - Control Zone/Controlled Tower Region (airport control zone)',
-      6: 'TMA - Terminal Maneuvering Area (terminal control area)',
-      7: 'TMA - Terminal Maneuvering Area (terminal control area)',
-      10: 'FIR - Flight Information Region',
-      26: 'CTA - Control Area',
-    };
-
-    return typeTooltipMap[typeCode] ?? 'Airspace type $typeCode';
-  }
-
-  /// Get tooltip description for ICAO class
-  String _getIcaoClassTooltip(int? icaoClassCode) {
-    if (icaoClassCode == null) return '';
-
-    final icaoTooltipMap = {
-      0: 'Class A - IFR only. All flights receive air traffic control service and are separated from all other traffic',
-      1: 'Class B - IFR and VFR permitted. All flights receive air traffic control service and are separated from all other traffic',
-      2: 'Class C - IFR and VFR permitted. All flights receive air traffic control service. IFR flights are separated from other IFR and VFR flights. VFR flights are separated from IFR flights and receive traffic information on other VFR flights',
-      3: 'Class D - IFR and VFR permitted. All flights receive air traffic control service. IFR flights are separated from other IFR flights and receive traffic information on VFR flights. VFR flights receive traffic information on all other traffic',
-      4: 'Class E - IFR and VFR permitted. IFR flights receive air traffic control service and are separated from other IFR flights. All flights receive traffic information as far as practical. VFR flights do not receive separation service',
-      5: 'Class F - IFR and VFR permitted. IFR flights receive air traffic advisory service and all flights receive flight information service if requested. Class F is not implemented in many countries',
-      6: 'Class G - Uncontrolled airspace. Only flight information service provided if requested. No separation service provided',
-      8: 'No ICAO class assigned - This airspace does not have an ICAO classification in the OpenAIP system',
-    };
-
-    return icaoTooltipMap[icaoClassCode] ?? 'ICAO Class $icaoClassCode';
-  }
 
   /// Get display abbreviation for airspace type, showing 'Unknown' for unmapped types
   String _getDisplayTypeAbbreviation(AirspaceType type) {

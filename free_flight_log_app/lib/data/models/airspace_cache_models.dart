@@ -1,4 +1,3 @@
-import 'package:latlong2/latlong.dart';
 import '../../services/airspace_geojson_service.dart' show ClipperData;
 
 /// Represents a unique airspace geometry stored in the cache
