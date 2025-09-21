@@ -525,6 +525,66 @@ restart_flutter() {
     setup_flutter_pipe "$device"
 }
 
+# Parse device argument using getopts
+parse_device_args() {
+    local device="emulator-5554"  # default device
+    local OPTIND=1  # Reset getopts
+
+    # Handle long options manually first
+    local args=()
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --device)
+                if [[ -n "$2" ]]; then
+                    device="$2"
+                    shift 2
+                else
+                    echo "ERROR: --device flag requires a device ID" >&2
+                    exit 1
+                fi
+                ;;
+            --device=*)
+                device="${1#*=}"
+                shift
+                ;;
+            *)
+                args+=("$1")
+                shift
+                ;;
+        esac
+    done
+
+    # Reset positional parameters to handle short options
+    set -- "${args[@]}"
+
+    # Parse short options with getopts
+    while getopts "d:" opt; do
+        case $opt in
+            d)
+                device="$OPTARG"
+                ;;
+            \?)
+                echo "ERROR: Invalid option -$OPTARG" >&2
+                exit 1
+                ;;
+            :)
+                echo "ERROR: Option -$OPTARG requires an argument" >&2
+                exit 1
+                ;;
+        esac
+    done
+
+    # Shift past processed options
+    shift $((OPTIND-1))
+
+    # If there's a remaining argument and no device was specified via flags, use it as device
+    if [[ $# -gt 0 && "$device" == "emulator-5554" ]]; then
+        device="$1"
+    fi
+
+    echo "$device"
+}
+
 # Main command handling
 case "$1" in
     "run")
@@ -534,7 +594,10 @@ case "$1" in
             cleanup_flutter_process
             sleep 2
         fi
-        setup_flutter_pipe "$2"
+        # Parse device from remaining arguments
+        shift  # Remove "run" from arguments
+        device=$(parse_device_args "$@")
+        setup_flutter_pipe "$device"
         ;;
     "r")
         # Hot reload with auto-start if needed
@@ -560,13 +623,19 @@ case "$1" in
         monitor_logs
         ;;
     "restart")
-        restart_flutter "$2"
+        # Parse device from remaining arguments
+        shift  # Remove "restart" from arguments
+        device=$(parse_device_args "$@")
+        restart_flutter "$device"
         ;;
     "cleanup")
         cleanup_flutter_process
         ;;
     "screenshot"|"ss")
-        take_screenshot "$2"
+        # Parse device from remaining arguments
+        shift  # Remove "screenshot"/"ss" from arguments
+        device=$(parse_device_args "$@")
+        take_screenshot "$device"
         ;;
     "health")
         flutter_health_check
@@ -579,7 +648,7 @@ case "$1" in
         echo "Usage: $0 {command} [options]"
         echo ""
         echo "Commands:"
-        echo "  run [device]     - Start Flutter with logging (default: emulator-5554)"
+        echo "  run [options]    - Start Flutter with logging"
         echo "  r                - Hot reload (with readiness check)"
         echo "  R                - Hot restart (with readiness check)"
         echo "  q, quit          - Quit Flutter"
@@ -587,11 +656,11 @@ case "$1" in
         echo "  logs [lines]     - Show recent logs (default: 50 lines)"
         echo "  clear-logs       - Clear the log file"
         echo "  monitor          - Monitor logs in real-time"
-        echo "  restart [device] - Force restart Flutter"
+        echo "  restart [options] - Force restart Flutter"
         echo "  cleanup          - Clean up crashed processes"
         echo ""
         echo "Enhanced Commands:"
-        echo "  screenshot, ss [device] - Take screenshot via adb (default: emulator-5554)"
+        echo "  screenshot, ss [options] - Take screenshot via adb"
         echo "  health           - Comprehensive health check (PID, pipe, readiness)"
         echo "  wait-ready [timeout] - Wait for Flutter to be ready (default: 30s)"
         echo ""
@@ -601,14 +670,20 @@ case "$1" in
         echo "  Status:    $STATUS_FILE" 
         echo "  PID:       $PID_FILE"
         echo ""
+        echo "Device Options:"
+        echo "  -d, --device DEVICE_ID   - Specify device (default: emulator-5554)"
+        echo "  DEVICE_ID                - Direct device specification"
+        echo ""
         echo "Examples:"
-        echo "  $0 run                    # Start Flutter on default emulator"
-        echo "  $0 run chrome             # Start Flutter on Chrome"
-        echo "  $0 status                 # Check if Flutter is running"
-        echo "  $0 health                 # Comprehensive health check"
-        echo "  $0 logs 100               # Show last 100 log lines"
-        echo "  $0 monitor                # Watch logs in real-time"
-        echo "  $0 screenshot             # Take screenshot from emulator"
-        echo "  $0 ss emulator-5556       # Take screenshot from specific device"
+        echo "  $0 run                           # Start Flutter on default emulator"
+        echo "  $0 run chrome                    # Start Flutter on Chrome"
+        echo "  $0 run -d emulator-5556          # Start on specific emulator"
+        echo "  $0 run --device adb-ABC123       # Start on wireless device"
+        echo "  $0 status                        # Check if Flutter is running"
+        echo "  $0 health                        # Comprehensive health check"
+        echo "  $0 logs 100                      # Show last 100 log lines"
+        echo "  $0 monitor                       # Watch logs in real-time"
+        echo "  $0 screenshot                    # Take screenshot from current device"
+        echo "  $0 ss -d emulator-5556           # Take screenshot from specific device"
         ;;
 esac
