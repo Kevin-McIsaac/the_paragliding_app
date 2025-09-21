@@ -1185,12 +1185,6 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                               value: 'v${_airspaceCacheStats!['summary']['database_version'] ?? 'Unknown'}',
                             ),
                             AppStatRow.dataManagement(
-                              label: 'Data Compression',
-                              value: _airspaceCacheStats!['summary']['compression_ratio'] != null
-                                  ? '${double.parse(_airspaceCacheStats!['summary']['compression_ratio'].toString()).toStringAsFixed(1)}x'
-                                  : 'N/A',
-                            ),
-                            AppStatRow.dataManagement(
                               label: 'Index Overhead',
                               value: '~${((10.72 - 3.4) / 3.4 * 100).toStringAsFixed(0)}%', // Estimated from our investigation
                             ),

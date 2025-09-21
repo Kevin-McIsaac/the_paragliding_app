@@ -38,11 +38,11 @@ class AppEmptyState extends StatelessWidget {
   }) {
     return AppEmptyState(
       title: 'No flights recorded yet',
-      message: 'Tap the + button to log your first flight',
+      message: 'Import your flights as IGC files',
       icon: Icons.flight_takeoff,
       onAction: onAddFlight,
-      actionButtonText: 'Add Flight',
-      actionButtonIcon: Icons.add,
+      actionButtonText: 'Import IGC Files',
+      actionButtonIcon: Icons.file_upload,
     );
   }
 

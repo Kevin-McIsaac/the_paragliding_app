@@ -465,7 +465,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
                       onAddFlight: () async {
                         final result = await Navigator.of(context).push<bool>(
                           MaterialPageRoute(
-                            builder: (context) => const AddFlightScreen(),
+                            builder: (context) => const IgcImportScreen(),
                           ),
                         );
                         
