@@ -271,56 +271,57 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
           ),
         ),
         const SizedBox(height: 8),
-        RadioGroup<MapProvider>(
-          groupValue: _selectedMapProvider,
-          onChanged: (value) => setState(() {
-            _selectedMapProvider = value!;
-            _applyFiltersDebounced();
-          }),
-          child: Column(
-            children: MapProvider.values.map((provider) =>
-              InkWell(
-                onTap: () => setState(() {
-                  _selectedMapProvider = provider;
-                  _applyFiltersDebounced();
-                }),
-                borderRadius: BorderRadius.circular(4),
-                child: Container(
-                  height: 24,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Transform.scale(
-                        scale: 0.7,
-                        child: Radio<MapProvider>(
-                          value: provider,
-                          activeColor: Colors.blue,
-                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: MapProvider.values.map((provider) =>
+            InkWell(
+              onTap: () => setState(() {
+                _selectedMapProvider = provider;
+                _applyFiltersDebounced();
+              }),
+              borderRadius: BorderRadius.circular(4),
+              child: Container(
+                height: 24,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: Radio<MapProvider>(
+                        value: provider,
+                        groupValue: _selectedMapProvider,
+                        onChanged: (value) => setState(() {
+                          _selectedMapProvider = value!;
+                          _applyFiltersDebounced();
+                        }),
+                        activeColor: Colors.blue,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Tooltip(
+                        message: provider.tooltip,
+                        textStyle: const TextStyle(color: Colors.white, fontSize: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1E1E1E),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.white24),
+                        ),
+                        child: Text(
+                          provider.shortName,
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      const SizedBox(width: 4),
-                      Flexible(
-                        child: Tooltip(
-                          message: provider.tooltip,
-                          textStyle: const TextStyle(color: Colors.white, fontSize: 12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1E1E1E),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: Colors.white24),
-                          ),
-                          child: Text(
-                            provider.shortName,
-                            style: const TextStyle(color: Colors.white, fontSize: 12),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-            ).toList(),
-          ),
+            ),
+          ).toList(),
         ),
       ],
     );
@@ -359,8 +360,9 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Transform.scale(
-                    scale: 0.7,
+                  SizedBox(
+                    width: 20,
+                    height: 20,
                     child: Checkbox(
                       value: _sitesEnabled,
                       onChanged: (value) => setState(() {
@@ -371,6 +373,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                       checkColor: Colors.white,
                       side: const BorderSide(color: Colors.white54),
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
                     ),
                   ),
                   const SizedBox(width: 4),
@@ -403,8 +406,9 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Transform.scale(
-                    scale: 0.7,
+                  SizedBox(
+                    width: 20,
+                    height: 20,
                     child: Checkbox(
                       value: _airspaceEnabled,
                       onChanged: (value) => setState(() {
@@ -415,6 +419,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                       checkColor: Colors.white,
                       side: const BorderSide(color: Colors.white54),
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
                     ),
                   ),
                   const SizedBox(width: 4),
@@ -450,8 +455,9 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Transform.scale(
-                      scale: 0.7,
+                    SizedBox(
+                      width: 20,
+                      height: 20,
                       child: Checkbox(
                         value: _clippingEnabled,
                         onChanged: (value) {
@@ -464,6 +470,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                         checkColor: Colors.white,
                         side: const BorderSide(color: Colors.white54),
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
                       ),
                     ),
                     const SizedBox(width: 4),
