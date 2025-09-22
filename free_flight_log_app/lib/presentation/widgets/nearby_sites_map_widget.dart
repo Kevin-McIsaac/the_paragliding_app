@@ -372,15 +372,15 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
   /// Load sites for the given bounds
   Future<void> _loadSitesForBounds(fm.LatLngBounds bounds) async {
-    // Always notify parent to track bounds, even when sites are disabled
-    // This ensures bounds are available when sites are toggled back on
-    if (widget.onBoundsChanged != null) {
-      widget.onBoundsChanged!(bounds);
-    }
-
     // Skip loading sites if they're disabled
     if (!widget.sitesEnabled) {
       return;
+    }
+
+    // Only notify parent to track bounds when sites are enabled
+    // This prevents unnecessary pipeline execution when sites are disabled
+    if (widget.onBoundsChanged != null) {
+      widget.onBoundsChanged!(bounds);
     }
   }
 

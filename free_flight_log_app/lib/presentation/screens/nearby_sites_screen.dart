@@ -199,6 +199,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   }
 
   Future<Position?> _updateUserLocation() async {
+    if (!mounted) return null;
+
     setState(() {
       _isLocationLoading = true;
     });
@@ -280,6 +282,17 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
 
   void _updateDisplayedSites() {
+    // Skip all site processing if sites are disabled
+    if (!_sitesEnabled) {
+      // Clear displayed sites to ensure UI is consistent
+      if (mounted) {
+        setState(() {
+          _displayedSites = [];
+        });
+      }
+      return;
+    }
+
     final stopwatch = Stopwatch()..start();
 
     // Convert UnifiedSites to ParaglidingSites for backward compatibility
@@ -304,10 +317,12 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     // Sites are loaded via bounds-based filtering, no distance filtering needed
     
     stopwatch.stop();
-    
-    setState(() {
-      _displayedSites = filteredSites;
-    });
+
+    if (mounted) {
+      setState(() {
+        _displayedSites = filteredSites;
+      });
+    }
     
     // Count flown vs new sites for logging
     final flownSites = filteredSites.where((site) {
@@ -429,6 +444,11 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
   // Bounds-based loading methods (copied from EditSiteScreen)
   void _onBoundsChanged(LatLngBounds bounds) {
+    // Skip bounds processing if sites are disabled
+    if (!_sitesEnabled) {
+      return;
+    }
+
     // Debounce the bounds change to prevent excessive API calls
     _debounceTimer?.cancel();
     _debounceTimer = Timer(const Duration(milliseconds: _debounceDurationMs), () {
@@ -448,84 +468,94 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       }
     }
     _currentBounds = bounds;
-    _loadSitesForBounds(bounds);
+    _loadAllMapDataForBounds(bounds);
   }
 
-  Future<void> _loadSitesForBounds(LatLngBounds bounds) async {
-    if (_isLoadingSites) {
+  /// Unified method to load all map data (sites and trigger airspace) in parallel
+  Future<void> _loadAllMapDataForBounds(LatLngBounds bounds) async {
+    // Skip loading if sites are disabled (airspace loads independently in map widget)
+    if (!_sitesEnabled) {
       return;
     }
 
-    // Skip loading sites if they're disabled
-    if (!_sitesEnabled) {
+    if (_isLoadingSites) {
       return;
     }
 
     // Create a unique key for these bounds to prevent duplicate requests
     final boundsKey = '${bounds.north.toStringAsFixed(6)}_${bounds.south.toStringAsFixed(6)}_${bounds.east.toStringAsFixed(6)}_${bounds.west.toStringAsFixed(6)}';
     if (_lastLoadedBoundsKey == boundsKey) {
-      LoggingService.info('Sites loading skipped - same bounds already loaded');
+      LoggingService.info('Parallel map data loading skipped - same bounds already loaded');
       return; // Same bounds already loaded
     }
+
+    if (!mounted) return;
+
+    final stopwatch = Stopwatch()..start();
 
     setState(() {
       _isLoadingSites = true;
     });
 
-    LoggingService.info('Starting site load for bounds using SiteBoundsLoader: $boundsKey');
-
     try {
-      // Use the new unified SiteBoundsLoader
-      final result = await SiteBoundsLoader.instance.loadSitesForBounds(
-        bounds,
-        apiLimit: 50,
-        includeFlightCounts: true,
+      // Build list of futures to load in parallel
+      final futures = <Future>[];
+
+      // Always load sites when sites are enabled
+      futures.add(
+        SiteBoundsLoader.instance.loadSitesForBounds(
+          bounds,
+          apiLimit: 50,
+          includeFlightCounts: true,
+        ).then((result) {
+          if (mounted) {
+            // Store unified sites
+            _allUnifiedSites = result.sites;
+            // Build flight status map for backward compatibility
+            _siteFlightStatus = {};
+            for (final site in result.sites) {
+              final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
+              _siteFlightStatus[siteKey] = site.hasFlights;
+            }
+
+            // Update displayed sites with the new bounds data
+            _updateDisplayedSites();
+          }
+        }),
       );
+
+      // Load all data in parallel
+      await Future.wait(futures);
 
       if (mounted) {
         setState(() {
-          // Store unified sites
-          _allUnifiedSites = result.sites;
-
-          // Build flight status map for backward compatibility
-          _siteFlightStatus = {};
-          for (final site in result.sites) {
-            final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
-            _siteFlightStatus[siteKey] = site.hasFlights;
-          }
-
           _isLoadingSites = false;
-
-          // Clear pinned site only if not from auto-jump or search is no longer active
-          if (!_searchManager.state.pinnedSiteIsFromAutoJump || _searchManager.state.query.isEmpty) {
-            // Note: SearchManager handles pinned site clearing internally
-            // No need to manually clear here anymore
-          }
-
-          // Update displayed sites with the new bounds data
-          _updateDisplayedSites();
         });
 
         // Mark these bounds as loaded to prevent duplicate requests
         _lastLoadedBoundsKey = boundsKey;
 
-        LoggingService.structured('BOUNDS_SITES_LOADED', {
-          'total_sites': result.sites.length,
-          'flown_sites': result.flownSites.length,
-          'new_sites': result.newSites.length,
+        stopwatch.stop();
+
+        LoggingService.structured('PARALLEL_MAP_DATA_LOADED', {
           'bounds_key': boundsKey,
+          'sites_count': _allUnifiedSites.length,
+          'flown_sites': _allUnifiedSites.where((s) => s.hasFlights).length,
+          'new_sites': _allUnifiedSites.where((s) => !s.hasFlights).length,
+          'load_time_ms': stopwatch.elapsedMilliseconds,
+          'parallel_loading': true,
         });
       }
-    } catch (e) {
-      LoggingService.error('NearbySitesScreen: Error loading sites for bounds', e);
+    } catch (error, stackTrace) {
+      LoggingService.error('Failed to load parallel map data', error, stackTrace);
       if (mounted) {
         setState(() {
           _isLoadingSites = false;
-          // Note: SearchManager handles pinned site state internally
         });
       }
     }
   }
+
 
 
   void _showSiteDetailsDialog({required ParaglidingSite paraglidingSite}) {
@@ -632,7 +662,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         if (_currentBounds != null) {
           // Force reload by clearing the last loaded bounds key
           _lastLoadedBoundsKey = '';
-          _loadSitesForBounds(_currentBounds!);
+          _loadAllMapDataForBounds(_currentBounds!);
         }
         LoggingService.action('MapFilter', 'sites_enabled', {'reloading_sites': true, 'has_bounds': _currentBounds != null});
       }
