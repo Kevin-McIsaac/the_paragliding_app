@@ -143,8 +143,8 @@ enum IcaoClass {
     'None',
     'Class None',
     'No ICAO class assigned in the OpenAIP system',
-    Color(0xFF000000),  // Black border
-    Color(0x40000000),  // 25% opacity black fill
+    Color(0x66808080),  // 40% opacity grey border
+    Color(0x40808080),  // 25% opacity grey fill
   );
 
   const IcaoClass(
