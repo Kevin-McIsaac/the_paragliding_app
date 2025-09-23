@@ -76,8 +76,6 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   @override
   void initState() {
     super.initState();
-    PerformanceMonitor.startOperation('FlightTrack2D_initState');
-    
     LoggingService.action('FlightTrack2D', 'Widget initialization started', {
       'flight_id': widget.flight.id,
       'has_track': widget.flight.trackLogPath != null,
@@ -87,11 +85,6 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     _loadTrackData();
     _loadSiteData();
     _loadClosingDistanceThreshold();
-    
-    PerformanceMonitor.endOperation('FlightTrack2D_initState', metadata: {
-      'flight_id': widget.flight.id,
-      'has_track': widget.flight.trackLogPath != null,
-    });
   }
 
   @override

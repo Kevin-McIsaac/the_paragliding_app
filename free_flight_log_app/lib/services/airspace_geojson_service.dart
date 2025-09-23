@@ -11,11 +11,10 @@ import '../services/airspace_identification_service.dart';
 import '../services/airspace_metadata_cache.dart';
 import '../services/airspace_geometry_cache.dart';
 import '../services/airspace_disk_cache.dart';
-import '../services/airspace_performance_logger.dart';
 import '../services/airspace_country_service.dart';
 import '../data/models/airspace_cache_models.dart';
 import '../data/models/airspace_enums.dart';
-import '../utils/performance_monitor.dart';
+import '../utils/airspace_pipeline_metrics.dart';
 
 /// Data structure for airspace information
 class AirspaceData {
@@ -323,13 +322,6 @@ class AirspaceGeoJsonService {
 
   final AirspaceMetadataCache _metadataCache = AirspaceMetadataCache.instance;
   final AirspaceGeometryCache _geometryCache = AirspaceGeometryCache.instance;
-  final AirspacePerformanceLogger _performanceLogger = AirspacePerformanceLogger.instance;
-
-
-  // Initialize performance monitoring
-  void initialize() {
-    _performanceLogger.startPeriodicLogging(interval: const Duration(minutes: 2));
-  }
 
   // Track currently visible airspace types
   Set<AirspaceType> _currentVisibleTypes = <AirspaceType>{};
@@ -476,14 +468,9 @@ class AirspaceGeoJsonService {
     double maxAltitudeFt,
     bool enableClipping,
   ) async {
-    final overallStopwatch = Stopwatch()..start();
-    final memoryBefore = PerformanceMonitor.getMemoryUsageMB();
-
-    LoggingService.structuredLazy('DIRECT_POLYGON_FETCH', () => {
-      'bounds': '${bounds.west},${bounds.south},${bounds.east},${bounds.north}',
-      'max_altitude_ft': maxAltitudeFt,
-      'clipping_enabled': enableClipping,
-    });
+    final pipelineMetrics = AirspacePipelineMetrics();
+    pipelineMetrics.startPipeline();
+    pipelineMetrics.startStage('database_query');
 
     // Convert excluded types to integer codes for SQL filtering
     final excludedTypeCodes = excludedTypes.map((type) => type.code).toSet();
@@ -502,25 +489,23 @@ class AirspaceGeoJsonService {
       orderByAltitude: enableClipping, // Order by altitude when clipping is enabled
     );
 
-    // Convert directly to Flutter Map polygons
-    final processingStopwatch = Stopwatch()..start();
+    pipelineMetrics.startStage('data_processing');
     final polygons = await _processGeometriesToPolygons(
       geometries,
       opacity,
       bounds,
       enableClipping,
+      pipelineMetrics,
     );
-    processingStopwatch.stop();
 
-    overallStopwatch.stop();
-    final memoryAfter = PerformanceMonitor.getMemoryUsageMB();
-
-    LoggingService.structuredLazy('DIRECT_POLYGON_COMPLETE', () => {
-      'total_ms': overallStopwatch.elapsedMilliseconds,
-      'processing_ms': processingStopwatch.elapsedMilliseconds,
-      'polygon_count': polygons.length,
-      'memory_delta_mb': (memoryAfter - memoryBefore).toStringAsFixed(1),
-    });
+    pipelineMetrics.endPipeline(
+      airspaceCount: polygons.length,
+      bounds: '${bounds.west},${bounds.south},${bounds.east},${bounds.north}',
+      additionalData: {
+        'max_altitude_ft': maxAltitudeFt,
+        'clipping_enabled': enableClipping,
+      },
+    );
 
     return polygons;
   }
@@ -1009,7 +994,6 @@ class AirspaceGeoJsonService {
   Future<void> clearCache() async {
     await _metadataCache.clearAllCache();
     await _geometryCache.clearAllCache();
-    await _performanceLogger.logPerformanceSummary();
     LoggingService.info('Cleared all airspace cache data');
   }
 
@@ -1019,10 +1003,6 @@ class AirspaceGeoJsonService {
     LoggingService.info('Cleaned expired airspace cache data');
   }
 
-  /// Log cache efficiency report
-  Future<void> logCacheEfficiency() async {
-    await _performanceLogger.logCacheEfficiency();
-  }
 
   /// Process cached geometries directly to Flutter Map polygons without GeoJSON conversion
   Future<List<fm.Polygon>> _processGeometriesToPolygons(
@@ -1030,7 +1010,9 @@ class AirspaceGeoJsonService {
     double opacity,
     fm.LatLngBounds viewport,
     bool enableClipping,
+    AirspacePipelineMetrics pipelineMetrics,
   ) async {
+    pipelineMetrics.startStage('polygon_conversion');
     final polygons = <fm.Polygon>[];
     final identificationPolygons = <AirspacePolygonData>[];
     final allIdentificationPolygons = <AirspacePolygonData>[];
@@ -1114,8 +1096,7 @@ class AirspaceGeoJsonService {
       }
 
       if (enableClipping) {
-        // Apply polygon clipping to remove overlapping areas
-        final clippingStopwatch = Stopwatch()..start();
+        pipelineMetrics.startStage('clipping');
 
         // Use optimized clipping if any geometry has ClipperData
         final hasClipperData = geometries.any((g) => g.clipperData != null);
@@ -1124,17 +1105,10 @@ class AirspaceGeoJsonService {
         // Always use optimized path with ClipperData
         clippedPolygons = _applyPolygonClippingOptimized(geometries, polygonsWithData, viewport);
 
-        clippingStopwatch.stop();
+        pipelineMetrics.startStage('flutter_conversion');
 
         // Convert clipped polygons back to flutter_map format
         polygons.addAll(_convertClippedPolygonsToFlutterMap(clippedPolygons, opacity));
-
-        LoggingService.structuredLazy('DIRECT_CLIPPING_PERFORMANCE', () => {
-          'polygons_input': polygonsWithData.length,
-          'polygons_output': polygons.length,
-          'clipping_time_ms': clippingStopwatch.elapsedMilliseconds,
-          'optimized': hasClipperData,
-        });
       } else {
         // No clipping - just extract polygons in sorted order
         for (final item in polygonsWithData) {
@@ -1152,19 +1126,10 @@ class AirspaceGeoJsonService {
     // Update visible types
     _currentVisibleTypes = visibleIncludedTypes;
 
-    LoggingService.structuredLazy('DIRECT_POLYGON_PROCESSING', () => {
-      'total_geometries': geometries.length,
-      'polygons_rendered': polygons.length,
-      'note': 'All filtering performed at SQL level',
-    });
 
     return polygons;
   }
 
-  /// Dispose resources
-  void dispose() {
-    _performanceLogger.dispose();
-  }
 }
 
 /// Helper class for direct Int32 to Clipper2 conversion

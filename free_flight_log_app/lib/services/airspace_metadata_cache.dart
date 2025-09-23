@@ -30,7 +30,6 @@ class AirspaceMetadataCache {
     required String countryCode,
     required List<Map<String, dynamic>> features,
   }) async {
-    final stopwatch = Stopwatch()..start();
 
     LoggingService.debug('Caching ${features.length} features for country $countryCode');
 
@@ -53,12 +52,7 @@ class AirspaceMetadataCache {
       // Update memory cache for UI purposes
       _updateCountryCache(countryCode, airspaceIds.toSet());
 
-      stopwatch.stop();
-      LoggingService.performance(
-        'Stored country airspaces',
-        stopwatch.elapsed,
-        'country=$countryCode, airspaces=${airspaceIds.length}',
-      );
+      LoggingService.info('Stored $countryCode airspaces: ${airspaceIds.length} geometries');
     } catch (e, stack) {
       LoggingService.error('Failed to store country airspaces', e, stack);
     }
@@ -78,7 +72,6 @@ class AirspaceMetadataCache {
     bool orderByAltitude = false,
   }) async {
 
-    final stopwatch = Stopwatch()..start();
 
     // Use the enhanced spatial query with SQL-level filtering
     final viewportGeometries = await _diskCache.getGeometriesInBounds(
@@ -92,14 +85,7 @@ class AirspaceMetadataCache {
       orderByAltitude: orderByAltitude,
     );
 
-    stopwatch.stop();
-
-    // Log the optimized performance
-    LoggingService.performance(
-      '[SPATIAL_VIEWPORT_QUERY]',
-      stopwatch.elapsed,
-      'viewport_geometries=${viewportGeometries.length}',
-    );
+    LoggingService.debug('Viewport query found ${viewportGeometries.length} geometries');
 
     return viewportGeometries;
   }
