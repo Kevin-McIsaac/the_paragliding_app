@@ -508,7 +508,7 @@ class AirspaceGeoJsonService {
     // Check if we have loaded countries
     final countries = await AirspaceDiskCache.instance.getCachedCountries();
     if (countries.isEmpty) {
-      LoggingService.warning('No countries loaded for airspace display');
+      LoggingService.debug('No countries loaded for airspace display');
       return [];
     }
 

@@ -68,7 +68,7 @@ class CardExpansionManager {
         final key = _getPreferenceKey(cardType);
         await prefs.setBool(key, expanded);
         
-        LoggingService.debug('CardExpansionManager: Saved expansion state for "$cardType" = $expanded');
+        // LoggingService.debug('CardExpansionManager: Saved expansion state for "$cardType" = $expanded');
       } catch (e) {
         LoggingService.error('CardExpansionManager: Failed to save expansion state for "$cardType"', e);
       }
@@ -91,7 +91,7 @@ class CardExpansionManager {
         _sessionStates[cardType] = storedState ?? _defaultStates[cardType]!;
       }
       
-      LoggingService.debug('CardExpansionManager: Loaded expansion states for screen "$_screenId"');
+      // LoggingService.debug('CardExpansionManager: Loaded expansion states for screen "$_screenId"');
     } catch (e) {
       LoggingService.error('CardExpansionManager: Failed to load expansion states for screen "$_screenId"', e);
       // Fall back to default states
