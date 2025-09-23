@@ -1,4 +1,7 @@
-import '../../services/airspace_geojson_service.dart' show ClipperData;
+import 'package:flutter_map/flutter_map.dart' as fm;
+import 'package:latlong2/latlong.dart';
+import '../../services/airspace_geojson_service.dart' show ClipperData, AirspaceData, AirspaceStyle;
+import 'airspace_enums.dart';
 
 /// Represents a unique airspace geometry stored in the cache
 class CachedAirspaceGeometry {
@@ -12,6 +15,11 @@ class CachedAirspaceGeometry {
   final int compressedSize;
   final int uncompressedSize;
   final int? lowerAltitudeFt;  // Pre-computed altitude from database
+
+  // Cached computed values to avoid redundant calculations
+  fm.LatLngBounds? _cachedBounds;
+  AirspaceData? _cachedAirspaceData;
+  AirspaceStyle? _cachedStyle;
 
   CachedAirspaceGeometry({
     required this.id,
@@ -28,6 +36,81 @@ class CachedAirspaceGeometry {
 
   // fromJson and toJson methods removed - data loaded directly from database
 
+  /// Get cached bounds or calculate and cache if not available
+  fm.LatLngBounds getBounds() {
+    if (_cachedBounds != null) return _cachedBounds!;
+
+    // Calculate bounds from ClipperData
+    _cachedBounds = _calculateBoundsFromClipperData();
+    return _cachedBounds!;
+  }
+
+  /// Get cached AirspaceData or create and cache if not available
+  AirspaceData getAirspaceData() {
+    if (_cachedAirspaceData != null) return _cachedAirspaceData!;
+
+    // Create AirspaceData from properties
+    _cachedAirspaceData = _createAirspaceDataFromProperties();
+    return _cachedAirspaceData!;
+  }
+
+  /// Get cached style or compute and cache if not available
+  AirspaceStyle getStyle(AirspaceStyle Function(AirspaceData) styleResolver) {
+    if (_cachedStyle != null) return _cachedStyle!;
+
+    // Compute style using the provided resolver
+    _cachedStyle = styleResolver(getAirspaceData());
+    return _cachedStyle!;
+  }
+
+  /// Calculate bounds from ClipperData coordinates
+  fm.LatLngBounds _calculateBoundsFromClipperData() {
+    const double coordPrecision = 10000000.0;
+
+    double minLat = 90.0, maxLat = -90.0;
+    double minLng = 180.0, maxLng = -180.0;
+
+    // Iterate through coordinates (stored as lng,lat pairs in Int32)
+    for (int i = 0; i < clipperData.coords.length; i += 2) {
+      final lng = clipperData.coords[i] / coordPrecision;
+      final lat = clipperData.coords[i + 1] / coordPrecision;
+
+      minLat = lat < minLat ? lat : minLat;
+      maxLat = lat > maxLat ? lat : maxLat;
+      minLng = lng < minLng ? lng : minLng;
+      maxLng = lng > maxLng ? lng : maxLng;
+    }
+
+    return fm.LatLngBounds(
+      LatLng(minLat, minLng),
+      LatLng(maxLat, maxLng),
+    );
+  }
+
+  /// Create AirspaceData from properties
+  AirspaceData _createAirspaceDataFromProperties() {
+    final icaoClass = (properties['class'] ?? properties['icaoClass']) as int?;
+    final upperLimit = properties['upperLimit'] as Map<String, dynamic>?;
+    final lowerLimit = properties['lowerLimit'] as Map<String, dynamic>?;
+    final country = properties['country'] as String?;
+
+    return AirspaceData(
+      name: name,
+      type: AirspaceType.fromCode(typeCode),
+      icaoClass: IcaoClass.fromCode(icaoClass),
+      upperLimit: upperLimit,
+      lowerLimit: lowerLimit,
+      country: country,
+      lowerAltitudeFt: lowerAltitudeFt,
+    );
+  }
+
+  /// Clear cached values (useful when properties are updated)
+  void clearCache() {
+    _cachedBounds = null;
+    _cachedAirspaceData = null;
+    _cachedStyle = null;
+  }
 
   // Helper methods removed - using ClipperData for all geometry operations
 

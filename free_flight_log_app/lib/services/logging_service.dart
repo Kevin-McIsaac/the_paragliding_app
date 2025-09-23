@@ -122,10 +122,47 @@ class LoggingService {
 
   /// Log structured data with key-value pairs for better Claude parsing
   static void structured(String category, Map<String, dynamic> data) {
+    // Skip expensive operations in production for non-critical logs
+    if (!kDebugMode && _isNonCriticalStructuredLog(category)) {
+      return;
+    }
+
     final pairs = data.entries
         .map((e) => '${e.key}=${_formatValue(e.value)}')
         .join(' | ');
     _logger.i('[$category] $pairs');
+  }
+
+  /// Lazy evaluation version of structured logging - only builds data if logging enabled
+  static void structuredLazy(String category, Map<String, dynamic> Function() dataBuilder) {
+    // Skip expensive operations in production for non-critical logs
+    if (!kDebugMode && _isNonCriticalStructuredLog(category)) {
+      return;
+    }
+
+    // Only build the expensive data if we're actually going to log it
+    if (Logger.level.index <= Level.info.index) {
+      final data = dataBuilder();
+      structured(category, data);
+    }
+  }
+
+  /// Check if this is a non-critical structured log that can be skipped in production
+  static bool _isNonCriticalStructuredLog(String category) {
+    // Skip verbose performance logs in production
+    const nonCriticalCategories = {
+      'DIRECT_POLYGON_FETCH',
+      'DIRECT_POLYGON_COMPLETE',
+      'SPATIAL_GEOJSON_FETCH',
+      'GEOJSON_MODE_COMPLETE',
+      'DIRECT_CLIPPING_PERFORMANCE',
+      'BATCH_GEOMETRY_FETCH',
+      'SPATIAL_QUERY_COMPLETE',
+      'SPATIAL_VIEWPORT_QUERY',
+      'DIRECT_POLYGON_PROCESSING',
+    };
+
+    return nonCriticalCategories.contains(category);
   }
 
   /// Log operation summary with results

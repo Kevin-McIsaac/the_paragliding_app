@@ -64,31 +64,6 @@ class AirspaceMetadataCache {
     }
   }
 
-  /// Get airspaces for selected countries (simplified - now returns all geometries)
-  Future<List<CachedAirspaceGeometry>> getAirspacesForCountries(List<String> countryCodes) async {
-    if (countryCodes.isEmpty) {
-      return [];
-    }
-
-    final stopwatch = Stopwatch()..start();
-
-    // Since we no longer track by country, use spatial query with no bounds to get all geometries
-    final geometries = await _diskCache.getGeometriesInBounds(
-      west: -180.0,
-      south: -90.0,
-      east: 180.0,
-      north: 90.0,
-    );
-
-    stopwatch.stop();
-    LoggingService.performance(
-      'Retrieved airspaces',
-      stopwatch.elapsed,
-      'geometries=${geometries.length}',
-    );
-
-    return geometries;
-  }
 
   /// Get airspaces for viewport using optimized spatial query with filtering
   /// All filtering is performed at the database level for optimal performance
