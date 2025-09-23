@@ -534,3 +534,4 @@ Use format `file_path:line_number` in logs:
 - Call sites in local DB "Flown Sites" and sites from PGE API "New Sites"
 - always run flutter_controller_enhanced in background
 - DOnt try to contol the app
+- don't try to controll app with adb
