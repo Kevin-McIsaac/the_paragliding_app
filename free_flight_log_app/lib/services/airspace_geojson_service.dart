@@ -529,10 +529,7 @@ class AirspaceGeoJsonService {
     final polygons = await _processGeometriesToPolygons(
       geometries,
       opacity,
-      excludedTypes,
-      excludedClasses,
       bounds,
-      maxAltitudeFt,
       enableClipping,
     );
     processingStopwatch.stop();
@@ -620,290 +617,6 @@ class AirspaceGeoJsonService {
 
   // Removed unused OpenAIP mappings: _openAipUnits, _openAipReferenceDatums
 
-
-
-
-  /// Parse GeoJSON string and return styled polygons for flutter_map
-  /// Also populates the AirspaceIdentificationService with polygon data
-  /// Filters polygons based on user-excluded airspace types
-  /// Optionally clips overlapping polygons for visual clarity
-  Future<List<fm.Polygon>> parseAirspaceGeoJson(
-    String geoJsonString,
-    double opacity,
-    Map<AirspaceType, bool> excludedTypes,
-    Map<IcaoClass, bool> excludedIcaoClasses,
-    fm.LatLngBounds viewport,
-    double maxAltitudeFt,
-    bool enableClipping,
-  ) async {
-    try {
-      // Performance timing for each stage
-      final totalStopwatch = Stopwatch()..start();
-      final parsingStopwatch = Stopwatch()..start();
-
-      // Use geobase to parse the GeoJSON data
-      final featureCollection = geo.FeatureCollection.parse(geoJsonString);
-      parsingStopwatch.stop();
-
-      List<fm.Polygon> polygons = <fm.Polygon>[];
-      List<AirspacePolygonData> identificationPolygons = <AirspacePolygonData>[];
-      List<AirspacePolygonData> allIdentificationPolygons = <AirspacePolygonData>[]; // For tooltip - includes ALL airspaces
-      final Set<AirspaceType> visibleIncludedTypes = <AirspaceType>{}; // Track visible included types
-
-      // Filtering counters for summary logging
-      int filteredByType = 0;
-      int filteredByClass = 0;
-      int filteredByElevation = 0;
-      int filteredByViewport = 0;
-      final Map<AirspaceType, int> filteredTypeDetails = {};
-      final Map<IcaoClass, int> filteredClassDetails = {};
-
-      // Start filtering and polygon creation timing
-      final filteringStopwatch = Stopwatch()..start();
-
-      for (final feature in featureCollection.features) {
-        final geometry = feature.geometry;
-        final properties = feature.properties;
-
-        if (geometry != null) {
-          // Create airspace data from properties
-          final airspaceData = AirspaceData(
-            name: properties['name']?.toString() ?? 'Unknown Airspace',
-            type: AirspaceType.fromCode((properties['type'] as int?) ?? 0),
-            icaoClass: IcaoClass.fromCode(properties['class'] as int?),
-            upperLimit: properties['upperLimit'] as Map<String, dynamic>?,
-            lowerLimit: properties['lowerLimit'] as Map<String, dynamic>?,
-            country: properties['country']?.toString(),
-          );
-
-          // Always add to identification polygons first (for tooltip - regardless of filters)
-          if (geometry is geo.GeometryCollection) {
-            // Handle geometry collections
-            for (final geom in geometry.geometries) {
-              final result = _createPolygonFromGeometry(geom, properties, opacity);
-              if (result != null) {
-                allIdentificationPolygons.add(AirspacePolygonData(
-                  points: result.points,
-                  airspaceData: airspaceData,
-                ));
-              }
-            }
-          } else {
-            final result = _createPolygonFromGeometry(geometry, properties, opacity);
-            if (result != null) {
-              allIdentificationPolygons.add(AirspacePolygonData(
-                points: result.points,
-                airspaceData: airspaceData,
-              ));
-            }
-          }
-
-          // Filter based on excluded airspace types - skip only if explicitly excluded
-          // This logic ensures unmapped types are shown by default
-          if (excludedTypes[airspaceData.type] == true) {
-            filteredByType++;
-            filteredTypeDetails[airspaceData.type] = (filteredTypeDetails[airspaceData.type] ?? 0) + 1;
-            continue; // Skip this airspace only if its type is explicitly excluded
-          }
-
-          // Filter based on excluded ICAO classes - skip only if explicitly excluded
-          final icaoClassKey = airspaceData.icaoClass;
-          if (excludedIcaoClasses[icaoClassKey] == true) {
-            filteredByClass++;
-            filteredClassDetails[icaoClassKey] = (filteredClassDetails[icaoClassKey] ?? 0) + 1;
-            continue; // Skip this airspace only if its ICAO class is explicitly excluded
-          }
-
-          // Filter based on maximum elevation setting
-          // Skip airspaces that START above the elevation filter
-          if (airspaceData.getLowerAltitudeInFeet() > maxAltitudeFt) {
-            filteredByElevation++;
-            continue; // Skip airspaces that start above the elevation filter
-          }
-
-          // Track this type as visible and included
-          visibleIncludedTypes.add(airspaceData.type);
-
-          // PERFORMANCE OPTIMIZATION: Check viewport bounds BEFORE creating polygon objects
-          // Calculate rough bounds from geometry to avoid expensive polygon creation
-          fm.LatLngBounds? roughBounds;
-
-          if (geometry is geo.Polygon) {
-            roughBounds = _calculateRoughBoundsFromGeometry(geometry);
-          } else if (geometry is geo.MultiPolygon && geometry.polygons.isNotEmpty) {
-            roughBounds = _calculateRoughBoundsFromGeometry(geometry.polygons.first);
-          } else if (geometry is geo.GeometryCollection && geometry.geometries.isNotEmpty) {
-            // For collections, check first geometry
-            final firstGeom = geometry.geometries.first;
-            if (firstGeom is geo.Polygon) {
-              roughBounds = _calculateRoughBoundsFromGeometry(firstGeom);
-            }
-          }
-
-          // Skip if completely outside viewport (early bounds check)
-          if (roughBounds != null && !_isInViewport(roughBounds, viewport)) {
-            filteredByViewport++;
-            continue; // Skip this airspace - it's outside the viewport
-          }
-
-          // Handle different geometry types
-          if (geometry is geo.GeometryCollection) {
-            // Handle geometry collections
-            for (final geom in geometry.geometries) {
-              final result = _createPolygonFromGeometry(geom, properties, opacity);
-              if (result != null) {
-                polygons.add(result.polygon);
-                identificationPolygons.add(AirspacePolygonData(
-                  points: result.points,
-                  airspaceData: airspaceData,
-                ));
-              }
-            }
-          } else {
-            final result = _createPolygonFromGeometry(geometry, properties, opacity);
-            if (result != null) {
-              polygons.add(result.polygon);
-              identificationPolygons.add(AirspacePolygonData(
-                points: result.points,
-                airspaceData: airspaceData,
-              ));
-            }
-          }
-        }
-      }
-
-      filteringStopwatch.stop();
-
-      // Log early viewport filtering performance
-      LoggingService.structured('VIEWPORT_PRE_FILTERING', {
-        'total_features': featureCollection.features.length,
-        'viewport_visible': polygons.length,
-        'filtered_by_viewport': filteredByViewport,
-        'filtered_out_early': featureCollection.features.length - polygons.length - filteredByType - filteredByClass - filteredByElevation,
-        'viewport_bounds': '${viewport.south},${viewport.west},${viewport.north},${viewport.east}',
-      });
-
-      // Sort polygons by lower altitude: highest first, lowest last
-      // This ensures lowest airspaces render on top (most visible)
-      final sortingStopwatch = Stopwatch();
-      if (polygons.isNotEmpty && identificationPolygons.isNotEmpty) {
-        sortingStopwatch.start();
-
-        // Create paired list of polygons with their altitude data
-        final polygonsWithAltitude = <({fm.Polygon polygon, AirspacePolygonData data})>[];
-        for (int i = 0; i < polygons.length; i++) {
-          polygonsWithAltitude.add((
-            polygon: polygons[i],
-            data: identificationPolygons[i],
-          ));
-        }
-
-        // Sort by lower altitude: lowest first (ascending order) for rendering and clipping
-        polygonsWithAltitude.sort((a, b) {
-          return a.data.airspaceData.getLowerAltitudeInFeet()
-              .compareTo(b.data.airspaceData.getLowerAltitudeInFeet());
-        });
-
-        sortingStopwatch.stop();
-
-        if (enableClipping) {
-          // Clipping is not supported for GeoJSON path - use direct polygon fetch for clipping
-          LoggingService.warning('Clipping requested but not available in GeoJSON path');
-        } else {
-          // No clipping - keep original polygons but maintain altitude-based rendering order
-          // Polygons are already in the list from the filtering loop above
-          // They are sorted by altitude, so lower altitude airspaces render first (bottom layer)
-          // Higher altitude airspaces render last (top layer, most visible)
-
-          // Simple actionable log
-          LoggingService.info('[AIRSPACE] Sorted ${polygons.length} polygons by altitude');
-        }
-
-        // IMPORTANT: Keep polygon order from sorting (lowest altitude first)
-        // Lower altitude airspaces render first (bottom layer)
-        // Higher altitude airspaces render last (top layer, most visible)
-        // Note: Removed reversal to show lowest altitude on top visually
-      }
-
-      // Update the identification service with polygon data (use ALL airspaces, not just filtered ones)
-      final boundsKey = _generateBoundsKeyFromGeoJson(featureCollection);
-      AirspaceIdentificationService.instance.updateAirspacePolygons(allIdentificationPolygons, boundsKey);
-
-      // Log filtering summary if anything was filtered
-      final totalFiltered = filteredByType + filteredByClass + filteredByElevation;
-      if (totalFiltered > 0) {
-        // Build a concise summary message
-        final filterBreakdown = <String>[];
-        if (filteredByType > 0) {
-          final types = filteredTypeDetails.keys.map((t) => t.abbreviation).join(',');
-          filterBreakdown.add('type=$filteredByType ($types)');
-        }
-        if (filteredByClass > 0) {
-          final classes = filteredClassDetails.keys.map((c) => c.abbreviation).join(',');
-          filterBreakdown.add('class=$filteredByClass ($classes)');
-        }
-        if (filteredByElevation > 0) {
-          filterBreakdown.add('elevation=$filteredByElevation');
-        }
-
-        LoggingService.structured('AIRSPACE_FILTERING_SUMMARY', {
-          'total_features': featureCollection.features.length,
-          'total_filtered': totalFiltered,
-          'filtered_by_type': filteredByType,
-          'filtered_by_class': filteredByClass,
-          'filtered_by_elevation': filteredByElevation,
-          'remaining_polygons': polygons.length,
-          'breakdown': filterBreakdown.join(', '),
-        });
-      }
-
-      // Actionable filtering summary (existing summary for compatibility)
-      final excludedTypeList = excludedTypes.keys.where((k) => excludedTypes[k] == true).map((k) => k.abbreviation).toList();
-      final excludedClassList = excludedIcaoClasses.keys.where((k) => excludedIcaoClasses[k] == true).map((k) => k.abbreviation).toList();
-      if (excludedTypeList.isNotEmpty || excludedClassList.isNotEmpty || maxAltitudeFt < double.infinity) {
-        final filtered = featureCollection.features.length - polygons.length;
-        String msg = '[AIRSPACE] Filtered $filtered of ${featureCollection.features.length} features';
-        if (excludedClassList.isNotEmpty) msg += ' (excluded: ${excludedClassList.join(",")})';
-        if (maxAltitudeFt < double.infinity) msg += ' (max alt: ${maxAltitudeFt.toInt()}ft)';
-        LoggingService.info(msg);
-      }
-
-      LoggingService.structured('GEOJSON_PARSING', {
-        'features_count': featureCollection.features.length,
-        'polygons_created': polygons.length,
-        'identification_polygons': identificationPolygons.length,
-        'geojson_size': geoJsonString.length,
-      });
-
-      // Update visible types with only enabled types that are present
-      _currentVisibleTypes = visibleIncludedTypes;
-
-      // Add airspace statistics logging (for debugging)
-      _logAirspaceStatistics(featureCollection);
-
-      totalStopwatch.stop();
-
-      // Log detailed performance breakdown
-      LoggingService.structured('AIRSPACE_PARSING_PERFORMANCE', {
-        'total_time_ms': totalStopwatch.elapsedMilliseconds,
-        'parsing_time_ms': parsingStopwatch.elapsedMilliseconds,
-        'filtering_time_ms': filteringStopwatch.elapsedMilliseconds,
-        'sorting_time_ms': sortingStopwatch.elapsedMilliseconds,
-        'features_count': featureCollection.features.length,
-        'polygons_created': polygons.length,
-        'filtered_by_type': filteredByType,
-        'filtered_by_class': filteredByClass,
-        'filtered_by_elevation': filteredByElevation,
-        'filtered_by_viewport': filteredByViewport,
-      });
-
-      return polygons;
-
-    } catch (error, stackTrace) {
-      LoggingService.error('Failed to parse airspace GeoJSON', error, stackTrace);
-      rethrow;
-    }
-  }
 
 
   /// Create a flutter_map Polygon from a geobase geometry
@@ -1557,10 +1270,7 @@ class AirspaceGeoJsonService {
   Future<List<fm.Polygon>> _processGeometriesToPolygons(
     List<CachedAirspaceGeometry> geometries,
     double opacity,
-    Set<AirspaceType> excludedTypes,
-    Set<IcaoClass> excludedClasses,
     fm.LatLngBounds viewport,
-    double maxAltitudeFt,
     bool enableClipping,
   ) async {
     final polygons = <fm.Polygon>[];
@@ -1701,13 +1411,10 @@ class AirspaceGeoJsonService {
     // Update visible types
     _currentVisibleTypes = visibleIncludedTypes;
 
-    LoggingService.structured('DIRECT_POLYGON_FILTERING', {
+    LoggingService.structured('DIRECT_POLYGON_PROCESSING', {
       'total_geometries': geometries.length,
-      'filtered_by_type': 0,  // Filtering now done in SQL
-      'filtered_by_class': 0,  // Filtering now done in SQL
-      'filtered_by_elevation': 0,  // Filtering now done in SQL
-      'filtered_by_viewport': 0,  // Filtering now done in SQL
       'polygons_rendered': polygons.length,
+      'note': 'All filtering performed at SQL level',
     });
 
     return polygons;
