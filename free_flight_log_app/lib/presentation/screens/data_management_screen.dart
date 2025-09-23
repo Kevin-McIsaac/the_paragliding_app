@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../utils/database_reset_helper.dart';
@@ -15,6 +16,8 @@ import '../widgets/common/app_expansion_card.dart';
 import '../widgets/common/app_stat_row.dart';
 import '../../services/airspace_geojson_service.dart';
 import '../../services/airspace_country_service.dart';
+import '../../services/pge_sites_download_service.dart';
+import '../../services/pge_sites_database_service.dart';
 
 class DataManagementScreen extends StatefulWidget {
   final bool expandPremiumMaps;
@@ -32,6 +35,11 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
   IGCCleanupStats? _cleanupStats;
   bool _isLoading = true;
   bool _dataModified = false; // Track if any data was modified
+
+  // PGE Sites state
+  Map<String, dynamic>? _pgeSitesStats;
+  PgeSitesDownloadProgress? _pgeSitesProgress;
+  StreamSubscription<PgeSitesDownloadProgress>? _downloadProgressSubscription;
   
   // Card expansion state manager (persistent for this screen)
   late CardExpansionManager _expansionManager;
@@ -63,6 +71,15 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
     _loadDatabaseStats();
     _loadBackupDiagnostics();
     _loadCesiumToken();
+    _loadPgeSitesStats();
+    _listenToDownloadProgress();
+  }
+
+  @override
+  void dispose() {
+    _downloadProgressSubscription?.cancel();
+    // Save expansion states if the manager supports it
+    super.dispose();
   }
 
   Future<void> _loadCardExpansionStates() async {
@@ -174,6 +191,142 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
         'error': e.toString(),
       });
       LoggingService.error('DataManagementScreen: Error loading Cesium token', e, stackTrace);
+    }
+  }
+
+  Future<void> _loadPgeSitesStats() async {
+    LoggingService.action('DataManagement', 'load_pge_sites_stats');
+
+    try {
+      // Initialize tables if needed
+      await PgeSitesDatabaseService.instance.initializeTables();
+
+      // Get database statistics
+      final stats = await PgeSitesDatabaseService.instance.getDatabaseStats();
+
+      // Get download status
+      final downloadStatus = await PgeSitesDownloadService.instance.getDownloadStatus();
+
+      // Format last downloaded date
+      String lastDownloaded = 'Never';
+      if (downloadStatus['downloaded_at'] != null) {
+        final downloadDate = DateTime.parse(downloadStatus['downloaded_at']);
+        final age = DateTime.now().difference(downloadDate);
+        if (age.inDays > 0) {
+          lastDownloaded = '${age.inDays} days ago';
+        } else if (age.inHours > 0) {
+          lastDownloaded = '${age.inHours} hours ago';
+        } else {
+          lastDownloaded = 'Recently';
+        }
+      }
+
+      final combinedStats = {
+        ...stats,
+        'database_size_mb': ((stats['database_size_bytes'] ?? 0) / 1024 / 1024).toStringAsFixed(1),
+        'last_downloaded': lastDownloaded,
+        'source_file_size_bytes': downloadStatus['file_size_bytes'] ?? 0,
+        'status': stats['sites_count'] > 0 ? 'Active' : 'Not downloaded',
+        'is_outdated': downloadStatus['is_outdated'] ?? false,
+      };
+
+      LoggingService.structured('PGE_SITES_STATS_LOADED', {
+        'sites_count': stats['sites_count'],
+        'database_size_mb': combinedStats['database_size_mb'],
+        'last_downloaded': lastDownloaded,
+        'is_outdated': downloadStatus['is_outdated'],
+      });
+
+      if (mounted) {
+        setState(() {
+          _pgeSitesStats = combinedStats;
+        });
+      }
+    } catch (e, stackTrace) {
+      LoggingService.error('DataManagementScreen: Error loading PGE sites stats', e, stackTrace);
+      setState(() {
+        _pgeSitesStats = {
+          'sites_count': 0,
+          'database_size_mb': '0.0',
+          'last_downloaded': 'Error',
+          'status': 'Error',
+        };
+      });
+    }
+  }
+
+  void _listenToDownloadProgress() {
+    _downloadProgressSubscription = PgeSitesDownloadService.instance.progressStream.listen((progress) {
+      if (mounted) {
+        setState(() {
+          _pgeSitesProgress = progress;
+        });
+      }
+    });
+  }
+
+  Future<void> _downloadPgeSites() async {
+    LoggingService.action('DataManagement', 'download_pge_sites');
+
+    try {
+      // Download the data
+      final downloadSuccess = await PgeSitesDownloadService.instance.downloadSitesData(
+        forceRedownload: _pgeSitesStats?['sites_count'] > 0,
+      );
+
+      if (!downloadSuccess) {
+        _showErrorDialog('Download Failed', 'Failed to download PGE sites data. Please try again.');
+        return;
+      }
+
+      // Import into database
+      _showLoadingDialog('Importing sites into database...');
+
+      final importSuccess = await PgeSitesDatabaseService.instance.importSitesData();
+
+      if (mounted) Navigator.of(context).pop(); // Close loading dialog
+
+      if (importSuccess) {
+        _showSuccessDialog(
+          'Sites Downloaded',
+          'Successfully downloaded and imported worldwide paragliding sites.'
+        );
+
+        // Reload statistics
+        await _loadPgeSitesStats();
+      } else {
+        _showErrorDialog('Import Failed', 'Failed to import sites into database.');
+      }
+
+    } catch (e, stackTrace) {
+      if (mounted) Navigator.of(context).pop(); // Close any open dialog
+      LoggingService.error('DataManagementScreen: Failed to download PGE sites', e, stackTrace);
+      _showErrorDialog('Error', 'Failed to download sites: $e');
+    }
+  }
+
+  Future<void> _clearPgeSites() async {
+    final confirmed = await _showConfirmationDialog(
+      'Clear PGE Sites Data',
+      'This will remove all downloaded ParaglidingEarth sites from the local database.\n\n'
+      'You can re-download them anytime.',
+    );
+
+    if (!confirmed) return;
+
+    LoggingService.action('DataManagement', 'clear_pge_sites');
+
+    try {
+      await PgeSitesDatabaseService.instance.clearData();
+
+      _showSuccessDialog('Data Cleared', 'PGE sites data has been removed.');
+
+      // Reload statistics
+      await _loadPgeSitesStats();
+
+    } catch (e, stackTrace) {
+      LoggingService.error('DataManagementScreen: Failed to clear PGE sites', e, stackTrace);
+      _showErrorDialog('Error', 'Failed to clear sites data: $e');
     }
   }
 
@@ -1399,7 +1552,118 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                   ),
                   
                   const SizedBox(height: 24),
-                  
+
+                  // PGE Sites Database
+                  AppExpansionCard.dataManagement(
+                    icon: Icons.public,
+                    title: 'PGE Sites Database',
+                    subtitle: _pgeSitesStats != null
+                        ? '${_pgeSitesStats!['sites_count'] ?? 0} sites • ${_pgeSitesStats!['database_size_mb'] ?? '0.0'}MB • ${_pgeSitesStats!['status'] ?? 'Unknown'}'
+                        : 'Loading...',
+                    expansionKey: 'pge_sites_db',
+                    expansionManager: _expansionManager,
+                    onExpansionChanged: (expanded) {
+                      setState(() {
+                        _expansionManager.setState('pge_sites_db', expanded);
+                      });
+                    },
+                    children: [
+                      if (_pgeSitesStats != null) ...[
+                        AppStatRowGroup.dataManagement(
+                          rows: [
+                            [
+                              AppStatRow.dataManagement(
+                                label: 'Total Sites',
+                                value: '${_pgeSitesStats!['sites_count'] ?? 0}',
+                              ),
+                              AppStatRow.dataManagement(
+                                label: 'Database Size',
+                                value: '${_pgeSitesStats!['database_size_mb'] ?? '0.0'}MB',
+                              ),
+                            ],
+                            [
+                              AppStatRow.dataManagement(
+                                label: 'Last Downloaded',
+                                value: _pgeSitesStats!['last_downloaded'] ?? 'Never',
+                              ),
+                              AppStatRow.dataManagement(
+                                label: 'Source Size',
+                                value: '${(_pgeSitesStats!['source_file_size_bytes'] ?? 0) / 1024}KB',
+                              ),
+                            ],
+                            if (_pgeSitesProgress != null && _pgeSitesProgress!.status == PgeSitesDownloadStatus.downloading)
+                              [
+                                AppStatRow.dataManagement(
+                                  label: 'Download Progress',
+                                  value: '${(_pgeSitesProgress!.progress * 100).toStringAsFixed(1)}%',
+                                ),
+                              ],
+                          ],
+                          padding: EdgeInsets.zero,
+                        ),
+                      ] else ...[
+                        const Text('Loading sites database information...'),
+                        const SizedBox(height: 8),
+                        const LinearProgressIndicator(),
+                      ],
+
+                      if (_pgeSitesProgress != null && _pgeSitesProgress!.status == PgeSitesDownloadStatus.downloading) ...[
+                        const SizedBox(height: 16),
+                        LinearProgressIndicator(
+                          value: _pgeSitesProgress!.progress,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Downloading: ${(_pgeSitesProgress!.downloadedBytes / 1024).toStringAsFixed(0)}KB / ${(_pgeSitesProgress!.totalBytes / 1024).toStringAsFixed(0)}KB',
+                          style: const TextStyle(color: Colors.grey, fontSize: 12),
+                        ),
+                      ],
+
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Download worldwide paragliding sites from ParaglidingEarth for offline use. '
+                        'This enables fast site lookups without internet connectivity.',
+                        style: TextStyle(color: Colors.grey, fontSize: 12),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _pgeSitesProgress?.status == PgeSitesDownloadStatus.downloading
+                                  ? null
+                                  : _downloadPgeSites,
+                              icon: const Icon(Icons.download),
+                              label: Text(
+                                _pgeSitesStats?['sites_count'] > 0
+                                  ? 'Re-download Sites'
+                                  : 'Download Sites'
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.blue,
+                              ),
+                            ),
+                          ),
+                          if (_pgeSitesStats?['sites_count'] > 0) ...[
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: _clearPgeSites,
+                                icon: const Icon(Icons.clear),
+                                label: const Text('Clear Data'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.orange,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 24),
+
                   // ParaglidingEarth API
                   AppExpansionCard.dataManagement(
                     icon: Icons.cloud_sync,

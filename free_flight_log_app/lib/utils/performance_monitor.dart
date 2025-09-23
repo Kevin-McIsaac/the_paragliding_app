@@ -26,6 +26,36 @@ class PerformanceMonitor {
   // Cleanup tracking
   static DateTime _lastCleanup = DateTime.now();
 
+  // Operation tracking
+  static final Map<String, DateTime> _operationStartTimes = {};
+
+  /// Start tracking a named operation
+  static void startOperation(String name) {
+    if (!kDebugMode) return;
+    _operationStartTimes[name] = DateTime.now();
+  }
+
+  /// End tracking a named operation and log duration
+  static void endOperation(String name, {Map<String, dynamic>? metadata}) {
+    if (!kDebugMode) return;
+
+    final startTime = _operationStartTimes.remove(name);
+    if (startTime == null) {
+      LoggingService.warning('PerformanceMonitor: endOperation called without startOperation for: $name');
+      return;
+    }
+
+    final duration = DateTime.now().difference(startTime);
+    LoggingService.performance(name, duration, metadata?.toString() ?? '');
+
+    if (metadata != null) {
+      LoggingService.structured('PERFORMANCE_$name', {
+        'duration_ms': duration.inMilliseconds,
+        ...metadata,
+      });
+    }
+  }
+
   /// Get current memory usage in MB
   static double getMemoryUsageMB() {
     if (!kDebugMode) return 0.0;
