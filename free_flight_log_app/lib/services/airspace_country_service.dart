@@ -20,7 +20,6 @@ class AirspaceCountryService {
 
   // Preferences keys
   static const String _selectedCountriesKey = 'airspace_selected_countries';
-  static const String _countryMetadataKey = 'airspace_country_metadata';
 
   // Cache references
   final AirspaceMetadataCache _metadataCache = AirspaceMetadataCache.instance;
@@ -78,33 +77,35 @@ class AirspaceCountryService {
     LoggingService.info('Updated selected countries: ${countryCodes.join(", ")}');
   }
 
-  /// Get metadata for all countries from database
+  /// Get metadata for all countries using simplified tracking
   Future<Map<String, CountryMetadata>> getCountryMetadata() async {
     try {
-      final countryDetails = await _diskCache.getCountryDetails();
-      final Map<String, CountryMetadata> metadata = {};
+      // Check if any airspace data exists
+      final geometryCount = await _diskCache.getGeometryCount();
+      if (geometryCount == 0) {
+        return {};
+      }
 
-      for (final details in countryDetails) {
-        final countryCode = details['country_code'] as String;
-        final airspaceCount = details['airspace_count'] as int? ?? 0;
-        final fetchTime = details['fetch_time'] as int?;
-        final sizeBytes = details['size_bytes'] as int?;
+      // Get currently selected countries from preferences
+      final selectedCountries = await getSelectedCountries();
 
+      // Return metadata for selected countries, assuming they have data
+      // since we can't track individual countries anymore
+      final metadata = <String, CountryMetadata>{};
+      for (final countryCode in selectedCountries) {
         metadata[countryCode] = CountryMetadata(
           countryCode: countryCode,
-          airspaceCount: airspaceCount,
-          downloadTime: fetchTime != null
-              ? DateTime.fromMillisecondsSinceEpoch(fetchTime)
-              : DateTime.now(),
-          etag: null, // Not stored in database
-          lastModified: null, // Not stored in database
+          airspaceCount: geometryCount, // Total airspace count for all countries
+          downloadTime: DateTime.now(), // Approximate download time
+          etag: null,
+          lastModified: null,
           version: 1,
         );
       }
 
       return metadata;
     } catch (e, stack) {
-      LoggingService.error('Failed to get country metadata from database', e, stack);
+      LoggingService.error('Failed to get simplified country metadata', e, stack);
       return {};
     }
   }

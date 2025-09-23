@@ -46,14 +46,14 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   bool _isLocationLoading = false;
   String? _errorMessage;
   LatLng? _mapCenterPosition;
-  double _mapZoom = 10.0; // Dynamic zoom level for map
+  final double _mapZoom = 10.0; // Dynamic zoom level for map
   LatLngBounds? _boundsToFit; // Exact bounds for map fitting after site jump
   
   // Map provider state
   MapProvider _selectedMapProvider = MapProvider.openStreetMap;
 
   // Key to force map widget refresh when airspace settings change
-  Key _mapWidgetKey = UniqueKey();
+  final Key _mapWidgetKey = UniqueKey();
   static const String _mapProviderKey = 'nearby_sites_map_provider';
 
   // Legend state

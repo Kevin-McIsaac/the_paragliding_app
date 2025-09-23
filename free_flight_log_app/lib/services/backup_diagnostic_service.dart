@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'logging_service.dart';
+import 'igc_file_manager.dart';
+import 'backup_diagnostics_cache.dart';
 
 /// Data class to hold IGC backup statistics
 class IGCBackupStats {
@@ -47,17 +49,23 @@ class IGCBackupStats {
 class BackupDiagnosticService {
   static const String _tag = 'BackupDiagnostic';
 
-  /// Get backup configuration status
+  /// Get backup configuration status with caching
   static Future<Map<String, dynamic>> getBackupStatus() async {
+    // Check cache first
+    final cached = BackupDiagnosticsCache.getCachedBackupStatus();
+    if (cached != null) {
+      return cached;
+    }
+
     try {
       LoggingService.debug('Getting backup configuration status');
-      
+
       // Check if backup is explicitly configured in AndroidManifest.xml
       final isExplicitlyEnabled = true; // Our implementation has explicit backup
       final hasCustomAgent = true; // We have IGCBackupAgent
       final hasBackupRules = true; // We have backup_rules.xml
 
-      return {
+      final status = {
         'success': true,
         'backupEnabled': isExplicitlyEnabled,
         'hasCustomAgent': hasCustomAgent,
@@ -65,58 +73,106 @@ class BackupDiagnosticService {
         'backupType': 'Explicit with IGC compression',
         'maxBackupSize': '25MB (Android limit)',
       };
+
+      // Cache the result
+      BackupDiagnosticsCache.cacheBackupStatus(status);
+      return status;
     } catch (e) {
       LoggingService.error('Failed to get backup status: $e');
-      return {
+      final errorStatus = {
         'success': false,
         'error': e.toString(),
       };
+
+      // Cache error status too (but with shorter validity)
+      BackupDiagnosticsCache.cacheBackupStatus(errorStatus);
+      return errorStatus;
     }
   }
 
-  /// Calculate IGC compression statistics for all IGC files
-  static Future<IGCBackupStats?> calculateIGCCompressionStats() async {
+  /// Calculate IGC compression statistics with caching and batching
+  static Future<IGCBackupStats?> calculateIGCCompressionStats({bool forceRefresh = false}) async {
+    // Check cache first unless forced refresh
+    if (!forceRefresh) {
+      final cached = BackupDiagnosticsCache.getCachedIGCStats();
+      if (cached != null) {
+        return cached;
+      }
+    }
+
     try {
       LoggingService.action('BackupDiagnostic', 'calculate_igc_compression');
-      
-      final igcFiles = await _findIGCFiles();
-      
+      final overallStopwatch = Stopwatch()..start();
+
+      // Use centralized file manager
+      final igcFiles = await IGCFileManager.getIGCFiles(forceRefresh: forceRefresh);
+
       if (igcFiles.isEmpty) {
         LoggingService.debug('No IGC files found for compression analysis');
-        return IGCBackupStats(
+        final emptyStats = IGCBackupStats(
           fileCount: 0,
           originalSizeBytes: 0,
           compressedSizeBytes: 0,
           compressionRatio: 0.0,
           estimatedBackupSizeMB: 0.0,
         );
+
+        // Cache empty result
+        BackupDiagnosticsCache.cacheIGCStats(emptyStats);
+        return emptyStats;
       }
 
+      // Process files in batches to avoid blocking the UI
+      const batchSize = 10;
       int totalOriginalSize = 0;
       int totalCompressedSize = 0;
       int processedFiles = 0;
 
-      for (final file in igcFiles) {
-        try {
-          final originalSize = await file.length();
-          
-          // Simulate compression by using a typical 4.2x ratio
-          // In production, this would call the native compression method
-          final compressedSize = (originalSize / 4.2).round();
-          
-          totalOriginalSize += originalSize;
-          totalCompressedSize += compressedSize;
-          processedFiles++;
-          
-        } catch (e) {
-          LoggingService.warning('Failed to process IGC file: $e');
+      final batches = await IGCFileManager.getFilesInBatches(batchSize: batchSize);
+
+      LoggingService.structured('BACKUP_COMPRESSION_START', {
+        'total_files': igcFiles.length,
+        'batch_count': batches.length,
+        'batch_size': batchSize,
+      });
+
+      for (int batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+        final batch = batches[batchIndex];
+        final batchStopwatch = Stopwatch()..start();
+
+        // Process batch
+        for (final file in batch) {
+          try {
+            final originalSize = await file.length();
+
+            // Simulate compression by using a typical 4.2x ratio
+            // In production, this would call the native compression method
+            final compressedSize = (originalSize / 4.2).round();
+
+            totalOriginalSize += originalSize;
+            totalCompressedSize += compressedSize;
+            processedFiles++;
+
+          } catch (e) {
+            LoggingService.warning('Failed to process IGC file ${file.path}: $e');
+          }
         }
+
+        batchStopwatch.stop();
+
+        // Yield control periodically to prevent blocking
+        if (batchIndex % 3 == 0) {
+          await Future.delayed(Duration.zero);
+        }
+
+        LoggingService.debug('Processed batch ${batchIndex + 1}/${batches.length} '
+            '(${batch.length} files) in ${batchStopwatch.elapsedMilliseconds}ms');
       }
 
-      final compressionRatio = totalCompressedSize > 0 
-          ? totalOriginalSize / totalCompressedSize 
+      final compressionRatio = totalCompressedSize > 0
+          ? totalOriginalSize / totalCompressedSize
           : 0.0;
-      
+
       final estimatedBackupSizeMB = totalCompressedSize / (1024 * 1024);
 
       final stats = IGCBackupStats(
@@ -127,17 +183,28 @@ class BackupDiagnosticService {
         estimatedBackupSizeMB: estimatedBackupSizeMB,
       );
 
+      overallStopwatch.stop();
+
       LoggingService.structured('BACKUP_COMPRESSION_COMPLETE', {
         'file_count': processedFiles,
         'original_size_mb': (totalOriginalSize / 1024 / 1024).toStringAsFixed(1),
         'compressed_size_mb': (totalCompressedSize / 1024 / 1024).toStringAsFixed(1),
         'compression_ratio': compressionRatio.toStringAsFixed(1),
         'backup_size_mb': estimatedBackupSizeMB.toStringAsFixed(1),
+        'total_time_ms': overallStopwatch.elapsedMilliseconds,
+        'avg_time_per_file_ms': processedFiles > 0 ? (overallStopwatch.elapsedMilliseconds / processedFiles).toStringAsFixed(1) : '0',
+        'batched_processing': true,
       });
 
+      // Cache the result
+      BackupDiagnosticsCache.cacheIGCStats(stats);
       return stats;
-    } catch (e) {
-      LoggingService.error('Failed to calculate IGC compression stats: $e');
+
+    } catch (e, stackTrace) {
+      LoggingService.error('Failed to calculate IGC compression stats', e, stackTrace);
+
+      // Cache null result to avoid immediate retry
+      BackupDiagnosticsCache.cacheIGCStats(null);
       return null;
     }
   }
@@ -147,7 +214,7 @@ class BackupDiagnosticService {
     try {
       LoggingService.action('BackupDiagnostic', 'test_compression_integrity');
       
-      final igcFiles = await _findIGCFiles();
+      final igcFiles = await IGCFileManager.getIGCFiles();
       
       if (igcFiles.isEmpty) {
         return {
@@ -187,105 +254,7 @@ class BackupDiagnosticService {
     }
   }
 
-  /// Find all IGC files in the app's directories
-  static Future<List<File>> _findIGCFiles() async {
-    final List<File> igcFiles = [];
-    
-    try {
-      final appDir = await getApplicationDocumentsDirectory();
-      LoggingService.structured('BACKUP_IGC_SEARCH_START', {
-        'app_directory': appDir.path,
-      });
-      
-      // First, check what track_log_path values are in the database
-      await _logDatabaseTrackPaths();
-      
-      // Actual IGC file locations used by this app
-      final igcDirectories = [
-        'igc_tracks',        // This is where IGC files are actually stored
-        'igc_files',         // Legacy location
-        'imported_igc',      // Alternative location
-        'flight_tracks',     // Alternative location
-      ];
-      
-      // Also check the root documents directory
-      final rootFiles = await appDir
-          .list()
-          .where((entity) => entity is File && 
-                 entity.path.toLowerCase().endsWith('.igc'))
-          .cast<File>()
-          .toList();
-      igcFiles.addAll(rootFiles);
-      
-      int totalFilesFound = rootFiles.length;
-      
-      for (final dirName in igcDirectories) {
-        final dir = Directory('${appDir.path}/$dirName');
-        
-        if (await dir.exists()) {
-          final files = await dir
-              .list()
-              .where((entity) => entity is File && 
-                     entity.path.toLowerCase().endsWith('.igc'))
-              .cast<File>()
-              .toList();
-          
-          igcFiles.addAll(files);
-          totalFilesFound += files.length;
-        }
-      }
-      
-      LoggingService.structured('BACKUP_IGC_SEARCH_COMPLETE', {
-        'total_files_found': totalFilesFound,
-        'directories_checked': igcDirectories.length + 1,
-      });
-      
-      // Sample file check for diagnostic purposes
-      if (igcFiles.isNotEmpty) {
-        await _checkDatabaseTrackFiles(igcFiles);
-      }
-      
-    } catch (e) {
-      LoggingService.error('Error finding IGC files: $e');
-    }
-    
-    return igcFiles;
-  }
-
-  /// Log track_log_path values from database for debugging
-  static Future<void> _logDatabaseTrackPaths() async {
-    try {
-      // This would require database access - for now just log that we're checking
-      LoggingService.debug('Checking database track_log_path values (149 flights expected)');
-    } catch (e) {
-      LoggingService.debug('Cannot access database directly: $e');
-    }
-  }
-
-  /// Check if database track_log_path files exist
-  static Future<void> _checkDatabaseTrackFiles(List<File> igcFiles) async {
-    try {
-      // Sample a few files for size analysis
-      int totalSize = 0;
-      int sampleCount = 0;
-      for (final file in igcFiles.take(5)) {
-        final size = await file.length();
-        totalSize += size;
-        sampleCount++;
-      }
-      
-      if (sampleCount > 0) {
-        final avgSize = (totalSize / sampleCount / 1024).round(); // KB
-        LoggingService.structured('BACKUP_FILE_SAMPLE', {
-          'sample_files': sampleCount,
-          'avg_size_kb': avgSize,
-          'total_files': igcFiles.length,
-        });
-      }
-    } catch (e) {
-      LoggingService.debug('Error sampling IGC file sizes: $e');
-    }
-  }
+  // Removed old _findIGCFiles and helper methods - now using IGCFileManager
 
   /// Get database backup size estimate
   static Future<Map<String, dynamic>> getDatabaseBackupEstimate() async {

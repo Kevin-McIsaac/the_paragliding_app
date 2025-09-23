@@ -50,20 +50,7 @@ class AirspaceMetadataCache {
       // Store all geometries in batch - much faster than individual inserts
       await _geometryCache.putGeometryBatch(features);
 
-      // Store country metadata
-      await _diskCache.putCountryMetadata(
-        countryCode: countryCode,
-        airspaceCount: airspaceIds.length,
-        sizeBytes: null, // Will be calculated later
-      );
-
-      // Store country to airspace mappings
-      await _diskCache.putCountryMappings(
-        countryCode: countryCode,
-        airspaceIds: airspaceIds,
-      );
-
-      // Update memory cache
+      // Update memory cache for UI purposes
       _updateCountryCache(countryCode, airspaceIds.toSet());
 
       stopwatch.stop();
@@ -77,7 +64,7 @@ class AirspaceMetadataCache {
     }
   }
 
-  /// Get airspaces for selected countries
+  /// Get airspaces for selected countries (simplified - now returns all geometries)
   Future<List<CachedAirspaceGeometry>> getAirspacesForCountries(List<String> countryCodes) async {
     if (countryCodes.isEmpty) {
       return [];
@@ -85,17 +72,19 @@ class AirspaceMetadataCache {
 
     final stopwatch = Stopwatch()..start();
 
-    // Get all airspace IDs for the selected countries
-    final airspaceIds = await _diskCache.getAirspaceIdsForCountries(countryCodes);
-
-    // Fetch all geometries using batch operation
-    final geometries = await _geometryCache.getGeometries(airspaceIds.toSet());
+    // Since we no longer track by country, use spatial query with no bounds to get all geometries
+    final geometries = await _diskCache.getGeometriesInBounds(
+      west: -180.0,
+      south: -90.0,
+      east: 180.0,
+      north: 90.0,
+    );
 
     stopwatch.stop();
     LoggingService.performance(
-      'Retrieved country airspaces',
+      'Retrieved airspaces',
       stopwatch.elapsed,
-      'countries=${countryCodes.length}, airspaces=${geometries.length}',
+      'geometries=${geometries.length}',
     );
 
     return geometries;
@@ -104,7 +93,6 @@ class AirspaceMetadataCache {
   /// Get airspaces for viewport using optimized spatial query with filtering
   /// All filtering is performed at the database level for optimal performance
   Future<List<CachedAirspaceGeometry>> getAirspacesForViewport({
-    required List<String> countryCodes,
     required double west,
     required double south,
     required double east,
@@ -114,9 +102,6 @@ class AirspaceMetadataCache {
     double? maxAltitudeFt,
     bool orderByAltitude = false,
   }) async {
-    if (countryCodes.isEmpty) {
-      return [];
-    }
 
     final stopwatch = Stopwatch()..start();
 
@@ -126,7 +111,6 @@ class AirspaceMetadataCache {
       south: south,
       east: east,
       north: north,
-      countryCodes: countryCodes,
       excludedTypes: excludedTypes,
       excludedClasses: excludedClasses,
       maxAltitudeFt: maxAltitudeFt,
@@ -135,22 +119,12 @@ class AirspaceMetadataCache {
 
     stopwatch.stop();
 
-    // Log the new optimized performance
+    // Log the optimized performance
     LoggingService.performance(
       '[SPATIAL_VIEWPORT_QUERY]',
       stopwatch.elapsed,
-      'countries=${countryCodes.length}, viewport_geometries=${viewportGeometries.length}',
+      'viewport_geometries=${viewportGeometries.length}',
     );
-
-    // Update country cache for loaded geometries
-    for (final countryCode in countryCodes) {
-      final countryIds = viewportGeometries
-          .map((g) => g.id)
-          .toSet();
-      if (countryIds.isNotEmpty) {
-        _updateCountryCache(countryCode, countryIds);
-      }
-    }
 
     return viewportGeometries;
   }
@@ -171,18 +145,18 @@ class AirspaceMetadataCache {
     }
   }
 
-  /// Delete country data
+  /// Delete country data (simplified - clears all airspace data)
   Future<void> deleteCountryData(String countryCode) async {
-    LoggingService.info('Deleting country data from cache: $countryCode');
+    LoggingService.info('Clearing airspace data for: $countryCode');
 
     // Remove from memory cache
     _countryAirspaceCache.remove(countryCode);
     _countryAccessOrder.remove(countryCode);
 
-    // Remove from disk cache
-    await _diskCache.deleteCountryData(countryCode);
+    // Since we no longer track by country, clear all cache data
+    await clearAllCache();
 
-    LoggingService.info('Successfully deleted country data: $countryCode');
+    LoggingService.info('Successfully cleared airspace data');
   }
 
   /// Get cache statistics
@@ -236,7 +210,7 @@ class AirspaceMetadataCache {
         'memoryHits': _cacheHits,
         'memoryMisses': _cacheMisses,
         'hitRate': (_cacheHits + _cacheMisses) > 0
-            ? (_cacheHits / (_cacheHits + _cacheMisses) * 100).toStringAsFixed(1) + '%'
+            ? '${(_cacheHits / (_cacheHits + _cacheMisses) * 100).toStringAsFixed(1)}%'
             : '0.0%',
         'countryCacheSize': _countryAirspaceCache.length,
       },

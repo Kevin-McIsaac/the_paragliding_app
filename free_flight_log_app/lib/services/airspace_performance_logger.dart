@@ -211,7 +211,7 @@ class AirspacePerformanceLogger {
   /// Log cache efficiency
   Future<void> logCacheEfficiency() async {
     final stats = await _diskCache.getStatistics();
-    final metadataMetrics = _metadataCache.getPerformanceMetrics();
+    // metadataMetrics extracted but not used
 
     final efficiency = {
       'deduplication': {

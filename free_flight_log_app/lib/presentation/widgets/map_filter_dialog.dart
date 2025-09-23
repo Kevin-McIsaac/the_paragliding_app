@@ -280,7 +280,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                 _applyFiltersDebounced();
               }),
               borderRadius: BorderRadius.circular(4),
-              child: Container(
+              child: SizedBox(
                 height: 24,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -288,16 +288,12 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                     SizedBox(
                       width: 20,
                       height: 20,
-                      child: Radio<MapProvider>(
-                        value: provider,
-                        groupValue: _selectedMapProvider,
-                        onChanged: (value) => setState(() {
-                          _selectedMapProvider = value!;
-                          _applyFiltersDebounced();
-                        }),
-                        activeColor: Colors.blue,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        visualDensity: VisualDensity.compact,
+                      child: Icon(
+                        _selectedMapProvider == provider
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_unchecked,
+                        size: 20,
+                        color: _selectedMapProvider == provider ? Colors.blue : Colors.white54,
                       ),
                     ),
                     const SizedBox(width: 4),
@@ -355,7 +351,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
               _applyFiltersDebounced();
             }),
             borderRadius: BorderRadius.circular(4),
-            child: Container(
+            child: SizedBox(
               height: 24,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -401,7 +397,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
               _applyFiltersDebounced();
             }),
             borderRadius: BorderRadius.circular(4),
-            child: Container(
+            child: SizedBox(
               height: 24,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -450,7 +446,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                 });
               },
               borderRadius: BorderRadius.circular(4),
-              child: Container(
+              child: SizedBox(
                 height: 24,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,

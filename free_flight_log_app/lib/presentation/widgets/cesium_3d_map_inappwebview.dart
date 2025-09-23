@@ -489,12 +489,30 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
               return; // Only log errors in release mode
             }
             
-            // Skip repetitive messages
+            // Skip repetitive messages and expected errors
             final msg = consoleMessage.message;
-            if (msg.contains('Tiles queued') || 
-                msg.contains('Memory:') || 
+            if (msg.contains('Tiles queued') ||
+                msg.contains('Memory:') ||
                 msg.contains('Debug')) {
               return; // Skip verbose debug messages
+            }
+
+            // Filter out expected sandboxing errors during WebView initialization
+            if (msg.contains('Blocked script execution') &&
+                msg.contains('sandboxed') &&
+                msg.contains('allow-scripts')) {
+              // These are expected during WebView initialization and not critical
+              if (kDebugMode) {
+                LoggingService.debug('Cesium3D JS: Filtered sandboxing error (expected during init)');
+              }
+              return;
+            }
+
+            // Filter out other expected initialization errors
+            if (msg.contains('about:blank') &&
+                (msg.contains('sandboxed') || msg.contains('permission'))) {
+              // These are also expected during WebView initialization
+              return;
             }
             
             final level = consoleMessage.messageLevel == ConsoleMessageLevel.ERROR ? 'ERROR' :

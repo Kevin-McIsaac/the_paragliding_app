@@ -3,6 +3,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'logging_service.dart';
 import 'database_service.dart';
+import 'igc_file_manager.dart';
+import 'backup_diagnostics_cache.dart';
 
 class IGCCleanupStats {
   final int totalIgcFiles;
@@ -37,51 +39,88 @@ class IGCCleanupStats {
 
 class IGCCleanupService {
 
-  /// Analyze IGC files and identify orphans
-  static Future<IGCCleanupStats?> analyzeIGCFiles() async {
+  /// Analyze IGC files and identify orphans with caching
+  static Future<IGCCleanupStats?> analyzeIGCFiles({bool forceRefresh = false}) async {
+    // Check cache first unless forced refresh
+    if (!forceRefresh) {
+      final cached = BackupDiagnosticsCache.getCachedCleanupStats();
+      if (cached != null) {
+        return cached;
+      }
+    }
+
     try {
       LoggingService.debug('Starting IGC file analysis');
-      
+      final overallStopwatch = Stopwatch()..start();
+
       // Get all flights with their track paths
+      final flightsStopwatch = Stopwatch()..start();
       final flights = await DatabaseService.instance.getAllFlightsRaw();
       final referencedFilenames = <String>{};
-      
+      flightsStopwatch.stop();
+
       LoggingService.structured('IGC_ANALYSIS_START', {
         'flight_records': flights.length,
+        'flights_query_ms': flightsStopwatch.elapsedMilliseconds,
       });
-      
+
+      // Extract referenced filenames
+      final extractionStopwatch = Stopwatch()..start();
       for (final flight in flights) {
         final trackPath = flight['track_log_path'] as String?;
-        
+
         if (trackPath != null && trackPath.isNotEmpty) {
           // Extract just the filename from the path (handles both absolute and relative paths)
           final filename = path.basename(trackPath);
           referencedFilenames.add(filename);
         }
       }
-      
-      // Find all IGC files
-      final allIgcFiles = await _findAllIGCFiles();
+      extractionStopwatch.stop();
+
+      // Use centralized file manager (with its own caching)
+      final filesStopwatch = Stopwatch()..start();
+      final allIgcFiles = await IGCFileManager.getIGCFiles(forceRefresh: forceRefresh);
+      filesStopwatch.stop();
+
+      // Analyze files in batches to avoid blocking
+      const batchSize = 20;
       final orphanedFiles = <String>[];
       int totalSize = 0;
       int orphanedSize = 0;
       int referencedCount = 0;
-      
-      for (final file in allIgcFiles) {
-        final size = await file.length();
-        totalSize += size;
-        
-        // Extract filename for comparison
-        final filename = path.basename(file.path);
-        
-        if (referencedFilenames.contains(filename)) {
-          referencedCount++;
-        } else {
-          orphanedFiles.add(file.path);
-          orphanedSize += size;
+
+      final analysisStopwatch = Stopwatch()..start();
+
+      for (int i = 0; i < allIgcFiles.length; i += batchSize) {
+        final end = (i + batchSize < allIgcFiles.length) ? i + batchSize : allIgcFiles.length;
+        final batch = allIgcFiles.sublist(i, end);
+
+        for (final file in batch) {
+          try {
+            final size = await file.length();
+            totalSize += size;
+
+            // Extract filename for comparison
+            final filename = path.basename(file.path);
+
+            if (referencedFilenames.contains(filename)) {
+              referencedCount++;
+            } else {
+              orphanedFiles.add(file.path);
+              orphanedSize += size;
+            }
+          } catch (e) {
+            LoggingService.warning('Failed to analyze IGC file ${file.path}: $e');
+          }
+        }
+
+        // Yield control periodically
+        if (i % (batchSize * 3) == 0) {
+          await Future.delayed(Duration.zero);
         }
       }
-      
+      analysisStopwatch.stop();
+
       final stats = IGCCleanupStats(
         totalIgcFiles: allIgcFiles.length,
         referencedFiles: referencedCount,
@@ -90,19 +129,33 @@ class IGCCleanupService {
         orphanedSizeBytes: orphanedSize,
         orphanedFilePaths: orphanedFiles,
       );
-      
+
+      overallStopwatch.stop();
+
       LoggingService.structured('IGC_ANALYSIS_COMPLETE', {
         'total_files': stats.totalIgcFiles,
-        'referenced_files': stats.referencedFiles, 
+        'referenced_files': stats.referencedFiles,
         'orphaned_files': stats.orphanedFiles,
         'orphaned_percentage': stats.orphanedPercentage.toStringAsFixed(1),
         'total_size_mb': (stats.totalSizeBytes / 1024 / 1024).toStringAsFixed(1),
         'orphaned_size_mb': (stats.orphanedSizeBytes / 1024 / 1024).toStringAsFixed(1),
+        'total_time_ms': overallStopwatch.elapsedMilliseconds,
+        'flights_query_ms': flightsStopwatch.elapsedMilliseconds,
+        'extraction_ms': extractionStopwatch.elapsedMilliseconds,
+        'files_scan_ms': filesStopwatch.elapsedMilliseconds,
+        'analysis_ms': analysisStopwatch.elapsedMilliseconds,
+        'batched_processing': true,
       });
-      
+
+      // Cache the result
+      BackupDiagnosticsCache.cacheCleanupStats(stats);
       return stats;
-    } catch (e) {
-      LoggingService.error('Failed to analyze IGC files: $e');
+
+    } catch (e, stackTrace) {
+      LoggingService.error('Failed to analyze IGC files', e, stackTrace);
+
+      // Cache null result to avoid immediate retry
+      BackupDiagnosticsCache.cacheCleanupStats(null);
       return null;
     }
   }
@@ -172,51 +225,7 @@ class IGCCleanupService {
     }
   }
 
-  /// Find all IGC files in app directories
-  static Future<List<File>> _findAllIGCFiles() async {
-    final List<File> igcFiles = [];
-    
-    try {
-      final appDir = await getApplicationDocumentsDirectory();
-      
-      // IGC file locations used by this app
-      final igcDirectories = [
-        'igc_tracks',        // Primary location
-        'igc_files',         // Legacy location
-        'imported_igc',      // Alternative location
-        'flight_tracks',     // Alternative location
-      ];
-      
-      // Check root documents directory
-      final rootFiles = await appDir
-          .list()
-          .where((entity) => entity is File && 
-                 entity.path.toLowerCase().endsWith('.igc'))
-          .cast<File>()
-          .toList();
-      igcFiles.addAll(rootFiles);
-      
-      // Check subdirectories
-      for (final dirName in igcDirectories) {
-        final dir = Directory('${appDir.path}/$dirName');
-        
-        if (await dir.exists()) {
-          final files = await dir
-              .list()
-              .where((entity) => entity is File && 
-                     entity.path.toLowerCase().endsWith('.igc'))
-              .cast<File>()
-              .toList();
-          igcFiles.addAll(files);
-        }
-      }
-      
-    } catch (e) {
-      LoggingService.error('Error finding IGC files: $e');
-    }
-    
-    return igcFiles;
-  }
+  // Removed old _findAllIGCFiles method - now using IGCFileManager
 
   /// Get relative path for comparison with database
 

@@ -218,7 +218,7 @@ class _MapLegendWidgetState extends State<MapLegendWidget> with SingleTickerProv
                         const SizedBox(height: 2),
                     ],
                   );
-                }).toList(),
+                }),
               ],
 
                     if (widget.isMergeMode) ...[
