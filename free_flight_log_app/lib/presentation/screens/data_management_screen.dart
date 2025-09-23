@@ -7,6 +7,8 @@ import '../../utils/cache_utils.dart';
 import '../../utils/preferences_helper.dart';
 import '../../services/backup_diagnostic_service.dart';
 import '../../services/igc_cleanup_service.dart';
+import '../../services/backup_diagnostics_cache.dart';
+import '../../services/igc_file_manager.dart';
 import '../../services/logging_service.dart';
 import '../../utils/card_expansion_manager.dart';
 import '../widgets/common/app_expansion_card.dart';
@@ -94,15 +96,30 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
     });
   }
 
-  Future<void> _loadBackupDiagnostics() async {
+  Future<void> _loadBackupDiagnostics({bool forceRefresh = false}) async {
     LoggingService.action('DataManagement', 'load_backup_diagnostics');
     final stopwatch = Stopwatch()..start();
-    
+
     try {
+      // Load backup status immediately (fast)
       final backupStatus = await BackupDiagnosticService.getBackupStatus();
-      final igcStats = await BackupDiagnosticService.calculateIGCCompressionStats();
-      final cleanupStats = await IGCCleanupService.analyzeIGCFiles();
-      
+
+      // Update UI with backup status immediately
+      if (mounted) {
+        setState(() {
+          _backupStatus = backupStatus;
+        });
+      }
+
+      // Load IGC stats and cleanup stats in parallel (slower operations)
+      final results = await Future.wait([
+        BackupDiagnosticService.calculateIGCCompressionStats(forceRefresh: forceRefresh),
+        IGCCleanupService.analyzeIGCFiles(forceRefresh: forceRefresh),
+      ]);
+
+      final igcStats = results[0] as IGCBackupStats?;
+      final cleanupStats = results[1] as IGCCleanupStats?;
+
       LoggingService.performance('Load backup diagnostics', stopwatch.elapsed, 'backup diagnostics loaded');
       LoggingService.structured('BACKUP_DIAGNOSTICS_LOADED', {
         'backup_enabled': backupStatus['backupEnabled'] ?? false,
@@ -113,13 +130,17 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
         'compression_ratio': igcStats?.compressionRatio ?? 0.0,
         'orphaned_files': cleanupStats?.orphanedFiles ?? 0,
         'duration_ms': stopwatch.elapsedMilliseconds,
+        'used_cache': !forceRefresh,
       });
-      
-      setState(() {
-        _backupStatus = backupStatus;
-        _igcStats = igcStats;
-        _cleanupStats = cleanupStats;
-      });
+
+      // Update UI with complete data
+      if (mounted) {
+        setState(() {
+          _igcStats = igcStats;
+          _cleanupStats = cleanupStats;
+        });
+      }
+
     } catch (e, stackTrace) {
       LoggingService.structured('BACKUP_DIAGNOSTICS_ERROR', {
         'error': e.toString(),
@@ -467,18 +488,13 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
         });
         _showSuccessDialog('All Flight Data Deleted', result['message']);
         
-        // Refresh all statistics after deletion
+        // Clear all caches after data deletion
+        BackupDiagnosticsCache.clearAll();
+        IGCFileManager.clearCache();
+
+        // Refresh all statistics after deletion with forced refresh
         await _loadDatabaseStats();
-        await _loadBackupDiagnostics(); // This includes IGC analysis
-        
-        // Force refresh of cleanup stats to show cleared state
-        setState(() {
-          _cleanupStats = null; // Clear to show loading state
-        });
-        final newCleanupStats = await IGCCleanupService.analyzeIGCFiles();
-        setState(() {
-          _cleanupStats = newCleanupStats;
-        });
+        await _loadBackupDiagnostics(forceRefresh: true);
       } else {
         LoggingService.structured('DELETE_ALL_DATA_FAILED', {
           'success': false,
@@ -573,18 +589,13 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
         
         _showSuccessDialog('Database Recreation Complete', message);
         
-        // Refresh all statistics after recreation
+        // Clear relevant caches after database recreation
+        BackupDiagnosticsCache.clearIGCCaches();
+        IGCFileManager.clearCache();
+
+        // Refresh all statistics after recreation with forced refresh
         await _loadDatabaseStats();
-        await _loadBackupDiagnostics(); // This includes IGC analysis
-        
-        // Force refresh of cleanup stats to show updated state
-        setState(() {
-          _cleanupStats = null; // Clear to show loading state
-        });
-        final newCleanupStats = await IGCCleanupService.analyzeIGCFiles();
-        setState(() {
-          _cleanupStats = newCleanupStats;
-        });
+        await _loadBackupDiagnostics(forceRefresh: true);
       } else {
         LoggingService.structured('RECREATE_DATABASE_FAILED', {
           'success': false,
