@@ -12,6 +12,7 @@ import '../../utils/card_expansion_manager.dart';
 import '../widgets/common/app_expansion_card.dart';
 import '../widgets/common/app_stat_row.dart';
 import '../../services/airspace_geojson_service.dart';
+import '../../services/airspace_country_service.dart';
 
 class DataManagementScreen extends StatefulWidget {
   final bool expandPremiumMaps;
@@ -38,8 +39,6 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
   bool _isCesiumTokenValidated = false;
   bool _isValidatingCesium = false;
 
-  // Airspace cache state
-  Map<String, dynamic>? _airspaceCacheStats;
 
   @override
   void initState() {
@@ -59,7 +58,6 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
     _loadDatabaseStats();
     _loadBackupDiagnostics();
     _loadCesiumToken();
-    _loadAirspaceCacheStats();
   }
 
   Future<void> _loadDatabaseStats() async {
@@ -844,18 +842,6 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
   }
 
 
-  Future<void> _loadAirspaceCacheStats() async {
-    try {
-      final stats = await AirspaceGeoJsonService.instance.getCacheStatistics();
-      if (mounted) {
-        setState(() {
-          _airspaceCacheStats = stats;
-        });
-      }
-    } catch (e, stackTrace) {
-      LoggingService.error('Failed to load airspace cache stats', e, stackTrace);
-    }
-  }
 
   Future<void> _clearAirspaceCache() async {
     final confirmed = await _showConfirmationDialog(
@@ -867,12 +853,12 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
 
     _showLoadingDialog('Clearing airspace database...');
     try {
-      // Clear all cache layers through the service
-      await AirspaceGeoJsonService.instance.clearCache();
+      // Clear all airspace data including country metadata and preferences
+      await AirspaceCountryService.instance.clearAllData();
 
       if (mounted) Navigator.of(context).pop(); // Close loading
 
-      await _loadAirspaceCacheStats(); // Reload stats
+      // Stats will be refreshed automatically via FutureBuilder
 
       _showSuccessDialog(
         'Database Cleared',
@@ -1145,72 +1131,88 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                   const SizedBox(height: 24),
 
                   // Airspace Database (Local copy of OpenAIP data)
-                  AppExpansionCard.dataManagement(
-                    icon: Icons.layers,
-                    title: 'Airspace DB',
-                    subtitle: _airspaceCacheStats != null
-                        ? '${_airspaceCacheStats!['summary']['country_count'] ?? 0} countries • ${_airspaceCacheStats!['summary']['total_unique_airspaces']} airspaces • ${_airspaceCacheStats!['summary']['database_size_mb'] ?? '0.00'}MB'
-                        : 'Loading...',
-                    expansionKey: 'airspace_cache',
-                    expansionManager: _expansionManager,
-                    onExpansionChanged: (expanded) {
-                      setState(() {
-                        _expansionManager.setState('airspace_cache', expanded);
-                      });
-                      if (expanded) {
-                        _loadAirspaceCacheStats(); // Refresh when expanded
-                      }
+                  FutureBuilder<Map<String, dynamic>>(
+                    future: AirspaceGeoJsonService.instance.getCacheStatistics(),
+                    builder: (context, snapshot) {
+                      final airspaceCacheStats = snapshot.data;
+                      return AppExpansionCard.dataManagement(
+                        icon: Icons.layers,
+                        title: 'Airspace DB',
+                        subtitle: airspaceCacheStats != null
+                            ? '${airspaceCacheStats['summary']['country_count'] ?? 0} countries • ${airspaceCacheStats['summary']['total_unique_airspaces']} airspaces • ${airspaceCacheStats['summary']['database_size_mb'] ?? '0.00'}MB'
+                            : 'Loading...',
+                        expansionKey: 'airspace_cache',
+                        expansionManager: _expansionManager,
+                        onExpansionChanged: (expanded) {
+                          setState(() {
+                            _expansionManager.setState('airspace_cache', expanded);
+                          });
+                        },
+                        children: [
+                          if (snapshot.connectionState == ConnectionState.waiting)
+                            const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(16.0),
+                                child: CircularProgressIndicator(),
+                              ),
+                            )
+                          else if (snapshot.hasError)
+                            Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Text(
+                                  'Error loading airspace data: ${snapshot.error}',
+                                  style: const TextStyle(color: Colors.red),
+                                ),
+                              ),
+                            )
+                          else if (airspaceCacheStats != null) ...[
+                            AppStatRowGroup.dataManagement(
+                              rows: [
+                                AppStatRow.dataManagement(
+                                  label: 'Countries Loaded',
+                                  value: airspaceCacheStats['summary']['cached_countries'] != null &&
+                                         (airspaceCacheStats['summary']['cached_countries'] as List).isNotEmpty
+                                      ? (airspaceCacheStats['summary']['cached_countries'] as List).join(', ')
+                                      : 'None',
+                                ),
+                                AppStatRow.dataManagement(
+                                  label: 'Total Airspaces',
+                                  value: airspaceCacheStats['summary']['total_unique_airspaces'].toString(),
+                                ),
+                                AppStatRow.dataManagement(
+                                  label: 'Database Size',
+                                  value: '${airspaceCacheStats['summary']['database_size_mb'] ?? '0.00'}MB',
+                                ),
+                                AppStatRow.dataManagement(
+                                  label: 'Schema Version',
+                                  value: 'v${airspaceCacheStats['summary']['database_version'] ?? 'Unknown'}',
+                                ),
+                              ],
+                              padding: EdgeInsets.zero,
+                            ),
+                            const SizedBox(height: 16),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: _clearAirspaceCache, // Always enabled
+                                icon: const Icon(Icons.cleaning_services),
+                                label: const Text('Clear Airspace Database'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.blue,
+                                ),
+                              ),
+                            ),
+                          ] else
+                            const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(16.0),
+                                child: Text('No airspace data available'),
+                              ),
+                            ),
+                        ],
+                      );
                     },
-                    children: [
-                      if (_airspaceCacheStats != null) ...[
-                        AppStatRowGroup.dataManagement(
-                          rows: [
-                            AppStatRow.dataManagement(
-                              label: 'Countries Loaded',
-                              value: _airspaceCacheStats!['summary']['cached_countries'] != null &&
-                                     (_airspaceCacheStats!['summary']['cached_countries'] as List).isNotEmpty
-                                  ? (_airspaceCacheStats!['summary']['cached_countries'] as List).join(', ')
-                                  : 'None',
-                            ),
-                            AppStatRow.dataManagement(
-                              label: 'Total Airspaces',
-                              value: _airspaceCacheStats!['summary']['total_unique_airspaces'].toString(),
-                            ),
-                            AppStatRow.dataManagement(
-                              label: 'Database Size',
-                              value: '${_airspaceCacheStats!['summary']['database_size_mb'] ?? '0.00'}MB / 100MB',
-                            ),
-                            AppStatRow.dataManagement(
-                              label: 'Schema Version',
-                              value: 'v${_airspaceCacheStats!['summary']['database_version'] ?? 'Unknown'}',
-                            ),
-                            AppStatRow.dataManagement(
-                              label: 'Index Overhead',
-                              value: '~${((10.72 - 3.4) / 3.4 * 100).toStringAsFixed(0)}%', // Estimated from our investigation
-                            ),
-                          ],
-                          padding: EdgeInsets.zero,
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: _clearAirspaceCache, // Always enabled
-                            icon: const Icon(Icons.cleaning_services),
-                            label: const Text('Clear Airspace Database'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.blue,
-                            ),
-                          ),
-                        ),
-                      ] else
-                        const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(16.0),
-                            child: CircularProgressIndicator(),
-                          ),
-                        ),
-                    ],
                   ),
 
                   const SizedBox(height: 24),

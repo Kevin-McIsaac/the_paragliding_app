@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/logging_service.dart';
 import '../services/airspace_metadata_cache.dart';
 import '../services/airspace_geometry_cache.dart';
+import '../services/airspace_disk_cache.dart';
 import '../data/models/airspace_country_models.dart';
 
 /// Service for managing country-based airspace data
@@ -24,6 +25,7 @@ class AirspaceCountryService {
   // Cache references
   final AirspaceMetadataCache _metadataCache = AirspaceMetadataCache.instance;
   final AirspaceGeometryCache _geometryCache = AirspaceGeometryCache.instance;
+  final AirspaceDiskCache _diskCache = AirspaceDiskCache.instance;
 
   // Available countries with metadata
   static final Map<String, CountryInfo> availableCountries = {
@@ -76,41 +78,37 @@ class AirspaceCountryService {
     LoggingService.info('Updated selected countries: ${countryCodes.join(", ")}');
   }
 
-  /// Get metadata for all countries
+  /// Get metadata for all countries from database
   Future<Map<String, CountryMetadata>> getCountryMetadata() async {
-    final prefs = await SharedPreferences.getInstance();
-    final jsonString = prefs.getString(_countryMetadataKey);
-
-    if (jsonString == null) {
-      return {};
-    }
-
     try {
-      final Map<String, dynamic> json = jsonDecode(jsonString);
+      final countryDetails = await _diskCache.getCountryDetails();
       final Map<String, CountryMetadata> metadata = {};
 
-      for (final entry in json.entries) {
-        metadata[entry.key] = CountryMetadata.fromJson(entry.value);
+      for (final details in countryDetails) {
+        final countryCode = details['country_code'] as String;
+        final airspaceCount = details['airspace_count'] as int? ?? 0;
+        final fetchTime = details['fetch_time'] as int?;
+        final sizeBytes = details['size_bytes'] as int?;
+
+        metadata[countryCode] = CountryMetadata(
+          countryCode: countryCode,
+          airspaceCount: airspaceCount,
+          downloadTime: fetchTime != null
+              ? DateTime.fromMillisecondsSinceEpoch(fetchTime)
+              : DateTime.now(),
+          etag: null, // Not stored in database
+          lastModified: null, // Not stored in database
+          version: 1,
+        );
       }
 
       return metadata;
     } catch (e, stack) {
-      LoggingService.error('Failed to parse country metadata', e, stack);
+      LoggingService.error('Failed to get country metadata from database', e, stack);
       return {};
     }
   }
 
-  /// Save country metadata
-  Future<void> _saveCountryMetadata(Map<String, CountryMetadata> metadata) async {
-    final prefs = await SharedPreferences.getInstance();
-
-    final Map<String, dynamic> json = {};
-    for (final entry in metadata.entries) {
-      json[entry.key] = entry.value.toJson();
-    }
-
-    await prefs.setString(_countryMetadataKey, jsonEncode(json));
-  }
 
   /// Download country airspace data
   Future<DownloadResult> downloadCountryData(
@@ -220,17 +218,7 @@ class AirspaceCountryService {
       features: features.cast<Map<String, dynamic>>(),
     );
 
-    // Update country metadata
-    final metadata = await getCountryMetadata();
-    metadata[countryCode] = CountryMetadata(
-      countryCode: countryCode,
-      airspaceCount: features.length,
-      downloadTime: DateTime.now(),
-      etag: etag,
-      lastModified: lastModified,
-      version: 1,
-    );
-    await _saveCountryMetadata(metadata);
+    // Country metadata is automatically stored by _metadataCache.putCountryAirspaces()
 
     stopwatch.stop();
 
@@ -250,28 +238,7 @@ class AirspaceCountryService {
         return true; // No data, needs download
       }
 
-      // Make HEAD request to check etag/last-modified
-      final url = '$_storageBaseUrl/${countryCode.toLowerCase()}_asp.geojson';
-      final response = await http.head(Uri.parse(url)).timeout(const Duration(seconds: 10));
-
-      if (response.statusCode != 200) {
-        return false; // Can't check, assume up to date
-      }
-
-      final remoteEtag = response.headers['etag'];
-      final remoteLastModified = response.headers['last-modified'];
-
-      // Check if etag has changed
-      if (remoteEtag != null && currentData.etag != null) {
-        return remoteEtag != currentData.etag;
-      }
-
-      // Check if last-modified has changed
-      if (remoteLastModified != null && currentData.lastModified != null) {
-        return remoteLastModified != currentData.lastModified;
-      }
-
-      // If no comparison possible, check age (update if > 30 days old)
+      // Check age (update if > 30 days old)
       final age = DateTime.now().difference(currentData.downloadTime);
       return age.inDays > 30;
 
@@ -285,13 +252,8 @@ class AirspaceCountryService {
   Future<void> deleteCountryData(String countryCode) async {
     LoggingService.info('Deleting country data for $countryCode');
 
-    // Remove from cache
+    // Remove from cache (also removes from database)
     await _metadataCache.deleteCountryData(countryCode);
-
-    // Remove from metadata
-    final metadata = await getCountryMetadata();
-    metadata.remove(countryCode);
-    await _saveCountryMetadata(metadata);
 
     // Remove from selected countries
     final selected = await getSelectedCountries();
@@ -316,7 +278,6 @@ class AirspaceCountryService {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_selectedCountriesKey);
-    await prefs.remove(_countryMetadataKey);
 
     LoggingService.info('Successfully cleared all country airspace data');
   }
