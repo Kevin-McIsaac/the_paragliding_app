@@ -1,6 +1,3 @@
-/// Enum definitions for OpenAIP airspace types and ICAO classes
-/// Provides type safety and centralized mapping for airspace data
-
 import 'package:flutter/material.dart';
 import '../../services/logging_service.dart';
 

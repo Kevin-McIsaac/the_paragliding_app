@@ -1,11 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:math' as math;
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
-import 'package:latlong2/latlong.dart';
 import '../services/logging_service.dart';
 import '../services/airspace_geojson_service.dart' show ClipperData;
 import '../data/models/airspace_cache_models.dart';

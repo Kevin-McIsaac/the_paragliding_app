@@ -868,7 +868,8 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
 
       if (mounted) Navigator.of(context).pop(); // Close loading
 
-      // Stats will be refreshed automatically via FutureBuilder
+      // Refresh UI to show updated stats
+      if (mounted) setState(() {});
 
       _showSuccessDialog(
         'Database Cleared',

@@ -236,7 +236,7 @@ class AirspaceMetadataCache {
         'memoryHits': _cacheHits,
         'memoryMisses': _cacheMisses,
         'hitRate': (_cacheHits + _cacheMisses) > 0
-            ? (_cacheHits / (_cacheHits + _cacheMisses) * 100).toStringAsFixed(1) + '%'
+            ? '${(_cacheHits / (_cacheHits + _cacheMisses) * 100).toStringAsFixed(1)}%'
             : '0.0%',
         'countryCacheSize': _countryAirspaceCache.length,
       },

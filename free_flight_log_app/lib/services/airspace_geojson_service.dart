@@ -634,19 +634,7 @@ class AirspaceGeoJsonService {
 
 
 
-  /// OpenAIP unit codes to aviation units mapping
-  static const Map<int, String> _openAipUnits = {
-    1: 'ft',    // Feet
-    2: 'm',     // Meters
-    6: 'FL',    // Flight Level
-  };
-
-  /// OpenAIP reference datum codes to aviation references mapping
-  static const Map<int, String> _openAipReferenceDatums = {
-    0: 'GND',   // Ground/Surface
-    1: 'AMSL',  // Above Mean Sea Level
-    2: 'STD',   // Standard (Flight Level)
-  };
+  // Removed unused OpenAIP mappings: _openAipUnits, _openAipReferenceDatums
 
 
 
@@ -1056,37 +1044,7 @@ class AirspaceGeoJsonService {
     );
   }
 
-  /// OpenAIP numeric type codes to string mapping
-  /// Based on OpenAIP API documentation and ICAO standards
-  static const Map<int, String> _openAipTypeCodes = {
-    0: 'CTA',   // Control Area/Centre (MELBOURNE CENTRE, PERTH CENTRE)
-    1: 'A',     // Class A
-    2: 'B',     // Class B
-    3: 'C',     // Class C
-    4: 'D',     // Class D (Danger)
-    5: 'E',     // Class E
-    6: 'F',     // Class F
-    7: 'G',     // Class G
-    8: 'CTR',   // Control Zone
-    9: 'TMA',   // Terminal Control Area
-    10: 'CTA',  // Control Area
-    11: 'R',    // Restricted
-    12: 'P',    // Prohibited
-    13: 'CTR',  // ATZ (Aerodrome Traffic Zone) - similar to CTR
-    14: 'D',    // Danger Area
-    15: 'R',    // Military Restricted
-    16: 'TMA',  // Approach Control
-    17: 'CTR',  // Airport Control Zone
-    18: 'R',    // Temporary Restricted
-    19: 'P',    // Temporary Prohibited
-    20: 'D',    // Temporary Danger
-    21: 'TMA',  // Terminal Area
-    22: 'CTA',  // Control Terminal Area
-    23: 'CTA',  // Control Area Extension
-    24: 'CTA',  // Control Area Sector
-    25: 'CTA',  // Control Area Step
-    26: 'CTA',  // Control Terminal Area (CTA A, CTA C1-C7)
-  };
+  // Removed unused OpenAIP type codes mapping
 
 
   /// Get style for airspace data (ICAO class takes priority, fallback to type)
@@ -1136,7 +1094,7 @@ class AirspaceGeoJsonService {
 
   // REMOVED: Float64 conversion methods - now using ClipperData with direct Int32→Int64 conversion
 
-  /// Convert clipper2 Path64 to List<LatLng> for final display only
+  /// Convert clipper2 Path64 to List of LatLng for final display only
   List<LatLng> _clipperPathToLatLngList(clipper.Path64 path) {
     const double coordPrecision = 10000000.0;
     return path.map((point) => LatLng(
@@ -1380,7 +1338,7 @@ class AirspaceGeoJsonService {
     for (int sortedI = 0; sortedI < batch.count; sortedI++) {
       final i = sortedIndices[sortedI];  // Get actual index from sorted array
       final currentAltitude = batch.altitudes[i];
-      final currentBounds = batch.getBounds(i);
+      // currentBounds extracted but not used
       final airspaceData = batch.airspaceData[i].airspaceData;
 
       // Get style for current airspace
@@ -1391,29 +1349,26 @@ class AirspaceGeoJsonService {
       final clippingIndices = <int>[];
       final clippingAirspaceData = <AirspaceData>[];
 
-      // Local comparison metrics
-      int localComparisons = 0;
-      int localAltitudeRejections = 0;
-      int localBoundsRejections = 0;
+      // Local comparison metrics removed - not used
 
       // Process all lower altitude airspaces (using sorted order)
       for (int sortedJ = 0; sortedJ < sortedI; sortedJ++) {
         final j = sortedIndices[sortedJ];
-        localComparisons++;
+        // Local comparison tracking removed
         actualComparisons++;
 
         final lowerAltitude = batch.altitudes[j];
 
         // Early exit - all remaining polygons are at same or higher altitude
         if (lowerAltitude >= currentAltitude) {
-          localAltitudeRejections++;
+          // Local altitude rejection tracking removed
           altitudeRejections++;
           break;
         }
 
         // Optimized bounds check using packed Float32List data
         if (!batch.boundsOverlap(i, j)) {
-          localBoundsRejections++;
+          // Local bounds rejection tracking removed
           boundsRejections++;
           continue;
         }

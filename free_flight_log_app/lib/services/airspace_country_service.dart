@@ -20,7 +20,6 @@ class AirspaceCountryService {
 
   // Preferences keys
   static const String _selectedCountriesKey = 'airspace_selected_countries';
-  static const String _countryMetadataKey = 'airspace_country_metadata';
 
   // Cache references
   final AirspaceMetadataCache _metadataCache = AirspaceMetadataCache.instance;
@@ -88,7 +87,7 @@ class AirspaceCountryService {
         final countryCode = details['country_code'] as String;
         final airspaceCount = details['airspace_count'] as int? ?? 0;
         final fetchTime = details['fetch_time'] as int?;
-        final sizeBytes = details['size_bytes'] as int?;
+        // size_bytes extracted but not used
 
         metadata[countryCode] = CountryMetadata(
           countryCode: countryCode,

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../services/airspace_country_service.dart';
-import '../../services/logging_service.dart';
 import '../../data/models/airspace_country_models.dart';
 
 class AirspaceCountrySelector extends StatefulWidget {
@@ -106,7 +105,9 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
                 if (country.isDownloaded) {
                   await _countryService.deleteCountryData(country.info.code);
                 }
-                Navigator.of(context).pop(true);
+                if (mounted) {
+                  Navigator.of(context).pop(true);
+                }
               },
               child: Text(
                 country.isDownloaded ? 'Delete Data' : 'Remove',

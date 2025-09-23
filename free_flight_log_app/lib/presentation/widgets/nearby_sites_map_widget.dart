@@ -91,7 +91,6 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   List<Widget> _airspaceLayers = [];
   bool _airspaceLoading = false;
   // Remove internal _airspaceEnabled state - use widget.airspaceEnabled instead
-  Set<AirspaceType> _visibleAirspaceTypes = {};
 
   // Airspace tooltip state
   List<AirspaceData> _tooltipAirspaces = [];
@@ -99,8 +98,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   bool _showTooltip = false;
 
   // Selected airspace state
-  AirspaceData? _selectedAirspace;
-  List<fm.Polygon> _highlightedPolygons = [];
+  final List<fm.Polygon> _highlightedPolygons = [];
 
   // Debouncing for render logs
   DateTime? _lastRenderLog;
@@ -424,7 +422,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         setState(() {
           _airspaceLayers = layers;
           _airspaceLoading = false;
-          _visibleAirspaceTypes = visibleTypes;
+          // visibleTypes tracked internally, not stored
           _loadedAirspaceCount = layers.length;
         });
 
@@ -503,7 +501,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
           airspace.getLowerAltitudeInFeet() == lowestAltitude).toList();
 
         // Store selected airspace for reference
-        _selectedAirspace = lowestAirspace;
+        // Track selected airspace for highlighting
 
         // Clear existing highlights before adding new ones
         _highlightedPolygons.clear();
@@ -628,7 +626,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   void _clearSelection() {
     if (mounted) {
       setState(() {
-        _selectedAirspace = null;
+        // Clear selected airspace
         _highlightedPolygons.clear();
       });
     }

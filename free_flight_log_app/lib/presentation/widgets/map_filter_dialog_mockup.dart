@@ -193,7 +193,7 @@ class _MapFilterDialogMockupState extends State<MapFilterDialogMockup> {
               });
             },
             borderRadius: BorderRadius.circular(4),
-            child: Container(
+            child: SizedBox(
               height: 18,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -221,7 +221,7 @@ class _MapFilterDialogMockupState extends State<MapFilterDialogMockup> {
               ),
             ),
           );
-        }).toList(),
+        }),
       ],
     );
   }
@@ -247,7 +247,7 @@ class _MapFilterDialogMockupState extends State<MapFilterDialogMockup> {
               });
             },
             borderRadius: BorderRadius.circular(4),
-            child: Container(
+            child: SizedBox(
               height: 18,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -275,7 +275,7 @@ class _MapFilterDialogMockupState extends State<MapFilterDialogMockup> {
               ),
             ),
           );
-        }).toList(),
+        }),
       ],
     );
   }
