@@ -15,10 +15,17 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
 
   String? _downloadingCountry;
   double? _downloadProgress;
+  late Future<List<CountrySelectionModel>> _countriesFuture;
 
   @override
   void initState() {
     super.initState();
+    _refreshCountries();
+  }
+
+  /// Refresh the country list data
+  void _refreshCountries() {
+    _countriesFuture = _buildCountryList();
   }
 
   Future<List<CountrySelectionModel>> _buildCountryList() async {
@@ -114,7 +121,9 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
         final selected = await _countryService.getSelectedCountries();
         selected.remove(country.info.code);
         await _countryService.setSelectedCountries(selected);
-        setState(() {}); // Trigger FutureBuilder refresh
+        setState(() {
+          _refreshCountries();
+        });
       }
     } else {
       // Select and download if needed
@@ -125,7 +134,9 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
       if (!country.isDownloaded) {
         await _downloadCountry(country.info.code);
       } else {
-        setState(() {}); // Trigger FutureBuilder refresh
+        setState(() {
+          _refreshCountries();
+        });
       }
     }
   }
@@ -143,6 +154,8 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
           if (mounted) {
             setState(() {
               _downloadProgress = progress;
+              // NOTE: Do NOT call _refreshCountries() here - this would cause
+              // hundreds of database queries during download progress updates
             });
           }
         },
@@ -174,7 +187,9 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
         _downloadingCountry = null;
         _downloadProgress = null;
       });
-      // Country list will refresh automatically via FutureBuilder
+      setState(() {
+        _refreshCountries();
+      });
     }
   }
 
@@ -187,7 +202,7 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<CountrySelectionModel>>(
-      future: _buildCountryList(),
+      future: _countriesFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -225,17 +240,6 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Theme.of(context).textTheme.bodySmall?.color,
                 ),
-              ),
-              const SizedBox(height: 8),
-              FutureBuilder<double>(
-                future: _countryService.getTotalStorageMB(),
-                builder: (context, snapshot) {
-                  final storageMB = snapshot.data ?? 0;
-                  return Text(
-                    'Total storage used: ${storageMB.toStringAsFixed(1)} MB',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  );
-                },
               ),
             ],
           ),
@@ -325,7 +329,9 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
 
                 if (confirm == true) {
                   await _countryService.deleteCountryData(country.info.code);
-                  setState(() {}); // Trigger FutureBuilder refresh
+                  setState(() {
+                    _refreshCountries();
+                  });
                 }
               },
               tooltip: 'Delete data',
@@ -351,16 +357,15 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
 
     if (country.isDownloaded) {
       final meta = country.metadata!;
-      final sizeMB = meta.sizeMB;
       final ageText = _getAgeText(meta.downloadTime);
 
       if (country.status == DownloadStatus.updateAvailable) {
-        return '${meta.airspaceCount} airspaces • ${sizeMB.toStringAsFixed(1)} MB • Update available';
+        return '${meta.airspaceCount} airspaces • Update available';
       }
-      return '${meta.airspaceCount} airspaces • ${sizeMB.toStringAsFixed(1)} MB • $ageText';
+      return '${meta.airspaceCount} airspaces • $ageText';
     }
 
-    return 'Not downloaded • ~${country.info.estimatedSizeMB} MB';
+    return 'Not downloaded';
   }
 
   String _getAgeText(DateTime downloadTime) {

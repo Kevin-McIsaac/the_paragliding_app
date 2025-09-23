@@ -66,7 +66,7 @@ class AirspaceCountryService {
     final prefs = await SharedPreferences.getInstance();
     final countries = prefs.getStringList(_selectedCountriesKey) ?? [];
 
-    LoggingService.info('Retrieved ${countries.length} selected countries: ${countries.join(", ")}');
+    // Only log when countries list changes, not on every call
     return countries;
   }
 
@@ -162,12 +162,13 @@ class AirspaceCountryService {
 
       final features = geoJson['features'] as List<dynamic>;
 
-      LoggingService.structured('COUNTRY_DOWNLOAD_COMPLETE', {
-        'country': countryCode,
-        'features_count': features.length,
-        'size_bytes': bytes.length,
-        'duration_ms': stopwatch.elapsedMilliseconds,
-      });
+      final countryName = availableCountries[countryCode]?.name ?? countryCode;
+      final sizeMB = bytes.length / (1024 * 1024);
+      final durationSec = stopwatch.elapsedMilliseconds / 1000;
+
+      LoggingService.info(
+        'Downloaded $countryName: ${features.length} airspaces (${sizeMB.toStringAsFixed(1)} MB) in ${durationSec.toStringAsFixed(1)}s'
+      );
 
       // Get etag and last-modified from response headers
       final etag = streamedResponse.headers['etag'];
@@ -207,10 +208,7 @@ class AirspaceCountryService {
   ) async {
     final stopwatch = Stopwatch()..start();
 
-    LoggingService.structured('COUNTRY_STORE_START', {
-      'country': countryCode,
-      'features': features.length,
-    });
+    LoggingService.debug('Storing ${features.length} features for country $countryCode');
 
     // Store all features for this country
     await _metadataCache.putCountryAirspaces(
@@ -222,10 +220,7 @@ class AirspaceCountryService {
 
     stopwatch.stop();
 
-    LoggingService.structured('COUNTRY_STORE_COMPLETE', {
-      'country': countryCode,
-      'duration_ms': stopwatch.elapsedMilliseconds,
-    });
+    LoggingService.debug('Completed storing country $countryCode in ${stopwatch.elapsedMilliseconds}ms');
   }
 
   /// Check if country data needs updating

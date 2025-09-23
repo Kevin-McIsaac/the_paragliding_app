@@ -405,8 +405,8 @@ class AirspaceDiskCache {
 
       final existingIds = results.map((row) => row['id'] as String).toSet();
 
-      LoggingService.info(
-        '[BATCH_ID_CHECK] Checked ${ids.length} IDs, found ${existingIds.length} existing in ${stopwatch.elapsedMilliseconds}ms'
+      LoggingService.debug(
+        'Batch ID check: ${ids.length} IDs, ${existingIds.length} existing (${stopwatch.elapsedMilliseconds}ms)'
       );
 
       return existingIds;

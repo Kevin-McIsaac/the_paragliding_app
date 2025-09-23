@@ -88,7 +88,7 @@ enum IcaoClass {
     'Class A',
     'IFR only. High-level, restrictive airspace primarily for commercial and passenger jets, requiring advanced IFR clearance. All flights receive air traffic control service and are separated from all other traffic',
     Color(0xFFFF0000),  // Red border
-    Color(0x1AFF0000),  // 10% opacity red fill
+    Color(0x40FF0000),  // 25% opacity red fill
   ),
   classB(
     1,
@@ -96,7 +96,7 @@ enum IcaoClass {
     'Class B',
     'IFR and VFR. Airspace surrounding major airports, with specific requirements for IFR and VFR flight, including clearance and ATC services. All flights receive air traffic control service and are separated from all other traffic',
     Color(0xFFFFA500),  // Orange border
-    Color(0x1AFFA500),  // 10% opacity orange fill
+    Color(0x40FFA500),  // 25% opacity orange fill
   ),
   classC(
     2,
@@ -104,7 +104,7 @@ enum IcaoClass {
     'Class C',
     'IFR and VFR. Airspace surrounding major airports, with specific requirements for IFR and VFR flight, including clearance and ATC services. All flights receive air traffic control service. IFR flights are separated from other IFR and VFR flights. VFR flights are separated from IFR flights and receive traffic information on other VFR flights',
     Color(0xFFFFD700),  // Yellow/Gold border
-    Color(0x1AFFD700),  // 10% opacity yellow fill
+    Color(0x40FFD700),  // 25% opacity yellow fill
   ),
   classD(
     3,
@@ -112,7 +112,7 @@ enum IcaoClass {
     'Class D',
     'IFR and VFR. Airspace surrounding major airports, with specific requirements for IFR and VFR flight, including clearance and ATC services. All flights receive air traffic control service. IFR flights are separated from other IFR flights and receive traffic information on VFR flights. VFR flights receive traffic information on all other traffic',
     Color(0xFF0080FF),  // Blue border
-    Color(0x1A0080FF),  // 10% opacity blue fill
+    Color(0x400080FF),  // 25% opacity blue fill
   ),
   classE(
     4,
@@ -120,7 +120,7 @@ enum IcaoClass {
     'Class E',
     'IFR and VFR. Mid-level, en route controlled airspace with less stringent rules than lower classes. IFR flights receive air traffic control service and are separated from other IFR flights. All flights receive traffic information as far as practical. VFR flights do not receive separation service',
     Color(0xFFA0522D),  // Sienna/Brown border
-    Color(0x4DA0522D),  // 30% opacity sienna fill
+    Color(0x40A0522D),  // 25% opacity sienna fill
   ),
   classF(
     5,
@@ -128,7 +128,7 @@ enum IcaoClass {
     'Class F',
     'IFR and VFR. IFR flights receive air traffic advisory service and all flights receive flight information service if requested. Class F is not implemented in many countries',
     Color(0xFF00CED1),  // Cyan/Turquoise border
-    Color(0x1A00CED1),  // 10% opacity cyan fill
+    Color(0x4000CED1),  // 25% opacity cyan fill
   ),
   classG(
     6,
@@ -136,15 +136,15 @@ enum IcaoClass {
     'Class G',
     'Uncontrolled. Pilots are responsible for "see and avoid" and maintaining separation, as ATC services and separation are not provided. Only flight information service provided if requested. No separation service provided',
     Color(0xFF00C000),  // Green border
-    Color(0x1A00C000),  // 10% opacity green fill
+    Color(0x4000C000),  // 25% opacity green fill
   ),
   none(
     8,
     'None',
     'Class None',
     'No ICAO class assigned in the OpenAIP system',
-    Color(0xFF404040),  // Dark gray border
-    Color(0x1A404040),  // 10% opacity dark gray fill
+    Color(0xFF000000),  // Black border
+    Color(0x40000000),  // 25% opacity black fill
   );
 
   const IcaoClass(
@@ -164,8 +164,8 @@ enum IcaoClass {
   final Color fillColor;
 
   /// Convert from OpenAIP numeric code to enum
-  static IcaoClass? fromCode(int? code) {
-    if (code == null) return null;
+  static IcaoClass fromCode(int? code) {
+    if (code == null) return IcaoClass.none; // Default to none for missing codes
     for (final icaoClass in IcaoClass.values) {
       if (icaoClass.code == code) return icaoClass;
     }

@@ -32,10 +32,7 @@ class AirspaceMetadataCache {
   }) async {
     final stopwatch = Stopwatch()..start();
 
-    LoggingService.structured('COUNTRY_CACHE_STORE', {
-      'country': countryCode,
-      'features': features.length,
-    });
+    LoggingService.debug('Caching ${features.length} features for country $countryCode');
 
     try {
       // Extract airspace IDs
