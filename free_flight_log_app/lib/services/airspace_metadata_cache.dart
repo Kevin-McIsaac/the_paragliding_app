@@ -30,7 +30,6 @@ class AirspaceMetadataCache {
     required String countryCode,
     required List<Map<String, dynamic>> features,
   }) async {
-    final stopwatch = Stopwatch()..start();
 
     LoggingService.debug('Caching ${features.length} features for country $countryCode');
 
@@ -53,42 +52,12 @@ class AirspaceMetadataCache {
       // Update memory cache for UI purposes
       _updateCountryCache(countryCode, airspaceIds.toSet());
 
-      stopwatch.stop();
-      LoggingService.performance(
-        'Stored country airspaces',
-        stopwatch.elapsed,
-        'country=$countryCode, airspaces=${airspaceIds.length}',
-      );
+      LoggingService.info('Stored $countryCode airspaces: ${airspaceIds.length} geometries');
     } catch (e, stack) {
       LoggingService.error('Failed to store country airspaces', e, stack);
     }
   }
 
-  /// Get airspaces for selected countries (simplified - now returns all geometries)
-  Future<List<CachedAirspaceGeometry>> getAirspacesForCountries(List<String> countryCodes) async {
-    if (countryCodes.isEmpty) {
-      return [];
-    }
-
-    final stopwatch = Stopwatch()..start();
-
-    // Since we no longer track by country, use spatial query with no bounds to get all geometries
-    final geometries = await _diskCache.getGeometriesInBounds(
-      west: -180.0,
-      south: -90.0,
-      east: 180.0,
-      north: 90.0,
-    );
-
-    stopwatch.stop();
-    LoggingService.performance(
-      'Retrieved airspaces',
-      stopwatch.elapsed,
-      'geometries=${geometries.length}',
-    );
-
-    return geometries;
-  }
 
   /// Get airspaces for viewport using optimized spatial query with filtering
   /// All filtering is performed at the database level for optimal performance
@@ -103,7 +72,6 @@ class AirspaceMetadataCache {
     bool orderByAltitude = false,
   }) async {
 
-    final stopwatch = Stopwatch()..start();
 
     // Use the enhanced spatial query with SQL-level filtering
     final viewportGeometries = await _diskCache.getGeometriesInBounds(
@@ -117,14 +85,7 @@ class AirspaceMetadataCache {
       orderByAltitude: orderByAltitude,
     );
 
-    stopwatch.stop();
-
-    // Log the optimized performance
-    LoggingService.performance(
-      '[SPATIAL_VIEWPORT_QUERY]',
-      stopwatch.elapsed,
-      'viewport_geometries=${viewportGeometries.length}',
-    );
+    LoggingService.debug('Viewport query found ${viewportGeometries.length} geometries');
 
     return viewportGeometries;
   }
