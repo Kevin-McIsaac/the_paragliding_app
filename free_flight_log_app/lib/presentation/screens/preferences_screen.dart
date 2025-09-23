@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../utils/preferences_helper.dart';
 import '../../utils/ui_utils.dart';
+import '../../utils/card_expansion_manager.dart';
 import '../../services/logging_service.dart';
 import '../widgets/airspace_country_selector.dart';
 
@@ -28,10 +29,22 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   bool _isLoading = true;
   bool _isSaving = false;
 
+  // Card expansion state manager
+  CardExpansionManager? _expansionManager;
+
   @override
   void initState() {
     super.initState();
+    _expansionManager = CardExpansionManagers.createPreferencesManager();
     _loadPreferences();
+    _loadCardExpansionStates();
+  }
+
+  Future<void> _loadCardExpansionStates() async {
+    await _expansionManager?.loadStates();
+    setState(() {
+      // Update UI with loaded expansion states
+    });
   }
 
   Future<void> _loadPreferences() async {
@@ -124,7 +137,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     }
   }
 
-  Widget _buildSection(String title, List<Widget> children, {bool collapsed = false}) {
+  Widget _buildSection(String title, List<Widget> children, {required String expansionKey}) {
     return Card(
       margin: const EdgeInsets.all(8.0),
       child: ExpansionTile(
@@ -134,7 +147,13 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
             fontWeight: FontWeight.bold,
           ),
         ),
-        initiallyExpanded: !collapsed,
+        initiallyExpanded: _expansionManager?.getState(expansionKey) ?? true,
+        onExpansionChanged: (expanded) {
+          _expansionManager?.setState(expansionKey, expanded);
+          setState(() {
+            // Update UI with new expansion state
+          });
+        },
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -208,7 +227,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           ListView(
             children: [
               // 3D Visualization Settings
-              _buildSection('3D Visualization', [
+              _buildSection('3D Visualization', expansionKey: '3d_visualization', [
                 _buildSwitchRow(
                   'Enable Terrain',
                   'Show 3D terrain relief on maps',
@@ -298,7 +317,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
               ]),
 
               // Airspace Countries
-              _buildSection('Airspace Data', [
+              _buildSection('Airspace Data', expansionKey: 'airspace_data', [
                 SizedBox(
                   height: 450, // Increased height to show more countries
                   child: const AirspaceCountrySelector(),
@@ -306,7 +325,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
               ]),
 
               // Flight Detection Settings
-              _buildSection('Flight Detection', [
+              _buildSection('Flight Detection', expansionKey: 'flight_detection', [
                 _buildDropdownRow<double>(
                   'Speed Threshold',
                   'Minimum 5-second average ground speed for takeoff/landing detection',

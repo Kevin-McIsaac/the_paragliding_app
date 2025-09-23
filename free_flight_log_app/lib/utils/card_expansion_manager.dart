@@ -164,7 +164,7 @@ class CardExpansionManagers {
   }
   
   /// Creates a CardExpansionManager for the Data Management screen with standard card types.
-  static CardExpansionManager createDataManagementManager({bool persistent = false}) {
+  static CardExpansionManager createDataManagementManager({bool persistent = true}) {
     final manager = CardExpansionManager(screenId: 'data_management', persistent: persistent);
     manager.registerCards({
       'database_stats': false,
@@ -174,6 +174,17 @@ class CardExpansionManagers {
       'igc_cleanup': false,
       'api_test': false,
       'premium_maps': false,
+    });
+    return manager;
+  }
+
+  /// Creates a CardExpansionManager for the Preferences screen with standard card types.
+  static CardExpansionManager createPreferencesManager() {
+    final manager = CardExpansionManager(screenId: 'preferences');
+    manager.registerCards({
+      '3d_visualization': true,
+      'airspace_data': true,
+      'flight_detection': true,
     });
     return manager;
   }

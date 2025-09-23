@@ -31,7 +31,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
   bool _isLoading = true;
   bool _dataModified = false; // Track if any data was modified
   
-  // Card expansion state manager (session-only for this screen)
+  // Card expansion state manager (persistent for this screen)
   late CardExpansionManager _expansionManager;
   
   // Cesium token state
@@ -49,15 +49,25 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
     
     // Initialize expansion manager
     _expansionManager = CardExpansionManagers.createDataManagementManager();
-    
+
+    // Load saved expansion states
+    _loadCardExpansionStates();
+
     // Set initial Premium Maps expansion state based on parameter
     if (widget.expandPremiumMaps) {
       _expansionManager.setState('premium_maps', true);
     }
-    
+
     _loadDatabaseStats();
     _loadBackupDiagnostics();
     _loadCesiumToken();
+  }
+
+  Future<void> _loadCardExpansionStates() async {
+    await _expansionManager.loadStates();
+    setState(() {
+      // Update UI with loaded expansion states
+    });
   }
 
   Future<void> _loadDatabaseStats() async {
