@@ -188,8 +188,8 @@ class AirspaceGeometryCache {
       await _diskCache.putGeometryBatch(geometriesToInsert);
     }
 
-    LoggingService.info(
-      '[BATCH_GEOMETRY_STORAGE] Processed ${features.length} features: $newGeometries new, $duplicates duplicates in ${stopwatch.elapsedMilliseconds}ms'
+    LoggingService.debug(
+      'Processed ${features.length} features: $newGeometries new, $duplicates duplicates (${stopwatch.elapsedMilliseconds}ms)'
     );
   }
 

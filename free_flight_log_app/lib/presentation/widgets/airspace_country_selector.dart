@@ -13,73 +13,68 @@ class AirspaceCountrySelector extends StatefulWidget {
 class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
   final AirspaceCountryService _countryService = AirspaceCountryService.instance;
 
-  List<CountrySelectionModel> _countries = [];
-  bool _isLoading = true;
   String? _downloadingCountry;
   double? _downloadProgress;
+  late Future<List<CountrySelectionModel>> _countriesFuture;
 
   @override
   void initState() {
     super.initState();
-    _loadCountries();
+    _refreshCountries();
   }
 
-  Future<void> _loadCountries() async {
-    setState(() => _isLoading = true);
+  /// Refresh the country list data
+  void _refreshCountries() {
+    _countriesFuture = _buildCountryList();
+  }
 
-    try {
-      // Get selected countries
-      final selectedCodes = await _countryService.getSelectedCountries();
-      final metadata = await _countryService.getCountryMetadata();
+  Future<List<CountrySelectionModel>> _buildCountryList() async {
+    // Get selected countries and metadata in real-time
+    final selectedCodes = await _countryService.getSelectedCountries();
+    final metadata = await _countryService.getCountryMetadata();
 
-      // Build country models
-      final countries = <CountrySelectionModel>[];
-      for (final entry in AirspaceCountryService.availableCountries.entries) {
-        final code = entry.key;
-        final info = entry.value;
-        final isSelected = selectedCodes.contains(code);
-        final meta = metadata[code];
-        final isDownloaded = meta != null;
+    // Build country models
+    final countries = <CountrySelectionModel>[];
+    for (final entry in AirspaceCountryService.availableCountries.entries) {
+      final code = entry.key;
+      final info = entry.value;
+      final meta = metadata[code];
+      final isDownloaded = meta != null;
+      // Only consider a country selected if it has data in the database AND is in the selected list
+      final isSelected = isDownloaded && selectedCodes.contains(code);
 
-        DownloadStatus status;
-        if (_downloadingCountry == code) {
-          status = DownloadStatus.downloading;
-        } else if (isDownloaded) {
-          if (meta.needsUpdate) {
-            status = DownloadStatus.updateAvailable;
-          } else {
-            status = DownloadStatus.downloaded;
-          }
+      DownloadStatus status;
+      if (_downloadingCountry == code) {
+        status = DownloadStatus.downloading;
+      } else if (isDownloaded) {
+        if (meta.needsUpdate) {
+          status = DownloadStatus.updateAvailable;
         } else {
-          status = DownloadStatus.notDownloaded;
+          status = DownloadStatus.downloaded;
         }
-
-        countries.add(CountrySelectionModel(
-          info: info,
-          isSelected: isSelected,
-          isDownloaded: isDownloaded,
-          status: status,
-          downloadProgress: _downloadingCountry == code ? _downloadProgress : null,
-          metadata: meta,
-        ));
+      } else {
+        status = DownloadStatus.notDownloaded;
       }
 
-      // Sort countries: selected first, then by name
-      countries.sort((a, b) {
-        if (a.isSelected != b.isSelected) {
-          return a.isSelected ? -1 : 1;
-        }
-        return a.info.name.compareTo(b.info.name);
-      });
-
-      setState(() {
-        _countries = countries;
-        _isLoading = false;
-      });
-    } catch (e, stack) {
-      LoggingService.error('Failed to load countries', e, stack);
-      setState(() => _isLoading = false);
+      countries.add(CountrySelectionModel(
+        info: info,
+        isSelected: isSelected,
+        isDownloaded: isDownloaded,
+        status: status,
+        downloadProgress: _downloadingCountry == code ? _downloadProgress : null,
+        metadata: meta,
+      ));
     }
+
+    // Sort countries: selected first, then by name
+    countries.sort((a, b) {
+      if (a.isSelected != b.isSelected) {
+        return a.isSelected ? -1 : 1;
+      }
+      return a.info.name.compareTo(b.info.name);
+    });
+
+    return countries;
   }
 
   Future<void> _toggleCountry(CountrySelectionModel country) async {
@@ -126,7 +121,9 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
         final selected = await _countryService.getSelectedCountries();
         selected.remove(country.info.code);
         await _countryService.setSelectedCountries(selected);
-        await _loadCountries();
+        setState(() {
+          _refreshCountries();
+        });
       }
     } else {
       // Select and download if needed
@@ -137,7 +134,9 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
       if (!country.isDownloaded) {
         await _downloadCountry(country.info.code);
       } else {
-        await _loadCountries();
+        setState(() {
+          _refreshCountries();
+        });
       }
     }
   }
@@ -155,6 +154,8 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
           if (mounted) {
             setState(() {
               _downloadProgress = progress;
+              // NOTE: Do NOT call _refreshCountries() here - this would cause
+              // hundreds of database queries during download progress updates
             });
           }
         },
@@ -186,7 +187,9 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
         _downloadingCountry = null;
         _downloadProgress = null;
       });
-      await _loadCountries();
+      setState(() {
+        _refreshCountries();
+      });
     }
   }
 
@@ -198,11 +201,28 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
+    return FutureBuilder<List<CountrySelectionModel>>(
+      future: _countriesFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-    return Column(
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                'Error loading countries: ${snapshot.error}',
+                style: const TextStyle(color: Colors.red),
+              ),
+            ),
+          );
+        }
+
+        final countries = snapshot.data ?? [];
+
+        return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
@@ -221,30 +241,21 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
                   color: Theme.of(context).textTheme.bodySmall?.color,
                 ),
               ),
-              const SizedBox(height: 8),
-              FutureBuilder<double>(
-                future: _countryService.getTotalStorageMB(),
-                builder: (context, snapshot) {
-                  final storageMB = snapshot.data ?? 0;
-                  return Text(
-                    'Total storage used: ${storageMB.toStringAsFixed(1)} MB',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  );
-                },
-              ),
             ],
           ),
         ),
         Expanded(
           child: ListView.builder(
-            itemCount: _countries.length,
+            itemCount: countries.length,
             itemBuilder: (context, index) {
-              final country = _countries[index];
+              final country = countries[index];
               return _buildCountryTile(country);
             },
           ),
         ),
-      ],
+        ],
+      );
+      },
     );
   }
 
@@ -318,7 +329,9 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
 
                 if (confirm == true) {
                   await _countryService.deleteCountryData(country.info.code);
-                  await _loadCountries();
+                  setState(() {
+                    _refreshCountries();
+                  });
                 }
               },
               tooltip: 'Delete data',
@@ -344,16 +357,15 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
 
     if (country.isDownloaded) {
       final meta = country.metadata!;
-      final sizeMB = meta.sizeMB;
       final ageText = _getAgeText(meta.downloadTime);
 
       if (country.status == DownloadStatus.updateAvailable) {
-        return '${meta.airspaceCount} airspaces • ${sizeMB.toStringAsFixed(1)} MB • Update available';
+        return '${meta.airspaceCount} airspaces • Update available';
       }
-      return '${meta.airspaceCount} airspaces • ${sizeMB.toStringAsFixed(1)} MB • $ageText';
+      return '${meta.airspaceCount} airspaces • $ageText';
     }
 
-    return 'Not downloaded • ~${country.info.estimatedSizeMB} MB';
+    return 'Not downloaded';
   }
 
   String _getAgeText(DateTime downloadTime) {

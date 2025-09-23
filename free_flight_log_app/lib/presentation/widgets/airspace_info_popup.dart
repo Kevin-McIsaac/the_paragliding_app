@@ -243,6 +243,7 @@ class _AirspaceInfoPopupState extends State<AirspaceInfoPopup> {
     final style = AirspaceGeoJsonService.instance.getStyleForAirspace(airspace);
 
 
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
       child: Column(
@@ -330,8 +331,8 @@ class _AirspaceInfoPopupState extends State<AirspaceInfoPopup> {
                   ),
                 ),
 
-                // ICAO class with mapping and tooltip (always show if available)
-                if (airspace.icaoClass != null) ...[
+                // ICAO class with mapping and tooltip (always show)
+                ...[
                   const SizedBox(width: 6),
                   Tooltip(
                     preferBelow: false,
@@ -349,7 +350,7 @@ class _AirspaceInfoPopupState extends State<AirspaceInfoPopup> {
                           child: Container(
                             constraints: const BoxConstraints(maxWidth: 250),
                             child: Text(
-                              airspace.icaoClass!.tooltip,
+                              airspace.icaoClass.tooltip,
                               style: const TextStyle(color: Colors.white, fontSize: 13),
                             ),
                           ),
@@ -357,7 +358,7 @@ class _AirspaceInfoPopupState extends State<AirspaceInfoPopup> {
                       ],
                     ),
                     child: Text(
-                      '${_getDisplayIcaoClassAbbreviation(airspace.icaoClass!)},',
+                      '${_getDisplayIcaoClassAbbreviation(airspace.icaoClass)},',
                       style: TextStyle(
                         color: airspace.isCurrentlyFiltered
                           ? Colors.grey.withValues(alpha: 0.8)

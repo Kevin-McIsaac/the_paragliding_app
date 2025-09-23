@@ -95,20 +95,20 @@ class AirspaceHoverTooltip extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (airspace.icaoClass != null) ...[
+                  if (airspace.icaoClass != IcaoClass.none) ...[
                     const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: airspace.icaoClass!.fillColor,
+                        color: airspace.icaoClass.fillColor,
                         borderRadius: BorderRadius.circular(4),
                         border: Border.all(
-                          color: airspace.icaoClass!.borderColor,
+                          color: airspace.icaoClass.borderColor,
                           width: 1,
                         ),
                       ),
                       child: Text(
-                        'Class ${airspace.icaoClass!.abbreviation}',
+                        'Class ${airspace.icaoClass.abbreviation}',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 11,
