@@ -13,8 +13,6 @@ class AirspaceDiskCache {
   static const int _databaseVersion = 7; // Version 7: Removed redundant indexes and tile table
 
   static const String _geometryTable = 'airspace_geometries';
-  static const String _countryMetadataTable = 'country_metadata';
-  static const String _countryMappingTable = 'country_airspace_mapping';
   static const String _statisticsTable = 'cache_statistics';
 
   // Size limits
@@ -166,31 +164,6 @@ class AirspaceDiskCache {
       )
     ''');
 
-    // Country metadata table (for country-based storage)
-    await db.execute('''
-      CREATE TABLE $_countryMetadataTable (
-        country_code TEXT PRIMARY KEY,
-        airspace_count INTEGER NOT NULL,
-        fetch_time INTEGER NOT NULL,
-        etag TEXT,
-        last_modified TEXT,
-        version INTEGER DEFAULT 1,
-        size_bytes INTEGER,
-        last_accessed INTEGER
-      )
-    ''');
-
-    // Country to airspace mapping table
-    await db.execute('''
-      CREATE TABLE $_countryMappingTable (
-        country_code TEXT NOT NULL,
-        airspace_id TEXT NOT NULL,
-        PRIMARY KEY (country_code, airspace_id),
-        FOREIGN KEY (country_code) REFERENCES $_countryMetadataTable(country_code) ON DELETE CASCADE,
-        FOREIGN KEY (airspace_id) REFERENCES $_geometryTable(id) ON DELETE CASCADE
-      )
-    ''');
-
     // Statistics table
     await db.execute('''
       CREATE TABLE $_statisticsTable (
@@ -200,19 +173,9 @@ class AirspaceDiskCache {
       )
     ''');
 
-    // Create essential indices only (reduced from 17 to 7)
-    // Spatial compound index for bounding box queries (replaces 4 individual indexes)
+    // Create spatial index for bounding box queries (most critical for performance)
     await db.execute('CREATE INDEX idx_geometry_spatial ON $_geometryTable(bounds_west, bounds_east, bounds_south, bounds_north)');
 
-    // Essential filtering indices
-    await db.execute('CREATE INDEX idx_geometry_lower_altitude ON $_geometryTable(lower_altitude_ft)');
-    await db.execute('CREATE INDEX idx_geometry_type_code ON $_geometryTable(type_code)');
-    await db.execute('CREATE INDEX idx_geometry_icao_class ON $_geometryTable(icao_class)');
-
-    // Country-based query indices
-    await db.execute('CREATE INDEX idx_country_mapping_country ON $_countryMappingTable(country_code)');
-    await db.execute('CREATE INDEX idx_country_mapping_airspace ON $_countryMappingTable(airspace_id)');
-    await db.execute('CREATE INDEX idx_country_metadata_fetch ON $_countryMetadataTable(fetch_time)');
   }
 
   // Compression utilities
@@ -714,7 +677,6 @@ class AirspaceDiskCache {
     required double south,
     required double east,
     required double north,
-    List<String>? countryCodes,
     int? typeCode,
     Set<int>? excludedTypes,
     Set<int>? excludedClasses,
@@ -764,23 +726,11 @@ class AirspaceDiskCache {
         args.add(maxAltitudeFt);
       }
 
-      // Build the query based on country filter
-      String query;
-      if (countryCodes != null && countryCodes.isNotEmpty) {
-        query = '''
-          SELECT DISTINCT g.*
-          FROM $_geometryTable g
-          JOIN $_countryMappingTable cm ON g.id = cm.airspace_id
-          WHERE ${conditions.join(' AND ')}
-            AND cm.country_code IN (${countryCodes.map((_) => '?').join(',')})
-        ''';
-        args.addAll(countryCodes);
-      } else {
-        query = '''
-          SELECT * FROM $_geometryTable
-          WHERE ${conditions.join(' AND ')}
-        ''';
-      }
+      // Build the optimized spatial query without JOIN
+      var query = '''
+        SELECT * FROM $_geometryTable
+        WHERE ${conditions.join(' AND ')}
+      ''';
 
       // Add ORDER BY clause for clipping optimization
       if (orderByAltitude) {
@@ -955,164 +905,11 @@ class AirspaceDiskCache {
     }
   }
 
-  // Country-based methods
-
-  /// Store country metadata
-  Future<void> putCountryMetadata({
-    required String countryCode,
-    required int airspaceCount,
-    String? etag,
-    String? lastModified,
-    int? sizeBytes,
-  }) async {
+  /// Get the total number of geometries in the cache
+  Future<int> getGeometryCount() async {
     final db = await database;
-    final now = DateTime.now().millisecondsSinceEpoch;
-
-    await db.insert(
-      _countryMetadataTable,
-      {
-        'country_code': countryCode,
-        'airspace_count': airspaceCount,
-        'fetch_time': now,
-        'etag': etag,
-        'last_modified': lastModified,
-        'version': 1,
-        'size_bytes': sizeBytes,
-        'last_accessed': now,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-  }
-
-  /// Store country to airspace mappings
-  Future<void> putCountryMappings({
-    required String countryCode,
-    required List<String> airspaceIds,
-  }) async {
-    final db = await database;
-
-    // Delete existing mappings for this country
-    await db.delete(
-      _countryMappingTable,
-      where: 'country_code = ?',
-      whereArgs: [countryCode],
-    );
-
-    // Insert new mappings in batch (use IGNORE to handle duplicates)
-    final batch = db.batch();
-    for (final airspaceId in airspaceIds) {
-      batch.insert(
-        _countryMappingTable,
-        {
-          'country_code': countryCode,
-          'airspace_id': airspaceId,
-        },
-        conflictAlgorithm: ConflictAlgorithm.ignore,
-      );
-    }
-    await batch.commit(noResult: true);
-  }
-
-  /// Get airspace IDs for a country
-  Future<List<String>> getCountryAirspaceIds(String countryCode) async {
-    final db = await database;
-
-    final results = await db.query(
-      _countryMappingTable,
-      columns: ['airspace_id'],
-      where: 'country_code = ?',
-      whereArgs: [countryCode],
-    );
-
-    return results.map((row) => row['airspace_id'] as String).toList();
-  }
-
-  /// Get airspace IDs for multiple countries
-  Future<Set<String>> getAirspaceIdsForCountries(List<String> countryCodes) async {
-    if (countryCodes.isEmpty) return {};
-
-    final db = await database;
-    final placeholders = List.filled(countryCodes.length, '?').join(',');
-
-    final results = await db.rawQuery('''
-      SELECT DISTINCT airspace_id
-      FROM $_countryMappingTable
-      WHERE country_code IN ($placeholders)
-    ''', countryCodes);
-
-    return results.map((row) => row['airspace_id'] as String).toSet();
-  }
-
-  /// Delete country data
-  Future<void> deleteCountryData(String countryCode) async {
-    final db = await database;
-
-    // Delete country metadata (cascades to mappings)
-    await db.delete(
-      _countryMetadataTable,
-      where: 'country_code = ?',
-      whereArgs: [countryCode],
-    );
-
-    // Clean up orphaned geometries
-    await cleanOrphanedGeometries();
-  }
-
-  /// Clean up geometries not referenced by any country
-  Future<void> cleanOrphanedGeometries() async {
-    final db = await database;
-
-    await db.execute('''
-      DELETE FROM $_geometryTable
-      WHERE id NOT IN (
-        SELECT DISTINCT airspace_id
-        FROM $_countryMappingTable
-      )
-    ''');
-  }
-
-  /// Get list of cached countries
-  Future<List<String>> getCachedCountries() async {
-    final db = await database;
-
-    final results = await db.query(
-      _countryMetadataTable,
-      columns: ['country_code'],
-      orderBy: 'country_code',
-    );
-
-    return results.map((row) => row['country_code'] as String).toList();
-  }
-
-  /// Get detailed country metadata with airspace counts
-  Future<List<Map<String, dynamic>>> getCountryDetails() async {
-    final db = await database;
-
-    try {
-      final results = await db.rawQuery('''
-        SELECT
-          cm.country_code,
-          cm.airspace_count,
-          cm.fetch_time,
-          cm.size_bytes,
-          COUNT(map.airspace_id) as actual_count
-        FROM $_countryMetadataTable cm
-        LEFT JOIN $_countryMappingTable map ON cm.country_code = map.country_code
-        GROUP BY cm.country_code
-        ORDER BY cm.country_code
-      ''');
-
-      return results.map((row) => {
-        'country_code': row['country_code'] as String,
-        'airspace_count': row['airspace_count'] as int? ?? 0,
-        'actual_count': row['actual_count'] as int? ?? 0,
-        'fetch_time': row['fetch_time'] as int?,
-        'size_bytes': row['size_bytes'] as int?,
-      }).toList();
-    } catch (e, stack) {
-      LoggingService.error('Failed to get country details', e, stack);
-      return [];
-    }
+    final result = await db.rawQuery('SELECT COUNT(*) as count FROM $_geometryTable');
+    return result.first['count'] as int;
   }
 
   // Get statistics as a simple map (for compatibility)

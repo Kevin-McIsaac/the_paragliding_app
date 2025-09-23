@@ -742,11 +742,11 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
 
     // Return cached markers if data hasn't changed
     if (_cachedSiteMarkersKey == cacheKey && _cachedSiteMarkers != null) {
-      LoggingService.info('[PERFORMANCE] Using cached site markers');
+      LoggingService.debug('[PERFORMANCE] Using cached site markers');
       return _cachedSiteMarkers!;
     }
 
-    LoggingService.info('[PERFORMANCE] Building new site markers (cache miss)');
+    LoggingService.debug('[PERFORMANCE] Building new site markers (cache miss)');
 
     // Build new markers
     _cachedSiteMarkers = widget.sites.map((site) {

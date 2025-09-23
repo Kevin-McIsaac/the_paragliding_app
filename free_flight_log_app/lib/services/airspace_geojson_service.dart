@@ -13,6 +13,7 @@ import '../services/airspace_metadata_cache.dart';
 import '../services/airspace_geometry_cache.dart';
 import '../services/airspace_disk_cache.dart';
 import '../services/airspace_performance_logger.dart';
+import '../services/airspace_country_service.dart';
 import '../data/models/airspace_cache_models.dart';
 import '../data/models/airspace_enums.dart';
 import '../utils/performance_monitor.dart';
@@ -472,8 +473,9 @@ class AirspaceGeoJsonService {
 
   /// Check if any countries are loaded
   Future<bool> hasLoadedCountries() async {
-    final countries = await AirspaceDiskCache.instance.getCachedCountries();
-    return countries.isNotEmpty;
+    // Since we no longer track by country, check if we have any geometries
+    final geometryCount = await AirspaceDiskCache.instance.getGeometryCount();
+    return geometryCount > 0;
   }
 
   /// Fetch airspace data as GeoJSON string (deprecated - use fetchAirspacePolygonsDirect)
@@ -505,13 +507,6 @@ class AirspaceGeoJsonService {
       'clipping_enabled': enableClipping,
     });
 
-    // Check if we have loaded countries
-    final countries = await AirspaceDiskCache.instance.getCachedCountries();
-    if (countries.isEmpty) {
-      LoggingService.debug('No countries loaded for airspace display');
-      return [];
-    }
-
     // Convert excluded types to integer codes for SQL filtering
     final excludedTypeCodes = excludedTypes.map((type) => type.code).toSet();
     final excludedClassCodes = excludedClasses.map((cls) => cls.code).toSet();
@@ -519,7 +514,6 @@ class AirspaceGeoJsonService {
     // Get airspaces with SQL-level filtering
     // Request ClipperData when clipping is enabled for optimal performance
     final geometries = await _metadataCache.getAirspacesForViewport(
-      countryCodes: countries,
       west: bounds.west,
       south: bounds.south,
       east: bounds.east,
@@ -547,7 +541,6 @@ class AirspaceGeoJsonService {
     final memoryAfter = PerformanceMonitor.getMemoryUsageMB();
 
     LoggingService.structured('DIRECT_POLYGON_COMPLETE', {
-      'countries': countries.length,
       'total_ms': overallStopwatch.elapsedMilliseconds,
       'processing_ms': processingStopwatch.elapsedMilliseconds,
       'polygon_count': polygons.length,
@@ -562,20 +555,12 @@ class AirspaceGeoJsonService {
     final overallStopwatch = Stopwatch()..start();
     final memoryBefore = PerformanceMonitor.getMemoryUsageMB();
 
-    LoggingService.structured('COUNTRY_MODE_FETCH', {
+    LoggingService.structured('SPATIAL_GEOJSON_FETCH', {
       'bounds': '${bounds.west},${bounds.south},${bounds.east},${bounds.north}',
     });
 
-    // Get list of loaded countries
-    final countries = await AirspaceDiskCache.instance.getCachedCountries();
-    if (countries.isEmpty) {
-      LoggingService.warning('No countries loaded, returning empty GeoJSON');
-      return '{"type":"FeatureCollection","features":[]}';
-    }
-
-    // Get airspaces for viewport from loaded countries
+    // Get airspaces for viewport using spatial bounds
     final geometries = await _metadataCache.getAirspacesForViewport(
-      countryCodes: countries,
       west: bounds.west,
       south: bounds.south,
       east: bounds.east,
@@ -615,8 +600,7 @@ class AirspaceGeoJsonService {
     overallStopwatch.stop();
     final memoryAfter = PerformanceMonitor.getMemoryUsageMB();
 
-    LoggingService.structured('COUNTRY_MODE_COMPLETE', {
-      'countries': countries.length,
+    LoggingService.structured('GEOJSON_MODE_COMPLETE', {
       'total_ms': overallStopwatch.elapsedMilliseconds,
       'unique_airspaces': features.length,
       'conversion_ms': conversionStopwatch.elapsedMilliseconds,
@@ -624,9 +608,9 @@ class AirspaceGeoJsonService {
     });
 
     LoggingService.performance(
-      'Airspace Fetch (Country Mode)',
+      'Airspace Fetch (GeoJSON Mode)',
       overallStopwatch.elapsed,
-      'countries=${countries.length}, airspaces=${features.length}',
+      'airspaces=${features.length}',
     );
 
     return mergedGeoJson;
@@ -1273,7 +1257,7 @@ class AirspaceGeoJsonService {
     List<({fm.Polygon polygon, AirspacePolygonData data})> polygonsWithAltitude,
     fm.LatLngBounds viewport,
   ) {
-    LoggingService.info('[AIRSPACE_CLIPPING_START] input_polygons=${polygonsWithAltitude.length} | strategy=Optimized ClipperData');
+    // LoggingService.debug('[AIRSPACE_CLIPPING_START] input_polygons=${polygonsWithAltitude.length} | strategy=Optimized ClipperData'); // Disabled for verbosity reduction
 
     final overallStopwatch = Stopwatch()..start();
     final setupStopwatch = Stopwatch()..start();
@@ -1325,14 +1309,7 @@ class AirspaceGeoJsonService {
     final n = batch.count;
     theoreticalComparisons = (n * (n - 1)) ~/ 2;
 
-    LoggingService.structured('CLIPPING_STAGE', {
-      'input_polygons': polygonsWithAltitude.length,
-      'polygons_to_clip': batch.count,
-      'theoretical_comparisons': theoreticalComparisons,
-      'setup_time_ms': setupStopwatch.elapsedMilliseconds,
-      'optimized': true,
-      'using_clipper_data': true,
-    });
+    // LoggingService.debug('[CLIPPING_STAGE] input_polygons=${polygonsWithAltitude.length} | polygons_to_clip=${batch.count} | theoretical_comparisons=$theoreticalComparisons | setup_time_ms=${setupStopwatch.elapsedMilliseconds} | optimized=true | using_clipper_data=true'); // Disabled for verbosity reduction
 
     // Process each visible polygon from lowest to highest altitude using sorted indices
     for (int sortedI = 0; sortedI < batch.count; sortedI++) {
@@ -1451,26 +1428,8 @@ class AirspaceGeoJsonService {
         ? ((theoreticalComparisons - actualComparisons) / theoreticalComparisons * 100)
         : 0.0;
 
-    // Log detailed performance
-    LoggingService.structured('CLIPPING_DETAILED_PERFORMANCE', {
-      'strategy': 'Optimized ClipperData',
-      'total_clipping_time_ms': totalClippingTimeMs,
-      'overall_time_ms': overallStopwatch.elapsedMilliseconds,
-      'setup_time_ms': setupStopwatch.elapsedMilliseconds,
-      'average_time_ms': batch.count > 0 ? (totalClippingTimeMs / batch.count).round() : 0,
-      'longest_time_ms': longestClippingTimeMs,
-      'longest_airspace': longestClippingAirspace,
-      'completely_clipped': completelyClippedCount,
-      'time_by_type': clippingTimeByType,
-      'total_comparisons': actualComparisons,
-      'theoretical_comparisons': theoreticalComparisons,
-      'comparison_reduction_%': comparisonReduction.toStringAsFixed(1),
-      'altitude_rejections': altitudeRejections,
-      'bounds_rejections': boundsRejections,
-      'actual_clipping_operations': actualClippingOperations,
-      'empty_clipping_lists': emptyClippingLists,
-      'using_clipper_data': true,  // Always using ClipperData now
-    });
+    // Log detailed performance - disabled for verbosity reduction
+    // LoggingService.debug('[CLIPPING_DETAILED_PERFORMANCE] strategy=Optimized ClipperData | total_clipping_time_ms=$totalClippingTimeMs | overall_time_ms=${overallStopwatch.elapsedMilliseconds} | setup_time_ms=${setupStopwatch.elapsedMilliseconds} | average_time_ms=${batch.count > 0 ? (totalClippingTimeMs / batch.count).round() : 0} | longest_time_ms=$longestClippingTimeMs | longest_airspace=$longestClippingAirspace | completely_clipped=$completelyClippedCount | time_by_type=$clippingTimeByType | total_comparisons=$actualComparisons | theoretical_comparisons=$theoreticalComparisons | comparison_reduction_%=${comparisonReduction.toStringAsFixed(1)} | altitude_rejections=$altitudeRejections | bounds_rejections=$boundsRejections | actual_clipping_operations=$actualClippingOperations | empty_clipping_lists=$emptyClippingLists | using_clipper_data=true');
 
     // Log summary if any were completely clipped
     if (completelyClippedCount > 0) {
@@ -1510,11 +1469,7 @@ class AirspaceGeoJsonService {
       }
     }
 
-    LoggingService.structured('CLIPPED_POLYGONS_CONVERSION', {
-      'clipped_polygons_input': clippedPolygons.length,
-      'flutter_map_polygons_output': flutterMapPolygons.length,
-      'polygons_with_holes': clippedPolygons.where((p) => p.holes.isNotEmpty).length,
-    });
+    // LoggingService.debug('[CLIPPED_POLYGONS_CONVERSION] clipped_polygons_input=${clippedPolygons.length} | flutter_map_polygons_output=${flutterMapPolygons.length} | polygons_with_holes=${clippedPolygons.where((p) => p.holes.isNotEmpty).length}'); // Disabled for verbosity reduction
 
     return flutterMapPolygons;
   }
@@ -1552,18 +1507,14 @@ class AirspaceGeoJsonService {
     // Get database version from disk cache
     final dbVersion = await AirspaceDiskCache.instance.getDatabaseVersion();
 
-    // Get country details
-    final countryDetails = await AirspaceDiskCache.instance.getCountryDetails();
-    final cachedCountries = await AirspaceDiskCache.instance.getCachedCountries();
-
     // Calculate database size in MB
     final databaseSizeMb = stats.totalMemoryBytes / 1024 / 1024;
 
-    // Calculate total airspaces across all countries
-    int totalAirspacesInCountries = 0;
-    for (final country in countryDetails) {
-      totalAirspacesInCountries += (country['actual_count'] as int? ?? 0);
-    }
+    // Get summary information about loaded countries and airspaces
+    final countryService = AirspaceCountryService.instance;
+    final selectedCountries = await countryService.getSelectedCountries();
+    final countryMetadata = await countryService.getCountryMetadata();
+    final loadedCountries = countryMetadata.keys.toList();
 
     return {
       'statistics': stats.toJson(),
@@ -1575,10 +1526,10 @@ class AirspaceGeoJsonService {
         'memory_saved_mb': (stats.memoryReductionPercent * stats.totalMemoryBytes / 100 / 1024 / 1024).toStringAsFixed(2),
         'compression_ratio': stats.averageCompressionRatio.toStringAsFixed(2),
         'cache_hit_rate': stats.cacheHitRate.toStringAsFixed(2),
-        'cached_countries': cachedCountries,
-        'country_count': cachedCountries.length,
-        'country_details': countryDetails,
-        'total_airspaces_in_countries': totalAirspacesInCountries,
+        'loaded_countries': loadedCountries,
+        'country_count': loadedCountries.length,
+        'selected_countries': selectedCountries,
+        'selected_country_count': selectedCountries.length,
       },
     };
   }
@@ -1626,15 +1577,10 @@ class AirspaceGeoJsonService {
       // Extract properties
       final properties = geometry.properties;
 
-      // Debug log properties for first geometry
-      if (geometries.indexOf(geometry) == 0) {
-        LoggingService.structured('GEOMETRY_PROPERTIES_DEBUG', {
-          'name': geometry.name,
-          'type_code': geometry.typeCode,
-          'properties_keys': properties.keys.toList(),
-          'properties': properties,
-        });
-      }
+      // Debug log properties for first geometry - disabled for verbosity reduction
+      // if (geometries.indexOf(geometry) == 0) {
+      //   LoggingService.debug('[GEOMETRY_PROPERTIES_DEBUG] name=${geometry.name} | type_code=${geometry.typeCode} | properties_keys=${properties.keys.toList()} | properties=${properties}');
+      // }
 
       // Try both 'class' and 'icaoClass' field names for compatibility
       final icaoClass = (properties['class'] ?? properties['icaoClass']) as int?;
@@ -1681,16 +1627,10 @@ class AirspaceGeoJsonService {
       // Use ICAO class-based styling first, then fall back to type-based styling
       final style = getStyleForAirspace(airspaceData);
 
-      // Debug logging for first polygon only
-      if (polygonsWithData.isEmpty) {
-        LoggingService.structured('POLYGON_OPACITY_DEBUG', {
-          'style_fill_color': style.fillColor.toString(),
-          'style_border_color': style.borderColor.toString(),
-          'airspace_type': airspaceType.toString(),
-          'icao_class': airspaceData.icaoClass.toString(),
-          'using_icao_style': airspaceData.icaoClass != IcaoClass.none,
-        });
-      }
+      // Debug logging for first polygon only - disabled for verbosity reduction
+      // if (polygonsWithData.isEmpty) {
+      //   LoggingService.debug('[POLYGON_OPACITY_DEBUG] style_fill_color=${style.fillColor.toString()} | style_border_color=${style.borderColor.toString()} | airspace_type=${airspaceType.toString()} | icao_class=${airspaceData.icaoClass.toString()} | using_icao_style=${airspaceData.icaoClass != IcaoClass.none}');
+      // }
 
       final polygon = fm.Polygon(
         points: allPoints,

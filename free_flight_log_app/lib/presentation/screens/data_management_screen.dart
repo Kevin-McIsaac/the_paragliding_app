@@ -1193,9 +1193,9 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                               rows: [
                                 AppStatRow.dataManagement(
                                   label: 'Countries Loaded',
-                                  value: airspaceCacheStats['summary']['cached_countries'] != null &&
-                                         (airspaceCacheStats['summary']['cached_countries'] as List).isNotEmpty
-                                      ? (airspaceCacheStats['summary']['cached_countries'] as List).join(', ')
+                                  value: airspaceCacheStats['summary']['loaded_countries'] != null &&
+                                         (airspaceCacheStats['summary']['loaded_countries'] as List).isNotEmpty
+                                      ? (airspaceCacheStats['summary']['loaded_countries'] as List).join(', ')
                                       : 'None',
                                 ),
                                 AppStatRow.dataManagement(
