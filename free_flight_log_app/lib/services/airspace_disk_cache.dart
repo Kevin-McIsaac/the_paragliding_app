@@ -45,28 +45,64 @@ class AirspaceDiskCache {
 
     LoggingService.info('Initializing airspace cache database at: $path');
 
+    // Ensure the directory exists
+    try {
+      await documentsDirectory.create(recursive: true);
+    } catch (e) {
+      LoggingService.error('Failed to create documents directory', e, null);
+    }
+
     // PRE-RELEASE ONLY: Force recreation for schema changes
     // Remove this after v1.0 release and implement proper migrations
     try {
-      final existing = await openDatabase(path, readOnly: true);
-      final currentVersion = await existing.getVersion();
-      await existing.close();
+      final file = File(path);
+      if (await file.exists()) {
+        // Only try to open existing database file
+        final existing = await openDatabase(path, readOnly: true);
+        final currentVersion = await existing.getVersion();
+        await existing.close();
 
-      if (currentVersion != _databaseVersion) {
-        LoggingService.info('Database version mismatch (current: $currentVersion, expected: $_databaseVersion). Deleting old database.');
-        await deleteDatabase(path);
+        if (currentVersion != _databaseVersion) {
+          LoggingService.info('Database version mismatch (current: $currentVersion, expected: $_databaseVersion). Deleting old database.');
+          await deleteDatabase(path);
+        }
+      } else {
+        LoggingService.info('Database file does not exist, will create new one');
       }
     } catch (e) {
-      // Database doesn't exist yet, which is fine
-      LoggingService.info('No existing database found, will create new one');
+      // Database doesn't exist or cannot be opened, which is fine for initial creation
+      LoggingService.info('Cannot access existing database (${e.toString()}), will create new one');
     }
 
-    return await openDatabase(
-      path,
-      version: _databaseVersion,
-      onCreate: _onCreate,
-      onOpen: _onOpen,
-    );
+    try {
+      return await openDatabase(
+        path,
+        version: _databaseVersion,
+        onCreate: _onCreate,
+        onOpen: _onOpen,
+      );
+    } catch (e, stackTrace) {
+      LoggingService.error('Failed to initialize airspace cache database', e, stackTrace);
+
+      // Try to delete any corrupted database file and retry once
+      try {
+        final file = File(path);
+        if (await file.exists()) {
+          await file.delete();
+          LoggingService.info('Deleted corrupted database file, retrying creation');
+        }
+
+        return await openDatabase(
+          path,
+          version: _databaseVersion,
+          onCreate: _onCreate,
+          onOpen: _onOpen,
+        );
+      } catch (retryError, retryStackTrace) {
+        LoggingService.error('Failed to create airspace cache database after retry', retryError, retryStackTrace);
+        rethrow;
+      }
+    }
   }
 
   Future<void> _onOpen(Database db) async {
