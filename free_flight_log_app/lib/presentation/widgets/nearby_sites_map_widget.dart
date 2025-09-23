@@ -552,7 +552,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     for (final airspace in airspaces) {
       // Check if airspace is filtered: true = excluded/filtered out, false/null = shown
       final isTypeFiltered = excludedTypes[airspace.type] == true;
-      final isClassFiltered = excludedClasses[airspace.icaoClass ?? IcaoClass.none] == true;
+      final isClassFiltered = excludedClasses[airspace.icaoClass] == true;
       final isElevationFiltered = airspace.getLowerAltitudeInFeet() > widget.maxAltitudeFt;
 
       // Mark if this airspace is currently filtered out
@@ -691,7 +691,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
       // Add label with airspace information and index suffix
       label: '${airspace.name}$labelSuffix\n'
              '${airspace.type.abbreviation}'
-             '${airspace.icaoClass != null ? ", ${airspace.icaoClass!.displayName}" : ""}'
+             ', ${airspace.icaoClass.displayName}'
              ', ${airspace.lowerAltitude} - ${airspace.upperAltitude}',
       labelStyle: const TextStyle(
         color: Colors.black,

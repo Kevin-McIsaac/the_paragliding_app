@@ -78,9 +78,7 @@ class DirectAirspacePolygon {
     final airspaceData = AirspaceData(
       name: row['name'] as String,
       type: AirspaceType.fromCode(row['type_code'] as int),
-      icaoClass: row['icao_class'] != null
-          ? IcaoClass.fromCode(row['icao_class'] as int)
-          : null,
+      icaoClass: IcaoClass.fromCode(row['icao_class'] as int?),
       upperLimit: row['upper_value'] != null ? {
         'value': row['upper_value'],
         'unit': row['upper_unit'],

@@ -21,7 +21,7 @@ import '../utils/performance_monitor.dart';
 class AirspaceData {
   final String name;
   final AirspaceType type;
-  final IcaoClass? icaoClass;
+  final IcaoClass icaoClass;
   final Map<String, dynamic>? upperLimit;
   final Map<String, dynamic>? lowerLimit;
   final String? country;
@@ -34,7 +34,7 @@ class AirspaceData {
   AirspaceData({
     required this.name,
     required this.type,
-    this.icaoClass,
+    required this.icaoClass,
     this.upperLimit,
     this.lowerLimit,
     this.country,
@@ -202,12 +202,14 @@ class AirspaceStyle {
   final Color borderColor;
   final double borderWidth;
   final bool isDotted;
+  final fm.StrokePattern? pattern;
 
   const AirspaceStyle({
     required this.fillColor,
     required this.borderColor,
     this.borderWidth = 1.5,
     this.isDotted = false,
+    this.pattern,
   });
 }
 
@@ -236,7 +238,7 @@ class ClippingBatch {
         airspaceData: AirspaceData(
           name: '',
           type: AirspaceType.other,
-          icaoClass: null,
+          icaoClass: IcaoClass.none,
           upperLimit: null,
           lowerLimit: null,
           country: null,
@@ -733,8 +735,7 @@ class AirspaceGeoJsonService {
           }
 
           // Filter based on excluded ICAO classes - skip only if explicitly excluded
-          // Handle null ICAO class (treat as IcaoClass.none per OpenAIP spec)
-          final icaoClassKey = airspaceData.icaoClass ?? IcaoClass.none;
+          final icaoClassKey = airspaceData.icaoClass;
           if (excludedIcaoClasses[icaoClassKey] == true) {
             filteredByClass++;
             filteredClassDetails[icaoClassKey] = (filteredClassDetails[icaoClassKey] ?? 0) + 1;
@@ -1035,6 +1036,7 @@ class AirspaceGeoJsonService {
         color: style.fillColor,  // Use color directly from style (already has correct opacity)
         borderColor: style.borderColor,
         borderStrokeWidth: style.borderWidth,
+        pattern: style.pattern ?? fm.StrokePattern.solid(),
       );
 
       return _PolygonResult(polygon: polygon, points: points);
@@ -1089,6 +1091,17 @@ class AirspaceGeoJsonService {
 
   /// Get style for airspace data (ICAO class takes priority, fallback to type)
   AirspaceStyle getStyleForAirspace(AirspaceData airspaceData) {
+    // Special overrides for critical airspace types (override ICAO class colors)
+    if (airspaceData.type == AirspaceType.restricted || airspaceData.type == AirspaceType.prohibited) {
+      // Dark red override for R (restricted) and P (prohibited) areas
+      const darkRed = Color(0xFF8B0000);
+      return AirspaceStyle(
+        fillColor: darkRed.withValues(alpha: 0.3), // 30% opacity
+        borderColor: darkRed,
+        borderWidth: 1.5,
+      );
+    }
+
     // Primary: Use ICAO class if available
     if (airspaceData.icaoClass != null) {
       final icaoStyle = _icaoClassStyles[airspaceData.icaoClass];
@@ -1533,6 +1546,7 @@ class AirspaceGeoJsonService {
           color: clippedData.style.fillColor,  // Use color directly from style (already has correct opacity)
           borderColor: clippedData.style.borderColor,
           borderStrokeWidth: clippedData.style.borderWidth,
+          pattern: clippedData.style.pattern ?? fm.StrokePattern.solid(),
           // Disable hole borders for cleaner appearance
           disableHolesBorder: true,
         );
@@ -1677,7 +1691,7 @@ class AirspaceGeoJsonService {
       final airspaceData = AirspaceData(
         name: geometry.name,
         type: AirspaceType.fromCode(geometry.typeCode),
-        icaoClass: icaoClass != null ? IcaoClass.fromCode(icaoClass) : null,
+        icaoClass: IcaoClass.fromCode(icaoClass),
         upperLimit: upperLimit,
         lowerLimit: lowerLimit,
         country: country,
@@ -1718,8 +1732,8 @@ class AirspaceGeoJsonService {
           'style_fill_color': style.fillColor.toString(),
           'style_border_color': style.borderColor.toString(),
           'airspace_type': airspaceType.toString(),
-          'icao_class': airspaceData.icaoClass?.toString() ?? 'none',
-          'using_icao_style': airspaceData.icaoClass != null,
+          'icao_class': airspaceData.icaoClass.toString(),
+          'using_icao_style': airspaceData.icaoClass != IcaoClass.none,
         });
       }
 
@@ -1728,6 +1742,7 @@ class AirspaceGeoJsonService {
         borderStrokeWidth: style.borderWidth,
         borderColor: style.borderColor,
         color: style.fillColor,  // Use color directly from style (already has correct opacity)
+        pattern: style.pattern ?? fm.StrokePattern.solid(),
         // Labels removed for cleaner visualization
       );
 
