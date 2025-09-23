@@ -5,7 +5,6 @@ import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart';
 import '../data/models/paragliding_site.dart';
 import '../services/logging_service.dart';
-import '../utils/performance_monitor.dart';
 
 /// Service for interacting with ParaglidingEarth.com API
 /// Provides real-time site lookups with caching and fallback support
@@ -112,15 +111,10 @@ class ParaglidingEarthApi {
     int limit = _defaultLimit,
     bool detailed = false, // Default to basic data for faster loading
   }) async {
-    PerformanceMonitor.startOperation('ParaglidingEarthApi_getSitesAroundCoordinates');
     
     // Check if we're in offline mode
     if (_isOfflineMode) {
       LoggingService.warning('ParaglidingEarthApi: No data available in offline mode');
-      PerformanceMonitor.endOperation('ParaglidingEarthApi_getSitesAroundCoordinates', metadata: {
-        'offline_mode': true,
-        'sites_count': 0,
-      });
       return [];
     }
 
@@ -157,19 +151,10 @@ class ParaglidingEarthApi {
           _markRequestSuccess();
           
           LoggingService.info('ParaglidingEarthApi: Found ${sites.length} sites');
-          PerformanceMonitor.endOperation('ParaglidingEarthApi_getSitesAroundCoordinates', metadata: {
-            'api_success': true,
-            'sites_count': sites.length,
-            'retries': retries,
-          });
           return sites;
         } else {
           LoggingService.warning('ParaglidingEarthApi: HTTP ${response.statusCode} - ${response.reasonPhrase}');
           _markRequestFailure();
-          PerformanceMonitor.endOperation('ParaglidingEarthApi_getSitesAroundCoordinates', metadata: {
-            'api_error': response.statusCode,
-            'sites_count': 0,
-          });
           return [];
         }
       } on SocketException catch (e) {
@@ -187,11 +172,6 @@ class ParaglidingEarthApi {
           LoggingService.error('ParaglidingEarthApi: Failed after 3 attempts', e);
           _markRequestFailure();
           
-          PerformanceMonitor.endOperation('ParaglidingEarthApi_getSitesAroundCoordinates', metadata: {
-            'network_error': true,
-            'sites_count': 0,
-            'retries': retries,
-          });
           return [];
         }
         
@@ -489,7 +469,6 @@ class ParaglidingEarthApi {
   /// Get detailed information for a specific site
   /// Returns detailed site data for display in dialog
   Future<Map<String, dynamic>?> getSiteDetails(double latitude, double longitude) async {
-    PerformanceMonitor.startOperation('ParaglidingEarthApi_getSiteDetails');
     
     // Check cache first
     final cacheKey = '${latitude.toStringAsFixed(4)},${longitude.toStringAsFixed(4)}';
@@ -499,10 +478,6 @@ class ParaglidingEarthApi {
         _siteDetailsCacheExpiry.containsKey(cacheKey) &&
         _siteDetailsCacheExpiry[cacheKey]!.isAfter(now)) {
       LoggingService.info('ParaglidingEarthApi: Using cached site details');
-      PerformanceMonitor.endOperation('ParaglidingEarthApi_getSiteDetails', metadata: {
-        'success': true,
-        'cache_hit': true,
-      });
       return _siteDetailsCache[cacheKey];
     }
     
@@ -561,34 +536,17 @@ class ParaglidingEarthApi {
           _siteDetailsCache[cacheKey] = properties;
           _siteDetailsCacheExpiry[cacheKey] = now.add(_cacheTimeout);
           
-          PerformanceMonitor.endOperation('ParaglidingEarthApi_getSiteDetails', metadata: {
-            'success': true,
-            'cache_hit': false,
-          });
           return properties;
         }
         
         LoggingService.warning('ParaglidingEarthApi: No detailed data found for site');
-        PerformanceMonitor.endOperation('ParaglidingEarthApi_getSiteDetails', metadata: {
-          'success': false,
-          'reason': 'no_data',
-        });
         return null;
       } else {
         LoggingService.warning('ParaglidingEarthApi: HTTP ${response.statusCode} for site details');
-        PerformanceMonitor.endOperation('ParaglidingEarthApi_getSiteDetails', metadata: {
-          'success': false,
-          'reason': 'http_error',
-          'status_code': response.statusCode,
-        });
         return null;
       }
     } catch (e) {
       LoggingService.error('ParaglidingEarthApi: Error getting site details', e);
-      PerformanceMonitor.endOperation('ParaglidingEarthApi_getSiteDetails', metadata: {
-        'success': false,
-        'reason': 'exception',
-      });
       return null;
     }
   }
@@ -717,7 +675,6 @@ class ParaglidingEarthApi {
   Future<List<ParaglidingSite>> searchSitesByName(String query) async {
     if (query.isEmpty || query.length < 2) return [];
     
-    PerformanceMonitor.startOperation('ParaglidingEarthApi_searchSitesByName');
     
     // Check cache first
     final cacheKey = query.toLowerCase().trim();
@@ -727,11 +684,6 @@ class ParaglidingEarthApi {
         _searchResultsCacheExpiry.containsKey(cacheKey) &&
         _searchResultsCacheExpiry[cacheKey]!.isAfter(now)) {
       LoggingService.info('ParaglidingEarthApi: Using cached search results for: $query');
-      PerformanceMonitor.endOperation('ParaglidingEarthApi_searchSitesByName', metadata: {
-        'sites_count': _searchResultsCache[cacheKey]!.length,
-        'query_length': query.length,
-        'cache_hit': true,
-      });
       return _searchResultsCache[cacheKey]!;
     }
     
@@ -773,21 +725,12 @@ class ParaglidingEarthApi {
         _searchResultsCache[cacheKey] = sites;
         _searchResultsCacheExpiry[cacheKey] = now.add(_cacheTimeout);
         
-        PerformanceMonitor.endOperation('ParaglidingEarthApi_searchSitesByName', metadata: {
-          'sites_count': sites.length,
-          'query_length': query.length,
-          'cache_hit': false,
-        });
         
         return sites;
       } else {
         LoggingService.warning('ParaglidingEarthApi: Search HTTP ${response.statusCode} - ${response.reasonPhrase}');
         _markRequestFailure();
         
-        PerformanceMonitor.endOperation('ParaglidingEarthApi_searchSitesByName', metadata: {
-          'api_error': response.statusCode,
-          'sites_count': 0,
-        });
         
         return [];
       }
@@ -795,10 +738,6 @@ class ParaglidingEarthApi {
       LoggingService.error('ParaglidingEarthApi: Search API error for query: $query', e);
       _markRequestFailure();
       
-      PerformanceMonitor.endOperation('ParaglidingEarthApi_searchSitesByName', metadata: {
-        'network_error': true,
-        'sites_count': 0,
-      });
       
       return [];
     }
