@@ -177,7 +177,6 @@ class PgeSitesDatabaseService {
     required double east,
     required double west,
     int limit = 100,
-    List<String>? windDirections,
   }) async {
     PerformanceMonitor.startOperation('PgeSitesQuery_Bounds');
     final stopwatch = Stopwatch()..start();
@@ -198,18 +197,6 @@ class PgeSitesDatabaseService {
 
       // All sites are paragliding sites now (column removed)
 
-      // Wind direction filtering
-      if (windDirections != null && windDirections.isNotEmpty) {
-        final windConditions = <String>[];
-        for (final direction in windDirections) {
-          final dbField = 'wind_${direction.toLowerCase()}';
-          windConditions.add('$dbField >= 1');
-        }
-        if (windConditions.isNotEmpty) {
-          whereConditions.add('(${windConditions.join(' OR ')})');
-        }
-      }
-
       final whereClause = whereConditions.join(' AND ');
 
       final results = await db.query(
@@ -217,7 +204,6 @@ class PgeSitesDatabaseService {
         where: whereClause,
         whereArgs: whereArgs,
         limit: limit,
-        orderBy: 'name',
       );
 
       stopwatch.stop();
@@ -234,7 +220,6 @@ class PgeSitesDatabaseService {
         'bounds': '$west,$south,$east,$north',
         'sites_found': sites.length,
         'query_duration_ms': stopwatch.elapsedMilliseconds,
-        'wind_filters': windDirections?.join(','),
       });
 
       PerformanceMonitor.endOperation('PgeSitesQuery_Bounds', metadata: {
