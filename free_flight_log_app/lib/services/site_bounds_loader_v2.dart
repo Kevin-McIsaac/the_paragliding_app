@@ -283,28 +283,6 @@ class SiteBoundsLoaderV2 {
     return _findMatchingLocalSiteByForeignKey(pgeSite, localSites);
   }
 
-  /// Find matching PGE site for a local site using foreign key relationship
-  /// Falls back to coordinate-based matching for unlinked sites
-  ParaglidingSite? _findMatchingPgeSiteByForeignKey(Site localSite, List<ParaglidingSite> pgeSites) {
-    // Primary: Use foreign key relationship if available
-    if (localSite.pgeSiteId != null) {
-      final linkedSite = pgeSites.where((pgeSite) => pgeSite.id == localSite.pgeSiteId).firstOrNull;
-      if (linkedSite != null) {
-        return linkedSite;
-      }
-    }
-
-    // Fallback: Use coordinate-based matching for unlinked sites
-    const tolerance = 0.001; // ~100m
-    for (final pgeSite in pgeSites) {
-      if ((localSite.latitude - pgeSite.latitude).abs() < tolerance &&
-          (localSite.longitude - pgeSite.longitude).abs() < tolerance) {
-        return pgeSite;
-      }
-    }
-    return null;
-  }
-
   /// Legacy coordinate-based matching method (deprecated)
   /// Kept for compatibility during transition period
   @Deprecated('Use _findMatchingPgeSiteByForeignKey instead for FK-based matching')

@@ -1442,11 +1442,166 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                   ),
                 ),
               ),
+
+              // Weather Information Section
+              const SizedBox(height: 16),
+              _buildWeatherInformationCard(),
             ],
           ],
         ),
       ),
       ),
+    );
+  }
+
+  Widget _buildWeatherInformationCard() {
+    // Extract weather-specific information from API data using actual field names
+    final weatherInfo = _detailedData?['weather']?.toString();
+    final thermalFlag = _detailedData?['thermals']?.toString();
+    final soaringFlag = _detailedData?['soaring']?.toString();
+    final xcFlag = _detailedData?['xc']?.toString();
+
+    // Check if we have any weather-related content
+    final hasWeatherContent = [weatherInfo].any((content) => content != null && content.isNotEmpty) ||
+        [thermalFlag, soaringFlag, xcFlag].any((flag) => flag == '1');
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.wb_sunny,
+                  color: Colors.orange,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Weather Information',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            if (!hasWeatherContent) ...[
+              // No weather information available
+              Row(
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    size: 24,
+                    color: Colors.grey.shade400,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'No weather information available for this site.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ] else ...[
+              // Display available weather information
+              if (weatherInfo != null && weatherInfo.isNotEmpty) ...[
+                _buildWeatherInfoSection(
+                  title: 'Weather Information',
+                  content: weatherInfo,
+                  icon: Icons.wb_cloudy,
+                  iconColor: Colors.blue,
+                ),
+                const SizedBox(height: 12),
+              ],
+
+              // Display flight characteristics based on API flags
+              if (thermalFlag == '1' || soaringFlag == '1' || xcFlag == '1') ...[
+                _buildFlightCharacteristicsSection(thermalFlag, soaringFlag, xcFlag),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWeatherInfoSection({
+    required String title,
+    required String content,
+    required IconData icon,
+    required Color iconColor,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: iconColor,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: iconColor,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          content,
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFlightCharacteristicsSection(String? thermalFlag, String? soaringFlag, String? xcFlag) {
+    final characteristics = <String>[];
+
+    if (thermalFlag == '1') characteristics.add('Thermals');
+    if (soaringFlag == '1') characteristics.add('Soaring');
+    if (xcFlag == '1') characteristics.add('Cross Country (XC)');
+
+    if (characteristics.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              Icons.flight,
+              size: 16,
+              color: Colors.green,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Flight Characteristics',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: Colors.green,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Good conditions for: ${characteristics.join(', ')}',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      ],
     );
   }
 
