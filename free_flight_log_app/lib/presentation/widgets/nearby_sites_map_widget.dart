@@ -800,25 +800,13 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
             mainAxisSize: MainAxisSize.min,
             children: [
               // Icon colored based on flown status - new sites are green
-              Icon(
-                Icons.location_on,
+              SiteMarkerUtils.buildSiteMarkerIcon(
                 color: isFlownSite ? SiteMarkerUtils.flownSiteColor : Colors.green,
-                size: 36,
               ),
               // Only show name at higher zoom levels (handled by clustering)
               if (_currentZoom > 10)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: Text(
-                    site.name,
-                    style: const TextStyle(
-                      fontSize: 8,
-                      color: Colors.black87,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
+                SiteMarkerUtils.buildSiteLabel(
+                  siteName: site.name,
                 ),
             ],
           ),
@@ -1369,17 +1357,11 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               // Clustered sites layer (now includes all sites)
               MarkerClusterLayerWidget(
                 options: MarkerClusterLayerOptions(
-                  maxClusterRadius: 180, // Very aggressive clustering for performance
+                  maxClusterRadius: 100, // Reduced from 180 - less aggressive clustering
                   size: const Size(40, 40),
-                  disableClusteringAtZoom: 10, // Show individual markers at zoom >= 10
+                  disableClusteringAtZoom: 11, // Increased from 10 - show individuals sooner
                   markers: _buildAllSiteMarkers(),
                   builder: (context, markers) {
-                    // Don't cluster small groups (6 or less)
-                    if (markers.length <= 6) {
-                      // Return null to show individual markers instead
-                      return const SizedBox.shrink();
-                    }
-
                     // Check if any marker in the cluster is a flown site
                     bool hasFlownSite = false;
                     for (final marker in markers) {

@@ -74,17 +74,23 @@ class SiteBoundsLoaderV2 {
         ? results[2] as Map<int?, int?>
         : <int?, int?>{};
 
-      // PGE-first approach: Start with PGE sites (which have wind directions)
+      // PGE-first approach: Start with PGE sites (which have wind directions) with FK enhancements
       final enrichedSites = <ParaglidingSite>[];
       final processedLocations = <String>{};
+
+      // Get linked PGE site IDs from local sites for efficient FK-based matching
+      final linkedPgeSiteIds = localSites
+          .where((site) => site.pgeSiteId != null)
+          .map((site) => site.pgeSiteId!)
+          .toSet();
 
       // Process all PGE sites and enrich with flight data
       for (final pgeSite in pgeSites) {
         final locationKey = _getLocationKey(pgeSite.latitude, pgeSite.longitude);
         processedLocations.add(locationKey);
 
-        // Find matching local site to get flight count
-        final matchingLocalSite = _findMatchingLocalSite(pgeSite, localSites);
+        // Find matching local site using FK-first approach, then coordinate fallback
+        final matchingLocalSite = _findMatchingLocalSiteByForeignKey(pgeSite, localSites);
         final flightCount = matchingLocalSite != null
             ? (flightCounts[matchingLocalSite.id] ?? 0)
             : 0;
@@ -109,6 +115,7 @@ class SiteBoundsLoaderV2 {
             siteType: 'launch', // Default for local sites
             flightCount: flightCount,
           ));
+          processedLocations.add(locationKey); // Track to prevent coord duplicates
         }
       }
 
@@ -226,10 +233,19 @@ class SiteBoundsLoaderV2 {
     }
   }
 
-  /// Find matching PGE site for a local site
-  ParaglidingSite? _findMatchingPgeSite(Site localSite, List<ParaglidingSite> pgeSites) {
-    const tolerance = 0.001; // ~100m
+  /// Find matching PGE site for a local site using foreign key relationship
+  /// Falls back to coordinate-based matching for unlinked sites
+  ParaglidingSite? _findMatchingPgeSiteByForeignKey(Site localSite, List<ParaglidingSite> pgeSites) {
+    // Primary: Use foreign key relationship if available
+    if (localSite.pgeSiteId != null) {
+      final linkedSite = pgeSites.where((pgeSite) => pgeSite.id == localSite.pgeSiteId).firstOrNull;
+      if (linkedSite != null) {
+        return linkedSite;
+      }
+    }
 
+    // Fallback: Use coordinate-based matching for unlinked sites
+    const tolerance = 0.001; // ~100m
     for (final pgeSite in pgeSites) {
       if ((localSite.latitude - pgeSite.latitude).abs() < tolerance &&
           (localSite.longitude - pgeSite.longitude).abs() < tolerance) {
@@ -239,16 +255,39 @@ class SiteBoundsLoaderV2 {
     return null;
   }
 
-  Site? _findMatchingLocalSite(ParaglidingSite pgeSite, List<Site> localSites) {
-    const tolerance = 0.001; // ~100m
+  /// Find matching local site for a PGE site using foreign key relationship first
+  /// Falls back to coordinate-based matching for unlinked sites
+  Site? _findMatchingLocalSiteByForeignKey(ParaglidingSite pgeSite, List<Site> localSites) {
+    // Primary: Use foreign key relationship if available
+    final linkedSite = localSites.where((localSite) =>
+      localSite.pgeSiteId != null && localSite.pgeSiteId == pgeSite.id).firstOrNull;
 
+    if (linkedSite != null) {
+      return linkedSite;
+    }
+
+    // Fallback: Use coordinate-based matching for unlinked sites
+    const tolerance = 0.001; // ~100m
     for (final localSite in localSites) {
-      if ((pgeSite.latitude - localSite.latitude).abs() < tolerance &&
+      if (localSite.pgeSiteId == null && // Only check unlinked sites
+          (pgeSite.latitude - localSite.latitude).abs() < tolerance &&
           (pgeSite.longitude - localSite.longitude).abs() < tolerance) {
         return localSite;
       }
     }
     return null;
+  }
+
+  /// Legacy coordinate-based matching method (deprecated)
+  Site? _findMatchingLocalSite(ParaglidingSite pgeSite, List<Site> localSites) {
+    return _findMatchingLocalSiteByForeignKey(pgeSite, localSites);
+  }
+
+  /// Legacy coordinate-based matching method (deprecated)
+  /// Kept for compatibility during transition period
+  @Deprecated('Use _findMatchingPgeSiteByForeignKey instead for FK-based matching')
+  ParaglidingSite? _findMatchingPgeSite(Site localSite, List<ParaglidingSite> pgeSites) {
+    return _findMatchingPgeSiteByForeignKey(localSite, pgeSites);
   }
 
   /// Get location key for deduplication

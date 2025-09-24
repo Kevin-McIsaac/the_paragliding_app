@@ -69,7 +69,7 @@ class SiteMarkerUtils {
   static Widget buildSiteLabel({
     required String siteName,
     int? flightCount,
-    double fontSize = 9.0,
+    double fontSize = 11.0,
     Color backgroundColor = const Color(0x80000000), // Colors.black.withValues(alpha: 0.5)
     Color textColor = Colors.white,
     double maxWidth = 140.0,

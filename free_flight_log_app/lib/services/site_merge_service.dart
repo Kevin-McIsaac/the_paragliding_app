@@ -44,7 +44,7 @@ class SiteMergeService {
       final sourceFlights = await _databaseService.getFlightsBySite(sourceSite.id!);
       LoggingService.debug('SiteMergeService: Found ${sourceFlights.length} flights to reassign');
       
-      // Create a new local site based on the API site
+      // Create a new local site based on the API site with foreign key relationship
       final newSite = Site(
         name: apiSite.name,
         latitude: apiSite.latitude,
@@ -52,10 +52,11 @@ class SiteMergeService {
         altitude: apiSite.altitude?.toDouble(),
         country: apiSite.country,
         customName: false, // Not custom since it's from API
+        pgeSiteId: apiSite.id, // Establish foreign key relationship
       );
-      
+
       final newSiteId = await _databaseService.insertSite(newSite);
-      LoggingService.info('SiteMergeService: Created new site from API data with ID: $newSiteId');
+      LoggingService.info('SiteMergeService: Created new site from API data with ID: $newSiteId, linked to PGE site ${apiSite.id}');
       
       // Reassign all flights to the new site
       for (final flight in sourceFlights) {
@@ -87,18 +88,22 @@ class SiteMergeService {
     LoggingService.info('SiteMergeService: Creating site and reassigning flights');
     
     try {
-      // Create the new site
-      final newSite = Site(
-        name: siteName,
+      // Use findOrCreateSite to automatically establish foreign key links if PGE site exists nearby
+      final newSite = await _databaseService.findOrCreateSite(
         latitude: latitude,
         longitude: longitude,
+        name: siteName,
         altitude: altitude,
         country: country,
-        customName: true, // User-created site
       );
-      
-      final newSiteId = await _databaseService.insertSite(newSite);
-      LoggingService.info('SiteMergeService: Created new site "$siteName" with ID: $newSiteId');
+
+      // Update customName flag since this is user-created
+      final updatedSite = newSite.copyWith(customName: true);
+      await _databaseService.updateSite(updatedSite);
+
+      final newSiteId = newSite.id!;
+      final linkedInfo = newSite.pgeSiteId != null ? ' (linked to PGE site ${newSite.pgeSiteId})' : '';
+      LoggingService.info('SiteMergeService: Created new site "$siteName" with ID: $newSiteId$linkedInfo');
       
       // Reassign nearby flights
       for (final flight in nearbyFlights) {
