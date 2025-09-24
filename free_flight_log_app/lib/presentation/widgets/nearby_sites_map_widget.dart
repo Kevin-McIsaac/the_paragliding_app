@@ -779,43 +779,14 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     return _cachedSiteMarkers!;
   }
 
-  // Split sites into flown (never clustered) and new/PGE sites (clustered)
-  List<fm.Marker> _buildFlownSiteMarkers() {
+  // All sites are now subject to clustering
+  List<fm.Marker> _buildAllSiteMarkers() {
     if (!widget.sitesEnabled) return [];
 
-    return widget.sites.where((site) {
+    // Create simple markers for all sites - clustering will handle grouping
+    return widget.sites.map((site) {
       final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
-      return widget.siteFlightStatus[siteKey] ?? false;
-    }).map((site) {
-      final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
-      return fm.Marker(
-        point: LatLng(site.latitude, site.longitude),
-        width: 140,
-        height: 80,
-        child: GestureDetector(
-          onTap: () {
-            widget.onSiteSelected?.call(site);
-          },
-          child: SiteMarkerUtils.buildDisplaySiteMarker(
-            position: LatLng(site.latitude, site.longitude),
-            siteName: site.name,
-            isFlownSite: true,
-            flightCount: 1,
-            tooltip: '${site.name} (Flown)',
-          ).child,
-        ),
-      );
-    }).toList();
-  }
-
-  List<fm.Marker> _buildClusterableSiteMarkers() {
-    if (!widget.sitesEnabled) return [];
-
-    // Only create simple markers for clustering - the cluster library will handle grouping
-    return widget.sites.where((site) {
-      final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
-      return !(widget.siteFlightStatus[siteKey] ?? false);
-    }).map((site) {
+      final isFlownSite = widget.siteFlightStatus[siteKey] ?? false;
       // Create simplified markers for better performance with large datasets
       return fm.Marker(
         point: LatLng(site.latitude, site.longitude),
@@ -828,10 +799,10 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Simple icon without complex styling
+              // Icon colored based on flown status - new sites are green
               Icon(
                 Icons.location_on,
-                color: SiteMarkerUtils.newSiteColor,
+                color: isFlownSite ? SiteMarkerUtils.flownSiteColor : Colors.green,
                 size: 36,
               ),
               // Only show name at higher zoom levels (handled by clustering)
@@ -1338,8 +1309,8 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     // Track marker creation time
     final markerStopwatch = Stopwatch()..start();
     final userMarkers = _buildUserLocationMarker();
-    // Note: We now build markers separately for clustering
-    // _buildFlownSiteMarkers() and _buildClusterableSiteMarkers() are called directly in the layers
+    // Note: All markers are now built together and clustered
+    // _buildAllSiteMarkers() is called directly in the clustering layer
     markerStopwatch.stop();
 
     // Build the widget tree
@@ -1395,18 +1366,29 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                 ),
               ],
 
-              // Clustered PGE/new sites layer
+              // Clustered sites layer (now includes all sites)
               MarkerClusterLayerWidget(
                 options: MarkerClusterLayerOptions(
                   maxClusterRadius: 180, // Very aggressive clustering for performance
                   size: const Size(40, 40),
                   disableClusteringAtZoom: 10, // Show individual markers at zoom >= 10
-                  markers: _buildClusterableSiteMarkers(),
+                  markers: _buildAllSiteMarkers(),
                   builder: (context, markers) {
-                    // Don't cluster small groups (5 or less)
-                    if (markers.length <= 5) {
+                    // Don't cluster small groups (6 or less)
+                    if (markers.length <= 6) {
                       // Return null to show individual markers instead
                       return const SizedBox.shrink();
+                    }
+
+                    // Check if any marker in the cluster is a flown site
+                    bool hasFlownSite = false;
+                    for (final marker in markers) {
+                      final markerPoint = marker.point;
+                      final siteKey = SiteUtils.createSiteKey(markerPoint.latitude, markerPoint.longitude);
+                      if (widget.siteFlightStatus[siteKey] ?? false) {
+                        hasFlownSite = true;
+                        break;
+                      }
                     }
 
                     // Simplified cluster marker for performance
@@ -1418,7 +1400,9 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                       height: 40,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: SiteMarkerUtils.newSiteColor.withValues(alpha: 0.9),
+                        color: hasFlownSite
+                            ? SiteMarkerUtils.flownSiteColor.withValues(alpha: 0.9)
+                            : Colors.green.withValues(alpha: 0.9),
                         border: Border.all(color: Colors.white, width: 2),
                       ),
                       child: Center(
@@ -1436,13 +1420,11 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                 ),
               ),
 
-              // Flown sites layer (always on top, never clustered)
-              fm.MarkerLayer(
-                markers: [
-                  ...userMarkers,
-                  ..._buildFlownSiteMarkers(),
-                ],
-              ),
+              // User location marker layer
+              if (userMarkers.isNotEmpty)
+                fm.MarkerLayer(
+                  markers: userMarkers,
+                ),
             ],
           ),
         ),
