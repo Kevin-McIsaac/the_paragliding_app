@@ -1399,6 +1399,8 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                               child: WindRoseWidget(
                                 launchableDirections: windDirections,
                                 size: 125.0,
+                                windSpeed: 12.0, // Test: 12 km/h
+                                windDirection: 315.0, // Test: NW (315°)
                               ),
                             ),
                           ],

@@ -5,11 +5,15 @@ import '../../services/logging_service.dart';
 class WindRoseWidget extends StatelessWidget {
   final List<String> launchableDirections;
   final double size;
+  final double? windSpeed; // Wind speed in km/h
+  final double? windDirection; // Wind direction in degrees (0 = North)
 
   const WindRoseWidget({
     super.key,
     required this.launchableDirections,
     this.size = 250.0,
+    this.windSpeed,
+    this.windDirection,
   });
 
   @override
@@ -34,6 +38,8 @@ class WindRoseWidget extends StatelessWidget {
         painter: WindRosePainter(
           launchableDirections: launchableDirections,
           theme: Theme.of(context),
+          windSpeed: windSpeed,
+          windDirection: windDirection,
         ),
       ),
     );

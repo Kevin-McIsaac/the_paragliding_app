@@ -5,6 +5,8 @@ import '../../services/logging_service.dart';
 class WindRosePainter extends CustomPainter {
   final List<String> launchableDirections;
   final ThemeData theme;
+  final double? windSpeed; // Wind speed in km/h
+  final double? windDirection; // Wind direction in degrees (0 = North)
 
   // 8 cardinal and intercardinal directions
   static const List<String> _allDirections = [
@@ -26,6 +28,8 @@ class WindRosePainter extends CustomPainter {
   WindRosePainter({
     required this.launchableDirections,
     required this.theme,
+    this.windSpeed,
+    this.windDirection,
   });
 
   @override
@@ -46,8 +50,18 @@ class WindRosePainter extends CustomPainter {
     _drawCompassRing(canvas, center, radius);
     _drawDirectionLabels(canvas, center, radius);
 
+    // Draw wind direction arrow if wind data available
+    if (windDirection != null) {
+      _drawWindArrow(canvas, center, radius);
+    }
+
     // Draw center point
     _drawCenterPoint(canvas, center, radius);
+
+    // Draw wind speed text if wind data available
+    if (windSpeed != null) {
+      _drawWindSpeedText(canvas, center, radius);
+    }
   }
 
   void _drawBackground(Canvas canvas, Offset center, double radius) {
@@ -164,11 +178,130 @@ class WindRosePainter extends CustomPainter {
   void _drawCenterPoint(Canvas canvas, Offset center, double radius) {
     final centerDotRadius = 15.0; // Same fixed size as used in _drawWindSectors
 
+    // Determine center dot color based on wind suitability
+    Color centerColor;
+    if (windDirection != null) {
+      final isLaunchable = _isWindDirectionLaunchable();
+      centerColor = isLaunchable
+          ? Colors.green.withValues(alpha: 0.3)  // Same as green wedges
+          : Colors.grey.withValues(alpha: 0.1);   // Same as grey wedges
+    } else {
+      centerColor = theme.colorScheme.primary; // Default blue if no wind data
+    }
+
     final centerPaint = Paint()
-      ..color = theme.colorScheme.primary
+      ..color = centerColor
       ..style = PaintingStyle.fill;
 
     canvas.drawCircle(center, centerDotRadius, centerPaint);
+  }
+
+  void _drawWindArrow(Canvas canvas, Offset center, double radius) {
+    final gap = 5.0;
+    final centerDotRadius = 15.0;
+    final arrowStartRadius = centerDotRadius;
+    final arrowEndRadius = radius - gap;
+
+    // Convert wind direction to radians (subtract 90° to align with coordinate system)
+    final arrowAngle = _degreesToRadians(windDirection! - 90);
+
+    // Calculate arrow start and end points
+    final startX = center.dx + arrowStartRadius * cos(arrowAngle);
+    final startY = center.dy + arrowStartRadius * sin(arrowAngle);
+    final endX = center.dx + arrowEndRadius * cos(arrowAngle);
+    final endY = center.dy + arrowEndRadius * sin(arrowAngle);
+
+    final arrowPaint = Paint()
+      ..color = theme.colorScheme.outline
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0
+      ..strokeCap = StrokeCap.round;
+
+    // Draw arrow line
+    canvas.drawLine(
+      Offset(startX, startY),
+      Offset(endX, endY),
+      arrowPaint,
+    );
+
+    // Draw arrowhead
+    final arrowheadLength = 8.0;
+    final arrowheadAngle = 30 * pi / 180; // 30 degrees
+
+    final arrowheadLeft = Offset(
+      endX - arrowheadLength * cos(arrowAngle - arrowheadAngle),
+      endY - arrowheadLength * sin(arrowAngle - arrowheadAngle),
+    );
+
+    final arrowheadRight = Offset(
+      endX - arrowheadLength * cos(arrowAngle + arrowheadAngle),
+      endY - arrowheadLength * sin(arrowAngle + arrowheadAngle),
+    );
+
+    canvas.drawLine(Offset(endX, endY), arrowheadLeft, arrowPaint);
+    canvas.drawLine(Offset(endX, endY), arrowheadRight, arrowPaint);
+  }
+
+  void _drawWindSpeedText(Canvas canvas, Offset center, double radius) {
+    // Calculate optimal font size to fit within circle
+    final innerCircleRadius = radius * 0.50;
+    final speedFontSize = innerCircleRadius * 0.6; // Larger size to fill circle better
+
+    // Draw speed number (centered)
+    final speedTextPainter = TextPainter(
+      text: TextSpan(
+        text: windSpeed!.toStringAsFixed(0),
+        style: TextStyle(
+          color: theme.colorScheme.outline,
+          fontSize: speedFontSize,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+
+    speedTextPainter.layout();
+
+    // Center the speed text perfectly in the circle
+    final speedOffset = Offset(
+      center.dx - speedTextPainter.width / 2,
+      center.dy - speedTextPainter.height / 2,
+    );
+
+    speedTextPainter.paint(canvas, speedOffset);
+  }
+
+  bool _isWindDirectionLaunchable() {
+    if (windDirection == null) return false;
+
+    // Convert wind direction to compass direction
+    final windCompassDirection = _degreesToCompassDirection(windDirection!);
+
+    // Debug logging
+    LoggingService.debug('Wind direction: ${windDirection}° → $windCompassDirection');
+    LoggingService.debug('Launchable directions: $launchableDirections');
+    LoggingService.debug('Is $windCompassDirection launchable? ${launchableDirections.contains(windCompassDirection)}');
+
+    // Check if it matches any launchable direction
+    return launchableDirections.contains(windCompassDirection);
+  }
+
+  String _degreesToCompassDirection(double degrees) {
+    // Normalize to 0-360 range
+    double normalizedDegrees = degrees % 360;
+    if (normalizedDegrees < 0) normalizedDegrees += 360;
+
+    // Convert to 8 compass directions
+    if (normalizedDegrees >= 337.5 || normalizedDegrees < 22.5) return 'N';
+    if (normalizedDegrees >= 22.5 && normalizedDegrees < 67.5) return 'NE';
+    if (normalizedDegrees >= 67.5 && normalizedDegrees < 112.5) return 'E';
+    if (normalizedDegrees >= 112.5 && normalizedDegrees < 157.5) return 'SE';
+    if (normalizedDegrees >= 157.5 && normalizedDegrees < 202.5) return 'S';
+    if (normalizedDegrees >= 202.5 && normalizedDegrees < 247.5) return 'SW';
+    if (normalizedDegrees >= 247.5 && normalizedDegrees < 292.5) return 'W';
+    if (normalizedDegrees >= 292.5 && normalizedDegrees < 337.5) return 'NW';
+
+    return 'N'; // fallback
   }
 
   double _degreesToRadians(double degrees) {
@@ -178,6 +311,8 @@ class WindRosePainter extends CustomPainter {
   @override
   bool shouldRepaint(WindRosePainter oldDelegate) {
     return launchableDirections != oldDelegate.launchableDirections ||
-           theme != oldDelegate.theme;
+           theme != oldDelegate.theme ||
+           windSpeed != oldDelegate.windSpeed ||
+           windDirection != oldDelegate.windDirection;
   }
 }
