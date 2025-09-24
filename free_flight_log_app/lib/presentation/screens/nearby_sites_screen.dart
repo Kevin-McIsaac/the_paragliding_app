@@ -20,6 +20,7 @@ import '../../utils/site_utils.dart';
 import '../widgets/nearby_sites_map_widget.dart';
 import '../widgets/map_filter_dialog.dart';
 import '../widgets/common/app_error_state.dart';
+import '../widgets/wind_rose_widget.dart';
 import '../../services/openaip_service.dart';
 
 
@@ -1118,7 +1119,7 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                             _buildTakeoffTab(),
                             _buildRulesTab(),
                             _buildAccessTab(),
-                            _buildWeatherTab(),
+                            _buildWeatherTab(windDirections),
                             _buildCommentsTab(),
                           ],
                         ),
@@ -1353,25 +1354,120 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     );
   }
 
-  Widget _buildWeatherTab() {
+  Widget _buildWeatherTab(List<String> windDirections) {
     return Scrollbar(
       child: SingleChildScrollView(
       child: Padding(
-        padding: const EdgeInsets.all(8.0),
+        padding: const EdgeInsets.all(16.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             if (_isLoadingDetails)
               const Center(child: CircularProgressIndicator())
             else if (_loadingError != null)
               Center(child: Text(_loadingError!, style: TextStyle(color: Colors.red)))
-            else if (_detailedData != null && _detailedData!['weather'] != null && _detailedData!['weather']!.toString().isNotEmpty) ...[
-              Text(
-                _detailedData!['weather']!.toString(),
-                style: Theme.of(context).textTheme.bodyMedium,
+            else ...[
+              // Wind Rose Widget
+              const SizedBox(height: 16),
+              WindRoseWidget(
+                launchableDirections: windDirections,
+                size: 250.0,
               ),
-            ] else
-              const Center(child: Text('No weather information available')),
+              const SizedBox(height: 24),
+
+              // Wind Information Summary
+              if (windDirections.isNotEmpty) ...[
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Suitable Wind Directions',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8.0,
+                          runSpacing: 4.0,
+                          children: windDirections.map((direction) =>
+                            Chip(
+                              label: Text(direction),
+                              backgroundColor: Colors.green.withValues(alpha: 0.2),
+                              side: BorderSide(color: Colors.green.withValues(alpha: 0.5)),
+                            )
+                          ).toList(),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Green sectors on the compass show wind directions suitable for this launch site.',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ] else ...[
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          size: 48,
+                          color: Colors.grey.shade400,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'No wind direction restrictions',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'This site has no specific wind direction requirements.',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Colors.grey.shade600,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+
+              // Show additional weather data if available from API
+              if (_detailedData != null && _detailedData!['weather'] != null && _detailedData!['weather']!.toString().isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Additional Weather Information',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _detailedData!['weather']!.toString(),
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ],
         ),
       ),
