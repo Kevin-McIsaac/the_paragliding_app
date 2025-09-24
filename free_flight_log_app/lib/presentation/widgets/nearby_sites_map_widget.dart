@@ -741,8 +741,8 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
       // Create simplified markers for better performance with large datasets
       return fm.Marker(
         point: LatLng(site.latitude, site.longitude),
-        width: 40,  // Smaller size for better performance
-        height: 50,
+        width: 140,  // Match other maps to prevent label truncation
+        height: 65,  // Increased to accommodate icon (42px) + label when shown
         child: GestureDetector(
           onTap: () {
             widget.onSiteSelected?.call(site);
