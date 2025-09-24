@@ -10,7 +10,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/flight.dart';
 import '../../data/models/igc_file.dart';
 import '../../data/models/paragliding_site.dart';
-import '../../services/database_service.dart';
 import '../../services/site_bounds_loader_v2.dart';
 import '../../services/logging_service.dart';
 import '../../services/flight_track_loader.dart';
@@ -39,7 +38,6 @@ class FlightTrack2DWidget extends StatefulWidget {
 }
 
 class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
-  final DatabaseService _databaseService = DatabaseService.instance;
   final SiteBoundsLoaderV2 _siteBoundsLoader = SiteBoundsLoaderV2.instance;
   final MapController _mapController = MapController();
   
@@ -83,7 +81,6 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     _loadMapProvider();
     _loadLegendPreference(); // Load saved legend state
     _loadTrackData();
-    _loadSiteData();
     _loadClosingDistanceThreshold();
   }
 
@@ -382,17 +379,6 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     );
   }
 
-  Future<void> _loadSiteData() async {
-    if (widget.flight.launchSiteId != null) {
-      try {
-        await _databaseService.getSite(widget.flight.launchSiteId!);
-        setState(() {
-        });
-      } catch (e) {
-        LoggingService.error('FlightTrack2DWidget: Error loading site data', e);
-      }
-    }
-  }
 
   Future<void> _loadTrackData() async {
     if (widget.flight.trackLogPath == null) {
