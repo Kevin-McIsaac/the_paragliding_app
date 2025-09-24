@@ -176,7 +176,6 @@ class PgeSitesDatabaseService {
     required double south,
     required double east,
     required double west,
-    int limit = 100,
   }) async {
     PerformanceMonitor.startOperation('PgeSitesQuery_Bounds');
     final stopwatch = Stopwatch()..start();
@@ -203,7 +202,6 @@ class PgeSitesDatabaseService {
         _pgeSitesTable,
         where: whereClause,
         whereArgs: whereArgs,
-        limit: limit,
       );
 
       stopwatch.stop();
@@ -320,7 +318,6 @@ class PgeSitesDatabaseService {
         south: latitude - tolerance,
         east: longitude + tolerance,
         west: longitude - tolerance,
-        limit: 10,
       );
 
       if (sites.isEmpty) return null;

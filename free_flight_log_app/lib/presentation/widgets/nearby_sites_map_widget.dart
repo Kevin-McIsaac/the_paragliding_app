@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart' as fm;
+import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../data/models/paragliding_site.dart';
@@ -778,6 +779,83 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     return _cachedSiteMarkers!;
   }
 
+  // Split sites into flown (never clustered) and new/PGE sites (clustered)
+  List<fm.Marker> _buildFlownSiteMarkers() {
+    if (!widget.sitesEnabled) return [];
+
+    return widget.sites.where((site) {
+      final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
+      return widget.siteFlightStatus[siteKey] ?? false;
+    }).map((site) {
+      final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
+      return fm.Marker(
+        point: LatLng(site.latitude, site.longitude),
+        width: 140,
+        height: 80,
+        child: GestureDetector(
+          onTap: () {
+            widget.onSiteSelected?.call(site);
+          },
+          child: SiteMarkerUtils.buildDisplaySiteMarker(
+            position: LatLng(site.latitude, site.longitude),
+            siteName: site.name,
+            isFlownSite: true,
+            flightCount: 1,
+            tooltip: '${site.name} (Flown)',
+          ).child,
+        ),
+      );
+    }).toList();
+  }
+
+  List<fm.Marker> _buildClusterableSiteMarkers() {
+    if (!widget.sitesEnabled) return [];
+
+    // Only create simple markers for clustering - the cluster library will handle grouping
+    return widget.sites.where((site) {
+      final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
+      return !(widget.siteFlightStatus[siteKey] ?? false);
+    }).map((site) {
+      // Create simplified markers for better performance with large datasets
+      return fm.Marker(
+        point: LatLng(site.latitude, site.longitude),
+        width: 40,  // Smaller size for better performance
+        height: 50,
+        child: GestureDetector(
+          onTap: () {
+            widget.onSiteSelected?.call(site);
+          },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Simple icon without complex styling
+              Icon(
+                Icons.location_on,
+                color: SiteMarkerUtils.newSiteColor,
+                size: 36,
+              ),
+              // Only show name at higher zoom levels (handled by clustering)
+              if (_currentZoom > 10)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Text(
+                    site.name,
+                    style: const TextStyle(
+                      fontSize: 8,
+                      color: Colors.black87,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    }).toList();
+  }
+
   List<fm.Marker> _buildUserLocationMarker() {
     if (widget.userPosition == null) return [];
     
@@ -1260,7 +1338,8 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     // Track marker creation time
     final markerStopwatch = Stopwatch()..start();
     final userMarkers = _buildUserLocationMarker();
-    final siteMarkers = _buildSiteMarkers();
+    // Note: We now build markers separately for clustering
+    // _buildFlownSiteMarkers() and _buildClusterableSiteMarkers() are called directly in the layers
     markerStopwatch.stop();
 
     // Build the widget tree
@@ -1316,11 +1395,46 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                 ),
               ],
 
-              // Site markers layer
+              // Clustered PGE/new sites layer
+              MarkerClusterLayerWidget(
+                options: MarkerClusterLayerOptions(
+                  maxClusterRadius: 120, // More aggressive clustering for performance
+                  size: const Size(40, 40),
+                  disableClusteringAtZoom: 12, // Only show individual markers at high zoom
+                  markers: _buildClusterableSiteMarkers(),
+                  builder: (context, markers) {
+                    // Simplified cluster marker for performance
+                    final count = markers.length;
+                    final displayText = count > 999 ? '999+' : count.toString();
+
+                    return Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: SiteMarkerUtils.newSiteColor.withValues(alpha: 0.9),
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      child: Center(
+                        child: Text(
+                          displayText,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: count > 99 ? 10 : 12,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+
+              // Flown sites layer (always on top, never clustered)
               fm.MarkerLayer(
                 markers: [
                   ...userMarkers,
-                  ...siteMarkers,
+                  ..._buildFlownSiteMarkers(),
                 ],
               ),
             ],
@@ -1385,7 +1499,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               })
             : 0,
         'user_markers': userMarkers.length,
-        'site_markers': siteMarkers.length,
+        'site_markers': widget.sites.length,
       });
     }
 
