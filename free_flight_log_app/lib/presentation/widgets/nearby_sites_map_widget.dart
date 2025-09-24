@@ -311,7 +311,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     _lastProcessedBounds = bounds;
 
     // Log the unified loading event
-    LoggingService.info('Loading visible data for bounds: ${bounds.west.toStringAsFixed(2)},${bounds.south.toStringAsFixed(2)},${bounds.east.toStringAsFixed(2)},${bounds.north.toStringAsFixed(2)}');
+    LoggingService.info('Loading visible data for bounds: ${bounds.west.toStringAsFixed(2)},${bounds.south.toStringAsFixed(2)},${bounds.east.toStringAsFixed(2)},${bounds.north.toStringAsFixed(2)}, zoom: ${_currentZoom.toStringAsFixed(1)}');
 
     // Set loading states before starting parallel loads
     setState(() {
@@ -1329,7 +1329,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         (currentZoom - _lastZoom).abs() > 0.5;
 
     if (shouldLog) {
-      LoggingService.info('[MAP] ${widget.sites.length} sites, ${_airspaceLayers.isNotEmpty ? "airspaces loaded" : "no airspaces"}');
+      LoggingService.info('[MAP] ${widget.sites.length} sites, ${_airspaceLayers.isNotEmpty ? "airspaces loaded" : "no airspaces"}, zoom: ${_currentZoom.toStringAsFixed(1)}');
       _lastRenderLog = now;
       _lastSiteCount = totalSites;
       _lastZoom = currentZoom;
@@ -1398,11 +1398,17 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               // Clustered PGE/new sites layer
               MarkerClusterLayerWidget(
                 options: MarkerClusterLayerOptions(
-                  maxClusterRadius: 120, // More aggressive clustering for performance
+                  maxClusterRadius: 180, // Very aggressive clustering for performance
                   size: const Size(40, 40),
-                  disableClusteringAtZoom: 12, // Only show individual markers at high zoom
+                  disableClusteringAtZoom: 10, // Show individual markers at zoom >= 10
                   markers: _buildClusterableSiteMarkers(),
                   builder: (context, markers) {
+                    // Don't cluster small groups (5 or less)
+                    if (markers.length <= 5) {
+                      // Return null to show individual markers instead
+                      return const SizedBox.shrink();
+                    }
+
                     // Simplified cluster marker for performance
                     final count = markers.length;
                     final displayText = count > 999 ? '999+' : count.toString();
@@ -1489,6 +1495,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         'build_total_ms': buildTime,
         'marker_creation_ms': markerStopwatch.elapsedMilliseconds,
         'site_count': widget.sites.length,
+        'zoom': _currentZoom,
         'airspace_layers': _airspaceLayers.length,
         'airspace_polygons': _airspaceLayers.isNotEmpty
             ? _airspaceLayers.fold<int>(0, (sum, layer) {
