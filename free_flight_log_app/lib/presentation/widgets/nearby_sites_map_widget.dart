@@ -800,25 +800,13 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
             mainAxisSize: MainAxisSize.min,
             children: [
               // Icon colored based on flown status - new sites are green
-              Icon(
-                Icons.location_on,
+              SiteMarkerUtils.buildSiteMarkerIcon(
                 color: isFlownSite ? SiteMarkerUtils.flownSiteColor : Colors.green,
-                size: 36,
               ),
               // Only show name at higher zoom levels (handled by clustering)
               if (_currentZoom > 10)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: Text(
-                    site.name,
-                    style: const TextStyle(
-                      fontSize: 8,
-                      color: Colors.black87,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
+                SiteMarkerUtils.buildSiteLabel(
+                  siteName: site.name,
                 ),
             ],
           ),
