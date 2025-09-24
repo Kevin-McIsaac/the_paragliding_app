@@ -12,6 +12,7 @@ import '../../data/models/paragliding_site.dart';
 import '../../data/models/flight.dart';
 import '../../services/database_service.dart';
 import '../../services/site_bounds_loader_v2.dart';
+import '../../services/map_bounds_manager.dart';
 import '../../services/logging_service.dart';
 import '../../utils/site_marker_utils.dart';
 import '../../utils/map_provider.dart';
@@ -44,8 +45,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   static const double _minZoom = 1.0;
   // Use shared constants from SiteMarkerUtils
   static const double _siteMarkerSize = SiteMarkerUtils.siteMarkerSize;
-  static const double _boundsThreshold = 0.001;
-  static const int _debounceDurationMs = 500; // Standardized debounce time for all maps
   static const double _launchRadiusMeters = 500.0;
   
   // Common UI shadows
@@ -63,14 +62,12 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   // Site markers state
   List<ParaglidingSite> _sites = [];
   List<Flight> _launches = [];
-  Timer? _debounceTimer;
   
   // Legend state
   bool _isLegendExpanded = false;
   static const String _legendExpandedKey = 'edit_site_legend_expanded';
   LatLngBounds? _currentBounds;
   bool _isLoadingSites = false;
-  String? _lastLoadedBoundsKey;
   String? _lastLoadedLaunchesBoundsKey;
   
   // Merge mode state
@@ -84,7 +81,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   
   // Services
   final DatabaseService _databaseService = DatabaseService.instance;
-  final SiteBoundsLoaderV2 _siteBoundsLoader = SiteBoundsLoaderV2.instance;
 
   @override
   void initState() {
@@ -260,7 +256,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
   @override
   void dispose() {
-    _debounceTimer?.cancel();
     _cacheRefreshTimer?.cancel();
     super.dispose();
   }
@@ -609,15 +604,12 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     _enforceZoomLimits();
     
     // React to all movement and zoom end events to reload sites
-    if (event is MapEventMoveEnd || 
+    if (event is MapEventMoveEnd ||
         event is MapEventFlingAnimationEnd ||
         event is MapEventDoubleTapZoomEnd ||
         event is MapEventScrollWheelZoom) {
-      
-      _debounceTimer?.cancel();
-      _debounceTimer = Timer(const Duration(milliseconds: _debounceDurationMs), () {
-        _updateMapBounds();
-      });
+
+      _updateMapBounds();
     }
   }
   
@@ -630,73 +622,54 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
   void _updateMapBounds() {
     if (_mapController == null) return;
-    
+
     final bounds = _mapController!.camera.visibleBounds;
-    
-    // Check if bounds have changed significantly
-    if (_currentBounds != null) {
-      
-      // Check if any corner of the bounds has moved more than the threshold
-      if ((bounds.north - _currentBounds!.north).abs() < _boundsThreshold &&
-          (bounds.south - _currentBounds!.south).abs() < _boundsThreshold &&
-          (bounds.east - _currentBounds!.east).abs() < _boundsThreshold &&
-          (bounds.west - _currentBounds!.west).abs() < _boundsThreshold) {
-        return; // Bounds haven't changed significantly
-      }
-    }
     _currentBounds = bounds;
-    _loadSitesForBounds(bounds);
+
+    // Use MapBoundsManager for debounced bounds loading
+    MapBoundsManager.instance.loadSitesForBoundsDebounced(
+      context: 'edit_site',
+      bounds: bounds,
+      siteLimit: 50,
+      includeFlightCounts: true,
+      onLoaded: (result) {
+        if (mounted) {
+          setState(() {
+            _sites = result.sites;
+            _isLoadingSites = false;
+          });
+          LoggingService.info('EditSiteScreen: Loaded ${result.sites.length} sites (${result.sitesWithFlights.length} with flights, ${result.sitesWithoutFlights.length} without)');
+        }
+      },
+    );
+
     _loadAllLaunchesInBounds(bounds);
   }
   
   Future<void> _loadSitesForBounds(LatLngBounds bounds) async {
-    if (_isLoadingSites) return;
-
-    // Create a unique key for these bounds to prevent duplicate requests
-    final boundsKey = '${bounds.north.toStringAsFixed(6)}_${bounds.south.toStringAsFixed(6)}_${bounds.east.toStringAsFixed(6)}_${bounds.west.toStringAsFixed(6)}';
-    if (_lastLoadedBoundsKey == boundsKey) {
-      return; // Same bounds already loaded
-    }
-
-    setState(() {
-      _isLoadingSites = true;
-    });
-
-    try {
-      // Use unified site loader
-      final result = await _siteBoundsLoader.loadSitesForBounds(
-        bounds,
-        limit: 50,
-        includeFlightCounts: true,
-      );
-
-      if (mounted) {
-        setState(() {
-          _sites = result.sites;
-          _isLoadingSites = false;
-        });
-
-        // Mark these bounds as loaded to prevent duplicate requests
-        _lastLoadedBoundsKey = boundsKey;
-
-        LoggingService.info('EditSiteScreen: Loaded ${result.sites.length} sites (${result.sitesWithFlights.length} with flights, ${result.sitesWithoutFlights.length} without)');
-      }
-    } catch (e) {
-      LoggingService.error('EditSiteScreen: Error loading sites', e);
-      if (mounted) {
-        setState(() {
-          _isLoadingSites = false;
-        });
-      }
-    }
+    // Use MapBoundsManager for immediate loading (called from onMapReady)
+    MapBoundsManager.instance.loadSitesForBoundsDebounced(
+      context: 'edit_site',
+      bounds: bounds,
+      siteLimit: 50,
+      includeFlightCounts: true,
+      onLoaded: (result) {
+        if (mounted) {
+          setState(() {
+            _sites = result.sites;
+            _isLoadingSites = false;
+          });
+          LoggingService.info('EditSiteScreen: Loaded ${result.sites.length} sites (${result.sitesWithFlights.length} with flights, ${result.sitesWithoutFlights.length} without)');
+        }
+      },
+    );
   }
 
 
   /// Clear cache keys to force refresh of map data
   void _clearMapDataCache() {
-    _lastLoadedBoundsKey = null;
     _lastLoadedLaunchesBoundsKey = null;
-    // No cache to clear anymore - V2 doesn't use caching
+    MapBoundsManager.instance.clearCache();
   }
   
   

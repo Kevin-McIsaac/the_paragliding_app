@@ -14,6 +14,7 @@ import '../../services/logging_service.dart';
 import '../../services/nearby_sites_search_state.dart';
 import '../../services/nearby_sites_search_manager_v2.dart';
 import '../../services/site_bounds_loader_v2.dart';
+import '../../services/map_bounds_manager.dart';
 import '../../utils/map_provider.dart';
 import '../../utils/site_utils.dart';
 import '../widgets/nearby_sites_map_widget.dart';
@@ -32,10 +33,6 @@ class NearbySitesScreen extends StatefulWidget {
 
 class _NearbySitesScreenState extends State<NearbySitesScreen> {
   final LocationService _locationService = LocationService.instance;
-  
-  // Constants for bounds-based loading (copied from EditSiteScreen)
-  static const double _boundsThreshold = 0.001;
-  static const int _debounceDurationMs = 500; // Standardized debounce time for all maps
   
   // Sites state - using ParaglidingSite directly (no more UnifiedSite)
   List<ParaglidingSite> _allSites = [];
@@ -64,11 +61,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   static const String _sitesEnabledKey = 'nearby_sites_sites_enabled';
   static const String _airspaceEnabledKey = 'nearby_sites_airspace_enabled';
   
-  // Bounds-based loading state (copied from EditSiteScreen)
-  Timer? _debounceTimer;
+  // Bounds-based loading state using MapBoundsManager
   LatLngBounds? _currentBounds;
   bool _isLoadingSites = false;
-  String? _lastLoadedBoundsKey;
   
   // Search management - consolidated into SearchManager
 
@@ -99,7 +94,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
   @override
   void dispose() {
-    _debounceTimer?.cancel(); // Clean up timer
+    MapBoundsManager.instance.cancelDebounce('nearby_sites'); // Clean up any pending debounce
     _locationNotificationTimer?.cancel(); // Clean up location notification timer
     _searchManager.dispose(); // Clean up search manager
     super.dispose();
@@ -453,112 +448,57 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       return;
     }
 
-    // Debounce the bounds change to prevent excessive API calls
-    _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: _debounceDurationMs), () {
-      _updateMapBounds(bounds);
-    });
-  }
-
-  void _updateMapBounds(LatLngBounds bounds) {
-    // Check if bounds have changed significantly
-    if (_currentBounds != null) {
-      // Check if any corner of the bounds has moved more than the threshold
-      if ((bounds.north - _currentBounds!.north).abs() < _boundsThreshold &&
-          (bounds.south - _currentBounds!.south).abs() < _boundsThreshold &&
-          (bounds.east - _currentBounds!.east).abs() < _boundsThreshold &&
-          (bounds.west - _currentBounds!.west).abs() < _boundsThreshold) {
-        return; // Bounds haven't changed significantly
-      }
+    // Check if bounds have changed significantly using MapBoundsManager
+    if (!MapBoundsManager.instance.haveBoundsChangedSignificantly('nearby_sites', bounds, _currentBounds)) {
+      return;
     }
+
     _currentBounds = bounds;
-    _loadAllMapDataForBounds(bounds);
-  }
 
-  /// Unified method to load all map data (sites and trigger airspace) in parallel
-  Future<void> _loadAllMapDataForBounds(LatLngBounds bounds) async {
-    // Skip loading if sites are disabled (airspace loads independently in map widget)
-    if (!_sitesEnabled) {
-      return;
-    }
-
-    if (_isLoadingSites) {
-      return;
-    }
-
-    // Create a unique key for these bounds to prevent duplicate requests
-    final boundsKey = '${bounds.north.toStringAsFixed(6)}_${bounds.south.toStringAsFixed(6)}_${bounds.east.toStringAsFixed(6)}_${bounds.west.toStringAsFixed(6)}';
-    if (_lastLoadedBoundsKey == boundsKey) {
-      LoggingService.info('Parallel map data loading skipped - same bounds already loaded');
-      return; // Same bounds already loaded
-    }
-
-    if (!mounted) return;
-
-    final stopwatch = Stopwatch()..start();
-
-    setState(() {
-      _isLoadingSites = true;
-    });
-
-    try {
-      // Build list of futures to load in parallel
-      final futures = <Future>[];
-
-      // Always load sites when sites are enabled
-      futures.add(
-        SiteBoundsLoaderV2.instance.loadSitesForBounds(
-          bounds,
-          limit: 50,
-          includeFlightCounts: true,
-        ).then((result) {
-          if (mounted) {
-            // Store sites (already ParaglidingSite objects)
+    // Use MapBoundsManager for debounced loading with caching
+    MapBoundsManager.instance.loadSitesForBoundsDebounced(
+      context: 'nearby_sites',
+      bounds: bounds,
+      onLoaded: (result) {
+        if (mounted) {
+          setState(() {
             _allSites = result.sites;
-            // Build flight status map for backward compatibility
             _siteFlightStatus = {};
             for (final site in result.sites) {
               final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
               _siteFlightStatus[siteKey] = site.hasFlights;
             }
-
-            // Update displayed sites with the new bounds data
             _updateDisplayedSites();
-          }
-        }),
-      );
+            _isLoadingSites = false;
+          });
 
-      // Load all data in parallel
-      await Future.wait(futures);
-
-      if (mounted) {
-        setState(() {
-          _isLoadingSites = false;
-        });
-
-        // Mark these bounds as loaded to prevent duplicate requests
-        _lastLoadedBoundsKey = boundsKey;
-
-        stopwatch.stop();
-
-        LoggingService.structured('PARALLEL_MAP_DATA_LOADED', {
-          'bounds_key': boundsKey,
-          'sites_count': _allSites.length,
-          'flown_sites': _allSites.where((s) => s.hasFlights).length,
-          'new_sites': _allSites.where((s) => !s.hasFlights).length,
-          'load_time_ms': stopwatch.elapsedMilliseconds,
-          'parallel_loading': true,
-        });
-      }
-    } catch (error, stackTrace) {
-      LoggingService.error('Failed to load parallel map data', error, stackTrace);
+          LoggingService.structured('NEARBY_SITES_LOADED', {
+            'sites_count': result.sites.length,
+            'flown_sites': result.sitesWithFlights.length,
+            'new_sites': result.sitesWithoutFlights.length,
+            'from_cache': MapBoundsManager.instance.areBoundsAlreadyLoaded('nearby_sites', bounds),
+          });
+        }
+      },
+      siteLimit: 50,
+      includeFlightCounts: true,
+    ).then((_) {
+      // Loading completed
+    }).catchError((error) {
+      LoggingService.error('Failed to load sites for bounds', error);
       if (mounted) {
         setState(() {
           _isLoadingSites = false;
         });
       }
-    }
+    });
+
+    // Set loading state
+    setState(() {
+      _isLoadingSites = true;
+    });
   }
+
 
 
 
@@ -658,15 +598,18 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         setState(() {
           _displayedSites.clear();
           _allSites.clear();
-          _lastLoadedBoundsKey = ''; // Clear the bounds key so sites reload when re-enabled
         });
+        // Clear cache so sites reload when re-enabled
+        MapBoundsManager.instance.clearCache('nearby_sites');
         LoggingService.action('MapFilter', 'sites_disabled', {'cleared_sites_count': _displayedSites.length});
       } else if (sitesEnabled && !previousSitesEnabled) {
         // Sites were enabled - reload sites for current bounds or trigger map refresh
         if (_currentBounds != null) {
-          // Force reload by clearing the last loaded bounds key
-          _lastLoadedBoundsKey = '';
-          _loadAllMapDataForBounds(_currentBounds!);
+          // Force reload using MapBoundsManager
+          MapBoundsManager.instance.clearCache('nearby_sites');
+          if (_currentBounds != null) {
+            _onBoundsChanged(_currentBounds!);
+          }
         }
         LoggingService.action('MapFilter', 'sites_enabled', {'reloading_sites': true, 'has_bounds': _currentBounds != null});
       }

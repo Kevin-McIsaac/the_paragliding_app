@@ -11,6 +11,7 @@ import '../../data/models/flight.dart';
 import '../../data/models/igc_file.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../services/site_bounds_loader_v2.dart';
+import '../../services/map_bounds_manager.dart';
 import '../../services/logging_service.dart';
 import '../../services/flight_track_loader.dart';
 import '../../utils/performance_monitor.dart';
@@ -38,7 +39,6 @@ class FlightTrack2DWidget extends StatefulWidget {
 }
 
 class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
-  final SiteBoundsLoaderV2 _siteBoundsLoader = SiteBoundsLoaderV2.instance;
   final MapController _mapController = MapController();
   
   // Constants
@@ -50,8 +50,6 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   static const double _altitudePaddingFactor = 0.1;
   static const int _chartIntervalMinutes = 15;
   static const int _chartIntervalMs = _chartIntervalMinutes * 60 * 1000;
-  static const double _boundsThreshold = 0.001; // Minimum change in degrees to trigger reload
-  static const int _debounceDurationMs = 500; // Standardized debounce time for all maps
   
   List<IgcPoint> _trackPoints = [];
   List<IgcPoint> _faiTrianglePoints = [];
@@ -64,12 +62,9 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   
   // Site display state
   List<ParaglidingSite> _sites = [];
-  Timer? _debounceTimer;
   Timer? _loadingDelayTimer;
   bool _isLoadingSites = false;
   bool _showLoadingIndicator = false;
-  String? _lastLoadedBoundsKey;
-  LatLngBounds? _currentBounds; // Track current bounds for threshold check
   
   @override
   void initState() {
@@ -466,13 +461,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   }
 
   /// Load sites within the current map bounds
-  Future<void> _loadSitesForBounds(LatLngBounds bounds) async {
-    // Create a unique key for these bounds to prevent duplicate requests
-    final boundsKey = '${bounds.north.toStringAsFixed(6)}_${bounds.south.toStringAsFixed(6)}_${bounds.east.toStringAsFixed(6)}_${bounds.west.toStringAsFixed(6)}';
-    if (_lastLoadedBoundsKey == boundsKey) {
-      return; // Same bounds already loaded
-    }
-
+  void _loadSitesForBounds(LatLngBounds bounds) {
     setState(() => _isLoadingSites = true);
 
     // Show loading indicator after 500ms delay to prevent flashing
@@ -483,36 +472,24 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
       }
     });
 
-    try {
-      // Use unified site loader
-      final result = await _siteBoundsLoader.loadSitesForBounds(
-        bounds,
-        limit: 30, // Smaller limit for 2D map view
-        includeFlightCounts: true,
-      );
-
-      if (mounted) {
-        setState(() {
-          _sites = result.sites;
-          _isLoadingSites = false;
-          _showLoadingIndicator = false;
-        });
-        _loadingDelayTimer?.cancel();
-
-        _lastLoadedBoundsKey = boundsKey;
-
-        LoggingService.info('FlightTrack2DWidget: Loaded ${result.sites.length} unified sites');
-      }
-    } catch (e) {
-      LoggingService.error('FlightTrack2DWidget: Error loading sites', e);
-      if (mounted) {
-        setState(() {
-          _isLoadingSites = false;
-          _showLoadingIndicator = false;
-        });
-        _loadingDelayTimer?.cancel();
-      }
-    }
+    // Use MapBoundsManager for debounced loading
+    MapBoundsManager.instance.loadSitesForBoundsDebounced(
+      context: 'flight_track_2d',
+      bounds: bounds,
+      siteLimit: 30, // Smaller limit for 2D map view
+      includeFlightCounts: true,
+      onLoaded: (result) {
+        if (mounted) {
+          setState(() {
+            _sites = result.sites;
+            _isLoadingSites = false;
+            _showLoadingIndicator = false;
+          });
+          _loadingDelayTimer?.cancel();
+          LoggingService.info('FlightTrack2DWidget: Loaded ${result.sites.length} unified sites');
+        }
+      },
+    );
   }
 
 
@@ -524,34 +501,13 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         event is MapEventFlingAnimationEnd ||
         event is MapEventDoubleTapZoomEnd ||
         event is MapEventScrollWheelZoom) {
-
-      _debounceTimer?.cancel();
-      _debounceTimer = Timer(const Duration(milliseconds: _debounceDurationMs), () {
-        if (mounted) {
-          _updateMapBounds();
-        }
-      });
+      _updateMapBounds();
     }
   }
 
-  /// Update map bounds and load sites if bounds changed significantly
+  /// Update map bounds and load sites
   void _updateMapBounds() {
     final newBounds = _mapController.camera.visibleBounds;
-
-    // Check if bounds have changed significantly
-    if (_currentBounds != null) {
-      final deltaLat = (newBounds.north - _currentBounds!.north).abs() +
-                       (newBounds.south - _currentBounds!.south).abs();
-      final deltaLng = (newBounds.east - _currentBounds!.east).abs() +
-                       (newBounds.west - _currentBounds!.west).abs();
-
-      if (deltaLat < _boundsThreshold && deltaLng < _boundsThreshold) {
-        // Bounds haven't changed significantly, skip loading
-        return;
-      }
-    }
-
-    _currentBounds = newBounds;
     _loadSitesForBounds(newBounds);
   }
 
@@ -1501,7 +1457,6 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
 
   @override
   void dispose() {
-    _debounceTimer?.cancel();
     _loadingDelayTimer?.cancel();
     _selectedTrackPointIndex.dispose();
     _mapController.dispose();
