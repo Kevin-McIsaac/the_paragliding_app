@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../utils/database_reset_helper.dart';
 import '../../services/site_matching_service.dart';
@@ -48,6 +49,12 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
   String? _cesiumToken;
   bool _isCesiumTokenValidated = false;
   bool _isValidatingCesium = false;
+
+  // Helper method to format numbers with thousands separator
+  String _formatNumber(int number) {
+    final formatter = NumberFormat('#,###');
+    return formatter.format(number);
+  }
 
 
   @override
@@ -225,7 +232,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
         ...stats,
         'database_size_mb': ((stats['database_size_bytes'] ?? 0) / 1024 / 1024).toStringAsFixed(1),
         'last_downloaded': lastDownloaded,
-        'source_file_size_bytes': downloadStatus['file_size_bytes'] ?? 0,
+        'source_file_size_mb': ((downloadStatus['file_size_bytes'] ?? 0) / 1024 / 1024).toStringAsFixed(1),
         'status': stats['sites_count'] > 0 ? 'Active' : 'Not downloaded',
         'is_outdated': downloadStatus['is_outdated'] ?? false,
       };
@@ -1564,7 +1571,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                     icon: Icons.public,
                     title: 'PGE Sites Database',
                     subtitle: _pgeSitesStats != null
-                        ? '${_pgeSitesStats!['sites_count'] ?? 0} sites • ${_pgeSitesStats!['database_size_mb'] ?? '0.0'}MB • ${_pgeSitesStats!['status'] ?? 'Unknown'}'
+                        ? '${_formatNumber(_pgeSitesStats!['sites_count'] ?? 0)} sites • ${_pgeSitesStats!['database_size_mb'] ?? '0.0'}MB • ${_pgeSitesStats!['status'] ?? 'Unknown'}'
                         : 'Loading...',
                     expansionKey: 'pge_sites_db',
                     expansionManager: _expansionManager,
@@ -1579,7 +1586,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                           rows: [
                             AppStatRow.dataManagement(
                               label: 'Total Sites',
-                              value: '${_pgeSitesStats!['sites_count'] ?? 0}',
+                              value: _formatNumber(_pgeSitesStats!['sites_count'] ?? 0),
                             ),
                             AppStatRow.dataManagement(
                               label: 'Database Size',
@@ -1591,7 +1598,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                             ),
                             AppStatRow.dataManagement(
                               label: 'Source Size',
-                              value: '${(_pgeSitesStats!['source_file_size_bytes'] ?? 0) / 1024}KB',
+                              value: '${_pgeSitesStats!['source_file_size_mb'] ?? '0.0'}MB',
                             ),
                             if (_pgeSitesProgress != null && _pgeSitesProgress!.status == PgeSitesDownloadStatus.downloading)
                               AppStatRow.dataManagement(
