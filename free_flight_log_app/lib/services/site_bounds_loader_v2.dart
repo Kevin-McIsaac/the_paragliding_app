@@ -56,7 +56,6 @@ class SiteBoundsLoaderV2 {
           south: bounds.south,
           east: bounds.east,
           west: bounds.west,
-          limit: limit,
         ));
       } else {
         // No local database available - return empty list

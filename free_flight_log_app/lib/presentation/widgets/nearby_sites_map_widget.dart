@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart' as fm;
+import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../data/models/paragliding_site.dart';
@@ -310,7 +311,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     _lastProcessedBounds = bounds;
 
     // Log the unified loading event
-    LoggingService.info('Loading visible data for bounds: ${bounds.west.toStringAsFixed(2)},${bounds.south.toStringAsFixed(2)},${bounds.east.toStringAsFixed(2)},${bounds.north.toStringAsFixed(2)}');
+    LoggingService.info('Loading visible data for bounds: ${bounds.west.toStringAsFixed(2)},${bounds.south.toStringAsFixed(2)},${bounds.east.toStringAsFixed(2)},${bounds.north.toStringAsFixed(2)}, zoom: ${_currentZoom.toStringAsFixed(1)}');
 
     // Set loading states before starting parallel loads
     setState(() {
@@ -776,6 +777,54 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     _cachedSiteMarkersKey = cacheKey;
 
     return _cachedSiteMarkers!;
+  }
+
+  // All sites are now subject to clustering
+  List<fm.Marker> _buildAllSiteMarkers() {
+    if (!widget.sitesEnabled) return [];
+
+    // Create simple markers for all sites - clustering will handle grouping
+    return widget.sites.map((site) {
+      final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
+      final isFlownSite = widget.siteFlightStatus[siteKey] ?? false;
+      // Create simplified markers for better performance with large datasets
+      return fm.Marker(
+        point: LatLng(site.latitude, site.longitude),
+        width: 40,  // Smaller size for better performance
+        height: 50,
+        child: GestureDetector(
+          onTap: () {
+            widget.onSiteSelected?.call(site);
+          },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Icon colored based on flown status - new sites are green
+              Icon(
+                Icons.location_on,
+                color: isFlownSite ? SiteMarkerUtils.flownSiteColor : Colors.green,
+                size: 36,
+              ),
+              // Only show name at higher zoom levels (handled by clustering)
+              if (_currentZoom > 10)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Text(
+                    site.name,
+                    style: const TextStyle(
+                      fontSize: 8,
+                      color: Colors.black87,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    }).toList();
   }
 
   List<fm.Marker> _buildUserLocationMarker() {
@@ -1251,7 +1300,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         (currentZoom - _lastZoom).abs() > 0.5;
 
     if (shouldLog) {
-      LoggingService.info('[MAP] ${widget.sites.length} sites, ${_airspaceLayers.isNotEmpty ? "airspaces loaded" : "no airspaces"}');
+      LoggingService.info('[MAP] ${widget.sites.length} sites, ${_airspaceLayers.isNotEmpty ? "airspaces loaded" : "no airspaces"}, zoom: ${_currentZoom.toStringAsFixed(1)}');
       _lastRenderLog = now;
       _lastSiteCount = totalSites;
       _lastZoom = currentZoom;
@@ -1260,7 +1309,8 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
     // Track marker creation time
     final markerStopwatch = Stopwatch()..start();
     final userMarkers = _buildUserLocationMarker();
-    final siteMarkers = _buildSiteMarkers();
+    // Note: All markers are now built together and clustered
+    // _buildAllSiteMarkers() is called directly in the clustering layer
     markerStopwatch.stop();
 
     // Build the widget tree
@@ -1316,13 +1366,65 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
                 ),
               ],
 
-              // Site markers layer
-              fm.MarkerLayer(
-                markers: [
-                  ...userMarkers,
-                  ...siteMarkers,
-                ],
+              // Clustered sites layer (now includes all sites)
+              MarkerClusterLayerWidget(
+                options: MarkerClusterLayerOptions(
+                  maxClusterRadius: 180, // Very aggressive clustering for performance
+                  size: const Size(40, 40),
+                  disableClusteringAtZoom: 10, // Show individual markers at zoom >= 10
+                  markers: _buildAllSiteMarkers(),
+                  builder: (context, markers) {
+                    // Don't cluster small groups (6 or less)
+                    if (markers.length <= 6) {
+                      // Return null to show individual markers instead
+                      return const SizedBox.shrink();
+                    }
+
+                    // Check if any marker in the cluster is a flown site
+                    bool hasFlownSite = false;
+                    for (final marker in markers) {
+                      final markerPoint = marker.point;
+                      final siteKey = SiteUtils.createSiteKey(markerPoint.latitude, markerPoint.longitude);
+                      if (widget.siteFlightStatus[siteKey] ?? false) {
+                        hasFlownSite = true;
+                        break;
+                      }
+                    }
+
+                    // Simplified cluster marker for performance
+                    final count = markers.length;
+                    final displayText = count > 999 ? '999+' : count.toString();
+
+                    return Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: hasFlownSite
+                            ? SiteMarkerUtils.flownSiteColor.withValues(alpha: 0.9)
+                            : Colors.green.withValues(alpha: 0.9),
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      child: Center(
+                        child: Text(
+                          displayText,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: count > 99 ? 10 : 12,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ),
+
+              // User location marker layer
+              if (userMarkers.isNotEmpty)
+                fm.MarkerLayer(
+                  markers: userMarkers,
+                ),
             ],
           ),
         ),
@@ -1375,6 +1477,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
         'build_total_ms': buildTime,
         'marker_creation_ms': markerStopwatch.elapsedMilliseconds,
         'site_count': widget.sites.length,
+        'zoom': _currentZoom,
         'airspace_layers': _airspaceLayers.length,
         'airspace_polygons': _airspaceLayers.isNotEmpty
             ? _airspaceLayers.fold<int>(0, (sum, layer) {
@@ -1385,7 +1488,7 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
               })
             : 0,
         'user_markers': userMarkers.length,
-        'site_markers': siteMarkers.length,
+        'site_markers': widget.sites.length,
       });
     }
 
