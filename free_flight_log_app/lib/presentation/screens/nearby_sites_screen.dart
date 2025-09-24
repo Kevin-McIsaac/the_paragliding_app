@@ -12,8 +12,8 @@ import '../../services/location_service.dart';
 import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
 import '../../services/nearby_sites_search_state.dart';
-import '../../services/nearby_sites_search_manager.dart';
-import '../../services/site_bounds_loader.dart';
+import '../../services/nearby_sites_search_manager_v2.dart';
+import '../../services/site_bounds_loader_v2.dart';
 import '../../data/models/unified_site.dart';
 import '../../utils/map_provider.dart';
 import '../../utils/site_utils.dart';
@@ -75,7 +75,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   // Location notification state
   bool _showLocationNotification = false;
   Timer? _locationNotificationTimer;
-  late final NearbySitesSearchManager _searchManager;
+  late final NearbySitesSearchManagerV2 _searchManager;
 
   // Filter state for sites and airspace (defaults, will be loaded from preferences)
   bool _sitesEnabled = true; // Controls site loading and display
@@ -106,7 +106,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   }
 
   void _initializeSearchManager() {
-    _searchManager = NearbySitesSearchManager(
+    _searchManager = NearbySitesSearchManagerV2(
       onStateChanged: (SearchState state) {
         setState(() {
           // Update displayed sites when search state changes
@@ -503,9 +503,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
       // Always load sites when sites are enabled
       futures.add(
-        SiteBoundsLoader.instance.loadSitesForBounds(
+        SiteBoundsLoaderV2.instance.loadSitesForBounds(
           bounds,
-          apiLimit: 50,
+          limit: 50,
           includeFlightCounts: true,
         ).then((result) {
           if (mounted) {

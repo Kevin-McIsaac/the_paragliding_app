@@ -174,6 +174,7 @@ class CardExpansionManagers {
       'igc_cleanup': false,
       'api_test': false,
       'premium_maps': false,
+      'pge_sites_db': false,
     });
     return manager;
   }

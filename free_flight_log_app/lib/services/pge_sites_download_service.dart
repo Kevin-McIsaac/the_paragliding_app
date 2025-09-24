@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -9,8 +10,8 @@ import '../utils/performance_monitor.dart';
 
 /// Configuration constants for PGE sites download
 class PgeSitesConfig {
-  /// Google Drive download URL - easily changeable
-  static const String downloadUrl = 'https://drive.google.com/file/d/1cfCns9cihiJqLJZbiDJGOy1qeLZIW_h7/view?usp=drive_link';
+  /// Asset path for bundled CSV file
+  static const String assetPath = 'assets/data/world_sites_extracted.csv.gz';
 
   /// Maximum age before auto-refresh
   static const Duration maxAge = Duration(days: 30);
@@ -103,24 +104,6 @@ class PgeSitesDownloadService {
     return _httpClient!;
   }
 
-  /// Convert Google Drive share URL to direct download URL
-  String _convertGoogleDriveUrl(String shareUrl) {
-    // Extract file ID from share URL
-    final regex = RegExp(r'/file/d/([a-zA-Z0-9_-]+)');
-    final match = regex.firstMatch(shareUrl);
-
-    if (match != null) {
-      final fileId = match.group(1);
-      return 'https://drive.google.com/uc?export=download&id=$fileId';
-    }
-
-    // If already a direct URL, return as-is
-    if (shareUrl.contains('drive.google.com/uc')) {
-      return shareUrl;
-    }
-
-    throw ArgumentError('Invalid Google Drive URL format: $shareUrl');
-  }
 
   /// Get local file path for downloaded data
   Future<String> _getLocalFilePath() async {
@@ -134,7 +117,7 @@ class PgeSitesDownloadService {
     return path.join(sitesDir.path, 'world_sites_extracted.csv.gz');
   }
 
-  /// Download compressed sites data from Google Drive
+  /// Copy bundled CSV file to local storage
   Future<bool> downloadSitesData({bool forceRedownload = false}) async {
     PerformanceMonitor.startOperation('PgeSitesDownload');
 
@@ -167,38 +150,27 @@ class PgeSitesDownloadService {
         startedAt: startTime,
       ));
 
-      LoggingService.info('[PGE_SITES] Starting download from Google Drive');
+      LoggingService.info('[PGE_SITES] Copying bundled CSV file to local storage');
 
-      // Convert share URL to direct download URL
-      final downloadUrl = _convertGoogleDriveUrl(PgeSitesConfig.downloadUrl);
+      // Load bundled CSV file from assets
+      final ByteData data = await rootBundle.load(PgeSitesConfig.assetPath);
+      final List<int> bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
 
-      // Make request with timeout
-      final response = await httpClient.get(
-        Uri.parse(downloadUrl),
-        headers: {
-          'User-Agent': 'FreeFlightLog/1.0',
-        },
-      ).timeout(PgeSitesConfig.downloadTimeout);
-
-      if (response.statusCode != 200) {
-        throw HttpException('Download failed with status ${response.statusCode}');
-      }
-
-      final totalBytes = response.contentLength ?? response.bodyBytes.length;
+      final totalBytes = bytes.length;
 
       LoggingService.structured('PGE_SITES_DOWNLOAD_STARTED', {
         'total_bytes': totalBytes,
-        'url': downloadUrl,
+        'source': 'bundled_asset',
       });
 
       // Write to temporary file first
       final tempFile = File('$localFilePath.tmp');
-      await tempFile.writeAsBytes(response.bodyBytes);
+      await tempFile.writeAsBytes(bytes);
 
       // Verify file was written correctly
       final writtenStats = await tempFile.stat();
-      if (writtenStats.size != response.bodyBytes.length) {
-        throw FileSystemException('Downloaded file size mismatch');
+      if (writtenStats.size == 0) {
+        throw FileSystemException('Written file is empty');
       }
 
       // Move to final location atomically
@@ -269,7 +241,7 @@ class PgeSitesDownloadService {
       final decompressedBytes = gzip.decode(compressedBytes);
       final csvContent = utf8.decode(decompressedBytes);
 
-      // Parse CSV manually (header: id,name,lng,lat,N,NE,E,SE,S,SW,W,NW)
+      // Parse CSV manually (format: id,name,lng,lat,N,NE,E,SE,S,SW,W,NW)
       final lines = csvContent.trim().split('\n');
       final sites = <Map<String, dynamic>>[];
 
@@ -388,6 +360,24 @@ class PgeSitesDownloadService {
 
   /// Get current progress
   PgeSitesDownloadProgress get currentProgress => _currentProgress;
+
+  /// Delete the local downloaded file to force re-download
+  Future<bool> deleteLocalFile() async {
+    try {
+      final localFilePath = await _getLocalFilePath();
+      final localFile = File(localFilePath);
+
+      if (await localFile.exists()) {
+        await localFile.delete();
+        LoggingService.info('[PGE_SITES] Deleted local file: $localFilePath');
+        return true;
+      }
+      return false;
+    } catch (error) {
+      LoggingService.error('[PGE_SITES] Failed to delete local file', error);
+      return false;
+    }
+  }
 
   /// Clean up resources
   void dispose() {

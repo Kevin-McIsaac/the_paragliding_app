@@ -1,7 +1,7 @@
 import 'dart:async';
 import '../data/models/paragliding_site.dart';
 import '../services/pge_sites_database_service.dart';
-import '../services/paragliding_earth_api.dart';
+// API import removed - using local database only
 import '../services/logging_service.dart';
 import 'nearby_sites_search_state.dart';
 
@@ -26,28 +26,15 @@ class NearbySitesSearchManagerV2 {
   /// Maximum results to show in dropdown
   static const int _maxResults = 15;
 
-  /// Flag to track if local database is available
-  bool? _isLocalDatabaseAvailable;
+  // Database availability check removed - always use local
 
   NearbySitesSearchManagerV2({
     required SearchStateCallback onStateChanged,
     AutoJumpCallback? onAutoJump,
   }) : _onStateChanged = onStateChanged,
-       _onAutoJump = onAutoJump {
-    // Check database availability on initialization
-    _checkDatabaseAvailability();
-  }
+       _onAutoJump = onAutoJump;
 
-  /// Check if local PGE database is available
-  Future<void> _checkDatabaseAvailability() async {
-    try {
-      _isLocalDatabaseAvailable = await PgeSitesDatabaseService.instance.isDataAvailable();
-      LoggingService.info('NearbySitesSearchManagerV2: Local database available: $_isLocalDatabaseAvailable');
-    } catch (e) {
-      LoggingService.error('NearbySitesSearchManagerV2: Failed to check database availability', e);
-      _isLocalDatabaseAvailable = false;
-    }
-  }
+  // Database availability check removed - always use local
 
   /// Get current search state
   SearchState get state => _state;
@@ -110,7 +97,7 @@ class NearbySitesSearchManagerV2 {
     LoggingService.action('NearbySitesV2', 'search_result_selected', {
       'site_name': site.name,
       'country': site.country,
-      'data_source': _isLocalDatabaseAvailable == true ? 'local_db' : 'api',
+      'data_source': 'local_db',
     });
 
     exitSearchMode(preservePinnedSite: site, pinnedSiteIsFromAutoJump: false);
@@ -144,7 +131,7 @@ class NearbySitesSearchManagerV2 {
         LoggingService.action('NearbySitesV2', 'enter_key_single_result', {
           'site_name': site.name,
           'country': site.country,
-          'data_source': _isLocalDatabaseAvailable == true ? 'local_db' : 'api',
+          'data_source': 'local_db',
         });
       } else {
         _updateState(_state.copyWith(
@@ -155,7 +142,7 @@ class NearbySitesSearchManagerV2 {
         LoggingService.action('NearbySitesV2', 'enter_key_search', {
           'query': trimmedQuery,
           'results_count': limitedResults.length,
-          'data_source': _isLocalDatabaseAvailable == true ? 'local_db' : 'api',
+          'data_source': 'local_db',
         });
       }
     } catch (e) {
@@ -187,7 +174,7 @@ class NearbySitesSearchManagerV2 {
         LoggingService.action('NearbySitesV2', 'live_search_single_result_auto_exit', {
           'site_name': site.name,
           'country': site.country,
-          'data_source': _isLocalDatabaseAvailable == true ? 'local_db' : 'api',
+          'data_source': 'local_db',
         });
 
         return;
@@ -199,7 +186,7 @@ class NearbySitesSearchManagerV2 {
         'query': query,
         'results_count': results.length,
         'auto_selected': limitedResults.length == 1,
-        'data_source': _isLocalDatabaseAvailable == true ? 'local_db' : 'api',
+        'data_source': 'local_db',
       });
 
     } catch (e) {
@@ -211,23 +198,17 @@ class NearbySitesSearchManagerV2 {
     }
   }
 
-  /// Search sites using local database or API
+  /// Search sites using local database only
   Future<List<ParaglidingSite>> _searchSites(String query) async {
-    // Re-check database availability if not set
-    if (_isLocalDatabaseAvailable == null) {
-      await _checkDatabaseAvailability();
-    }
-
-    if (_isLocalDatabaseAvailable == true) {
-      // Use local database (fast, offline-capable)
-      LoggingService.info('NearbySitesSearchManagerV2: Searching local database for: $query');
+    // Always use local database
+    LoggingService.info('NearbySitesSearchManagerV2: Searching local database for: $query');
+    try {
       return await PgeSitesDatabaseService.instance.searchSitesByName(
         query: query,
       );
-    } else {
-      // Fall back to API (requires internet)
-      LoggingService.info('NearbySitesSearchManagerV2: Searching API for: $query');
-      return await ParaglidingEarthApi.instance.searchSitesByName(query);
+    } catch (e) {
+      LoggingService.error('NearbySitesSearchManagerV2: Search failed', e);
+      return [];
     }
   }
 

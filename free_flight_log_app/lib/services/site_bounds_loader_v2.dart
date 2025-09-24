@@ -14,11 +14,7 @@ class SiteBoundsLoaderV2 {
 
   SiteBoundsLoaderV2._();
 
-  // Cache for loaded results (keyed by bounds)
-  final Map<String, SiteBoundsLoadResult> _cache = {};
-
-  // Cache timeout (5 minutes)
-  static const Duration _cacheTimeout = Duration(minutes: 5);
+  // No caching - always fetch fresh data from local database
 
   /// Load sites for the given bounds using local database first
   /// Falls back to API only if local database is not available
@@ -26,26 +22,11 @@ class SiteBoundsLoaderV2 {
     LatLngBounds bounds, {
     int limit = 100,
     bool includeFlightCounts = true,
-    bool useCache = true,
-    bool forceLocalOnly = false, // New parameter to force local-only mode
   }) async {
     final stopwatch = Stopwatch()..start();
 
-    // Create cache key from bounds
+    // Create bounds key for logging
     final boundsKey = _getBoundsKey(bounds);
-
-    // Check cache if enabled
-    if (useCache && _cache.containsKey(boundsKey)) {
-      final cached = _cache[boundsKey]!;
-      final age = DateTime.now().difference(cached.loadedAt);
-      if (age < _cacheTimeout) {
-        LoggingService.info('SiteBoundsLoaderV2: Using cached results for $boundsKey');
-        return cached;
-      } else {
-        // Remove stale cache entry
-        _cache.remove(boundsKey);
-      }
-    }
 
     try {
       // Check if local PGE database is available
@@ -53,7 +34,6 @@ class SiteBoundsLoaderV2 {
 
       LoggingService.structured('SITES_BOUNDS_LOADER_V2', {
         'pge_data_available': isPgeDataAvailable,
-        'force_local_only': forceLocalOnly,
         'bounds': '$boundsKey',
       });
 
@@ -68,7 +48,7 @@ class SiteBoundsLoaderV2 {
         west: bounds.west,
       ));
 
-      // 2. Load PGE sites from local database or API
+      // 2. Load PGE sites from local database only
       if (isPgeDataAvailable) {
         // Use local PGE database (fast)
         futures.add(PgeSitesDatabaseService.instance.getSitesInBounds(
@@ -78,18 +58,8 @@ class SiteBoundsLoaderV2 {
           west: bounds.west,
           limit: limit,
         ));
-      } else if (!forceLocalOnly) {
-        // Fall back to API (slower, requires internet)
-        futures.add(ParaglidingEarthApi.instance.getSitesInBounds(
-          bounds.north,
-          bounds.south,
-          bounds.east,
-          bounds.west,
-          limit: limit,
-          detailed: false, // Basic info only for map markers
-        ));
       } else {
-        // Local only mode, no PGE data available
+        // No local database available - return empty list
         futures.add(Future.value(<ParaglidingSite>[]));
       }
 
@@ -154,17 +124,14 @@ class SiteBoundsLoaderV2 {
         loadedAt: DateTime.now(),
       );
 
-      // Cache if enabled
-      if (useCache) {
-        _cache[boundsKey] = result;
-      }
+      // No caching - always return fresh results
 
       stopwatch.stop();
 
       LoggingService.performance(
         'SiteBoundsLoaderV2',
         stopwatch.elapsed,
-        'Loaded ${unifiedSites.length} sites (${localSites.length} local, ${pgeSites.length} PGE, source: ${isPgeDataAvailable ? "local DB" : "API"})',
+        'Loaded ${unifiedSites.length} sites (${localSites.length} local, ${pgeSites.length} PGE from local DB)',
       );
 
       LoggingService.structured('SITES_BOUNDS_LOADED_V2', {
@@ -174,7 +141,7 @@ class SiteBoundsLoaderV2 {
         'pge_sites': pgeSites.length,
         'flown_sites': unifiedSites.where((s) => s.hasFlights).length,
         'new_sites': unifiedSites.where((s) => !s.hasFlights).length,
-        'data_source': isPgeDataAvailable ? 'local_database' : 'api',
+        'data_source': isPgeDataAvailable ? 'local_database' : 'none',
         'load_time_ms': stopwatch.elapsedMilliseconds,
         'cached': false,
       });
@@ -192,7 +159,7 @@ class SiteBoundsLoaderV2 {
     }
   }
 
-  /// Search sites by name using local database or API
+  /// Search sites by name using local database only
   Future<List<ParaglidingSite>> searchSitesByName(
     String query, {
     double? centerLatitude,
@@ -210,8 +177,9 @@ class SiteBoundsLoaderV2 {
           centerLongitude: centerLongitude,
         );
       } else {
-        // Fall back to API search (requires internet)
-        return await ParaglidingEarthApi.instance.searchSitesByName(query);
+        // No local database available
+        LoggingService.info('SiteBoundsLoaderV2: Local database not available for search');
+        return [];
       }
     } catch (error, stackTrace) {
       LoggingService.error('SiteBoundsLoaderV2: Search failed', error, stackTrace);
@@ -231,19 +199,7 @@ class SiteBoundsLoaderV2 {
     }
   }
 
-  /// Clear the cache
-  void clearCache() {
-    _cache.clear();
-    LoggingService.info('SiteBoundsLoaderV2: Cache cleared');
-  }
-
-  /// Clear cache for specific bounds
-  void clearCacheForBounds(LatLngBounds bounds) {
-    final key = _getBoundsKey(bounds);
-    if (_cache.remove(key) != null) {
-      LoggingService.info('SiteBoundsLoaderV2: Cache cleared for $key');
-    }
-  }
+  // Cache methods removed - no longer needed
 
   /// Load flight counts for sites in bounds
   Future<Map<int?, int?>> _loadFlightCountsForBounds(LatLngBounds bounds) async {

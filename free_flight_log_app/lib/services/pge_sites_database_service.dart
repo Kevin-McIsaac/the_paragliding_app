@@ -22,18 +22,13 @@ class PgeSitesDatabaseService {
     LoggingService.info('[PGE_SITES_DB] Initializing PGE sites tables');
 
     try {
-      // Create pge_sites table
+      // Create pge_sites table with minimal schema matching CSV format
       await db.execute('''
         CREATE TABLE IF NOT EXISTS $_pgeSitesTable (
           id INTEGER PRIMARY KEY,
           name TEXT NOT NULL,
-          latitude REAL NOT NULL,
           longitude REAL NOT NULL,
-          altitude INTEGER,
-          country_code TEXT,
-          country TEXT,
-          place TEXT,
-          takeoff_description TEXT,
+          latitude REAL NOT NULL,
 
           -- Wind direction ratings (0=no good, 1=good, 2=excellent)
           wind_n INTEGER DEFAULT 0,
@@ -43,35 +38,7 @@ class PgeSitesDatabaseService {
           wind_s INTEGER DEFAULT 0,
           wind_sw INTEGER DEFAULT 0,
           wind_w INTEGER DEFAULT 0,
-          wind_nw INTEGER DEFAULT 0,
-
-          -- Site capabilities (0=no, 1=yes)
-          paragliding INTEGER DEFAULT 1,
-          hanggliding INTEGER DEFAULT 0,
-          thermals INTEGER DEFAULT 0,
-          soaring INTEGER DEFAULT 0,
-          winch INTEGER DEFAULT 0,
-          xc INTEGER DEFAULT 0,
-          flatland INTEGER DEFAULT 0,
-
-          -- Landing coordinates (if different from takeoff)
-          landing_lat REAL,
-          landing_lng REAL,
-
-          -- Parking coordinates
-          takeoff_parking_lat REAL,
-          takeoff_parking_lng REAL,
-          landing_parking_lat REAL,
-          landing_parking_lng REAL,
-
-          -- PGE metadata
-          pge_link TEXT,
-          last_edit TEXT,
-          ffvl_site_id INTEGER DEFAULT 0,
-
-          -- Local metadata
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+          wind_nw INTEGER DEFAULT 0
         )
       ''');
 
@@ -81,16 +48,9 @@ class PgeSitesDatabaseService {
         ON $_pgeSitesTable(latitude, longitude)
       ''');
 
-      await db.execute('''
-        CREATE INDEX IF NOT EXISTS idx_pge_sites_country
-        ON $_pgeSitesTable(country_code)
-      ''');
+      // Removed country and capabilities indexes as those columns no longer exist
 
-      await db.execute('''
-        CREATE INDEX IF NOT EXISTS idx_pge_sites_capabilities
-        ON $_pgeSitesTable(paragliding, hanggliding)
-      ''');
-
+      // Create composite index on wind directions for efficient wind-based queries
       await db.execute('''
         CREATE INDEX IF NOT EXISTS idx_pge_sites_wind
         ON $_pgeSitesTable(wind_n, wind_ne, wind_e, wind_se, wind_s, wind_sw, wind_w, wind_nw)
@@ -151,23 +111,20 @@ class PgeSitesDatabaseService {
         final batch = txn.batch();
 
         for (final siteData in sitesData) {
-          // Map CSV data to database fields
+          // Map CSV data directly to database fields (schema now matches CSV)
           final dbData = {
             'id': siteData['id'],
             'name': siteData['name'],
-            'latitude': siteData['latitude'],
             'longitude': siteData['longitude'],
-            'wind_n': siteData['wind_n'],
-            'wind_ne': siteData['wind_ne'],
-            'wind_e': siteData['wind_e'],
-            'wind_se': siteData['wind_se'],
-            'wind_s': siteData['wind_s'],
-            'wind_sw': siteData['wind_sw'],
-            'wind_w': siteData['wind_w'],
-            'wind_nw': siteData['wind_nw'],
-            'paragliding': 1, // Default to paragliding sites
-            'created_at': DateTime.now().toIso8601String(),
-            'updated_at': DateTime.now().toIso8601String(),
+            'latitude': siteData['latitude'],
+            'wind_n': siteData['wind_n'] ?? 0,
+            'wind_ne': siteData['wind_ne'] ?? 0,
+            'wind_e': siteData['wind_e'] ?? 0,
+            'wind_se': siteData['wind_se'] ?? 0,
+            'wind_s': siteData['wind_s'] ?? 0,
+            'wind_sw': siteData['wind_sw'] ?? 0,
+            'wind_w': siteData['wind_w'] ?? 0,
+            'wind_nw': siteData['wind_nw'] ?? 0,
           };
 
           batch.insert(_pgeSitesTable, dbData);
@@ -239,8 +196,7 @@ class PgeSitesDatabaseService {
       whereConditions.add('longitude BETWEEN ? AND ?');
       whereArgs.addAll([west, east]);
 
-      // Only paragliding sites
-      whereConditions.add('paragliding = 1');
+      // All sites are paragliding sites now (column removed)
 
       // Wind direction filtering
       if (windDirections != null && windDirections.isNotEmpty) {
@@ -319,8 +275,7 @@ class PgeSitesDatabaseService {
       whereConditions.add('name LIKE ?');
       whereArgs.add('%$query%');
 
-      // Only paragliding sites
-      whereConditions.add('paragliding = 1');
+      // All sites are paragliding sites now (column removed)
 
       final whereClause = whereConditions.join(' AND ');
 
@@ -458,7 +413,7 @@ class PgeSitesDatabaseService {
       final downloadStatus = await PgeSitesDownloadService.instance.getDownloadStatus();
 
       final metadata = {
-        'download_url': PgeSitesConfig.downloadUrl,
+        'download_url': PgeSitesConfig.assetPath,  // Use existing column name
         'downloaded_at': DateTime.now().toIso8601String(),
         'sites_count': sitesCount,
         'file_size_bytes': downloadStatus['file_size_bytes'] ?? 0,
@@ -501,12 +456,12 @@ class PgeSitesDatabaseService {
       name: row['name'] as String? ?? 'Unknown Site',
       latitude: (row['latitude'] as num?)?.toDouble() ?? 0.0,
       longitude: (row['longitude'] as num?)?.toDouble() ?? 0.0,
-      altitude: row['altitude'] as int?,
-      description: row['takeoff_description'] as String? ?? '',
+      altitude: null, // No longer stored in simplified schema
+      description: '', // No longer stored in simplified schema
       windDirections: windDirections,
       siteType: 'launch', // PGE sites are primarily launch sites
       rating: null,
-      country: row['country'] as String?,
+      country: null, // No longer stored in simplified schema
       region: null,
       popularity: null,
     );

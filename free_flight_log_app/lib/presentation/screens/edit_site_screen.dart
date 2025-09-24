@@ -12,7 +12,7 @@ import '../../data/models/paragliding_site.dart';
 import '../../data/models/flight.dart';
 import '../../data/models/unified_site.dart';
 import '../../services/database_service.dart';
-import '../../services/site_bounds_loader.dart';
+import '../../services/site_bounds_loader_v2.dart';
 import '../../services/logging_service.dart';
 import '../../utils/site_marker_utils.dart';
 import '../../utils/map_provider.dart';
@@ -85,7 +85,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   
   // Services
   final DatabaseService _databaseService = DatabaseService.instance;
-  final SiteBoundsLoader _siteBoundsLoader = SiteBoundsLoader.instance;
+  final SiteBoundsLoaderV2 _siteBoundsLoader = SiteBoundsLoaderV2.instance;
 
   @override
   void initState() {
@@ -667,7 +667,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       // Use unified site loader
       final result = await _siteBoundsLoader.loadSitesForBounds(
         bounds,
-        apiLimit: 50,
+        limit: 50,
         includeFlightCounts: true,
       );
 
@@ -697,8 +697,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   void _clearMapDataCache() {
     _lastLoadedBoundsKey = null;
     _lastLoadedLaunchesBoundsKey = null;
-    // Clear the unified site loader cache too
-    _siteBoundsLoader.clearCache();
+    // No cache to clear anymore - V2 doesn't use caching
   }
   
   

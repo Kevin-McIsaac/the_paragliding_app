@@ -269,9 +269,15 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
     LoggingService.action('DataManagement', 'download_pge_sites');
 
     try {
+      // First delete any corrupted local file to ensure fresh download
+      final deleted = await PgeSitesDownloadService.instance.deleteLocalFile();
+      if (deleted) {
+        LoggingService.info('DataManagementScreen: Deleted existing local PGE sites file');
+      }
+
       // Download the data
       final downloadSuccess = await PgeSitesDownloadService.instance.downloadSitesData(
-        forceRedownload: _pgeSitesStats?['sites_count'] > 0,
+        forceRedownload: true, // Always force since we may have deleted the file
       );
 
       if (!downloadSuccess) {
@@ -1571,33 +1577,27 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                       if (_pgeSitesStats != null) ...[
                         AppStatRowGroup.dataManagement(
                           rows: [
-                            [
-                              AppStatRow.dataManagement(
-                                label: 'Total Sites',
-                                value: '${_pgeSitesStats!['sites_count'] ?? 0}',
-                              ),
-                              AppStatRow.dataManagement(
-                                label: 'Database Size',
-                                value: '${_pgeSitesStats!['database_size_mb'] ?? '0.0'}MB',
-                              ),
-                            ],
-                            [
-                              AppStatRow.dataManagement(
-                                label: 'Last Downloaded',
-                                value: _pgeSitesStats!['last_downloaded'] ?? 'Never',
-                              ),
-                              AppStatRow.dataManagement(
-                                label: 'Source Size',
-                                value: '${(_pgeSitesStats!['source_file_size_bytes'] ?? 0) / 1024}KB',
-                              ),
-                            ],
+                            AppStatRow.dataManagement(
+                              label: 'Total Sites',
+                              value: '${_pgeSitesStats!['sites_count'] ?? 0}',
+                            ),
+                            AppStatRow.dataManagement(
+                              label: 'Database Size',
+                              value: '${_pgeSitesStats!['database_size_mb'] ?? '0.0'}MB',
+                            ),
+                            AppStatRow.dataManagement(
+                              label: 'Last Downloaded',
+                              value: _pgeSitesStats!['last_downloaded'] ?? 'Never',
+                            ),
+                            AppStatRow.dataManagement(
+                              label: 'Source Size',
+                              value: '${(_pgeSitesStats!['source_file_size_bytes'] ?? 0) / 1024}KB',
+                            ),
                             if (_pgeSitesProgress != null && _pgeSitesProgress!.status == PgeSitesDownloadStatus.downloading)
-                              [
-                                AppStatRow.dataManagement(
-                                  label: 'Download Progress',
-                                  value: '${(_pgeSitesProgress!.progress * 100).toStringAsFixed(1)}%',
-                                ),
-                              ],
+                              AppStatRow.dataManagement(
+                                label: 'Download Progress',
+                                value: '${(_pgeSitesProgress!.progress * 100).toStringAsFixed(1)}%',
+                              ),
                           ],
                           padding: EdgeInsets.zero,
                         ),
