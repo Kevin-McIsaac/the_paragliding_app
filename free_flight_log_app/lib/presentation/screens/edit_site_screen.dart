@@ -1204,7 +1204,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     
     return DragMarker(
       point: LatLng(site.latitude, site.longitude),
-      size: const Size(140, 80), // Use shared marker container size
+      size: const Size(140, 85), // Increased height to prevent overflow
       offset: const Offset(0, -_siteMarkerSize / 2),
       dragOffset: const Offset(0, -40), // Move marker well above finger during drag
       onTap: (point) => _isMergeMode ? _handleMergeTarget(site) : _enterMergeMode(site),
@@ -1251,8 +1251,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                   _currentlyDraggedSite!.id != site.id)
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 300),
-                  width: _siteMarkerSize + 12,
-                  height: _siteMarkerSize + 12,
+                  width: _siteMarkerSize + 8,
+                  height: _siteMarkerSize + 8,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.blue, width: 4),
@@ -1280,7 +1280,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     
     return DragMarker(
       point: LatLng(site.latitude, site.longitude),
-      size: const Size(140, 80), // Use shared marker container size
+      size: const Size(140, 85), // Increased height to prevent overflow
       offset: const Offset(0, -_siteMarkerSize / 2),
       disableDrag: true, // Cannot drag API sites, only drop onto them
       onTap: (point) => _isMergeMode ? _handleMergeIntoApiSite(site) : null,
@@ -1309,8 +1309,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
               if (_currentlyDraggedSite != null && _hoveredTargetSite == site)
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 300),
-                  width: _siteMarkerSize + 12,
-                  height: _siteMarkerSize + 12,
+                  width: _siteMarkerSize + 8,
+                  height: _siteMarkerSize + 8,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.green, width: 4),
