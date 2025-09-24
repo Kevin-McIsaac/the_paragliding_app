@@ -14,12 +14,12 @@ import '../../services/logging_service.dart';
 import '../../services/nearby_sites_search_state.dart';
 import '../../services/nearby_sites_search_manager_v2.dart';
 import '../../services/site_bounds_loader_v2.dart';
-import '../../data/models/unified_site.dart';
 import '../../utils/map_provider.dart';
 import '../../utils/site_utils.dart';
 import '../widgets/nearby_sites_map_widget.dart';
 import '../widgets/map_filter_dialog.dart';
 import '../widgets/common/app_error_state.dart';
+import '../widgets/wind_rose_widget.dart';
 import '../../services/openaip_service.dart';
 
 
@@ -37,9 +37,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   static const double _boundsThreshold = 0.001;
   static const int _debounceDurationMs = 500; // Standardized debounce time for all maps
   
-  // Unified state variables using new UnifiedSite model
-  List<UnifiedSite> _allUnifiedSites = [];
-  List<ParaglidingSite> _displayedSites = [];  // Keep as ParaglidingSite for widget compatibility
+  // Sites state - using ParaglidingSite directly (no more UnifiedSite)
+  List<ParaglidingSite> _allSites = [];
+  List<ParaglidingSite> _displayedSites = [];
   Map<String, bool> _siteFlightStatus = {}; // Key: "lat,lng", Value: hasFlights
   Position? _userPosition;
   bool _isLoading = false;
@@ -169,8 +169,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       _mapCenterPosition = await _getInitialMapCenter();
       
       // Sites will be loaded dynamically via bounds-based loading
-      // Initialize empty unified structure
-      _allUnifiedSites = [];
+      // Initialize empty structure
+      _allSites = [];
       _displayedSites = [];
       _siteFlightStatus = {};
       
@@ -295,11 +295,10 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
     final stopwatch = Stopwatch()..start();
 
-    // Convert UnifiedSites to ParaglidingSites for backward compatibility
-    final paraglidingSites = _allUnifiedSites.map((s) => s.toParaglidingSite()).toList();
+    // Sites are already ParaglidingSite objects - no conversion needed!
 
     // Use SearchManager's computed property for cleaner logic
-    List<ParaglidingSite> filteredSites = _searchManager.getDisplayedSites(paraglidingSites);
+    List<ParaglidingSite> filteredSites = _searchManager.getDisplayedSites(_allSites);
     
     // Add pinned site if we have one and it's not already in the list
     final pinnedSite = _searchManager.state.pinnedSite;
@@ -371,7 +370,12 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   void _onSiteSelected(ParaglidingSite site) {
     final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
     final hasFlights = _siteFlightStatus[siteKey] ?? false;
-    
+
+    // Debug logging for site 21842
+    if (site.id == 21842) {
+      LoggingService.debug('_onSiteSelected for site 21842: windDirections=${site.windDirections}');
+    }
+
     LoggingService.action('NearbySites', hasFlights ? 'flown_site_selected' : 'new_site_selected', {
       'site_id': site.id,
       'site_name': site.name,
@@ -509,8 +513,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           includeFlightCounts: true,
         ).then((result) {
           if (mounted) {
-            // Store unified sites
-            _allUnifiedSites = result.sites;
+            // Store sites (already ParaglidingSite objects)
+            _allSites = result.sites;
             // Build flight status map for backward compatibility
             _siteFlightStatus = {};
             for (final site in result.sites) {
@@ -539,9 +543,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
         LoggingService.structured('PARALLEL_MAP_DATA_LOADED', {
           'bounds_key': boundsKey,
-          'sites_count': _allUnifiedSites.length,
-          'flown_sites': _allUnifiedSites.where((s) => s.hasFlights).length,
-          'new_sites': _allUnifiedSites.where((s) => !s.hasFlights).length,
+          'sites_count': _allSites.length,
+          'flown_sites': _allSites.where((s) => s.hasFlights).length,
+          'new_sites': _allSites.where((s) => !s.hasFlights).length,
           'load_time_ms': stopwatch.elapsedMilliseconds,
           'parallel_loading': true,
         });
@@ -653,7 +657,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         // Sites were disabled - clear displayed sites and reset the bounds key
         setState(() {
           _displayedSites.clear();
-          _allUnifiedSites.clear();
+          _allSites.clear();
           _lastLoadedBoundsKey = ''; // Clear the bounds key so sites reload when re-enabled
         });
         LoggingService.action('MapFilter', 'sites_disabled', {'cleared_sites_count': _displayedSites.length});
@@ -1016,8 +1020,17 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     final String? region = widget.paraglidingSite?.region ?? _detailedData?['region'];
     final String? description = widget.paraglidingSite?.description ?? _detailedData?['description'];
     final int? rating = widget.paraglidingSite?.rating ?? _detailedData?['rating'];
-    final List<String> windDirections = widget.paraglidingSite?.windDirections ?? 
+    final List<String> windDirections = widget.paraglidingSite?.windDirections ??
         (_detailedData?['wind_directions'] as List<dynamic>?)?.cast<String>() ?? [];
+
+    // Debug logging for Annecy - Planfait site
+    if (name.contains('Annecy') || name.contains('Planfait')) {
+      LoggingService.debug('Annecy site debug: name=$name');
+      LoggingService.debug('Annecy site debug: widget.paraglidingSite?.id=${widget.paraglidingSite?.id}');
+      LoggingService.debug('Annecy site debug: widget.paraglidingSite?.windDirections=${widget.paraglidingSite?.windDirections}');
+      LoggingService.debug('Annecy site debug: _detailedData wind_directions=${_detailedData?['wind_directions']}');
+      LoggingService.debug('Annecy site debug: final windDirections=$windDirections');
+    }
     final String? siteType = widget.paraglidingSite?.siteType ?? _detailedData?['site_type'];
     final int? flightCount = widget.site?.flightCount;
     
@@ -1118,7 +1131,7 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                             _buildTakeoffTab(),
                             _buildRulesTab(),
                             _buildAccessTab(),
-                            _buildWeatherTab(),
+                            _buildWeatherTab(windDirections),
                             _buildCommentsTab(),
                           ],
                         ),
@@ -1353,25 +1366,83 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     );
   }
 
-  Widget _buildWeatherTab() {
+  Widget _buildWeatherTab(List<String> windDirections) {
     return Scrollbar(
       child: SingleChildScrollView(
       child: Padding(
-        padding: const EdgeInsets.all(8.0),
+        padding: const EdgeInsets.all(16.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             if (_isLoadingDetails)
               const Center(child: CircularProgressIndicator())
             else if (_loadingError != null)
               Center(child: Text(_loadingError!, style: TextStyle(color: Colors.red)))
-            else if (_detailedData != null && _detailedData!['weather'] != null && _detailedData!['weather']!.toString().isNotEmpty) ...[
-              Text(
-                _detailedData!['weather']!.toString(),
-                style: Theme.of(context).textTheme.bodyMedium,
+            else ...[
+              // Wind Rose with wrapped text layout
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Wind directions section with wrapped layout
+                      if (windDirections.isNotEmpty) ...[
+                        Wrap(
+                          alignment: WrapAlignment.start,
+                          crossAxisAlignment: WrapCrossAlignment.start,
+                          children: [
+                            // Wind Rose at top left
+                            Padding(
+                              padding: const EdgeInsets.only(right: 16.0, bottom: 8.0),
+                              child: WindRoseWidget(
+                                launchableDirections: windDirections,
+                                size: 125.0,
+                                windSpeed: 12.0, // Test: 12 km/h
+                                windDirection: 315.0, // Test: NW (315°)
+                              ),
+                            ),
+                          ],
+                        ),
+                      ] else ...[
+                        // No wind directions layout
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              size: 32,
+                              color: Colors.grey.shade400,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'No wind direction restrictions',
+                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'This site has no specific wind direction requirements.',
+                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               ),
-            ] else
-              const Center(child: Text('No weather information available')),
+            ],
           ],
         ),
       ),

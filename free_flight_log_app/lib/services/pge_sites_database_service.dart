@@ -427,11 +427,21 @@ class PgeSitesDatabaseService {
       'NW': row['wind_nw'] ?? 0,
     };
 
+    // Debug logging for site 21842
+    final siteId = row['id'];
+    if (siteId == 21842) {
+      LoggingService.debug('Site 21842 (${row['name']}) raw wind data: $windMap');
+    }
+
     windMap.forEach((direction, value) {
       if (value != null && value >= 1) {
         windDirections.add(direction);
       }
     });
+
+    if (siteId == 21842) {
+      LoggingService.debug('Site 21842 final windDirections: $windDirections');
+    }
 
     return ParaglidingSite(
       id: row['id'] as int?,

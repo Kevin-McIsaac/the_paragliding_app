@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'package:flutter/material.dart';
 
 class ParaglidingSite {
   final int? id;
@@ -13,6 +14,7 @@ class ParaglidingSite {
   final String? country;
   final String? region;
   final double? popularity; // Calculated popularity score
+  final int flightCount; // Number of flights from local database
 
   const ParaglidingSite({
     this.id,
@@ -27,7 +29,18 @@ class ParaglidingSite {
     this.country,
     this.region,
     this.popularity,
+    this.flightCount = 0,
   });
+
+  // Computed properties
+  bool get hasFlights => flightCount > 0;
+
+  // Helper to get marker color - moved from UnifiedSite
+  Color get markerColor {
+    return hasFlights
+        ? const Color(0xFF4CAF50)  // Green for sites with flights
+        : const Color(0xFF2196F3); // Blue for new sites
+  }
 
   /// Create from JSON (for loading from assets)
   factory ParaglidingSite.fromJson(Map<String, dynamic> json) {
@@ -186,6 +199,7 @@ class ParaglidingSite {
     String? country,
     String? region,
     double? popularity,
+    int? flightCount,
   }) {
     return ParaglidingSite(
       id: id ?? this.id,
@@ -200,6 +214,7 @@ class ParaglidingSite {
       country: country ?? this.country,
       region: region ?? this.region,
       popularity: popularity ?? this.popularity,
+      flightCount: flightCount ?? this.flightCount,
     );
   }
 }
