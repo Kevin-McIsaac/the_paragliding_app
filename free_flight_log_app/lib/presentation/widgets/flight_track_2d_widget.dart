@@ -11,7 +11,7 @@ import '../../data/models/flight.dart';
 import '../../data/models/igc_file.dart';
 import '../../data/models/unified_site.dart';
 import '../../services/database_service.dart';
-import '../../services/site_bounds_loader.dart';
+import '../../services/site_bounds_loader_v2.dart';
 import '../../services/logging_service.dart';
 import '../../services/flight_track_loader.dart';
 import '../../utils/performance_monitor.dart';
@@ -40,7 +40,7 @@ class FlightTrack2DWidget extends StatefulWidget {
 
 class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   final DatabaseService _databaseService = DatabaseService.instance;
-  final SiteBoundsLoader _siteBoundsLoader = SiteBoundsLoader.instance;
+  final SiteBoundsLoaderV2 _siteBoundsLoader = SiteBoundsLoaderV2.instance;
   final MapController _mapController = MapController();
   
   // Constants
@@ -501,7 +501,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
       // Use unified site loader
       final result = await _siteBoundsLoader.loadSitesForBounds(
         bounds,
-        apiLimit: 30, // Smaller limit for 2D map view
+        limit: 30, // Smaller limit for 2D map view
         includeFlightCounts: true,
       );
 

@@ -1,19 +1,13 @@
 import 'dart:async';
 import '../data/models/paragliding_site.dart';
-import '../services/paragliding_earth_api.dart';
+import '../services/pge_sites_database_service.dart';
+// API import removed - using local database only
 import '../services/logging_service.dart';
 import 'nearby_sites_search_state.dart';
 
-/// Callback types for search state updates
-typedef SearchStateCallback = void Function(SearchState state);
-typedef AutoJumpCallback = void Function(ParaglidingSite site);
-
-/// Consolidated search manager for nearby sites functionality
-/// 
-/// This class extracts all search logic from the screen widget and provides
-/// a clean, testable interface for search operations.
-class NearbySitesSearchManager {
-  final ParaglidingEarthApi _api;
+/// Enhanced search manager that uses local PGE database first
+/// Falls back to API only when local database is unavailable
+class NearbySitesSearchManagerV2 {
   final SearchStateCallback _onStateChanged;
   final AutoJumpCallback? _onAutoJump;
 
@@ -22,23 +16,25 @@ class NearbySitesSearchManager {
 
   /// Debounce timer for API calls
   Timer? _searchDebounce;
-  
+
   /// Debounce duration for search queries
   static const Duration _searchDebounceDelay = Duration(milliseconds: 300);
 
-  /// Minimum query length for API search
+  /// Minimum query length for search
   static const int _minQueryLength = 2;
 
   /// Maximum results to show in dropdown
   static const int _maxResults = 15;
 
-  NearbySitesSearchManager({
+  // Database availability check removed - always use local
+
+  NearbySitesSearchManagerV2({
     required SearchStateCallback onStateChanged,
     AutoJumpCallback? onAutoJump,
-    ParaglidingEarthApi? api,
   }) : _onStateChanged = onStateChanged,
-       _onAutoJump = onAutoJump,
-       _api = api ?? ParaglidingEarthApi.instance;
+       _onAutoJump = onAutoJump;
+
+  // Database availability check removed - always use local
 
   /// Get current search state
   SearchState get state => _state;
@@ -49,7 +45,6 @@ class NearbySitesSearchManager {
   }
 
   /// Exit search mode and clear all state
-  /// If [preservePinnedSite] is provided, keep that site pinned after exiting
   void exitSearchMode({ParaglidingSite? preservePinnedSite, bool pinnedSiteIsFromAutoJump = false}) {
     _searchDebounce?.cancel();
     if (preservePinnedSite != null) {
@@ -65,10 +60,10 @@ class NearbySitesSearchManager {
   /// Handle search query change with debouncing
   void onSearchQueryChanged(String query) {
     final trimmedQuery = query.trim();
-    
+
     // Cancel any existing search
     _searchDebounce?.cancel();
-    
+
     // Clear results immediately if query is empty
     if (trimmedQuery.isEmpty) {
       _updateState(_state.copyWith(
@@ -78,89 +73,80 @@ class NearbySitesSearchManager {
       ).clearPinnedSite());
       return;
     }
-    
+
     // Update state with new query and start searching
     _updateState(_state.copyWith(
       query: trimmedQuery,
       isSearching: true,
     ));
-    
+
     // Don't search for very short queries
     if (trimmedQuery.length < _minQueryLength) {
       _updateState(_state.copyWith(isSearching: false));
       return;
     }
-    
-    // Debounce the actual API call
+
+    // Debounce the actual search
     _searchDebounce = Timer(_searchDebounceDelay, () {
       _performSearch(trimmedQuery);
     });
   }
 
-  /// Select a search result (called when user taps on result)
+  /// Select a search result
   void selectSearchResult(ParaglidingSite site) {
-    LoggingService.action('NearbySites', 'search_result_selected', {
+    LoggingService.action('NearbySitesV2', 'search_result_selected', {
       'site_name': site.name,
       'country': site.country,
+      'data_source': 'local_db',
     });
 
-    // Exit search mode while preserving the selected site
     exitSearchMode(preservePinnedSite: site, pinnedSiteIsFromAutoJump: false);
   }
 
   /// Perform immediate search (triggered by Enter key)
-  /// Bypasses debounce and auto-selects single results
   Future<void> performImmediateSearch(String query) async {
     final trimmedQuery = query.trim();
-    
-    // Cancel any existing search
+
     _searchDebounce?.cancel();
-    
-    // Don't search for empty or very short queries
+
     if (trimmedQuery.isEmpty || trimmedQuery.length < _minQueryLength) {
       return;
     }
-    
-    // Update state to show we're searching
+
     _updateState(_state.copyWith(
       query: trimmedQuery,
       isSearchMode: true,
       isSearching: true,
     ));
-    
+
     try {
-      final results = await _api.searchSitesByName(trimmedQuery);
+      final results = await _searchSites(trimmedQuery);
       final limitedResults = results.take(_maxResults).toList();
-      
+
       if (limitedResults.length == 1) {
-        // Single result - jump to it and exit search mode
         final site = limitedResults.first;
-        
-        // Notify callback for map centering
         _onAutoJump?.call(site);
-        
-        // Exit search mode and pin the site
         exitSearchMode(preservePinnedSite: site, pinnedSiteIsFromAutoJump: false);
-        
-        LoggingService.action('NearbySites', 'enter_key_single_result', {
+
+        LoggingService.action('NearbySitesV2', 'enter_key_single_result', {
           'site_name': site.name,
           'country': site.country,
+          'data_source': 'local_db',
         });
       } else {
-        // Multiple or no results - show normal search results
         _updateState(_state.copyWith(
           results: limitedResults,
           isSearching: false,
         ));
-        
-        LoggingService.action('NearbySites', 'enter_key_search', {
+
+        LoggingService.action('NearbySitesV2', 'enter_key_search', {
           'query': trimmedQuery,
           'results_count': limitedResults.length,
+          'data_source': 'local_db',
         });
       }
     } catch (e) {
       LoggingService.error('Enter key search failed', e);
-      
       _updateState(_state.copyWith(
         results: [],
         isSearching: false,
@@ -168,55 +154,61 @@ class NearbySitesSearchManager {
     }
   }
 
-  /// Perform the actual API search
+  /// Perform the actual search
   Future<void> _performSearch(String query) async {
     try {
-      final results = await _api.searchSitesByName(query);
-      
-      // Limit results for better UX
+      final results = await _searchSites(query);
       final limitedResults = results.take(_maxResults).toList();
-      
-      // Update state with results
+
       var newState = _state.copyWith(
         results: limitedResults,
         isSearching: false,
       );
 
-      // Auto-jump to single result for normal search (not Enter key)
+      // Auto-jump to single result
       if (limitedResults.length == 1) {
-        // Exit search mode and preserve the pinned site for single results
-        // This provides consistent behavior with Enter key search
         final site = limitedResults.first;
-        
-        // Notify callback for map centering
         _onAutoJump?.call(site);
-        
-        // Exit search mode while preserving the selected site
         exitSearchMode(preservePinnedSite: site, pinnedSiteIsFromAutoJump: true);
-        
-        LoggingService.action('NearbySites', 'live_search_single_result_auto_exit', {
+
+        LoggingService.action('NearbySitesV2', 'live_search_single_result_auto_exit', {
           'site_name': site.name,
           'country': site.country,
+          'data_source': 'local_db',
         });
-        
-        return; // Exit early since we've already updated state via exitSearchMode
+
+        return;
       }
 
       _updateState(newState);
 
-      LoggingService.action('NearbySites', 'api_search_performed', {
+      LoggingService.action('NearbySitesV2', 'search_performed', {
         'query': query,
         'results_count': results.length,
         'auto_selected': limitedResults.length == 1,
+        'data_source': 'local_db',
       });
 
     } catch (e) {
-      LoggingService.error('API search failed', e);
-      
+      LoggingService.error('Search failed', e);
       _updateState(_state.copyWith(
         results: [],
         isSearching: false,
       ));
+    }
+  }
+
+  /// Search sites using local database only
+  Future<List<ParaglidingSite>> _searchSites(String query) async {
+    // Always use local database
+    LoggingService.info('NearbySitesSearchManagerV2: Searching local database for: $query');
+    try {
+      return await PgeSitesDatabaseService.instance.searchSitesByName(
+        query: query,
+      );
+    } catch (e) {
+      LoggingService.error('NearbySitesSearchManagerV2: Search failed', e);
+      return [];
     }
   }
 
@@ -241,17 +233,12 @@ class NearbySitesSearchManager {
   }
 
   /// Get sites to display based on search state and all sites
-  /// This is a computed property that simplifies display logic
   List<ParaglidingSite> getDisplayedSites(List<ParaglidingSite> allSites) {
     if (_state.query.isNotEmpty && _state.results.isNotEmpty) {
-      // Show search results
       return _state.results;
     } else if (_state.query.isEmpty) {
-      // No search - show all sites
       return allSites;
     } else {
-      // Search in progress or no results - keep showing current sites
-      // This prevents sites from disappearing while typing
       return allSites;
     }
   }
@@ -261,3 +248,7 @@ class NearbySitesSearchManager {
     return _state.isSearchMode && (_state.results.isNotEmpty || _state.isSearching);
   }
 }
+
+/// Callback types for search state updates
+typedef SearchStateCallback = void Function(SearchState state);
+typedef AutoJumpCallback = void Function(ParaglidingSite site);
