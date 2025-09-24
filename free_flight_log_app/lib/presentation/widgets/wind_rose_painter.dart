@@ -47,7 +47,7 @@ class WindRosePainter extends CustomPainter {
     _drawDirectionLabels(canvas, center, radius);
 
     // Draw center point
-    _drawCenterPoint(canvas, center);
+    _drawCenterPoint(canvas, center, radius);
   }
 
   void _drawBackground(Canvas canvas, Offset center, double radius) {
@@ -59,14 +59,18 @@ class WindRosePainter extends CustomPainter {
   }
 
   void _drawWindSectors(Canvas canvas, Offset center, double radius) {
-    final sectorRadius = radius - 10;
+    final gap = 5.0; // Gap size for all spacing
+    final centerDotRadius = 15.0; // Fixed size for center dot
+    final sectorOuterRadius = radius - gap; // Outer edge of wedges (5px gap from outer ring)
+    final sectorInnerRadius = centerDotRadius + gap; // Inner edge of wedges (5px gap from center dot)
 
     for (final direction in _allDirections) {
       final isLaunchable = launchableDirections.contains(direction);
       final angle = _directionAngles[direction]!;
 
       // Each sector spans 45 degrees (360° / 8 directions)
-      final startAngle = _degreesToRadians(angle - 22.5);
+      // Subtract 90° to align with label coordinate system (N at top)
+      final startAngle = _degreesToRadians(angle - 90 - 22.5);
       final sweepAngle = _degreesToRadians(45);
 
       final sectorPaint = Paint()
@@ -75,15 +79,25 @@ class WindRosePainter extends CustomPainter {
             : Colors.grey.withValues(alpha: 0.1)
         ..style = PaintingStyle.fill;
 
-      // Draw sector as a path
+      // Draw sector as a donut path (with equal inner and outer gaps)
       final path = Path();
-      path.moveTo(center.dx, center.dy);
+
+      // Outer arc
       path.arcTo(
-        Rect.fromCircle(center: center, radius: sectorRadius),
+        Rect.fromCircle(center: center, radius: sectorOuterRadius),
         startAngle,
         sweepAngle,
         false,
       );
+
+      // Inner arc (reverse direction to create donut with equal gaps)
+      path.arcTo(
+        Rect.fromCircle(center: center, radius: sectorInnerRadius),
+        startAngle + sweepAngle,
+        -sweepAngle,
+        false,
+      );
+
       path.close();
 
       canvas.drawPath(path, sectorPaint);
@@ -147,12 +161,14 @@ class WindRosePainter extends CustomPainter {
     }
   }
 
-  void _drawCenterPoint(Canvas canvas, Offset center) {
+  void _drawCenterPoint(Canvas canvas, Offset center, double radius) {
+    final centerDotRadius = 15.0; // Same fixed size as used in _drawWindSectors
+
     final centerPaint = Paint()
       ..color = theme.colorScheme.primary
       ..style = PaintingStyle.fill;
 
-    canvas.drawCircle(center, 4, centerPaint);
+    canvas.drawCircle(center, centerDotRadius, centerPaint);
   }
 
   double _degreesToRadians(double degrees) {

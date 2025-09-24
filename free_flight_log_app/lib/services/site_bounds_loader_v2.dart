@@ -1,7 +1,6 @@
 import 'package:flutter_map/flutter_map.dart';
 import '../data/models/site.dart';
 import '../data/models/paragliding_site.dart';
-import '../data/models/unified_site.dart';
 import 'database_service.dart';
 import 'pge_sites_database_service.dart';
 import 'paragliding_earth_api.dart';
@@ -75,50 +74,47 @@ class SiteBoundsLoaderV2 {
         ? results[2] as Map<int?, int?>
         : <int?, int?>{};
 
-      // Build unified site list with deduplication
-      final unifiedSites = <UnifiedSite>[];
+      // PGE-first approach: Start with PGE sites (which have wind directions)
+      final enrichedSites = <ParaglidingSite>[];
       final processedLocations = <String>{};
 
-      // Add all local sites first (they take priority)
-      for (final localSite in localSites) {
-        final locationKey = _getLocationKey(localSite.latitude, localSite.longitude);
-        processedLocations.add(locationKey);
-
-        // Try to find matching PGE site for enrichment
-        final matchingPgeSite = _findMatchingPgeSite(localSite, pgeSites);
-
-        final flightCount = flightCounts[localSite.id] ?? 0;
-
-        if (matchingPgeSite != null) {
-          // Merged site with both local and PGE data
-          unifiedSites.add(UnifiedSite.merged(
-            localSite: localSite,
-            apiSite: matchingPgeSite,
-            flightCount: flightCount,
-          ));
-        } else {
-          // Local-only site
-          unifiedSites.add(UnifiedSite.fromLocalSite(
-            localSite,
-            flightCount: flightCount,
-          ));
-        }
-      }
-
-      // Add PGE-only sites (not matching any local sites)
+      // Process all PGE sites and enrich with flight data
       for (final pgeSite in pgeSites) {
         final locationKey = _getLocationKey(pgeSite.latitude, pgeSite.longitude);
+        processedLocations.add(locationKey);
+
+        // Find matching local site to get flight count
+        final matchingLocalSite = _findMatchingLocalSite(pgeSite, localSites);
+        final flightCount = matchingLocalSite != null
+            ? (flightCounts[matchingLocalSite.id] ?? 0)
+            : 0;
+
+        // Create enriched ParaglidingSite with flight data
+        enrichedSites.add(pgeSite.copyWith(flightCount: flightCount));
+      }
+
+      // Add local-only sites (sites with flights but not in PGE database)
+      for (final localSite in localSites) {
+        final locationKey = _getLocationKey(localSite.latitude, localSite.longitude);
         if (!processedLocations.contains(locationKey)) {
-          unifiedSites.add(UnifiedSite.fromApiSite(
-            pgeSite,
-            flightCount: 0, // PGE-only sites have no local flights
+          final flightCount = flightCounts[localSite.id] ?? 0;
+
+          // Convert local Site to ParaglidingSite
+          enrichedSites.add(ParaglidingSite(
+            name: localSite.name,
+            latitude: localSite.latitude,
+            longitude: localSite.longitude,
+            altitude: localSite.altitude?.toInt(),
+            country: localSite.country,
+            siteType: 'launch', // Default for local sites
+            flightCount: flightCount,
           ));
         }
       }
 
       // Create result
       final result = SiteBoundsLoadResult(
-        sites: unifiedSites,
+        sites: enrichedSites,
         bounds: bounds,
         loadedAt: DateTime.now(),
       );
@@ -130,16 +126,16 @@ class SiteBoundsLoaderV2 {
       LoggingService.performance(
         'SiteBoundsLoaderV2',
         stopwatch.elapsed,
-        'Loaded ${unifiedSites.length} sites (${localSites.length} local, ${pgeSites.length} PGE from local DB)',
+        'Loaded ${enrichedSites.length} sites (${localSites.length} local, ${pgeSites.length} PGE from local DB)',
       );
 
       LoggingService.structured('SITES_BOUNDS_LOADED_V2', {
         'bounds_key': boundsKey,
-        'total_sites': unifiedSites.length,
+        'total_sites': enrichedSites.length,
         'local_sites': localSites.length,
         'pge_sites': pgeSites.length,
-        'flown_sites': unifiedSites.where((s) => s.hasFlights).length,
-        'new_sites': unifiedSites.where((s) => !s.hasFlights).length,
+        'flown_sites': enrichedSites.where((s) => s.hasFlights).length,
+        'new_sites': enrichedSites.where((s) => !s.hasFlights).length,
         'data_source': isPgeDataAvailable ? 'local_database' : 'none',
         'load_time_ms': stopwatch.elapsedMilliseconds,
         'cached': false,
@@ -243,6 +239,18 @@ class SiteBoundsLoaderV2 {
     return null;
   }
 
+  Site? _findMatchingLocalSite(ParaglidingSite pgeSite, List<Site> localSites) {
+    const tolerance = 0.001; // ~100m
+
+    for (final localSite in localSites) {
+      if ((pgeSite.latitude - localSite.latitude).abs() < tolerance &&
+          (pgeSite.longitude - localSite.longitude).abs() < tolerance) {
+        return localSite;
+      }
+    }
+    return null;
+  }
+
   /// Get location key for deduplication
   String _getLocationKey(double latitude, double longitude) {
     return '${latitude.toStringAsFixed(6)},${longitude.toStringAsFixed(6)}';
@@ -259,7 +267,7 @@ class SiteBoundsLoaderV2 {
 
 /// Result of loading sites for a bounding box
 class SiteBoundsLoadResult {
-  final List<UnifiedSite> sites;
+  final List<ParaglidingSite> sites;
   final LatLngBounds bounds;
   final DateTime loadedAt;
 
@@ -270,8 +278,6 @@ class SiteBoundsLoadResult {
   });
 
   // Convenience filters
-  List<UnifiedSite> get localSites => sites.where((s) => s.isLocalSite).toList();
-  List<UnifiedSite> get apiOnlySites => sites.where((s) => !s.isLocalSite).toList();
-  List<UnifiedSite> get flownSites => sites.where((s) => s.hasFlights).toList();
-  List<UnifiedSite> get newSites => sites.where((s) => !s.hasFlights).toList();
+  List<ParaglidingSite> get sitesWithFlights => sites.where((s) => s.hasFlights).toList();
+  List<ParaglidingSite> get sitesWithoutFlights => sites.where((s) => !s.hasFlights).toList();
 }

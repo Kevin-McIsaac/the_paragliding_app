@@ -10,7 +10,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/site.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/flight.dart';
-import '../../data/models/unified_site.dart';
 import '../../services/database_service.dart';
 import '../../services/site_bounds_loader_v2.dart';
 import '../../services/logging_service.dart';
@@ -62,7 +61,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   );
   
   // Site markers state
-  List<UnifiedSite> _unifiedSites = [];
+  List<ParaglidingSite> _sites = [];
   List<Flight> _launches = [];
   Timer? _debounceTimer;
   
@@ -673,14 +672,14 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
       if (mounted) {
         setState(() {
-          _unifiedSites = result.sites;
+          _sites = result.sites;
           _isLoadingSites = false;
         });
 
         // Mark these bounds as loaded to prevent duplicate requests
         _lastLoadedBoundsKey = boundsKey;
 
-        LoggingService.info('EditSiteScreen: Loaded ${result.sites.length} unified sites (${result.localSites.length} local, ${result.apiOnlySites.length} API)');
+        LoggingService.info('EditSiteScreen: Loaded ${result.sites.length} sites (${result.sitesWithFlights.length} with flights, ${result.sitesWithoutFlights.length} without)');
       }
     } catch (e) {
       LoggingService.error('EditSiteScreen: Error loading sites', e);
@@ -773,7 +772,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       final distanceToNewPoint = _calculateDistance(newPoint, launchPoint);
       
       // Check against all existing local sites
-      for (final site in _unifiedSites.where((s) => s.isLocalSite)) {
+      for (final site in _sites.where((s) => s.hasFlights)) {
         final sitePoint = LatLng(site.latitude, site.longitude);
         final distanceToExistingSite = _calculateDistance(sitePoint, launchPoint);
         if (distanceToExistingSite <= distanceToNewPoint) {
@@ -817,7 +816,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     double? nearestDistance;
     
     // Check all unified sites
-    for (final site in _unifiedSites) {
+    for (final site in _sites) {
       final siteCountry = site.country;
 
       if (siteCountry == null || siteCountry.isEmpty) {
@@ -1205,13 +1204,20 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     List<DragMarker> dragMarkers = [];
 
     // Build markers from unified sites
-    for (final site in _unifiedSites) {
-      if (site.isLocalSite) {
-        final localSite = site.toLocalSite();
+    for (final site in _sites) {
+      if (site.hasFlights) {
+        // Convert ParaglidingSite back to Site for local site handling
+        final localSite = Site(
+          name: site.name,
+          latitude: site.latitude,
+          longitude: site.longitude,
+          altitude: site.altitude?.toDouble(),
+          country: site.country,
+        );
         dragMarkers.add(_buildLocalSiteDragMarker(localSite, site.flightCount));
       } else {
-        final apiSite = site.toParaglidingSite();
-        dragMarkers.add(_buildApiSiteDragMarker(apiSite));
+        // Already a ParaglidingSite - use directly
+        dragMarkers.add(_buildApiSiteDragMarker(site));
       }
     }
 
@@ -1439,15 +1445,23 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     const double hitRadius = 18.0; // Half of 36px marker size
     
     // Check all unified sites
-    for (final unifiedSite in _unifiedSites) {
+    for (final unifiedSite in _sites) {
       final sitePixel = camera.projectAtZoom(LatLng(unifiedSite.latitude, unifiedSite.longitude), camera.zoom);
       final distance = (dropPixel - sitePixel).distance;
       if (distance <= hitRadius) {
         // Return the appropriate site type
-        if (unifiedSite.isLocalSite) {
-          return unifiedSite.toLocalSite();
+        if (unifiedSite.hasFlights) {
+          // Convert back to Site for local sites
+          return Site(
+            name: unifiedSite.name,
+            latitude: unifiedSite.latitude,
+            longitude: unifiedSite.longitude,
+            altitude: unifiedSite.altitude?.toDouble(),
+            country: unifiedSite.country,
+          );
         } else {
-          return unifiedSite.toParaglidingSite();
+          // Already a ParaglidingSite
+          return unifiedSite;
         }
       }
     }

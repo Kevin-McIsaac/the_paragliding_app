@@ -9,7 +9,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/flight.dart';
 import '../../data/models/igc_file.dart';
-import '../../data/models/unified_site.dart';
+import '../../data/models/paragliding_site.dart';
 import '../../services/database_service.dart';
 import '../../services/site_bounds_loader_v2.dart';
 import '../../services/logging_service.dart';
@@ -65,7 +65,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   double _closingDistanceThreshold = 500.0; // Default value
   
   // Site display state
-  List<UnifiedSite> _unifiedSites = [];
+  List<ParaglidingSite> _sites = [];
   Timer? _debounceTimer;
   Timer? _loadingDelayTimer;
   bool _isLoadingSites = false;
@@ -507,7 +507,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
 
       if (mounted) {
         setState(() {
-          _unifiedSites = result.sites;
+          _sites = result.sites;
           _isLoadingSites = false;
           _showLoadingIndicator = false;
         });
@@ -1034,7 +1034,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     List<DragMarker> markers = [];
 
     // Add unified sites with their correct colors based on flight count
-    for (final site in _unifiedSites) {
+    for (final site in _sites) {
       markers.add(
         DragMarker(
           point: LatLng(site.latitude, site.longitude),
