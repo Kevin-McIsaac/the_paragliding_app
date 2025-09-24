@@ -12,9 +12,20 @@ class SiteUtils {
   }
   
   /// Check if an API site is already represented by a local site
+  /// Uses foreign key relationship when available, falls back to coordinates
   /// Used to avoid showing duplicate markers on maps
   static bool isDuplicateApiSite(ParaglidingSite apiSite, List<Site> localSites) {
+    // First check if any local site has this API site linked via foreign key
+    final linkedSite = localSites.where((localSite) =>
+      localSite.pgeSiteId != null && localSite.pgeSiteId == apiSite.id).firstOrNull;
+
+    if (linkedSite != null) {
+      return true; // Found exact FK match
+    }
+
+    // Fallback to coordinate-based matching for unlinked sites
     return localSites.any((localSite) =>
+      localSite.pgeSiteId == null && // Only check unlinked sites
       (localSite.latitude - apiSite.latitude).abs() < _coordinateTolerance &&
       (localSite.longitude - apiSite.longitude).abs() < _coordinateTolerance
     );
@@ -33,5 +44,27 @@ class SiteUtils {
     return localSites.where((site) =>
       areCoordinatesEqual(latitude, longitude, site.latitude, site.longitude)
     ).firstOrNull;
+  }
+
+  /// Find a local site that is linked to the given PGE site ID
+  /// More efficient than coordinate-based matching
+  static Site? findLinkedLocalSite(int pgeSiteId, List<Site> localSites) {
+    return localSites.where((site) => site.pgeSiteId == pgeSiteId).firstOrNull;
+  }
+
+  /// Check if a site is linked to PGE data
+  static bool isSiteLinkedToPge(Site site) {
+    return site.pgeSiteId != null;
+  }
+
+  /// Get sites grouped by their linking status for UI purposes
+  static Map<String, List<Site>> groupSitesByLinkingStatus(List<Site> sites) {
+    final linked = sites.where((site) => site.pgeSiteId != null).toList();
+    final unlinked = sites.where((site) => site.pgeSiteId == null).toList();
+
+    return {
+      'linked': linked,
+      'unlinked': unlinked,
+    };
   }
 }

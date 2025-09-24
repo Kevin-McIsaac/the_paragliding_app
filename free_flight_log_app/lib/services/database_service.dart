@@ -4,6 +4,7 @@ import '../data/models/flight.dart';
 import '../data/models/site.dart';
 import '../data/models/wing.dart';
 import 'logging_service.dart';
+import 'pge_sites_database_service.dart';
 
 /// Unified database service combining all database operations
 /// Single source of truth for all data persistence and queries
@@ -777,16 +778,37 @@ class DatabaseService {
     }
     
     // Create new site
+    // Try to link with a PGE site if available
+    int? pgeSiteId;
+    try {
+      final pgeSite = await PgeSitesDatabaseService.instance.findNearestSite(
+        latitude: latitude,
+        longitude: longitude,
+        maxDistanceKm: 0.1, // 100m tolerance for automatic linking
+      );
+      pgeSiteId = pgeSite?.id;
+    } catch (e) {
+      LoggingService.debug('Failed to find matching PGE site: $e');
+      // Continue without PGE link
+    }
+
     final newSite = Site(
       latitude: latitude,
       longitude: longitude,
       name: finalName,
       altitude: altitude,
       country: country,
+      pgeSiteId: pgeSiteId,
     );
-    
+
     final id = await insertSite(newSite);
-    return newSite.copyWith(id: id);
+    final createdSite = newSite.copyWith(id: id);
+
+    if (pgeSiteId != null) {
+      LoggingService.info('DatabaseService: Created site "$finalName" linked to PGE site ID: $pgeSiteId');
+    }
+
+    return createdSite;
   }
 
   Future<List<Site>> getSitesWithFlightCounts() async {
@@ -829,6 +851,53 @@ class DatabaseService {
     ''');
     
     return List.generate(maps.length, (i) => Site.fromMap(maps[i]));
+  }
+
+  /// Link a local site with a PGE site using foreign key relationship
+  /// This replaces the need for runtime coordinate-based matching
+  Future<bool> linkSiteWithPgeSite(int localSiteId, int pgeSiteId) async {
+    try {
+      Database db = await _databaseHelper.database;
+
+      final result = await db.update(
+        'sites',
+        {'pge_site_id': pgeSiteId},
+        where: 'id = ?',
+        whereArgs: [localSiteId],
+      );
+
+      if (result > 0) {
+        LoggingService.info('DatabaseService: Linked site $localSiteId with PGE site $pgeSiteId');
+        return true;
+      } else {
+        LoggingService.warning('DatabaseService: Failed to link site $localSiteId - site not found');
+        return false;
+      }
+    } catch (e) {
+      LoggingService.error('DatabaseService: Error linking site with PGE site', e);
+      return false;
+    }
+  }
+
+  /// Get sites with their linked PGE site information
+  /// Uses JOIN to efficiently combine local and PGE site data
+  Future<List<Map<String, dynamic>>> getSitesWithPgeInfo() async {
+    Database db = await _databaseHelper.database;
+
+    List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT s.*,
+             p.name as pge_name,
+             p.wind_n, p.wind_ne, p.wind_e, p.wind_se,
+             p.wind_s, p.wind_sw, p.wind_w, p.wind_nw,
+             COUNT(f.id) as flight_count
+      FROM sites s
+      LEFT JOIN pge_sites p ON s.pge_site_id = p.id
+      LEFT JOIN flights f ON f.launch_site_id = s.id
+      GROUP BY s.id
+      ORDER BY s.name ASC
+    ''');
+
+    return maps;
   }
 
   // ========================================================================

@@ -5,7 +5,7 @@ import '../../services/logging_service.dart';
 
 class DatabaseHelper {
   static const _databaseName = "FlightLog.db";
-  static const _databaseVersion = 1; // v1.0 Release Schema - Start migrations from v2
+  static const _databaseVersion = 2; // v2: Added pge_site_id foreign key for deduplication
 
   // Singleton pattern
   DatabaseHelper._privateConstructor();
@@ -29,6 +29,7 @@ class DatabaseHelper {
       path,
       version: _databaseVersion,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
 
     return db;
@@ -98,6 +99,7 @@ class DatabaseHelper {
         altitude REAL,
         country TEXT,
         custom_name INTEGER DEFAULT 0,
+        pge_site_id INTEGER,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     ''');
@@ -163,10 +165,116 @@ class DatabaseHelper {
       // Used in searchSitesByName() for autocomplete and site search features
       await db.execute('CREATE INDEX IF NOT EXISTS idx_sites_name ON sites(name)');
 
+      // 7. Index for PGE site foreign key relationship
+      // Critical for deduplication and site linking operations
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_sites_pge_site_id ON sites(pge_site_id)');
+
       LoggingService.database('INDEX', 'Successfully created essential indexes');
     } catch (e) {
       LoggingService.error('DatabaseHelper: Failed to create indexes', e);
       rethrow;
+    }
+  }
+
+  /// Handle database upgrades with migration logic
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    LoggingService.database('MIGRATE', 'Upgrading database from v$oldVersion to v$newVersion');
+
+    try {
+      // Migration from v1 to v2: Add pge_site_id foreign key
+      if (oldVersion < 2) {
+        LoggingService.database('MIGRATE', 'Applying migration v1 -> v2: Adding pge_site_id column');
+
+        // Add pge_site_id column to sites table
+        await db.execute('ALTER TABLE sites ADD COLUMN pge_site_id INTEGER');
+
+        // Create index for the new foreign key column
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_sites_pge_site_id ON sites(pge_site_id)');
+
+        LoggingService.database('MIGRATE', 'Successfully added pge_site_id column and index');
+
+        // Trigger data migration to match existing sites with PGE sites
+        await _migrateExistingSitesToPgeMapping(db);
+      }
+
+      LoggingService.database('MIGRATE', 'Database migration completed successfully');
+    } catch (e) {
+      LoggingService.error('DatabaseHelper: Database migration failed', e);
+      rethrow;
+    }
+  }
+
+  /// Migrate existing sites to match with PGE sites using coordinate-based lookup
+  Future<void> _migrateExistingSitesToPgeMapping(Database db) async {
+    LoggingService.database('MIGRATE', 'Starting site-to-PGE mapping migration');
+
+    try {
+      // Check if PGE sites table exists and has data
+      final pgeSitesExist = await db.rawQuery('''
+        SELECT name FROM sqlite_master
+        WHERE type='table' AND name='pge_sites'
+      ''');
+
+      if (pgeSitesExist.isEmpty) {
+        LoggingService.database('MIGRATE', 'PGE sites table not found, skipping site mapping');
+        return;
+      }
+
+      final pgeSitesCount = await db.rawQuery('SELECT COUNT(*) as count FROM pge_sites');
+      final pgeCount = pgeSitesCount.first['count'] as int;
+
+      if (pgeCount == 0) {
+        LoggingService.database('MIGRATE', 'PGE sites table empty, skipping site mapping');
+        return;
+      }
+
+      // Get all existing local sites
+      final localSites = await db.query('sites', where: 'pge_site_id IS NULL');
+
+      if (localSites.isEmpty) {
+        LoggingService.database('MIGRATE', 'No local sites to migrate');
+        return;
+      }
+
+      LoggingService.database('MIGRATE', 'Matching ${localSites.length} local sites with $pgeCount PGE sites');
+
+      int matchedCount = 0;
+      const double coordinateTolerance = 0.0001; // ~10m tolerance
+
+      for (final localSite in localSites) {
+        final lat = localSite['latitude'] as double;
+        final lng = localSite['longitude'] as double;
+        final siteId = localSite['id'] as int;
+
+        // Find closest PGE site within tolerance
+        final matches = await db.rawQuery('''
+          SELECT id, latitude, longitude,
+                 ABS(latitude - ?) + ABS(longitude - ?) as distance
+          FROM pge_sites
+          WHERE ABS(latitude - ?) < ? AND ABS(longitude - ?) < ?
+          ORDER BY distance
+          LIMIT 1
+        ''', [lat, lng, lat, coordinateTolerance, lng, coordinateTolerance]);
+
+        if (matches.isNotEmpty) {
+          final pgeSiteId = matches.first['id'] as int;
+
+          // Update the local site with the PGE site ID
+          await db.update(
+            'sites',
+            {'pge_site_id': pgeSiteId},
+            where: 'id = ?',
+            whereArgs: [siteId],
+          );
+
+          matchedCount++;
+        }
+      }
+
+      LoggingService.database('MIGRATE', 'Site mapping migration completed: $matchedCount/${localSites.length} sites matched');
+    } catch (e) {
+      LoggingService.error('DatabaseHelper: Site mapping migration failed', e);
+      // Don't rethrow - this is a data enrichment operation, not critical
     }
   }
 
@@ -218,10 +326,10 @@ class DatabaseHelper {
         return false;
       }
       
-      // Check sites table has all expected columns  
+      // Check sites table has all expected columns
       final siteColumns = await db.rawQuery("PRAGMA table_info(sites)");
       final expectedSiteColumns = {
-        'id', 'name', 'latitude', 'longitude', 'altitude', 'country', 'custom_name', 'created_at'
+        'id', 'name', 'latitude', 'longitude', 'altitude', 'country', 'custom_name', 'pge_site_id', 'created_at'
       };
       
       final actualSiteColumns = siteColumns.map((col) => col['name'] as String).toSet();
