@@ -210,8 +210,8 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
   List<Widget> _buildMapOverlays() {
     final overlays = <Widget>[];
 
-    // Add location request button if no user location
-    if (widget.userLocation == null && widget.onLocationRequest != null) {
+    // Always show location button for refreshing location
+    if (widget.onLocationRequest != null) {
       overlays.add(
         MapOverlayPositioned(
           position: MapOverlayPosition.bottomRight,
