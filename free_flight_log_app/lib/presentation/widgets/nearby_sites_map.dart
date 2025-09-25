@@ -166,18 +166,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
         sites: widget.sites,
         showFlightCounts: true,
         onApiSiteClick: _onSiteMarkerTap,
-        onLocalSiteClick: (site) {
-          // Convert local site to ParaglidingSite for consistency
-          _onSiteMarkerTap(ParaglidingSite(
-            id: site.id,
-            name: site.name,
-            latitude: site.latitude,
-            longitude: site.longitude,
-            altitude: site.altitude?.toInt(),
-            country: site.country,
-            siteType: 'other', // Default site type
-          ));
-        },
+        onLocalSiteClick: _onSiteMarkerTap, // Pass the original ParaglidingSite directly
       ),
     );
 

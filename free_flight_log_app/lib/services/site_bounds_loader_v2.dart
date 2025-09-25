@@ -40,8 +40,8 @@ class SiteBoundsLoaderV2 {
       // Prepare futures list
       final futures = <Future>[];
 
-      // 1. Load local user sites WITH flight counts using optimized query
-      futures.add(DatabaseService.instance.getSitesInBoundsWithFlightCounts(
+      // 1. Load local sites with PGE data using JOIN query
+      futures.add(DatabaseService.instance.getLocalSitesWithPgeDataInBounds(
         north: bounds.north,
         south: bounds.south,
         east: bounds.east,
@@ -64,56 +64,19 @@ class SiteBoundsLoaderV2 {
 
       final results = await Future.wait(futures);
 
-      // Extract sites and flight counts from optimized query result
-      final sitesWithCounts = results[0] as Map<Site, int>;
-      final localSites = sitesWithCounts.keys.toList();
+      // Extract sites from JOIN query (already enriched with PGE data)
+      final localSitesWithPgeData = results[0] as List<ParaglidingSite>;
       final pgeSites = results[1] as List<ParaglidingSite>;
 
-      // Build flight counts map with site ID as key
-      final flightCounts = <int?, int?>{};
-      for (final entry in sitesWithCounts.entries) {
-        if (entry.key.id != null) {
-          flightCounts[entry.key.id] = entry.value;
-        }
-      }
-
-      // Local-first approach: Prioritize local sites over PGE sites
+      // Combine results: local sites (already enriched) + PGE-only sites
       final enrichedSites = <ParaglidingSite>[];
       final processedLocations = <String>{};
 
-      // Create a map of PGE sites by location for quick lookup
-      final pgeSitesByLocation = <String, ParaglidingSite>{};
-      for (final pgeSite in pgeSites) {
-        final locationKey = _getLocationKey(pgeSite.latitude, pgeSite.longitude);
-        pgeSitesByLocation[locationKey] = pgeSite;
-      }
-
-      // Process local sites FIRST - they take priority
-      for (final localSite in localSites) {
+      // Add all local sites (already have PGE data from JOIN)
+      for (final localSite in localSitesWithPgeData) {
         final locationKey = _getLocationKey(localSite.latitude, localSite.longitude);
         processedLocations.add(locationKey);
-
-        final flightCount = flightCounts[localSite.id] ?? 0;
-
-        // Look up corresponding PGE site to get additional data
-        final pgeSite = pgeSitesByLocation[locationKey];
-
-        // Convert local Site to ParaglidingSite, enriching with PGE data if available
-        enrichedSites.add(ParaglidingSite(
-          id: localSite.id,  // CRITICAL: Preserve site ID for operations
-          name: localSite.name,
-          latitude: localSite.latitude,
-          longitude: localSite.longitude,
-          altitude: localSite.altitude?.toInt() ?? pgeSite?.altitude,
-          country: localSite.country ?? pgeSite?.country,
-          siteType: pgeSite?.siteType ?? 'launch', // Use PGE site type if available
-          windDirections: pgeSite?.windDirections ?? [], // Get wind directions from PGE
-          description: pgeSite?.description, // Get description from PGE
-          rating: pgeSite?.rating, // Get rating from PGE
-          region: pgeSite?.region, // Get region from PGE
-          flightCount: flightCount,
-          isFromLocalDb: true,  // Mark as local database site
-        ));
+        enrichedSites.add(localSite);
       }
 
       // Add PGE sites that don't have local equivalents
@@ -146,13 +109,13 @@ class SiteBoundsLoaderV2 {
       LoggingService.performance(
         'SiteBoundsLoaderV2',
         stopwatch.elapsed,
-        'Loaded ${enrichedSites.length} sites (${localSites.length} local, ${pgeSites.length} PGE from local DB)',
+        'Loaded ${enrichedSites.length} sites (${localSitesWithPgeData.length} local with PGE JOIN, ${pgeSites.length} PGE from local DB)',
       );
 
       LoggingService.structured('SITES_BOUNDS_LOADED_V2', {
         'bounds_key': boundsKey,
         'total_sites': enrichedSites.length,
-        'local_sites': localSites.length,
+        'local_sites': localSitesWithPgeData.length,
         'pge_sites': pgeSites.length,
         'flown_sites': enrichedSites.where((s) => s.hasFlights).length,
         'new_sites': enrichedSites.where((s) => !s.hasFlights).length,

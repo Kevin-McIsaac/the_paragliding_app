@@ -11,11 +11,11 @@ import '../../../utils/site_marker_utils.dart';
 class SiteMarkerLayer extends StatelessWidget {
   final List<ParaglidingSite> sites;
   final bool enableDragging;
-  final Function(Site)? onLocalSiteClick;
-  final Function(Site)? onLocalSiteLongPress;
+  final Function(ParaglidingSite)? onLocalSiteClick;
+  final Function(ParaglidingSite)? onLocalSiteLongPress;
   final Function(ParaglidingSite)? onApiSiteClick;
   final Function(ParaglidingSite)? onApiSiteLongPress;
-  final Function(Site, LatLng)? onSiteDragEnd;
+  final Function(ParaglidingSite, LatLng)? onSiteDragEnd;
   final Site? highlightedSite;
   final bool showFlightCounts;
 
@@ -53,15 +53,7 @@ class SiteMarkerLayer extends StatelessWidget {
     for (final site in sites) {
       if (site.hasFlights) {
         // Local site with flights - draggable
-        final localSite = Site(
-          name: site.name,
-          latitude: site.latitude,
-          longitude: site.longitude,
-          altitude: site.altitude?.toDouble(),
-          country: site.country,
-        );
-
-        markers.add(_buildLocalSiteDragMarker(localSite, site.flightCount));
+        markers.add(_buildLocalSiteDragMarker(site));
       } else {
         // API site without flights - not draggable
         markers.add(_buildApiSiteDragMarker(site));
@@ -84,28 +76,14 @@ class SiteMarkerLayer extends StatelessWidget {
           child: GestureDetector(
             onTap: () {
               if (site.hasFlights && onLocalSiteClick != null) {
-                final localSite = Site(
-                  name: site.name,
-                  latitude: site.latitude,
-                  longitude: site.longitude,
-                  altitude: site.altitude?.toDouble(),
-                  country: site.country,
-                );
-                onLocalSiteClick!(localSite);
+                onLocalSiteClick!(site);
               } else if (!site.hasFlights && onApiSiteClick != null) {
                 onApiSiteClick!(site);
               }
             },
             onLongPress: () {
               if (site.hasFlights && onLocalSiteLongPress != null) {
-                final localSite = Site(
-                  name: site.name,
-                  latitude: site.latitude,
-                  longitude: site.longitude,
-                  altitude: site.altitude?.toDouble(),
-                  country: site.country,
-                );
-                onLocalSiteLongPress!(localSite);
+                onLocalSiteLongPress!(site);
               } else if (!site.hasFlights && onApiSiteLongPress != null) {
                 onApiSiteLongPress!(site);
               }
@@ -126,7 +104,7 @@ class SiteMarkerLayer extends StatelessWidget {
   }
 
   /// Build draggable marker for local site
-  DragMarker _buildLocalSiteDragMarker(Site site, int flightCount) {
+  DragMarker _buildLocalSiteDragMarker(ParaglidingSite site) {
     return DragMarker(
       point: LatLng(site.latitude, site.longitude),
       size: const Size(140, 80),
@@ -144,7 +122,9 @@ class SiteMarkerLayer extends StatelessWidget {
               SiteMarkerUtils.buildSiteMarkerIcon(
                 color: SiteMarkerUtils.flownSiteColor,
               ),
-              if (highlightedSite?.id == site.id)
+              // For now, we can't properly highlight local sites since we don't have the original Site ID
+              // This would need the ParaglidingSite to track the local site ID separately
+              if (false) // TODO: Fix highlighting for local sites
                 Container(
                   width: SiteMarkerUtils.siteMarkerSize + 8,
                   height: SiteMarkerUtils.siteMarkerSize + 8,
@@ -157,7 +137,7 @@ class SiteMarkerLayer extends StatelessWidget {
           ),
           SiteMarkerUtils.buildSiteLabel(
             siteName: site.name,
-            flightCount: showFlightCounts ? flightCount : null,
+            flightCount: showFlightCounts ? site.flightCount : null,
           ),
         ],
       ),
