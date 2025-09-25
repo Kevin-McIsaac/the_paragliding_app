@@ -348,7 +348,7 @@ class PgeSitesDatabaseService {
       final results = await db.rawQuery('''
         SELECT
           s.*,
-          COALESCE(cc.name, UPPER(s.country)) as country_name
+          COALESCE(cc.name, s.country) as country_name
         FROM $_pgeSitesTable s
         LEFT JOIN $_countryCodesTable cc ON UPPER(s.country) = cc.code
         WHERE $whereClause
@@ -423,7 +423,7 @@ class PgeSitesDatabaseService {
       final results = await db.rawQuery('''
         SELECT
           s.*,
-          COALESCE(cc.name, UPPER(s.country)) as country_name
+          COALESCE(cc.name, s.country) as country_name
         FROM $_pgeSitesTable s
         LEFT JOIN $_countryCodesTable cc ON UPPER(s.country) = cc.code
         WHERE $whereClause

@@ -628,7 +628,7 @@ class DatabaseService {
     final query = '''
       SELECT
         s.*,
-        COALESCE(cc.name, UPPER(s.country)) as country_name,
+        COALESCE(cc.name, s.country) as country_name,
         COUNT(f.id) as flight_count
       FROM sites s
       LEFT JOIN flights f ON s.id = f.launch_site_id
@@ -670,13 +670,28 @@ class DatabaseService {
 
   Future<Site?> getSite(int id) async {
     Database db = await _databaseHelper.database;
-    List<Map<String, dynamic>> maps = await db.query(
-      'sites',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-    if (maps.isNotEmpty) {
-      return Site.fromMap(maps.first);
+
+    // Use JOIN to get country name conversion
+    final results = await db.rawQuery('''
+      SELECT
+        s.*,
+        COALESCE(cc.name, s.country) as country_name
+      FROM sites s
+      LEFT JOIN country_codes cc ON UPPER(s.country) = cc.code
+      WHERE s.id = ?
+    ''', [id]);
+
+    if (results.isNotEmpty) {
+      final row = results.first;
+      final siteMap = Map<String, dynamic>.from(row)
+        ..remove('country_name');
+
+      // Use country_name if available
+      if (row['country_name'] != null) {
+        siteMap['country'] = row['country_name'];
+      }
+
+      return Site.fromMap(siteMap);
     }
     return null;
   }
