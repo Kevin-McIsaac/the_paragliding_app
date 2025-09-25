@@ -3,6 +3,7 @@ import '../data/datasources/database_helper.dart';
 import '../data/models/flight.dart';
 import '../data/models/site.dart';
 import '../data/models/wing.dart';
+import '../data/models/paragliding_site.dart';
 import 'logging_service.dart';
 import 'pge_sites_database_service.dart';
 
@@ -668,6 +669,106 @@ class DatabaseService {
     return sitesWithCounts;
   }
 
+  /// Get local sites enriched with PGE data via FK JOIN
+  /// Returns ParaglidingSite objects combining local and PGE data
+  Future<List<ParaglidingSite>> getLocalSitesWithPgeDataInBounds({
+    required double north,
+    required double south,
+    required double east,
+    required double west,
+  }) async {
+    final stopwatch = Stopwatch()..start();
+    Database db = await _databaseHelper.database;
+
+    // Handle date line crossing
+    String longitudeCondition;
+    List<dynamic> whereArgs;
+    if (west > east) {
+      // Crosses date line
+      longitudeCondition = '(s.longitude >= ? OR s.longitude <= ?)';
+      whereArgs = [south, north, west, east];
+    } else {
+      // Normal case
+      longitudeCondition = '(s.longitude >= ? AND s.longitude <= ?)';
+      whereArgs = [south, north, west, east];
+    }
+
+    // JOIN query to get local sites with PGE data via FK
+    // Note: pge_sites table only has basic fields, not description/rating/etc from API
+    final results = await db.rawQuery('''
+      SELECT
+        s.*,
+        COUNT(f.id) as flight_count,
+        pge.name as pge_name,
+        pge.wind_n, pge.wind_ne, pge.wind_e, pge.wind_se,
+        pge.wind_s, pge.wind_sw, pge.wind_w, pge.wind_nw,
+        pge.altitude as pge_altitude,
+        pge.country as pge_country
+      FROM sites s
+      LEFT JOIN pge_sites pge ON s.pge_site_id = pge.id
+      LEFT JOIN flights f ON f.launch_site_id = s.id
+      WHERE s.latitude >= ? AND s.latitude <= ?
+      AND $longitudeCondition
+      GROUP BY s.id
+    ''', whereArgs);
+
+    // Convert results to ParaglidingSite objects
+    final sites = <ParaglidingSite>[];
+    for (final row in results) {
+      // Build wind directions from PGE data
+      final windDirections = <String>[];
+      final windMap = {
+        'N': row['wind_n'],
+        'NE': row['wind_ne'],
+        'E': row['wind_e'],
+        'SE': row['wind_se'],
+        'S': row['wind_s'],
+        'SW': row['wind_sw'],
+        'W': row['wind_w'],
+        'NW': row['wind_nw'],
+      };
+
+      // Debug for Mt Bakewell
+      if ((row['name'] as String).contains('Bakewell')) {
+        LoggingService.debug('Mt Bakewell JOIN result:');
+        LoggingService.debug('  - Site ID: ${row['id']}');
+        LoggingService.debug('  - PGE Site ID: ${row['pge_site_id']}');
+        LoggingService.debug('  - Wind data: $windMap');
+      }
+
+      windMap.forEach((direction, value) {
+        if (value != null && (value as int) >= 1) {
+          windDirections.add(direction);
+        }
+      });
+
+      sites.add(ParaglidingSite(
+        id: row['id'] as int?,
+        name: row['name'] as String,
+        latitude: (row['latitude'] as num).toDouble(),
+        longitude: (row['longitude'] as num).toDouble(),
+        altitude: (row['altitude'] as num?)?.toInt() ?? (row['pge_altitude'] as num?)?.toInt(),
+        country: (row['country'] ?? row['pge_country']) as String?,
+        siteType: 'launch',  // Default since PGE DB doesn't have this
+        windDirections: windDirections,
+        description: null,  // Not available in local PGE DB
+        rating: null,  // Not available in local PGE DB
+        region: null,  // Not available in local PGE DB
+        flightCount: row['flight_count'] as int? ?? 0,
+        isFromLocalDb: true,
+      ));
+    }
+
+    stopwatch.stop();
+    LoggingService.performance(
+      'Local sites with PGE JOIN',
+      stopwatch.elapsed,
+      'Found ${sites.length} sites'
+    );
+
+    return sites;
+  }
+
   Future<Site?> getSite(int id) async {
     Database db = await _databaseHelper.database;
 
@@ -805,6 +906,7 @@ class DatabaseService {
     String? name,
     double? altitude,
     String? country,
+    int? pgeSiteId,
   }) async {
     // Check if site exists at these coordinates
     Site? existingSite = await findSiteByCoordinates(latitude, longitude);
@@ -826,18 +928,20 @@ class DatabaseService {
     }
     
     // Create new site
-    // Try to link with a PGE site if available
-    int? pgeSiteId;
-    try {
-      final pgeSite = await PgeSitesDatabaseService.instance.findNearestSite(
-        latitude: latitude,
-        longitude: longitude,
-        maxDistanceKm: 0.1, // 100m tolerance for automatic linking
-      );
-      pgeSiteId = pgeSite?.id;
-    } catch (e) {
-      LoggingService.debug('Failed to find matching PGE site: $e');
-      // Continue without PGE link
+    // Use provided pgeSiteId or try to find a matching PGE site
+    int? finalPgeSiteId = pgeSiteId;
+    if (finalPgeSiteId == null) {
+      try {
+        final pgeSite = await PgeSitesDatabaseService.instance.findNearestSite(
+          latitude: latitude,
+          longitude: longitude,
+          maxDistanceKm: 0.1, // 100m tolerance for automatic linking
+        );
+        finalPgeSiteId = pgeSite?.id;
+      } catch (e) {
+        LoggingService.debug('Failed to find matching PGE site: $e');
+        // Continue without PGE link
+      }
     }
 
     final newSite = Site(
@@ -846,14 +950,14 @@ class DatabaseService {
       name: finalName,
       altitude: altitude,
       country: country,
-      pgeSiteId: pgeSiteId,
+      pgeSiteId: finalPgeSiteId,
     );
 
     final id = await insertSite(newSite);
     final createdSite = newSite.copyWith(id: id);
 
-    if (pgeSiteId != null) {
-      LoggingService.info('DatabaseService: Created site "$finalName" linked to PGE site ID: $pgeSiteId');
+    if (finalPgeSiteId != null) {
+      LoggingService.info('DatabaseService: Created site "$finalName" linked to PGE site ID: $finalPgeSiteId');
     }
 
     return createdSite;

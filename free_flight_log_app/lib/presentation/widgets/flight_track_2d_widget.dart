@@ -6,6 +6,7 @@ import '../../data/models/flight.dart';
 import '../../data/models/igc_file.dart';
 import '../../services/logging_service.dart';
 import '../../services/flight_track_loader.dart';
+import '../../utils/map_calculation_utils.dart';
 import '../../utils/performance_monitor.dart';
 import '../../utils/preferences_helper.dart';
 import '../../utils/ui_utils.dart';
@@ -211,26 +212,13 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     }
     
     // Calculate distance traveled over the time window using simple Pythagorean formula
-    final distanceMeters = _calculateSimpleDistance(
+    final distanceMeters = MapCalculationUtils.simpleDistance(
       firstInWindow.latitude, firstInWindow.longitude,
       point.latitude, point.longitude
     );
     
     // Convert to km/h: (meters/second) * 3.6
     return (distanceMeters / timeDiffSeconds) * 3.6;
-  }
-  
-  /// Calculate distance between two lat/lng points using simple Pythagorean formula
-  /// For small distances (GPS points), Earth curvature correction is negligible
-  double _calculateSimpleDistance(double lat1, double lng1, double lat2, double lng2) {
-    // Convert degrees to approximate meters using first point's latitude for longitude correction
-    const metersPerDegreeLat = 111320.0; // Meters per degree latitude (constant)
-    final metersPerDegreeLng = 111320.0 * math.cos(lat1 * math.pi / 180); // Adjust for longitude at first point's latitude
-    
-    final deltaLat = (lat2 - lat1) * metersPerDegreeLat;
-    final deltaLng = (lng2 - lng1) * metersPerDegreeLng;
-    
-    return math.sqrt(deltaLat * deltaLat + deltaLng * deltaLng);
   }
 
   /// Finds the closest track point index by timestamp

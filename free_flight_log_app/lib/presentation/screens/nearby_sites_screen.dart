@@ -16,7 +16,7 @@ import '../../services/nearby_sites_search_manager_v2.dart';
 import '../../services/map_bounds_manager.dart';
 import '../../utils/map_provider.dart';
 import '../../utils/site_utils.dart';
-import '../widgets/nearby_sites_map_widget.dart';
+import '../widgets/nearby_sites_map.dart';
 import '../widgets/map_filter_dialog.dart';
 import '../widgets/common/app_error_state.dart';
 import '../widgets/wind_rose_widget.dart';
@@ -43,7 +43,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   String? _errorMessage;
   LatLng? _mapCenterPosition;
   final double _mapZoom = 10.0; // Dynamic zoom level for map
-  LatLngBounds? _boundsToFit; // Exact bounds for map fitting after site jump
   
   // Map provider state
   MapProvider _selectedMapProvider = MapProvider.openStreetMap;
@@ -53,7 +52,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   static const String _mapProviderKey = 'nearby_sites_map_provider';
 
   // Legend state
-  bool _isLegendExpanded = false;
   static const String _legendExpandedKey = 'nearby_sites_legend_expanded';
 
   // Preference keys for filter states
@@ -62,6 +60,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   
   // Bounds-based loading state using MapBoundsManager
   LatLngBounds? _currentBounds;
+  LatLngBounds? _boundsToFit; // For site jumping
   bool _isLoadingSites = false;
   
   // Search management - consolidated into SearchManager
@@ -71,13 +70,16 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   Timer? _locationNotificationTimer;
   late final NearbySitesSearchManagerV2 _searchManager;
 
+  // Search bar controller (persistent to fix backwards text issue)
+  final TextEditingController _searchController = TextEditingController();
+
   // Filter state for sites and airspace (defaults, will be loaded from preferences)
   bool _sitesEnabled = true; // Controls site loading and display
   bool _airspaceEnabled = true; // Controls airspace loading and display
   bool _hasActiveFilters = false; // Cached value to avoid FutureBuilder rebuilds
   double _maxAltitudeFt = 10000.0; // Default altitude filter
-  int _filterUpdateCounter = 0; // Increments when any filter changes to trigger map refresh
   Map<IcaoClass, bool> _excludedIcaoClasses = {}; // Current ICAO class filter state
+  int _filterUpdateCounter = 0; // Triggers map refresh on filter changes
   final OpenAipService _openAipService = OpenAipService.instance;
   
 
@@ -89,6 +91,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     _loadFilterSettings();
     _updateActiveFiltersState(); // Initialize the cached active filters state
     _loadData();
+
+    // Listen to search state changes to update controller
+    _searchController.text = _searchManager.state.query;
   }
 
   @override
@@ -96,6 +101,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     MapBoundsManager.instance.cancelDebounce('nearby_sites'); // Clean up any pending debounce
     _locationNotificationTimer?.cancel(); // Clean up location notification timer
     _searchManager.dispose(); // Clean up search manager
+    _searchController.dispose(); // Dispose search controller
     super.dispose();
   }
 
@@ -105,6 +111,15 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         setState(() {
           // Update displayed sites when search state changes
           _updateDisplayedSites();
+
+          // Update search controller text if it changed externally
+          if (_searchController.text != state.query) {
+            _searchController.text = state.query;
+            // Move cursor to end
+            _searchController.selection = TextSelection.fromPosition(
+              TextPosition(offset: state.query.length),
+            );
+          }
         });
       },
       onAutoJump: (ParaglidingSite site) {
@@ -117,14 +132,12 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final providerIndex = prefs.getInt(_mapProviderKey) ?? MapProvider.openStreetMap.index;
-      final legendExpanded = prefs.getBool(_legendExpandedKey) ?? false;
       final sitesEnabled = prefs.getBool(_sitesEnabledKey) ?? true;
       final airspaceEnabled = prefs.getBool(_airspaceEnabledKey) ?? true;
 
       if (mounted) {
         setState(() {
           _selectedMapProvider = MapProvider.values[providerIndex];
-          _isLegendExpanded = legendExpanded;
           _sitesEnabled = sitesEnabled;
           _airspaceEnabled = airspaceEnabled;
         });
@@ -387,18 +400,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     _jumpToLocation(site);
   }
 
-  void _toggleLegend() async {
-    setState(() {
-      _isLegendExpanded = !_isLegendExpanded;
-    });
-    
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_legendExpandedKey, _isLegendExpanded);
-    } catch (e) {
-      LoggingService.error('Failed to save legend preference', e);
-    }
-  }
 
 
   /// Jump to a location without dismissing search results
@@ -696,6 +697,88 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     }
   }
 
+  Widget _buildSearchBar() {
+    return Container(
+      height: 36,  // Compact height to match map controls
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(4),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 4,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: _searchController,  // Use persistent controller
+        onChanged: _searchManager.onSearchQueryChanged,
+        style: const TextStyle(fontSize: 14),  // Smaller text
+        decoration: InputDecoration(
+          hintText: 'Search sites...',
+          hintStyle: const TextStyle(fontSize: 14),
+          prefixIcon: const Icon(Icons.search, size: 18),  // Smaller icon
+          suffixIcon: _searchManager.state.query.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear, size: 16),
+                  onPressed: () {
+                    _searchController.clear();  // Clear controller
+                    _searchManager.onSearchQueryChanged('');
+                  },
+                  padding: EdgeInsets.zero,
+                )
+              : null,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),  // Compact padding
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchResults() {
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 200),
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 4,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: _searchManager.state.isSearching
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: CircularProgressIndicator(),
+              ),
+            )
+          : ListView.builder(
+              shrinkWrap: true,
+              itemCount: _searchManager.state.results.length,
+              itemBuilder: (context, index) {
+                final site = _searchManager.state.results[index];
+                return ListTile(
+                  leading: Icon(
+                    Icons.location_on,
+                    color: site.hasFlights ? Colors.blue : Colors.deepPurple,
+                  ),
+                  title: Text(site.name),
+                  subtitle: Text(
+                    site.hasFlights
+                        ? '${site.flightCount} flights'
+                        : 'New site',
+                  ),
+                  onTap: () => _onSearchResultSelected(site),
+                );
+              },
+            ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -715,35 +798,56 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                   )
                 : Stack(
                       children: [
-                        // Map - removed FutureBuilder to prevent unnecessary rebuilds
-                        NearbySitesMapWidget(
-                          key: _mapWidgetKey, // Force rebuild when airspace settings change
+                        // Map - using new BaseMapWidget-based implementation
+                        NearbySitesMap(
+                          key: _mapWidgetKey, // Force rebuild when settings change
                           sites: _displayedSites,
-                          siteFlightStatus: _siteFlightStatus,
-                          userPosition: _userPosition,
-                          centerPosition: _mapCenterPosition,
-                          boundsToFit: _boundsToFit,
-                          initialZoom: _mapZoom,
-                          mapProvider: _selectedMapProvider,
-                          isLegendExpanded: _isLegendExpanded,
-                          onToggleLegend: _toggleLegend,
-                          onSiteSelected: _onSiteSelected,
-                          onBoundsChanged: _onBoundsChanged,
-                          searchQuery: _searchManager.state.query,
-                          onSearchChanged: _searchManager.onSearchQueryChanged,
-                          onRefreshLocation: _onRefreshLocation,
-                          isLocationLoading: _isLocationLoading,
-                          searchResults: _searchManager.state.results,
-                          isSearching: _searchManager.state.isSearching,
-                          onSearchResultSelected: _onSearchResultSelected,
-                          onShowMapFilter: _showMapFilterDialog,
-                          hasActiveFilters: _hasActiveFilters,
-                          sitesEnabled: _sitesEnabled,
+                          userLocation: _userPosition != null
+                              ? LatLng(_userPosition!.latitude, _userPosition!.longitude)
+                              : null,
                           airspaceEnabled: _airspaceEnabled,
                           maxAltitudeFt: _maxAltitudeFt,
-                          filterUpdateCounter: _filterUpdateCounter,
-                          excludedIcaoClasses: _excludedIcaoClasses,
+                          onSiteSelected: _onSiteSelected,
+                          onLocationRequest: _onRefreshLocation,
+                          onBoundsChanged: _onBoundsChanged,
+                          showUserLocation: true,
+                          isLocationLoading: _isLocationLoading,
+                          initialCenter: _mapCenterPosition,
+                          initialZoom: _mapZoom,
                         ),
+
+                        // Search bar overlay - fits between Legend and Map selector
+                        Positioned(
+                          top: 8,  // Same level as map controls
+                          left: 80,  // After the Legend button (approx width)
+                          right: 120,  // Before the Map selector button (approx width)
+                          child: _buildSearchBar(),
+                        ),
+
+                        // Filter button overlay
+                        Positioned(
+                          bottom: 100,
+                          right: 16,
+                          child: FloatingActionButton(
+                            mini: true,
+                            onPressed: _showMapFilterDialog,
+                            backgroundColor: _hasActiveFilters ? Colors.orange : null,
+                            child: Icon(
+                              Icons.filter_list,
+                              color: _hasActiveFilters ? Colors.white : null,
+                            ),
+                            tooltip: 'Map Filters',
+                          ),
+                        ),
+
+                        // Search results overlay - below search bar
+                        if (_searchManager.state.isSearching || _searchManager.state.results.isNotEmpty)
+                          Positioned(
+                            top: 52,  // Just below the search bar
+                            left: 80,  // Align with search bar
+                            right: 120,  // Align with search bar
+                            child: _buildSearchResults(),
+                          ),
 
                         // Auto-dismissing location notification
                         if (_showLocationNotification)
@@ -962,16 +1066,19 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     final String? region = widget.paraglidingSite?.region ?? _detailedData?['region'];
     final String? description = widget.paraglidingSite?.description ?? _detailedData?['description'];
     final int? rating = widget.paraglidingSite?.rating ?? _detailedData?['rating'];
-    final List<String> windDirections = widget.paraglidingSite?.windDirections ??
-        (_detailedData?['wind_directions'] as List<dynamic>?)?.cast<String>() ?? [];
+    // Check for both null and empty wind directions to ensure fallback to API data
+    final List<String> windDirections =
+        (widget.paraglidingSite?.windDirections?.isNotEmpty == true
+            ? widget.paraglidingSite!.windDirections
+            : (_detailedData?['wind_directions'] as List<dynamic>?)?.cast<String>()) ?? [];
 
-    // Debug logging for Annecy - Planfait site
-    if (name.contains('Annecy') || name.contains('Planfait')) {
-      LoggingService.debug('Annecy site debug: name=$name');
-      LoggingService.debug('Annecy site debug: widget.paraglidingSite?.id=${widget.paraglidingSite?.id}');
-      LoggingService.debug('Annecy site debug: widget.paraglidingSite?.windDirections=${widget.paraglidingSite?.windDirections}');
-      LoggingService.debug('Annecy site debug: _detailedData wind_directions=${_detailedData?['wind_directions']}');
-      LoggingService.debug('Annecy site debug: final windDirections=$windDirections');
+    // Debug logging for Annecy - Planfait site and Mt Bakewell
+    if (name.contains('Annecy') || name.contains('Planfait') || name.contains('Bakewell')) {
+      LoggingService.debug('Site debug: name=$name');
+      LoggingService.debug('Site debug: widget.paraglidingSite?.id=${widget.paraglidingSite?.id}');
+      LoggingService.debug('Site debug: widget.paraglidingSite?.windDirections=${widget.paraglidingSite?.windDirections}');
+      LoggingService.debug('Site debug: _detailedData wind_directions=${_detailedData?['wind_directions']}');
+      LoggingService.debug('Site debug: final windDirections=$windDirections');
     }
     final String? siteType = widget.paraglidingSite?.siteType ?? _detailedData?['site_type'];
     final int? flightCount = widget.site?.flightCount;

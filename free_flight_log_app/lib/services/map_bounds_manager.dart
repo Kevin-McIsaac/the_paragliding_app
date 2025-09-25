@@ -96,6 +96,7 @@ class MapBoundsManager {
     required Function(SiteBoundsLoadResult) onLoaded,
     int siteLimit = defaultSiteLimit,
     bool includeFlightCounts = true,
+    double? zoomLevel,
   }) async {
     // Cancel any existing debounce timer
     cancelDebounce(context);
@@ -112,6 +113,7 @@ class MapBoundsManager {
             onLoaded: onLoaded,
             siteLimit: siteLimit,
             includeFlightCounts: includeFlightCounts,
+            zoomLevel: zoomLevel,
           );
           completer.complete();
         } catch (e) {
@@ -130,6 +132,7 @@ class MapBoundsManager {
     required Function(SiteBoundsLoadResult) onLoaded,
     int siteLimit = defaultSiteLimit,
     bool includeFlightCounts = true,
+    double? zoomLevel,
   }) async {
     final boundsKey = getBoundsKey(bounds);
 
@@ -187,6 +190,7 @@ class MapBoundsManager {
       LoggingService.structured('MAP_BOUNDS_LOADED', {
         'context': context,
         'bounds_key': boundsKey,
+        'zoom_level': zoomLevel?.toStringAsFixed(1) ?? 'unknown',
         'sites_count': result.sites.length,
         'flown_sites': result.sitesWithFlights.length,
         'new_sites': result.sitesWithoutFlights.length,

@@ -1,10 +1,10 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../../data/models/flight.dart';
 import '../../data/models/igc_file.dart';
 import '../../services/logging_service.dart';
+import '../../utils/map_calculation_utils.dart';
 import '../../utils/site_marker_utils.dart';
 import '../../utils/ui_utils.dart';
 import 'common/base_map_widget.dart';
@@ -90,26 +90,7 @@ class _FlightTrackMapState extends BaseMapState<FlightTrackMap> {
   }
 
   int _findClosestTrackPointByPosition(LatLng position) {
-    if (widget.trackPoints.isEmpty) return -1;
-
-    int closestIndex = 0;
-    double minDistance = _calculateDistance(
-      position,
-      LatLng(widget.trackPoints[0].latitude, widget.trackPoints[0].longitude)
-    );
-
-    for (int i = 1; i < widget.trackPoints.length; i++) {
-      final distance = _calculateDistance(
-        position,
-        LatLng(widget.trackPoints[i].latitude, widget.trackPoints[i].longitude)
-      );
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestIndex = i;
-      }
-    }
-
-    return closestIndex;
+    return MapCalculationUtils.findClosestTrackPoint(position, widget.trackPoints);
   }
 
   void _fitMapToBounds() {
@@ -131,29 +112,7 @@ class _FlightTrackMapState extends BaseMapState<FlightTrackMap> {
   }
 
   LatLngBounds _calculateBounds() {
-    if (widget.trackPoints.isEmpty) {
-      return LatLngBounds(
-        const LatLng(46.9480, 7.4474),
-        const LatLng(46.9580, 7.4574),
-      );
-    }
-
-    double minLat = widget.trackPoints.first.latitude;
-    double maxLat = widget.trackPoints.first.latitude;
-    double minLng = widget.trackPoints.first.longitude;
-    double maxLng = widget.trackPoints.first.longitude;
-
-    for (final point in widget.trackPoints) {
-      minLat = math.min(minLat, point.latitude);
-      maxLat = math.max(maxLat, point.latitude);
-      minLng = math.min(minLng, point.longitude);
-      maxLng = math.max(maxLng, point.longitude);
-    }
-
-    return LatLngBounds(
-      LatLng(minLat - _mapPadding, minLng - _mapPadding),
-      LatLng(maxLat + _mapPadding, maxLng + _mapPadding),
-    );
+    return MapCalculationUtils.calculateBounds(widget.trackPoints, padding: _mapPadding);
   }
 
   @override
@@ -374,7 +333,7 @@ class _FlightTrackMapState extends BaseMapState<FlightTrackMap> {
     Color currentColor = Colors.blue;
 
     for (int i = 1; i < widget.trackPoints.length; i++) {
-      final climbRate = _calculateClimbRate(widget.trackPoints[i-1], widget.trackPoints[i]);
+      final climbRate = MapCalculationUtils.calculateClimbRate(widget.trackPoints[i-1], widget.trackPoints[i]);
       final color = _getClimbRateColor(climbRate);
 
       if (color != currentColor && currentSegment.length > 1) {
@@ -528,13 +487,13 @@ class _FlightTrackMapState extends BaseMapState<FlightTrackMap> {
     final p2 = LatLng(widget.faiTrianglePoints[1].latitude, widget.faiTrianglePoints[1].longitude);
     final p3 = LatLng(widget.faiTrianglePoints[2].latitude, widget.faiTrianglePoints[2].longitude);
 
-    final side1Distance = _calculateDistance(p1, p2) / 1000.0;
-    final side2Distance = _calculateDistance(p2, p3) / 1000.0;
-    final side3Distance = _calculateDistance(p3, p1) / 1000.0;
+    final side1Distance = MapCalculationUtils.haversineDistanceKm(p1, p2);
+    final side2Distance = MapCalculationUtils.haversineDistanceKm(p2, p3);
+    final side3Distance = MapCalculationUtils.haversineDistanceKm(p3, p1);
 
-    final midpoint1 = LatLng((p1.latitude + p2.latitude) / 2, (p1.longitude + p2.longitude) / 2);
-    final midpoint2 = LatLng((p2.latitude + p3.latitude) / 2, (p2.longitude + p3.longitude) / 2);
-    final midpoint3 = LatLng((p3.latitude + p1.latitude) / 2, (p3.longitude + p1.longitude) / 2);
+    final midpoint1 = MapCalculationUtils.calculateMidpoint(p1, p2);
+    final midpoint2 = MapCalculationUtils.calculateMidpoint(p2, p3);
+    final midpoint3 = MapCalculationUtils.calculateMidpoint(p3, p1);
 
     return [
       _buildDistanceLabel(midpoint1, side1Distance),
@@ -569,31 +528,10 @@ class _FlightTrackMapState extends BaseMapState<FlightTrackMap> {
   }
 
   // Helper methods
-  double _calculateClimbRate(IgcPoint point1, IgcPoint point2) {
-    final timeDiff = point2.timestamp.difference(point1.timestamp).inSeconds;
-    if (timeDiff <= 0) return 0.0;
-    final altitudeDiff = point2.gpsAltitude - point1.gpsAltitude;
-    return altitudeDiff / timeDiff;
-  }
-
   Color _getClimbRateColor(double climbRate) {
     if (climbRate >= 0) return Colors.green;
     if (climbRate > -1.5) return Colors.blue;
     return Colors.red;
-  }
-
-  double _calculateDistance(LatLng point1, LatLng point2) {
-    final lat1Rad = point1.latitude * (math.pi / 180);
-    final lat2Rad = point2.latitude * (math.pi / 180);
-    final deltaLat = (point2.latitude - point1.latitude) * (math.pi / 180);
-    final deltaLng = (point2.longitude - point1.longitude) * (math.pi / 180);
-
-    final a = math.sin(deltaLat / 2) * math.sin(deltaLat / 2) +
-        math.cos(lat1Rad) * math.cos(lat2Rad) *
-        math.sin(deltaLng / 2) * math.sin(deltaLng / 2);
-    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
-
-    return 6371000 * c; // Earth radius in meters
   }
 
   @override
