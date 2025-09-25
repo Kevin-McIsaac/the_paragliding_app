@@ -261,6 +261,7 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
       bounds: bounds,
       siteLimit: siteLimit,
       includeFlightCounts: true,
+      zoomLevel: mapController.camera.zoom,
       onLoaded: (result) {
         if (mounted) {
           setState(() {
