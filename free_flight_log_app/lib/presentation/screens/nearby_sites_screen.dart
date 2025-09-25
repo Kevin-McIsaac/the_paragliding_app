@@ -13,7 +13,6 @@ import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
 import '../../services/nearby_sites_search_state.dart';
 import '../../services/nearby_sites_search_manager_v2.dart';
-import '../../services/site_bounds_loader_v2.dart';
 import '../../services/map_bounds_manager.dart';
 import '../../utils/map_provider.dart';
 import '../../utils/site_utils.dart';

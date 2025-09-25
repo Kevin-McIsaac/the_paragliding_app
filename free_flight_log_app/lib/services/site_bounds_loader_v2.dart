@@ -105,6 +105,7 @@ class SiteBoundsLoaderV2 {
 
           // Convert local Site to ParaglidingSite
           enrichedSites.add(ParaglidingSite(
+            id: localSite.id,  // CRITICAL: Preserve site ID for operations
             name: localSite.name,
             latitude: localSite.latitude,
             longitude: localSite.longitude,

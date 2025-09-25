@@ -11,7 +11,6 @@ import '../../data/models/site.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/flight.dart';
 import '../../services/database_service.dart';
-import '../../services/site_bounds_loader_v2.dart';
 import '../../services/map_bounds_manager.dart';
 import '../../services/logging_service.dart';
 import '../../utils/site_marker_utils.dart';
@@ -68,7 +67,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   static const String _legendExpandedKey = 'edit_site_legend_expanded';
   LatLngBounds? _currentBounds;
   bool _isLoadingSites = false;
-  String? _lastLoadedLaunchesBoundsKey;
   
   // Merge mode state
   Site? _selectedSourceSite;
@@ -668,40 +666,27 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
   /// Clear cache keys to force refresh of map data
   void _clearMapDataCache() {
-    _lastLoadedLaunchesBoundsKey = null;
     MapBoundsManager.instance.clearCache();
+    MapBoundsManager.instance.clearLaunchCache();
   }
   
   
 
-  /// Load all launches in the current viewport bounds
+  /// Load all launches in the current viewport bounds with debouncing
   Future<void> _loadAllLaunchesInBounds(LatLngBounds bounds) async {
-    // Create a unique key for these bounds to prevent duplicate requests
-    final boundsKey = '${bounds.north.toStringAsFixed(6)}_${bounds.south.toStringAsFixed(6)}_${bounds.east.toStringAsFixed(6)}_${bounds.west.toStringAsFixed(6)}';
-    if (_lastLoadedLaunchesBoundsKey == boundsKey) {
-      return; // Same bounds already loaded
-    }
-    
-    try {
-      final launches = await _databaseService.getAllLaunchesInBounds(
-        north: bounds.north,
-        south: bounds.south,
-        east: bounds.east,
-        west: bounds.west,
-      );
-      
-      if (mounted) {
-        setState(() {
-          _launches = launches;
-        });
-        
-        // Mark these bounds as loaded to prevent duplicate requests
-        _lastLoadedLaunchesBoundsKey = boundsKey;
-        LoggingService.info('EditSiteScreen: Loaded ${launches.length} launches in viewport');
-      }
-    } catch (e) {
-      LoggingService.error('EditSiteScreen: Error loading launches in bounds', e);
-    }
+    // Use MapBoundsManager for debounced loading with caching
+    await MapBoundsManager.instance.loadLaunchesForBoundsDebounced(
+      context: 'edit_site',
+      bounds: bounds,
+      onLoaded: (result) {
+        if (mounted) {
+          setState(() {
+            _launches = result.launches;
+          });
+        }
+        LoggingService.info('EditSiteScreen: Loaded ${result.launches.length} launches in viewport');
+      },
+    );
   }
 
 
@@ -1019,9 +1004,15 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           customName: true, // Mark as custom since user edited it
         );
         
-        await _databaseService.updateSite(updatedSite);
-        
-        LoggingService.info('EditSiteScreen: Updated site ${updatedSite.id}: ${updatedSite.name}');
+        // Only update if site has an ID (not a new unsaved site)
+        if (updatedSite.id != null) {
+          await _databaseService.updateSite(updatedSite);
+          LoggingService.info('EditSiteScreen: Updated site ${updatedSite.id}: ${updatedSite.name}');
+        } else {
+          // For new sites without ID, insert instead of update
+          final newSiteId = await _databaseService.insertSite(updatedSite);
+          LoggingService.info('EditSiteScreen: Created new site with ID $newSiteId: ${updatedSite.name}');
+        }
         
         // Show success message
         if (mounted) {
@@ -1181,6 +1172,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       if (site.hasFlights) {
         // Convert ParaglidingSite back to Site for local site handling
         final localSite = Site(
+          id: site.id,  // CRITICAL: Preserve the ID for merge operations
           name: site.name,
           latitude: site.latitude,
           longitude: site.longitude,
@@ -1467,6 +1459,20 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
   /// Merge flown site into another flown site
   Future<void> _mergeFlownIntoFlownSite(Site sourceSite, Site targetSite) async {
+    // Ensure both sites have IDs
+    if (sourceSite.id == null || targetSite.id == null) {
+      LoggingService.error('EditSiteScreen: Cannot merge sites without IDs', null);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cannot merge sites: Site IDs not found'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
     // Get the flights that will be affected
     final affectedFlights = await _databaseService.getFlightsBySite(sourceSite.id!);
     
@@ -1548,6 +1554,20 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
   /// Merge flown site into an API site
   Future<void> _mergeFlownIntoApiSite(Site sourceSite, ParaglidingSite apiSite) async {
+    // Ensure source site has an ID
+    if (sourceSite.id == null) {
+      LoggingService.error('EditSiteScreen: Cannot merge site without ID', null);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cannot merge site: Site ID not found'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
     // Get the flights that will be affected
     final affectedFlights = await _databaseService.getFlightsBySite(sourceSite.id!);
     
