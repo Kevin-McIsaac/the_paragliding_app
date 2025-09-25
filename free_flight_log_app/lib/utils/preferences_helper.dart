@@ -361,4 +361,34 @@ class PreferencesHelper {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(openAipOverlayOpacityKey, value);
   }
+
+  // PGE Sites preferences
+  static const String pgeSitesDownloadedKey = 'pge_sites_downloaded';
+  static const String pgeSitesDownloadDateKey = 'pge_sites_download_date';
+
+  /// Check if PGE sites have ever been downloaded
+  static Future<bool> hasPgeSitesBeenDownloaded() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(pgeSitesDownloadedKey) ?? false;
+  }
+
+  /// Mark PGE sites as downloaded
+  static Future<void> setPgeSitesDownloaded(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(pgeSitesDownloadedKey, value);
+    if (value) {
+      // Also store the download date
+      await prefs.setString(pgeSitesDownloadDateKey, DateTime.now().toIso8601String());
+    }
+  }
+
+  /// Get the date when PGE sites were last downloaded
+  static Future<DateTime?> getPgeSitesDownloadDate() async {
+    final prefs = await SharedPreferences.getInstance();
+    final dateStr = prefs.getString(pgeSitesDownloadDateKey);
+    if (dateStr != null) {
+      return DateTime.tryParse(dateStr);
+    }
+    return null;
+  }
 }
