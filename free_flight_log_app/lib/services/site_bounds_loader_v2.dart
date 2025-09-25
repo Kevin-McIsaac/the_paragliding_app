@@ -81,6 +81,13 @@ class SiteBoundsLoaderV2 {
       final enrichedSites = <ParaglidingSite>[];
       final processedLocations = <String>{};
 
+      // Create a map of PGE sites by location for quick lookup
+      final pgeSitesByLocation = <String, ParaglidingSite>{};
+      for (final pgeSite in pgeSites) {
+        final locationKey = _getLocationKey(pgeSite.latitude, pgeSite.longitude);
+        pgeSitesByLocation[locationKey] = pgeSite;
+      }
+
       // Process local sites FIRST - they take priority
       for (final localSite in localSites) {
         final locationKey = _getLocationKey(localSite.latitude, localSite.longitude);
@@ -88,15 +95,22 @@ class SiteBoundsLoaderV2 {
 
         final flightCount = flightCounts[localSite.id] ?? 0;
 
-        // Convert local Site to ParaglidingSite
+        // Look up corresponding PGE site to get additional data
+        final pgeSite = pgeSitesByLocation[locationKey];
+
+        // Convert local Site to ParaglidingSite, enriching with PGE data if available
         enrichedSites.add(ParaglidingSite(
           id: localSite.id,  // CRITICAL: Preserve site ID for operations
           name: localSite.name,
           latitude: localSite.latitude,
           longitude: localSite.longitude,
-          altitude: localSite.altitude?.toInt(),
-          country: localSite.country,
-          siteType: 'launch', // Default for local sites
+          altitude: localSite.altitude?.toInt() ?? pgeSite?.altitude,
+          country: localSite.country ?? pgeSite?.country,
+          siteType: pgeSite?.siteType ?? 'launch', // Use PGE site type if available
+          windDirections: pgeSite?.windDirections ?? [], // Get wind directions from PGE
+          description: pgeSite?.description, // Get description from PGE
+          rating: pgeSite?.rating, // Get rating from PGE
+          region: pgeSite?.region, // Get region from PGE
           flightCount: flightCount,
           isFromLocalDb: true,  // Mark as local database site
         ));

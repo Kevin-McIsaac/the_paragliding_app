@@ -1066,16 +1066,19 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     final String? region = widget.paraglidingSite?.region ?? _detailedData?['region'];
     final String? description = widget.paraglidingSite?.description ?? _detailedData?['description'];
     final int? rating = widget.paraglidingSite?.rating ?? _detailedData?['rating'];
-    final List<String> windDirections = widget.paraglidingSite?.windDirections ??
-        (_detailedData?['wind_directions'] as List<dynamic>?)?.cast<String>() ?? [];
+    // Check for both null and empty wind directions to ensure fallback to API data
+    final List<String> windDirections =
+        (widget.paraglidingSite?.windDirections?.isNotEmpty == true
+            ? widget.paraglidingSite!.windDirections
+            : (_detailedData?['wind_directions'] as List<dynamic>?)?.cast<String>()) ?? [];
 
-    // Debug logging for Annecy - Planfait site
-    if (name.contains('Annecy') || name.contains('Planfait')) {
-      LoggingService.debug('Annecy site debug: name=$name');
-      LoggingService.debug('Annecy site debug: widget.paraglidingSite?.id=${widget.paraglidingSite?.id}');
-      LoggingService.debug('Annecy site debug: widget.paraglidingSite?.windDirections=${widget.paraglidingSite?.windDirections}');
-      LoggingService.debug('Annecy site debug: _detailedData wind_directions=${_detailedData?['wind_directions']}');
-      LoggingService.debug('Annecy site debug: final windDirections=$windDirections');
+    // Debug logging for Annecy - Planfait site and Mt Bakewell
+    if (name.contains('Annecy') || name.contains('Planfait') || name.contains('Bakewell')) {
+      LoggingService.debug('Site debug: name=$name');
+      LoggingService.debug('Site debug: widget.paraglidingSite?.id=${widget.paraglidingSite?.id}');
+      LoggingService.debug('Site debug: widget.paraglidingSite?.windDirections=${widget.paraglidingSite?.windDirections}');
+      LoggingService.debug('Site debug: _detailedData wind_directions=${_detailedData?['wind_directions']}');
+      LoggingService.debug('Site debug: final windDirections=$windDirections');
     }
     final String? siteType = widget.paraglidingSite?.siteType ?? _detailedData?['site_type'];
     final int? flightCount = widget.site?.flightCount;

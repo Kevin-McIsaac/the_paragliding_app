@@ -805,6 +805,7 @@ class DatabaseService {
     String? name,
     double? altitude,
     String? country,
+    int? pgeSiteId,
   }) async {
     // Check if site exists at these coordinates
     Site? existingSite = await findSiteByCoordinates(latitude, longitude);
@@ -826,18 +827,20 @@ class DatabaseService {
     }
     
     // Create new site
-    // Try to link with a PGE site if available
-    int? pgeSiteId;
-    try {
-      final pgeSite = await PgeSitesDatabaseService.instance.findNearestSite(
-        latitude: latitude,
-        longitude: longitude,
-        maxDistanceKm: 0.1, // 100m tolerance for automatic linking
-      );
-      pgeSiteId = pgeSite?.id;
-    } catch (e) {
-      LoggingService.debug('Failed to find matching PGE site: $e');
-      // Continue without PGE link
+    // Use provided pgeSiteId or try to find a matching PGE site
+    int? finalPgeSiteId = pgeSiteId;
+    if (finalPgeSiteId == null) {
+      try {
+        final pgeSite = await PgeSitesDatabaseService.instance.findNearestSite(
+          latitude: latitude,
+          longitude: longitude,
+          maxDistanceKm: 0.1, // 100m tolerance for automatic linking
+        );
+        finalPgeSiteId = pgeSite?.id;
+      } catch (e) {
+        LoggingService.debug('Failed to find matching PGE site: $e');
+        // Continue without PGE link
+      }
     }
 
     final newSite = Site(
@@ -846,14 +849,14 @@ class DatabaseService {
       name: finalName,
       altitude: altitude,
       country: country,
-      pgeSiteId: pgeSiteId,
+      pgeSiteId: finalPgeSiteId,
     );
 
     final id = await insertSite(newSite);
     final createdSite = newSite.copyWith(id: id);
 
-    if (pgeSiteId != null) {
-      LoggingService.info('DatabaseService: Created site "$finalName" linked to PGE site ID: $pgeSiteId');
+    if (finalPgeSiteId != null) {
+      LoggingService.info('DatabaseService: Created site "$finalName" linked to PGE site ID: $finalPgeSiteId');
     }
 
     return createdSite;

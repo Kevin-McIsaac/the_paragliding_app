@@ -288,6 +288,7 @@ class IgcImportService {
         altitude: siteAltitude,
         name: siteName,
         country: country,
+        pgeSiteId: matchedSite?.id, // Link to PGE site if matched
       );
       
       // Debug output to see what was actually stored
