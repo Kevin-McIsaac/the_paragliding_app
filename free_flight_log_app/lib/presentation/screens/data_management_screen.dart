@@ -1642,7 +1642,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                                   : _downloadPgeSites,
                               icon: const Icon(Icons.download),
                               label: Text(
-                                _pgeSitesStats?['sites_count'] > 0
+                                (_pgeSitesStats?['sites_count'] ?? 0) > 0
                                   ? 'Re-download Sites'
                                   : 'Download Sites'
                               ),
@@ -1651,7 +1651,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                               ),
                             ),
                           ),
-                          if (_pgeSitesStats?['sites_count'] > 0) ...[
+                          if ((_pgeSitesStats?['sites_count'] ?? 0) > 0) ...[
                             const SizedBox(width: 8),
                             Expanded(
                               child: OutlinedButton.icon(

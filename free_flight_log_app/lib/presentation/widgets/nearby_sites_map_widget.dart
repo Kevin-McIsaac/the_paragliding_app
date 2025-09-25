@@ -116,9 +116,6 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   static const double _boundsThreshold = 0.001;
   static const int _debounceDurationMs = 750;
 
-  // Cached markers to avoid recreation on every build
-  List<fm.Marker>? _cachedSiteMarkers;
-  String? _cachedSiteMarkersKey;
 
   // Separate loading states for parallel operations
   bool _isLoadingSites = false;
@@ -732,52 +729,6 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
   }
 
 
-  List<fm.Marker> _buildSiteMarkers() {
-    // Don't show site markers if sites are disabled
-    if (!widget.sitesEnabled) {
-      return [];
-    }
-
-    // Create cache key from sites data and flight status
-    final cacheKey = '${widget.sites.length}_${widget.siteFlightStatus.length}_${widget.sitesEnabled}';
-
-    // Return cached markers if data hasn't changed
-    if (_cachedSiteMarkersKey == cacheKey && _cachedSiteMarkers != null) {
-      LoggingService.debug('[PERFORMANCE] Using cached site markers');
-      return _cachedSiteMarkers!;
-    }
-
-    LoggingService.debug('[PERFORMANCE] Building new site markers (cache miss)');
-
-    // Build new markers
-    _cachedSiteMarkers = widget.sites.map((site) {
-      final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
-      final hasFlights = widget.siteFlightStatus[siteKey] ?? false;
-
-      return fm.Marker(
-        point: LatLng(site.latitude, site.longitude),
-        width: 140,
-        height: 80,
-        child: GestureDetector(
-          onTap: () {
-            widget.onSiteSelected?.call(site);
-          },
-          child: SiteMarkerUtils.buildDisplaySiteMarker(
-            position: LatLng(site.latitude, site.longitude),
-            siteName: site.name,
-            isFlownSite: hasFlights, // Blue for flown sites, purple for new sites
-            flightCount: hasFlights ? 1 : null, // Show indicator if flown
-            tooltip: hasFlights ? '${site.name} (Flown)' : site.name,
-          ).child,
-        ),
-      );
-    }).toList();
-
-    // Update cache key
-    _cachedSiteMarkersKey = cacheKey;
-
-    return _cachedSiteMarkers!;
-  }
 
   // All sites are now subject to clustering
   List<fm.Marker> _buildAllSiteMarkers() {
@@ -790,8 +741,8 @@ class _NearbySitesMapWidgetState extends State<NearbySitesMapWidget> {
       // Create simplified markers for better performance with large datasets
       return fm.Marker(
         point: LatLng(site.latitude, site.longitude),
-        width: 40,  // Smaller size for better performance
-        height: 50,
+        width: 140,  // Match other maps to prevent label truncation
+        height: 65,  // Increased to accommodate icon (42px) + label when shown
         child: GestureDetector(
           onTap: () {
             widget.onSiteSelected?.call(site);

@@ -4,6 +4,8 @@ import 'package:path_provider/path_provider.dart';
 import '../data/datasources/database_helper.dart';
 import '../services/logging_service.dart';
 import '../services/igc_import_service.dart';
+import '../services/pge_sites_database_service.dart';
+import '../services/pge_sites_download_service.dart';
 
 /// Helper class for resetting/clearing database data
 /// Can be called from within the Flutter app
@@ -111,8 +113,49 @@ class DatabaseResetHelper {
           'errors': [resetResult['message']],
         };
       }
-      
-      LoggingService.info('DatabaseResetHelper: Database reset complete, now importing IGC files...');
+
+      LoggingService.info('DatabaseResetHelper: Database reset complete, downloading PGE sites...');
+
+      // Initialize and download PGE sites before importing IGC files
+      // This ensures sites can be properly linked during import
+      try {
+        // Call progress callback to inform user
+        onProgress?.call('Downloading site database...', 0, 1);
+
+        // Initialize PGE sites tables
+        await PgeSitesDatabaseService.instance.initializeTables();
+
+        // Check if we need to download
+        final hasData = await PgeSitesDatabaseService.instance.isDataAvailable();
+
+        if (!hasData) {
+          LoggingService.info('DatabaseResetHelper: Downloading PGE sites data...');
+
+          // Download the PGE sites data
+          final downloadSuccess = await PgeSitesDownloadService.instance.downloadSitesData();
+
+          if (downloadSuccess) {
+            // Import the downloaded data into the database
+            final importSuccess = await PgeSitesDatabaseService.instance.importSitesData();
+
+            if (importSuccess) {
+              LoggingService.info('DatabaseResetHelper: Successfully downloaded and imported PGE sites data');
+            } else {
+              LoggingService.warning('DatabaseResetHelper: Failed to import PGE sites data, continuing without it');
+            }
+          } else {
+            LoggingService.warning('DatabaseResetHelper: Failed to download PGE sites data, continuing without it');
+          }
+        } else {
+          LoggingService.info('DatabaseResetHelper: PGE sites data already exists');
+        }
+      } catch (e) {
+        // Don't fail the entire operation if PGE sites download fails
+        LoggingService.error('DatabaseResetHelper: Error downloading PGE sites (non-fatal)', e);
+        LoggingService.info('DatabaseResetHelper: Continuing with IGC import without PGE sites');
+      }
+
+      LoggingService.info('DatabaseResetHelper: Now importing IGC files...');
       
       // Import each IGC file
       final importService = IgcImportService.instance;

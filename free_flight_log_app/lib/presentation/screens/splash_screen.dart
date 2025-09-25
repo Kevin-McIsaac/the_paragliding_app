@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'flight_list_screen.dart';
 import '../../services/logging_service.dart';
+import '../../services/app_initialization_service.dart';
 
 /// Lightweight splash screen that shows loading and then navigates
 class SplashScreen extends StatefulWidget {
@@ -21,15 +22,19 @@ class _SplashScreenState extends State<SplashScreen> {
   Future<void> _navigateToMain() async {
     // Use a microtask to ensure the splash screen renders at least once
     await Future.microtask(() {});
-    
+
     if (mounted) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (context) => const FlightListScreen(),
         ),
       );
-      
+
       LoggingService.info('App startup completed');
+
+      // Start background initialization after navigation
+      // This includes downloading PGE sites on first launch
+      AppInitializationService.instance.initializeInBackground();
     }
   }
 

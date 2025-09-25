@@ -17,10 +17,11 @@ class SiteBoundsLoaderV2 {
 
   /// Load sites for the given bounds using local database first
   /// Falls back to API only if local database is not available
+  /// Flight counts are now always included using optimized JOIN query
   Future<SiteBoundsLoadResult> loadSitesForBounds(
     LatLngBounds bounds, {
     int limit = 100,
-    bool includeFlightCounts = true,
+    bool includeFlightCounts = true, // Kept for backward compatibility but ignored
   }) async {
     final stopwatch = Stopwatch()..start();
 
@@ -39,8 +40,8 @@ class SiteBoundsLoaderV2 {
       // Prepare futures list
       final futures = <Future>[];
 
-      // 1. Always load local user sites (from flights database)
-      futures.add(DatabaseService.instance.getSitesInBounds(
+      // 1. Load local user sites WITH flight counts using optimized query
+      futures.add(DatabaseService.instance.getSitesInBoundsWithFlightCounts(
         north: bounds.north,
         south: bounds.south,
         east: bounds.east,
@@ -61,28 +62,25 @@ class SiteBoundsLoaderV2 {
         futures.add(Future.value(<ParaglidingSite>[]));
       }
 
-      // 3. Add flight counts if requested
-      if (includeFlightCounts) {
-        futures.add(_loadFlightCountsForBounds(bounds));
-      }
-
       final results = await Future.wait(futures);
 
-      final localSites = results[0] as List<Site>;
+      // Extract sites and flight counts from optimized query result
+      final sitesWithCounts = results[0] as Map<Site, int>;
+      final localSites = sitesWithCounts.keys.toList();
       final pgeSites = results[1] as List<ParaglidingSite>;
-      final flightCounts = includeFlightCounts && results.length > 2
-        ? results[2] as Map<int?, int?>
-        : <int?, int?>{};
+
+      // Build flight counts map with site ID as key
+      final flightCounts = <int?, int?>{};
+      for (final entry in sitesWithCounts.entries) {
+        if (entry.key.id != null) {
+          flightCounts[entry.key.id] = entry.value;
+        }
+      }
 
       // PGE-first approach: Start with PGE sites (which have wind directions) with FK enhancements
       final enrichedSites = <ParaglidingSite>[];
       final processedLocations = <String>{};
 
-      // Get linked PGE site IDs from local sites for efficient FK-based matching
-      final linkedPgeSiteIds = localSites
-          .where((site) => site.pgeSiteId != null)
-          .map((site) => site.pgeSiteId!)
-          .toSet();
 
       // Process all PGE sites and enrich with flight data
       for (final pgeSite in pgeSites) {
@@ -107,6 +105,7 @@ class SiteBoundsLoaderV2 {
 
           // Convert local Site to ParaglidingSite
           enrichedSites.add(ParaglidingSite(
+            id: localSite.id,  // CRITICAL: Preserve site ID for operations
             name: localSite.name,
             latitude: localSite.latitude,
             longitude: localSite.longitude,
@@ -202,58 +201,8 @@ class SiteBoundsLoaderV2 {
   }
 
   // Cache methods removed - no longer needed
+  // _loadFlightCountsForBounds removed - now using optimized JOIN query in DatabaseService
 
-  /// Load flight counts for sites in bounds
-  Future<Map<int?, int?>> _loadFlightCountsForBounds(LatLngBounds bounds) async {
-    try {
-      final sites = await DatabaseService.instance.getSitesInBounds(
-        north: bounds.north,
-        south: bounds.south,
-        east: bounds.east,
-        west: bounds.west,
-      );
-
-      final counts = <int?, int?>{};
-
-      for (final site in sites) {
-        if (site.id != null) {
-          final flightCount = await DatabaseService.instance.getFlightCountForSite(site.id!);
-          if (flightCount > 0) {
-            counts[site.id] = flightCount;
-          }
-        }
-      }
-
-      LoggingService.info('SiteBoundsLoaderV2: Loaded flight counts for ${counts.length} sites');
-      return counts;
-
-    } catch (error, stackTrace) {
-      LoggingService.error('SiteBoundsLoaderV2: Failed to load flight counts', error, stackTrace);
-      return {};
-    }
-  }
-
-  /// Find matching PGE site for a local site using foreign key relationship
-  /// Falls back to coordinate-based matching for unlinked sites
-  ParaglidingSite? _findMatchingPgeSiteByForeignKey(Site localSite, List<ParaglidingSite> pgeSites) {
-    // Primary: Use foreign key relationship if available
-    if (localSite.pgeSiteId != null) {
-      final linkedSite = pgeSites.where((pgeSite) => pgeSite.id == localSite.pgeSiteId).firstOrNull;
-      if (linkedSite != null) {
-        return linkedSite;
-      }
-    }
-
-    // Fallback: Use coordinate-based matching for unlinked sites
-    const tolerance = 0.001; // ~100m
-    for (final pgeSite in pgeSites) {
-      if ((localSite.latitude - pgeSite.latitude).abs() < tolerance &&
-          (localSite.longitude - pgeSite.longitude).abs() < tolerance) {
-        return pgeSite;
-      }
-    }
-    return null;
-  }
 
   /// Find matching local site for a PGE site using foreign key relationship first
   /// Falls back to coordinate-based matching for unlinked sites
@@ -278,17 +227,6 @@ class SiteBoundsLoaderV2 {
     return null;
   }
 
-  /// Legacy coordinate-based matching method (deprecated)
-  Site? _findMatchingLocalSite(ParaglidingSite pgeSite, List<Site> localSites) {
-    return _findMatchingLocalSiteByForeignKey(pgeSite, localSites);
-  }
-
-  /// Legacy coordinate-based matching method (deprecated)
-  /// Kept for compatibility during transition period
-  @Deprecated('Use _findMatchingPgeSiteByForeignKey instead for FK-based matching')
-  ParaglidingSite? _findMatchingPgeSite(Site localSite, List<ParaglidingSite> pgeSites) {
-    return _findMatchingPgeSiteByForeignKey(localSite, pgeSites);
-  }
 
   /// Get location key for deduplication
   String _getLocationKey(double latitude, double longitude) {

@@ -11,7 +11,7 @@ import '../../data/models/site.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/flight.dart';
 import '../../services/database_service.dart';
-import '../../services/site_bounds_loader_v2.dart';
+import '../../services/map_bounds_manager.dart';
 import '../../services/logging_service.dart';
 import '../../utils/site_marker_utils.dart';
 import '../../utils/map_provider.dart';
@@ -44,8 +44,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   static const double _minZoom = 1.0;
   // Use shared constants from SiteMarkerUtils
   static const double _siteMarkerSize = SiteMarkerUtils.siteMarkerSize;
-  static const double _boundsThreshold = 0.001;
-  static const int _debounceDurationMs = 500; // Standardized debounce time for all maps
   static const double _launchRadiusMeters = 500.0;
   
   // Common UI shadows
@@ -63,15 +61,12 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   // Site markers state
   List<ParaglidingSite> _sites = [];
   List<Flight> _launches = [];
-  Timer? _debounceTimer;
   
   // Legend state
   bool _isLegendExpanded = false;
   static const String _legendExpandedKey = 'edit_site_legend_expanded';
   LatLngBounds? _currentBounds;
   bool _isLoadingSites = false;
-  String? _lastLoadedBoundsKey;
-  String? _lastLoadedLaunchesBoundsKey;
   
   // Merge mode state
   Site? _selectedSourceSite;
@@ -84,7 +79,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   
   // Services
   final DatabaseService _databaseService = DatabaseService.instance;
-  final SiteBoundsLoaderV2 _siteBoundsLoader = SiteBoundsLoaderV2.instance;
 
   @override
   void initState() {
@@ -260,7 +254,6 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
   @override
   void dispose() {
-    _debounceTimer?.cancel();
     _cacheRefreshTimer?.cancel();
     super.dispose();
   }
@@ -609,15 +602,12 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     _enforceZoomLimits();
     
     // React to all movement and zoom end events to reload sites
-    if (event is MapEventMoveEnd || 
+    if (event is MapEventMoveEnd ||
         event is MapEventFlingAnimationEnd ||
         event is MapEventDoubleTapZoomEnd ||
         event is MapEventScrollWheelZoom) {
-      
-      _debounceTimer?.cancel();
-      _debounceTimer = Timer(const Duration(milliseconds: _debounceDurationMs), () {
-        _updateMapBounds();
-      });
+
+      _updateMapBounds();
     }
   }
   
@@ -630,105 +620,73 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
   void _updateMapBounds() {
     if (_mapController == null) return;
-    
+
     final bounds = _mapController!.camera.visibleBounds;
-    
-    // Check if bounds have changed significantly
-    if (_currentBounds != null) {
-      
-      // Check if any corner of the bounds has moved more than the threshold
-      if ((bounds.north - _currentBounds!.north).abs() < _boundsThreshold &&
-          (bounds.south - _currentBounds!.south).abs() < _boundsThreshold &&
-          (bounds.east - _currentBounds!.east).abs() < _boundsThreshold &&
-          (bounds.west - _currentBounds!.west).abs() < _boundsThreshold) {
-        return; // Bounds haven't changed significantly
-      }
-    }
     _currentBounds = bounds;
-    _loadSitesForBounds(bounds);
+
+    // Use MapBoundsManager for debounced bounds loading
+    MapBoundsManager.instance.loadSitesForBoundsDebounced(
+      context: 'edit_site',
+      bounds: bounds,
+      siteLimit: 50,
+      includeFlightCounts: true,
+      onLoaded: (result) {
+        if (mounted) {
+          setState(() {
+            _sites = result.sites;
+            _isLoadingSites = false;
+          });
+          LoggingService.info('EditSiteScreen: Loaded ${result.sites.length} sites (${result.sitesWithFlights.length} with flights, ${result.sitesWithoutFlights.length} without)');
+        }
+      },
+    );
+
     _loadAllLaunchesInBounds(bounds);
   }
   
   Future<void> _loadSitesForBounds(LatLngBounds bounds) async {
-    if (_isLoadingSites) return;
-
-    // Create a unique key for these bounds to prevent duplicate requests
-    final boundsKey = '${bounds.north.toStringAsFixed(6)}_${bounds.south.toStringAsFixed(6)}_${bounds.east.toStringAsFixed(6)}_${bounds.west.toStringAsFixed(6)}';
-    if (_lastLoadedBoundsKey == boundsKey) {
-      return; // Same bounds already loaded
-    }
-
-    setState(() {
-      _isLoadingSites = true;
-    });
-
-    try {
-      // Use unified site loader
-      final result = await _siteBoundsLoader.loadSitesForBounds(
-        bounds,
-        limit: 50,
-        includeFlightCounts: true,
-      );
-
-      if (mounted) {
-        setState(() {
-          _sites = result.sites;
-          _isLoadingSites = false;
-        });
-
-        // Mark these bounds as loaded to prevent duplicate requests
-        _lastLoadedBoundsKey = boundsKey;
-
-        LoggingService.info('EditSiteScreen: Loaded ${result.sites.length} sites (${result.sitesWithFlights.length} with flights, ${result.sitesWithoutFlights.length} without)');
-      }
-    } catch (e) {
-      LoggingService.error('EditSiteScreen: Error loading sites', e);
-      if (mounted) {
-        setState(() {
-          _isLoadingSites = false;
-        });
-      }
-    }
+    // Use MapBoundsManager for immediate loading (called from onMapReady)
+    MapBoundsManager.instance.loadSitesForBoundsDebounced(
+      context: 'edit_site',
+      bounds: bounds,
+      siteLimit: 50,
+      includeFlightCounts: true,
+      onLoaded: (result) {
+        if (mounted) {
+          setState(() {
+            _sites = result.sites;
+            _isLoadingSites = false;
+          });
+          LoggingService.info('EditSiteScreen: Loaded ${result.sites.length} sites (${result.sitesWithFlights.length} with flights, ${result.sitesWithoutFlights.length} without)');
+        }
+      },
+    );
   }
 
 
   /// Clear cache keys to force refresh of map data
   void _clearMapDataCache() {
-    _lastLoadedBoundsKey = null;
-    _lastLoadedLaunchesBoundsKey = null;
-    // No cache to clear anymore - V2 doesn't use caching
+    MapBoundsManager.instance.clearCache();
+    MapBoundsManager.instance.clearLaunchCache();
   }
   
   
 
-  /// Load all launches in the current viewport bounds
+  /// Load all launches in the current viewport bounds with debouncing
   Future<void> _loadAllLaunchesInBounds(LatLngBounds bounds) async {
-    // Create a unique key for these bounds to prevent duplicate requests
-    final boundsKey = '${bounds.north.toStringAsFixed(6)}_${bounds.south.toStringAsFixed(6)}_${bounds.east.toStringAsFixed(6)}_${bounds.west.toStringAsFixed(6)}';
-    if (_lastLoadedLaunchesBoundsKey == boundsKey) {
-      return; // Same bounds already loaded
-    }
-    
-    try {
-      final launches = await _databaseService.getAllLaunchesInBounds(
-        north: bounds.north,
-        south: bounds.south,
-        east: bounds.east,
-        west: bounds.west,
-      );
-      
-      if (mounted) {
-        setState(() {
-          _launches = launches;
-        });
-        
-        // Mark these bounds as loaded to prevent duplicate requests
-        _lastLoadedLaunchesBoundsKey = boundsKey;
-        LoggingService.info('EditSiteScreen: Loaded ${launches.length} launches in viewport');
-      }
-    } catch (e) {
-      LoggingService.error('EditSiteScreen: Error loading launches in bounds', e);
-    }
+    // Use MapBoundsManager for debounced loading with caching
+    await MapBoundsManager.instance.loadLaunchesForBoundsDebounced(
+      context: 'edit_site',
+      bounds: bounds,
+      onLoaded: (result) {
+        if (mounted) {
+          setState(() {
+            _launches = result.launches;
+          });
+        }
+        LoggingService.info('EditSiteScreen: Loaded ${result.launches.length} launches in viewport');
+      },
+    );
   }
 
 
@@ -1046,9 +1004,15 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           customName: true, // Mark as custom since user edited it
         );
         
-        await _databaseService.updateSite(updatedSite);
-        
-        LoggingService.info('EditSiteScreen: Updated site ${updatedSite.id}: ${updatedSite.name}');
+        // Only update if site has an ID (not a new unsaved site)
+        if (updatedSite.id != null) {
+          await _databaseService.updateSite(updatedSite);
+          LoggingService.info('EditSiteScreen: Updated site ${updatedSite.id}: ${updatedSite.name}');
+        } else {
+          // For new sites without ID, insert instead of update
+          final newSiteId = await _databaseService.insertSite(updatedSite);
+          LoggingService.info('EditSiteScreen: Created new site with ID $newSiteId: ${updatedSite.name}');
+        }
         
         // Show success message
         if (mounted) {
@@ -1208,6 +1172,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       if (site.hasFlights) {
         // Convert ParaglidingSite back to Site for local site handling
         final localSite = Site(
+          id: site.id,  // CRITICAL: Preserve the ID for merge operations
           name: site.name,
           latitude: site.latitude,
           longitude: site.longitude,
@@ -1231,7 +1196,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     
     return DragMarker(
       point: LatLng(site.latitude, site.longitude),
-      size: const Size(140, 80), // Use shared marker container size
+      size: const Size(140, 85), // Increased height to prevent overflow
       offset: const Offset(0, -_siteMarkerSize / 2),
       dragOffset: const Offset(0, -40), // Move marker well above finger during drag
       onTap: (point) => _isMergeMode ? _handleMergeTarget(site) : _enterMergeMode(site),
@@ -1278,8 +1243,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                   _currentlyDraggedSite!.id != site.id)
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 300),
-                  width: _siteMarkerSize + 12,
-                  height: _siteMarkerSize + 12,
+                  width: _siteMarkerSize + 8,
+                  height: _siteMarkerSize + 8,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.blue, width: 4),
@@ -1307,7 +1272,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     
     return DragMarker(
       point: LatLng(site.latitude, site.longitude),
-      size: const Size(140, 80), // Use shared marker container size
+      size: const Size(140, 85), // Increased height to prevent overflow
       offset: const Offset(0, -_siteMarkerSize / 2),
       disableDrag: true, // Cannot drag API sites, only drop onto them
       onTap: (point) => _isMergeMode ? _handleMergeIntoApiSite(site) : null,
@@ -1336,8 +1301,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
               if (_currentlyDraggedSite != null && _hoveredTargetSite == site)
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 300),
-                  width: _siteMarkerSize + 12,
-                  height: _siteMarkerSize + 12,
+                  width: _siteMarkerSize + 8,
+                  height: _siteMarkerSize + 8,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.green, width: 4),
@@ -1494,6 +1459,20 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
   /// Merge flown site into another flown site
   Future<void> _mergeFlownIntoFlownSite(Site sourceSite, Site targetSite) async {
+    // Ensure both sites have IDs
+    if (sourceSite.id == null || targetSite.id == null) {
+      LoggingService.error('EditSiteScreen: Cannot merge sites without IDs', null);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cannot merge sites: Site IDs not found'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
     // Get the flights that will be affected
     final affectedFlights = await _databaseService.getFlightsBySite(sourceSite.id!);
     
@@ -1575,6 +1554,20 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
   /// Merge flown site into an API site
   Future<void> _mergeFlownIntoApiSite(Site sourceSite, ParaglidingSite apiSite) async {
+    // Ensure source site has an ID
+    if (sourceSite.id == null) {
+      LoggingService.error('EditSiteScreen: Cannot merge site without ID', null);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cannot merge site: Site ID not found'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
     // Get the flights that will be affected
     final affectedFlights = await _databaseService.getFlightsBySite(sourceSite.id!);
     

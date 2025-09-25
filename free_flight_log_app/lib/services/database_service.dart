@@ -599,40 +599,63 @@ class DatabaseService {
     );
     return List.generate(maps.length, (i) => Site.fromMap(maps[i]));
   }
-  
-  /// Get all sites within a bounding box
-  Future<List<Site>> getSitesInBounds({
+
+  /// Optimized method to get sites with flight counts in a single query
+  /// Uses LEFT JOIN to avoid N+1 query problem
+  Future<Map<Site, int>> getSitesInBoundsWithFlightCounts({
     required double north,
     required double south,
     required double east,
     required double west,
   }) async {
     Database db = await _databaseHelper.database;
-    
+
     // Handle date line crossing
     String longitudeCondition;
     List<dynamic> whereArgs;
-    
+
     if (west > east) {
       // Crosses date line
-      longitudeCondition = '(longitude >= ? OR longitude <= ?)';
+      longitudeCondition = '(s.longitude >= ? OR s.longitude <= ?)';
       whereArgs = [south, north, west, east];
     } else {
       // Normal case
-      longitudeCondition = '(longitude >= ? AND longitude <= ?)';
+      longitudeCondition = '(s.longitude >= ? AND s.longitude <= ?)';
       whereArgs = [south, north, west, east];
     }
-    
-    List<Map<String, dynamic>> maps = await db.query(
-      'sites',
-      where: 'latitude >= ? AND latitude <= ? AND $longitudeCondition',
-      whereArgs: whereArgs,
-      orderBy: 'name ASC',
+
+    // Use raw query with LEFT JOIN to get sites and flight counts in one query
+    final query = '''
+      SELECT
+        s.*,
+        COUNT(f.id) as flight_count
+      FROM sites s
+      LEFT JOIN flights f ON s.id = f.launch_site_id
+      WHERE s.latitude >= ? AND s.latitude <= ? AND $longitudeCondition
+      GROUP BY s.id
+      ORDER BY s.name ASC
+    ''';
+
+    final stopwatch = Stopwatch()..start();
+    List<Map<String, dynamic>> results = await db.rawQuery(query, whereArgs);
+    stopwatch.stop();
+
+    final sitesWithCounts = <Site, int>{};
+    for (final row in results) {
+      // Extract site data (remove the flight_count field)
+      final siteMap = Map<String, dynamic>.from(row)..remove('flight_count');
+      final site = Site.fromMap(siteMap);
+      final flightCount = row['flight_count'] as int? ?? 0;
+      sitesWithCounts[site] = flightCount;
+    }
+
+    LoggingService.performance(
+      'Optimized sites query',
+      Duration(milliseconds: stopwatch.elapsedMilliseconds),
+      'Found ${sitesWithCounts.length} sites with flight counts in single query',
     );
-    
-    final sites = List.generate(maps.length, (i) => Site.fromMap(maps[i]));
-    LoggingService.debug('DatabaseService: Found ${sites.length} sites in bounds');
-    return sites;
+
+    return sitesWithCounts;
   }
 
   Future<Site?> getSite(int id) async {
