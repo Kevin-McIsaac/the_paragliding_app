@@ -94,7 +94,11 @@ class SiteBoundsLoaderV2 {
             : 0;
 
         // Create enriched ParaglidingSite with flight data
-        enrichedSites.add(pgeSite.copyWith(flightCount: flightCount));
+        // PGE sites are never from local DB, even if they match a local site
+        enrichedSites.add(pgeSite.copyWith(
+          flightCount: flightCount,
+          isFromLocalDb: false,  // PGE sites always marked as non-local
+        ));
       }
 
       // Add local-only sites (sites with flights but not in PGE database)
@@ -113,6 +117,7 @@ class SiteBoundsLoaderV2 {
             country: localSite.country,
             siteType: 'launch', // Default for local sites
             flightCount: flightCount,
+            isFromLocalDb: true,  // Mark as local database site
           ));
           processedLocations.add(locationKey); // Track to prevent coord duplicates
         }

@@ -15,6 +15,7 @@ class ParaglidingSite {
   final String? region;
   final double? popularity; // Calculated popularity score
   final int flightCount; // Number of flights from local database
+  final bool isFromLocalDb; // True if site exists in local database
 
   const ParaglidingSite({
     this.id,
@@ -30,6 +31,7 @@ class ParaglidingSite {
     this.region,
     this.popularity,
     this.flightCount = 0,
+    this.isFromLocalDb = false,
   });
 
   // Computed properties
@@ -200,6 +202,7 @@ class ParaglidingSite {
     String? region,
     double? popularity,
     int? flightCount,
+    bool? isFromLocalDb,
   }) {
     return ParaglidingSite(
       id: id ?? this.id,
@@ -215,6 +218,7 @@ class ParaglidingSite {
       region: region ?? this.region,
       popularity: popularity ?? this.popularity,
       flightCount: flightCount ?? this.flightCount,
+      isFromLocalDb: isFromLocalDb ?? this.isFromLocalDb,
     );
   }
 }
