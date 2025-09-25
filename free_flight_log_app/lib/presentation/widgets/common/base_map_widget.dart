@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../data/models/paragliding_site.dart';
 import '../../../services/map_bounds_manager.dart';
 import '../../../services/logging_service.dart';
+import '../../../utils/airspace_overlay_manager.dart';
 import '../../../utils/map_provider.dart';
 import '../../../utils/map_tile_provider.dart';
 import '../../../utils/site_marker_utils.dart';
@@ -47,6 +48,12 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
   Timer? _loadingDelayTimer;
   bool _showLoadingIndicator = false;
 
+  // Airspace overlay state (optional)
+  List<Widget> _airspaceLayers = [];
+  bool _isLoadingAirspace = false;
+  final AirspaceOverlayManager _airspaceManager = AirspaceOverlayManager.instance;
+  Timer? _airspaceLoadingTimer;
+
   // Common UI constants
   static const BoxShadow standardElevatedShadow = BoxShadow(
     color: Colors.black26,
@@ -71,6 +78,11 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
   // Allow subclasses to customize bounds loading
   bool get loadSitesOnBoundsChange => true;
 
+  // Airspace configuration (subclasses can enable)
+  bool get enableAirspace => false;
+  double get maxAltitudeFt => 10000.0;
+  void onAirspaceLoaded(List<Widget> layers) {}
+
   MapController get mapController => _mapController;
   MapProvider get selectedMapProvider => _selectedMapProvider;
   List<ParaglidingSite> get sites => _sites;
@@ -89,6 +101,7 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
   @override
   void dispose() {
     _loadingDelayTimer?.cancel();
+    _airspaceLoadingTimer?.cancel();
     if (widget.mapController == null) {
       _mapController.dispose();
     }
@@ -189,9 +202,14 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
   void handleMapReady() {
     onMapReady();
 
+    final bounds = _mapController.camera.visibleBounds;
+
     if (loadSitesOnBoundsChange) {
-      final bounds = _mapController.camera.visibleBounds;
       loadSitesForBounds(bounds);
+    }
+
+    if (enableAirspace) {
+      loadAirspaceLayers(bounds);
     }
   }
 
@@ -200,9 +218,8 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
     // Enforce zoom limits
     enforceZoomLimits();
 
-    // React to movement and zoom events to reload sites
-    if (loadSitesOnBoundsChange &&
-        (event is MapEventMoveEnd ||
+    // React to movement and zoom events to reload sites and airspace
+    if ((event is MapEventMoveEnd ||
          event is MapEventFlingAnimationEnd ||
          event is MapEventDoubleTapZoomEnd ||
          event is MapEventScrollWheelZoom)) {
@@ -211,10 +228,17 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
     }
   }
 
-  /// Update map bounds and load sites
+  /// Update map bounds and load sites/airspace
   void updateMapBounds() {
     final bounds = _mapController.camera.visibleBounds;
-    loadSitesForBounds(bounds);
+
+    if (loadSitesOnBoundsChange) {
+      loadSitesForBounds(bounds);
+    }
+
+    if (enableAirspace) {
+      loadAirspaceLayers(bounds);
+    }
   }
 
   /// Load sites for the given bounds using MapBoundsManager
@@ -253,6 +277,48 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
         }
       },
     );
+  }
+
+  /// Load airspace overlay layers if enabled
+  Future<void> loadAirspaceLayers(LatLngBounds bounds) async {
+    if (!enableAirspace || _isLoadingAirspace) return;
+
+    setState(() => _isLoadingAirspace = true);
+
+    try {
+      final center = LatLng(
+        (bounds.south + bounds.north) / 2,
+        (bounds.west + bounds.east) / 2,
+      );
+      final zoom = _mapController.camera.zoom;
+
+      final layers = await _airspaceManager.buildEnabledOverlayLayers(
+        center: center,
+        zoom: zoom,
+        visibleBounds: bounds,
+        maxAltitudeFt: maxAltitudeFt,
+      );
+
+      if (mounted) {
+        setState(() {
+          _airspaceLayers = layers;
+          _isLoadingAirspace = false;
+        });
+
+        LoggingService.info('$mapContext: Loaded ${layers.length} airspace layers');
+
+        // Notify subclass
+        onAirspaceLoaded(layers);
+      }
+    } catch (e) {
+      LoggingService.error('$mapContext: Error loading airspace layers', e);
+      if (mounted) {
+        setState(() {
+          _isLoadingAirspace = false;
+          _airspaceLayers = [];
+        });
+      }
+    }
   }
 
   /// Get the appropriate icon for a map provider
@@ -373,6 +439,11 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
         SiteMarkerUtils.newSiteColor,
         'New Sites'
       ),
+      // Add airspace legend items if enabled
+      if (enableAirspace && _airspaceLayers.isNotEmpty) ...[
+        const SizedBox(height: 4),
+        ...SiteMarkerUtils.buildAirspaceLegendItems(),
+      ],
       // Add subclass-specific legend items
       ...buildAdditionalLegendItems(),
     ];
@@ -435,6 +506,8 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
           ),
           children: [
             buildTileLayer(),
+            // Add airspace layers before site markers
+            if (enableAirspace) ..._airspaceLayers,
             ...buildAdditionalLayers(),
           ],
         ),
