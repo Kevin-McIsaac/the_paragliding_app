@@ -916,55 +916,20 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     }
   }
 
-  /// Handle API site click - create local site first, then edit
+  /// Handle API site click - show edit dialog, only save if user confirms
   Future<void> _handleApiSiteClick(ParaglidingSite apiSite) async {
-    try {
-      // Create a new local site from the API site data
-      final newSite = Site(
-        name: apiSite.name,
-        latitude: apiSite.latitude,
-        longitude: apiSite.longitude,
-        altitude: apiSite.altitude?.toDouble(),
-        country: apiSite.country,
-        customName: false, // Mark as not custom since from API
-      );
-      
-      final newSiteId = await _databaseService.insertSite(newSite);
-      final createdSite = newSite.copyWith(id: newSiteId);
-      
-      LoggingService.info('EditSiteScreen: Created local site from API site: ${createdSite.name}');
-      
-      // Find and reassign nearby launches, just like clicking on empty map area
-      final sitePoint = LatLng(apiSite.latitude, apiSite.longitude);
-      final launchesNearby = _findLaunchesWithinRadius(sitePoint, _launchRadiusMeters);
-      final eligibleLaunches = _filterLaunchesCloserToPoint(launchesNearby, sitePoint);
-      
-      // Reassign eligible flights if any
-      if (eligibleLaunches.isNotEmpty) {
-        final flightIds = eligibleLaunches.map((f) => f.id!).toList();
-        await _databaseService.bulkUpdateFlightSites(flightIds, newSiteId);
-        LoggingService.info('EditSiteScreen: Reassigned ${flightIds.length} flights from API site "${apiSite.name}" to new local site');
-      }
-      
-      // Refresh the map to show the new local site
-      if (mounted) {
-        _clearMapDataCache();
-        _updateMapBounds();
-        
-        // Now open the edit dialog for the newly created site
-        await _showSiteEditDialog(createdSite);
-      }
-    } catch (e) {
-      LoggingService.error('EditSiteScreen: Error creating site from API site', e);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error creating site: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
-    }
+    // Convert PGE site to temporary local site (no ID = not saved yet)
+    final tempSite = Site(
+      name: apiSite.name,
+      latitude: apiSite.latitude,
+      longitude: apiSite.longitude,
+      altitude: apiSite.altitude?.toDouble(),
+      country: apiSite.country,
+      customName: false,
+    );
+
+    // Show dialog - it will handle saving if user confirms
+    await _showSiteEditDialog(tempSite);
   }
 
   /// Create the new site and reassign eligible flights

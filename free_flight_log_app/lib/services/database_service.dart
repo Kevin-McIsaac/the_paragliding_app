@@ -624,13 +624,15 @@ class DatabaseService {
       whereArgs = [south, north, west, east];
     }
 
-    // Use raw query with LEFT JOIN to get sites and flight counts in one query
+    // Use raw query with LEFT JOINs to get sites, flight counts, and country names in one query
     final query = '''
       SELECT
         s.*,
+        COALESCE(cc.name, UPPER(s.country)) as country_name,
         COUNT(f.id) as flight_count
       FROM sites s
       LEFT JOIN flights f ON s.id = f.launch_site_id
+      LEFT JOIN country_codes cc ON UPPER(s.country) = cc.code
       WHERE s.latitude >= ? AND s.latitude <= ? AND $longitudeCondition
       GROUP BY s.id
       ORDER BY s.name ASC
@@ -642,8 +644,16 @@ class DatabaseService {
 
     final sitesWithCounts = <Site, int>{};
     for (final row in results) {
-      // Extract site data (remove the flight_count field)
-      final siteMap = Map<String, dynamic>.from(row)..remove('flight_count');
+      // Extract site data (remove the flight_count and country_name fields)
+      final siteMap = Map<String, dynamic>.from(row)
+        ..remove('flight_count')
+        ..remove('country_name');
+
+      // Use country_name if available, otherwise use the original country code
+      if (row['country_name'] != null) {
+        siteMap['country'] = row['country_name'];
+      }
+
       final site = Site.fromMap(siteMap);
       final flightCount = row['flight_count'] as int? ?? 0;
       sitesWithCounts[site] = flightCount;
