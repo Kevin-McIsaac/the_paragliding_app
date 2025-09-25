@@ -241,31 +241,35 @@ class PgeSitesDownloadService {
       final decompressedBytes = gzip.decode(compressedBytes);
       final csvContent = utf8.decode(decompressedBytes);
 
-      // Parse CSV manually (format: id,name,lng,lat,N,NE,E,SE,S,SW,W,NW)
+      // Parse CSV manually (format: id,name,lng,lat,altitude,country,N,NE,E,SE,S,SW,W,NW)
       final lines = csvContent.trim().split('\n');
       final sites = <Map<String, dynamic>>[];
 
       for (final line in lines) {
         if (line.trim().isEmpty) continue;
+        // Skip header row if present
+        if (line.startsWith('id,')) continue;
 
         try {
           // Parse CSV line (handle quoted fields)
           final fields = _parseCsvLine(line);
 
-          if (fields.length >= 12) {
+          if (fields.length >= 14) {
             sites.add({
               'id': int.tryParse(fields[0]) ?? 0,
               'name': fields[1].replaceAll('"', ''),
               'longitude': double.tryParse(fields[2]) ?? 0.0,
               'latitude': double.tryParse(fields[3]) ?? 0.0,
-              'wind_n': int.tryParse(fields[4]) ?? 0,
-              'wind_ne': int.tryParse(fields[5]) ?? 0,
-              'wind_e': int.tryParse(fields[6]) ?? 0,
-              'wind_se': int.tryParse(fields[7]) ?? 0,
-              'wind_s': int.tryParse(fields[8]) ?? 0,
-              'wind_sw': int.tryParse(fields[9]) ?? 0,
-              'wind_w': int.tryParse(fields[10]) ?? 0,
-              'wind_nw': int.tryParse(fields[11]) ?? 0,
+              'altitude': int.tryParse(fields[4]) ?? null,  // altitude as INTEGER
+              'country': fields[5].replaceAll('"', ''),  // country code
+              'wind_n': int.tryParse(fields[6]) ?? 0,
+              'wind_ne': int.tryParse(fields[7]) ?? 0,
+              'wind_e': int.tryParse(fields[8]) ?? 0,
+              'wind_se': int.tryParse(fields[9]) ?? 0,
+              'wind_s': int.tryParse(fields[10]) ?? 0,
+              'wind_sw': int.tryParse(fields[11]) ?? 0,
+              'wind_w': int.tryParse(fields[12]) ?? 0,
+              'wind_nw': int.tryParse(fields[13]) ?? 0,
             });
           }
         } catch (e) {

@@ -1476,13 +1476,13 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     
     if (confirmed == true && mounted) {
       try {
-        // Create the API site in database
+        // Create the API site in database, preserving source site metadata if API site lacks it
         final newSite = Site(
           name: apiSite.name,
           latitude: apiSite.latitude,
           longitude: apiSite.longitude,
-          altitude: apiSite.altitude?.toDouble(),
-          country: apiSite.country,
+          altitude: apiSite.altitude?.toDouble() ?? sourceSite.altitude,  // Preserve source altitude if API lacks it
+          country: apiSite.country ?? sourceSite.country,  // Preserve source country if API lacks it
           customName: false, // Mark as not custom since from API
         );
         

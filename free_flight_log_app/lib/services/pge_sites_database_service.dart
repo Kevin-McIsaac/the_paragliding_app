@@ -29,6 +29,8 @@ class PgeSitesDatabaseService {
           name TEXT NOT NULL,
           longitude REAL NOT NULL,
           latitude REAL NOT NULL,
+          altitude INTEGER,
+          country TEXT,
 
           -- Wind direction ratings (0=no good, 1=good, 2=excellent)
           wind_n INTEGER DEFAULT 0,
@@ -111,12 +113,14 @@ class PgeSitesDatabaseService {
         final batch = txn.batch();
 
         for (final siteData in sitesData) {
-          // Map CSV data directly to database fields (schema now matches CSV)
+          // Map CSV data directly to database fields (schema now includes altitude and country)
           final dbData = {
             'id': siteData['id'],
             'name': siteData['name'],
             'longitude': siteData['longitude'],
             'latitude': siteData['latitude'],
+            'altitude': siteData['altitude'],  // New field
+            'country': siteData['country'],    // New field
             'wind_n': siteData['wind_n'] ?? 0,
             'wind_ne': siteData['wind_ne'] ?? 0,
             'wind_e': siteData['wind_e'] ?? 0,
@@ -448,12 +452,12 @@ class PgeSitesDatabaseService {
       name: row['name'] as String? ?? 'Unknown Site',
       latitude: (row['latitude'] as num?)?.toDouble() ?? 0.0,
       longitude: (row['longitude'] as num?)?.toDouble() ?? 0.0,
-      altitude: null, // No longer stored in simplified schema
-      description: '', // No longer stored in simplified schema
+      altitude: row['altitude'] as int?,  // Now stored in database
+      description: '', // Not available from PGE API
       windDirections: windDirections,
       siteType: 'launch', // PGE sites are primarily launch sites
       rating: null,
-      country: null, // No longer stored in simplified schema
+      country: row['country'] as String?,  // Now stored in database
       region: null,
       popularity: null,
     );
