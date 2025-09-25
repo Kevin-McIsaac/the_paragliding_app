@@ -858,149 +858,21 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
   /// Show site edit dialog for any site (current, local, or newly created)
   Future<void> _showSiteEditDialog(Site site) async {
-    final nameController = TextEditingController(text: site.name);
-    final latitudeController = TextEditingController(text: site.latitude.toString());
-    final longitudeController = TextEditingController(text: site.longitude.toString());
-    final altitudeController = TextEditingController(text: site.altitude?.toString() ?? '');
-    final countryController = TextEditingController(text: site.country ?? '');
-    
-    final formKey = GlobalKey<FormState>();
-    
-    final result = await showDialog<bool>(
+    final result = await showDialog<Map<String, dynamic>?>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Edit Site'),
-        content: SizedBox(
-          width: 400,
-          child: Form(
-            key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Site Name',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.location_on),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please enter a site name';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: latitudeController,
-                        decoration: const InputDecoration(
-                          labelText: 'Latitude',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.location_searching),
-                        ),
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Required';
-                          }
-                          final lat = double.tryParse(value);
-                          if (lat == null || lat < -90 || lat > 90) {
-                            return 'Invalid latitude';
-                          }
-                          return null;
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: TextFormField(
-                        controller: longitudeController,
-                        decoration: const InputDecoration(
-                          labelText: 'Longitude',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.explore),
-                        ),
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Required';
-                          }
-                          final lon = double.tryParse(value);
-                          if (lon == null || lon < -180 || lon > 180) {
-                            return 'Invalid longitude';
-                          }
-                          return null;
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: altitudeController,
-                  decoration: const InputDecoration(
-                    labelText: 'Altitude (meters)',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.terrain),
-                  ),
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  validator: (value) {
-                    if (value != null && value.isNotEmpty) {
-                      final altitude = double.tryParse(value);
-                      if (altitude == null) {
-                        return 'Invalid altitude';
-                      }
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: countryController,
-                  decoration: const InputDecoration(
-                    labelText: 'Country',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.flag),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (formKey.currentState!.validate()) {
-                Navigator.of(context).pop(true);
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+      barrierDismissible: false,
+      builder: (context) => EditSiteDialog(site: site),
     );
-    
-    if (result == true && mounted) {
+
+    if (result != null && mounted) {
       try {
-        // Update the site with new data
+        // Update the site with new data from dialog
         final updatedSite = site.copyWith(
-          name: nameController.text.trim(),
-          latitude: double.parse(latitudeController.text.trim()),
-          longitude: double.parse(longitudeController.text.trim()),
-          altitude: altitudeController.text.trim().isEmpty 
-              ? null 
-              : double.parse(altitudeController.text.trim()),
-          country: countryController.text.trim().isEmpty 
-              ? null 
-              : countryController.text.trim(),
+          name: result['name'] as String,
+          latitude: result['latitude'] as double,
+          longitude: result['longitude'] as double,
+          altitude: result['altitude'] as double?,
+          country: result['country'] as String?,
           customName: true, // Mark as custom since user edited it
         );
         
@@ -1042,64 +914,22 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         }
       }
     }
-    
-    // Clean up controllers
-    nameController.dispose();
-    latitudeController.dispose();
-    longitudeController.dispose();
-    altitudeController.dispose();
-    countryController.dispose();
   }
 
-  /// Handle API site click - create local site first, then edit
+  /// Handle API site click - show edit dialog, only save if user confirms
   Future<void> _handleApiSiteClick(ParaglidingSite apiSite) async {
-    try {
-      // Create a new local site from the API site data
-      final newSite = Site(
-        name: apiSite.name,
-        latitude: apiSite.latitude,
-        longitude: apiSite.longitude,
-        altitude: apiSite.altitude?.toDouble(),
-        country: apiSite.country,
-        customName: false, // Mark as not custom since from API
-      );
-      
-      final newSiteId = await _databaseService.insertSite(newSite);
-      final createdSite = newSite.copyWith(id: newSiteId);
-      
-      LoggingService.info('EditSiteScreen: Created local site from API site: ${createdSite.name}');
-      
-      // Find and reassign nearby launches, just like clicking on empty map area
-      final sitePoint = LatLng(apiSite.latitude, apiSite.longitude);
-      final launchesNearby = _findLaunchesWithinRadius(sitePoint, _launchRadiusMeters);
-      final eligibleLaunches = _filterLaunchesCloserToPoint(launchesNearby, sitePoint);
-      
-      // Reassign eligible flights if any
-      if (eligibleLaunches.isNotEmpty) {
-        final flightIds = eligibleLaunches.map((f) => f.id!).toList();
-        await _databaseService.bulkUpdateFlightSites(flightIds, newSiteId);
-        LoggingService.info('EditSiteScreen: Reassigned ${flightIds.length} flights from API site "${apiSite.name}" to new local site');
-      }
-      
-      // Refresh the map to show the new local site
-      if (mounted) {
-        _clearMapDataCache();
-        _updateMapBounds();
-        
-        // Now open the edit dialog for the newly created site
-        await _showSiteEditDialog(createdSite);
-      }
-    } catch (e) {
-      LoggingService.error('EditSiteScreen: Error creating site from API site', e);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error creating site: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
-    }
+    // Convert PGE site to temporary local site (no ID = not saved yet)
+    final tempSite = Site(
+      name: apiSite.name,
+      latitude: apiSite.latitude,
+      longitude: apiSite.longitude,
+      altitude: apiSite.altitude?.toDouble(),
+      country: apiSite.country,
+      customName: false,
+    );
+
+    // Show dialog - it will handle saving if user confirms
+    await _showSiteEditDialog(tempSite);
   }
 
   /// Create the new site and reassign eligible flights
@@ -1169,7 +999,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
 
     // Build markers from unified sites
     for (final site in _sites) {
-      if (site.hasFlights) {
+      if (site.isFromLocalDb) {
         // Convert ParaglidingSite back to Site for local site handling
         final localSite = Site(
           id: site.id,  // CRITICAL: Preserve the ID for merge operations
@@ -1181,7 +1011,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
         );
         dragMarkers.add(_buildLocalSiteDragMarker(localSite, site.flightCount));
       } else {
-        // Already a ParaglidingSite - use directly
+        // PGE API site - not in local database
         dragMarkers.add(_buildApiSiteDragMarker(site));
       }
     }
@@ -1199,8 +1029,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       size: const Size(140, 85), // Increased height to prevent overflow
       offset: const Offset(0, -_siteMarkerSize / 2),
       dragOffset: const Offset(0, -40), // Move marker well above finger during drag
-      onTap: (point) => _isMergeMode ? _handleMergeTarget(site) : _enterMergeMode(site),
-      onLongPress: (point) => _isMergeMode ? null : _showSiteEditDialog(site),
+      onTap: (point) => _isMergeMode ? _handleMergeTarget(site) : _showSiteEditDialog(site),
+      onLongPress: (point) => _isMergeMode ? null : _enterMergeMode(site),
       onDragStart: (details, point) {
         setState(() {
           _currentlyDraggedSite = site;
@@ -1275,8 +1105,8 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       size: const Size(140, 85), // Increased height to prevent overflow
       offset: const Offset(0, -_siteMarkerSize / 2),
       disableDrag: true, // Cannot drag API sites, only drop onto them
-      onTap: (point) => _isMergeMode ? _handleMergeIntoApiSite(site) : null,
-      onLongPress: (point) => _isMergeMode ? null : _handleApiSiteClick(site),
+      onTap: (point) => _isMergeMode ? _handleMergeIntoApiSite(site) : _handleApiSiteClick(site),
+      onLongPress: (point) => null, // API sites don't support long-press merge initiation
       builder: (ctx, point, isDragging) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1415,9 +1245,10 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       final distance = (dropPixel - sitePixel).distance;
       if (distance <= hitRadius) {
         // Return the appropriate site type
-        if (unifiedSite.hasFlights) {
+        if (unifiedSite.isFromLocalDb) {
           // Convert back to Site for local sites
           return Site(
+            id: unifiedSite.id,  // CRITICAL: Preserve ID for merge operations
             name: unifiedSite.name,
             latitude: unifiedSite.latitude,
             longitude: unifiedSite.longitude,
@@ -1425,7 +1256,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
             country: unifiedSite.country,
           );
         } else {
-          // Already a ParaglidingSite
+          // PGE API site - not in local database
           return unifiedSite;
         }
       }
@@ -1610,13 +1441,13 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     
     if (confirmed == true && mounted) {
       try {
-        // Create the API site in database
+        // Create the API site in database, preserving source site metadata if API site lacks it
         final newSite = Site(
           name: apiSite.name,
           latitude: apiSite.latitude,
           longitude: apiSite.longitude,
-          altitude: apiSite.altitude?.toDouble(),
-          country: apiSite.country,
+          altitude: apiSite.altitude?.toDouble() ?? sourceSite.altitude,  // Preserve source altitude if API lacks it
+          country: apiSite.country ?? sourceSite.country,  // Preserve source country if API lacks it
           customName: false, // Mark as not custom since from API
         );
         
@@ -1951,3 +1782,194 @@ class _HelpItem extends StatelessWidget {
   }
 }
 
+
+
+/// Edit Site Dialog - Properly manages TextEditingController lifecycle
+class EditSiteDialog extends StatefulWidget {
+  final Site site;
+
+  const EditSiteDialog({
+    Key? key,
+    required this.site,
+  }) : super(key: key);
+
+  @override
+  State<EditSiteDialog> createState() => _EditSiteDialogState();
+}
+
+class _EditSiteDialogState extends State<EditSiteDialog> {
+  late final TextEditingController _nameController;
+  late final TextEditingController _latitudeController;
+  late final TextEditingController _longitudeController;
+  late final TextEditingController _altitudeController;
+  late final TextEditingController _countryController;
+  final _formKey = GlobalKey<FormState>();
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.site.name);
+    _latitudeController = TextEditingController(text: widget.site.latitude.toString());
+    _longitudeController = TextEditingController(text: widget.site.longitude.toString());
+    _altitudeController = TextEditingController(text: widget.site.altitude?.toString() ?? '');
+    _countryController = TextEditingController(text: widget.site.country ?? '');
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _latitudeController.dispose();
+    _longitudeController.dispose();
+    _altitudeController.dispose();
+    _countryController.dispose();
+    super.dispose();
+  }
+
+  void _handleSave() {
+    if (_formKey.currentState!.validate() && !_isSaving) {
+      setState(() {
+        _isSaving = true;
+      });
+
+      // Return the values to the caller
+      final result = {
+        'name': _nameController.text.trim(),
+        'latitude': double.parse(_latitudeController.text.trim()),
+        'longitude': double.parse(_longitudeController.text.trim()),
+        'altitude': _altitudeController.text.trim().isEmpty
+            ? null
+            : double.parse(_altitudeController.text.trim()),
+        'country': _countryController.text.trim().isEmpty
+            ? null
+            : _countryController.text.trim(),
+      };
+
+      Navigator.of(context).pop(result);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Edit Site'),
+      content: SizedBox(
+        width: 400,
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: _nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Site Name',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.location_on),
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter a site name';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _latitudeController,
+                      decoration: const InputDecoration(
+                        labelText: 'Latitude',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.location_searching),
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Required';
+                        }
+                        final lat = double.tryParse(value);
+                        if (lat == null || lat < -90 || lat > 90) {
+                          return 'Invalid latitude';
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _longitudeController,
+                      decoration: const InputDecoration(
+                        labelText: 'Longitude',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.explore),
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Required';
+                        }
+                        final lon = double.tryParse(value);
+                        if (lon == null || lon < -180 || lon > 180) {
+                          return 'Invalid longitude';
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _altitudeController,
+                decoration: const InputDecoration(
+                  labelText: 'Altitude (meters)',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.terrain),
+                ),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                validator: (value) {
+                  if (value != null && value.isNotEmpty) {
+                    final altitude = double.tryParse(value);
+                    if (altitude == null) {
+                      return 'Invalid altitude';
+                    }
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _countryController,
+                decoration: const InputDecoration(
+                  labelText: 'Country',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.flag),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isSaving ? null : () => Navigator.of(context).pop(null),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _isSaving ? null : _handleSave,
+          child: _isSaving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Save'),
+        ),
+      ],
+    );
+  }
+}

@@ -71,7 +71,7 @@ class _SiteManagementMapState extends BaseMapState<SiteManagementMap> {
           markers: widget.launches.map((launch) {
             final site = Site(
               id: launch.launchSiteId,
-              name: launch.launchSiteName,
+              name: launch.launchSiteName ?? 'Unknown Site',
               latitude: launch.launchLatitude!,
               longitude: launch.launchLongitude!,
             );

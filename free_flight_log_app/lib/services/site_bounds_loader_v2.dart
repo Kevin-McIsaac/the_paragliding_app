@@ -77,44 +77,44 @@ class SiteBoundsLoaderV2 {
         }
       }
 
-      // PGE-first approach: Start with PGE sites (which have wind directions) with FK enhancements
+      // Local-first approach: Prioritize local sites over PGE sites
       final enrichedSites = <ParaglidingSite>[];
       final processedLocations = <String>{};
 
-
-      // Process all PGE sites and enrich with flight data
-      for (final pgeSite in pgeSites) {
-        final locationKey = _getLocationKey(pgeSite.latitude, pgeSite.longitude);
-        processedLocations.add(locationKey);
-
-        // Find matching local site using FK-first approach, then coordinate fallback
-        final matchingLocalSite = _findMatchingLocalSiteByForeignKey(pgeSite, localSites);
-        final flightCount = matchingLocalSite != null
-            ? (flightCounts[matchingLocalSite.id] ?? 0)
-            : 0;
-
-        // Create enriched ParaglidingSite with flight data
-        enrichedSites.add(pgeSite.copyWith(flightCount: flightCount));
-      }
-
-      // Add local-only sites (sites with flights but not in PGE database)
+      // Process local sites FIRST - they take priority
       for (final localSite in localSites) {
         final locationKey = _getLocationKey(localSite.latitude, localSite.longitude);
-        if (!processedLocations.contains(locationKey)) {
-          final flightCount = flightCounts[localSite.id] ?? 0;
+        processedLocations.add(locationKey);
 
-          // Convert local Site to ParaglidingSite
-          enrichedSites.add(ParaglidingSite(
-            id: localSite.id,  // CRITICAL: Preserve site ID for operations
-            name: localSite.name,
-            latitude: localSite.latitude,
-            longitude: localSite.longitude,
-            altitude: localSite.altitude?.toInt(),
-            country: localSite.country,
-            siteType: 'launch', // Default for local sites
-            flightCount: flightCount,
+        final flightCount = flightCounts[localSite.id] ?? 0;
+
+        // Convert local Site to ParaglidingSite
+        enrichedSites.add(ParaglidingSite(
+          id: localSite.id,  // CRITICAL: Preserve site ID for operations
+          name: localSite.name,
+          latitude: localSite.latitude,
+          longitude: localSite.longitude,
+          altitude: localSite.altitude?.toInt(),
+          country: localSite.country,
+          siteType: 'launch', // Default for local sites
+          flightCount: flightCount,
+          isFromLocalDb: true,  // Mark as local database site
+        ));
+      }
+
+      // Add PGE sites that don't have local equivalents
+      for (final pgeSite in pgeSites) {
+        final locationKey = _getLocationKey(pgeSite.latitude, pgeSite.longitude);
+
+        // Skip PGE sites that have a local site at the same location
+        if (!processedLocations.contains(locationKey)) {
+          processedLocations.add(locationKey);
+
+          // PGE-only sites have no flight counts from local DB
+          enrichedSites.add(pgeSite.copyWith(
+            flightCount: 0,
+            isFromLocalDb: false,  // PGE sites always marked as non-local
           ));
-          processedLocations.add(locationKey); // Track to prevent coord duplicates
         }
       }
 
