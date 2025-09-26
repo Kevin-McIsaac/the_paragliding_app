@@ -454,6 +454,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     MapBoundsManager.instance.loadSitesForBoundsDebounced(
       context: 'nearby_sites',
       bounds: bounds,
+      zoomLevel: _mapController.camera.zoom,
       onLoaded: (result) {
         if (mounted) {
           setState(() {

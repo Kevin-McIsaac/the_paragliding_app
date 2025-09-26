@@ -11,8 +11,8 @@ class SiteMarkerUtils {
   static const double launchMarkerSize = 25.0;
   
   // Colors
-  static const Color flownSiteColor = Colors.blue;
-  static const Color newSiteColor = Colors.deepPurple;
+  static const Color flownSiteColor = Colors.green;
+  static const Color newSiteColor = Colors.blue;
   static const Color launchColor = Colors.green;
   static const Color landingColor = Colors.red;
   static const Color selectedPointColor = Colors.amber;

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:latlong2/latlong.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../services/logging_service.dart';
 import '../../utils/map_constants.dart';
+import '../../utils/site_marker_utils.dart';
 import 'common/base_map_widget.dart';
 import 'common/map_overlays.dart';
 import 'common/user_location_marker.dart';
@@ -158,17 +160,89 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     widget.onSiteSelected?.call(site);
   }
 
+  /// Build markers for clustering with site data preserved
+  List<Marker> _buildClusterableMarkers() {
+    return widget.sites.map((site) {
+      return Marker(
+        point: LatLng(site.latitude, site.longitude),
+        width: 140,
+        height: 80,
+        // Store site data in key for cluster color detection
+        key: ValueKey(site),
+        child: GestureDetector(
+          onTap: () => _onSiteMarkerTap(site),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SiteMarkerUtils.buildSiteMarkerIcon(
+                color: site.markerColor,
+              ),
+              SiteMarkerUtils.buildSiteLabel(
+                siteName: site.name,
+                flightCount: site.hasFlights ? site.flightCount : null,
+              ),
+            ],
+          ),
+        ),
+      );
+    }).toList();
+  }
+
+  /// Build cluster marker showing count with color based on content
+  Widget _buildClusterMarker(List<Marker> markers) {
+    final count = markers.length;
+    final displayText = count > 999 ? '999+' : count.toString();
+
+    // Check if any markers are flown sites (green)
+    final hasFlownSites = markers.any((marker) {
+      if (marker.key is ValueKey<ParaglidingSite>) {
+        final site = (marker.key as ValueKey<ParaglidingSite>).value;
+        return site.hasFlights;
+      }
+      return false;
+    });
+
+    // Use green for clusters with flown sites, blue for new sites only
+    final clusterColor = hasFlownSites ? Colors.green : Colors.blue;
+
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: clusterColor.withOpacity(0.9),
+        border: Border.all(color: Colors.white, width: 2),
+      ),
+      child: Center(
+        child: Text(
+          displayText,
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: count > 99 ? 10 : 12,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   List<Widget> buildAdditionalLayers() {
     final layers = <Widget>[];
 
-    // Site markers using the shared SiteMarkerLayer
+    // Site markers with clustering
     layers.add(
-      SiteMarkerLayer(
-        sites: widget.sites,
-        showFlightCounts: true,
-        onApiSiteClick: _onSiteMarkerTap,
-        onLocalSiteClick: _onSiteMarkerTap, // Pass the original ParaglidingSite directly
+      MarkerClusterLayerWidget(
+        options: MarkerClusterLayerOptions(
+          maxClusterRadius: 50,  // Reduced from 80 for less aggressive clustering
+          size: const Size(40, 40),
+          disableClusteringAtZoom: 14,  // Stop clustering at higher zoom levels
+          padding: const EdgeInsets.all(50), // Add padding when zooming to cluster bounds
+          spiderfyCluster: true,  // Show spider pattern for dense clusters
+          zoomToBoundsOnClick: true, // Zoom to bounds when cluster is clicked
+          markers: _buildClusterableMarkers(),
+          builder: (context, markers) => _buildClusterMarker(markers),
+        ),
       ),
     );
 

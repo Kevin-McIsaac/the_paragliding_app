@@ -40,8 +40,8 @@ class ParaglidingSite {
   // Helper to get marker color - moved from UnifiedSite
   Color get markerColor {
     return hasFlights
-        ? Colors.blue  // Blue for flown sites (sites with flights)
-        : Colors.deepPurple; // Deep purple for new sites (from PGE API)
+        ? Colors.green  // Green for flown sites (sites with flights)
+        : Colors.blue; // Blue for new sites (from PGE API)
   }
 
   /// Create from JSON (for loading from assets)
