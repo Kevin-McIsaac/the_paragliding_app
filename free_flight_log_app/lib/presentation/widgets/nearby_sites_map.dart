@@ -9,7 +9,6 @@ import '../../utils/site_marker_utils.dart';
 import 'common/base_map_widget.dart';
 import 'common/map_overlays.dart';
 import 'common/user_location_marker.dart';
-import 'common/site_marker_layer.dart';
 
 /// Clean implementation of nearby sites map using BaseMapWidget architecture
 /// Replaces the monolithic 1400+ line nearby_sites_map_widget.dart
@@ -46,8 +45,6 @@ class NearbySitesMap extends BaseMapWidget {
 }
 
 class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
-  ParaglidingSite? _selectedSite;
-
   @override
   String get mapProviderKey => 'nearby_sites_map_provider';
 
@@ -149,10 +146,10 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
 
   @override
   void onMapTap(TapPosition tapPosition, LatLng point) {
-    // Clear selection on map tap
-    setState(() {
-      _selectedSite = null;
-    });
+    LoggingService.info('NearbySitesMap: onMapTap called at ${point.latitude}, ${point.longitude}');
+
+    // Call parent to handle airspace interaction
+    super.onMapTap(tapPosition, point);
   }
 
   void _onSiteMarkerTap(ParaglidingSite site) {
@@ -210,7 +207,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
       height: 40,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: clusterColor.withOpacity(0.9),
+        color: clusterColor.withValues(alpha: 0.9),
         border: Border.all(color: Colors.white, width: 2),
       ),
       child: Center(
@@ -234,12 +231,12 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     layers.add(
       MarkerClusterLayerWidget(
         options: MarkerClusterLayerOptions(
-          maxClusterRadius: 50,  // Reduced from 80 for less aggressive clustering
+          maxClusterRadius: 50,
           size: const Size(40, 40),
-          disableClusteringAtZoom: 14,  // Stop clustering at higher zoom levels
-          padding: const EdgeInsets.all(50), // Add padding when zooming to cluster bounds
-          spiderfyCluster: true,  // Show spider pattern for dense clusters
-          zoomToBoundsOnClick: true, // Zoom to bounds when cluster is clicked
+          disableClusteringAtZoom: 14,
+          padding: const EdgeInsets.all(50),
+          spiderfyCluster: true,
+          zoomToBoundsOnClick: true,
           markers: _buildClusterableMarkers(),
           builder: (context, markers) => _buildClusterMarker(markers),
         ),
@@ -304,7 +301,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        buildMap(), // Use buildMap() from BaseMapState
+        buildMap(), // Use buildMap() which includes airspace popup
         ..._buildMapOverlays(),
       ],
     );

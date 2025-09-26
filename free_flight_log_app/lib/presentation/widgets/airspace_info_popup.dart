@@ -372,10 +372,10 @@ class _AirspaceInfoPopupState extends State<AirspaceInfoPopup> {
 
                 const SizedBox(width: 6),
 
-                // Altitude range and country
+                // Altitude range only (country removed)
                 Expanded(
                   child: Text(
-                    '${_formatAltitudeRangeWithUnits(airspace)} ${_getCountryName(airspace.country)}',
+                    _formatAltitudeRangeWithUnits(airspace),
                     style: TextStyle(
                       color: airspace.isCurrentlyFiltered
                         ? Colors.grey.withValues(alpha: 0.8)

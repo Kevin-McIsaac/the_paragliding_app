@@ -1027,21 +1027,14 @@ class AirspaceGeoJsonService {
       // Use cached AirspaceData from geometry (avoids redundant property parsing)
       final airspaceData = geometry.getAirspaceData();
 
-      // Delay LatLng conversion until after clipping if enabled
-      final List<LatLng> allPoints;
-      if (enableClipping) {
-        // For clipping, we'll convert after clipping operations are done
-        // Just use empty points for now, will be filled during clipping
-        allPoints = const [];
-      } else {
-        // No clipping - convert to LatLng immediately for direct display
-        final polygons = geometry.clipperData.toLatLngPolygons();
-        allPoints = polygons.isNotEmpty ? polygons.first : const [];
-      }
+      // Always convert to LatLng for identification purposes
+      // Even when clipping is enabled, we need the original polygon for tap detection
+      final polygons = geometry.clipperData.toLatLngPolygons();
+      final List<LatLng> allPoints = polygons.isNotEmpty ? polygons.first : const [];
 
       // Add to all identification polygons (for tooltip) - defer conversion
       // We'll use a placeholder and convert only when actually needed for identification
-      final identificationPoints = enableClipping ? const <LatLng>[] : allPoints;
+      final identificationPoints = allPoints;
 
       allIdentificationPolygons.add(AirspacePolygonData(
         points: identificationPoints,
@@ -1099,7 +1092,6 @@ class AirspaceGeoJsonService {
         pipelineMetrics.startStage('clipping');
 
         // Use optimized clipping if any geometry has ClipperData
-        final hasClipperData = geometries.any((g) => g.clipperData != null);
         final List<_ClippedPolygonData> clippedPolygons;
 
         // Always use optimized path with ClipperData

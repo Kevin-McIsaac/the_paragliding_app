@@ -229,14 +229,8 @@ class SiteMarkerUtils {
     // If visibleTypes is not provided, get from service (for backwards compatibility)
     final typesToShow = visibleTypes ?? airspaceService.visibleAirspaceTypes.map((type) => type.abbreviation).toSet();
 
-    // Define airspace type descriptions with detailed tooltips
+    // Define ICAO class descriptions only (removed airspace types)
     final typeDescriptions = {
-      'CTR': {'name': 'Control Zone', 'tooltip': 'CTR - Control Zone: Controlled airspace around airports'},
-      'TMA': {'name': 'Terminal Area', 'tooltip': 'TMA - Terminal Area: Controlled airspace in terminal areas'},
-      'CTA': {'name': 'Control Area', 'tooltip': 'CTA - Control Area: General controlled airspace'},
-      'D': {'name': 'Danger Area', 'tooltip': 'D - Danger Area: Areas with potential hazards to aircraft'},
-      'R': {'name': 'Restricted', 'tooltip': 'R - Restricted: Areas with restrictions on aircraft operations'},
-      'P': {'name': 'Prohibited', 'tooltip': 'P - Prohibited: Areas where flight is completely prohibited'},
       'A': {'name': 'Class A', 'tooltip': 'Class A: IFR only, ATC clearance required'},
       'B': {'name': 'Class B', 'tooltip': 'Class B: IFR and VFR, ATC clearance required'},
       'C': {'name': 'Class C', 'tooltip': 'Class C: IFR and VFR, ATC clearance for IFR, contact for VFR'},
@@ -245,8 +239,8 @@ class SiteMarkerUtils {
       'G': {'name': 'Class G', 'tooltip': 'Class G: IFR and VFR, uncontrolled airspace'},
     };
 
-    // Show most common/important types first, but only if they're visible
-    final priorityOrder = ['CTR', 'TMA', 'D', 'R', 'P', 'C', 'A', 'B', 'E', 'F', 'G'];
+    // Show only ICAO classes in priority order
+    final priorityOrder = ['A', 'B', 'C', 'E', 'F', 'G'];
 
     final List<Widget> legendItems = [];
 

@@ -240,16 +240,25 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Layers',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
+        Tooltip(
+          message: 'Toggle map layers to customize your view',
+          textStyle: const TextStyle(color: Colors.white, fontSize: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E1E),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: Colors.white24),
+          ),
+          child: const Text(
+            'Layers',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
           ),
         ),
         const SizedBox(height: 8),
-        // Horizontal layout for Sites and Airspace checkboxes
+        // Horizontal layout for Sites, Airspace, and Clip checkboxes
         Row(
           children: [
             // Sites checkbox
@@ -345,59 +354,60 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                 ),
               ),
             ),
-          ],
-        ),
-        // Clipping toggle (only shown when airspace is enabled)
-        if (_airspaceEnabled)
-          Tooltip(
-            message: 'Only show the bottom layer at each point',
-            textStyle: const TextStyle(color: Colors.white, fontSize: 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E1E1E),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: Colors.white24),
-            ),
-            child: InkWell(
-              onTap: () {
-                setState(() {
-                  _clippingEnabled = !_clippingEnabled;
-                  _applyFiltersDebounced();
-                });
-              },
-              borderRadius: BorderRadius.circular(4),
-              child: SizedBox(
-                height: 24,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: Checkbox(
-                        value: _clippingEnabled,
-                        onChanged: (value) {
-                          setState(() {
-                            _clippingEnabled = value ?? true;
-                            _applyFiltersDebounced();
-                          });
-                        },
-                        activeColor: Colors.blue,
-                        checkColor: Colors.white,
-                        side: const BorderSide(color: Colors.white54),
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        visualDensity: VisualDensity.compact,
-                      ),
+            const SizedBox(width: 16), // Space between checkboxes
+            // Clip checkbox (only shown when airspace is enabled)
+            if (_airspaceEnabled)
+              Tooltip(
+                message: 'Only show the bottom layer at each point',
+                textStyle: const TextStyle(color: Colors.white, fontSize: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E1E1E),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: InkWell(
+                  onTap: () {
+                    setState(() {
+                      _clippingEnabled = !_clippingEnabled;
+                      _applyFiltersDebounced();
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(4),
+                  child: SizedBox(
+                    height: 24,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: Checkbox(
+                            value: _clippingEnabled,
+                            onChanged: (value) {
+                              setState(() {
+                                _clippingEnabled = value ?? true;
+                                _applyFiltersDebounced();
+                              });
+                            },
+                            activeColor: Colors.blue,
+                            checkColor: Colors.white,
+                            side: const BorderSide(color: Colors.white54),
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Text(
+                          'Clip',
+                          style: TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 4),
-                    const Text(
-                      'Clip',
-                      style: TextStyle(color: Colors.white, fontSize: 12),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            ),
-          ),
+          ],
+        ),
       ],
     );
   }
