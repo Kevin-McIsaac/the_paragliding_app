@@ -36,6 +36,7 @@ class NearbySitesMap extends BaseMapWidget {
     super.height = 400,
     super.initialCenter,
     super.initialZoom = 10.0,
+    super.mapController,
   });
 
   @override

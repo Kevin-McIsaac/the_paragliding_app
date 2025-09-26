@@ -405,7 +405,7 @@ class PgeSitesDatabaseService {
       final whereArgs = <dynamic>[];
 
       // Name search
-      whereConditions.add('name LIKE ?');
+      whereConditions.add('s.name LIKE ?');
       whereArgs.add('%$query%');
 
       // All sites are paragliding sites now (column removed)

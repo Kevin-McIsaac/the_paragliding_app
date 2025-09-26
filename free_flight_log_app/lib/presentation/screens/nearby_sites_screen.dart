@@ -32,7 +32,8 @@ class NearbySitesScreen extends StatefulWidget {
 
 class _NearbySitesScreenState extends State<NearbySitesScreen> {
   final LocationService _locationService = LocationService.instance;
-  
+  final MapController _mapController = MapController();
+
   // Sites state - using ParaglidingSite directly (no more UnifiedSite)
   List<ParaglidingSite> _allSites = [];
   List<ParaglidingSite> _displayedSites = [];
@@ -102,6 +103,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     _locationNotificationTimer?.cancel(); // Clean up location notification timer
     _searchManager.dispose(); // Clean up search manager
     _searchController.dispose(); // Dispose search controller
+    _mapController.dispose(); // Dispose map controller
     super.dispose();
   }
 
@@ -410,29 +412,22 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       LatLng(newCenter.latitude - 0.05, newCenter.longitude - 0.05),
       LatLng(newCenter.latitude + 0.05, newCenter.longitude + 0.05),
     );
-    
+
+    // Update state for initial position (in case widget rebuilds)
     setState(() {
-      // Set map to fit exactly the bounds used for API search
       _mapCenterPosition = newCenter;
-      _boundsToFit = bounds; // This will trigger exact bounds fitting in map widget
     });
-    
-    // Use a very short delay just to allow the map to update its center
+
+    // Use the MapController to move the map
+    _mapController.move(newCenter, 14.0);
+
+    // Trigger bounds changed callback after a short delay
     Future.delayed(const Duration(milliseconds: 100), () {
       if (mounted) {
         _onBoundsChanged(bounds);
       }
     });
-    
-    // Clear bounds after map has fitted to allow normal navigation
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted) {
-        setState(() {
-          _boundsToFit = null; // Clear bounds to allow normal map navigation
-        });
-      }
-    });
-    
+
     LoggingService.action('NearbySites', 'location_jumped', {
       'site_name': site.name,
       'country': site.country,
@@ -545,7 +540,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           icaoClasses: icaoClasses,
           maxAltitudeFt: _maxAltitudeFt,
           clippingEnabled: clippingEnabled,
-          mapProvider: _selectedMapProvider,
           onApply: _handleFilterApply,
         ),
       );
@@ -573,18 +567,16 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   }
 
   /// Handle filter apply from dialog
-  void _handleFilterApply(bool sitesEnabled, bool airspaceEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled, MapProvider mapProvider) async {
+  void _handleFilterApply(bool sitesEnabled, bool airspaceEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) async {
     try {
       // Update filter states
       final previousSitesEnabled = _sitesEnabled;
       final previousAirspaceEnabled = _airspaceEnabled;
-      final previousMapProvider = _selectedMapProvider;
 
       setState(() {
         _sitesEnabled = sitesEnabled;
         _airspaceEnabled = airspaceEnabled;
         _maxAltitudeFt = maxAltitudeFt;
-        _selectedMapProvider = mapProvider;
       });
 
       // Save the enabled states to preferences
@@ -655,11 +647,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         }
       }
 
-      // Handle map provider changes
-      if (mapProvider != previousMapProvider) {
-        await _saveMapProviderPreference(mapProvider);
-        LoggingService.action('MapFilter', 'map_provider_changed', {'provider': mapProvider.displayName});
-      }
 
       // Refresh map to apply airspace filter changes
       setState(() {
@@ -673,11 +660,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         'airspace_enabled': airspaceEnabled,
         'sites_changed': sitesEnabled != previousSitesEnabled,
         'airspace_changed': airspaceEnabled != previousAirspaceEnabled,
-        'map_provider_changed': mapProvider != previousMapProvider,
         'selected_types': types.values.where((v) => v).length,
         'selected_classes': classes.values.where((v) => v).length,
         'max_altitude_ft': maxAltitudeFt,
-        'map_provider': mapProvider.displayName,
       });
 
       // Update the cached active filters state
@@ -697,45 +682,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     }
   }
 
-  Widget _buildSearchBar() {
-    return Container(
-      height: 36,  // Compact height to match map controls
-      decoration: BoxDecoration(
-        color: const Color(0x80000000),  // Match Legend and Map selector opacity/color
-        borderRadius: BorderRadius.circular(4),
-        boxShadow: const [
-          BoxShadow(
-            color: Colors.black26,
-            blurRadius: 4,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: TextField(
-        controller: _searchController,  // Use persistent controller
-        onChanged: _searchManager.onSearchQueryChanged,
-        style: const TextStyle(fontSize: 14, color: Colors.white),  // White text to match other controls
-        decoration: InputDecoration(
-          isDense: true,  // Tighter layout for better baseline alignment
-          hintText: 'Search sites...',
-          hintStyle: const TextStyle(fontSize: 14, color: Colors.white70),
-          prefixIcon: const Icon(Icons.search, size: 18, color: Colors.white),  // White icon
-          suffixIcon: _searchManager.state.query.isNotEmpty
-              ? IconButton(
-                  icon: const Icon(Icons.clear, size: 16, color: Colors.white),
-                  onPressed: () {
-                    _searchController.clear();  // Clear controller
-                    _searchManager.onSearchQueryChanged('');
-                  },
-                  padding: EdgeInsets.zero,
-                )
-              : null,
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),  // Slightly reduced vertical padding
-        ),
-      ),
-    );
-  }
 
   Widget _buildSearchResults() {
     return Container(
@@ -785,7 +731,46 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Nearby Sites'),
+        title: Container(
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: TextField(
+            controller: _searchController,
+            onChanged: _searchManager.onSearchQueryChanged,
+            style: const TextStyle(fontSize: 16, color: Colors.white),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: 'Search nearby sites...',
+              hintStyle: TextStyle(fontSize: 16, color: Colors.white.withOpacity(0.7)),
+              prefixIcon: const Icon(Icons.search, size: 20, color: Colors.white),
+              suffixIcon: _searchManager.state.query.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, size: 18, color: Colors.white),
+                      onPressed: () {
+                        _searchController.clear();
+                        _searchManager.onSearchQueryChanged('');
+                      },
+                      padding: EdgeInsets.zero,
+                    )
+                  : null,
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+          ),
+        ),
+        actions: [
+          IconButton(
+            icon: Icon(
+              Icons.filter_list,
+              color: _hasActiveFilters ? Colors.orange : null,
+            ),
+            onPressed: _showMapFilterDialog,
+            tooltip: 'Map Filters',
+          ),
+        ],
       ),
       body: Stack(
         children: [
@@ -802,6 +787,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                         // Map - using new BaseMapWidget-based implementation
                         NearbySitesMap(
                           key: _mapWidgetKey, // Force rebuild when settings change
+                          mapController: _mapController,
                           sites: _displayedSites,
                           userLocation: _userPosition != null
                               ? LatLng(_userPosition!.latitude, _userPosition!.longitude)
@@ -817,36 +803,12 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                           initialZoom: _mapZoom,
                         ),
 
-                        // Search bar overlay - fits between Legend and Map selector
-                        Positioned(
-                          top: 8,  // Same level as map controls
-                          left: 90,  // After the Legend button with more spacing
-                          right: 90,  // Better centered with Map selector
-                          child: _buildSearchBar(),
-                        ),
-
-                        // Filter button overlay
-                        Positioned(
-                          bottom: 100,
-                          right: 16,
-                          child: FloatingActionButton(
-                            mini: true,
-                            onPressed: _showMapFilterDialog,
-                            backgroundColor: _hasActiveFilters ? Colors.orange : null,
-                            child: Icon(
-                              Icons.filter_list,
-                              color: _hasActiveFilters ? Colors.white : null,
-                            ),
-                            tooltip: 'Map Filters',
-                          ),
-                        ),
-
-                        // Search results overlay - below search bar
+                        // Search results overlay - below AppBar
                         if (_searchManager.state.isSearching || _searchManager.state.results.isNotEmpty)
                           Positioned(
-                            top: 52,  // Just below the search bar
-                            left: 90,  // Align with search bar
-                            right: 90,  // Align with search bar
+                            top: 8,  // Below the AppBar
+                            left: 16,
+                            right: 16,
                             child: _buildSearchResults(),
                           ),
 
@@ -1932,8 +1894,7 @@ class _DraggableFilterDialog extends StatefulWidget {
   final Map<String, bool> icaoClasses;
   final double maxAltitudeFt;
   final bool clippingEnabled;
-  final MapProvider mapProvider;
-  final Function(bool sitesEnabled, bool airspaceEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled, MapProvider mapProvider) onApply;
+  final Function(bool sitesEnabled, bool airspaceEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) onApply;
 
   const _DraggableFilterDialog({
     required this.sitesEnabled,
@@ -1942,7 +1903,6 @@ class _DraggableFilterDialog extends StatefulWidget {
     required this.icaoClasses,
     required this.maxAltitudeFt,
     required this.clippingEnabled,
-    required this.mapProvider,
     required this.onApply,
   });
 
@@ -1982,7 +1942,6 @@ class _DraggableFilterDialogState extends State<_DraggableFilterDialog> {
                 icaoClasses: widget.icaoClasses,
                 maxAltitudeFt: widget.maxAltitudeFt,
                 clippingEnabled: widget.clippingEnabled,
-                mapProvider: widget.mapProvider,
                 onApply: widget.onApply,
               ),
             ),
