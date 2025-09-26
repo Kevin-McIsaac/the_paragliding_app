@@ -359,6 +359,7 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
   /// Build the tile layer for the selected map provider
   Widget buildTileLayer() {
     return TileLayer(
+      key: ValueKey('${mapContext}_tile_layer_${_selectedMapProvider.name}'),
       urlTemplate: _selectedMapProvider.urlTemplate,
       userAgentPackageName: 'com.freeflightlog.free_flight_log_app',
       maxNativeZoom: _selectedMapProvider.maxZoom,
@@ -803,6 +804,7 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
     return Stack(
       children: [
         FlutterMap(
+          key: ValueKey('${mapContext}_flutter_map'),
           mapController: _mapController,
           options: MapOptions(
             initialCenter: widget.initialCenter ?? const LatLng(46.9480, 7.4474),

@@ -573,15 +573,18 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         // Flight Track Map using the new refactored widget
         SizedBox(
           height: (widget.height ?? 400) - _totalChartsHeight - 20,
-          child: FlightTrackMap(
-            flight: widget.flight,
-            trackPoints: _trackPoints,
-            faiTrianglePoints: _faiTrianglePoints,
-            selectedTrackPointIndex: _selectedTrackPointIndex,
-            closingDistanceThreshold: _closingDistanceThreshold,
-            onTrackPointSelected: (index) {
-              _selectedTrackPointIndex.value = index;
-            },
+          child: RepaintBoundary(
+            child: FlightTrackMap(
+              key: ValueKey('flight_track_map_${widget.flight.id}'),
+              flight: widget.flight,
+              trackPoints: _trackPoints,
+              faiTrianglePoints: _faiTrianglePoints,
+              selectedTrackPointIndex: _selectedTrackPointIndex,
+              closingDistanceThreshold: _closingDistanceThreshold,
+              onTrackPointSelected: (index) {
+                _selectedTrackPointIndex.value = index;
+              },
+            ),
           ),
         ),
         // Three synchronized charts

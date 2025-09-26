@@ -56,21 +56,6 @@ class _FlightTrackMapState extends BaseMapState<FlightTrackMap> {
   int get siteLimit => MapConstants.flightMapSiteLimit; // Optimized for performance with charts
 
   @override
-  void initState() {
-    super.initState();
-
-    // Set initial center from track points
-    if (widget.trackPoints.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        mapController.move(
-          LatLng(widget.trackPoints.first.latitude, widget.trackPoints.first.longitude),
-          13.0,
-        );
-      });
-    }
-  }
-
-  @override
   void onMapReady() {
     super.onMapReady();
     _fitMapToBounds();
