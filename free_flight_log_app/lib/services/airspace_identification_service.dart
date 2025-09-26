@@ -43,9 +43,12 @@ class AirspaceIdentificationService {
     final start = DateTime.now();
     final containingAirspaces = <AirspaceData>[];
 
+    LoggingService.info('Checking point ${point.latitude}, ${point.longitude} against ${_airspacePolygons.length} polygons');
+
     for (final polygonData in _airspacePolygons) {
       if (_pointInPolygon(point, polygonData.points)) {
         containingAirspaces.add(polygonData.airspaceData);
+        LoggingService.info('Point is inside airspace: ${polygonData.airspaceData.name}');
       }
     }
 
