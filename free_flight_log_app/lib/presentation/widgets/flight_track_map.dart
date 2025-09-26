@@ -7,6 +7,7 @@ import '../../services/logging_service.dart';
 import '../../utils/map_calculation_utils.dart';
 import '../../utils/site_marker_utils.dart';
 import '../../utils/ui_utils.dart';
+import '../../utils/map_constants.dart';
 import 'common/base_map_widget.dart';
 import 'common/site_marker_layer.dart';
 
@@ -52,7 +53,7 @@ class _FlightTrackMapState extends BaseMapState<FlightTrackMap> {
   String get mapContext => 'flight_track_2d';
 
   @override
-  int get siteLimit => 30; // Smaller limit for performance with charts
+  int get siteLimit => MapConstants.flightMapSiteLimit; // Optimized for performance with charts
 
   @override
   void initState() {

@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../services/logging_service.dart';
+import '../../utils/map_constants.dart';
 import 'common/base_map_widget.dart';
 import 'common/map_overlays.dart';
 import 'common/user_location_marker.dart';
@@ -54,7 +55,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
   String get mapContext => 'nearby_sites';
 
   @override
-  int get siteLimit => 100; // Show more sites for nearby exploration
+  int get siteLimit => MapConstants.defaultSiteLimit; // Standard site limit
 
   @override
   bool get enableAirspace => widget.airspaceEnabled;

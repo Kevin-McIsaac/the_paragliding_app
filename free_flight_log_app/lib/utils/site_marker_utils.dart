@@ -211,7 +211,7 @@ class SiteMarkerUtils {
         Text(
           label,
           style: const TextStyle(
-            fontSize: 9,
+            fontSize: 12,
             fontWeight: FontWeight.w500,
             color: Colors.white,
           ),
@@ -378,7 +378,7 @@ class SiteMarkerUtils {
                   const Text(
                     'Legend',
                     style: TextStyle(
-                      fontSize: 9,
+                      fontSize: 13,
                       fontWeight: FontWeight.w500,
                       color: Colors.white,
                     ),

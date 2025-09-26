@@ -14,6 +14,7 @@ import '../../services/database_service.dart';
 import '../../services/map_bounds_manager.dart';
 import '../../services/logging_service.dart';
 import '../../utils/site_marker_utils.dart';
+import '../../utils/map_constants.dart';
 import '../../utils/map_provider.dart';
 import '../../utils/map_tile_provider.dart';
 import '../widgets/common/map_loading_overlay.dart';
@@ -44,7 +45,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
   static const double _minZoom = 1.0;
   // Use shared constants from SiteMarkerUtils
   static const double _siteMarkerSize = SiteMarkerUtils.siteMarkerSize;
-  static const double _launchRadiusMeters = 500.0;
+  static const double _launchRadiusMeters = MapConstants.launchRadiusMeters;
   
   // Common UI shadows
   static const BoxShadow _standardElevatedShadow = BoxShadow(
@@ -628,7 +629,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     MapBoundsManager.instance.loadSitesForBoundsDebounced(
       context: 'edit_site',
       bounds: bounds,
-      siteLimit: 50,
+      siteLimit: MapConstants.defaultSiteLimit,
       includeFlightCounts: true,
       onLoaded: (result) {
         if (mounted) {
@@ -649,7 +650,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     MapBoundsManager.instance.loadSitesForBoundsDebounced(
       context: 'edit_site',
       bounds: bounds,
-      siteLimit: 50,
+      siteLimit: MapConstants.defaultSiteLimit,
       includeFlightCounts: true,
       onLoaded: (result) {
         if (mounted) {
@@ -1072,7 +1073,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
                   _hoveredTargetSite == site && 
                   _currentlyDraggedSite!.id != site.id)
                 AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
+                  duration: MapConstants.animationDuration,
                   width: _siteMarkerSize + 8,
                   height: _siteMarkerSize + 8,
                   decoration: BoxDecoration(
@@ -1130,7 +1131,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
               // Drag hover target indicator
               if (_currentlyDraggedSite != null && _hoveredTargetSite == site)
                 AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
+                  duration: MapConstants.animationDuration,
                   width: _siteMarkerSize + 8,
                   height: _siteMarkerSize + 8,
                   decoration: BoxDecoration(

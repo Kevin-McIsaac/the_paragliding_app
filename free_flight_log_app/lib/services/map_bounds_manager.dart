@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter_map/flutter_map.dart';
 import '../data/models/flight.dart';
+import '../utils/map_constants.dart';
 import 'site_bounds_loader_v2.dart';
 import 'database_service.dart';
 import 'logging_service.dart';
@@ -27,8 +28,8 @@ class MapBoundsManager {
 
   // Constants shared across all maps
   static const double boundsThreshold = 0.001; // ~100m change threshold
-  static const int debounceDurationMs = 500; // Standardized debounce time
-  static const int defaultSiteLimit = 50;
+  static const int debounceDurationMs = MapConstants.mapBoundsDebounceMs;
+  static const int defaultSiteLimit = MapConstants.defaultSiteLimit;
 
   // Debounce timers for each map context
   final Map<String, Timer?> _debounceTimers = {};
@@ -42,12 +43,7 @@ class MapBoundsManager {
   final Map<String, bool> _loadingStates = {};
   final Map<String, bool> _launchLoadingStates = {};
 
-  // Cache for loaded sites (bounds key -> result)
-  final Map<String, SiteBoundsLoadResult> _cache = {};
-  final Map<String, LaunchBoundsLoadResult> _launchCache = {};
-  static const int _maxCacheSize = 10; // LRU cache size
-  final List<String> _cacheKeys = []; // Track order for LRU
-  final List<String> _launchCacheKeys = []; // Track order for launch cache LRU
+  // Note: Cache removed for simplicity - debouncing provides sufficient performance
 
   /// Check if bounds have changed significantly for a given context
   bool haveBoundsChangedSignificantly(
@@ -142,26 +138,9 @@ class MapBoundsManager {
       return;
     }
 
-    // Check if same bounds already loaded
+    // Check if same bounds already loaded (deduplication)
     if (_lastLoadedBoundsKeys[context] == boundsKey) {
-      LoggingService.debug('[$context] Same bounds already loaded, using cached result');
-
-      // Check cache for result
-      if (_cache.containsKey(boundsKey)) {
-        onLoaded(_cache[boundsKey]!);
-      }
-      return;
-    }
-
-    // Check cache first
-    if (_cache.containsKey(boundsKey)) {
-      LoggingService.info('[$context] Using cached sites for bounds: $boundsKey');
-      _lastLoadedBoundsKeys[context] = boundsKey;
-      onLoaded(_cache[boundsKey]!);
-
-      // Move to end of LRU list
-      _cacheKeys.remove(boundsKey);
-      _cacheKeys.add(boundsKey);
+      LoggingService.debug('[$context] Same bounds already loaded, skipping duplicate request');
       return;
     }
 
@@ -178,8 +157,7 @@ class MapBoundsManager {
         includeFlightCounts: includeFlightCounts,
       );
 
-      // Update cache with LRU eviction
-      _addToCache(boundsKey, result);
+      // No caching - debouncing provides sufficient performance
 
       // Update last loaded bounds
       _lastLoadedBoundsKeys[context] = boundsKey;
@@ -194,7 +172,6 @@ class MapBoundsManager {
         'sites_count': result.sites.length,
         'flown_sites': result.sitesWithFlights.length,
         'new_sites': result.sitesWithoutFlights.length,
-        'from_cache': false,
       });
 
     } catch (error, stackTrace) {
@@ -205,24 +182,8 @@ class MapBoundsManager {
     }
   }
 
-  /// Add result to cache with LRU eviction
-  void _addToCache(String key, SiteBoundsLoadResult result) {
-    // Remove from current position if exists
-    _cacheKeys.remove(key);
 
-    // Add to end (most recently used)
-    _cacheKeys.add(key);
-    _cache[key] = result;
-
-    // Evict oldest if cache is full
-    if (_cacheKeys.length > _maxCacheSize) {
-      final oldestKey = _cacheKeys.removeAt(0);
-      _cache.remove(oldestKey);
-      LoggingService.debug('Evicted oldest cache entry: $oldestKey');
-    }
-  }
-
-  /// Clear cache for a specific context or all contexts
+  /// Clear state for a specific context or all contexts
   void clearCache([String? context]) {
     if (context != null) {
       // Clear specific context
@@ -231,29 +192,22 @@ class MapBoundsManager {
       cancelDebounce(context);
     } else {
       // Clear all
-      _cache.clear();
-      _cacheKeys.clear();
       _lastLoadedBoundsKeys.clear();
       _loadingStates.clear();
       _debounceTimers.forEach((key, timer) => timer?.cancel());
       _debounceTimers.clear();
     }
 
-    LoggingService.info('Cache cleared ${context != null ? "for context: $context" : "for all contexts"}');
+    LoggingService.info('State cleared ${context != null ? "for context: $context" : "for all contexts"}');
   }
 
-  /// Get cache statistics for monitoring
+  /// Get statistics for monitoring
   Map<String, dynamic> getCacheStats() {
     return {
-      'site_cache_size': _cache.length,
-      'launch_cache_size': _launchCache.length,
-      'max_cache_size': _maxCacheSize,
       'contexts_tracked': _lastLoadedBoundsKeys.length,
       'launch_contexts_tracked': _lastLoadedLaunchBoundsKeys.length,
       'active_timers': _debounceTimers.values.where((t) => t != null && t.isActive).length,
       'active_launch_timers': _launchDebounceTimers.values.where((t) => t != null && t.isActive).length,
-      'total_sites_cached': _cache.values.fold(0, (sum, result) => sum + result.sites.length),
-      'total_launches_cached': _launchCache.values.fold(0, (sum, result) => sum + result.launches.length),
     };
   }
 
@@ -326,22 +280,6 @@ class MapBoundsManager {
       return;
     }
 
-    // Check cache first
-    if (_launchCache.containsKey(boundsKey)) {
-      final cachedResult = _launchCache[boundsKey]!;
-      LoggingService.info('[$context] Using cached launches for bounds: $boundsKey');
-
-      onLoaded(cachedResult);
-      _lastLoadedLaunchBoundsKeys[context] = boundsKey;
-
-      LoggingService.structured('LAUNCH_BOUNDS_LOADED', {
-        'context': context,
-        'bounds_key': boundsKey,
-        'launches_count': cachedResult.launches.length,
-        'from_cache': true,
-      });
-      return;
-    }
 
     // Mark as loading
     _launchLoadingStates[context] = true;
@@ -363,8 +301,7 @@ class MapBoundsManager {
         timestamp: DateTime.now(),
       );
 
-      // Update cache with LRU eviction
-      _addToLaunchCache(boundsKey, result);
+      // No caching - debouncing provides sufficient performance
 
       // Update last loaded bounds
       _lastLoadedLaunchBoundsKeys[context] = boundsKey;
@@ -376,7 +313,6 @@ class MapBoundsManager {
         'context': context,
         'bounds_key': boundsKey,
         'launches_count': launches.length,
-        'from_cache': false,
       });
 
     } catch (error, stackTrace) {
@@ -387,24 +323,8 @@ class MapBoundsManager {
     }
   }
 
-  /// Add launch result to cache with LRU eviction
-  void _addToLaunchCache(String key, LaunchBoundsLoadResult result) {
-    // Remove from current position if exists
-    _launchCacheKeys.remove(key);
 
-    // Add to end (most recent)
-    _launchCacheKeys.add(key);
-    _launchCache[key] = result;
-
-    // Evict oldest if over limit
-    if (_launchCacheKeys.length > _maxCacheSize) {
-      final oldestKey = _launchCacheKeys.removeAt(0);
-      _launchCache.remove(oldestKey);
-      LoggingService.debug('Launch cache evicted oldest entry: $oldestKey');
-    }
-  }
-
-  /// Clear launch cache for a specific context or all
+  /// Clear launch state for a specific context or all
   void clearLaunchCache([String? context]) {
     if (context != null) {
       // Clear specific context
@@ -412,9 +332,7 @@ class MapBoundsManager {
       _launchLoadingStates.remove(context);
       cancelLaunchDebounce(context);
     } else {
-      // Clear all launch caches
-      _launchCache.clear();
-      _launchCacheKeys.clear();
+      // Clear all launch states
       _lastLoadedLaunchBoundsKeys.clear();
       _launchLoadingStates.clear();
       _launchDebounceTimers.forEach((key, timer) => timer?.cancel());

@@ -701,7 +701,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     return Container(
       height: 36,  // Compact height to match map controls
       decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.95),
+        color: const Color(0x80000000),  // Match Legend and Map selector opacity/color
         borderRadius: BorderRadius.circular(4),
         boxShadow: const [
           BoxShadow(
@@ -714,14 +714,15 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       child: TextField(
         controller: _searchController,  // Use persistent controller
         onChanged: _searchManager.onSearchQueryChanged,
-        style: const TextStyle(fontSize: 14),  // Smaller text
+        style: const TextStyle(fontSize: 14, color: Colors.white),  // White text to match other controls
         decoration: InputDecoration(
+          isDense: true,  // Tighter layout for better baseline alignment
           hintText: 'Search sites...',
-          hintStyle: const TextStyle(fontSize: 14),
-          prefixIcon: const Icon(Icons.search, size: 18),  // Smaller icon
+          hintStyle: const TextStyle(fontSize: 14, color: Colors.white70),
+          prefixIcon: const Icon(Icons.search, size: 18, color: Colors.white),  // White icon
           suffixIcon: _searchManager.state.query.isNotEmpty
               ? IconButton(
-                  icon: const Icon(Icons.clear, size: 16),
+                  icon: const Icon(Icons.clear, size: 16, color: Colors.white),
                   onPressed: () {
                     _searchController.clear();  // Clear controller
                     _searchManager.onSearchQueryChanged('');
@@ -730,7 +731,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                 )
               : null,
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),  // Compact padding
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),  // Slightly reduced vertical padding
         ),
       ),
     );
@@ -819,8 +820,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                         // Search bar overlay - fits between Legend and Map selector
                         Positioned(
                           top: 8,  // Same level as map controls
-                          left: 80,  // After the Legend button (approx width)
-                          right: 120,  // Before the Map selector button (approx width)
+                          left: 90,  // After the Legend button with more spacing
+                          right: 90,  // Better centered with Map selector
                           child: _buildSearchBar(),
                         ),
 
@@ -844,8 +845,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                         if (_searchManager.state.isSearching || _searchManager.state.results.isNotEmpty)
                           Positioned(
                             top: 52,  // Just below the search bar
-                            left: 80,  // Align with search bar
-                            right: 120,  // Align with search bar
+                            left: 90,  // Align with search bar
+                            right: 90,  // Align with search bar
                             child: _buildSearchResults(),
                           ),
 

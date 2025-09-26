@@ -1,5 +1,6 @@
 import 'dart:async';
 import '../data/models/paragliding_site.dart';
+import '../utils/map_constants.dart';
 import '../services/pge_sites_database_service.dart';
 // API import removed - using local database only
 import '../services/logging_service.dart';
@@ -18,7 +19,7 @@ class NearbySitesSearchManagerV2 {
   Timer? _searchDebounce;
 
   /// Debounce duration for search queries
-  static const Duration _searchDebounceDelay = Duration(milliseconds: 300);
+  static const Duration _searchDebounceDelay = Duration(milliseconds: MapConstants.searchDebounceMs);
 
   /// Minimum query length for search
   static const int _minQueryLength = 2;

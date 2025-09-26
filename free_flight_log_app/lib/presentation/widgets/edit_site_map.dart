@@ -4,6 +4,7 @@ import 'package:flutter_map_dragmarker/flutter_map_dragmarker.dart';
 import 'package:latlong2/latlong.dart';
 import '../../data/models/site.dart';
 import '../../services/logging_service.dart';
+import '../../utils/map_constants.dart';
 import 'common/base_map_widget.dart';
 
 /// Specialized map widget for site editing
@@ -41,7 +42,7 @@ class _EditSiteMapState extends BaseMapState<EditSiteMap> {
   String get mapContext => 'edit_site';
 
   @override
-  int get siteLimit => 50; // More sites for reference when editing
+  int get siteLimit => MapConstants.defaultSiteLimit; // Standard site limit
 
   @override
   void initState() {

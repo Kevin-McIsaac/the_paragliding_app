@@ -10,6 +10,7 @@ import '../../../utils/airspace_overlay_manager.dart';
 import '../../../utils/map_provider.dart';
 import '../../../utils/map_tile_provider.dart';
 import '../../../utils/site_marker_utils.dart';
+import '../../../utils/map_constants.dart';
 import 'map_loading_overlay.dart';
 
 /// Base widget for all map implementations in the app
@@ -65,7 +66,7 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
   String get mapProviderKey; // Unique key for storing map provider preference
   String get legendExpandedKey; // Unique key for storing legend state
   String get mapContext; // Context for MapBoundsManager (e.g., 'nearby_sites')
-  int get siteLimit => 50; // Default site limit, can be overridden
+  int get siteLimit => MapConstants.defaultSiteLimit; // Default site limit, can be overridden
 
   // Template methods for customization
   List<Widget> buildAdditionalLayers() => [];
