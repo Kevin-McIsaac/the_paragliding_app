@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:latlong2/latlong.dart';
 import '../../data/models/paragliding_site.dart';
+import '../../data/models/wind_data.dart';
 import '../../services/logging_service.dart';
 import '../../utils/map_constants.dart';
 import '../../utils/site_marker_utils.dart';
@@ -22,6 +23,9 @@ class NearbySitesMap extends BaseMapWidget {
   final bool showUserLocation;
   final bool isLocationLoading;
   final Function(LatLngBounds)? onBoundsChanged;
+  final Map<String, WindData> siteWindData;
+  final double maxWindSpeed;
+  final double maxWindGusts;
 
   const NearbySitesMap({
     super.key,
@@ -34,6 +38,9 @@ class NearbySitesMap extends BaseMapWidget {
     this.showUserLocation = true,
     this.isLocationLoading = false,
     this.onBoundsChanged,
+    this.siteWindData = const {},
+    this.maxWindSpeed = 25.0,
+    this.maxWindGusts = 30.0,
     super.height = 400,
     super.initialCenter,
     super.initialZoom = 10.0,
@@ -157,6 +164,53 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     widget.onSiteSelected?.call(site);
   }
 
+  /// Determine if a site is flyable based on wind conditions
+  bool _isSiteFlyable(ParaglidingSite site) {
+    final windKey = '${site.latitude}_${site.longitude}';
+    final wind = widget.siteWindData[windKey];
+
+    if (wind == null) {
+      return false; // No wind data available
+    }
+
+    if (site.windDirections.isEmpty) {
+      return false; // Site has no defined wind directions
+    }
+
+    final isFlyable = wind.isFlyable(
+      site.windDirections,
+      widget.maxWindSpeed,
+      widget.maxWindGusts,
+    );
+
+    // Log flyability decision with structured data
+    if (isFlyable) {
+      LoggingService.structured('SITE_FLYABLE', {
+        'site': site.name,
+        'wind_direction': wind.compassDirection,
+        'wind_speed': wind.speedKmh.toStringAsFixed(1),
+        'site_directions': site.windDirections.join(','),
+      });
+    }
+
+    return isFlyable;
+  }
+
+  /// Get the marker color for a site based on flyability
+  Color _getSiteMarkerColor(ParaglidingSite site) {
+    // Check if site is flyable with current wind conditions
+    final isFlyable = _isSiteFlyable(site);
+
+    if (isFlyable) {
+      return Colors.pink; // Flyable!
+    }
+
+    // Default colors based on flight history
+    return site.hasFlights
+        ? SiteMarkerUtils.flownSiteColor
+        : SiteMarkerUtils.newSiteColor;
+  }
+
   /// Build markers for clustering with site data preserved
   List<Marker> _buildClusterableMarkers() {
     return widget.sites.map((site) {
@@ -172,7 +226,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
             mainAxisSize: MainAxisSize.min,
             children: [
               SiteMarkerUtils.buildSiteMarkerIcon(
-                color: site.markerColor,
+                color: _getSiteMarkerColor(site),
               ),
               SiteMarkerUtils.buildSiteLabel(
                 siteName: site.name,
@@ -190,6 +244,15 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     final count = markers.length;
     final displayText = count > 999 ? '999+' : count.toString();
 
+    // Check if any sites are flyable
+    final hasFlyableSites = markers.any((marker) {
+      if (marker.key is ValueKey<ParaglidingSite>) {
+        final site = (marker.key as ValueKey<ParaglidingSite>).value;
+        return _isSiteFlyable(site);
+      }
+      return false;
+    });
+
     // Check if any markers are flown sites (green)
     final hasFlownSites = markers.any((marker) {
       if (marker.key is ValueKey<ParaglidingSite>) {
@@ -199,8 +262,10 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
       return false;
     });
 
-    // Use green for clusters with flown sites, blue for new sites only
-    final clusterColor = hasFlownSites ? Colors.green : Colors.blue;
+    // Use pink for flyable sites, green for flown sites, blue for new sites
+    final clusterColor = hasFlyableSites
+        ? Colors.pink
+        : (hasFlownSites ? Colors.green : Colors.blue);
 
     return Container(
       width: 40,

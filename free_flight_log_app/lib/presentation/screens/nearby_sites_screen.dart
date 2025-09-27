@@ -5,17 +5,21 @@ import 'package:latlong2/latlong.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:intl/intl.dart';
 import '../../data/models/site.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/airspace_enums.dart';
+import '../../data/models/wind_data.dart';
 import '../../services/location_service.dart';
 import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
 import '../../services/nearby_sites_search_state.dart';
 import '../../services/nearby_sites_search_manager_v2.dart';
 import '../../services/map_bounds_manager.dart';
+import '../../services/weather_service.dart';
 import '../../utils/map_provider.dart';
 import '../../utils/site_utils.dart';
+import '../../utils/preferences_helper.dart';
 import '../widgets/nearby_sites_map.dart';
 import '../widgets/map_filter_dialog.dart';
 import '../widgets/common/app_error_state.dart';
@@ -84,7 +88,14 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   Map<IcaoClass, bool> _excludedIcaoClasses = {}; // Current ICAO class filter state
   int _filterUpdateCounter = 0; // Triggers map refresh on filter changes
   final OpenAipService _openAipService = OpenAipService.instance;
-  
+
+  // Wind forecast state
+  DateTime _selectedDateTime = DateTime.now();
+  final Map<String, WindData> _siteWindData = {};
+  double _maxWindSpeed = 25.0;
+  double _maxWindGusts = 30.0;
+  bool _isLoadingWind = false;
+  final WeatherService _weatherService = WeatherService.instance;
 
   @override
   void initState() {
@@ -92,6 +103,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     _initializeSearchManager();
     _loadPreferences();
     _loadFilterSettings();
+    _loadWindPreferences();
     _updateActiveFiltersState(); // Initialize the cached active filters state
     _loadData();
 
@@ -170,6 +182,86 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       }
     } catch (e) {
       LoggingService.error('Failed to load filter settings', e);
+    }
+  }
+
+  Future<void> _loadWindPreferences() async {
+    try {
+      _maxWindSpeed = await PreferencesHelper.getMaxWindSpeed();
+      _maxWindGusts = await PreferencesHelper.getMaxWindGusts();
+    } catch (e) {
+      LoggingService.error('Failed to load wind preferences', e);
+    }
+  }
+
+  Future<void> _showDateTimePicker() async {
+    // Show date picker (max 7 days future)
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _selectedDateTime,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 7)),
+    );
+
+    if (date != null && mounted) {
+      // Show time picker
+      final time = await showTimePicker(
+        context: context,
+        initialTime: TimeOfDay.fromDateTime(_selectedDateTime),
+      );
+
+      if (time != null && mounted) {
+        setState(() {
+          _selectedDateTime = DateTime(
+            date.year,
+            date.month,
+            date.day,
+            time.hour,
+            time.minute,
+          );
+        });
+        _fetchWindDataForSites();
+      }
+    }
+  }
+
+  Future<void> _fetchWindDataForSites() async {
+    if (_displayedSites.isEmpty) return;
+
+    setState(() {
+      _isLoadingWind = true;
+    });
+
+    try {
+      // Clear old wind data
+      _siteWindData.clear();
+
+      // Fetch wind data for all displayed sites
+      for (final site in _displayedSites) {
+        final wind = await _weatherService.getWindData(
+          site.latitude,
+          site.longitude,
+          _selectedDateTime,
+        );
+        if (wind != null) {
+          final key = '${site.latitude}_${site.longitude}';
+          _siteWindData[key] = wind;
+        }
+      }
+
+      LoggingService.structured('WIND_DATA_FETCHED', {
+        'sites_count': _displayedSites.length,
+        'wind_data_count': _siteWindData.length,
+        'selected_time': _selectedDateTime.toIso8601String(),
+      });
+    } catch (e) {
+      LoggingService.error('Failed to fetch wind data for sites', e);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingWind = false;
+        });
+      }
     }
   }
 
@@ -485,6 +577,11 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
             'new_sites': result.sitesWithoutFlights.length,
             'from_cache': MapBoundsManager.instance.areBoundsAlreadyLoaded('nearby_sites', bounds),
           });
+
+          // Auto-fetch wind data when sites are loaded for the first time
+          if (_displayedSites.isNotEmpty && _siteWindData.isEmpty) {
+            _fetchWindDataForSites();
+          }
         }
       },
       siteLimit: 50,
@@ -510,6 +607,10 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
 
   void _showSiteDetailsDialog({required ParaglidingSite paraglidingSite}) {
+    // Get wind data for this site
+    final windKey = '${paraglidingSite.latitude}_${paraglidingSite.longitude}';
+    final windData = _siteWindData[windKey];
+
     showDialog(
       context: context,
       barrierColor: Colors.transparent,
@@ -518,6 +619,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         site: null,
         paraglidingSite: paraglidingSite,
         userPosition: _userPosition,
+        windData: windData,
       ),
     );
   }
@@ -782,6 +884,11 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.access_time),
+            onPressed: _showDateTimePicker,
+            tooltip: 'Wind Forecast Time',
+          ),
+          IconButton(
             icon: Icon(
               Icons.filter_list,
               color: _hasActiveFilters ? Colors.orange : null,
@@ -815,11 +922,56 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                           maxAltitudeFt: _maxAltitudeFt,
                           onSiteSelected: _onSiteSelected,
                           onLocationRequest: _onRefreshLocation,
+                          siteWindData: _siteWindData,
+                          maxWindSpeed: _maxWindSpeed,
+                          maxWindGusts: _maxWindGusts,
                           onBoundsChanged: _onBoundsChanged,
                           showUserLocation: true,
                           isLocationLoading: _isLocationLoading,
                           initialCenter: _mapCenterPosition,
                           initialZoom: _mapZoom,
+                        ),
+
+                        // Wind forecast status bar
+                        Positioned(
+                          bottom: 0,
+                          left: 0,
+                          right: 0,
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            color: Theme.of(context).primaryColor.withOpacity(0.9),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.air, size: 16, color: Colors.white),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Wind forecast for ${DateFormat('MMM d, h:mm a').format(_selectedDateTime)}',
+                                    style: const TextStyle(fontSize: 12, color: Colors.white),
+                                  ),
+                                ),
+                                if (_isLoadingWind)
+                                  const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                    ),
+                                  )
+                                else
+                                  TextButton(
+                                    onPressed: _fetchWindDataForSites,
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      minimumSize: const Size(0, 0),
+                                      foregroundColor: Colors.white,
+                                    ),
+                                    child: const Text('Refresh', style: TextStyle(fontSize: 12)),
+                                  ),
+                              ],
+                            ),
+                          ),
                         ),
 
                         // Search results overlay - below AppBar
@@ -960,11 +1112,13 @@ class _SiteDetailsDialog extends StatefulWidget {
   final Site? site;
   final ParaglidingSite? paraglidingSite;
   final Position? userPosition;
+  final WindData? windData;
 
   const _SiteDetailsDialog({
     this.site,
     this.paraglidingSite,
     this.userPosition,
+    this.windData,
   });
 
   @override
@@ -1233,24 +1387,12 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                       ),
                     ),
                   ),
-                  // Takeoff altitude from API data (if available)
-                  if (_detailedData?['takeoff_altitude'] != null) ...[
-                    const SizedBox(width: 6),
-                    Icon(Icons.height, size: 14, color: Colors.grey),
-                    const SizedBox(width: 2),
-                    Text(
-                      '${_detailedData!['takeoff_altitude']}m',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
                 ],
-                // Altitude (existing site data)
-                if (altitude != null) ...[
+                // Show altitude (prefer takeoff_altitude from API, fallback to general altitude)
+                if (_detailedData?['takeoff_altitude'] != null || altitude != null) ...[
                   const SizedBox(width: 12),
-                  const Icon(Icons.terrain, size: 16, color: Colors.grey),
-                  const SizedBox(width: 4),
                   Text(
-                    '${altitude}m',
+                    '${_detailedData?['takeoff_altitude'] ?? altitude}m',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -1398,90 +1540,148 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
   }
 
   Widget _buildWeatherTab(List<String> windDirections) {
+    // Extract weather information early for better layout control
+    final weatherInfo = _detailedData?['weather']?.toString();
+    final thermalFlag = _detailedData?['thermals']?.toString();
+    final soaringFlag = _detailedData?['soaring']?.toString();
+    final xcFlag = _detailedData?['xc']?.toString();
+
     return Scrollbar(
       child: SingleChildScrollView(
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(12.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (_isLoadingDetails)
               const Center(child: CircularProgressIndicator())
             else if (_loadingError != null)
               Center(child: Text(_loadingError!, style: TextStyle(color: Colors.red)))
-            else ...[
-              // Wind Rose with wrapped text layout
-              const SizedBox(height: 16),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Wind directions section with wrapped layout
-                      if (windDirections.isNotEmpty) ...[
-                        Wrap(
-                          alignment: WrapAlignment.start,
-                          crossAxisAlignment: WrapCrossAlignment.start,
-                          children: [
-                            // Wind Rose at top left
-                            Padding(
-                              padding: const EdgeInsets.only(right: 16.0, bottom: 8.0),
-                              child: WindRoseWidget(
-                                launchableDirections: windDirections,
-                                size: 125.0,
-                                windSpeed: 12.0, // Test: 12 km/h
-                                windDirection: 315.0, // Test: NW (315°)
-                              ),
+            else if (windDirections.isNotEmpty) ...[
+              // Two-column layout: Wind rose on left, weather info on right
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Left column - Wind Rose
+                  Expanded(
+                    child: Center(
+                      child: WindRoseWidget(
+                        launchableDirections: windDirections,
+                        size: 140.0,
+                        windSpeed: widget.windData?.speedKmh,
+                        windDirection: widget.windData?.directionDegrees,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  // Right column - Weather Information
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      children: [
+                        // Weather description
+                        if (weatherInfo != null && weatherInfo.isNotEmpty) ...[
+                          Text(
+                            weatherInfo,
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+
+                        // Flight characteristics
+                        if (thermalFlag == '1' || soaringFlag == '1' || xcFlag == '1') ...[
+                          _buildCompactFlightCharacteristics(thermalFlag, soaringFlag, xcFlag),
+                        ],
+
+                        // If no weather content at all
+                        if ((weatherInfo == null || weatherInfo.isEmpty) &&
+                            thermalFlag != '1' && soaringFlag != '1' && xcFlag != '1') ...[
+                          Text(
+                            'No weather information available for this site.',
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Colors.grey.shade600,
                             ),
-                          ],
-                        ),
-                      ] else ...[
-                        // No wind directions layout
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.info_outline,
-                              size: 32,
-                              color: Colors.grey.shade400,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'No wind direction restrictions',
-                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'This site has no specific wind direction requirements.',
-                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Colors.grey.shade600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ],
+                    ),
+                  ),
+                ],
+              ),
+            ] else ...[
+              // No wind directions - center message
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 32.0),
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        size: 48,
+                        color: Colors.grey.shade400,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No wind direction restrictions',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'This site has no specific wind direction requirements.',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Colors.grey.shade600,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
                     ],
                   ),
                 ),
               ),
-
-              // Weather Information Section
-              const SizedBox(height: 16),
-              _buildWeatherInformationCard(),
             ],
           ],
         ),
       ),
       ),
+    );
+  }
+
+  Widget _buildCompactFlightCharacteristics(String? thermalFlag, String? soaringFlag, String? xcFlag) {
+    final characteristics = <String>[];
+
+    if (thermalFlag == '1') characteristics.add('Thermals');
+    if (soaringFlag == '1') characteristics.add('Soaring');
+    if (xcFlag == '1') characteristics.add('Cross Country');
+
+    if (characteristics.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              Icons.flight,
+              size: 16,
+              color: Colors.green,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Good for:',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          characteristics.join(' • '),
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      ],
     );
   }
 

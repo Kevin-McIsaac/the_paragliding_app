@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
-import '../../services/logging_service.dart';
 
 class WindRosePainter extends CustomPainter {
   final List<String> launchableDirections;
@@ -37,8 +36,7 @@ class WindRosePainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.width / 2 - 20; // Leave margin for labels
 
-    LoggingService.debug('WindRosePainter painting with radius: $radius');
-    LoggingService.debug('WindRosePainter received directions: $launchableDirections');
+    // Debug logging removed to reduce noise
 
     // Draw background circle
     _drawBackground(canvas, center, radius);
@@ -277,10 +275,7 @@ class WindRosePainter extends CustomPainter {
     // Convert wind direction to compass direction
     final windCompassDirection = _degreesToCompassDirection(windDirection!);
 
-    // Debug logging
-    LoggingService.debug('Wind direction: ${windDirection}° → $windCompassDirection');
-    LoggingService.debug('Launchable directions: $launchableDirections');
-    LoggingService.debug('Is $windCompassDirection launchable? ${launchableDirections.contains(windCompassDirection)}');
+    // Check if wind direction matches any launchable direction
 
     // Check if it matches any launchable direction
     return launchableDirections.contains(windCompassDirection);
@@ -291,17 +286,18 @@ class WindRosePainter extends CustomPainter {
     double normalizedDegrees = degrees % 360;
     if (normalizedDegrees < 0) normalizedDegrees += 360;
 
-    // Convert to 8 compass directions
-    if (normalizedDegrees >= 337.5 || normalizedDegrees < 22.5) return 'N';
-    if (normalizedDegrees >= 22.5 && normalizedDegrees < 67.5) return 'NE';
-    if (normalizedDegrees >= 67.5 && normalizedDegrees < 112.5) return 'E';
-    if (normalizedDegrees >= 112.5 && normalizedDegrees < 157.5) return 'SE';
-    if (normalizedDegrees >= 157.5 && normalizedDegrees < 202.5) return 'S';
-    if (normalizedDegrees >= 202.5 && normalizedDegrees < 247.5) return 'SW';
-    if (normalizedDegrees >= 247.5 && normalizedDegrees < 292.5) return 'W';
-    if (normalizedDegrees >= 292.5 && normalizedDegrees < 337.5) return 'NW';
+    // 16-point compass for better accuracy
+    const directions = [
+      'N', 'NNE', 'NE', 'ENE',
+      'E', 'ESE', 'SE', 'SSE',
+      'S', 'SSW', 'SW', 'WSW',
+      'W', 'WNW', 'NW', 'NNW'
+    ];
 
-    return 'N'; // fallback
+    // Each direction covers 22.5 degrees, offset by 11.25 degrees
+    final index = ((normalizedDegrees + 11.25) / 22.5).floor() % 16;
+
+    return directions[index];
   }
 
   double _degreesToRadians(double degrees) {

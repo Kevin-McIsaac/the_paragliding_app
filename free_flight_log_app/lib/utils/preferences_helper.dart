@@ -48,7 +48,17 @@ class PreferencesHelper {
   static const List<double> validClimbRateThresholds = [0.1, 0.2, 0.3, 0.5]; // m/s
   static const List<double> validTriangleClosingDistances = [500.0, 1000.0, 2000.0]; // meters
   static const List<int> validTriangleSamplingIntervals = [15, 30, 60]; // seconds
-  
+
+  // Wind limits for flyability
+  static const String maxWindSpeedKey = 'max_wind_speed';
+  static const String maxWindGustsKey = 'max_wind_gusts';
+
+  // Default values for wind limits
+  static const double defaultMaxWindSpeed = 25.0; // km/h
+  static const double defaultMaxWindGusts = 30.0; // km/h
+  static const List<double> validMaxWindSpeeds = [15.0, 20.0, 25.0, 30.0, 35.0]; // km/h
+  static const List<double> validMaxWindGusts = [20.0, 25.0, 30.0, 35.0, 40.0]; // km/h
+
   // Cesium 3D Map methods
   static Future<String?> getCesiumSceneMode() async {
     final prefs = await SharedPreferences.getInstance();
@@ -275,7 +285,46 @@ class PreferencesHelper {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(triangleSamplingIntervalKey, value);
   }
-  
+
+  // Wind limit methods for flyability assessment
+  static Future<double> getMaxWindSpeed() async {
+    final prefs = await SharedPreferences.getInstance();
+    // Check if the preference has been set before
+    if (!prefs.containsKey(maxWindSpeedKey)) {
+      // First time - set default
+      await prefs.setDouble(maxWindSpeedKey, defaultMaxWindSpeed);
+      return defaultMaxWindSpeed;
+    }
+    return prefs.getDouble(maxWindSpeedKey) ?? defaultMaxWindSpeed;
+  }
+
+  static Future<void> setMaxWindSpeed(double value) async {
+    if (value < 10.0 || value > 50.0) {
+      throw ArgumentError('Max wind speed must be between 10-50 km/h');
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(maxWindSpeedKey, value);
+  }
+
+  static Future<double> getMaxWindGusts() async {
+    final prefs = await SharedPreferences.getInstance();
+    // Check if the preference has been set before
+    if (!prefs.containsKey(maxWindGustsKey)) {
+      // First time - set default
+      await prefs.setDouble(maxWindGustsKey, defaultMaxWindGusts);
+      return defaultMaxWindGusts;
+    }
+    return prefs.getDouble(maxWindGustsKey) ?? defaultMaxWindGusts;
+  }
+
+  static Future<void> setMaxWindGusts(double value) async {
+    if (value < 15.0 || value > 60.0) {
+      throw ArgumentError('Max wind gusts must be between 15-60 km/h');
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(maxWindGustsKey, value);
+  }
+
   // Card expansion state management is now handled by CardExpansionManager
   // Legacy methods removed - use CardExpansionManager instead
 
