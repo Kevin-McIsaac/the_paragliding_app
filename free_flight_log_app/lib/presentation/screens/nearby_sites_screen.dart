@@ -73,6 +73,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
   // Search bar controller (persistent to fix backwards text issue)
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  bool _isUpdatingFromTextField = false;
 
   // Filter state for sites and airspace (defaults, will be loaded from preferences)
   bool _sitesEnabled = true; // Controls site loading and display
@@ -103,6 +105,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     _locationNotificationTimer?.cancel(); // Clean up location notification timer
     _searchManager.dispose(); // Clean up search manager
     _searchController.dispose(); // Dispose search controller
+    _searchFocusNode.dispose(); // Dispose search focus node
     _mapController.dispose(); // Dispose map controller
     super.dispose();
   }
@@ -114,8 +117,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           // Update displayed sites when search state changes
           _updateDisplayedSites();
 
-          // Update search controller text if it changed externally
-          if (_searchController.text != state.query) {
+          // Only update search controller if the change came from outside the TextField
+          if (!_isUpdatingFromTextField && _searchController.text != state.query) {
             _searchController.text = state.query;
             // Move cursor to end
             _searchController.selection = TextSelection.fromPosition(
@@ -133,13 +136,21 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   Future<void> _loadPreferences() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final providerIndex = prefs.getInt(_mapProviderKey) ?? MapProvider.openStreetMap.index;
+      final savedProviderName = prefs.getString(_mapProviderKey);
       final sitesEnabled = prefs.getBool(_sitesEnabledKey) ?? true;
       final airspaceEnabled = prefs.getBool(_airspaceEnabledKey) ?? true;
 
+      MapProvider selectedProvider = MapProvider.openStreetMap;
+      if (savedProviderName != null) {
+        selectedProvider = MapProvider.values.firstWhere(
+          (p) => p.name == savedProviderName,
+          orElse: () => MapProvider.openStreetMap,
+        );
+      }
+
       if (mounted) {
         setState(() {
-          _selectedMapProvider = MapProvider.values[providerIndex];
+          _selectedMapProvider = selectedProvider;
           _sitesEnabled = sitesEnabled;
           _airspaceEnabled = airspaceEnabled;
         });
@@ -677,7 +688,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   Future<void> _saveMapProviderPreference(MapProvider provider) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(_mapProviderKey, provider.index);
+      await prefs.setString(_mapProviderKey, provider.name);
     } catch (e) {
       LoggingService.error('Failed to save map provider preference', e);
     }
@@ -740,7 +751,12 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           ),
           child: TextField(
             controller: _searchController,
-            onChanged: _searchManager.onSearchQueryChanged,
+            focusNode: _searchFocusNode,
+            onChanged: (value) {
+              _isUpdatingFromTextField = true;
+              _searchManager.onSearchQueryChanged(value);
+              _isUpdatingFromTextField = false;
+            },
             style: const TextStyle(fontSize: 16, color: Colors.white),
             decoration: InputDecoration(
               isDense: true,
@@ -751,8 +767,10 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                   ? IconButton(
                       icon: const Icon(Icons.clear, size: 18, color: Colors.white),
                       onPressed: () {
+                        _isUpdatingFromTextField = true;
                         _searchController.clear();
                         _searchManager.onSearchQueryChanged('');
+                        _isUpdatingFromTextField = false;
                       },
                       padding: EdgeInsets.zero,
                     )
