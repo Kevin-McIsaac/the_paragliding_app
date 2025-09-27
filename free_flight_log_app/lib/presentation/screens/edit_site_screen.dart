@@ -629,6 +629,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     MapBoundsManager.instance.loadSitesForBoundsDebounced(
       context: 'edit_site',
       bounds: bounds,
+      zoomLevel: _mapController?.camera.zoom,
       siteLimit: MapConstants.defaultSiteLimit,
       includeFlightCounts: true,
       onLoaded: (result) {
@@ -650,6 +651,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
     MapBoundsManager.instance.loadSitesForBoundsDebounced(
       context: 'edit_site',
       bounds: bounds,
+      zoomLevel: _mapController?.camera.zoom,
       siteLimit: MapConstants.defaultSiteLimit,
       includeFlightCounts: true,
       onLoaded: (result) {
