@@ -1558,54 +1558,58 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
             else if (_loadingError != null)
               Center(child: Text(_loadingError!, style: TextStyle(color: Colors.red)))
             else if (windDirections.isNotEmpty) ...[
-              // Two-column layout: Wind rose on left, weather info on right
-              Row(
+              // Compact single-column layout with inline wind rose
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Left column - Wind Rose
-                  Expanded(
-                    child: Center(
-                      child: WindRoseWidget(
-                        launchableDirections: windDirections,
-                        size: 140.0,
-                        windSpeed: widget.windData?.speedKmh,
-                        windDirection: widget.windData?.directionDegrees,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Wind rose on the left
+                      Padding(
+                        padding: const EdgeInsets.only(right: 12.0),
+                        child: WindRoseWidget(
+                          launchableDirections: windDirections,
+                          size: 100.0,
+                          windSpeed: widget.windData?.speedKmh,
+                          windDirection: widget.windData?.directionDegrees,
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  // Right column - Weather Information
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      children: [
-                        // Weather description
-                        if (weatherInfo != null && weatherInfo.isNotEmpty) ...[
-                          Text(
-                            weatherInfo,
-                            style: Theme.of(context).textTheme.bodyMedium,
-                          ),
-                          const SizedBox(height: 12),
-                        ],
+                      // Weather text on the right, flexible to use remaining space
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Weather description
+                            if (weatherInfo != null && weatherInfo.isNotEmpty) ...[
+                              Text(
+                                weatherInfo,
+                                style: Theme.of(context).textTheme.bodyMedium,
+                                softWrap: true,
+                              ),
+                              const SizedBox(height: 8),
+                            ],
 
-                        // Flight characteristics
-                        if (thermalFlag == '1' || soaringFlag == '1' || xcFlag == '1') ...[
-                          _buildCompactFlightCharacteristics(thermalFlag, soaringFlag, xcFlag),
-                        ],
+                            // Flight characteristics
+                            if (thermalFlag == '1' || soaringFlag == '1' || xcFlag == '1') ...[
+                              _buildCompactFlightCharacteristics(thermalFlag, soaringFlag, xcFlag),
+                            ],
 
-                        // If no weather content at all
-                        if ((weatherInfo == null || weatherInfo.isEmpty) &&
-                            thermalFlag != '1' && soaringFlag != '1' && xcFlag != '1') ...[
-                          Text(
-                            'No weather information available for this site.',
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
+                            // If no weather content at all
+                            if ((weatherInfo == null || weatherInfo.isEmpty) &&
+                                thermalFlag != '1' && soaringFlag != '1' && xcFlag != '1') ...[
+                              Text(
+                                'No weather information available for this site.',
+                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: Colors.grey.shade600,
+                                ),
+                                softWrap: true,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

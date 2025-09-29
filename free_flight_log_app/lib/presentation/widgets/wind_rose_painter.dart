@@ -147,11 +147,12 @@ class WindRosePainter extends CustomPainter {
       final x = center.dx + labelRadius * cos(radians);
       final y = center.dy + labelRadius * sin(radians);
 
-      // Create text painter
+      // Create text painter with smaller font size
       final textPainter = TextPainter(
         text: TextSpan(
           text: direction,
-          style: theme.textTheme.labelMedium?.copyWith(
+          style: theme.textTheme.labelSmall?.copyWith(
+            fontSize: 11,  // Smaller font for cardinal directions
             color: isLaunchable
                 ? Colors.green.shade700
                 : theme.colorScheme.onSurface.withValues(alpha: 0.7),
@@ -212,7 +213,7 @@ class WindRosePainter extends CustomPainter {
     final arrowPaint = Paint()
       ..color = theme.colorScheme.outline
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.0
+      ..strokeWidth = 1.5  // Thinner arrow line
       ..strokeCap = StrokeCap.round;
 
     // Draw arrow line
@@ -223,8 +224,8 @@ class WindRosePainter extends CustomPainter {
     );
 
     // Draw arrowhead
-    final arrowheadLength = 8.0;
-    final arrowheadAngle = 30 * pi / 180; // 30 degrees
+    final arrowheadLength = 6.0;  // Smaller arrowhead
+    final arrowheadAngle = 25 * pi / 180; // Narrower angle
 
     final arrowheadLeft = Offset(
       endX - arrowheadLength * cos(arrowAngle - arrowheadAngle),
@@ -241,9 +242,10 @@ class WindRosePainter extends CustomPainter {
   }
 
   void _drawWindSpeedText(Canvas canvas, Offset center, double radius) {
-    // Calculate optimal font size to fit within circle
-    final innerCircleRadius = radius * 0.50;
-    final speedFontSize = innerCircleRadius * 0.6; // Larger size to fill circle better
+    // Use fixed center dot radius to ensure text fits properly
+    final centerDotRadius = 15.0;
+    // Make font size relative to center dot, not full radius
+    final speedFontSize = centerDotRadius * 1.2; // Larger text to fill center dot better
 
     // Draw speed number (centered)
     final speedTextPainter = TextPainter(
@@ -252,7 +254,7 @@ class WindRosePainter extends CustomPainter {
         style: TextStyle(
           color: theme.colorScheme.outline,
           fontSize: speedFontSize,
-          fontWeight: FontWeight.w900,
+          fontWeight: FontWeight.w600,  // Reduced from w900 to w600
         ),
       ),
       textDirection: TextDirection.ltr,
