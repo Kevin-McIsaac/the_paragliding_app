@@ -580,8 +580,16 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           });
 
           // Auto-fetch wind data when sites are loaded for the first time
-          if (_displayedSites.isNotEmpty && _siteWindData.isEmpty) {
-            _fetchWindDataForSites();
+          // or when navigating to new sites that don't have wind data
+          if (_displayedSites.isNotEmpty) {
+            // Check if any displayed site is missing wind data
+            final missingWindData = _displayedSites.any((site) {
+              final key = '${site.latitude}_${site.longitude}';
+              return !_siteWindData.containsKey(key);
+            });
+            if (missingWindData || _siteWindData.isEmpty) {
+              _fetchWindDataForSites();
+            }
           }
         }
       },
