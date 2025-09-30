@@ -38,11 +38,22 @@ class SiteMarkerUtils {
     bool showBorder = false,
     Color borderColor = Colors.white,
     double borderWidth = 2.0,
-    Color? centerDotColor,  // New parameter for flyability indicator
+    Color? centerDotColor,  // Flyability indicator circle color
   }) {
     return Stack(
       alignment: Alignment.center,
       children: [
+        // Flyability indicator circle (behind icon, shows through transparent center)
+        if (centerDotColor != null)
+          Container(
+            width: 22,  // Large enough to show through icon center
+            height: 22,
+            decoration: BoxDecoration(
+              color: centerDotColor,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+            ),
+          ),
         // White outline
         const Icon(
           Icons.location_on,
@@ -63,20 +74,6 @@ class SiteMarkerUtils {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(color: borderColor, width: borderWidth),
-            ),
-          ),
-        // Flyability indicator dot (positioned in center of marker)
-        if (centerDotColor != null)
-          Positioned(
-            top: 8,  // Position in the circular part of location_on icon
-            child: Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: centerDotColor,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 1),
-              ),
             ),
           ),
       ],
