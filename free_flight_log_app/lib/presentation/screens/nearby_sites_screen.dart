@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -1135,7 +1136,7 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
   void initState() {
     super.initState();
     // Create tab controller for both local and API sites - both can have detailed data
-    _tabController = TabController(length: 5, vsync: this); // 5 tabs: Takeoff, Rules, Access, Weather, Comments
+    _tabController = TabController(length: 2, vsync: this); // 2 tabs: Takeoff, Weather
     _loadSiteDetails();
   }
 
@@ -1178,6 +1179,14 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
           _detailedData = details;
           _isLoadingDetails = false;
         });
+        // Debug: Log all available fields
+        if (details != null) {
+          LoggingService.info('Site details fields: ${details.keys.toList()}');
+          LoggingService.info('Has landing_altitude: ${details.containsKey('landing_altitude')}');
+          LoggingService.info('Has landing_description: ${details.containsKey('landing_description')}');
+          LoggingService.info('Has lz_altitude: ${details.containsKey('lz_altitude')}');
+          LoggingService.info('Has lz_description: ${details.containsKey('lz_description')}');
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -1260,12 +1269,26 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        name,
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
+                      // Make name clickable if PGE link is available
+                      if (_detailedData?['pge_link'] != null)
+                        InkWell(
+                          onTap: () => _launchUrl(_detailedData!['pge_link']),
+                          child: Text(
+                            name,
+                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.primary,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        )
+                      else
+                        Text(
+                          name,
+                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -1301,11 +1324,8 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                           indicatorWeight: 1.0,
                           indicatorPadding: EdgeInsets.zero,
                         tabs: const [
-                          Tab(icon: Tooltip(message: 'Takeoff', child: Icon(Icons.flight_takeoff, size: 18))),
-                          Tab(icon: Tooltip(message: 'Rules', child: Icon(Icons.policy, size: 18))),
-                          Tab(icon: Tooltip(message: 'Access', child: Icon(Icons.location_on, size: 18))),
-                          Tab(icon: Tooltip(message: 'Weather', child: Icon(Icons.cloud, size: 18))),
-                          Tab(icon: Tooltip(message: 'Comments', child: Icon(Icons.comment, size: 18))),
+                          Tab(icon: Tooltip(message: 'Site Information', child: Icon(Icons.info_outline, size: 18))),
+                          Tab(icon: Tooltip(message: 'Site Weather', child: Icon(Icons.air, size: 18))),
                         ],
                         ),
                       ),
@@ -1314,15 +1334,10 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                           controller: _tabController,
                           children: [
                             _buildTakeoffTab(),
-                            _buildRulesTab(),
-                            _buildAccessTab(),
                             _buildWeatherTab(windDirections),
-                            _buildCommentsTab(),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      _buildActionButtons(name, latitude, longitude),
                     ],
                   ),
                 ),
@@ -1336,61 +1351,33 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
 
   List<Widget> _buildOverviewContent(String name, double latitude, double longitude, int? altitude, String? country, String? region, int? rating, String? siteType, List<String> windDirections, int? flightCount, String? distanceText) {
     return [
-            // Row 1: Location + Distance + Rating (moved to header)
+            // Row 2: Site Type + Altitude + Wind + Directions
             Row(
               children: [
-                // Location info
-                if (region != null || country != null) ...[
-                  const Icon(Icons.location_on, size: 16, color: Colors.grey),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      [region, country].where((s) => s != null && s.isNotEmpty).join(', '),
-                      style: Theme.of(context).textTheme.bodySmall,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-                // Distance
-                if (distanceText != null) ...[
-                  const SizedBox(width: 12),
-                  const Icon(Icons.straighten, size: 16, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Text(
-                    '$distanceText away',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ],
-            ),
-            const SizedBox(height: 6),
-            
-            // Row 2: Site Type + Altitude + Wind
-            Row(
-              children: [
-                // Site type with characteristics tooltip
+                // Site type with characteristics tooltip on icon
                 if (siteType != null) ...[
-                  Icon(
-                    _getSiteTypeIcon(siteType), 
-                    size: 16, 
-                    color: Colors.grey,
-                  ),
-                  const SizedBox(width: 6),
                   Tooltip(
                     message: _buildSiteCharacteristicsTooltip(),
-                    child: Text(
-                      _formatSiteType(siteType),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        fontWeight: FontWeight.w500,
-                        decoration: TextDecoration.underline,
-                        decorationStyle: TextDecorationStyle.dotted,
-                      ),
+                    child: Icon(
+                      _getSiteTypeIcon(siteType),
+                      size: 16,
+                      color: Colors.grey,
                     ),
                   ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _formatSiteType(siteType),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const Text(':', style: TextStyle(color: Colors.grey)),
                 ],
                 // Show altitude (prefer takeoff_altitude from API, fallback to general altitude)
                 if (_detailedData?['takeoff_altitude'] != null || altitude != null) ...[
                   const SizedBox(width: 12),
+                  const Icon(Icons.terrain, size: 16, color: Colors.grey),
+                  const SizedBox(width: 4),
                   Text(
                     '${_detailedData?['takeoff_altitude'] ?? altitude}m',
                     style: Theme.of(context).textTheme.bodySmall,
@@ -1409,9 +1396,73 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                     ),
                   ),
                 ],
+                // Map icon - opens maps app (directly after wind directions)
+                const SizedBox(width: 12),
+                InkWell(
+                  onTap: () => _launchMap(latitude, longitude),
+                  child: const Icon(
+                    Icons.map,
+                    size: 16,
+                    color: Colors.blue,
+                  ),
+                ),
               ],
             ),
-            
+
+            // Landing information row (if available)
+            if (_detailedData?['landing_altitude'] != null || _detailedData?['landing_description'] != null || _detailedData?['landing_lat'] != null) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  // Landing icon with tooltip
+                  Tooltip(
+                    message: 'Landing information',
+                    child: const Icon(
+                      Icons.flight_land,
+                      size: 16,
+                      color: Colors.grey,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Landing Site',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const Text(':', style: TextStyle(color: Colors.grey)),
+                  // Landing altitude
+                  if (_detailedData?['landing_altitude'] != null) ...[
+                    const SizedBox(width: 12),
+                    const Icon(Icons.terrain, size: 16, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${_detailedData!['landing_altitude']}m',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                  // Map icon for landing - uses landing coordinates if available
+                  const SizedBox(width: 12),
+                  InkWell(
+                    onTap: () {
+                      final landingLat = double.tryParse(_detailedData?['landing_lat']?.toString() ?? '');
+                      final landingLng = double.tryParse(_detailedData?['landing_lng']?.toString() ?? '');
+                      if (landingLat != null && landingLng != null) {
+                        _launchMap(landingLat, landingLng);
+                      } else {
+                        _launchMap(latitude, longitude);
+                      }
+                    },
+                    child: const Icon(
+                      Icons.map,
+                      size: 16,
+                      color: Colors.blue,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+
             // Flight count (for local sites) - only show if present
             if (flightCount != null && flightCount > 0) ...[
               const SizedBox(height: 6),
@@ -1443,6 +1494,22 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
           else if (_loadingError != null)
             Center(child: Text(_loadingError!, style: TextStyle(color: Colors.red)))
           else if (_detailedData != null) ...[
+            // ===== TAKEOFF SECTION =====
+            Row(
+              children: [
+                Icon(Icons.flight_takeoff, size: 18, color: Colors.grey[300]),
+                const SizedBox(width: 8),
+                Text(
+                  'Takeoff',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey[300],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+
             // Takeoff instructions
             if (_detailedData!['takeoff_description'] != null && _detailedData!['takeoff_description']!.toString().isNotEmpty) ...[
               Text(
@@ -1451,9 +1518,23 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
               ),
               const SizedBox(height: 16),
             ],
-            
-            // Landing information
+
+            // ===== LANDING SECTION =====
             if (_detailedData!['landing_description'] != null && _detailedData!['landing_description']!.toString().isNotEmpty) ...[
+              Row(
+                children: [
+                  Icon(Icons.flight_land, size: 18, color: Colors.grey[300]),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Landing',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[300],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
               Text(
                 _detailedData!['landing_description']!.toString(),
                 style: Theme.of(context).textTheme.bodyMedium,
@@ -1463,20 +1544,175 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
             
             // Parking information
             if (_detailedData!['takeoff_parking_description'] != null && _detailedData!['takeoff_parking_description']!.toString().isNotEmpty) ...[
+              Row(
+                children: [
+                  Icon(Icons.local_parking, size: 18, color: Colors.grey[300]),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Parking Information',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[300],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
               Text(
                 _detailedData!['takeoff_parking_description']!.toString(),
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
+              // Add navigation to parking location if coordinates available
+              if (_detailedData!['landing'] != null &&
+                  _detailedData!['landing']['landing_parking_lat'] != null &&
+                  _detailedData!['landing']['landing_parking_lng'] != null) ...[
+                const SizedBox(height: 8),
+                InkWell(
+                  onTap: () {
+                    final lat = double.tryParse(_detailedData!['landing']['landing_parking_lat'].toString());
+                    final lng = double.tryParse(_detailedData!['landing']['landing_parking_lng'].toString());
+                    if (lat != null && lng != null) {
+                      _launchNavigation(lat, lng);
+                    }
+                  },
+                  child: Row(
+                    children: [
+                      const Icon(Icons.directions, size: 16, color: Colors.blue),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Navigate to parking',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.blue,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
             ],
-            
-            // Altitude information
-            if (widget.paraglidingSite?.altitude != null) ...[
+
+            // Flight Rules section
+            if (_detailedData!['flight_rules'] != null && _detailedData!['flight_rules']!.toString().isNotEmpty) ...[
+              Row(
+                children: [
+                  Icon(Icons.policy, size: 18, color: Colors.grey[300]),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Flight Rules & Regulations',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[300],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
               Text(
-                '${widget.paraglidingSite!.altitude}m above sea level',
+                _detailedData!['flight_rules']!.toString(),
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 16),
+            ],
+
+            // Access Instructions section
+            if (_detailedData!['going_there'] != null && _detailedData!['going_there']!.toString().isNotEmpty) ...[
+              Row(
+                children: [
+                  Icon(Icons.directions_car, size: 18, color: Colors.grey[300]),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Access Instructions',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[300],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _buildLinkableText(_detailedData!['going_there']!.toString()),
+              const SizedBox(height: 16),
+            ],
+
+            // Community Comments section
+            if (_detailedData!['comments'] != null && _detailedData!['comments']!.toString().isNotEmpty) ...[
+              Row(
+                children: [
+                  Icon(Icons.info_outline, size: 18, color: Colors.grey[300]),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Local Information',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[300],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _buildLinkableText(_detailedData!['comments']!.toString()),
+              const SizedBox(height: 16),
+            ],
+
+            // Alternate Takeoffs section
+            if (_detailedData!['alternate_takeoffs'] != null && _hasAlternateTakeoffs(_detailedData!['alternate_takeoffs'])) ...[
+              Row(
+                children: [
+                  Icon(Icons.alt_route, size: 18, color: Colors.grey[300]),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Alternative Launch Points',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[300],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _buildAlternateTakeoffs(_detailedData!['alternate_takeoffs']),
+              const SizedBox(height: 16),
+            ],
+
+            // Alternate Landings section
+            if (_detailedData!['landing'] != null && _detailedData!['landing']['alternate_landings'] != null) ...[
+              Row(
+                children: [
+                  Icon(Icons.alt_route, size: 18, color: Colors.grey[300]),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Alternative Landing Zones',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[300],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _buildAlternateLandings(_detailedData!['landing']['alternate_landings']),
+            ],
+
+            // Last updated information
+            if (_detailedData!['last_edit'] != null) ...[
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Icon(Icons.update, size: 14, color: Colors.grey),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Last updated: ${_detailedData!['last_edit']}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
             ],
           ] else
             const Center(child: Text('No takeoff information available')),
@@ -1884,6 +2120,20 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     }
   }
 
+  /// Launch map to view a location (not navigate)
+  Future<void> _launchMap(double latitude, double longitude) async {
+    final uri = Uri.parse('https://maps.google.com/?q=$latitude,$longitude');
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      LoggingService.action('NearbySites', 'launch_map', {
+        'latitude': latitude,
+        'longitude': longitude,
+      });
+    } catch (e) {
+      LoggingService.error('NearbySites: Could not launch map', e);
+    }
+  }
+
   /// Launch URL in external browser
   Future<void> _launchUrl(String url) async {
     final uri = Uri.parse(url);
@@ -1895,38 +2145,6 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     }
   }
 
-  Widget _buildActionButtons(String name, double latitude, double longitude) {
-    return Column(
-      children: [
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: () {
-              Navigator.of(context).pop();
-              _launchNavigation(latitude, longitude);
-            },
-            icon: const Icon(Icons.navigation),
-            label: const Text('Navigate'),
-          ),
-        ),
-        // View on PGE button for API sites
-        if (widget.paraglidingSite != null && _detailedData != null && _detailedData!['pgeid'] != null) ...[
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: TextButton.icon(
-              onPressed: () {
-                final pgeUrl = 'https://www.paraglidingearth.com/pgearth/index.php?site=${_detailedData!['pgeid']}';
-                _launchUrl(pgeUrl);
-              },
-              icon: const Icon(Icons.open_in_new, size: 18),
-              label: const Text('View Full Details on ParaglidingEarth'),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
 
   List<Widget> _buildSimpleContent(String name, double latitude, double longitude, int? altitude, String? country, String? region, int? rating, String? siteType, List<String> windDirections, int? flightCount, String? distanceText, String? description) {
     return [
@@ -2046,11 +2264,6 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
           style: Theme.of(context).textTheme.bodyMedium,
         ),
       ],
-      
-      const SizedBox(height: 20),
-      
-      // Action buttons
-      _buildActionButtons(name, latitude, longitude),
     ];
   }
   
@@ -2106,6 +2319,303 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     return characteristics.isNotEmpty
         ? characteristics.join(', ')
         : 'Site information';
+  }
+
+  /// Build clickable text that turns URLs into links
+  Widget _buildLinkableText(String text) {
+    // Simple URL detection - matches http/https URLs
+    final urlRegex = RegExp(r'https?://[^\s]+');
+    final matches = urlRegex.allMatches(text);
+
+    if (matches.isEmpty) {
+      return Text(
+        text,
+        style: Theme.of(context).textTheme.bodyMedium,
+      );
+    }
+
+    final spans = <TextSpan>[];
+    int lastEnd = 0;
+
+    for (final match in matches) {
+      // Add text before the URL
+      if (match.start > lastEnd) {
+        spans.add(TextSpan(
+          text: text.substring(lastEnd, match.start),
+          style: Theme.of(context).textTheme.bodyMedium,
+        ));
+      }
+
+      // Add the clickable URL
+      final url = match.group(0)!;
+      spans.add(TextSpan(
+        text: url,
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          color: Colors.blue,
+          decoration: TextDecoration.underline,
+        ),
+        recognizer: TapGestureRecognizer()..onTap = () => _launchUrl(url),
+      ));
+
+      lastEnd = match.end;
+    }
+
+    // Add remaining text after the last URL
+    if (lastEnd < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(lastEnd),
+        style: Theme.of(context).textTheme.bodyMedium,
+      ));
+    }
+
+    return RichText(
+      text: TextSpan(children: spans),
+    );
+  }
+
+  /// Check if alternate takeoffs data has valid content
+  bool _hasAlternateTakeoffs(dynamic alternateData) {
+    if (alternateData == null) return false;
+
+    List<dynamic> alternates = [];
+    if (alternateData is Map && alternateData.containsKey('alternate_takeoff')) {
+      final alt = alternateData['alternate_takeoff'];
+      if (alt is List) {
+        alternates = alt;
+      } else {
+        alternates = [alt];
+      }
+    } else if (alternateData is List) {
+      alternates = alternateData;
+    } else {
+      alternates = [alternateData];
+    }
+
+    // Check if any alternate has meaningful data (lat/lng or description)
+    for (final alternate in alternates) {
+      if (alternate is Map) {
+        final hasCoords = alternate['lat'] != null || alternate['lng'] != null;
+        final hasDesc = alternate['description']?.toString().isNotEmpty == true;
+        final hasName = alternate['name']?.toString().isNotEmpty == true;
+        if (hasCoords || hasDesc || hasName) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /// Build alternate takeoffs section
+  Widget _buildAlternateTakeoffs(dynamic alternateData) {
+    if (alternateData == null) {
+      return const SizedBox.shrink();
+    }
+
+    // Handle both single alternate takeoff and list of alternates
+    List<dynamic> alternates = [];
+    if (alternateData is Map && alternateData.containsKey('alternate_takeoff')) {
+      final alt = alternateData['alternate_takeoff'];
+      if (alt is List) {
+        alternates = alt;
+      } else {
+        alternates = [alt];
+      }
+    } else if (alternateData is List) {
+      alternates = alternateData;
+    } else {
+      alternates = [alternateData];
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: alternates.asMap().entries.map((entry) {
+        final index = entry.key;
+        final alternate = entry.value;
+
+        if (alternate is! Map) return const SizedBox.shrink();
+
+        final name = alternate['name']?.toString();
+        final lat = double.tryParse(alternate['lat']?.toString() ?? '');
+        final lng = double.tryParse(alternate['lng']?.toString() ?? '');
+        final altitude = alternate['altitude']?.toString();
+        final description = alternate['description']?.toString();
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.flag, size: 16, color: Colors.purple.shade700),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      name?.isNotEmpty == true ? name! : 'Alternate ${index + 1}',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  if (lat != null && lng != null)
+                    InkWell(
+                      onTap: () => _launchNavigation(lat, lng),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.directions, size: 16, color: Colors.blue),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Navigate',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.blue,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+              if (altitude != null) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(Icons.terrain, size: 14, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${altitude}m',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ],
+              if (description?.isNotEmpty == true) ...[
+                const SizedBox(height: 6),
+                Text(
+                  description!,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  /// Build alternate landings section
+  Widget _buildAlternateLandings(dynamic alternateData) {
+    if (alternateData == null) {
+      return const SizedBox.shrink();
+    }
+
+    // Handle both single alternate landing and list of alternates
+    List<dynamic> alternates = [];
+    if (alternateData is Map && alternateData.containsKey('alternate_landing')) {
+      final alt = alternateData['alternate_landing'];
+      if (alt is List) {
+        alternates = alt;
+      } else {
+        alternates = [alt];
+      }
+    } else if (alternateData is List) {
+      alternates = alternateData;
+    } else {
+      alternates = [alternateData];
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: alternates.asMap().entries.map((entry) {
+        final index = entry.key;
+        final alternate = entry.value;
+
+        if (alternate is! Map) return const SizedBox.shrink();
+
+        final name = alternate['name']?.toString();
+        final lat = double.tryParse(alternate['lat']?.toString() ?? '');
+        final lng = double.tryParse(alternate['lng']?.toString() ?? '');
+        final altitude = alternate['altitude']?.toString();
+        final description = alternate['description']?.toString();
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.teal.shade200),
+            borderRadius: BorderRadius.circular(8),
+            color: Colors.teal.shade50,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.location_on, size: 16, color: Colors.teal.shade700),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      name?.isNotEmpty == true ? name! : 'Alternate Landing ${index + 1}',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  if (lat != null && lng != null)
+                    InkWell(
+                      onTap: () => _launchNavigation(lat, lng),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.directions, size: 16, color: Colors.blue),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Navigate',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.blue,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+              if (altitude != null) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(Icons.terrain, size: 14, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${altitude}m',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ],
+              if (description?.isNotEmpty == true) ...[
+                const SizedBox(height: 6),
+                Text(
+                  description!,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      }).toList(),
+    );
   }
 }
 
