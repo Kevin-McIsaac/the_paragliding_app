@@ -10,10 +10,14 @@ class SiteMarkerUtils {
   static const double siteMarkerIconSize = 36.0;
   static const double launchMarkerSize = 25.0;
   
-  // Site status colors
+  // Site status colors (for other screens)
   static const Color flownSiteColor = Colors.purple;     // Sites with logged flights
   static const Color newSiteColor = Colors.blue;         // Sites from PGE API
-  static const Color flyableSiteColor = Colors.lightGreen; // Flyable with current wind
+
+  // Nearby Sites map flyability colors
+  static const Color flyableSiteColor = Colors.green;    // Flyable with current wind
+  static const Color notFlyableSiteColor = Colors.red;   // Not flyable with current wind
+  static const Color unknownFlyabilitySiteColor = Colors.grey; // Wind data not available
 
   // Launch/landing colors
   static const Color launchColor = Colors.green;
@@ -38,22 +42,10 @@ class SiteMarkerUtils {
     bool showBorder = false,
     Color borderColor = Colors.white,
     double borderWidth = 2.0,
-    Color? centerDotColor,  // Flyability indicator circle color
   }) {
     return Stack(
       alignment: Alignment.center,
       children: [
-        // Flyability indicator circle (behind icon, shows through transparent center)
-        if (centerDotColor != null)
-          Container(
-            width: 22,  // Large enough to show through icon center
-            height: 22,
-            decoration: BoxDecoration(
-              color: centerDotColor,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
-            ),
-          ),
         // White outline
         const Icon(
           Icons.location_on,
