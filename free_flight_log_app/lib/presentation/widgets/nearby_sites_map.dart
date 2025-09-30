@@ -196,34 +196,32 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     return isFlyable;
   }
 
-  /// Get the marker color for a site based on flown/new status
+  /// Get the marker color for a site based on flight history
   Color _getSiteMarkerColor(ParaglidingSite site) {
-    // Icon color always shows status (purple = flown, blue = new)
+    // Color indicates flight history (purple = flown, blue = new)
     return site.hasFlights
-        ? SiteMarkerUtils.flownSiteColor  // Purple
-        : SiteMarkerUtils.newSiteColor;   // Blue
+        ? SiteMarkerUtils.flownSiteColor
+        : SiteMarkerUtils.newSiteColor;
   }
 
-  /// Get outline color based on flyability status
-  Color _getOutlineColor(ParaglidingSite site) {
+  /// Get the center dot color based on flyability
+  Color? _getFlyabilityDotColor(ParaglidingSite site) {
     final windKey = '${site.latitude}_${site.longitude}';
     final wind = widget.siteWindData[windKey];
 
     // No wind data = white (unknown)
-    if (wind == null || site.windDirections.isEmpty) {
-      return SiteMarkerUtils.unknownFlyabilityColor;
+    if (wind == null) {
+      return Colors.white;
     }
 
-    // Check flyability
-    final isFlyable = wind.isFlyable(
-      site.windDirections,
-      widget.maxWindSpeed,
-      widget.maxWindGusts,
-    );
+    // No site wind directions = can't determine flyability
+    if (site.windDirections.isEmpty) {
+      return Colors.white;
+    }
 
-    return isFlyable
-      ? SiteMarkerUtils.flyableOutlineColor
-      : SiteMarkerUtils.unflyableOutlineColor;
+    // Check if flyable
+    final isFlyable = _isSiteFlyable(site);
+    return isFlyable ? Colors.green : Colors.red;
   }
 
   /// Build markers for clustering with site data preserved
@@ -242,7 +240,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
             children: [
               SiteMarkerUtils.buildSiteMarkerIcon(
                 color: _getSiteMarkerColor(site),
-                outlineColor: _getOutlineColor(site),
+                centerDotColor: _getFlyabilityDotColor(site),
               ),
               SiteMarkerUtils.buildSiteLabel(
                 siteName: site.name,
@@ -260,16 +258,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     final count = markers.length;
     final displayText = count > 999 ? '999+' : count.toString();
 
-    // Check if any sites are flyable
-    final hasFlyableSites = markers.any((marker) {
-      if (marker.key is ValueKey<ParaglidingSite>) {
-        final site = (marker.key as ValueKey<ParaglidingSite>).value;
-        return _isSiteFlyable(site);
-      }
-      return false;
-    });
-
-    // Check if any markers are flown sites (green)
+    // Check if any markers are flown sites (purple)
     final hasFlownSites = markers.any((marker) {
       if (marker.key is ValueKey<ParaglidingSite>) {
         final site = (marker.key as ValueKey<ParaglidingSite>).value;
@@ -278,8 +267,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
       return false;
     });
 
-    // Cluster color based on priority: flown (purple) > new (blue)
-    // Flyability is shown via outline, not cluster color
+    // Use purple for flown sites, blue for new sites
     final clusterColor = hasFlownSites
         ? SiteMarkerUtils.flownSiteColor
         : SiteMarkerUtils.newSiteColor;

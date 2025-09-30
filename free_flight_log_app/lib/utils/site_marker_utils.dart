@@ -13,11 +13,7 @@ class SiteMarkerUtils {
   // Site status colors
   static const Color flownSiteColor = Colors.purple;     // Sites with logged flights
   static const Color newSiteColor = Colors.blue;         // Sites from PGE API
-
-  // Flyability outline colors (shown on marker outline)
-  static const Color flyableOutlineColor = Colors.green;      // Green = safe to fly
-  static const Color unflyableOutlineColor = Colors.red;      // Red = not flyable
-  static const Color unknownFlyabilityColor = Colors.white;   // White = no wind data
+  static const Color flyableSiteColor = Colors.lightGreen; // Flyable with current wind
 
   // Launch/landing colors
   static const Color launchColor = Colors.green;
@@ -39,21 +35,21 @@ class SiteMarkerUtils {
   /// Create a site marker icon with consistent styling
   static Widget buildSiteMarkerIcon({
     required Color color,
-    Color outlineColor = Colors.white,  // Configurable outline for flyability
     bool showBorder = false,
     Color borderColor = Colors.white,
     double borderWidth = 2.0,
+    Color? centerDotColor,  // New parameter for flyability indicator
   }) {
     return Stack(
       alignment: Alignment.center,
       children: [
-        // Outline (color indicates flyability status)
-        Icon(
+        // White outline
+        const Icon(
           Icons.location_on,
-          color: outlineColor,
+          color: Colors.white,
           size: siteMarkerSize,
         ),
-        // Colored marker (color indicates flown/new status)
+        // Colored marker
         Icon(
           Icons.location_on,
           color: color,
@@ -67,6 +63,20 @@ class SiteMarkerUtils {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(color: borderColor, width: borderWidth),
+            ),
+          ),
+        // Flyability indicator dot (positioned in center of marker)
+        if (centerDotColor != null)
+          Positioned(
+            top: 8,  // Position in the circular part of location_on icon
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: centerDotColor,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 1),
+              ),
             ),
           ),
       ],
