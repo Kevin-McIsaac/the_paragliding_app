@@ -13,7 +13,11 @@ class SiteMarkerUtils {
   // Site status colors
   static const Color flownSiteColor = Colors.purple;     // Sites with logged flights
   static const Color newSiteColor = Colors.blue;         // Sites from PGE API
-  static const Color flyableSiteColor = Colors.lightGreen; // Flyable with current wind
+
+  // Flyability outline colors (shown on marker outline)
+  static const Color flyableOutlineColor = Colors.green;      // Green = safe to fly
+  static const Color unflyableOutlineColor = Colors.red;      // Red = not flyable
+  static const Color unknownFlyabilityColor = Colors.white;   // White = no wind data
 
   // Launch/landing colors
   static const Color launchColor = Colors.green;
@@ -35,6 +39,7 @@ class SiteMarkerUtils {
   /// Create a site marker icon with consistent styling
   static Widget buildSiteMarkerIcon({
     required Color color,
+    Color outlineColor = Colors.white,  // Configurable outline for flyability
     bool showBorder = false,
     Color borderColor = Colors.white,
     double borderWidth = 2.0,
@@ -42,13 +47,13 @@ class SiteMarkerUtils {
     return Stack(
       alignment: Alignment.center,
       children: [
-        // White outline
-        const Icon(
+        // Outline (color indicates flyability status)
+        Icon(
           Icons.location_on,
-          color: Colors.white,
+          color: outlineColor,
           size: siteMarkerSize,
         ),
-        // Colored marker
+        // Colored marker (color indicates flown/new status)
         Icon(
           Icons.location_on,
           color: color,
