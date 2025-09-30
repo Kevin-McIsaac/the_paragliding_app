@@ -202,7 +202,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     final isFlyable = _isSiteFlyable(site);
 
     if (isFlyable) {
-      return Colors.pink; // Flyable!
+      return SiteMarkerUtils.flyableSiteColor; // Flyable with current wind!
     }
 
     // Default colors based on flight history
@@ -262,10 +262,10 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
       return false;
     });
 
-    // Use pink for flyable sites, green for flown sites, blue for new sites
+    // Use light green for flyable sites, purple for flown sites, blue for new sites
     final clusterColor = hasFlyableSites
-        ? Colors.pink
-        : (hasFlownSites ? Colors.green : Colors.blue);
+        ? SiteMarkerUtils.flyableSiteColor
+        : (hasFlownSites ? SiteMarkerUtils.flownSiteColor : SiteMarkerUtils.newSiteColor);
 
     return Container(
       width: 40,
