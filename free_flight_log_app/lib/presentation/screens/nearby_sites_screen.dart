@@ -955,65 +955,12 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                           siteWindData: _siteWindData,
                           maxWindSpeed: _maxWindSpeed,
                           maxWindGusts: _maxWindGusts,
+                          selectedDateTime: _selectedDateTime,
                           onBoundsChanged: _onBoundsChanged,
                           showUserLocation: true,
                           isLocationLoading: _isLocationLoading,
                           initialCenter: _mapCenterPosition,
                           initialZoom: _mapZoom,
-                        ),
-
-                        // Collapsible wind forecast status bar
-                        Positioned(
-                          bottom: 0,
-                          left: 0,
-                          right: 0,
-                          child: GestureDetector(
-                            onTap: _toggleWindBar,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              color: Theme.of(context).primaryColor.withOpacity(0.9),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.air, size: 16, color: Colors.white),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      _isWindBarExpanded
-                                          ? 'Wind forecast for ${DateFormat('MMM d, h:mm a').format(_selectedDateTime)}'
-                                          : DateFormat('MMM d, h:mm a').format(_selectedDateTime),
-                                      style: const TextStyle(fontSize: 12, color: Colors.white),
-                                    ),
-                                  ),
-                                  if (_isWindBarExpanded) ...[
-                                    if (_isLoadingWind)
-                                      const SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                        ),
-                                      )
-                                    else
-                                      TextButton(
-                                        onPressed: _fetchWindDataForSites,
-                                        style: TextButton.styleFrom(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                          minimumSize: const Size(0, 0),
-                                          foregroundColor: Colors.white,
-                                        ),
-                                        child: const Text('Refresh', style: TextStyle(fontSize: 12)),
-                                      ),
-                                  ],
-                                  Icon(
-                                    _isWindBarExpanded ? Icons.expand_more : Icons.expand_less,
-                                    size: 16,
-                                    color: Colors.white,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
                         ),
 
                         // Search results overlay - below AppBar

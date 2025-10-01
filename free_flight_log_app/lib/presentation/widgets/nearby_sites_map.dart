@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:intl/intl.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/wind_data.dart';
 import '../../services/logging_service.dart';
@@ -26,6 +27,7 @@ class NearbySitesMap extends BaseMapWidget {
   final Map<String, WindData> siteWindData;
   final double maxWindSpeed;
   final double maxWindGusts;
+  final DateTime selectedDateTime;
 
   const NearbySitesMap({
     super.key,
@@ -41,6 +43,7 @@ class NearbySitesMap extends BaseMapWidget {
     this.siteWindData = const {},
     this.maxWindSpeed = 25.0,
     this.maxWindGusts = 30.0,
+    required this.selectedDateTime,
     super.height = 400,
     super.initialCenter,
     super.initialZoom = 10.0,
@@ -369,6 +372,19 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
   List<Widget> buildCustomSiteLegendItems() {
     // Override site legend with flyability-based colors for Nearby Sites
     return [
+      // Wind forecast date/time
+      Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.air, size: 12, color: Colors.white70),
+          const SizedBox(width: 4),
+          Text(
+            DateFormat('MMM d, h:mm a').format(widget.selectedDateTime),
+            style: const TextStyle(fontSize: 10, color: Colors.white70),
+          ),
+        ],
+      ),
+      const SizedBox(height: 4),
       SiteMarkerUtils.buildLegendItem(
         context,
         Icons.location_on,
