@@ -27,9 +27,36 @@ class WindData {
     // Check wind speed and gusts limits
     if (speedKmh > maxSpeed || gustsKmh > maxGusts) return false;
 
+    // Light wind (< 1 km/h) - any direction is acceptable
+    if (speedKmh < 1.0) return true;
+
     // Check if wind direction matches any allowed site direction
     // Allow ±22.5° tolerance (half of a compass point)
     return siteDirections.any((dir) => _isDirectionMatch(compassDirection, dir));
+  }
+
+  /// Get detailed reason for flyability status
+  String getFlyabilityReason(List<String> siteDirections, double maxSpeed, double maxGusts) {
+    if (siteDirections.isEmpty) return 'No wind directions defined for site';
+
+    if (speedKmh > maxSpeed) {
+      return '${speedKmh.toStringAsFixed(1)} km/h from $compassDirection - too strong (max: ${maxSpeed.toInt()} km/h)';
+    }
+
+    if (gustsKmh > maxGusts) {
+      return 'Gusts ${gustsKmh.toStringAsFixed(1)} km/h - too strong (max: ${maxGusts.toInt()} km/h)';
+    }
+
+    if (speedKmh < 1.0) {
+      return '${speedKmh.toStringAsFixed(1)} km/h - light wind, any direction OK';
+    }
+
+    final directionMatches = siteDirections.any((dir) => _isDirectionMatch(compassDirection, dir));
+    if (directionMatches) {
+      return '${speedKmh.toStringAsFixed(1)} km/h from $compassDirection - good direction';
+    } else {
+      return '${speedKmh.toStringAsFixed(1)} km/h from $compassDirection - wrong direction (needs: ${siteDirections.join(", ")})';
+    }
   }
 
   /// Convert degrees to 16-point compass direction for better accuracy

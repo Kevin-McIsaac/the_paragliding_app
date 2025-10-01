@@ -219,6 +219,26 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
         : SiteMarkerUtils.notFlyableSiteColor;
   }
 
+  /// Get tooltip message showing flyability status
+  String _getSiteFlyabilityTooltip(ParaglidingSite site) {
+    final windKey = '${site.latitude}_${site.longitude}';
+    final wind = widget.siteWindData[windKey];
+
+    if (wind == null) {
+      return 'No wind data available';
+    }
+
+    if (site.windDirections.isEmpty) {
+      return 'No wind directions defined';
+    }
+
+    return wind.getFlyabilityReason(
+      site.windDirections,
+      widget.maxWindSpeed,
+      widget.maxWindGusts,
+    );
+  }
+
   /// Build markers for clustering with site data preserved
   List<Marker> _buildClusterableMarkers() {
     return widget.sites.map((site) {
@@ -233,8 +253,11 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              SiteMarkerUtils.buildSiteMarkerIcon(
-                color: _getSiteMarkerColor(site),
+              Tooltip(
+                message: _getSiteFlyabilityTooltip(site),
+                child: SiteMarkerUtils.buildSiteMarkerIcon(
+                  color: _getSiteMarkerColor(site),
+                ),
               ),
               SiteMarkerUtils.buildSiteLabel(
                 siteName: site.name,
