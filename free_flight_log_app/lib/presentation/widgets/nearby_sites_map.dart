@@ -252,30 +252,29 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     final count = markers.length;
     final displayText = count > 999 ? '999+' : count.toString();
 
-    // Check if any sites are flyable
+    // Check if any sites are flyable (green)
     final hasFlyableSites = markers.any((marker) {
       if (marker.key is ValueKey<ParaglidingSite>) {
         final site = (marker.key as ValueKey<ParaglidingSite>).value;
-        return _isSiteFlyable(site);
+        final windKey = '${site.latitude}_${site.longitude}';
+        final wind = widget.siteWindData[windKey];
+
+        // Site must have wind data and allowed directions to be flyable
+        if (wind != null && site.windDirections.isNotEmpty) {
+          return _isSiteFlyable(site);
+        }
       }
       return false;
     });
 
-    // Check if any markers are flown sites (green)
-    final hasFlownSites = markers.any((marker) {
-      if (marker.key is ValueKey<ParaglidingSite>) {
-        final site = (marker.key as ValueKey<ParaglidingSite>).value;
-        return site.hasFlights;
-      }
-      return false;
-    });
-
-    // Check if any sites are not flyable (have wind data but bad conditions)
+    // Check if any sites are not flyable (red) - have wind data but bad conditions
     final hasNotFlyableSites = markers.any((marker) {
       if (marker.key is ValueKey<ParaglidingSite>) {
         final site = (marker.key as ValueKey<ParaglidingSite>).value;
         final windKey = '${site.latitude}_${site.longitude}';
         final wind = widget.siteWindData[windKey];
+
+        // Site has wind data and directions, but is not flyable
         if (wind != null && site.windDirections.isNotEmpty) {
           return !_isSiteFlyable(site);
         }
@@ -283,7 +282,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
       return false;
     });
 
-    // Priority: Green for flyable > Red for not flyable > Grey for unknown
+    // Priority: Green if any flyable > Red if any not flyable > Grey for all unknown
     final clusterColor = hasFlyableSites
         ? SiteMarkerUtils.flyableSiteColor
         : (hasNotFlyableSites ? SiteMarkerUtils.notFlyableSiteColor : SiteMarkerUtils.unknownFlyabilitySiteColor);
