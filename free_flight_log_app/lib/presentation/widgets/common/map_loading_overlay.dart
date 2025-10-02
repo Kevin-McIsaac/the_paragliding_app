@@ -111,12 +111,15 @@ class MapLoadingOverlay extends StatelessWidget {
         ),
         const SizedBox(width: 10),
         // Text label with optional count
-        Text(
-          item.count != null ? '${item.label} (${item.count})' : item.label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
+        Flexible(
+          child: Text(
+            item.count != null ? '${item.label} (${item.count})' : item.label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],

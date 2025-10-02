@@ -24,6 +24,7 @@ import '../../utils/preferences_helper.dart';
 import '../widgets/nearby_sites_map.dart';
 import '../widgets/map_filter_dialog.dart';
 import '../widgets/common/app_error_state.dart';
+import '../widgets/common/map_loading_overlay.dart';
 import '../widgets/wind_rose_widget.dart';
 import '../../services/openaip_service.dart';
 
@@ -88,6 +89,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   double _maxWindSpeed = 25.0;
   double _maxWindGusts = 30.0;
   bool _isWindBarExpanded = false; // Default to collapsed
+  bool _isWindLoading = false; // Track wind data fetch status
   final WeatherService _weatherService = WeatherService.instance;
   static const String _windBarExpandedKey = 'nearby_sites_wind_bar_expanded';
   Timer? _windFetchDebounce;
@@ -258,6 +260,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       if (!mounted) return;
 
       setState(() {
+        _isWindLoading = true;
         // Mark all sites as loading
         for (final site in _displayedSites) {
           final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
@@ -296,6 +299,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
         // Update wind data map and flyability status with setState for immediate UI update
         setState(() {
+          _isWindLoading = false;
           _siteWindData.addAll(windDataResults);
           // Force recalculation because we have fresh wind data
           _updateFlyabilityStatus(forceRecalculation: true);
@@ -311,6 +315,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         LoggingService.error('Failed to fetch wind data', e, stackTrace);
         if (mounted) {
           setState(() {
+            _isWindLoading = false;
             // Mark failed sites as unknown
             for (final site in _displayedSites) {
               final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
@@ -1150,7 +1155,16 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                           ),
                       ],
                     ),
-          
+
+          // Wind loading overlay
+          if (_isWindLoading)
+            MapLoadingOverlay.single(
+              label: 'Loading wind forecast',
+              icon: Icons.air,
+              iconColor: Colors.lightBlue,
+              count: _displayedSites.length,
+            ),
+
           // Search dropdown overlay
           if (_searchManager.shouldShowSearchDropdown())
             Positioned(
