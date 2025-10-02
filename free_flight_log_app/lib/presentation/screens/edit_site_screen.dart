@@ -1109,7 +1109,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
       offset: const Offset(0, -_siteMarkerSize / 2),
       disableDrag: true, // Cannot drag API sites, only drop onto them
       onTap: (point) => _isMergeMode ? _handleMergeIntoApiSite(site) : _handleApiSiteClick(site),
-      onLongPress: (point) => null, // API sites don't support long-press merge initiation
+      onLongPress: (point) {}, // API sites don't support long-press merge initiation
       builder: (ctx, point, isDragging) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1793,9 +1793,9 @@ class EditSiteDialog extends StatefulWidget {
   final Site site;
 
   const EditSiteDialog({
-    Key? key,
+    super.key,
     required this.site,
-  }) : super(key: key);
+  });
 
   @override
   State<EditSiteDialog> createState() => _EditSiteDialogState();

@@ -57,7 +57,7 @@ class _EditSiteMapState extends BaseMapState<EditSiteMap> {
       point: _selectedLocation,
       size: const Size(85, 85),
       offset: const Offset(0, -42.5),
-      builder: (_, point, __) {
+      builder: (context, point, isDragging) {
         return Column(
           children: [
             Container(

@@ -122,17 +122,9 @@ class SiteMarkerLayer extends StatelessWidget {
               SiteMarkerUtils.buildSiteMarkerIcon(
                 color: SiteMarkerUtils.flownSiteColor,
               ),
+              // TODO: Fix highlighting for local sites
               // For now, we can't properly highlight local sites since we don't have the original Site ID
               // This would need the ParaglidingSite to track the local site ID separately
-              if (false) // TODO: Fix highlighting for local sites
-                Container(
-                  width: SiteMarkerUtils.siteMarkerSize + 8,
-                  height: SiteMarkerUtils.siteMarkerSize + 8,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.orange, width: 3),
-                  ),
-                ),
             ],
           ),
           SiteMarkerUtils.buildSiteLabel(

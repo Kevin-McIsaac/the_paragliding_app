@@ -1,5 +1,4 @@
 import 'package:flutter_map/flutter_map.dart';
-import '../data/models/site.dart';
 import '../data/models/paragliding_site.dart';
 import 'database_service.dart';
 import 'pge_sites_database_service.dart';
@@ -34,7 +33,7 @@ class SiteBoundsLoaderV2 {
 
       LoggingService.structured('SITES_BOUNDS_LOADER_V2', {
         'pge_data_available': isPgeDataAvailable,
-        'bounds': '$boundsKey',
+        'bounds': boundsKey,
       });
 
       // Prepare futures list
@@ -179,30 +178,6 @@ class SiteBoundsLoaderV2 {
 
   // Cache methods removed - no longer needed
   // _loadFlightCountsForBounds removed - now using optimized JOIN query in DatabaseService
-
-
-  /// Find matching local site for a PGE site using foreign key relationship first
-  /// Falls back to coordinate-based matching for unlinked sites
-  Site? _findMatchingLocalSiteByForeignKey(ParaglidingSite pgeSite, List<Site> localSites) {
-    // Primary: Use foreign key relationship if available
-    final linkedSite = localSites.where((localSite) =>
-      localSite.pgeSiteId != null && localSite.pgeSiteId == pgeSite.id).firstOrNull;
-
-    if (linkedSite != null) {
-      return linkedSite;
-    }
-
-    // Fallback: Use coordinate-based matching for unlinked sites
-    const tolerance = 0.001; // ~100m
-    for (final localSite in localSites) {
-      if (localSite.pgeSiteId == null && // Only check unlinked sites
-          (pgeSite.latitude - localSite.latitude).abs() < tolerance &&
-          (pgeSite.longitude - localSite.longitude).abs() < tolerance) {
-        return localSite;
-      }
-    }
-    return null;
-  }
 
 
   /// Get location key for deduplication

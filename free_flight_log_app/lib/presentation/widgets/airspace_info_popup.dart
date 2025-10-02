@@ -474,60 +474,6 @@ class _AirspaceInfoPopupState extends State<AirspaceInfoPopup> {
 
 
 
-  /// Get country name from country code
-  String _getCountryName(String? countryCode) {
-    if (countryCode == null || countryCode.isEmpty) return '';
-
-    final countryNames = {
-      'AU': 'Australia',
-      'US': 'USA',
-      'CA': 'Canada',
-      'GB': 'UK',
-      'NZ': 'New Zealand',
-      'FR': 'France',
-      'DE': 'Germany',
-      'IT': 'Italy',
-      'ES': 'Spain',
-      'CH': 'Switzerland',
-      'AT': 'Austria',
-      'NL': 'Netherlands',
-      'BE': 'Belgium',
-      'NO': 'Norway',
-      'SE': 'Sweden',
-      'DK': 'Denmark',
-      'FI': 'Finland',
-      'PL': 'Poland',
-      'CZ': 'Czech Republic',
-      'HU': 'Hungary',
-      'SK': 'Slovakia',
-      'SI': 'Slovenia',
-      'HR': 'Croatia',
-      'BA': 'Bosnia',
-      'RS': 'Serbia',
-      'ME': 'Montenegro',
-      'MK': 'Macedonia',
-      'BG': 'Bulgaria',
-      'RO': 'Romania',
-      'GR': 'Greece',
-      'TR': 'Turkey',
-      'JP': 'Japan',
-      'KR': 'South Korea',
-      'CN': 'China',
-      'IN': 'India',
-      'BR': 'Brazil',
-      'AR': 'Argentina',
-      'CL': 'Chile',
-      'MX': 'Mexico',
-      'ZA': 'South Africa',
-      'EG': 'Egypt',
-      'IL': 'Israel',
-      'AE': 'UAE',
-      'SA': 'Saudi Arabia',
-    };
-
-    return countryNames[countryCode.toUpperCase()] ?? countryCode;
-  }
-
   /// Calculate optimal position for tooltip in top right corner
   Offset _calculateOptimalPosition(
     Offset cursorPosition,

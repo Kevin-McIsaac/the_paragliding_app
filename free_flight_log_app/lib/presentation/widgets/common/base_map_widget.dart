@@ -484,8 +484,8 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
             final originalColor = polygon.color ?? Colors.blue.withValues(alpha: 0.2);
             final highlightedPolygon = Polygon(
               points: polygon.points,
-              borderStrokeWidth: (polygon.borderStrokeWidth ?? 1.0) * 1.5, // Slightly thicker border
-              borderColor: polygon.borderColor ?? Colors.blue,
+              borderStrokeWidth: polygon.borderStrokeWidth * 1.5, // Slightly thicker border
+              borderColor: polygon.borderColor,
               color: originalColor.withValues(
                 alpha: ((originalColor.a * 255.0).round() * 2).clamp(0, 255) / 255.0, // Double opacity
               ),

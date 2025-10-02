@@ -1,10 +1,8 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_map/flutter_map.dart' as fm;
-import 'package:geobase/geobase.dart' as geo;
 import 'package:clipper2/clipper2.dart' as clipper;
 import '../services/logging_service.dart';
 import '../services/airspace_identification_service.dart';
@@ -547,11 +545,9 @@ class AirspaceGeoJsonService {
     }
 
     // Primary: Use ICAO class if available
-    if (airspaceData.icaoClass != null) {
-      final icaoStyle = _icaoClassStyles[airspaceData.icaoClass];
-      if (icaoStyle != null) {
-        return icaoStyle;
-      }
+    final icaoStyle = _icaoClassStyles[airspaceData.icaoClass];
+    if (icaoStyle != null) {
+      return icaoStyle;
     }
 
     // Fallback: Use airspace type
@@ -596,42 +592,6 @@ class AirspaceGeoJsonService {
   }
 
   /// Check if two bounding boxes overlap
-  bool _boundingBoxesOverlap(fm.LatLngBounds box1, fm.LatLngBounds box2) {
-    // Check if box1 is completely to the left, right, above, or below box2
-    return !(box1.east < box2.west ||
-             box1.west > box2.east ||
-             box1.north < box2.south ||
-             box1.south > box2.north);
-  }
-
-  /// Check if airspace bounding box intersects with viewport
-  bool _isInViewport(fm.LatLngBounds airspaceBounds, fm.LatLngBounds viewport) {
-    return _boundingBoxesOverlap(airspaceBounds, viewport);
-  }
-
-  /// Calculate rough bounding box from geometry without creating LatLng objects
-  /// This is a performance optimization to avoid expensive object creation
-  fm.LatLngBounds? _calculateRoughBoundsFromGeometry(geo.Polygon polygon) {
-    final exterior = polygon.exterior;
-    if (exterior == null || exterior.positions.isEmpty) {
-      return null;
-    }
-
-    double minLat = 90.0, maxLat = -90.0, minLon = 180.0, maxLon = -180.0;
-
-    for (final pos in exterior.positions) {
-      minLat = math.min(minLat, pos.y);
-      maxLat = math.max(maxLat, pos.y);
-      minLon = math.min(minLon, pos.x);
-      maxLon = math.max(maxLon, pos.x);
-    }
-
-    return fm.LatLngBounds(
-      LatLng(minLat, minLon),
-      LatLng(maxLat, maxLon),
-    );
-  }
-
   /// Optimized version using ClipperData directly - no LatLng conversion
   List<_ClippedPolygonData> _subtractPolygonsFromSubjectOptimized({
     required ClipperData subjectData,
@@ -648,7 +608,7 @@ class AirspaceGeoJsonService {
 
       // Pre-extract subject path once
       final subjectPath = subjectData.getPath(subjectIndex);
-      if (subjectPath == null || subjectPath.isEmpty) {
+      if (subjectPath.isEmpty) {
         return [];
       }
 
@@ -659,7 +619,7 @@ class AirspaceGeoJsonService {
 
       for (int i = 0; i < clippingDataList.length; i++) {
         final path = clippingDataList[i].getPath(clippingIndices[i]);
-        if (path != null && path.isNotEmpty) {
+        if (path.isNotEmpty) {
           clipPaths[validPathCount++] = path;
         }
       }
@@ -747,18 +707,11 @@ class AirspaceGeoJsonService {
     final List<_ClippedPolygonData> clippedPolygons = [];
 
     // Track performance metrics
-    int actualComparisons = 0;
-    int theoreticalComparisons = 0;
     int totalClippingTimeMs = 0;
     int longestClippingTimeMs = 0;
-    String longestClippingAirspace = '';
     int completelyClippedCount = 0;
     final List<String> completelyClippedNames = [];
     final Map<String, int> clippingTimeByType = {};
-    int altitudeRejections = 0;
-    int boundsRejections = 0;
-    int actualClippingOperations = 0;
-    int emptyClippingLists = 0;
 
     // OPTIMIZATION: Use ClippingBatch for better cache locality
     final batch = ClippingBatch(geometries.length);
@@ -787,11 +740,6 @@ class AirspaceGeoJsonService {
 
     setupStopwatch.stop();
 
-    // Calculate theoretical comparisons
-    final n = batch.count;
-    theoreticalComparisons = (n * (n - 1)) ~/ 2;
-
-
     // Process each visible polygon from lowest to highest altitude using sorted indices
     for (int sortedI = 0; sortedI < batch.count; sortedI++) {
       final i = sortedIndices[sortedI];  // Get actual index from sorted array
@@ -812,22 +760,18 @@ class AirspaceGeoJsonService {
       // Process all lower altitude airspaces (using sorted order)
       for (int sortedJ = 0; sortedJ < sortedI; sortedJ++) {
         final j = sortedIndices[sortedJ];
-        // Local comparison tracking removed
-        actualComparisons++;
 
         final lowerAltitude = batch.altitudes[j];
 
         // Early exit - all remaining polygons are at same or higher altitude
         if (lowerAltitude >= currentAltitude) {
           // Local altitude rejection tracking removed
-          altitudeRejections++;
           break;
         }
 
         // Optimized bounds check using packed Float32List data
         if (!batch.boundsOverlap(i, j)) {
           // Local bounds rejection tracking removed
-          boundsRejections++;
           continue;
         }
 
@@ -841,12 +785,7 @@ class AirspaceGeoJsonService {
         }
       }
 
-      // Track if we're doing actual clipping
-      if (clippingDataList.isEmpty) {
-        emptyClippingLists++;
-      } else {
-        actualClippingOperations++;
-      }
+      // Track if we're doing actual clipping (metrics removed)
 
       // Perform clipping operation with timing
       final clippingStopwatch = Stopwatch()..start();
@@ -886,7 +825,6 @@ class AirspaceGeoJsonService {
       totalClippingTimeMs += clippingTimeMs;
       if (clippingTimeMs > longestClippingTimeMs) {
         longestClippingTimeMs = clippingTimeMs;
-        longestClippingAirspace = airspaceData.name;
       }
 
       // Aggregate by type
@@ -903,12 +841,6 @@ class AirspaceGeoJsonService {
     }
 
     overallStopwatch.stop();
-
-    // Calculate comparison efficiency
-    final double comparisonReduction = theoreticalComparisons > 0
-        ? ((theoreticalComparisons - actualComparisons) / theoreticalComparisons * 100)
-        : 0.0;
-
 
     // Log summary if any were completely clipped
     if (completelyClippedCount > 0) {
