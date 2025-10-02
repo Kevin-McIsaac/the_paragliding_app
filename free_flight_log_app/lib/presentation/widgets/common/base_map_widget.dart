@@ -6,14 +6,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../data/models/paragliding_site.dart';
 import '../../../services/map_bounds_manager.dart';
 import '../../../services/logging_service.dart';
-import '../../../services/airspace_identification_service.dart';
-import '../../../services/airspace_geojson_service.dart';
+import '../../../services/airspace_interaction_service.dart';
 import '../../../utils/airspace_overlay_manager.dart';
 import '../../../utils/map_provider.dart';
 import '../../../utils/map_tile_provider.dart';
 import '../../../utils/site_marker_utils.dart';
 import '../../../utils/map_constants.dart';
-import '../../../utils/map_calculation_utils.dart';
 import '../airspace_info_popup.dart';
 import 'map_loading_overlay.dart';
 
@@ -59,13 +57,6 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
   final AirspaceOverlayManager _airspaceManager = AirspaceOverlayManager.instance;
   Timer? _airspaceLoadingTimer;
 
-  // Airspace interaction state
-  List<AirspaceData> _tooltipAirspaces = [];
-  Offset? _tooltipPosition;
-  bool _showTooltip = false;
-  List<Polygon> _highlightedPolygons = [];
-  List<MapEntry<List<AirspaceData>, LatLng>> _airspaceLabels = []; // Grouped airspaces with their positions
-
   // Common UI constants
   static const BoxShadow standardElevatedShadow = BoxShadow(
     color: Colors.black26,
@@ -92,7 +83,12 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
     // Handle airspace interaction if enabled
     if (enableAirspace) {
       LoggingService.info('$mapContext: Airspace enabled, handling interaction');
-      handleAirspaceInteraction(tapPosition, point);
+      AirspaceInteractionService.instance.handleMapTap(
+        point: point,
+        tapPosition: tapPosition.global,
+        airspaceLayers: _airspaceLayers,
+        context: mapContext,
+      );
     } else {
       LoggingService.info('$mapContext: Airspace not enabled');
     }
@@ -125,6 +121,9 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
   void dispose() {
     _loadingDelayTimer?.cancel();
     _airspaceLoadingTimer?.cancel();
+    if (enableAirspace) {
+      AirspaceInteractionService.instance.clearInteraction();
+    }
     if (widget.mapController == null) {
       _mapController.dispose();
     }
@@ -421,292 +420,6 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
     );
   }
 
-  /// Handle airspace interaction on map tap
-  /// Made protected (not private) so subclasses can call it when needed
-  void handleAirspaceInteraction(TapPosition tapPosition, LatLng point) {
-    try {
-      LoggingService.info('$mapContext: Identifying airspace at ${point.latitude}, ${point.longitude}');
-
-      // Identify airspace at tap point - returns synchronous list
-      final identificationService = AirspaceIdentificationService.instance;
-      final airspaces = identificationService.identifyAirspacesAtPoint(point);
-
-      LoggingService.info('$mapContext: Found ${airspaces.length} airspaces at tap location');
-
-      if (airspaces.isNotEmpty && mounted) {
-        LoggingService.info('$mapContext: Showing airspace popup for ${airspaces.first.name}');
-
-        // Find ALL clipped polygons that contain the tap point and their centroids
-        final result = _findClippedPolygonsWithCentroids(point, airspaces);
-
-        setState(() {
-          _tooltipAirspaces = airspaces;
-          _tooltipPosition = tapPosition.global;
-          _showTooltip = true;
-          _highlightedPolygons = result.$1; // Highlighted polygons
-          _airspaceLabels = result.$2; // Airspace/centroid pairs
-        });
-      } else if (mounted) {
-        LoggingService.info('$mapContext: No airspace found at tap location, clearing popup');
-        // Clear tooltip if no airspace found
-        setState(() {
-          _tooltipAirspaces = [];
-          _tooltipPosition = null;
-          _showTooltip = false;
-          _highlightedPolygons = [];
-          _airspaceLabels = [];
-        });
-      }
-    } catch (e) {
-      LoggingService.error('$mapContext: Error identifying airspace', e);
-    }
-  }
-
-  /// Find clipped polygons that contain the tap point with their centroids
-  (List<Polygon>, List<MapEntry<List<AirspaceData>, LatLng>>) _findClippedPolygonsWithCentroids(
-      LatLng point, List<AirspaceData> airspaces) {
-    final highlightedPolygons = <Polygon>[];
-    final individualLabels = <MapEntry<AirspaceData, LatLng>>[];
-
-    // We need to match each polygon to its airspace
-    // Since we can't directly match them, we'll use the airspaces list
-    // and check each polygon if it contains the tap point
-    int airspaceIndex = 0;
-
-    // Search through the rendered airspace layers for all polygons containing the tap point
-    for (final layer in _airspaceLayers) {
-      if (layer is PolygonLayer) {
-        for (final polygon in layer.polygons) {
-          // Check if this polygon contains the tap point
-          if (_pointInPolygon(point, polygon.points)) {
-            // Create highlighted version with double opacity
-            // Keep original color but increase opacity
-            final originalColor = polygon.color ?? Colors.blue.withValues(alpha: 0.2);
-            final highlightedPolygon = Polygon(
-              points: polygon.points,
-              borderStrokeWidth: polygon.borderStrokeWidth * 1.5, // Slightly thicker border
-              borderColor: polygon.borderColor,
-              color: originalColor.withValues(
-                alpha: ((originalColor.a * 255.0).round() * 2).clamp(0, 255) / 255.0, // Double opacity
-              ),
-            );
-            highlightedPolygons.add(highlightedPolygon);
-
-            // Calculate centroid and associate with airspace
-            final centroid = _calculatePolygonCentroid(polygon.points);
-            if (airspaceIndex < airspaces.length) {
-              individualLabels.add(MapEntry(airspaces[airspaceIndex], centroid));
-              airspaceIndex++;
-            }
-          }
-        }
-      }
-    }
-
-    // Group nearby labels to prevent overlap
-    final groupedLabels = _groupNearbyLabels(individualLabels);
-
-    LoggingService.info('$mapContext: Found ${highlightedPolygons.length} polygons, grouped into ${groupedLabels.length} labels');
-    return (highlightedPolygons, groupedLabels);
-  }
-
-  /// Simple point-in-polygon test using ray casting
-  bool _pointInPolygon(LatLng point, List<LatLng> polygon) {
-    if (polygon.length < 3) return false;
-
-    bool inside = false;
-    int j = polygon.length - 1;
-
-    for (int i = 0; i < polygon.length; i++) {
-      final xi = polygon[i].longitude;
-      final yi = polygon[i].latitude;
-      final xj = polygon[j].longitude;
-      final yj = polygon[j].latitude;
-
-      if (((yi > point.latitude) != (yj > point.latitude)) &&
-          (point.longitude < (xj - xi) * (point.latitude - yi) / (yj - yi) + xi)) {
-        inside = !inside;
-      }
-      j = i;
-    }
-
-    return inside;
-  }
-
-  /// Calculate centroid of a polygon
-  LatLng _calculatePolygonCentroid(List<LatLng> points) {
-    if (points.isEmpty) return const LatLng(0, 0);
-
-    double totalLat = 0;
-    double totalLng = 0;
-
-    for (final point in points) {
-      totalLat += point.latitude;
-      totalLng += point.longitude;
-    }
-
-    return LatLng(totalLat / points.length, totalLng / points.length);
-  }
-
-  /// Group nearby labels to prevent overlap
-  List<MapEntry<List<AirspaceData>, LatLng>> _groupNearbyLabels(
-      List<MapEntry<AirspaceData, LatLng>> individualLabels) {
-
-    if (individualLabels.isEmpty) return [];
-
-    // Group labels that are within 1000 meters of each other
-    const double groupingThresholdMeters = 1000.0;
-
-    // Keep track of which labels have been grouped
-    final groupedIndices = <int>{};
-    final result = <MapEntry<List<AirspaceData>, LatLng>>[];
-
-    for (int i = 0; i < individualLabels.length; i++) {
-      if (groupedIndices.contains(i)) continue;
-
-      final currentLabel = individualLabels[i];
-      final group = <AirspaceData>[currentLabel.key];
-      final positions = <LatLng>[currentLabel.value];
-      groupedIndices.add(i);
-
-      // Find all other labels within threshold distance
-      for (int j = i + 1; j < individualLabels.length; j++) {
-        if (groupedIndices.contains(j)) continue;
-
-        final otherLabel = individualLabels[j];
-        final distance = MapCalculationUtils.haversineDistance(
-          currentLabel.value,
-          otherLabel.value
-        );
-
-        if (distance <= groupingThresholdMeters) {
-          group.add(otherLabel.key);
-          positions.add(otherLabel.value);
-          groupedIndices.add(j);
-        }
-      }
-
-      // Calculate average position for the group
-      double avgLat = 0;
-      double avgLng = 0;
-      for (final pos in positions) {
-        avgLat += pos.latitude;
-        avgLng += pos.longitude;
-      }
-      final groupPosition = LatLng(avgLat / positions.length, avgLng / positions.length);
-
-      result.add(MapEntry(group, groupPosition));
-    }
-
-    return result;
-  }
-
-  /// Build airspace label widget for single or grouped airspaces
-  Widget _buildAirspaceLabel(List<AirspaceData> airspaces) {
-    if (airspaces.isEmpty) return const SizedBox.shrink();
-
-    // For a single airspace, show full details
-    if (airspaces.length == 1) {
-      final airspace = airspaces.first;
-      // Format altitude range using AirspaceData's properties
-      final lower = airspace.lowerAltitude;
-      final upper = airspace.upperAltitude;
-      String altitudeRange;
-
-      if (lower == upper || upper.isEmpty) {
-        altitudeRange = lower;
-      } else if (lower.isEmpty) {
-        altitudeRange = upper;
-      } else {
-        altitudeRange = '$lower-$upper';
-      }
-
-      return IgnorePointer( // Don't interfere with map interaction
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Line 1: Airspace name
-            Text(
-              airspace.name,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                shadows: [
-                  Shadow(color: Colors.black, blurRadius: 4, offset: const Offset(1, 1)),
-                  Shadow(color: Colors.black, blurRadius: 4, offset: const Offset(-1, -1)),
-                ],
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            // Line 2: Type, ICAO Class, Altitude
-            Text(
-              '${airspace.type.abbreviation}, ${airspace.icaoClass.displayName}, $altitudeRange',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                shadows: [
-                  Shadow(color: Colors.black, blurRadius: 3, offset: const Offset(1, 1)),
-                  Shadow(color: Colors.black, blurRadius: 3, offset: const Offset(-1, -1)),
-                ],
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      );
-    }
-
-    // For grouped airspaces, show combined info
-    final firstAirspace = airspaces.first;
-    final typeClasses = airspaces.map((a) =>
-      '${a.type.abbreviation}/${a.icaoClass.displayName}'
-    ).toSet().join(', ');
-
-    return IgnorePointer( // Don't interfere with map interaction
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Line 1: Show first airspace name or "Multiple Airspaces"
-          Text(
-            airspaces.length == 2 ? firstAirspace.name : 'Multiple Airspaces',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              shadows: [
-                Shadow(color: Colors.black, blurRadius: 4, offset: const Offset(1, 1)),
-                Shadow(color: Colors.black, blurRadius: 4, offset: const Offset(-1, -1)),
-              ],
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          // Line 2: Combined types/classes
-          Text(
-            typeClasses,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              shadows: [
-                Shadow(color: Colors.black, blurRadius: 3, offset: const Offset(1, 1)),
-                Shadow(color: Colors.black, blurRadius: 3, offset: const Offset(-1, -1)),
-              ],
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ),
-    );
-  }
-
   /// Build the attribution widget
   Widget buildAttribution() {
     return Positioned(
@@ -828,20 +541,32 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
             buildTileLayer(),
             // Add airspace layers before site markers
             if (enableAirspace) ..._airspaceLayers,
-            // Add highlighted polygons layer
-            if (_highlightedPolygons.isNotEmpty)
-              PolygonLayer(polygons: _highlightedPolygons),
-            // Add label markers at polygon centroids
-            if (_airspaceLabels.isNotEmpty)
-              MarkerLayer(
-                markers: _airspaceLabels.map((entry) {
-                  return Marker(
-                    point: entry.value, // Centroid position
-                    width: 200,
-                    height: 60,
-                    child: _buildAirspaceLabel(entry.key), // Airspace data
+            // Add airspace interaction overlays (highlighted polygons and labels)
+            if (enableAirspace)
+              ValueListenableBuilder<AirspaceInteractionState?>(
+                valueListenable: AirspaceInteractionService.instance.state,
+                builder: (context, state, _) {
+                  if (state == null) return const SizedBox.shrink();
+                  return Stack(
+                    children: [
+                      // Highlighted polygons
+                      if (state.highlightedPolygons.isNotEmpty)
+                        PolygonLayer(polygons: state.highlightedPolygons),
+                      // Label markers
+                      if (state.labels.isNotEmpty)
+                        MarkerLayer(
+                          markers: state.labels.map((label) {
+                            return Marker(
+                              point: label.position,
+                              width: 200,
+                              height: 60,
+                              child: AirspaceInteractionService.buildAirspaceLabel(label.airspaces),
+                            );
+                          }).toList(),
+                        ),
+                    ],
                   );
-                }).toList(),
+                },
               ),
             ...buildAdditionalLayers(),
           ],
@@ -851,19 +576,17 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
         buildLegend(),
         if (buildLoadingIndicator() != null) buildLoadingIndicator()!,
         // Add airspace info popup
-        if (_showTooltip && _tooltipPosition != null && _tooltipAirspaces.isNotEmpty)
-          AirspaceInfoPopup(
-            position: _tooltipPosition!,
-            airspaces: _tooltipAirspaces,
-            screenSize: MediaQuery.of(context).size,
-            onClose: () {
-              setState(() {
-                _showTooltip = false;
-                _tooltipAirspaces = [];
-                _tooltipPosition = null;
-                _highlightedPolygons = [];
-                _airspaceLabels = [];
-              });
+        if (enableAirspace)
+          ValueListenableBuilder<AirspaceInteractionState?>(
+            valueListenable: AirspaceInteractionService.instance.state,
+            builder: (context, state, _) {
+              if (state == null) return const SizedBox.shrink();
+              return AirspaceInfoPopup(
+                position: state.tapPosition,
+                airspaces: state.airspaces,
+                screenSize: MediaQuery.of(context).size,
+                onClose: () => AirspaceInteractionService.instance.clearInteraction(),
+              );
             },
           ),
       ],

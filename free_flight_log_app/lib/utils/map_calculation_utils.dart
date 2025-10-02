@@ -225,4 +225,57 @@ class MapCalculationUtils {
   static double feetToMeters(double feet) {
     return feet / 3.28084;
   }
+
+  /// Simple point-in-polygon test using ray casting algorithm
+  /// Returns true if point is inside polygon
+  static bool pointInPolygon(LatLng point, List<LatLng> polygon) {
+    if (polygon.length < 3) return false;
+
+    bool inside = false;
+    int j = polygon.length - 1;
+
+    for (int i = 0; i < polygon.length; i++) {
+      final xi = polygon[i].longitude;
+      final yi = polygon[i].latitude;
+      final xj = polygon[j].longitude;
+      final yj = polygon[j].latitude;
+
+      if (((yi > point.latitude) != (yj > point.latitude)) &&
+          (point.longitude < (xj - xi) * (point.latitude - yi) / (yj - yi) + xi)) {
+        inside = !inside;
+      }
+      j = i;
+    }
+
+    return inside;
+  }
+
+  /// Calculate centroid (geometric center) of a polygon
+  /// Returns the average position of all points
+  static LatLng calculateCentroid(List<LatLng> points) {
+    if (points.isEmpty) return const LatLng(0, 0);
+
+    double totalLat = 0;
+    double totalLng = 0;
+
+    for (final point in points) {
+      totalLat += point.latitude;
+      totalLng += point.longitude;
+    }
+
+    return LatLng(totalLat / points.length, totalLng / points.length);
+  }
+
+  /// Quick distance calculation using Pythagorean approximation
+  /// Faster than Haversine for nearby points (< 10km apart)
+  /// Returns distance in meters
+  static double quickDistanceMeters(LatLng point1, LatLng point2) {
+    // Convert degrees to approximate meters using first point's latitude for longitude correction
+    final metersPerDegreeLng = metersPerDegreeLat * math.cos(point1.latitude * math.pi / 180);
+
+    final deltaLat = (point2.latitude - point1.latitude) * metersPerDegreeLat;
+    final deltaLng = (point2.longitude - point1.longitude) * metersPerDegreeLng;
+
+    return math.sqrt(deltaLat * deltaLat + deltaLng * deltaLng);
+  }
 }
