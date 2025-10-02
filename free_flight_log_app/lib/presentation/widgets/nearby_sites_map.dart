@@ -10,6 +10,7 @@ import '../../services/logging_service.dart';
 import '../../utils/map_constants.dart';
 import '../../utils/site_marker_utils.dart';
 import '../../utils/site_utils.dart';
+import '../models/site_marker_presentation.dart';
 import 'common/base_map_widget.dart';
 import 'common/map_overlays.dart';
 import 'common/user_location_marker.dart';
@@ -174,85 +175,41 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     widget.onSiteSelected?.call(site);
   }
 
-  /// Get the marker color for a site based on flyability status
-  Color _getSiteMarkerColor(ParaglidingSite site) {
+  /// Get the marker presentation (color, tooltip, opacity) for a site
+  SiteMarkerPresentation _getSiteMarkerPresentation(ParaglidingSite site) {
     final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
-    final status = widget.siteFlyabilityStatus[key] ?? FlyabilityStatus.unknown;
+    final status = widget.siteFlyabilityStatus[key];
+    final windData = widget.siteWindData[key];
 
-    switch (status) {
-      case FlyabilityStatus.flyable:
-        return SiteMarkerUtils.flyableSiteColor;
-      case FlyabilityStatus.notFlyable:
-        return SiteMarkerUtils.notFlyableSiteColor;
-      case FlyabilityStatus.loading:
-      case FlyabilityStatus.unknown:
-        return SiteMarkerUtils.unknownFlyabilitySiteColor;
-    }
-  }
+    final presentation = SiteMarkerPresentation.forFlyability(
+      site: site,
+      status: status,
+      windData: windData,
+      maxWindSpeed: widget.maxWindSpeed,
+      maxWindGusts: widget.maxWindGusts,
+      forecastEnabled: widget.forecastEnabled,
+    );
 
-  /// Get the marker opacity based on whether wind data is available
-  double _getSiteMarkerOpacity(ParaglidingSite site) {
-    // When forecast is disabled, all sites should be solid
-    if (!widget.forecastEnabled) {
-      return 1.0;
-    }
-
-    // Sites with no wind directions defined should always be solid (can't evaluate flyability)
-    if (site.windDirections.isEmpty) {
-      return 1.0;
-    }
-
-    final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
-    final status = widget.siteFlyabilityStatus[key] ?? FlyabilityStatus.unknown;
-
-    switch (status) {
-      case FlyabilityStatus.flyable:
-      case FlyabilityStatus.notFlyable:
-        return 1.0; // Fully opaque when we have wind data
-      case FlyabilityStatus.loading:
-      case FlyabilityStatus.unknown:
-        return 0.5; // 50% opacity when no wind data
-    }
-  }
-
-  /// Get tooltip message showing flyability status
-  String _getSiteFlyabilityTooltip(ParaglidingSite site) {
-    // When forecast is disabled, no tooltip
-    if (!widget.forecastEnabled) {
-      return '';
+    // Special case: When forecast is enabled but no wind data, show zoom hint
+    if (widget.forecastEnabled &&
+        windData == null &&
+        site.windDirections.isNotEmpty &&
+        (status == null || status == FlyabilityStatus.unknown)) {
+      return SiteMarkerPresentation(
+        color: presentation.color,
+        tooltip: '⚠️ Zoom in for wind forecast',
+        opacity: presentation.opacity,
+      );
     }
 
-    final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
-    final status = widget.siteFlyabilityStatus[key] ?? FlyabilityStatus.unknown;
-    final wind = widget.siteWindData[key];
-
-    switch (status) {
-      case FlyabilityStatus.loading:
-        return 'Fetching wind forecast...';
-      case FlyabilityStatus.unknown:
-        // Check wind directions first - this is a site property, not zoom-dependent
-        if (site.windDirections.isEmpty) {
-          return 'No wind directions defined for site';
-        } else if (wind == null) {
-          return '⚠️ Zoom in for wind forecast';
-        }
-        return 'Flyability unknown';
-      case FlyabilityStatus.flyable:
-      case FlyabilityStatus.notFlyable:
-        if (wind != null) {
-          return wind.getFlyabilityReason(
-            site.windDirections,
-            widget.maxWindSpeed,
-            widget.maxWindGusts,
-          );
-        }
-        return 'Flyability status available';
-    }
+    return presentation;
   }
 
   /// Build markers for clustering with site data preserved
   List<Marker> _buildClusterableMarkers() {
     return widget.sites.map((site) {
+      final presentation = _getSiteMarkerPresentation(site);
+
       return Marker(
         point: LatLng(site.latitude, site.longitude),
         width: 140,
@@ -265,11 +222,11 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Tooltip(
-                message: _getSiteFlyabilityTooltip(site),
+                message: presentation.tooltip ?? '',
                 child: Opacity(
-                  opacity: _getSiteMarkerOpacity(site),
+                  opacity: presentation.opacity,
                   child: SiteMarkerUtils.buildSiteMarkerIcon(
-                    color: _getSiteMarkerColor(site),
+                    color: presentation.color,
                   ),
                 ),
               ),
