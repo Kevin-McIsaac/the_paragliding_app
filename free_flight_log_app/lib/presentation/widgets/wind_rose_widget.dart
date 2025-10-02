@@ -6,6 +6,8 @@ class WindRoseWidget extends StatelessWidget {
   final double size;
   final double? windSpeed; // Wind speed in km/h
   final double? windDirection; // Wind direction in degrees (0 = North)
+  final Color? centerDotColor; // Optional color for center dot based on flyability
+  final String? centerDotTooltip; // Optional tooltip for center dot showing flyability status
 
   const WindRoseWidget({
     super.key,
@@ -13,11 +15,13 @@ class WindRoseWidget extends StatelessWidget {
     this.size = 250.0,
     this.windSpeed,
     this.windDirection,
+    this.centerDotColor,
+    this.centerDotTooltip,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final windRose = Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
@@ -37,10 +41,21 @@ class WindRoseWidget extends StatelessWidget {
           theme: Theme.of(context),
           windSpeed: windSpeed,
           windDirection: windDirection,
+          centerDotColor: centerDotColor,
         ),
         isComplex: true,
         willChange: false,
       ),
     );
+
+    // Wrap in tooltip if provided
+    if (centerDotTooltip != null && centerDotTooltip!.isNotEmpty) {
+      return Tooltip(
+        message: centerDotTooltip!,
+        child: windRose,
+      );
+    }
+
+    return windRose;
   }
 }

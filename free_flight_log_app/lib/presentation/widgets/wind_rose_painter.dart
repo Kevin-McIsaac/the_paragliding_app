@@ -6,6 +6,7 @@ class WindRosePainter extends CustomPainter {
   final ThemeData theme;
   final double? windSpeed; // Wind speed in km/h
   final double? windDirection; // Wind direction in degrees (0 = North)
+  final Color? centerDotColor; // Optional color for center dot based on flyability
 
   // 8 cardinal and intercardinal directions
   static const List<String> _allDirections = [
@@ -29,6 +30,7 @@ class WindRosePainter extends CustomPainter {
     required this.theme,
     this.windSpeed,
     this.windDirection,
+    this.centerDotColor,
   });
 
   @override
@@ -177,9 +179,11 @@ class WindRosePainter extends CustomPainter {
   void _drawCenterPoint(Canvas canvas, Offset center, double radius) {
     final centerDotRadius = 15.0; // Same fixed size as used in _drawWindSectors
 
-    // Determine center dot color based on wind suitability
+    // Use provided color if available, otherwise determine based on wind suitability
     Color centerColor;
-    if (windDirection != null) {
+    if (centerDotColor != null) {
+      centerColor = centerDotColor!;
+    } else if (windDirection != null) {
       final isLaunchable = _isWindDirectionLaunchable();
       centerColor = isLaunchable
           ? Colors.green.withValues(alpha: 0.3)  // Same as green wedges
@@ -257,7 +261,7 @@ class WindRosePainter extends CustomPainter {
       text: TextSpan(
         text: windSpeed!.toStringAsFixed(0),
         style: TextStyle(
-          color: theme.colorScheme.outline,
+          color: Colors.white,
           fontSize: speedFontSize,
           fontWeight: FontWeight.w600,  // Reduced from w900 to w600
         ),
@@ -316,6 +320,7 @@ class WindRosePainter extends CustomPainter {
     return launchableDirections != oldDelegate.launchableDirections ||
            theme != oldDelegate.theme ||
            windSpeed != oldDelegate.windSpeed ||
-           windDirection != oldDelegate.windDirection;
+           windDirection != oldDelegate.windDirection ||
+           centerDotColor != oldDelegate.centerDotColor;
   }
 }
