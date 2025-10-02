@@ -48,6 +48,103 @@ lib/
 └── main.dart               # ✅ Production app entry point with performance tracking
 ```
 
+## Modular Architecture Layers
+
+The application follows a clean modular architecture with clear separation of concerns:
+
+### 1. Presentation Layer (`lib/presentation/`)
+**Responsibility**: User interface and user interaction handling
+
+- **Screens** (`screens/`): Full-page UI components
+  - `FlightListScreen` - Main app screen with flight listing
+  - `FlightDetailScreen` - Detailed flight view
+  - `IgcImportScreen` - File import UI workflow
+  - `DataManagementScreen` - Settings and admin functions
+  - Other specialized screens for 3D visualization, statistics, etc.
+
+- **Widgets** (`widgets/`): Reusable UI components
+  - **Common Widgets** (`common/`): Shared across screens
+    - `AppStatCard` - Statistics display cards
+    - `AppExpansionCard` - Collapsible content containers
+    - `AppEmptyState` - Empty list states
+    - `AppErrorState` - Error handling displays
+  - **Feature Widgets**: Flight-specific components
+    - Flight track widgets, map widgets, etc.
+
+### 2. Service Layer (`lib/services/`)
+**Responsibility**: Business logic, coordination between UI and data
+
+Core Services:
+- **`DatabaseService`** - Database operations abstraction layer
+  - Provides typed methods for all database operations
+  - Singleton pattern for connection management
+  - No direct SQL exposure to upper layers
+
+- **`FlightTrackLoader`** - Single source of truth for flight data
+  - Handles all track loading and processing
+  - LRU cache for performance
+  - Ensures consistent data (trimmed, zero-based indexing)
+
+- **`LoggingService`** - Centralized, Claude-optimized logging
+  - Structured logging with file:line references
+  - Performance metrics tracking
+  - Error reporting with context
+
+- **`IgcImportService`** - Complete file import workflow
+  - IGC parsing and validation
+  - Site/wing matching and creation
+  - Progress tracking for bulk imports
+
+- **`TakeoffLandingDetector`** - Flight detection algorithms
+  - Automatic takeoff/landing detection
+  - Track trimming logic
+  - Stores full indices, returns zero-based
+
+### 3. Data Layer (`lib/data/`)
+**Responsibility**: Data structures and persistence
+
+- **Models** (`models/`): Core data structures
+  - `Flight` - Flight record with all metadata
+  - `IgcFile` - Track data structure with points
+  - `Site` - Launch/landing location
+  - `Wing` - Equipment/glider information
+
+- **Datasources** (`datasources/`): Data persistence
+  - `DatabaseHelper` - SQLite schema definition
+  - Migration management (currently v10)
+  - Table creation and indexing
+
+### 4. Entry Point (`lib/main.dart`)
+**Responsibility**: Application initialization
+- App configuration
+- Theme setup
+- Root widget initialization
+- Performance tracking setup
+
+### Architecture Principles
+
+1. **Separation of Concerns**: Each layer has distinct responsibilities
+2. **Dependency Flow**: Upper layers depend on lower layers (not vice versa)
+3. **Single Source of Truth**: `FlightTrackLoader` for all flight data
+4. **Simple State Management**: StatefulWidget with direct service calls
+5. **No Complex Patterns**: Avoids Provider, Bloc, etc. for simplicity
+
+### Data Flow Example
+
+```
+User Action (UI) → Screen → Service → Data Layer → Database
+                      ↓         ↓          ↓
+                  setState  Business   SQLite
+                            Logic      Operations
+```
+
+Example: Loading flights
+1. User opens `FlightListScreen` (Presentation)
+2. Screen calls `DatabaseService.getAllFlights()` (Service)
+3. Service queries `DatabaseHelper` (Data)
+4. Results flow back up through models
+5. Screen updates with `setState()`
+
 ## Dual Mapping Architecture
 
 ### 2D Mapping System (OpenStreetMap + flutter_map)
