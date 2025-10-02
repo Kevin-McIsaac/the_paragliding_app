@@ -252,6 +252,11 @@ class MapCalculationUtils {
 
   /// Calculate centroid (geometric center) of a polygon
   /// Returns the average position of all points
+  ///
+  /// Note: Uses simple arithmetic mean of coordinates, which works well for
+  /// convex polygons. For concave polygons, the calculated centroid may fall
+  /// outside the polygon boundary. For more accurate centroids of complex
+  /// shapes, consider using area-weighted centroid algorithms.
   static LatLng calculateCentroid(List<LatLng> points) {
     if (points.isEmpty) return const LatLng(0, 0);
 
