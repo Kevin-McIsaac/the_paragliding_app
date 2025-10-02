@@ -393,10 +393,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
         if (isFlyable) {
           flyable++;
-          LoggingService.debug('Flyability flyable: ${site.name}, wind=${wind.compassDirection} ${wind.speedKmh}km/h, directions=${site.windDirections}');
         } else {
           notFlyable++;
-          LoggingService.debug('Flyability not flyable: ${site.name}, wind=${wind.compassDirection} ${wind.speedKmh}km/h, directions=${site.windDirections}');
         }
       }
     }
@@ -690,17 +688,17 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   // Bounds-based loading methods (copied from EditSiteScreen)
   void _onBoundsChanged(LatLngBounds bounds) {
     final currentZoom = _mapController.camera.zoom;
-    LoggingService.info('_onBoundsChanged called: zoom=$currentZoom');
+    LoggingService.debug('_onBoundsChanged called: zoom=$currentZoom');
 
     // Skip bounds processing if sites are disabled
     if (!_sitesEnabled) {
-      LoggingService.info('Sites disabled, skipping bounds change');
+      LoggingService.debug('Sites disabled, skipping bounds change');
       return;
     }
 
     // Check if bounds have changed significantly using MapBoundsManager
     if (!MapBoundsManager.instance.haveBoundsChangedSignificantly('nearby_sites', bounds, _currentBounds)) {
-      LoggingService.info('Bounds have not changed significantly, skipping load');
+      LoggingService.debug('Bounds have not changed significantly, skipping load');
       return;
     }
 
