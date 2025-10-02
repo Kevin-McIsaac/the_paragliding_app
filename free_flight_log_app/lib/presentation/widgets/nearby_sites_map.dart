@@ -5,6 +5,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:intl/intl.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/wind_data.dart';
+import '../../data/models/flyability_status.dart';
 import '../../services/logging_service.dart';
 import '../../utils/map_constants.dart';
 import '../../utils/site_marker_utils.dart';
@@ -25,6 +26,7 @@ class NearbySitesMap extends BaseMapWidget {
   final bool isLocationLoading;
   final Function(LatLngBounds)? onBoundsChanged;
   final Map<String, WindData> siteWindData;
+  final Map<String, FlyabilityStatus> siteFlyabilityStatus;
   final double maxWindSpeed;
   final double maxWindGusts;
   final DateTime selectedDateTime;
@@ -41,6 +43,7 @@ class NearbySitesMap extends BaseMapWidget {
     this.isLocationLoading = false,
     this.onBoundsChanged,
     this.siteWindData = const {},
+    this.siteFlyabilityStatus = const {},
     this.maxWindSpeed = 25.0,
     this.maxWindGusts = 30.0,
     required this.selectedDateTime,
@@ -167,79 +170,49 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     widget.onSiteSelected?.call(site);
   }
 
-  /// Determine if a site is flyable based on wind conditions
-  bool _isSiteFlyable(ParaglidingSite site) {
-    final windKey = '${site.latitude}_${site.longitude}';
-    final wind = widget.siteWindData[windKey];
-
-    if (wind == null) {
-      return false; // No wind data available
-    }
-
-    if (site.windDirections.isEmpty) {
-      return false; // Site has no defined wind directions
-    }
-
-    final isFlyable = wind.isFlyable(
-      site.windDirections,
-      widget.maxWindSpeed,
-      widget.maxWindGusts,
-    );
-
-    // Log flyability decision with structured data
-    if (isFlyable) {
-      LoggingService.structured('SITE_FLYABLE', {
-        'site': site.name,
-        'wind_direction': wind.compassDirection,
-        'wind_speed': wind.speedKmh.toStringAsFixed(1),
-        'site_directions': site.windDirections.join(','),
-      });
-    }
-
-    return isFlyable;
-  }
-
-  /// Get the marker color for a site based on flyability
+  /// Get the marker color for a site based on flyability status
   Color _getSiteMarkerColor(ParaglidingSite site) {
-    final windKey = '${site.latitude}_${site.longitude}';
-    final wind = widget.siteWindData[windKey];
+    final key = '${site.latitude}_${site.longitude}';
+    final status = widget.siteFlyabilityStatus[key] ?? FlyabilityStatus.unknown;
 
-    // No wind data available - grey
-    if (wind == null || site.windDirections.isEmpty) {
-      return SiteMarkerUtils.unknownFlyabilitySiteColor;
+    switch (status) {
+      case FlyabilityStatus.flyable:
+        return SiteMarkerUtils.flyableSiteColor;
+      case FlyabilityStatus.notFlyable:
+        return SiteMarkerUtils.notFlyableSiteColor;
+      case FlyabilityStatus.loading:
+      case FlyabilityStatus.unknown:
+        return SiteMarkerUtils.unknownFlyabilitySiteColor;
     }
-
-    // Check if site is flyable with current wind conditions
-    final isFlyable = wind.isFlyable(
-      site.windDirections,
-      widget.maxWindSpeed,
-      widget.maxWindGusts,
-    );
-
-    // Green for flyable, red for not flyable
-    return isFlyable
-        ? SiteMarkerUtils.flyableSiteColor
-        : SiteMarkerUtils.notFlyableSiteColor;
   }
 
   /// Get tooltip message showing flyability status
   String _getSiteFlyabilityTooltip(ParaglidingSite site) {
-    final windKey = '${site.latitude}_${site.longitude}';
-    final wind = widget.siteWindData[windKey];
+    final key = '${site.latitude}_${site.longitude}';
+    final status = widget.siteFlyabilityStatus[key] ?? FlyabilityStatus.unknown;
+    final wind = widget.siteWindData[key];
 
-    if (wind == null) {
-      return 'No wind data available';
+    switch (status) {
+      case FlyabilityStatus.loading:
+        return 'Fetching wind forecast...';
+      case FlyabilityStatus.unknown:
+        if (wind == null) {
+          return '⚠️ Zoom in for wind forecast';
+        } else if (site.windDirections.isEmpty) {
+          return 'No wind directions defined for site';
+        }
+        return 'Flyability unknown';
+      case FlyabilityStatus.flyable:
+      case FlyabilityStatus.notFlyable:
+        if (wind != null) {
+          return wind.getFlyabilityReason(
+            site.windDirections,
+            widget.maxWindSpeed,
+            widget.maxWindGusts,
+          );
+        }
+        return 'Flyability status available';
     }
-
-    if (site.windDirections.isEmpty) {
-      return 'No wind directions defined';
-    }
-
-    return wind.getFlyabilityReason(
-      site.windDirections,
-      widget.maxWindSpeed,
-      widget.maxWindGusts,
-    );
   }
 
   /// Build markers for clustering with site data preserved
@@ -282,33 +255,25 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     final hasFlyableSites = markers.any((marker) {
       if (marker.key is ValueKey<ParaglidingSite>) {
         final site = (marker.key as ValueKey<ParaglidingSite>).value;
-        final windKey = '${site.latitude}_${site.longitude}';
-        final wind = widget.siteWindData[windKey];
-
-        // Site must have wind data and allowed directions to be flyable
-        if (wind != null && site.windDirections.isNotEmpty) {
-          return _isSiteFlyable(site);
-        }
+        final key = '${site.latitude}_${site.longitude}';
+        final status = widget.siteFlyabilityStatus[key];
+        return status == FlyabilityStatus.flyable;
       }
       return false;
     });
 
-    // Check if any sites are not flyable (red) - have wind data but bad conditions
+    // Check if any sites are not flyable (red)
     final hasNotFlyableSites = markers.any((marker) {
       if (marker.key is ValueKey<ParaglidingSite>) {
         final site = (marker.key as ValueKey<ParaglidingSite>).value;
-        final windKey = '${site.latitude}_${site.longitude}';
-        final wind = widget.siteWindData[windKey];
-
-        // Site has wind data and directions, but is not flyable
-        if (wind != null && site.windDirections.isNotEmpty) {
-          return !_isSiteFlyable(site);
-        }
+        final key = '${site.latitude}_${site.longitude}';
+        final status = widget.siteFlyabilityStatus[key];
+        return status == FlyabilityStatus.notFlyable;
       }
       return false;
     });
 
-    // Priority: Green if any flyable > Red if any not flyable > Grey for all unknown
+    // Priority: Green if any flyable > Red if any not flyable > Grey for all unknown/loading
     final clusterColor = hasFlyableSites
         ? SiteMarkerUtils.flyableSiteColor
         : (hasNotFlyableSites ? SiteMarkerUtils.notFlyableSiteColor : SiteMarkerUtils.unknownFlyabilitySiteColor);

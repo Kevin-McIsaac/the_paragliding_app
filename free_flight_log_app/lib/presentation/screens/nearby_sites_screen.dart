@@ -11,6 +11,7 @@ import '../../data/models/site.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/airspace_enums.dart';
 import '../../data/models/wind_data.dart';
+import '../../data/models/flyability_status.dart';
 import '../../services/location_service.dart';
 import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
@@ -93,12 +94,14 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   // Wind forecast state
   DateTime _selectedDateTime = DateTime.now();
   final Map<String, WindData> _siteWindData = {};
+  final Map<String, FlyabilityStatus> _siteFlyabilityStatus = {};
   double _maxWindSpeed = 25.0;
   double _maxWindGusts = 30.0;
   bool _isLoadingWind = false;
   bool _isWindBarExpanded = false; // Default to collapsed
   final WeatherService _weatherService = WeatherService.instance;
   static const String _windBarExpandedKey = 'nearby_sites_wind_bar_expanded';
+  Timer? _windFetchDebounce;
 
   @override
   void initState() {
@@ -118,6 +121,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   void dispose() {
     MapBoundsManager.instance.cancelDebounce('nearby_sites'); // Clean up any pending debounce
     _locationNotificationTimer?.cancel(); // Clean up location notification timer
+    _windFetchDebounce?.cancel(); // Clean up wind fetch debounce timer
     _searchManager.dispose(); // Clean up search manager
     _searchController.dispose(); // Dispose search controller
     _searchFocusNode.dispose(); // Dispose search focus node
@@ -248,41 +252,127 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   }
 
   Future<void> _fetchWindDataForSites() async {
-    if (_displayedSites.isEmpty) return;
+    if (_displayedSites.isEmpty) {
+      LoggingService.info('Skipping wind fetch: no displayed sites');
+      return;
+    }
 
-    setState(() {
-      _isLoadingWind = true;
-    });
+    // Cancel any pending debounced fetch
+    _windFetchDebounce?.cancel();
 
-    try {
-      // Clear old wind data
-      _siteWindData.clear();
+    // Only fetch wind data if zoom level is high enough (≥10)
+    final currentZoom = _mapController.camera.zoom;
+    if (currentZoom < 10) {
+      LoggingService.info('Skipping wind fetch: zoom level $currentZoom < 10');
+      // Mark sites as unknown if they don't have wind data
+      setState(() {
+        for (final site in _displayedSites) {
+          final key = '${site.latitude}_${site.longitude}';
+          if (!_siteWindData.containsKey(key)) {
+            _siteFlyabilityStatus[key] = FlyabilityStatus.unknown;
+          }
+        }
+      });
+      return;
+    }
 
-      // Fetch wind data for all displayed sites
-      for (final site in _displayedSites) {
-        final wind = await _weatherService.getWindData(
-          site.latitude,
-          site.longitude,
+    LoggingService.info('Wind fetch triggered at zoom $currentZoom, starting debounce timer');
+
+    // Debounce wind fetches to avoid rapid API calls on map movement
+    _windFetchDebounce = Timer(const Duration(milliseconds: 300), () async {
+      if (!mounted) return;
+
+      setState(() {
+        _isLoadingWind = true;
+        // Mark all sites as loading
+        for (final site in _displayedSites) {
+          final key = '${site.latitude}_${site.longitude}';
+          if (!_siteWindData.containsKey(key)) {
+            _siteFlyabilityStatus[key] = FlyabilityStatus.loading;
+          }
+        }
+      });
+
+      try {
+        // Build list of locations to fetch (deduplicate by lat/lon)
+        final locationsToFetch = <LatLng>[];
+        final seenKeys = <String>{};
+
+        for (final site in _displayedSites) {
+          final key = '${site.latitude}_${site.longitude}';
+          if (!seenKeys.contains(key)) {
+            seenKeys.add(key);
+            locationsToFetch.add(LatLng(site.latitude, site.longitude));
+          }
+        }
+
+        LoggingService.structured('WIND_FETCH_START', {
+          'total_sites': _displayedSites.length,
+          'unique_locations': locationsToFetch.length,
+          'zoom_level': currentZoom,
+        });
+
+        // Fetch wind data in batch
+        final windDataResults = await _weatherService.getWindDataBatch(
+          locationsToFetch,
           _selectedDateTime,
         );
-        if (wind != null) {
-          final key = '${site.latitude}_${site.longitude}';
-          _siteWindData[key] = wind;
-        }
-      }
 
-      LoggingService.structured('WIND_DATA_FETCHED', {
-        'sites_count': _displayedSites.length,
-        'wind_data_count': _siteWindData.length,
-        'selected_time': _selectedDateTime.toIso8601String(),
-      });
-    } catch (e) {
-      LoggingService.error('Failed to fetch wind data for sites', e);
-    } finally {
-      if (mounted) {
+        if (!mounted) return;
+
+        // Update wind data map
+        _siteWindData.addAll(windDataResults);
+
+        // Calculate flyability status for all sites
+        _updateFlyabilityStatus();
+
         setState(() {
           _isLoadingWind = false;
         });
+
+        LoggingService.structured('WIND_DATA_FETCHED', {
+          'sites_count': _displayedSites.length,
+          'fetched_count': windDataResults.length,
+          'time': _selectedDateTime.toIso8601String(),
+          'zoom_level': currentZoom,
+        });
+      } catch (e, stackTrace) {
+        LoggingService.error('Failed to fetch wind data', e, stackTrace);
+        if (mounted) {
+          setState(() {
+            _isLoadingWind = false;
+            // Mark failed sites as unknown
+            for (final site in _displayedSites) {
+              final key = '${site.latitude}_${site.longitude}';
+              if (!_siteWindData.containsKey(key)) {
+                _siteFlyabilityStatus[key] = FlyabilityStatus.unknown;
+              }
+            }
+          });
+        }
+      }
+    });
+  }
+
+  /// Calculate flyability status for all displayed sites
+  void _updateFlyabilityStatus() {
+    for (final site in _displayedSites) {
+      final key = '${site.latitude}_${site.longitude}';
+      final wind = _siteWindData[key];
+
+      if (wind == null) {
+        _siteFlyabilityStatus[key] = FlyabilityStatus.unknown;
+      } else if (site.windDirections.isEmpty) {
+        _siteFlyabilityStatus[key] = FlyabilityStatus.unknown;
+      } else {
+        final isFlyable = wind.isFlyable(
+          site.windDirections,
+          _maxWindSpeed,
+          _maxWindGusts,
+        );
+        _siteFlyabilityStatus[key] = isFlyable
+            ? FlyabilityStatus.flyable
+            : FlyabilityStatus.notFlyable;
       }
     }
   }
@@ -585,6 +675,12 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           setState(() {
             _allSites = result.sites;
             _siteFlightStatus = {};
+
+            // Clean up stale flyability status and wind data for sites no longer visible
+            final currentSiteKeys = result.sites.map((site) => '${site.latitude}_${site.longitude}').toSet();
+            _siteFlyabilityStatus.removeWhere((key, value) => !currentSiteKeys.contains(key));
+            _siteWindData.removeWhere((key, value) => !currentSiteKeys.contains(key));
+
             for (final site in result.sites) {
               final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
               _siteFlightStatus[siteKey] = site.hasFlights;
@@ -602,22 +698,53 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
           // Auto-fetch wind data when sites are loaded for the first time
           // or when navigating to new sites that don't have wind data
-          if (_displayedSites.isNotEmpty) {
-            // Check if any displayed site is missing wind data
-            final missingWindData = _displayedSites.any((site) {
-              final key = '${site.latitude}_${site.longitude}';
-              return !_siteWindData.containsKey(key);
-            });
-            if (missingWindData || _siteWindData.isEmpty) {
-              _fetchWindDataForSites();
+          // Use a short delay to ensure _displayedSites is fully updated
+          Future.delayed(const Duration(milliseconds: 50), () {
+            if (!mounted) return;
+            if (_displayedSites.isNotEmpty) {
+              // Check if any displayed site is missing wind data
+              final missingWindData = _displayedSites.any((site) {
+                final key = '${site.latitude}_${site.longitude}';
+                return !_siteWindData.containsKey(key) && !_siteFlyabilityStatus.containsKey(key);
+              });
+              if (missingWindData || _siteWindData.isEmpty) {
+                _fetchWindDataForSites();
+              }
             }
-          }
+          });
         }
       },
       siteLimit: 50,
       includeFlightCounts: true,
     ).then((_) {
-      // Loading completed
+      // Loading completed - also check for missing wind data
+      // This handles the case when sites come from cache and onLoaded isn't called
+      LoggingService.info('Bounds load completed, checking for missing wind data');
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (!mounted) {
+          LoggingService.info('Not mounted, skipping wind check');
+          return;
+        }
+        final currentZoom = _mapController.camera.zoom;
+        LoggingService.info('Wind check: sites=${_displayedSites.length}, zoom=$currentZoom');
+
+        if (_displayedSites.isNotEmpty && currentZoom >= 10) {
+          // Check if any displayed site is missing wind data or has unknown status
+          final missingWindData = _displayedSites.any((site) {
+            final key = '${site.latitude}_${site.longitude}';
+            // Missing if: no wind data OR status is unknown/loading OR no status at all
+            return !_siteWindData.containsKey(key) ||
+                   _siteFlyabilityStatus[key] == FlyabilityStatus.unknown ||
+                   _siteFlyabilityStatus[key] == FlyabilityStatus.loading ||
+                   !_siteFlyabilityStatus.containsKey(key);
+          });
+          LoggingService.info('Missing wind data check: $missingWindData');
+          if (missingWindData) {
+            LoggingService.info('Triggering wind fetch after bounds load completion');
+            _fetchWindDataForSites();
+          }
+        }
+      });
     }).catchError((error) {
       LoggingService.error('Failed to load sites for bounds', error);
       if (mounted) {
@@ -953,6 +1080,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                           onSiteSelected: _onSiteSelected,
                           onLocationRequest: _onRefreshLocation,
                           siteWindData: _siteWindData,
+                          siteFlyabilityStatus: _siteFlyabilityStatus,
                           maxWindSpeed: _maxWindSpeed,
                           maxWindGusts: _maxWindGusts,
                           selectedDateTime: _selectedDateTime,
