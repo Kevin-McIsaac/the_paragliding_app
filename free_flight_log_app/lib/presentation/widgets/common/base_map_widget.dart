@@ -83,10 +83,19 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
     // Handle airspace interaction if enabled
     if (enableAirspace) {
       LoggingService.info('$mapContext: Airspace enabled, handling interaction');
+
+      // Extract polygons from airspace layers
+      final airspacePolygons = <Polygon>[];
+      for (final layer in _airspaceLayers) {
+        if (layer is PolygonLayer) {
+          airspacePolygons.addAll(layer.polygons);
+        }
+      }
+
       AirspaceInteractionService.instance.handleMapTap(
         point: point,
         tapPosition: tapPosition.global,
-        airspaceLayers: _airspaceLayers,
+        airspacePolygons: airspacePolygons,
         context: mapContext,
       );
     } else {

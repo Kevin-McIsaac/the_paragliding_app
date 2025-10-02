@@ -27,7 +27,7 @@ class AirspaceInteractionService {
   void handleMapTap({
     required LatLng point,
     required Offset tapPosition,
-    required List<Widget> airspaceLayers,
+    required List<Polygon> airspacePolygons,
     required String context,
   }) {
     try {
@@ -43,7 +43,7 @@ class AirspaceInteractionService {
         LoggingService.info('$context: Showing airspace popup for ${airspaces.first.name}');
 
         // Find all clipped polygons that contain the tap point and their centroids
-        final result = _findClippedPolygonsWithCentroids(point, airspaces, airspaceLayers);
+        final result = _findClippedPolygonsWithCentroids(point, airspaces, airspacePolygons);
 
         _state.value = AirspaceInteractionState(
           airspaces: airspaces,
@@ -70,41 +70,37 @@ class AirspaceInteractionService {
   (List<Polygon>, List<AirspaceLabel>) _findClippedPolygonsWithCentroids(
     LatLng point,
     List<AirspaceData> airspaces,
-    List<Widget> airspaceLayers,
+    List<Polygon> airspacePolygons,
   ) {
     final highlightedPolygons = <Polygon>[];
     final individualLabels = <MapEntry<AirspaceData, LatLng>>[];
 
-    // Search through the rendered airspace layers for all polygons containing the tap point
-    for (final layer in airspaceLayers) {
-      if (layer is PolygonLayer) {
-        for (final polygon in layer.polygons) {
-          // Check if this polygon contains the tap point
-          if (MapCalculationUtils.pointInPolygon(point, polygon.points)) {
-            // Extract airspace data from polygon hitValue (explicit matching)
-            if (polygon.hitValue is! AirspaceData) {
-              LoggingService.error('Polygon missing AirspaceData hitValue', Exception('Invalid polygon hitValue type'));
-              continue;
-            }
-            final airspaceData = polygon.hitValue as AirspaceData;
-
-            // Create highlighted version with double opacity
-            final originalColor = polygon.color ?? Colors.blue.withValues(alpha: 0.2);
-            final highlightedPolygon = Polygon(
-              points: polygon.points,
-              borderStrokeWidth: polygon.borderStrokeWidth * 1.5,
-              borderColor: polygon.borderColor,
-              color: originalColor.withValues(
-                alpha: ((originalColor.a * 255.0).round() * 2).clamp(0, 255) / 255.0,
-              ),
-            );
-            highlightedPolygons.add(highlightedPolygon);
-
-            // Calculate centroid and associate with airspace
-            final centroid = MapCalculationUtils.calculateCentroid(polygon.points);
-            individualLabels.add(MapEntry(airspaceData, centroid));
-          }
+    // Search through polygons for all that contain the tap point
+    for (final polygon in airspacePolygons) {
+      // Check if this polygon contains the tap point
+      if (MapCalculationUtils.pointInPolygon(point, polygon.points)) {
+        // Extract airspace data from polygon hitValue (explicit matching)
+        if (polygon.hitValue is! AirspaceData) {
+          LoggingService.error('Polygon missing AirspaceData hitValue', Exception('Invalid polygon hitValue type'));
+          continue;
         }
+        final airspaceData = polygon.hitValue as AirspaceData;
+
+        // Create highlighted version with double opacity
+        final originalColor = polygon.color ?? Colors.blue.withValues(alpha: 0.2);
+        final highlightedPolygon = Polygon(
+          points: polygon.points,
+          borderStrokeWidth: polygon.borderStrokeWidth * 1.5,
+          borderColor: polygon.borderColor,
+          color: originalColor.withValues(
+            alpha: ((originalColor.a * 255.0).round() * 2).clamp(0, 255) / 255.0,
+          ),
+        );
+        highlightedPolygons.add(highlightedPolygon);
+
+        // Calculate centroid and associate with airspace
+        final centroid = MapCalculationUtils.calculateCentroid(polygon.points);
+        individualLabels.add(MapEntry(airspaceData, centroid));
       }
     }
 
