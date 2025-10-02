@@ -108,9 +108,10 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
   void handleMapEvent(MapEvent event) {
     super.handleMapEvent(event);
 
-    // Notify parent when bounds change
+    // Notify parent when bounds change - include MapEventMove for cluster zoom animations
     if (widget.onBoundsChanged != null &&
         (event is MapEventMoveEnd ||
+         event is MapEventMove ||
          event is MapEventFlingAnimationEnd ||
          event is MapEventDoubleTapZoomEnd ||
          event is MapEventScrollWheelZoom)) {

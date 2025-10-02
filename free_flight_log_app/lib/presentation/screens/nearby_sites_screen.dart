@@ -297,8 +297,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         // Update wind data map and flyability status with setState for immediate UI update
         setState(() {
           _siteWindData.addAll(windDataResults);
-          LoggingService.debug('Wind data keys after adding: ${_siteWindData.keys.toList()}');
-          _updateFlyabilityStatus();
+          // Force recalculation because we have fresh wind data
+          _updateFlyabilityStatus(forceRecalculation: true);
         });
 
         LoggingService.structured('WIND_DATA_FETCHED', {
@@ -344,17 +344,43 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   }
 
   /// Calculate flyability status for all displayed sites
-  void _updateFlyabilityStatus() {
+  ///
+  /// Uses intelligent caching to avoid redundant calculations:
+  /// - Only recalculates sites that don't have cached status (unless forced)
+  /// - Preserves existing cache entries for unchanged sites
+  /// - Provides summary logging for performance tracking
+  void _updateFlyabilityStatus({bool forceRecalculation = false}) {
+    int calculated = 0;
+    int flyable = 0;
+    int notFlyable = 0;
+    int unknown = 0;
+
     for (final site in _displayedSites) {
       final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
+
+      // Skip if already calculated and not forcing recalc
+      if (!forceRecalculation && _siteFlyabilityStatus.containsKey(key)) {
+        // Count existing status for summary
+        final status = _siteFlyabilityStatus[key];
+        if (status == FlyabilityStatus.flyable) {
+          flyable++;
+        } else if (status == FlyabilityStatus.notFlyable) {
+          notFlyable++;
+        } else {
+          unknown++;
+        }
+        continue;
+      }
+
+      calculated++;
       final wind = _siteWindData[key];
 
       if (wind == null) {
-        LoggingService.debug('Flyability unknown: no wind data for ${site.name} (key: $key, available keys: ${_siteWindData.keys.toList()})');
         _siteFlyabilityStatus[key] = FlyabilityStatus.unknown;
+        unknown++;
       } else if (site.windDirections.isEmpty) {
-        LoggingService.debug('Flyability unknown: ${site.name} has no wind directions defined');
         _siteFlyabilityStatus[key] = FlyabilityStatus.unknown;
+        unknown++;
       } else {
         final isFlyable = wind.isFlyable(
           site.windDirections,
@@ -364,8 +390,26 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         _siteFlyabilityStatus[key] = isFlyable
             ? FlyabilityStatus.flyable
             : FlyabilityStatus.notFlyable;
-        LoggingService.info('Flyability ${isFlyable ? "flyable" : "not flyable"}: ${site.name}, wind=${wind.compassDirection} ${wind.speedKmh}km/h, directions=${site.windDirections}');
+
+        if (isFlyable) {
+          flyable++;
+          LoggingService.debug('Flyability flyable: ${site.name}, wind=${wind.compassDirection} ${wind.speedKmh}km/h, directions=${site.windDirections}');
+        } else {
+          notFlyable++;
+          LoggingService.debug('Flyability not flyable: ${site.name}, wind=${wind.compassDirection} ${wind.speedKmh}km/h, directions=${site.windDirections}');
+        }
       }
+    }
+
+    // Summary logging for Claude analysis
+    if (calculated > 0 || forceRecalculation) {
+      LoggingService.structured('FLYABILITY_UPDATE', {
+        'total_sites': _displayedSites.length,
+        'recalculated': calculated,
+        'flyable': flyable,
+        'not_flyable': notFlyable,
+        'unknown': unknown,
+      });
     }
   }
 
@@ -645,17 +689,23 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
   // Bounds-based loading methods (copied from EditSiteScreen)
   void _onBoundsChanged(LatLngBounds bounds) {
+    final currentZoom = _mapController.camera.zoom;
+    LoggingService.info('_onBoundsChanged called: zoom=$currentZoom');
+
     // Skip bounds processing if sites are disabled
     if (!_sitesEnabled) {
+      LoggingService.info('Sites disabled, skipping bounds change');
       return;
     }
 
     // Check if bounds have changed significantly using MapBoundsManager
     if (!MapBoundsManager.instance.haveBoundsChangedSignificantly('nearby_sites', bounds, _currentBounds)) {
+      LoggingService.info('Bounds have not changed significantly, skipping load');
       return;
     }
 
     _currentBounds = bounds;
+    LoggingService.info('Bounds changed significantly, loading sites at zoom=$currentZoom');
 
     // Use MapBoundsManager for debounced loading with caching
     MapBoundsManager.instance.loadSitesForBoundsDebounced(
@@ -703,12 +753,13 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     ).then((_) {
       // Loading completed - also check for missing wind data
       // This handles the case when sites come from cache and onLoaded isn't called
-      LoggingService.info('Bounds load completed, checking for missing wind data');
-      Future.delayed(const Duration(milliseconds: 100), () {
+      LoggingService.info('Bounds load completed, checking for missing wind data after animation delay');
+      Future.delayed(const Duration(milliseconds: 500), () {
         if (!mounted) {
           LoggingService.info('Not mounted, skipping wind check');
           return;
         }
+        // Capture zoom AFTER delay, when cluster zoom animation is complete
         final currentZoom = _mapController.camera.zoom;
         LoggingService.info('Wind check: sites=${_displayedSites.length}, zoom=$currentZoom');
 
