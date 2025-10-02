@@ -58,6 +58,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   // Preference keys for filter states
   static const String _sitesEnabledKey = 'nearby_sites_sites_enabled';
   static const String _airspaceEnabledKey = 'nearby_sites_airspace_enabled';
+  static const String _forecastEnabledKey = 'nearby_sites_forecast_enabled';
   
   // Bounds-based loading state using MapBoundsManager
   LatLngBounds? _currentBounds;
@@ -77,6 +78,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   // Filter state for sites and airspace (defaults, will be loaded from preferences)
   bool _sitesEnabled = true; // Controls site loading and display
   bool _airspaceEnabled = true; // Controls airspace loading and display
+  bool _forecastEnabled = true; // Controls wind forecast fetching and display
   bool _hasActiveFilters = false; // Cached value to avoid FutureBuilder rebuilds
   double _maxAltitudeFt = 10000.0; // Default altitude filter
   Map<IcaoClass, bool> _excludedIcaoClasses = {}; // Current ICAO class filter state
@@ -149,6 +151,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       final savedProviderName = prefs.getString(_mapProviderKey);
       final sitesEnabled = prefs.getBool(_sitesEnabledKey) ?? true;
       final airspaceEnabled = prefs.getBool(_airspaceEnabledKey) ?? true;
+      final forecastEnabled = prefs.getBool(_forecastEnabledKey) ?? true;
 
       MapProvider selectedProvider = MapProvider.openStreetMap;
       if (savedProviderName != null) {
@@ -162,6 +165,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         setState(() {
           _sitesEnabled = sitesEnabled;
           _airspaceEnabled = airspaceEnabled;
+          _forecastEnabled = forecastEnabled;
         });
       }
     } catch (e) {
@@ -229,6 +233,12 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   }
 
   Future<void> _fetchWindDataForSites() async {
+    // Skip fetching if sites or forecast are disabled
+    if (!_sitesEnabled || !_forecastEnabled) {
+      LoggingService.info('Skipping wind fetch: sites or forecast disabled');
+      return;
+    }
+
     if (_displayedSites.isEmpty) {
       LoggingService.info('Skipping wind fetch: no displayed sites');
       return;
@@ -834,6 +844,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         builder: (context) => _DraggableFilterDialog(
           sitesEnabled: _sitesEnabled,
           airspaceEnabled: _airspaceEnabled,
+          forecastEnabled: _forecastEnabled,
           airspaceTypes: airspaceTypes,
           icaoClasses: icaoClasses,
           maxAltitudeFt: _maxAltitudeFt,
@@ -852,12 +863,12 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       final types = await _openAipService.getExcludedAirspaceTypes();
       final classes = await _openAipService.getExcludedIcaoClasses();
 
-      // Consider filters active if any type/class is disabled or sites are disabled
+      // Consider filters active if any type/class is disabled or sites/forecast are disabled
       final hasDisabledTypes = types.values.contains(false);
       final hasDisabledClasses = classes.values.contains(false);
 
       setState(() {
-        _hasActiveFilters = !_sitesEnabled || hasDisabledTypes || hasDisabledClasses;
+        _hasActiveFilters = !_sitesEnabled || !_forecastEnabled || hasDisabledTypes || hasDisabledClasses;
       });
     } catch (e) {
       LoggingService.error('Failed to update active filters state', e);
@@ -865,15 +876,17 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   }
 
   /// Handle filter apply from dialog
-  void _handleFilterApply(bool sitesEnabled, bool airspaceEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) async {
+  void _handleFilterApply(bool sitesEnabled, bool airspaceEnabled, bool forecastEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) async {
     try {
       // Update filter states
       final previousSitesEnabled = _sitesEnabled;
       final previousAirspaceEnabled = _airspaceEnabled;
+      final previousForecastEnabled = _forecastEnabled;
 
       setState(() {
         _sitesEnabled = sitesEnabled;
         _airspaceEnabled = airspaceEnabled;
+        _forecastEnabled = forecastEnabled;
         _maxAltitudeFt = maxAltitudeFt;
       });
 
@@ -881,6 +894,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_sitesEnabledKey, sitesEnabled);
       await prefs.setBool(_airspaceEnabledKey, airspaceEnabled);
+      await prefs.setBool(_forecastEnabledKey, forecastEnabled);
 
       // Handle sites visibility changes
       if (!sitesEnabled && previousSitesEnabled) {
@@ -902,6 +916,23 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           }
         }
         LoggingService.action('MapFilter', 'sites_enabled', {'reloading_sites': true, 'has_bounds': _currentBounds != null});
+      }
+
+      // Handle forecast visibility changes
+      if (!forecastEnabled && previousForecastEnabled) {
+        // Forecast was disabled - clear wind data and flyability status
+        setState(() {
+          _siteWindData.clear();
+          _siteFlyabilityStatus.clear();
+        });
+        LoggingService.action('MapFilter', 'forecast_disabled', {'cleared_wind_data': true});
+      } else if (forecastEnabled && !previousForecastEnabled) {
+        // Forecast was enabled - fetch wind data for visible sites if zoomed in
+        final currentZoom = _mapController.camera.zoom;
+        if (_displayedSites.isNotEmpty && currentZoom >= 10) {
+          _fetchWindDataForSites();
+        }
+        LoggingService.action('MapFilter', 'forecast_enabled', {'will_fetch': currentZoom >= 10});
       }
 
       // Handle airspace visibility changes
@@ -2664,15 +2695,17 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
 class _DraggableFilterDialog extends StatefulWidget {
   final bool sitesEnabled;
   final bool airspaceEnabled;
+  final bool forecastEnabled;
   final Map<String, bool> airspaceTypes;
   final Map<String, bool> icaoClasses;
   final double maxAltitudeFt;
   final bool clippingEnabled;
-  final Function(bool sitesEnabled, bool airspaceEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) onApply;
+  final Function(bool sitesEnabled, bool airspaceEnabled, bool forecastEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) onApply;
 
   const _DraggableFilterDialog({
     required this.sitesEnabled,
     required this.airspaceEnabled,
+    required this.forecastEnabled,
     required this.airspaceTypes,
     required this.icaoClasses,
     required this.maxAltitudeFt,
@@ -2712,6 +2745,7 @@ class _DraggableFilterDialogState extends State<_DraggableFilterDialog> {
               child: MapFilterDialog(
                 sitesEnabled: widget.sitesEnabled,
                 airspaceEnabled: widget.airspaceEnabled,
+                forecastEnabled: widget.forecastEnabled,
                 airspaceTypes: widget.airspaceTypes,
                 icaoClasses: widget.icaoClasses,
                 maxAltitudeFt: widget.maxAltitudeFt,
