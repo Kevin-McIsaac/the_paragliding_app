@@ -188,6 +188,21 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     }
   }
 
+  /// Get the marker opacity based on whether wind data is available
+  double _getSiteMarkerOpacity(ParaglidingSite site) {
+    final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
+    final status = widget.siteFlyabilityStatus[key] ?? FlyabilityStatus.unknown;
+
+    switch (status) {
+      case FlyabilityStatus.flyable:
+      case FlyabilityStatus.notFlyable:
+        return 1.0; // Fully opaque when we have wind data
+      case FlyabilityStatus.loading:
+      case FlyabilityStatus.unknown:
+        return 0.4; // 40% opacity when no wind data
+    }
+  }
+
   /// Get tooltip message showing flyability status
   String _getSiteFlyabilityTooltip(ParaglidingSite site) {
     final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
@@ -233,8 +248,11 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
             children: [
               Tooltip(
                 message: _getSiteFlyabilityTooltip(site),
-                child: SiteMarkerUtils.buildSiteMarkerIcon(
-                  color: _getSiteMarkerColor(site),
+                child: Opacity(
+                  opacity: _getSiteMarkerOpacity(site),
+                  child: SiteMarkerUtils.buildSiteMarkerIcon(
+                    color: _getSiteMarkerColor(site),
+                  ),
                 ),
               ),
               SiteMarkerUtils.buildSiteLabel(
