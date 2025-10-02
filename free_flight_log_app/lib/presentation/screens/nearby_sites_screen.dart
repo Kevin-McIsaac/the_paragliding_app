@@ -6,11 +6,11 @@ import 'package:latlong2/latlong.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:intl/intl.dart';
 import '../../data/models/site.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/airspace_enums.dart';
 import '../../data/models/wind_data.dart';
+import '../../data/models/flyability_status.dart';
 import '../../services/location_service.dart';
 import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
@@ -20,10 +20,12 @@ import '../../services/map_bounds_manager.dart';
 import '../../services/weather_service.dart';
 import '../../utils/map_provider.dart';
 import '../../utils/site_utils.dart';
+import '../../utils/site_marker_utils.dart';
 import '../../utils/preferences_helper.dart';
 import '../widgets/nearby_sites_map.dart';
 import '../widgets/map_filter_dialog.dart';
 import '../widgets/common/app_error_state.dart';
+import '../widgets/common/map_loading_overlay.dart';
 import '../widgets/wind_rose_widget.dart';
 import '../../services/openaip_service.dart';
 
@@ -50,24 +52,17 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   LatLng? _mapCenterPosition;
   final double _mapZoom = 10.0; // Dynamic zoom level for map
   
-  // Map provider state
-  MapProvider _selectedMapProvider = MapProvider.openStreetMap;
-
   // Key to force map widget refresh when airspace settings change
   final Key _mapWidgetKey = UniqueKey();
   static const String _mapProviderKey = 'nearby_sites_map_provider';
 
-  // Legend state
-  static const String _legendExpandedKey = 'nearby_sites_legend_expanded';
-
   // Preference keys for filter states
   static const String _sitesEnabledKey = 'nearby_sites_sites_enabled';
   static const String _airspaceEnabledKey = 'nearby_sites_airspace_enabled';
+  static const String _forecastEnabledKey = 'nearby_sites_forecast_enabled';
   
   // Bounds-based loading state using MapBoundsManager
   LatLngBounds? _currentBounds;
-  LatLngBounds? _boundsToFit; // For site jumping
-  bool _isLoadingSites = false;
   
   // Search management - consolidated into SearchManager
 
@@ -84,21 +79,23 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   // Filter state for sites and airspace (defaults, will be loaded from preferences)
   bool _sitesEnabled = true; // Controls site loading and display
   bool _airspaceEnabled = true; // Controls airspace loading and display
+  bool _forecastEnabled = true; // Controls wind forecast fetching and display
   bool _hasActiveFilters = false; // Cached value to avoid FutureBuilder rebuilds
   double _maxAltitudeFt = 10000.0; // Default altitude filter
   Map<IcaoClass, bool> _excludedIcaoClasses = {}; // Current ICAO class filter state
-  int _filterUpdateCounter = 0; // Triggers map refresh on filter changes
   final OpenAipService _openAipService = OpenAipService.instance;
 
   // Wind forecast state
   DateTime _selectedDateTime = DateTime.now();
   final Map<String, WindData> _siteWindData = {};
+  final Map<String, FlyabilityStatus> _siteFlyabilityStatus = {};
   double _maxWindSpeed = 25.0;
   double _maxWindGusts = 30.0;
-  bool _isLoadingWind = false;
   bool _isWindBarExpanded = false; // Default to collapsed
+  bool _isWindLoading = false; // Track wind data fetch status
   final WeatherService _weatherService = WeatherService.instance;
   static const String _windBarExpandedKey = 'nearby_sites_wind_bar_expanded';
+  Timer? _windFetchDebounce;
 
   @override
   void initState() {
@@ -118,6 +115,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   void dispose() {
     MapBoundsManager.instance.cancelDebounce('nearby_sites'); // Clean up any pending debounce
     _locationNotificationTimer?.cancel(); // Clean up location notification timer
+    _windFetchDebounce?.cancel(); // Clean up wind fetch debounce timer
     _searchManager.dispose(); // Clean up search manager
     _searchController.dispose(); // Dispose search controller
     _searchFocusNode.dispose(); // Dispose search focus node
@@ -154,6 +152,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       final savedProviderName = prefs.getString(_mapProviderKey);
       final sitesEnabled = prefs.getBool(_sitesEnabledKey) ?? true;
       final airspaceEnabled = prefs.getBool(_airspaceEnabledKey) ?? true;
+      final forecastEnabled = prefs.getBool(_forecastEnabledKey) ?? true;
 
       MapProvider selectedProvider = MapProvider.openStreetMap;
       if (savedProviderName != null) {
@@ -165,9 +164,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
       if (mounted) {
         setState(() {
-          _selectedMapProvider = selectedProvider;
           _sitesEnabled = sitesEnabled;
           _airspaceEnabled = airspaceEnabled;
+          _forecastEnabled = forecastEnabled;
         });
       }
     } catch (e) {
@@ -203,19 +202,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     }
   }
 
-  Future<void> _toggleWindBar() async {
-    setState(() {
-      _isWindBarExpanded = !_isWindBarExpanded;
-    });
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_windBarExpandedKey, _isWindBarExpanded);
-    } catch (e) {
-      LoggingService.error('Failed to save wind bar state', e);
-    }
-  }
-
   Future<void> _showDateTimePicker() async {
     // Show date picker (max 7 days future)
     final date = await showDatePicker(
@@ -248,42 +234,196 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   }
 
   Future<void> _fetchWindDataForSites() async {
-    if (_displayedSites.isEmpty) return;
+    // Skip fetching if sites or forecast are disabled
+    if (!_sitesEnabled || !_forecastEnabled) {
+      LoggingService.info('Skipping wind fetch: sites or forecast disabled');
+      return;
+    }
 
-    setState(() {
-      _isLoadingWind = true;
-    });
+    if (_displayedSites.isEmpty) {
+      LoggingService.info('Skipping wind fetch: no displayed sites');
+      return;
+    }
 
-    try {
-      // Clear old wind data
-      _siteWindData.clear();
+    // Cancel any pending debounced fetch
+    _windFetchDebounce?.cancel();
 
-      // Fetch wind data for all displayed sites
-      for (final site in _displayedSites) {
-        final wind = await _weatherService.getWindData(
-          site.latitude,
-          site.longitude,
+    // Only fetch wind data if zoom level is high enough (≥10)
+    final currentZoom = _mapController.camera.zoom;
+    if (currentZoom < 10) {
+      LoggingService.info('Skipping wind fetch: zoom level $currentZoom < 10');
+      // Mark sites as unknown if they don't have wind data
+      setState(() {
+        for (final site in _displayedSites) {
+          final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
+          if (!_siteWindData.containsKey(key)) {
+            _siteFlyabilityStatus[key] = FlyabilityStatus.unknown;
+          }
+        }
+      });
+      return;
+    }
+
+    LoggingService.info('Wind fetch triggered at zoom $currentZoom, starting debounce timer');
+
+    // Debounce wind fetches to avoid rapid API calls on map movement
+    _windFetchDebounce = Timer(const Duration(milliseconds: 300), () async {
+      if (!mounted) return;
+
+      setState(() {
+        _isWindLoading = true;
+        // Mark all sites as loading
+        for (final site in _displayedSites) {
+          final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
+          if (!_siteWindData.containsKey(key)) {
+            _siteFlyabilityStatus[key] = FlyabilityStatus.loading;
+          }
+        }
+      });
+
+      try {
+        // Build list of locations to fetch (deduplicate by lat/lon)
+        final locationsToFetch = <LatLng>[];
+        final seenKeys = <String>{};
+
+        for (final site in _displayedSites) {
+          final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
+          if (!seenKeys.contains(key)) {
+            seenKeys.add(key);
+            locationsToFetch.add(LatLng(site.latitude, site.longitude));
+          }
+        }
+
+        LoggingService.structured('WIND_FETCH_START', {
+          'total_sites': _displayedSites.length,
+          'unique_locations': locationsToFetch.length,
+          'zoom_level': currentZoom,
+        });
+
+        // Fetch wind data in batch
+        final windDataResults = await _weatherService.getWindDataBatch(
+          locationsToFetch,
           _selectedDateTime,
         );
-        if (wind != null) {
-          final key = '${site.latitude}_${site.longitude}';
-          _siteWindData[key] = wind;
+
+        if (!mounted) return;
+
+        // Update wind data map and flyability status with setState for immediate UI update
+        setState(() {
+          _isWindLoading = false;
+          _siteWindData.addAll(windDataResults);
+          // Force recalculation because we have fresh wind data
+          _updateFlyabilityStatus(forceRecalculation: true);
+        });
+
+        LoggingService.structured('WIND_DATA_FETCHED', {
+          'sites_count': _displayedSites.length,
+          'fetched_count': windDataResults.length,
+          'time': _selectedDateTime.toIso8601String(),
+          'zoom_level': currentZoom,
+        });
+      } catch (e, stackTrace) {
+        LoggingService.error('Failed to fetch wind data', e, stackTrace);
+        if (mounted) {
+          setState(() {
+            _isWindLoading = false;
+            // Mark failed sites as unknown
+            for (final site in _displayedSites) {
+              final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
+              if (!_siteWindData.containsKey(key)) {
+                _siteFlyabilityStatus[key] = FlyabilityStatus.unknown;
+              }
+            }
+          });
         }
       }
+    });
+  }
 
-      LoggingService.structured('WIND_DATA_FETCHED', {
-        'sites_count': _displayedSites.length,
-        'wind_data_count': _siteWindData.length,
-        'selected_time': _selectedDateTime.toIso8601String(),
-      });
-    } catch (e) {
-      LoggingService.error('Failed to fetch wind data for sites', e);
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoadingWind = false;
-        });
+  /// Check if any displayed site is missing wind data
+  bool _hasMissingWindData({bool includeUnknownStatus = false}) {
+    return _displayedSites.any((site) {
+      final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
+      if (includeUnknownStatus) {
+        // Missing if: no wind data OR status is unknown/loading OR no status at all
+        final hasWindData = _siteWindData.containsKey(key);
+        final status = _siteFlyabilityStatus[key];
+        final isMissing = !hasWindData ||
+               status == FlyabilityStatus.unknown ||
+               status == FlyabilityStatus.loading ||
+               !_siteFlyabilityStatus.containsKey(key);
+        LoggingService.debug('Site ${site.name}: hasWindData=$hasWindData, status=$status, isMissing=$isMissing');
+        return isMissing;
       }
+      return !_siteWindData.containsKey(key) && !_siteFlyabilityStatus.containsKey(key);
+    });
+  }
+
+  /// Calculate flyability status for all displayed sites
+  ///
+  /// Uses intelligent caching to avoid redundant calculations:
+  /// - Only recalculates sites that don't have cached status (unless forced)
+  /// - Preserves existing cache entries for unchanged sites
+  /// - Provides summary logging for performance tracking
+  void _updateFlyabilityStatus({bool forceRecalculation = false}) {
+    int calculated = 0;
+    int flyable = 0;
+    int notFlyable = 0;
+    int unknown = 0;
+
+    for (final site in _displayedSites) {
+      final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
+
+      // Skip if already calculated and not forcing recalc
+      if (!forceRecalculation && _siteFlyabilityStatus.containsKey(key)) {
+        // Count existing status for summary
+        final status = _siteFlyabilityStatus[key];
+        if (status == FlyabilityStatus.flyable) {
+          flyable++;
+        } else if (status == FlyabilityStatus.notFlyable) {
+          notFlyable++;
+        } else {
+          unknown++;
+        }
+        continue;
+      }
+
+      calculated++;
+      final wind = _siteWindData[key];
+
+      if (wind == null) {
+        _siteFlyabilityStatus[key] = FlyabilityStatus.unknown;
+        unknown++;
+      } else if (site.windDirections.isEmpty) {
+        _siteFlyabilityStatus[key] = FlyabilityStatus.unknown;
+        unknown++;
+      } else {
+        final isFlyable = wind.isFlyable(
+          site.windDirections,
+          _maxWindSpeed,
+          _maxWindGusts,
+        );
+        _siteFlyabilityStatus[key] = isFlyable
+            ? FlyabilityStatus.flyable
+            : FlyabilityStatus.notFlyable;
+
+        if (isFlyable) {
+          flyable++;
+        } else {
+          notFlyable++;
+        }
+      }
+    }
+
+    // Summary logging for Claude analysis
+    if (calculated > 0 || forceRecalculation) {
+      LoggingService.structured('FLYABILITY_UPDATE', {
+        'total_sites': _displayedSites.length,
+        'recalculated': calculated,
+        'flyable': flyable,
+        'not_flyable': notFlyable,
+        'unknown': unknown,
+      });
     }
   }
 
@@ -563,17 +703,23 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
   // Bounds-based loading methods (copied from EditSiteScreen)
   void _onBoundsChanged(LatLngBounds bounds) {
+    final currentZoom = _mapController.camera.zoom;
+    LoggingService.debug('_onBoundsChanged called: zoom=$currentZoom');
+
     // Skip bounds processing if sites are disabled
     if (!_sitesEnabled) {
+      LoggingService.debug('Sites disabled, skipping bounds change');
       return;
     }
 
     // Check if bounds have changed significantly using MapBoundsManager
     if (!MapBoundsManager.instance.haveBoundsChangedSignificantly('nearby_sites', bounds, _currentBounds)) {
+      LoggingService.debug('Bounds have not changed significantly, skipping load');
       return;
     }
 
     _currentBounds = bounds;
+    LoggingService.info('Bounds changed significantly, loading sites at zoom=$currentZoom');
 
     // Use MapBoundsManager for debounced loading with caching
     MapBoundsManager.instance.loadSitesForBoundsDebounced(
@@ -585,12 +731,17 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           setState(() {
             _allSites = result.sites;
             _siteFlightStatus = {};
+
+            // Clean up stale flyability status and wind data for sites no longer visible
+            final currentSiteKeys = result.sites.map((site) => SiteUtils.createSiteKey(site.latitude, site.longitude)).toSet();
+            _siteFlyabilityStatus.removeWhere((key, value) => !currentSiteKeys.contains(key));
+            _siteWindData.removeWhere((key, value) => !currentSiteKeys.contains(key));
+
             for (final site in result.sites) {
               final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
               _siteFlightStatus[siteKey] = site.hasFlights;
             }
             _updateDisplayedSites();
-            _isLoadingSites = false;
           });
 
           LoggingService.structured('NEARBY_SITES_LOADED', {
@@ -602,34 +753,41 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
           // Auto-fetch wind data when sites are loaded for the first time
           // or when navigating to new sites that don't have wind data
-          if (_displayedSites.isNotEmpty) {
-            // Check if any displayed site is missing wind data
-            final missingWindData = _displayedSites.any((site) {
-              final key = '${site.latitude}_${site.longitude}';
-              return !_siteWindData.containsKey(key);
-            });
-            if (missingWindData || _siteWindData.isEmpty) {
+          // Use a short delay to ensure _displayedSites is fully updated
+          Future.delayed(const Duration(milliseconds: 50), () {
+            if (!mounted) return;
+            if (_displayedSites.isNotEmpty && (_hasMissingWindData() || _siteWindData.isEmpty)) {
               _fetchWindDataForSites();
             }
-          }
+          });
         }
       },
       siteLimit: 50,
       includeFlightCounts: true,
     ).then((_) {
-      // Loading completed
+      // Loading completed - also check for missing wind data
+      // This handles the case when sites come from cache and onLoaded isn't called
+      LoggingService.info('Bounds load completed, checking for missing wind data after animation delay');
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (!mounted) {
+          LoggingService.info('Not mounted, skipping wind check');
+          return;
+        }
+        // Capture zoom AFTER delay, when cluster zoom animation is complete
+        final currentZoom = _mapController.camera.zoom;
+        LoggingService.info('Wind check: sites=${_displayedSites.length}, zoom=$currentZoom');
+
+        if (_displayedSites.isNotEmpty && currentZoom >= 10) {
+          final missingWindData = _hasMissingWindData(includeUnknownStatus: true);
+          LoggingService.info('Missing wind data check: $missingWindData');
+          if (missingWindData) {
+            LoggingService.info('Triggering wind fetch after bounds load completion');
+            _fetchWindDataForSites();
+          }
+        }
+      });
     }).catchError((error) {
       LoggingService.error('Failed to load sites for bounds', error);
-      if (mounted) {
-        setState(() {
-          _isLoadingSites = false;
-        });
-      }
-    });
-
-    // Set loading state
-    setState(() {
-      _isLoadingSites = true;
     });
   }
 
@@ -638,7 +796,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
   void _showSiteDetailsDialog({required ParaglidingSite paraglidingSite}) {
     // Get wind data for this site
-    final windKey = '${paraglidingSite.latitude}_${paraglidingSite.longitude}';
+    final windKey = SiteUtils.createSiteKey(paraglidingSite.latitude, paraglidingSite.longitude);
     final windData = _siteWindData[windKey];
 
     showDialog(
@@ -650,6 +808,13 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         paraglidingSite: paraglidingSite,
         userPosition: _userPosition,
         windData: windData,
+        onWindDataFetched: (fetchedWindData) {
+          // Update parent's cache when dialog fetches wind data
+          setState(() {
+            _siteWindData[windKey] = fetchedWindData;
+            _updateFlyabilityStatus(forceRecalculation: true);
+          });
+        },
       ),
     );
   }
@@ -680,6 +845,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         builder: (context) => _DraggableFilterDialog(
           sitesEnabled: _sitesEnabled,
           airspaceEnabled: _airspaceEnabled,
+          forecastEnabled: _forecastEnabled,
           airspaceTypes: airspaceTypes,
           icaoClasses: icaoClasses,
           maxAltitudeFt: _maxAltitudeFt,
@@ -698,12 +864,12 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       final types = await _openAipService.getExcludedAirspaceTypes();
       final classes = await _openAipService.getExcludedIcaoClasses();
 
-      // Consider filters active if any type/class is disabled or sites are disabled
+      // Consider filters active if any type/class is disabled or sites/forecast are disabled
       final hasDisabledTypes = types.values.contains(false);
       final hasDisabledClasses = classes.values.contains(false);
 
       setState(() {
-        _hasActiveFilters = !_sitesEnabled || hasDisabledTypes || hasDisabledClasses;
+        _hasActiveFilters = !_sitesEnabled || !_forecastEnabled || hasDisabledTypes || hasDisabledClasses;
       });
     } catch (e) {
       LoggingService.error('Failed to update active filters state', e);
@@ -711,15 +877,17 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   }
 
   /// Handle filter apply from dialog
-  void _handleFilterApply(bool sitesEnabled, bool airspaceEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) async {
+  void _handleFilterApply(bool sitesEnabled, bool airspaceEnabled, bool forecastEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) async {
     try {
       // Update filter states
       final previousSitesEnabled = _sitesEnabled;
       final previousAirspaceEnabled = _airspaceEnabled;
+      final previousForecastEnabled = _forecastEnabled;
 
       setState(() {
         _sitesEnabled = sitesEnabled;
         _airspaceEnabled = airspaceEnabled;
+        _forecastEnabled = forecastEnabled;
         _maxAltitudeFt = maxAltitudeFt;
       });
 
@@ -727,6 +895,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_sitesEnabledKey, sitesEnabled);
       await prefs.setBool(_airspaceEnabledKey, airspaceEnabled);
+      await prefs.setBool(_forecastEnabledKey, forecastEnabled);
 
       // Handle sites visibility changes
       if (!sitesEnabled && previousSitesEnabled) {
@@ -748,6 +917,23 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           }
         }
         LoggingService.action('MapFilter', 'sites_enabled', {'reloading_sites': true, 'has_bounds': _currentBounds != null});
+      }
+
+      // Handle forecast visibility changes
+      if (!forecastEnabled && previousForecastEnabled) {
+        // Forecast was disabled - clear wind data and flyability status
+        setState(() {
+          _siteWindData.clear();
+          _siteFlyabilityStatus.clear();
+        });
+        LoggingService.action('MapFilter', 'forecast_disabled', {'cleared_wind_data': true});
+      } else if (forecastEnabled && !previousForecastEnabled) {
+        // Forecast was enabled - fetch wind data for visible sites if zoomed in
+        final currentZoom = _mapController.camera.zoom;
+        if (_displayedSites.isNotEmpty && currentZoom >= 10) {
+          _fetchWindDataForSites();
+        }
+        LoggingService.action('MapFilter', 'forecast_enabled', {'will_fetch': currentZoom >= 10});
       }
 
       // Handle airspace visibility changes
@@ -794,8 +980,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
       // Refresh map to apply airspace filter changes
       setState(() {
-        // Increment counter to trigger map overlay refresh
-        _filterUpdateCounter++;
         // This preserves the map position and zoom level
       });
 
@@ -815,17 +999,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       LoggingService.error('Failed to apply map filters', error, stackTrace);
     }
   }
-
-  /// Save map provider preference
-  Future<void> _saveMapProviderPreference(MapProvider provider) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_mapProviderKey, provider.name);
-    } catch (e) {
-      LoggingService.error('Failed to save map provider preference', e);
-    }
-  }
-
 
   Widget _buildSearchResults() {
     return Container(
@@ -878,7 +1051,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         title: Container(
           height: 40,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.1),
+            color: Colors.white.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(4),
           ),
           child: TextField(
@@ -893,7 +1066,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
             decoration: InputDecoration(
               isDense: true,
               hintText: 'Search nearby sites...',
-              hintStyle: TextStyle(fontSize: 16, color: Colors.white.withOpacity(0.7)),
+              hintStyle: TextStyle(fontSize: 16, color: Colors.white.withValues(alpha: 0.7)),
               prefixIcon: const Icon(Icons.search, size: 20, color: Colors.white),
               suffixIcon: _searchManager.state.query.isNotEmpty
                   ? IconButton(
@@ -953,9 +1126,11 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                           onSiteSelected: _onSiteSelected,
                           onLocationRequest: _onRefreshLocation,
                           siteWindData: _siteWindData,
+                          siteFlyabilityStatus: _siteFlyabilityStatus,
                           maxWindSpeed: _maxWindSpeed,
                           maxWindGusts: _maxWindGusts,
                           selectedDateTime: _selectedDateTime,
+                          forecastEnabled: _forecastEnabled,
                           onBoundsChanged: _onBoundsChanged,
                           showUserLocation: true,
                           isLocationLoading: _isLocationLoading,
@@ -1020,7 +1195,16 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                           ),
                       ],
                     ),
-          
+
+          // Wind loading overlay
+          if (_isWindLoading)
+            MapLoadingOverlay.single(
+              label: 'Loading wind forecast',
+              icon: Icons.air,
+              iconColor: Colors.lightBlue,
+              count: _displayedSites.length,
+            ),
+
           // Search dropdown overlay
           if (_searchManager.shouldShowSearchDropdown())
             Positioned(
@@ -1102,12 +1286,14 @@ class _SiteDetailsDialog extends StatefulWidget {
   final ParaglidingSite? paraglidingSite;
   final Position? userPosition;
   final WindData? windData;
+  final Function(WindData)? onWindDataFetched;
 
   const _SiteDetailsDialog({
     this.site,
     this.paraglidingSite,
     this.userPosition,
     this.windData,
+    this.onWindDataFetched,
   });
 
   @override
@@ -1120,12 +1306,17 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
   String? _loadingError;
   TabController? _tabController;
 
+  // Wind data state
+  WindData? _windData;
+  bool _isLoadingWind = false;
+
   @override
   void initState() {
     super.initState();
     // Create tab controller for both local and API sites - both can have detailed data
     _tabController = TabController(length: 2, vsync: this); // 2 tabs: Takeoff, Weather
     _loadSiteDetails();
+    _loadWindData();
   }
 
   @override
@@ -1187,6 +1378,105 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     }
   }
 
+  Future<void> _loadWindData() async {
+    // If wind data was already provided by parent, use it
+    if (widget.windData != null) {
+      _windData = widget.windData;
+      return;
+    }
+
+    // Otherwise, fetch wind data ourselves
+    setState(() => _isLoadingWind = true);
+
+    try {
+      // Get coordinates from either paraglidingSite or site
+      double latitude;
+      double longitude;
+
+      if (widget.paraglidingSite != null) {
+        latitude = widget.paraglidingSite!.latitude;
+        longitude = widget.paraglidingSite!.longitude;
+      } else if (widget.site != null) {
+        latitude = widget.site!.latitude;
+        longitude = widget.site!.longitude;
+      } else {
+        setState(() => _isLoadingWind = false);
+        return;
+      }
+
+      LoggingService.info('[SITE_DIALOG] Fetching wind data for site at $latitude, $longitude');
+
+      final windData = await WeatherService.instance.getWindData(
+        latitude,
+        longitude,
+        DateTime.now(),
+      );
+
+      if (mounted) {
+        setState(() {
+          _windData = windData;
+          _isLoadingWind = false;
+        });
+
+        // Notify parent to update its cache
+        if (windData != null && widget.onWindDataFetched != null) {
+          widget.onWindDataFetched!(windData);
+        }
+
+        LoggingService.info('[SITE_DIALOG] Wind data fetched successfully: ${windData?.compassDirection} ${windData?.speedKmh}km/h');
+      }
+    } catch (e, stackTrace) {
+      if (mounted) {
+        setState(() => _isLoadingWind = false);
+      }
+      LoggingService.error('Failed to fetch wind data for site dialog', e, stackTrace);
+    }
+  }
+
+  /// Get the center dot color based on flyability status
+  Color? _getCenterDotColor(List<String> windDirections) {
+    // If no wind data available, return null to use default color
+    if (_windData == null) {
+      return null;
+    }
+
+    // If no wind directions defined, return grey (can't evaluate flyability)
+    if (windDirections.isEmpty) {
+      return SiteMarkerUtils.unknownFlyabilitySiteColor;
+    }
+
+    // Calculate flyability using the same logic as nearby_sites_screen
+    final isFlyable = _windData!.isFlyable(
+      windDirections,
+      25.0, // Default max wind speed
+      30.0, // Default max gusts
+    );
+
+    return isFlyable
+        ? SiteMarkerUtils.flyableSiteColor
+        : SiteMarkerUtils.notFlyableSiteColor;
+  }
+
+  /// Get the center dot tooltip showing flyability reason
+  String? _getCenterDotTooltip(List<String> windDirections) {
+    // If no wind data, no tooltip
+    if (_windData == null) {
+      return null;
+    }
+
+    // If no wind directions, explain why we can't evaluate
+    if (windDirections.isEmpty) {
+      return 'No wind directions defined for site';
+    }
+
+    // Use WindData's built-in flyability reason
+    return _windData!.getFlyabilityReason(
+      windDirections,
+      25.0, // Default max wind speed
+      30.0, // Default max gusts
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // Determine which site data to use
@@ -1201,7 +1491,7 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     final int? rating = widget.paraglidingSite?.rating ?? _detailedData?['rating'];
     // Check for both null and empty wind directions to ensure fallback to API data
     final List<String> windDirections =
-        (widget.paraglidingSite?.windDirections?.isNotEmpty == true
+        (widget.paraglidingSite?.windDirections.isNotEmpty == true
             ? widget.paraglidingSite!.windDirections
             : (_detailedData?['wind_directions'] as List<dynamic>?)?.cast<String>()) ?? [];
 
@@ -1711,58 +2001,6 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     );
   }
 
-  Widget _buildRulesTab() {
-    return Scrollbar(
-      child: SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (_isLoadingDetails)
-              const Center(child: CircularProgressIndicator())
-            else if (_loadingError != null)
-              Center(child: Text(_loadingError!, style: TextStyle(color: Colors.red)))
-            else if (_detailedData != null && _detailedData!['flight_rules'] != null && _detailedData!['flight_rules']!.toString().isNotEmpty) ...[
-              Text(
-                _detailedData!['flight_rules']!.toString(),
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ] else
-              const Center(child: Text('No flight rules available')),
-          ],
-        ),
-      ),
-      ),
-    );
-  }
-
-  Widget _buildAccessTab() {
-    return Scrollbar(
-      child: SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (_isLoadingDetails)
-              const Center(child: CircularProgressIndicator())
-            else if (_loadingError != null)
-              Center(child: Text(_loadingError!, style: TextStyle(color: Colors.red)))
-            else if (_detailedData != null && _detailedData!['going_there'] != null && _detailedData!['going_there']!.toString().isNotEmpty) ...[
-              Text(
-                _detailedData!['going_there']!.toString(),
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ] else
-              const Center(child: Text('No access information available')),
-          ],
-        ),
-      ),
-      ),
-    );
-  }
-
   Widget _buildWeatherTab(List<String> windDirections) {
     // Extract weather information early for better layout control
     final weatherInfo = _detailedData?['weather']?.toString();
@@ -1795,8 +2033,10 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                         child: WindRoseWidget(
                           launchableDirections: windDirections,
                           size: 100.0,
-                          windSpeed: widget.windData?.speedKmh,
-                          windDirection: widget.windData?.directionDegrees,
+                          windSpeed: _windData?.speedKmh,
+                          windDirection: _windData?.directionDegrees,
+                          centerDotColor: _getCenterDotColor(windDirections),
+                          centerDotTooltip: _getCenterDotTooltip(windDirections),
                         ),
                       ),
                       // Weather text on the right, flexible to use remaining space
@@ -1913,84 +2153,6 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     );
   }
 
-  Widget _buildWeatherInformationCard() {
-    // Extract weather-specific information from API data using actual field names
-    final weatherInfo = _detailedData?['weather']?.toString();
-    final thermalFlag = _detailedData?['thermals']?.toString();
-    final soaringFlag = _detailedData?['soaring']?.toString();
-    final xcFlag = _detailedData?['xc']?.toString();
-
-    // Check if we have any weather-related content
-    final hasWeatherContent = [weatherInfo].any((content) => content != null && content.isNotEmpty) ||
-        [thermalFlag, soaringFlag, xcFlag].any((flag) => flag == '1');
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.wb_sunny,
-                  color: Colors.orange,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Weather Information',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            if (!hasWeatherContent) ...[
-              // No weather information available
-              Row(
-                children: [
-                  Icon(
-                    Icons.info_outline,
-                    size: 24,
-                    color: Colors.grey.shade400,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'No weather information available for this site.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ] else ...[
-              // Display available weather information
-              if (weatherInfo != null && weatherInfo.isNotEmpty) ...[
-                _buildWeatherInfoSection(
-                  title: 'Weather Information',
-                  content: weatherInfo,
-                  icon: Icons.wb_cloudy,
-                  iconColor: Colors.blue,
-                ),
-                const SizedBox(height: 12),
-              ],
-
-              // Display flight characteristics based on API flags
-              if (thermalFlag == '1' || soaringFlag == '1' || xcFlag == '1') ...[
-                _buildFlightCharacteristicsSection(thermalFlag, soaringFlag, xcFlag),
-              ],
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildWeatherInfoSection({
     required String title,
     required String content,
@@ -2061,36 +2223,6 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
           style: Theme.of(context).textTheme.bodyMedium,
         ),
       ],
-    );
-  }
-
-  Widget _buildCommentsTab() {
-    return Scrollbar(
-      child: SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (_isLoadingDetails)
-              const Center(child: CircularProgressIndicator())
-            else if (_loadingError != null)
-              Center(child: Text(_loadingError!, style: TextStyle(color: Colors.red)))
-            else if (_detailedData != null) ...[
-            // Pilot comments
-            if (_detailedData!['comments'] != null && _detailedData!['comments']!.toString().isNotEmpty) ...[
-              Text(
-                _detailedData!['comments']!.toString(),
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ] else
-              const Center(child: Text('No pilot comments available')),
-            ] else
-              const Center(child: Text('No pilot comments available')),
-          ],
-        ),
-      ),
-      ),
     );
   }
 
@@ -2611,15 +2743,17 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
 class _DraggableFilterDialog extends StatefulWidget {
   final bool sitesEnabled;
   final bool airspaceEnabled;
+  final bool forecastEnabled;
   final Map<String, bool> airspaceTypes;
   final Map<String, bool> icaoClasses;
   final double maxAltitudeFt;
   final bool clippingEnabled;
-  final Function(bool sitesEnabled, bool airspaceEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) onApply;
+  final Function(bool sitesEnabled, bool airspaceEnabled, bool forecastEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) onApply;
 
   const _DraggableFilterDialog({
     required this.sitesEnabled,
     required this.airspaceEnabled,
+    required this.forecastEnabled,
     required this.airspaceTypes,
     required this.icaoClasses,
     required this.maxAltitudeFt,
@@ -2659,6 +2793,7 @@ class _DraggableFilterDialogState extends State<_DraggableFilterDialog> {
               child: MapFilterDialog(
                 sitesEnabled: widget.sitesEnabled,
                 airspaceEnabled: widget.airspaceEnabled,
+                forecastEnabled: widget.forecastEnabled,
                 airspaceTypes: widget.airspaceTypes,
                 icaoClasses: widget.icaoClasses,
                 maxAltitudeFt: widget.maxAltitudeFt,

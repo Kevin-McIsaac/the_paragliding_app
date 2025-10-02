@@ -111,9 +111,14 @@ class MapBoundsManager {
             includeFlightCounts: includeFlightCounts,
             zoomLevel: zoomLevel,
           );
-          completer.complete();
+          // Always complete, even if early return happened
+          if (!completer.isCompleted) {
+            completer.complete();
+          }
         } catch (e) {
-          completer.completeError(e);
+          if (!completer.isCompleted) {
+            completer.completeError(e);
+          }
         }
       },
     );

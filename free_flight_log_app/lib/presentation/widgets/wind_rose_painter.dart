@@ -6,6 +6,7 @@ class WindRosePainter extends CustomPainter {
   final ThemeData theme;
   final double? windSpeed; // Wind speed in km/h
   final double? windDirection; // Wind direction in degrees (0 = North)
+  final Color? centerDotColor; // Optional color for center dot based on flyability
 
   // 8 cardinal and intercardinal directions
   static const List<String> _allDirections = [
@@ -29,6 +30,7 @@ class WindRosePainter extends CustomPainter {
     required this.theme,
     this.windSpeed,
     this.windDirection,
+    this.centerDotColor,
   });
 
   @override
@@ -177,9 +179,11 @@ class WindRosePainter extends CustomPainter {
   void _drawCenterPoint(Canvas canvas, Offset center, double radius) {
     final centerDotRadius = 15.0; // Same fixed size as used in _drawWindSectors
 
-    // Determine center dot color based on wind suitability
+    // Use provided color if available, otherwise determine based on wind suitability
     Color centerColor;
-    if (windDirection != null) {
+    if (centerDotColor != null) {
+      centerColor = centerDotColor!;
+    } else if (windDirection != null) {
       final isLaunchable = _isWindDirectionLaunchable();
       centerColor = isLaunchable
           ? Colors.green.withValues(alpha: 0.3)  // Same as green wedges
@@ -198,13 +202,16 @@ class WindRosePainter extends CustomPainter {
   void _drawWindArrow(Canvas canvas, Offset center, double radius) {
     final gap = 5.0;
     final centerDotRadius = 15.0;
-    final arrowStartRadius = centerDotRadius;
-    final arrowEndRadius = radius - gap;
+    final arrowStartRadius = radius - gap; // Start from outer edge
+    final arrowEndRadius = centerDotRadius; // End at center
 
-    // Convert wind direction to radians (subtract 90° to align with coordinate system)
+    // Convert wind direction to radians
+    // Wind direction from API is "FROM" direction (meteorologically correct)
+    // Subtract 90° to align with coordinate system (North at top)
     final arrowAngle = _degreesToRadians(windDirection! - 90);
 
-    // Calculate arrow start and end points
+    // Calculate arrow start (outer edge) and end points (center)
+    // Arrow points FROM the wind direction TOWARD center (inward)
     final startX = center.dx + arrowStartRadius * cos(arrowAngle);
     final startY = center.dy + arrowStartRadius * sin(arrowAngle);
     final endX = center.dx + arrowEndRadius * cos(arrowAngle);
@@ -216,25 +223,27 @@ class WindRosePainter extends CustomPainter {
       ..strokeWidth = 1.5  // Thinner arrow line
       ..strokeCap = StrokeCap.round;
 
-    // Draw arrow line
+    // Draw arrow line from outer edge toward center
     canvas.drawLine(
       Offset(startX, startY),
       Offset(endX, endY),
       arrowPaint,
     );
 
-    // Draw arrowhead
+    // Draw arrowhead pointing inward (toward center)
     final arrowheadLength = 6.0;  // Smaller arrowhead
     final arrowheadAngle = 25 * pi / 180; // Narrower angle
 
+    // Arrowhead at the END point (center), pointing inward
+    // Reverse the angle calculation to point toward center
     final arrowheadLeft = Offset(
-      endX - arrowheadLength * cos(arrowAngle - arrowheadAngle),
-      endY - arrowheadLength * sin(arrowAngle - arrowheadAngle),
+      endX + arrowheadLength * cos(arrowAngle - arrowheadAngle),
+      endY + arrowheadLength * sin(arrowAngle - arrowheadAngle),
     );
 
     final arrowheadRight = Offset(
-      endX - arrowheadLength * cos(arrowAngle + arrowheadAngle),
-      endY - arrowheadLength * sin(arrowAngle + arrowheadAngle),
+      endX + arrowheadLength * cos(arrowAngle + arrowheadAngle),
+      endY + arrowheadLength * sin(arrowAngle + arrowheadAngle),
     );
 
     canvas.drawLine(Offset(endX, endY), arrowheadLeft, arrowPaint);
@@ -252,7 +261,7 @@ class WindRosePainter extends CustomPainter {
       text: TextSpan(
         text: windSpeed!.toStringAsFixed(0),
         style: TextStyle(
-          color: theme.colorScheme.outline,
+          color: Colors.white,
           fontSize: speedFontSize,
           fontWeight: FontWeight.w600,  // Reduced from w900 to w600
         ),
@@ -311,6 +320,7 @@ class WindRosePainter extends CustomPainter {
     return launchableDirections != oldDelegate.launchableDirections ||
            theme != oldDelegate.theme ||
            windSpeed != oldDelegate.windSpeed ||
-           windDirection != oldDelegate.windDirection;
+           windDirection != oldDelegate.windDirection ||
+           centerDotColor != oldDelegate.centerDotColor;
   }
 }

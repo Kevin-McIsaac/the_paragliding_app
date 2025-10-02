@@ -9,16 +9,18 @@ import 'package:multi_dropdown/multi_dropdown.dart';
 class MapFilterDialog extends StatefulWidget {
   final bool sitesEnabled;
   final bool airspaceEnabled;
+  final bool forecastEnabled;
   final Map<String, bool> airspaceTypes;
   final Map<String, bool> icaoClasses;
   final double maxAltitudeFt;
   final bool clippingEnabled;
-  final Function(bool sitesEnabled, bool airspaceEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) onApply;
+  final Function(bool sitesEnabled, bool airspaceEnabled, bool forecastEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) onApply;
 
   const MapFilterDialog({
     super.key,
     required this.sitesEnabled,
     required this.airspaceEnabled,
+    required this.forecastEnabled,
     required this.airspaceTypes,
     required this.icaoClasses,
     required this.maxAltitudeFt,
@@ -33,6 +35,7 @@ class MapFilterDialog extends StatefulWidget {
 class _MapFilterDialogState extends State<MapFilterDialog> {
   late bool _sitesEnabled;
   late bool _airspaceEnabled;
+  late bool _forecastEnabled;
   late Map<String, bool> _airspaceTypes;
   late Map<String, bool> _icaoClasses;
   late double _maxAltitudeFt;
@@ -70,6 +73,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
     super.initState();
     _sitesEnabled = widget.sitesEnabled;
     _airspaceEnabled = widget.airspaceEnabled;
+    _forecastEnabled = widget.forecastEnabled;
     _airspaceTypes = Map<String, bool>.from(widget.airspaceTypes);
     _icaoClasses = Map<String, bool>.from(widget.icaoClasses);
     _maxAltitudeFt = widget.maxAltitudeFt;
@@ -307,6 +311,54 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                 ),
               ),
             ),
+            const SizedBox(width: 16), // Space between checkboxes
+            // Forecast checkbox (only shown when sites are enabled)
+            if (_sitesEnabled)
+              Tooltip(
+                message: 'Show wind forecast and flyability for sites',
+                textStyle: const TextStyle(color: Colors.white, fontSize: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E1E1E),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: InkWell(
+                  onTap: () => setState(() {
+                    _forecastEnabled = !_forecastEnabled;
+                    _applyFiltersDebounced();
+                  }),
+                  borderRadius: BorderRadius.circular(4),
+                  child: SizedBox(
+                    height: 24,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: Checkbox(
+                            value: _forecastEnabled,
+                            onChanged: (value) => setState(() {
+                              _forecastEnabled = value ?? true;
+                              _applyFiltersDebounced();
+                            }),
+                            activeColor: Colors.blue,
+                            checkColor: Colors.white,
+                            side: const BorderSide(color: Colors.white54),
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Text(
+                          'Forecast',
+                          style: TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             const SizedBox(width: 16), // Space between checkboxes
             // Airspace checkbox
             Tooltip(
@@ -786,6 +838,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
     LoggingService.structured('MAP_FILTER_APPLIED', {
       'sites_enabled': _sitesEnabled,
       'airspace_enabled': _airspaceEnabled,
+      'forecast_enabled': _forecastEnabled,
       'selected_types': selectedTypes,
       'selected_classes': selectedClasses,
       'total_types': _airspaceTypes.length,
@@ -794,7 +847,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
       'clipping_enabled': _clippingEnabled,
     });
 
-    widget.onApply(_sitesEnabled, _airspaceEnabled, _airspaceTypes, _icaoClasses, _maxAltitudeFt, _clippingEnabled);
+    widget.onApply(_sitesEnabled, _airspaceEnabled, _forecastEnabled, _airspaceTypes, _icaoClasses, _maxAltitudeFt, _clippingEnabled);
   }
 }
 
