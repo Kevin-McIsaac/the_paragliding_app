@@ -6,7 +6,6 @@ import 'package:latlong2/latlong.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:intl/intl.dart';
 import '../../data/models/site.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/airspace_enums.dart';
@@ -51,15 +50,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   LatLng? _mapCenterPosition;
   final double _mapZoom = 10.0; // Dynamic zoom level for map
   
-  // Map provider state
-  MapProvider _selectedMapProvider = MapProvider.openStreetMap;
-
   // Key to force map widget refresh when airspace settings change
   final Key _mapWidgetKey = UniqueKey();
   static const String _mapProviderKey = 'nearby_sites_map_provider';
-
-  // Legend state
-  static const String _legendExpandedKey = 'nearby_sites_legend_expanded';
 
   // Preference keys for filter states
   static const String _sitesEnabledKey = 'nearby_sites_sites_enabled';
@@ -67,8 +60,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   
   // Bounds-based loading state using MapBoundsManager
   LatLngBounds? _currentBounds;
-  LatLngBounds? _boundsToFit; // For site jumping
-  bool _isLoadingSites = false;
   
   // Search management - consolidated into SearchManager
 
@@ -88,7 +79,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   bool _hasActiveFilters = false; // Cached value to avoid FutureBuilder rebuilds
   double _maxAltitudeFt = 10000.0; // Default altitude filter
   Map<IcaoClass, bool> _excludedIcaoClasses = {}; // Current ICAO class filter state
-  int _filterUpdateCounter = 0; // Triggers map refresh on filter changes
   final OpenAipService _openAipService = OpenAipService.instance;
 
   // Wind forecast state
@@ -97,7 +87,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   final Map<String, FlyabilityStatus> _siteFlyabilityStatus = {};
   double _maxWindSpeed = 25.0;
   double _maxWindGusts = 30.0;
-  bool _isLoadingWind = false;
   bool _isWindBarExpanded = false; // Default to collapsed
   final WeatherService _weatherService = WeatherService.instance;
   static const String _windBarExpandedKey = 'nearby_sites_wind_bar_expanded';
@@ -169,7 +158,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
       if (mounted) {
         setState(() {
-          _selectedMapProvider = selectedProvider;
           _sitesEnabled = sitesEnabled;
           _airspaceEnabled = airspaceEnabled;
         });
@@ -204,19 +192,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       });
     } catch (e) {
       LoggingService.error('Failed to load wind preferences', e);
-    }
-  }
-
-  Future<void> _toggleWindBar() async {
-    setState(() {
-      _isWindBarExpanded = !_isWindBarExpanded;
-    });
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_windBarExpandedKey, _isWindBarExpanded);
-    } catch (e) {
-      LoggingService.error('Failed to save wind bar state', e);
     }
   }
 
@@ -283,7 +258,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       if (!mounted) return;
 
       setState(() {
-        _isLoadingWind = true;
         // Mark all sites as loading
         for (final site in _displayedSites) {
           final key = '${site.latitude}_${site.longitude}';
@@ -326,10 +300,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         // Calculate flyability status for all sites
         _updateFlyabilityStatus();
 
-        setState(() {
-          _isLoadingWind = false;
-        });
-
         LoggingService.structured('WIND_DATA_FETCHED', {
           'sites_count': _displayedSites.length,
           'fetched_count': windDataResults.length,
@@ -340,7 +310,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         LoggingService.error('Failed to fetch wind data', e, stackTrace);
         if (mounted) {
           setState(() {
-            _isLoadingWind = false;
             // Mark failed sites as unknown
             for (final site in _displayedSites) {
               final key = '${site.latitude}_${site.longitude}';
@@ -686,7 +655,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
               _siteFlightStatus[siteKey] = site.hasFlights;
             }
             _updateDisplayedSites();
-            _isLoadingSites = false;
           });
 
           LoggingService.structured('NEARBY_SITES_LOADED', {
@@ -747,16 +715,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       });
     }).catchError((error) {
       LoggingService.error('Failed to load sites for bounds', error);
-      if (mounted) {
-        setState(() {
-          _isLoadingSites = false;
-        });
-      }
-    });
-
-    // Set loading state
-    setState(() {
-      _isLoadingSites = true;
     });
   }
 
@@ -921,8 +879,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
       // Refresh map to apply airspace filter changes
       setState(() {
-        // Increment counter to trigger map overlay refresh
-        _filterUpdateCounter++;
         // This preserves the map position and zoom level
       });
 
@@ -942,17 +898,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       LoggingService.error('Failed to apply map filters', error, stackTrace);
     }
   }
-
-  /// Save map provider preference
-  Future<void> _saveMapProviderPreference(MapProvider provider) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_mapProviderKey, provider.name);
-    } catch (e) {
-      LoggingService.error('Failed to save map provider preference', e);
-    }
-  }
-
 
   Widget _buildSearchResults() {
     return Container(
@@ -1005,7 +950,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         title: Container(
           height: 40,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.1),
+            color: Colors.white.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(4),
           ),
           child: TextField(
@@ -1020,7 +965,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
             decoration: InputDecoration(
               isDense: true,
               hintText: 'Search nearby sites...',
-              hintStyle: TextStyle(fontSize: 16, color: Colors.white.withOpacity(0.7)),
+              hintStyle: TextStyle(fontSize: 16, color: Colors.white.withValues(alpha: 0.7)),
               prefixIcon: const Icon(Icons.search, size: 20, color: Colors.white),
               suffixIcon: _searchManager.state.query.isNotEmpty
                   ? IconButton(
@@ -1329,7 +1274,7 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     final int? rating = widget.paraglidingSite?.rating ?? _detailedData?['rating'];
     // Check for both null and empty wind directions to ensure fallback to API data
     final List<String> windDirections =
-        (widget.paraglidingSite?.windDirections?.isNotEmpty == true
+        (widget.paraglidingSite?.windDirections.isNotEmpty == true
             ? widget.paraglidingSite!.windDirections
             : (_detailedData?['wind_directions'] as List<dynamic>?)?.cast<String>()) ?? [];
 
