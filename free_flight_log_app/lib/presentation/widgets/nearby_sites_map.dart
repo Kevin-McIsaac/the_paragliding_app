@@ -31,6 +31,7 @@ class NearbySitesMap extends BaseMapWidget {
   final double maxWindSpeed;
   final double maxWindGusts;
   final DateTime selectedDateTime;
+  final bool forecastEnabled;
 
   const NearbySitesMap({
     super.key,
@@ -48,6 +49,7 @@ class NearbySitesMap extends BaseMapWidget {
     this.maxWindSpeed = 25.0,
     this.maxWindGusts = 30.0,
     required this.selectedDateTime,
+    this.forecastEnabled = true,
     super.height = 400,
     super.initialCenter,
     super.initialZoom = 10.0,
@@ -190,6 +192,11 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
 
   /// Get the marker opacity based on whether wind data is available
   double _getSiteMarkerOpacity(ParaglidingSite site) {
+    // When forecast is disabled, all sites should be solid
+    if (!widget.forecastEnabled) {
+      return 1.0;
+    }
+
     // Sites with no wind directions defined should always be solid (can't evaluate flyability)
     if (site.windDirections.isEmpty) {
       return 1.0;
@@ -210,6 +217,11 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
 
   /// Get tooltip message showing flyability status
   String _getSiteFlyabilityTooltip(ParaglidingSite site) {
+    // When forecast is disabled, no tooltip
+    if (!widget.forecastEnabled) {
+      return '';
+    }
+
     final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
     final status = widget.siteFlyabilityStatus[key] ?? FlyabilityStatus.unknown;
     final wind = widget.siteWindData[key];
@@ -315,8 +327,9 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
 
     // Use reduced opacity only for clusters with unknown/loading sites that DO have wind directions
     // Sites with no wind directions OR known status get solid opacity
+    // When forecast is disabled, all clusters get solid opacity
     final hasAnyKnownStatus = hasFlyableSites || hasNotFlyableSites;
-    final alpha = (hasAnyKnownStatus || hasNoWindDirectionsSites) ? 0.9 : 0.5;
+    final alpha = (!widget.forecastEnabled || hasAnyKnownStatus || hasNoWindDirectionsSites) ? 0.9 : 0.5;
 
     return Container(
       width: 40,

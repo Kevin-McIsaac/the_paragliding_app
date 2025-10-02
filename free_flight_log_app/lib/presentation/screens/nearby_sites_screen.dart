@@ -1129,6 +1129,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                           maxWindSpeed: _maxWindSpeed,
                           maxWindGusts: _maxWindGusts,
                           selectedDateTime: _selectedDateTime,
+                          forecastEnabled: _forecastEnabled,
                           onBoundsChanged: _onBoundsChanged,
                           showUserLocation: true,
                           isLocationLoading: _isLocationLoading,
