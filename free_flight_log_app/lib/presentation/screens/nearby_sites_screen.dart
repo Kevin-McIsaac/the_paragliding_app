@@ -11,6 +11,7 @@ import '../../data/models/paragliding_site.dart';
 import '../../data/models/airspace_enums.dart';
 import '../../data/models/wind_data.dart';
 import '../../data/models/flyability_status.dart';
+import '../models/site_marker_presentation.dart';
 import '../../services/location_service.dart';
 import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
@@ -20,7 +21,6 @@ import '../../services/map_bounds_manager.dart';
 import '../../services/weather_service.dart';
 import '../../utils/map_provider.dart';
 import '../../utils/site_utils.dart';
-import '../../utils/site_marker_utils.dart';
 import '../../utils/preferences_helper.dart';
 import '../widgets/nearby_sites_map.dart';
 import '../widgets/map_filter_dialog.dart';
@@ -1420,48 +1420,41 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     }
   }
 
-  /// Get the center dot color based on flyability status
-  Color? _getCenterDotColor(List<String> windDirections) {
-    // If no wind data available, return null to use default color
+  /// Get wind rose center dot presentation (color and tooltip) based on flyability
+  SiteMarkerPresentation? _getWindRosePresentation(List<String> windDirections) {
+    // If no wind data available, return null (wind rose will use default styling)
     if (_windData == null) {
       return null;
     }
 
-    // If no wind directions defined, return grey (can't evaluate flyability)
-    if (windDirections.isEmpty) {
-      return SiteMarkerUtils.unknownFlyabilitySiteColor;
-    }
-
-    // Calculate flyability using the same logic as nearby_sites_screen
-    final isFlyable = _windData!.isFlyable(
-      windDirections,
-      25.0, // Default max wind speed
-      30.0, // Default max gusts
+    // Create a minimal temporary site object for presentation calculation
+    // This allows us to reuse the centralized flyability logic
+    final tempSite = ParaglidingSite(
+      name: '',
+      latitude: 0.0,
+      longitude: 0.0,
+      windDirections: windDirections.where((d) => d.trim().isNotEmpty).toList(),
+      siteType: 'launch',
     );
 
-    return isFlyable
-        ? SiteMarkerUtils.flyableSiteColor
-        : SiteMarkerUtils.notFlyableSiteColor;
+    return SiteMarkerPresentation.forFlyability(
+      site: tempSite,
+      status: null, // Will be calculated from wind data
+      windData: _windData,
+      maxWindSpeed: 25.0, // Default max wind speed
+      maxWindGusts: 30.0, // Default max gusts
+      forecastEnabled: true,
+    );
+  }
+
+  /// Get the center dot color based on flyability status
+  Color? _getCenterDotColor(List<String> windDirections) {
+    return _getWindRosePresentation(windDirections)?.color;
   }
 
   /// Get the center dot tooltip showing flyability reason
   String? _getCenterDotTooltip(List<String> windDirections) {
-    // If no wind data, no tooltip
-    if (_windData == null) {
-      return null;
-    }
-
-    // If no wind directions, explain why we can't evaluate
-    if (windDirections.isEmpty) {
-      return 'No wind directions defined for site';
-    }
-
-    // Use WindData's built-in flyability reason
-    return _windData!.getFlyabilityReason(
-      windDirections,
-      25.0, // Default max wind speed
-      30.0, // Default max gusts
-    );
+    return _getWindRosePresentation(windDirections)?.tooltip;
   }
 
   @override
