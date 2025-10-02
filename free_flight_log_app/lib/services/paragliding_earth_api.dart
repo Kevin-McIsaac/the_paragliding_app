@@ -528,6 +528,33 @@ class ParaglidingEarthApi {
             }
             properties['orientations'] = orientations;
           }
+
+          // Extract landing information (landing is a sibling of takeoff in the XML structure)
+          final landingElement = document.findAllElements('landing').firstOrNull;
+          if (landingElement != null) {
+            final Map<String, dynamic> landing = {};
+            for (final element in landingElement.children.whereType<XmlElement>()) {
+              final text = element.innerText.trim();
+              if (text.isNotEmpty) {
+                landing[element.name.local] = text;
+              }
+            }
+            properties['landing'] = landing;
+
+            // Also flatten landing info for easy access
+            if (landing['landing_altitude'] != null) {
+              properties['landing_altitude'] = landing['landing_altitude'];
+            }
+            if (landing['landing_description'] != null) {
+              properties['landing_description'] = landing['landing_description'];
+            }
+            if (landing['landing_lat'] != null) {
+              properties['landing_lat'] = landing['landing_lat'];
+            }
+            if (landing['landing_lng'] != null) {
+              properties['landing_lng'] = landing['landing_lng'];
+            }
+          }
           
           LoggingService.info('ParaglidingEarthApi: Found detailed data for site');
           LoggingService.info('ParaglidingEarthApi: Parsed fields: ${properties.keys.toList()}');

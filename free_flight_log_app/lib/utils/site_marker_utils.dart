@@ -10,9 +10,16 @@ class SiteMarkerUtils {
   static const double siteMarkerIconSize = 36.0;
   static const double launchMarkerSize = 25.0;
   
-  // Colors
-  static const Color flownSiteColor = Colors.green;
-  static const Color newSiteColor = Colors.blue;
+  // Site status colors (for other screens)
+  static const Color flownSiteColor = Colors.purple;     // Sites with logged flights
+  static const Color newSiteColor = Colors.blue;         // Sites from PGE API
+
+  // Nearby Sites map flyability colors
+  static const Color flyableSiteColor = Colors.green;    // Flyable with current wind
+  static const Color notFlyableSiteColor = Colors.red;   // Not flyable with current wind
+  static const Color unknownFlyabilitySiteColor = Colors.grey; // Wind data not available
+
+  // Launch/landing colors
   static const Color launchColor = Colors.green;
   static const Color landingColor = Colors.red;
   static const Color selectedPointColor = Colors.amber;

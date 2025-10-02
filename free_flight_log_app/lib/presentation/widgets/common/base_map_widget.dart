@@ -81,6 +81,7 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
 
   // Template methods for customization
   List<Widget> buildAdditionalLayers() => [];
+  List<Widget>? buildCustomSiteLegendItems() => null; // Return null to use default legend
   List<Widget> buildAdditionalLegendItems() => [];
   List<Widget> buildAdditionalControls() => [];
   void onSitesLoaded(List<ParaglidingSite> sites) {}
@@ -734,21 +735,29 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
 
   /// Build the collapsible legend widget
   Widget buildLegend() {
+    // Check if subclass provides custom site legend items
+    final customSiteLegend = buildCustomSiteLegendItems();
+
     final legendItems = <Widget>[
-      // Common legend items
-      SiteMarkerUtils.buildLegendItem(
-        context,
-        Icons.location_on,
-        SiteMarkerUtils.flownSiteColor,
-        'Flown Sites'
-      ),
-      const SizedBox(height: 4),
-      SiteMarkerUtils.buildLegendItem(
-        context,
-        Icons.location_on,
-        SiteMarkerUtils.newSiteColor,
-        'New Sites'
-      ),
+      // Use custom site legend if provided, otherwise use default
+      if (customSiteLegend != null) ...[
+        ...customSiteLegend,
+      ] else ...[
+        // Default site legend items
+        SiteMarkerUtils.buildLegendItem(
+          context,
+          Icons.location_on,
+          SiteMarkerUtils.flownSiteColor,
+          'Flown Sites'
+        ),
+        const SizedBox(height: 4),
+        SiteMarkerUtils.buildLegendItem(
+          context,
+          Icons.location_on,
+          SiteMarkerUtils.newSiteColor,
+          'New Sites'
+        ),
+      ],
       // Add airspace legend items if enabled
       if (enableAirspace && _airspaceLayers.isNotEmpty) ...[
         const SizedBox(height: 4),

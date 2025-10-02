@@ -1,21 +1,26 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:intl/intl.dart';
 import '../../data/models/site.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/airspace_enums.dart';
+import '../../data/models/wind_data.dart';
 import '../../services/location_service.dart';
 import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
 import '../../services/nearby_sites_search_state.dart';
 import '../../services/nearby_sites_search_manager_v2.dart';
 import '../../services/map_bounds_manager.dart';
+import '../../services/weather_service.dart';
 import '../../utils/map_provider.dart';
 import '../../utils/site_utils.dart';
+import '../../utils/preferences_helper.dart';
 import '../widgets/nearby_sites_map.dart';
 import '../widgets/map_filter_dialog.dart';
 import '../widgets/common/app_error_state.dart';
@@ -84,7 +89,16 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   Map<IcaoClass, bool> _excludedIcaoClasses = {}; // Current ICAO class filter state
   int _filterUpdateCounter = 0; // Triggers map refresh on filter changes
   final OpenAipService _openAipService = OpenAipService.instance;
-  
+
+  // Wind forecast state
+  DateTime _selectedDateTime = DateTime.now();
+  final Map<String, WindData> _siteWindData = {};
+  double _maxWindSpeed = 25.0;
+  double _maxWindGusts = 30.0;
+  bool _isLoadingWind = false;
+  bool _isWindBarExpanded = false; // Default to collapsed
+  final WeatherService _weatherService = WeatherService.instance;
+  static const String _windBarExpandedKey = 'nearby_sites_wind_bar_expanded';
 
   @override
   void initState() {
@@ -92,6 +106,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     _initializeSearchManager();
     _loadPreferences();
     _loadFilterSettings();
+    _loadWindPreferences();
     _updateActiveFiltersState(); // Initialize the cached active filters state
     _loadData();
 
@@ -170,6 +185,105 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       }
     } catch (e) {
       LoggingService.error('Failed to load filter settings', e);
+    }
+  }
+
+  Future<void> _loadWindPreferences() async {
+    try {
+      _maxWindSpeed = await PreferencesHelper.getMaxWindSpeed();
+      _maxWindGusts = await PreferencesHelper.getMaxWindGusts();
+
+      // Load wind bar expanded state (default to collapsed)
+      final prefs = await SharedPreferences.getInstance();
+      setState(() {
+        _isWindBarExpanded = prefs.getBool(_windBarExpandedKey) ?? false;
+      });
+    } catch (e) {
+      LoggingService.error('Failed to load wind preferences', e);
+    }
+  }
+
+  Future<void> _toggleWindBar() async {
+    setState(() {
+      _isWindBarExpanded = !_isWindBarExpanded;
+    });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_windBarExpandedKey, _isWindBarExpanded);
+    } catch (e) {
+      LoggingService.error('Failed to save wind bar state', e);
+    }
+  }
+
+  Future<void> _showDateTimePicker() async {
+    // Show date picker (max 7 days future)
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _selectedDateTime,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 7)),
+    );
+
+    if (date != null && mounted) {
+      // Show time picker
+      final time = await showTimePicker(
+        context: context,
+        initialTime: TimeOfDay.fromDateTime(_selectedDateTime),
+      );
+
+      if (time != null && mounted) {
+        setState(() {
+          _selectedDateTime = DateTime(
+            date.year,
+            date.month,
+            date.day,
+            time.hour,
+            time.minute,
+          );
+        });
+        _fetchWindDataForSites();
+      }
+    }
+  }
+
+  Future<void> _fetchWindDataForSites() async {
+    if (_displayedSites.isEmpty) return;
+
+    setState(() {
+      _isLoadingWind = true;
+    });
+
+    try {
+      // Clear old wind data
+      _siteWindData.clear();
+
+      // Fetch wind data for all displayed sites
+      for (final site in _displayedSites) {
+        final wind = await _weatherService.getWindData(
+          site.latitude,
+          site.longitude,
+          _selectedDateTime,
+        );
+        if (wind != null) {
+          final key = '${site.latitude}_${site.longitude}';
+          _siteWindData[key] = wind;
+        }
+      }
+
+      LoggingService.structured('WIND_DATA_FETCHED', {
+        'sites_count': _displayedSites.length,
+        'wind_data_count': _siteWindData.length,
+        'selected_time': _selectedDateTime.toIso8601String(),
+      });
+    } catch (e) {
+      LoggingService.error('Failed to fetch wind data for sites', e);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingWind = false;
+        });
+      }
     }
   }
 
@@ -485,6 +599,19 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
             'new_sites': result.sitesWithoutFlights.length,
             'from_cache': MapBoundsManager.instance.areBoundsAlreadyLoaded('nearby_sites', bounds),
           });
+
+          // Auto-fetch wind data when sites are loaded for the first time
+          // or when navigating to new sites that don't have wind data
+          if (_displayedSites.isNotEmpty) {
+            // Check if any displayed site is missing wind data
+            final missingWindData = _displayedSites.any((site) {
+              final key = '${site.latitude}_${site.longitude}';
+              return !_siteWindData.containsKey(key);
+            });
+            if (missingWindData || _siteWindData.isEmpty) {
+              _fetchWindDataForSites();
+            }
+          }
         }
       },
       siteLimit: 50,
@@ -510,6 +637,10 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
 
   void _showSiteDetailsDialog({required ParaglidingSite paraglidingSite}) {
+    // Get wind data for this site
+    final windKey = '${paraglidingSite.latitude}_${paraglidingSite.longitude}';
+    final windData = _siteWindData[windKey];
+
     showDialog(
       context: context,
       barrierColor: Colors.transparent,
@@ -518,6 +649,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         site: null,
         paraglidingSite: paraglidingSite,
         userPosition: _userPosition,
+        windData: windData,
       ),
     );
   }
@@ -782,6 +914,11 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.access_time),
+            onPressed: _showDateTimePicker,
+            tooltip: 'Wind Forecast Time',
+          ),
+          IconButton(
             icon: Icon(
               Icons.filter_list,
               color: _hasActiveFilters ? Colors.orange : null,
@@ -815,6 +952,10 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                           maxAltitudeFt: _maxAltitudeFt,
                           onSiteSelected: _onSiteSelected,
                           onLocationRequest: _onRefreshLocation,
+                          siteWindData: _siteWindData,
+                          maxWindSpeed: _maxWindSpeed,
+                          maxWindGusts: _maxWindGusts,
+                          selectedDateTime: _selectedDateTime,
                           onBoundsChanged: _onBoundsChanged,
                           showUserLocation: true,
                           isLocationLoading: _isLocationLoading,
@@ -960,11 +1101,13 @@ class _SiteDetailsDialog extends StatefulWidget {
   final Site? site;
   final ParaglidingSite? paraglidingSite;
   final Position? userPosition;
+  final WindData? windData;
 
   const _SiteDetailsDialog({
     this.site,
     this.paraglidingSite,
     this.userPosition,
+    this.windData,
   });
 
   @override
@@ -981,7 +1124,7 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
   void initState() {
     super.initState();
     // Create tab controller for both local and API sites - both can have detailed data
-    _tabController = TabController(length: 5, vsync: this); // 5 tabs: Takeoff, Rules, Access, Weather, Comments
+    _tabController = TabController(length: 2, vsync: this); // 2 tabs: Takeoff, Weather
     _loadSiteDetails();
   }
 
@@ -1024,6 +1167,14 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
           _detailedData = details;
           _isLoadingDetails = false;
         });
+        // Debug: Log all available fields
+        if (details != null) {
+          LoggingService.info('Site details fields: ${details.keys.toList()}');
+          LoggingService.info('Has landing_altitude: ${details.containsKey('landing_altitude')}');
+          LoggingService.info('Has landing_description: ${details.containsKey('landing_description')}');
+          LoggingService.info('Has lz_altitude: ${details.containsKey('lz_altitude')}');
+          LoggingService.info('Has lz_description: ${details.containsKey('lz_description')}');
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -1106,12 +1257,26 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        name,
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
+                      // Make name clickable if PGE link is available
+                      if (_detailedData?['pge_link'] != null)
+                        InkWell(
+                          onTap: () => _launchUrl(_detailedData!['pge_link']),
+                          child: Text(
+                            name,
+                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.primary,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        )
+                      else
+                        Text(
+                          name,
+                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -1147,11 +1312,8 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                           indicatorWeight: 1.0,
                           indicatorPadding: EdgeInsets.zero,
                         tabs: const [
-                          Tab(icon: Tooltip(message: 'Takeoff', child: Icon(Icons.flight_takeoff, size: 18))),
-                          Tab(icon: Tooltip(message: 'Rules', child: Icon(Icons.policy, size: 18))),
-                          Tab(icon: Tooltip(message: 'Access', child: Icon(Icons.location_on, size: 18))),
-                          Tab(icon: Tooltip(message: 'Weather', child: Icon(Icons.cloud, size: 18))),
-                          Tab(icon: Tooltip(message: 'Comments', child: Icon(Icons.comment, size: 18))),
+                          Tab(icon: Tooltip(message: 'Site Information', child: Icon(Icons.info_outline, size: 18))),
+                          Tab(icon: Tooltip(message: 'Site Weather', child: Icon(Icons.air, size: 18))),
                         ],
                         ),
                       ),
@@ -1160,15 +1322,10 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                           controller: _tabController,
                           children: [
                             _buildTakeoffTab(),
-                            _buildRulesTab(),
-                            _buildAccessTab(),
                             _buildWeatherTab(windDirections),
-                            _buildCommentsTab(),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      _buildActionButtons(name, latitude, longitude),
                     ],
                   ),
                 ),
@@ -1182,75 +1339,35 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
 
   List<Widget> _buildOverviewContent(String name, double latitude, double longitude, int? altitude, String? country, String? region, int? rating, String? siteType, List<String> windDirections, int? flightCount, String? distanceText) {
     return [
-            // Row 1: Location + Distance + Rating (moved to header)
+            // Row 2: Site Type + Altitude + Wind + Directions
             Row(
               children: [
-                // Location info
-                if (region != null || country != null) ...[
-                  const Icon(Icons.location_on, size: 16, color: Colors.grey),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      [region, country].where((s) => s != null && s.isNotEmpty).join(', '),
-                      style: Theme.of(context).textTheme.bodySmall,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-                // Distance
-                if (distanceText != null) ...[
-                  const SizedBox(width: 12),
-                  const Icon(Icons.straighten, size: 16, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Text(
-                    '$distanceText away',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ],
-            ),
-            const SizedBox(height: 6),
-            
-            // Row 2: Site Type + Altitude + Wind
-            Row(
-              children: [
-                // Site type with characteristics tooltip
+                // Site type with characteristics tooltip on icon
                 if (siteType != null) ...[
-                  Icon(
-                    _getSiteTypeIcon(siteType), 
-                    size: 16, 
-                    color: Colors.grey,
-                  ),
-                  const SizedBox(width: 6),
                   Tooltip(
                     message: _buildSiteCharacteristicsTooltip(),
-                    child: Text(
-                      _formatSiteType(siteType),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        fontWeight: FontWeight.w500,
-                        decoration: TextDecoration.underline,
-                        decorationStyle: TextDecorationStyle.dotted,
-                      ),
+                    child: Icon(
+                      _getSiteTypeIcon(siteType),
+                      size: 16,
+                      color: Colors.grey,
                     ),
                   ),
-                  // Takeoff altitude from API data (if available)
-                  if (_detailedData?['takeoff_altitude'] != null) ...[
-                    const SizedBox(width: 6),
-                    Icon(Icons.height, size: 14, color: Colors.grey),
-                    const SizedBox(width: 2),
-                    Text(
-                      '${_detailedData!['takeoff_altitude']}m',
-                      style: Theme.of(context).textTheme.bodySmall,
+                  const SizedBox(width: 4),
+                  Text(
+                    _formatSiteType(siteType),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w500,
                     ),
-                  ],
+                  ),
+                  const Text(':', style: TextStyle(color: Colors.grey)),
                 ],
-                // Altitude (existing site data)
-                if (altitude != null) ...[
+                // Show altitude (prefer takeoff_altitude from API, fallback to general altitude)
+                if (_detailedData?['takeoff_altitude'] != null || altitude != null) ...[
                   const SizedBox(width: 12),
                   const Icon(Icons.terrain, size: 16, color: Colors.grey),
                   const SizedBox(width: 4),
                   Text(
-                    '${altitude}m',
+                    '${_detailedData?['takeoff_altitude'] ?? altitude}m',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -1267,9 +1384,73 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                     ),
                   ),
                 ],
+                // Map icon - opens maps app (directly after wind directions)
+                const SizedBox(width: 12),
+                InkWell(
+                  onTap: () => _launchMap(latitude, longitude),
+                  child: const Icon(
+                    Icons.map,
+                    size: 16,
+                    color: Colors.blue,
+                  ),
+                ),
               ],
             ),
-            
+
+            // Landing information row (if available)
+            if (_detailedData?['landing_altitude'] != null || _detailedData?['landing_description'] != null || _detailedData?['landing_lat'] != null) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  // Landing icon with tooltip
+                  Tooltip(
+                    message: 'Landing information',
+                    child: const Icon(
+                      Icons.flight_land,
+                      size: 16,
+                      color: Colors.grey,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Landing Site',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const Text(':', style: TextStyle(color: Colors.grey)),
+                  // Landing altitude
+                  if (_detailedData?['landing_altitude'] != null) ...[
+                    const SizedBox(width: 12),
+                    const Icon(Icons.terrain, size: 16, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${_detailedData!['landing_altitude']}m',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                  // Map icon for landing - uses landing coordinates if available
+                  const SizedBox(width: 12),
+                  InkWell(
+                    onTap: () {
+                      final landingLat = double.tryParse(_detailedData?['landing_lat']?.toString() ?? '');
+                      final landingLng = double.tryParse(_detailedData?['landing_lng']?.toString() ?? '');
+                      if (landingLat != null && landingLng != null) {
+                        _launchMap(landingLat, landingLng);
+                      } else {
+                        _launchMap(latitude, longitude);
+                      }
+                    },
+                    child: const Icon(
+                      Icons.map,
+                      size: 16,
+                      color: Colors.blue,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+
             // Flight count (for local sites) - only show if present
             if (flightCount != null && flightCount > 0) ...[
               const SizedBox(height: 6),
@@ -1301,6 +1482,22 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
           else if (_loadingError != null)
             Center(child: Text(_loadingError!, style: TextStyle(color: Colors.red)))
           else if (_detailedData != null) ...[
+            // ===== TAKEOFF SECTION =====
+            Row(
+              children: [
+                Icon(Icons.flight_takeoff, size: 18, color: Colors.grey[300]),
+                const SizedBox(width: 8),
+                Text(
+                  'Takeoff',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey[300],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+
             // Takeoff instructions
             if (_detailedData!['takeoff_description'] != null && _detailedData!['takeoff_description']!.toString().isNotEmpty) ...[
               Text(
@@ -1309,9 +1506,23 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
               ),
               const SizedBox(height: 16),
             ],
-            
-            // Landing information
+
+            // ===== LANDING SECTION =====
             if (_detailedData!['landing_description'] != null && _detailedData!['landing_description']!.toString().isNotEmpty) ...[
+              Row(
+                children: [
+                  Icon(Icons.flight_land, size: 18, color: Colors.grey[300]),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Landing',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[300],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
               Text(
                 _detailedData!['landing_description']!.toString(),
                 style: Theme.of(context).textTheme.bodyMedium,
@@ -1321,20 +1532,175 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
             
             // Parking information
             if (_detailedData!['takeoff_parking_description'] != null && _detailedData!['takeoff_parking_description']!.toString().isNotEmpty) ...[
+              Row(
+                children: [
+                  Icon(Icons.local_parking, size: 18, color: Colors.grey[300]),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Parking Information',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[300],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
               Text(
                 _detailedData!['takeoff_parking_description']!.toString(),
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
+              // Add navigation to parking location if coordinates available
+              if (_detailedData!['landing'] != null &&
+                  _detailedData!['landing']['landing_parking_lat'] != null &&
+                  _detailedData!['landing']['landing_parking_lng'] != null) ...[
+                const SizedBox(height: 8),
+                InkWell(
+                  onTap: () {
+                    final lat = double.tryParse(_detailedData!['landing']['landing_parking_lat'].toString());
+                    final lng = double.tryParse(_detailedData!['landing']['landing_parking_lng'].toString());
+                    if (lat != null && lng != null) {
+                      _launchNavigation(lat, lng);
+                    }
+                  },
+                  child: Row(
+                    children: [
+                      const Icon(Icons.directions, size: 16, color: Colors.blue),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Navigate to parking',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.blue,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
             ],
-            
-            // Altitude information
-            if (widget.paraglidingSite?.altitude != null) ...[
+
+            // Flight Rules section
+            if (_detailedData!['flight_rules'] != null && _detailedData!['flight_rules']!.toString().isNotEmpty) ...[
+              Row(
+                children: [
+                  Icon(Icons.policy, size: 18, color: Colors.grey[300]),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Flight Rules & Regulations',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[300],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
               Text(
-                '${widget.paraglidingSite!.altitude}m above sea level',
+                _detailedData!['flight_rules']!.toString(),
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 16),
+            ],
+
+            // Access Instructions section
+            if (_detailedData!['going_there'] != null && _detailedData!['going_there']!.toString().isNotEmpty) ...[
+              Row(
+                children: [
+                  Icon(Icons.directions_car, size: 18, color: Colors.grey[300]),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Access Instructions',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[300],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _buildLinkableText(_detailedData!['going_there']!.toString()),
+              const SizedBox(height: 16),
+            ],
+
+            // Community Comments section
+            if (_detailedData!['comments'] != null && _detailedData!['comments']!.toString().isNotEmpty) ...[
+              Row(
+                children: [
+                  Icon(Icons.info_outline, size: 18, color: Colors.grey[300]),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Local Information',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[300],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _buildLinkableText(_detailedData!['comments']!.toString()),
+              const SizedBox(height: 16),
+            ],
+
+            // Alternate Takeoffs section
+            if (_detailedData!['alternate_takeoffs'] != null && _hasAlternateTakeoffs(_detailedData!['alternate_takeoffs'])) ...[
+              Row(
+                children: [
+                  Icon(Icons.alt_route, size: 18, color: Colors.grey[300]),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Alternative Launch Points',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[300],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _buildAlternateTakeoffs(_detailedData!['alternate_takeoffs']),
+              const SizedBox(height: 16),
+            ],
+
+            // Alternate Landings section
+            if (_detailedData!['landing'] != null && _detailedData!['landing']['alternate_landings'] != null) ...[
+              Row(
+                children: [
+                  Icon(Icons.alt_route, size: 18, color: Colors.grey[300]),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Alternative Landing Zones',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[300],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _buildAlternateLandings(_detailedData!['landing']['alternate_landings']),
+            ],
+
+            // Last updated information
+            if (_detailedData!['last_edit'] != null) ...[
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Icon(Icons.update, size: 14, color: Colors.grey),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Last updated: ${_detailedData!['last_edit']}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
             ],
           ] else
             const Center(child: Text('No takeoff information available')),
@@ -1398,90 +1764,152 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
   }
 
   Widget _buildWeatherTab(List<String> windDirections) {
+    // Extract weather information early for better layout control
+    final weatherInfo = _detailedData?['weather']?.toString();
+    final thermalFlag = _detailedData?['thermals']?.toString();
+    final soaringFlag = _detailedData?['soaring']?.toString();
+    final xcFlag = _detailedData?['xc']?.toString();
+
     return Scrollbar(
       child: SingleChildScrollView(
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(12.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (_isLoadingDetails)
               const Center(child: CircularProgressIndicator())
             else if (_loadingError != null)
               Center(child: Text(_loadingError!, style: TextStyle(color: Colors.red)))
-            else ...[
-              // Wind Rose with wrapped text layout
-              const SizedBox(height: 16),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
+            else if (windDirections.isNotEmpty) ...[
+              // Compact single-column layout with inline wind rose
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Wind directions section with wrapped layout
-                      if (windDirections.isNotEmpty) ...[
-                        Wrap(
-                          alignment: WrapAlignment.start,
-                          crossAxisAlignment: WrapCrossAlignment.start,
+                      // Wind rose on the left
+                      Padding(
+                        padding: const EdgeInsets.only(right: 12.0),
+                        child: WindRoseWidget(
+                          launchableDirections: windDirections,
+                          size: 100.0,
+                          windSpeed: widget.windData?.speedKmh,
+                          windDirection: widget.windData?.directionDegrees,
+                        ),
+                      ),
+                      // Weather text on the right, flexible to use remaining space
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Wind Rose at top left
-                            Padding(
-                              padding: const EdgeInsets.only(right: 16.0, bottom: 8.0),
-                              child: WindRoseWidget(
-                                launchableDirections: windDirections,
-                                size: 125.0,
-                                windSpeed: 12.0, // Test: 12 km/h
-                                windDirection: 315.0, // Test: NW (315°)
+                            // Weather description
+                            if (weatherInfo != null && weatherInfo.isNotEmpty) ...[
+                              Text(
+                                weatherInfo,
+                                style: Theme.of(context).textTheme.bodyMedium,
+                                softWrap: true,
                               ),
-                            ),
+                              const SizedBox(height: 8),
+                            ],
+
+                            // Flight characteristics
+                            if (thermalFlag == '1' || soaringFlag == '1' || xcFlag == '1') ...[
+                              _buildCompactFlightCharacteristics(thermalFlag, soaringFlag, xcFlag),
+                            ],
+
+                            // If no weather content at all
+                            if ((weatherInfo == null || weatherInfo.isEmpty) &&
+                                thermalFlag != '1' && soaringFlag != '1' && xcFlag != '1') ...[
+                              Text(
+                                'No weather information available for this site.',
+                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: Colors.grey.shade600,
+                                ),
+                                softWrap: true,
+                              ),
+                            ],
                           ],
                         ),
-                      ] else ...[
-                        // No wind directions layout
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.info_outline,
-                              size: 32,
-                              color: Colors.grey.shade400,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'No wind direction restrictions',
-                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'This site has no specific wind direction requirements.',
-                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Colors.grey.shade600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ] else ...[
+              // No wind directions - center message
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 32.0),
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        size: 48,
+                        color: Colors.grey.shade400,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No wind direction restrictions',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
                         ),
-                      ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'This site has no specific wind direction requirements.',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Colors.grey.shade600,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
                     ],
                   ),
                 ),
               ),
-
-              // Weather Information Section
-              const SizedBox(height: 16),
-              _buildWeatherInformationCard(),
             ],
           ],
         ),
       ),
       ),
+    );
+  }
+
+  Widget _buildCompactFlightCharacteristics(String? thermalFlag, String? soaringFlag, String? xcFlag) {
+    final characteristics = <String>[];
+
+    if (thermalFlag == '1') characteristics.add('Thermals');
+    if (soaringFlag == '1') characteristics.add('Soaring');
+    if (xcFlag == '1') characteristics.add('Cross Country');
+
+    if (characteristics.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              Icons.flight,
+              size: 16,
+              color: Colors.green,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Good for:',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          characteristics.join(' • '),
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      ],
     );
   }
 
@@ -1680,6 +2108,20 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     }
   }
 
+  /// Launch map to view a location (not navigate)
+  Future<void> _launchMap(double latitude, double longitude) async {
+    final uri = Uri.parse('https://maps.google.com/?q=$latitude,$longitude');
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      LoggingService.action('NearbySites', 'launch_map', {
+        'latitude': latitude,
+        'longitude': longitude,
+      });
+    } catch (e) {
+      LoggingService.error('NearbySites: Could not launch map', e);
+    }
+  }
+
   /// Launch URL in external browser
   Future<void> _launchUrl(String url) async {
     final uri = Uri.parse(url);
@@ -1691,38 +2133,6 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     }
   }
 
-  Widget _buildActionButtons(String name, double latitude, double longitude) {
-    return Column(
-      children: [
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: () {
-              Navigator.of(context).pop();
-              _launchNavigation(latitude, longitude);
-            },
-            icon: const Icon(Icons.navigation),
-            label: const Text('Navigate'),
-          ),
-        ),
-        // View on PGE button for API sites
-        if (widget.paraglidingSite != null && _detailedData != null && _detailedData!['pgeid'] != null) ...[
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: TextButton.icon(
-              onPressed: () {
-                final pgeUrl = 'https://www.paraglidingearth.com/pgearth/index.php?site=${_detailedData!['pgeid']}';
-                _launchUrl(pgeUrl);
-              },
-              icon: const Icon(Icons.open_in_new, size: 18),
-              label: const Text('View Full Details on ParaglidingEarth'),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
 
   List<Widget> _buildSimpleContent(String name, double latitude, double longitude, int? altitude, String? country, String? region, int? rating, String? siteType, List<String> windDirections, int? flightCount, String? distanceText, String? description) {
     return [
@@ -1842,11 +2252,6 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
           style: Theme.of(context).textTheme.bodyMedium,
         ),
       ],
-      
-      const SizedBox(height: 20),
-      
-      // Action buttons
-      _buildActionButtons(name, latitude, longitude),
     ];
   }
   
@@ -1902,6 +2307,303 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     return characteristics.isNotEmpty
         ? characteristics.join(', ')
         : 'Site information';
+  }
+
+  /// Build clickable text that turns URLs into links
+  Widget _buildLinkableText(String text) {
+    // Simple URL detection - matches http/https URLs
+    final urlRegex = RegExp(r'https?://[^\s]+');
+    final matches = urlRegex.allMatches(text);
+
+    if (matches.isEmpty) {
+      return Text(
+        text,
+        style: Theme.of(context).textTheme.bodyMedium,
+      );
+    }
+
+    final spans = <TextSpan>[];
+    int lastEnd = 0;
+
+    for (final match in matches) {
+      // Add text before the URL
+      if (match.start > lastEnd) {
+        spans.add(TextSpan(
+          text: text.substring(lastEnd, match.start),
+          style: Theme.of(context).textTheme.bodyMedium,
+        ));
+      }
+
+      // Add the clickable URL
+      final url = match.group(0)!;
+      spans.add(TextSpan(
+        text: url,
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          color: Colors.blue,
+          decoration: TextDecoration.underline,
+        ),
+        recognizer: TapGestureRecognizer()..onTap = () => _launchUrl(url),
+      ));
+
+      lastEnd = match.end;
+    }
+
+    // Add remaining text after the last URL
+    if (lastEnd < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(lastEnd),
+        style: Theme.of(context).textTheme.bodyMedium,
+      ));
+    }
+
+    return RichText(
+      text: TextSpan(children: spans),
+    );
+  }
+
+  /// Check if alternate takeoffs data has valid content
+  bool _hasAlternateTakeoffs(dynamic alternateData) {
+    if (alternateData == null) return false;
+
+    List<dynamic> alternates = [];
+    if (alternateData is Map && alternateData.containsKey('alternate_takeoff')) {
+      final alt = alternateData['alternate_takeoff'];
+      if (alt is List) {
+        alternates = alt;
+      } else {
+        alternates = [alt];
+      }
+    } else if (alternateData is List) {
+      alternates = alternateData;
+    } else {
+      alternates = [alternateData];
+    }
+
+    // Check if any alternate has meaningful data (lat/lng or description)
+    for (final alternate in alternates) {
+      if (alternate is Map) {
+        final hasCoords = alternate['lat'] != null || alternate['lng'] != null;
+        final hasDesc = alternate['description']?.toString().isNotEmpty == true;
+        final hasName = alternate['name']?.toString().isNotEmpty == true;
+        if (hasCoords || hasDesc || hasName) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /// Build alternate takeoffs section
+  Widget _buildAlternateTakeoffs(dynamic alternateData) {
+    if (alternateData == null) {
+      return const SizedBox.shrink();
+    }
+
+    // Handle both single alternate takeoff and list of alternates
+    List<dynamic> alternates = [];
+    if (alternateData is Map && alternateData.containsKey('alternate_takeoff')) {
+      final alt = alternateData['alternate_takeoff'];
+      if (alt is List) {
+        alternates = alt;
+      } else {
+        alternates = [alt];
+      }
+    } else if (alternateData is List) {
+      alternates = alternateData;
+    } else {
+      alternates = [alternateData];
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: alternates.asMap().entries.map((entry) {
+        final index = entry.key;
+        final alternate = entry.value;
+
+        if (alternate is! Map) return const SizedBox.shrink();
+
+        final name = alternate['name']?.toString();
+        final lat = double.tryParse(alternate['lat']?.toString() ?? '');
+        final lng = double.tryParse(alternate['lng']?.toString() ?? '');
+        final altitude = alternate['altitude']?.toString();
+        final description = alternate['description']?.toString();
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.flag, size: 16, color: Colors.purple.shade700),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      name?.isNotEmpty == true ? name! : 'Alternate ${index + 1}',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  if (lat != null && lng != null)
+                    InkWell(
+                      onTap: () => _launchNavigation(lat, lng),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.directions, size: 16, color: Colors.blue),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Navigate',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.blue,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+              if (altitude != null) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(Icons.terrain, size: 14, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${altitude}m',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ],
+              if (description?.isNotEmpty == true) ...[
+                const SizedBox(height: 6),
+                Text(
+                  description!,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  /// Build alternate landings section
+  Widget _buildAlternateLandings(dynamic alternateData) {
+    if (alternateData == null) {
+      return const SizedBox.shrink();
+    }
+
+    // Handle both single alternate landing and list of alternates
+    List<dynamic> alternates = [];
+    if (alternateData is Map && alternateData.containsKey('alternate_landing')) {
+      final alt = alternateData['alternate_landing'];
+      if (alt is List) {
+        alternates = alt;
+      } else {
+        alternates = [alt];
+      }
+    } else if (alternateData is List) {
+      alternates = alternateData;
+    } else {
+      alternates = [alternateData];
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: alternates.asMap().entries.map((entry) {
+        final index = entry.key;
+        final alternate = entry.value;
+
+        if (alternate is! Map) return const SizedBox.shrink();
+
+        final name = alternate['name']?.toString();
+        final lat = double.tryParse(alternate['lat']?.toString() ?? '');
+        final lng = double.tryParse(alternate['lng']?.toString() ?? '');
+        final altitude = alternate['altitude']?.toString();
+        final description = alternate['description']?.toString();
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.teal.shade200),
+            borderRadius: BorderRadius.circular(8),
+            color: Colors.teal.shade50,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.location_on, size: 16, color: Colors.teal.shade700),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      name?.isNotEmpty == true ? name! : 'Alternate Landing ${index + 1}',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  if (lat != null && lng != null)
+                    InkWell(
+                      onTap: () => _launchNavigation(lat, lng),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.directions, size: 16, color: Colors.blue),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Navigate',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.blue,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+              if (altitude != null) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(Icons.terrain, size: 14, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${altitude}m',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ],
+              if (description?.isNotEmpty == true) ...[
+                const SizedBox(height: 6),
+                Text(
+                  description!,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      }).toList(),
+    );
   }
 }
 

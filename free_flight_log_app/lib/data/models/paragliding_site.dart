@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../../utils/site_marker_utils.dart';
 
 class ParaglidingSite {
   final int? id;
@@ -40,8 +41,8 @@ class ParaglidingSite {
   // Helper to get marker color - moved from UnifiedSite
   Color get markerColor {
     return hasFlights
-        ? Colors.green  // Green for flown sites (sites with flights)
-        : Colors.blue; // Blue for new sites (from PGE API)
+        ? SiteMarkerUtils.flownSiteColor  // Purple for flown sites (sites with flights)
+        : SiteMarkerUtils.newSiteColor;   // Blue for new sites (from PGE API)
   }
 
   /// Create from JSON (for loading from assets)

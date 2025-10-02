@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'wind_rose_painter.dart';
-import '../../services/logging_service.dart';
 
 class WindRoseWidget extends StatelessWidget {
   final List<String> launchableDirections;
@@ -18,8 +17,6 @@ class WindRoseWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    LoggingService.debug('WindRoseWidget building with directions: $launchableDirections');
-
     return Container(
       width: size,
       height: size,
@@ -41,6 +38,8 @@ class WindRoseWidget extends StatelessWidget {
           windSpeed: windSpeed,
           windDirection: windDirection,
         ),
+        isComplex: true,
+        willChange: false,
       ),
     );
   }

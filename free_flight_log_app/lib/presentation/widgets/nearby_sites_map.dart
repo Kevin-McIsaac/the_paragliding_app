@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:intl/intl.dart';
 import '../../data/models/paragliding_site.dart';
+import '../../data/models/wind_data.dart';
 import '../../services/logging_service.dart';
 import '../../utils/map_constants.dart';
 import '../../utils/site_marker_utils.dart';
@@ -22,6 +24,10 @@ class NearbySitesMap extends BaseMapWidget {
   final bool showUserLocation;
   final bool isLocationLoading;
   final Function(LatLngBounds)? onBoundsChanged;
+  final Map<String, WindData> siteWindData;
+  final double maxWindSpeed;
+  final double maxWindGusts;
+  final DateTime selectedDateTime;
 
   const NearbySitesMap({
     super.key,
@@ -34,6 +40,10 @@ class NearbySitesMap extends BaseMapWidget {
     this.showUserLocation = true,
     this.isLocationLoading = false,
     this.onBoundsChanged,
+    this.siteWindData = const {},
+    this.maxWindSpeed = 25.0,
+    this.maxWindGusts = 30.0,
+    required this.selectedDateTime,
     super.height = 400,
     super.initialCenter,
     super.initialZoom = 10.0,
@@ -157,6 +167,81 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     widget.onSiteSelected?.call(site);
   }
 
+  /// Determine if a site is flyable based on wind conditions
+  bool _isSiteFlyable(ParaglidingSite site) {
+    final windKey = '${site.latitude}_${site.longitude}';
+    final wind = widget.siteWindData[windKey];
+
+    if (wind == null) {
+      return false; // No wind data available
+    }
+
+    if (site.windDirections.isEmpty) {
+      return false; // Site has no defined wind directions
+    }
+
+    final isFlyable = wind.isFlyable(
+      site.windDirections,
+      widget.maxWindSpeed,
+      widget.maxWindGusts,
+    );
+
+    // Log flyability decision with structured data
+    if (isFlyable) {
+      LoggingService.structured('SITE_FLYABLE', {
+        'site': site.name,
+        'wind_direction': wind.compassDirection,
+        'wind_speed': wind.speedKmh.toStringAsFixed(1),
+        'site_directions': site.windDirections.join(','),
+      });
+    }
+
+    return isFlyable;
+  }
+
+  /// Get the marker color for a site based on flyability
+  Color _getSiteMarkerColor(ParaglidingSite site) {
+    final windKey = '${site.latitude}_${site.longitude}';
+    final wind = widget.siteWindData[windKey];
+
+    // No wind data available - grey
+    if (wind == null || site.windDirections.isEmpty) {
+      return SiteMarkerUtils.unknownFlyabilitySiteColor;
+    }
+
+    // Check if site is flyable with current wind conditions
+    final isFlyable = wind.isFlyable(
+      site.windDirections,
+      widget.maxWindSpeed,
+      widget.maxWindGusts,
+    );
+
+    // Green for flyable, red for not flyable
+    return isFlyable
+        ? SiteMarkerUtils.flyableSiteColor
+        : SiteMarkerUtils.notFlyableSiteColor;
+  }
+
+  /// Get tooltip message showing flyability status
+  String _getSiteFlyabilityTooltip(ParaglidingSite site) {
+    final windKey = '${site.latitude}_${site.longitude}';
+    final wind = widget.siteWindData[windKey];
+
+    if (wind == null) {
+      return 'No wind data available';
+    }
+
+    if (site.windDirections.isEmpty) {
+      return 'No wind directions defined';
+    }
+
+    return wind.getFlyabilityReason(
+      site.windDirections,
+      widget.maxWindSpeed,
+      widget.maxWindGusts,
+    );
+  }
+
   /// Build markers for clustering with site data preserved
   List<Marker> _buildClusterableMarkers() {
     return widget.sites.map((site) {
@@ -171,8 +256,11 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              SiteMarkerUtils.buildSiteMarkerIcon(
-                color: site.markerColor,
+              Tooltip(
+                message: _getSiteFlyabilityTooltip(site),
+                child: SiteMarkerUtils.buildSiteMarkerIcon(
+                  color: _getSiteMarkerColor(site),
+                ),
               ),
               SiteMarkerUtils.buildSiteLabel(
                 siteName: site.name,
@@ -190,17 +278,40 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     final count = markers.length;
     final displayText = count > 999 ? '999+' : count.toString();
 
-    // Check if any markers are flown sites (green)
-    final hasFlownSites = markers.any((marker) {
+    // Check if any sites are flyable (green)
+    final hasFlyableSites = markers.any((marker) {
       if (marker.key is ValueKey<ParaglidingSite>) {
         final site = (marker.key as ValueKey<ParaglidingSite>).value;
-        return site.hasFlights;
+        final windKey = '${site.latitude}_${site.longitude}';
+        final wind = widget.siteWindData[windKey];
+
+        // Site must have wind data and allowed directions to be flyable
+        if (wind != null && site.windDirections.isNotEmpty) {
+          return _isSiteFlyable(site);
+        }
       }
       return false;
     });
 
-    // Use green for clusters with flown sites, blue for new sites only
-    final clusterColor = hasFlownSites ? Colors.green : Colors.blue;
+    // Check if any sites are not flyable (red) - have wind data but bad conditions
+    final hasNotFlyableSites = markers.any((marker) {
+      if (marker.key is ValueKey<ParaglidingSite>) {
+        final site = (marker.key as ValueKey<ParaglidingSite>).value;
+        final windKey = '${site.latitude}_${site.longitude}';
+        final wind = widget.siteWindData[windKey];
+
+        // Site has wind data and directions, but is not flyable
+        if (wind != null && site.windDirections.isNotEmpty) {
+          return !_isSiteFlyable(site);
+        }
+      }
+      return false;
+    });
+
+    // Priority: Green if any flyable > Red if any not flyable > Grey for all unknown
+    final clusterColor = hasFlyableSites
+        ? SiteMarkerUtils.flyableSiteColor
+        : (hasNotFlyableSites ? SiteMarkerUtils.notFlyableSiteColor : SiteMarkerUtils.unknownFlyabilitySiteColor);
 
     return Container(
       width: 40,
@@ -255,6 +366,46 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     }
 
     return layers;
+  }
+
+  @override
+  List<Widget> buildCustomSiteLegendItems() {
+    // Override site legend with flyability-based colors for Nearby Sites
+    return [
+      // Wind forecast date/time
+      Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.air, size: 12, color: Colors.white70),
+          const SizedBox(width: 4),
+          Text(
+            DateFormat('MMM d, h:mm a').format(widget.selectedDateTime),
+            style: const TextStyle(fontSize: 10, color: Colors.white70),
+          ),
+        ],
+      ),
+      const SizedBox(height: 4),
+      SiteMarkerUtils.buildLegendItem(
+        context,
+        Icons.location_on,
+        SiteMarkerUtils.flyableSiteColor,
+        'Flyable',
+      ),
+      const SizedBox(height: 4),
+      SiteMarkerUtils.buildLegendItem(
+        context,
+        Icons.location_on,
+        SiteMarkerUtils.notFlyableSiteColor,
+        'Not Flyable',
+      ),
+      const SizedBox(height: 4),
+      SiteMarkerUtils.buildLegendItem(
+        context,
+        Icons.location_on,
+        SiteMarkerUtils.unknownFlyabilitySiteColor,
+        'Unknown',
+      ),
+    ];
   }
 
   @override
