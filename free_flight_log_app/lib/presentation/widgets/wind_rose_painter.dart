@@ -198,13 +198,16 @@ class WindRosePainter extends CustomPainter {
   void _drawWindArrow(Canvas canvas, Offset center, double radius) {
     final gap = 5.0;
     final centerDotRadius = 15.0;
-    final arrowStartRadius = centerDotRadius;
-    final arrowEndRadius = radius - gap;
+    final arrowStartRadius = radius - gap; // Start from outer edge
+    final arrowEndRadius = centerDotRadius; // End at center
 
-    // Convert wind direction to radians (subtract 90° to align with coordinate system)
+    // Convert wind direction to radians
+    // Wind direction from API is "FROM" direction (meteorologically correct)
+    // Subtract 90° to align with coordinate system (North at top)
     final arrowAngle = _degreesToRadians(windDirection! - 90);
 
-    // Calculate arrow start and end points
+    // Calculate arrow start (outer edge) and end points (center)
+    // Arrow points FROM the wind direction TOWARD center (inward)
     final startX = center.dx + arrowStartRadius * cos(arrowAngle);
     final startY = center.dy + arrowStartRadius * sin(arrowAngle);
     final endX = center.dx + arrowEndRadius * cos(arrowAngle);
@@ -216,25 +219,27 @@ class WindRosePainter extends CustomPainter {
       ..strokeWidth = 1.5  // Thinner arrow line
       ..strokeCap = StrokeCap.round;
 
-    // Draw arrow line
+    // Draw arrow line from outer edge toward center
     canvas.drawLine(
       Offset(startX, startY),
       Offset(endX, endY),
       arrowPaint,
     );
 
-    // Draw arrowhead
+    // Draw arrowhead pointing inward (toward center)
     final arrowheadLength = 6.0;  // Smaller arrowhead
     final arrowheadAngle = 25 * pi / 180; // Narrower angle
 
+    // Arrowhead at the END point (center), pointing inward
+    // Reverse the angle calculation to point toward center
     final arrowheadLeft = Offset(
-      endX - arrowheadLength * cos(arrowAngle - arrowheadAngle),
-      endY - arrowheadLength * sin(arrowAngle - arrowheadAngle),
+      endX + arrowheadLength * cos(arrowAngle - arrowheadAngle),
+      endY + arrowheadLength * sin(arrowAngle - arrowheadAngle),
     );
 
     final arrowheadRight = Offset(
-      endX - arrowheadLength * cos(arrowAngle + arrowheadAngle),
-      endY - arrowheadLength * sin(arrowAngle + arrowheadAngle),
+      endX + arrowheadLength * cos(arrowAngle + arrowheadAngle),
+      endY + arrowheadLength * sin(arrowAngle + arrowheadAngle),
     );
 
     canvas.drawLine(Offset(endX, endY), arrowheadLeft, arrowPaint);
