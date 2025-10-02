@@ -190,6 +190,11 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
 
   /// Get the marker opacity based on whether wind data is available
   double _getSiteMarkerOpacity(ParaglidingSite site) {
+    // Sites with no wind directions defined should always be solid (can't evaluate flyability)
+    if (site.windDirections.isEmpty) {
+      return 1.0;
+    }
+
     final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
     final status = widget.siteFlyabilityStatus[key] ?? FlyabilityStatus.unknown;
 
@@ -199,7 +204,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
         return 1.0; // Fully opaque when we have wind data
       case FlyabilityStatus.loading:
       case FlyabilityStatus.unknown:
-        return 0.4; // 40% opacity when no wind data
+        return 0.5; // 50% opacity when no wind data
     }
   }
 
@@ -213,10 +218,11 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
       case FlyabilityStatus.loading:
         return 'Fetching wind forecast...';
       case FlyabilityStatus.unknown:
-        if (wind == null) {
-          return '⚠️ Zoom in for wind forecast';
-        } else if (site.windDirections.isEmpty) {
+        // Check wind directions first - this is a site property, not zoom-dependent
+        if (site.windDirections.isEmpty) {
           return 'No wind directions defined for site';
+        } else if (wind == null) {
+          return '⚠️ Zoom in for wind forecast';
         }
         return 'Flyability unknown';
       case FlyabilityStatus.flyable:
@@ -293,17 +299,31 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
       return false;
     });
 
+    // Check if any sites have no wind directions defined
+    final hasNoWindDirectionsSites = markers.any((marker) {
+      if (marker.key is ValueKey<ParaglidingSite>) {
+        final site = (marker.key as ValueKey<ParaglidingSite>).value;
+        return site.windDirections.isEmpty;
+      }
+      return false;
+    });
+
     // Priority: Green if any flyable > Red if any not flyable > Grey for all unknown/loading
     final clusterColor = hasFlyableSites
         ? SiteMarkerUtils.flyableSiteColor
         : (hasNotFlyableSites ? SiteMarkerUtils.notFlyableSiteColor : SiteMarkerUtils.unknownFlyabilitySiteColor);
+
+    // Use reduced opacity only for clusters with unknown/loading sites that DO have wind directions
+    // Sites with no wind directions OR known status get solid opacity
+    final hasAnyKnownStatus = hasFlyableSites || hasNotFlyableSites;
+    final alpha = (hasAnyKnownStatus || hasNoWindDirectionsSites) ? 0.9 : 0.5;
 
     return Container(
       width: 40,
       height: 40,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: clusterColor.withValues(alpha: 0.9),
+        color: clusterColor.withValues(alpha: alpha),
         border: Border.all(color: Colors.white, width: 2),
       ),
       child: Center(
