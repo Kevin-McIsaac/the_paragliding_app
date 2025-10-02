@@ -274,6 +274,12 @@ class MapCalculationUtils {
   /// Quick distance calculation using Pythagorean approximation
   /// Faster than Haversine for nearby points (< 10km apart)
   /// Returns distance in meters
+  ///
+  /// Note: Uses cosine correction for longitude based on point1's latitude.
+  /// Accuracy degrades at extreme latitudes (>70°) where cosine correction
+  /// becomes less effective. At 80° latitude, errors can reach ~15% for
+  /// east-west distances. For critical distance calculations at high latitudes
+  /// or distances >10km, use [haversineDistance] instead.
   static double quickDistanceMeters(LatLng point1, LatLng point2) {
     // Convert degrees to approximate meters using first point's latitude for longitude correction
     final metersPerDegreeLng = metersPerDegreeLat * math.cos(point1.latitude * math.pi / 180);

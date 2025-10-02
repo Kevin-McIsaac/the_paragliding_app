@@ -72,6 +72,7 @@ class AirspaceInteractionService {
     List<AirspaceData> airspaces,
     List<Polygon> airspacePolygons,
   ) {
+    final stopwatch = Stopwatch()..start();
     final highlightedPolygons = <Polygon>[];
     final individualLabels = <MapEntry<AirspaceData, LatLng>>[];
 
@@ -107,7 +108,15 @@ class AirspaceInteractionService {
     // Group nearby labels to prevent overlap
     final groupedLabels = _groupNearbyLabels(individualLabels);
 
-    LoggingService.info('Found ${highlightedPolygons.length} polygons, grouped into ${groupedLabels.length} labels');
+    stopwatch.stop();
+    final duration = stopwatch.elapsedMilliseconds;
+
+    // Log performance warning if polygon hit testing is slow
+    if (duration > 50) {
+      LoggingService.info('[PERF WARNING] Polygon hit test took ${duration}ms for ${airspacePolygons.length} polygons (threshold: 50ms)');
+    }
+
+    LoggingService.info('Found ${highlightedPolygons.length} polygons, grouped into ${groupedLabels.length} labels in ${duration}ms');
     return (highlightedPolygons, groupedLabels);
   }
 
