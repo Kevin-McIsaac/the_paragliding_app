@@ -102,11 +102,12 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
               ),
             TextButton(
               onPressed: () async {
+                final navigator = Navigator.of(context);
                 if (country.isDownloaded) {
                   await _countryService.deleteCountryData(country.info.code);
                 }
                 if (mounted) {
-                  Navigator.of(context).pop(true);
+                  navigator.pop(true);
                 }
               },
               child: Text(

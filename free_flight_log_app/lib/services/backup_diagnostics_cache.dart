@@ -174,16 +174,8 @@ class BackupDiagnosticsCache {
   }
 
   /// Get cache hit rate for performance monitoring
-  static Map<String, int> _cacheHits = {'igc_stats': 0, 'cleanup_stats': 0, 'backup_status': 0};
-  static Map<String, int> _cacheMisses = {'igc_stats': 0, 'cleanup_stats': 0, 'backup_status': 0};
-
-  static void _recordCacheHit(String type) {
-    _cacheHits[type] = (_cacheHits[type] ?? 0) + 1;
-  }
-
-  static void _recordCacheMiss(String type) {
-    _cacheMisses[type] = (_cacheMisses[type] ?? 0) + 1;
-  }
+  static final Map<String, int> _cacheHits = {'igc_stats': 0, 'cleanup_stats': 0, 'backup_status': 0};
+  static final Map<String, int> _cacheMisses = {'igc_stats': 0, 'cleanup_stats': 0, 'backup_status': 0};
 
   /// Get cache performance statistics
   static Map<String, dynamic> getCachePerformance() {

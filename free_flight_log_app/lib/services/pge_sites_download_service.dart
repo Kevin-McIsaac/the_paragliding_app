@@ -182,7 +182,7 @@ class PgeSitesDownloadService {
       LoggingService.performance(
         'PGE Sites Download',
         duration,
-        'Downloaded ${totalBytes} bytes'
+        'Downloaded $totalBytes bytes'
       );
 
       LoggingService.structured('PGE_SITES_DOWNLOAD_COMPLETED', {
@@ -260,7 +260,7 @@ class PgeSitesDownloadService {
               'name': fields[1].replaceAll('"', ''),
               'longitude': double.tryParse(fields[2]) ?? 0.0,
               'latitude': double.tryParse(fields[3]) ?? 0.0,
-              'altitude': int.tryParse(fields[4]) ?? null,  // altitude as INTEGER
+              'altitude': int.tryParse(fields[4]),  // altitude as INTEGER
               'country': fields[5].replaceAll('"', ''),  // country code
               'wind_n': int.tryParse(fields[6]) ?? 0,
               'wind_ne': int.tryParse(fields[7]) ?? 0,

@@ -83,8 +83,10 @@ class LocationService {
       final stopwatch = Stopwatch()..start();
       
       final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 5), // Increased from 3 to 5 seconds
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 5), // Increased from 3 to 5 seconds
+        ),
       );
       
       stopwatch.stop();

@@ -91,10 +91,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   final Map<String, FlyabilityStatus> _siteFlyabilityStatus = {};
   double _maxWindSpeed = 25.0;
   double _maxWindGusts = 30.0;
-  bool _isWindBarExpanded = false; // Default to collapsed
   bool _isWindLoading = false; // Track wind data fetch status
   final WeatherService _weatherService = WeatherService.instance;
-  static const String _windBarExpandedKey = 'nearby_sites_wind_bar_expanded';
   Timer? _windFetchDebounce;
 
   @override
@@ -154,9 +152,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       final airspaceEnabled = prefs.getBool(_airspaceEnabledKey) ?? true;
       final forecastEnabled = prefs.getBool(_forecastEnabledKey) ?? true;
 
-      MapProvider selectedProvider = MapProvider.openStreetMap;
+      // Map provider loaded from preferences if needed
       if (savedProviderName != null) {
-        selectedProvider = MapProvider.values.firstWhere(
+        MapProvider.values.firstWhere(
           (p) => p.name == savedProviderName,
           orElse: () => MapProvider.openStreetMap,
         );
@@ -192,11 +190,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       _maxWindSpeed = await PreferencesHelper.getMaxWindSpeed();
       _maxWindGusts = await PreferencesHelper.getMaxWindGusts();
 
-      // Load wind bar expanded state (default to collapsed)
-      final prefs = await SharedPreferences.getInstance();
-      setState(() {
-        _isWindBarExpanded = prefs.getBool(_windBarExpandedKey) ?? false;
-      });
+      // Wind bar state preferences could be loaded here if needed
     } catch (e) {
       LoggingService.error('Failed to load wind preferences', e);
     }
@@ -1308,7 +1302,6 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
 
   // Wind data state
   WindData? _windData;
-  bool _isLoadingWind = false;
 
   @override
   void initState() {
@@ -1386,7 +1379,6 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     }
 
     // Otherwise, fetch wind data ourselves
-    setState(() => _isLoadingWind = true);
 
     try {
       // Get coordinates from either paraglidingSite or site
@@ -1400,7 +1392,6 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
         latitude = widget.site!.latitude;
         longitude = widget.site!.longitude;
       } else {
-        setState(() => _isLoadingWind = false);
         return;
       }
 
@@ -1415,7 +1406,6 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
       if (mounted) {
         setState(() {
           _windData = windData;
-          _isLoadingWind = false;
         });
 
         // Notify parent to update its cache
@@ -1426,9 +1416,6 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
         LoggingService.info('[SITE_DIALOG] Wind data fetched successfully: ${windData?.compassDirection} ${windData?.speedKmh}km/h');
       }
     } catch (e, stackTrace) {
-      if (mounted) {
-        setState(() => _isLoadingWind = false);
-      }
       LoggingService.error('Failed to fetch wind data for site dialog', e, stackTrace);
     }
   }
@@ -2147,79 +2134,6 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
         const SizedBox(height: 4),
         Text(
           characteristics.join(' • '),
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildWeatherInfoSection({
-    required String title,
-    required String content,
-    required IconData icon,
-    required Color iconColor,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(
-              icon,
-              size: 16,
-              color: iconColor,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              title,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: iconColor,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          content,
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFlightCharacteristicsSection(String? thermalFlag, String? soaringFlag, String? xcFlag) {
-    final characteristics = <String>[];
-
-    if (thermalFlag == '1') characteristics.add('Thermals');
-    if (soaringFlag == '1') characteristics.add('Soaring');
-    if (xcFlag == '1') characteristics.add('Cross Country (XC)');
-
-    if (characteristics.isEmpty) return const SizedBox.shrink();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(
-              Icons.flight,
-              size: 16,
-              color: Colors.green,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              'Flight Characteristics',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: Colors.green,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Good conditions for: ${characteristics.join(', ')}',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
       ],
