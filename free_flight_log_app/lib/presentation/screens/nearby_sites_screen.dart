@@ -242,7 +242,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       // Mark sites as unknown if they don't have wind data
       setState(() {
         for (final site in _displayedSites) {
-          final key = '${site.latitude}_${site.longitude}';
+          final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
           if (!_siteWindData.containsKey(key)) {
             _siteFlyabilityStatus[key] = FlyabilityStatus.unknown;
           }
@@ -260,7 +260,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       setState(() {
         // Mark all sites as loading
         for (final site in _displayedSites) {
-          final key = '${site.latitude}_${site.longitude}';
+          final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
           if (!_siteWindData.containsKey(key)) {
             _siteFlyabilityStatus[key] = FlyabilityStatus.loading;
           }
@@ -273,7 +273,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         final seenKeys = <String>{};
 
         for (final site in _displayedSites) {
-          final key = '${site.latitude}_${site.longitude}';
+          final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
           if (!seenKeys.contains(key)) {
             seenKeys.add(key);
             locationsToFetch.add(LatLng(site.latitude, site.longitude));
@@ -294,11 +294,12 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
         if (!mounted) return;
 
-        // Update wind data map
-        _siteWindData.addAll(windDataResults);
-
-        // Calculate flyability status for all sites
-        _updateFlyabilityStatus();
+        // Update wind data map and flyability status with setState for immediate UI update
+        setState(() {
+          _siteWindData.addAll(windDataResults);
+          LoggingService.debug('Wind data keys after adding: ${_siteWindData.keys.toList()}');
+          _updateFlyabilityStatus();
+        });
 
         LoggingService.structured('WIND_DATA_FETCHED', {
           'sites_count': _displayedSites.length,
@@ -312,7 +313,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           setState(() {
             // Mark failed sites as unknown
             for (final site in _displayedSites) {
-              final key = '${site.latitude}_${site.longitude}';
+              final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
               if (!_siteWindData.containsKey(key)) {
                 _siteFlyabilityStatus[key] = FlyabilityStatus.unknown;
               }
@@ -323,15 +324,36 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     });
   }
 
+  /// Check if any displayed site is missing wind data
+  bool _hasMissingWindData({bool includeUnknownStatus = false}) {
+    return _displayedSites.any((site) {
+      final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
+      if (includeUnknownStatus) {
+        // Missing if: no wind data OR status is unknown/loading OR no status at all
+        final hasWindData = _siteWindData.containsKey(key);
+        final status = _siteFlyabilityStatus[key];
+        final isMissing = !hasWindData ||
+               status == FlyabilityStatus.unknown ||
+               status == FlyabilityStatus.loading ||
+               !_siteFlyabilityStatus.containsKey(key);
+        LoggingService.debug('Site ${site.name}: hasWindData=$hasWindData, status=$status, isMissing=$isMissing');
+        return isMissing;
+      }
+      return !_siteWindData.containsKey(key) && !_siteFlyabilityStatus.containsKey(key);
+    });
+  }
+
   /// Calculate flyability status for all displayed sites
   void _updateFlyabilityStatus() {
     for (final site in _displayedSites) {
-      final key = '${site.latitude}_${site.longitude}';
+      final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
       final wind = _siteWindData[key];
 
       if (wind == null) {
+        LoggingService.debug('Flyability unknown: no wind data for ${site.name} (key: $key, available keys: ${_siteWindData.keys.toList()})');
         _siteFlyabilityStatus[key] = FlyabilityStatus.unknown;
       } else if (site.windDirections.isEmpty) {
+        LoggingService.debug('Flyability unknown: ${site.name} has no wind directions defined');
         _siteFlyabilityStatus[key] = FlyabilityStatus.unknown;
       } else {
         final isFlyable = wind.isFlyable(
@@ -342,6 +364,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         _siteFlyabilityStatus[key] = isFlyable
             ? FlyabilityStatus.flyable
             : FlyabilityStatus.notFlyable;
+        LoggingService.info('Flyability ${isFlyable ? "flyable" : "not flyable"}: ${site.name}, wind=${wind.compassDirection} ${wind.speedKmh}km/h, directions=${site.windDirections}');
       }
     }
   }
@@ -646,7 +669,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
             _siteFlightStatus = {};
 
             // Clean up stale flyability status and wind data for sites no longer visible
-            final currentSiteKeys = result.sites.map((site) => '${site.latitude}_${site.longitude}').toSet();
+            final currentSiteKeys = result.sites.map((site) => SiteUtils.createSiteKey(site.latitude, site.longitude)).toSet();
             _siteFlyabilityStatus.removeWhere((key, value) => !currentSiteKeys.contains(key));
             _siteWindData.removeWhere((key, value) => !currentSiteKeys.contains(key));
 
@@ -669,15 +692,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           // Use a short delay to ensure _displayedSites is fully updated
           Future.delayed(const Duration(milliseconds: 50), () {
             if (!mounted) return;
-            if (_displayedSites.isNotEmpty) {
-              // Check if any displayed site is missing wind data
-              final missingWindData = _displayedSites.any((site) {
-                final key = '${site.latitude}_${site.longitude}';
-                return !_siteWindData.containsKey(key) && !_siteFlyabilityStatus.containsKey(key);
-              });
-              if (missingWindData || _siteWindData.isEmpty) {
-                _fetchWindDataForSites();
-              }
+            if (_displayedSites.isNotEmpty && (_hasMissingWindData() || _siteWindData.isEmpty)) {
+              _fetchWindDataForSites();
             }
           });
         }
@@ -697,15 +713,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         LoggingService.info('Wind check: sites=${_displayedSites.length}, zoom=$currentZoom');
 
         if (_displayedSites.isNotEmpty && currentZoom >= 10) {
-          // Check if any displayed site is missing wind data or has unknown status
-          final missingWindData = _displayedSites.any((site) {
-            final key = '${site.latitude}_${site.longitude}';
-            // Missing if: no wind data OR status is unknown/loading OR no status at all
-            return !_siteWindData.containsKey(key) ||
-                   _siteFlyabilityStatus[key] == FlyabilityStatus.unknown ||
-                   _siteFlyabilityStatus[key] == FlyabilityStatus.loading ||
-                   !_siteFlyabilityStatus.containsKey(key);
-          });
+          final missingWindData = _hasMissingWindData(includeUnknownStatus: true);
           LoggingService.info('Missing wind data check: $missingWindData');
           if (missingWindData) {
             LoggingService.info('Triggering wind fetch after bounds load completion');
@@ -723,7 +731,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
   void _showSiteDetailsDialog({required ParaglidingSite paraglidingSite}) {
     // Get wind data for this site
-    final windKey = '${paraglidingSite.latitude}_${paraglidingSite.longitude}';
+    final windKey = SiteUtils.createSiteKey(paraglidingSite.latitude, paraglidingSite.longitude);
     final windData = _siteWindData[windKey];
 
     showDialog(
@@ -1784,58 +1792,6 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     );
   }
 
-  Widget _buildRulesTab() {
-    return Scrollbar(
-      child: SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (_isLoadingDetails)
-              const Center(child: CircularProgressIndicator())
-            else if (_loadingError != null)
-              Center(child: Text(_loadingError!, style: TextStyle(color: Colors.red)))
-            else if (_detailedData != null && _detailedData!['flight_rules'] != null && _detailedData!['flight_rules']!.toString().isNotEmpty) ...[
-              Text(
-                _detailedData!['flight_rules']!.toString(),
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ] else
-              const Center(child: Text('No flight rules available')),
-          ],
-        ),
-      ),
-      ),
-    );
-  }
-
-  Widget _buildAccessTab() {
-    return Scrollbar(
-      child: SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (_isLoadingDetails)
-              const Center(child: CircularProgressIndicator())
-            else if (_loadingError != null)
-              Center(child: Text(_loadingError!, style: TextStyle(color: Colors.red)))
-            else if (_detailedData != null && _detailedData!['going_there'] != null && _detailedData!['going_there']!.toString().isNotEmpty) ...[
-              Text(
-                _detailedData!['going_there']!.toString(),
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ] else
-              const Center(child: Text('No access information available')),
-          ],
-        ),
-      ),
-      ),
-    );
-  }
-
   Widget _buildWeatherTab(List<String> windDirections) {
     // Extract weather information early for better layout control
     final weatherInfo = _detailedData?['weather']?.toString();
@@ -1986,84 +1942,6 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     );
   }
 
-  Widget _buildWeatherInformationCard() {
-    // Extract weather-specific information from API data using actual field names
-    final weatherInfo = _detailedData?['weather']?.toString();
-    final thermalFlag = _detailedData?['thermals']?.toString();
-    final soaringFlag = _detailedData?['soaring']?.toString();
-    final xcFlag = _detailedData?['xc']?.toString();
-
-    // Check if we have any weather-related content
-    final hasWeatherContent = [weatherInfo].any((content) => content != null && content.isNotEmpty) ||
-        [thermalFlag, soaringFlag, xcFlag].any((flag) => flag == '1');
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.wb_sunny,
-                  color: Colors.orange,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Weather Information',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            if (!hasWeatherContent) ...[
-              // No weather information available
-              Row(
-                children: [
-                  Icon(
-                    Icons.info_outline,
-                    size: 24,
-                    color: Colors.grey.shade400,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'No weather information available for this site.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ] else ...[
-              // Display available weather information
-              if (weatherInfo != null && weatherInfo.isNotEmpty) ...[
-                _buildWeatherInfoSection(
-                  title: 'Weather Information',
-                  content: weatherInfo,
-                  icon: Icons.wb_cloudy,
-                  iconColor: Colors.blue,
-                ),
-                const SizedBox(height: 12),
-              ],
-
-              // Display flight characteristics based on API flags
-              if (thermalFlag == '1' || soaringFlag == '1' || xcFlag == '1') ...[
-                _buildFlightCharacteristicsSection(thermalFlag, soaringFlag, xcFlag),
-              ],
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildWeatherInfoSection({
     required String title,
     required String content,
@@ -2134,36 +2012,6 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
           style: Theme.of(context).textTheme.bodyMedium,
         ),
       ],
-    );
-  }
-
-  Widget _buildCommentsTab() {
-    return Scrollbar(
-      child: SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (_isLoadingDetails)
-              const Center(child: CircularProgressIndicator())
-            else if (_loadingError != null)
-              Center(child: Text(_loadingError!, style: TextStyle(color: Colors.red)))
-            else if (_detailedData != null) ...[
-            // Pilot comments
-            if (_detailedData!['comments'] != null && _detailedData!['comments']!.toString().isNotEmpty) ...[
-              Text(
-                _detailedData!['comments']!.toString(),
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ] else
-              const Center(child: Text('No pilot comments available')),
-            ] else
-              const Center(child: Text('No pilot comments available')),
-          ],
-        ),
-      ),
-      ),
     );
   }
 

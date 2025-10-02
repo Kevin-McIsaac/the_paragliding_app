@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import '../data/models/wind_data.dart';
+import '../utils/site_utils.dart';
 import 'logging_service.dart';
 
 /// Service for fetching weather data from Open-Meteo API
@@ -208,7 +209,7 @@ class WeatherService {
     for (final location in locations) {
       final cacheKey = _getCacheKey(location.latitude, location.longitude, dateTime);
       if (_cache.containsKey(cacheKey)) {
-        final locationKey = '${location.latitude}_${location.longitude}';
+        final locationKey = SiteUtils.createSiteKey(location.latitude, location.longitude);
         results[locationKey] = _cache[cacheKey]!;
       } else {
         uncachedLocations.add(location);
@@ -310,8 +311,8 @@ class WeatherService {
             final cacheKey = _getCacheKey(location.latitude, location.longitude, dateTime);
             _cache[cacheKey] = windData;
 
-            // Add to results
-            final locationKey = '${location.latitude}_${location.longitude}';
+            // Add to results using SiteUtils for consistent key format
+            final locationKey = SiteUtils.createSiteKey(location.latitude, location.longitude);
             results[locationKey] = windData;
           }
         }
