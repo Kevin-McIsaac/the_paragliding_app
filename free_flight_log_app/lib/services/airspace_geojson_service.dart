@@ -865,13 +865,14 @@ class AirspaceGeoJsonService {
     for (final clippedData in clippedPolygons) {
       if (clippedData.outerPoints.length >= 3) {
         // Create flutter_map polygon with holes support
-        final polygon = fm.Polygon(
+        final polygon = fm.Polygon<AirspaceData>(
           points: clippedData.outerPoints,
           holePointsList: clippedData.holes.isNotEmpty ? clippedData.holes : null,
           color: clippedData.style.fillColor,  // Use color directly from style (already has correct opacity)
           borderColor: clippedData.style.borderColor,
           borderStrokeWidth: clippedData.style.borderWidth,
           pattern: clippedData.style.pattern ?? fm.StrokePattern.solid(),
+          hitValue: clippedData.airspaceData,  // Store airspace data for explicit polygon matching
           // Disable hole borders for cleaner appearance
           disableHolesBorder: true,
         );
@@ -990,12 +991,13 @@ class AirspaceGeoJsonService {
       final style = geometry.getStyle(getStyleForAirspace);
 
       // Create polygon - if clipping enabled, points will be updated later
-      final polygon = fm.Polygon(
+      final polygon = fm.Polygon<AirspaceData>(
         points: allPoints,
         borderStrokeWidth: style.borderWidth,
         borderColor: style.borderColor,
         color: style.fillColor,  // Use color directly from style (already has correct opacity)
         pattern: style.pattern ?? fm.StrokePattern.solid(),
+        hitValue: airspaceData,  // Store airspace data for explicit polygon matching
         // Labels removed for cleaner visualization
       );
 

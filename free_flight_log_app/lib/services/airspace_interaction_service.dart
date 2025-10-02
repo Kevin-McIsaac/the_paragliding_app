@@ -74,7 +74,6 @@ class AirspaceInteractionService {
   ) {
     final highlightedPolygons = <Polygon>[];
     final individualLabels = <MapEntry<AirspaceData, LatLng>>[];
-    int airspaceIndex = 0;
 
     // Search through the rendered airspace layers for all polygons containing the tap point
     for (final layer in airspaceLayers) {
@@ -82,6 +81,13 @@ class AirspaceInteractionService {
         for (final polygon in layer.polygons) {
           // Check if this polygon contains the tap point
           if (MapCalculationUtils.pointInPolygon(point, polygon.points)) {
+            // Extract airspace data from polygon hitValue (explicit matching)
+            if (polygon.hitValue is! AirspaceData) {
+              LoggingService.error('Polygon missing AirspaceData hitValue', Exception('Invalid polygon hitValue type'));
+              continue;
+            }
+            final airspaceData = polygon.hitValue as AirspaceData;
+
             // Create highlighted version with double opacity
             final originalColor = polygon.color ?? Colors.blue.withValues(alpha: 0.2);
             final highlightedPolygon = Polygon(
@@ -96,10 +102,7 @@ class AirspaceInteractionService {
 
             // Calculate centroid and associate with airspace
             final centroid = MapCalculationUtils.calculateCentroid(polygon.points);
-            if (airspaceIndex < airspaces.length) {
-              individualLabels.add(MapEntry(airspaces[airspaceIndex], centroid));
-              airspaceIndex++;
-            }
+            individualLabels.add(MapEntry(airspaceData, centroid));
           }
         }
       }
@@ -175,7 +178,7 @@ class AirspaceInteractionService {
       return IgnorePointer(
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(
               airspace.name,
@@ -188,6 +191,7 @@ class AirspaceInteractionService {
                   Shadow(color: Colors.black, blurRadius: 4, offset: Offset(-1, -1)),
                 ],
               ),
+              textAlign: TextAlign.center,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -202,6 +206,7 @@ class AirspaceInteractionService {
                   Shadow(color: Colors.black, blurRadius: 3, offset: Offset(-1, -1)),
                 ],
               ),
+              textAlign: TextAlign.center,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -220,7 +225,7 @@ class AirspaceInteractionService {
     return IgnorePointer(
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Text(
             airspaces.length == 2 ? firstAirspace.name : 'Multiple Airspaces',
@@ -233,6 +238,7 @@ class AirspaceInteractionService {
                 Shadow(color: Colors.black, blurRadius: 4, offset: Offset(-1, -1)),
               ],
             ),
+            textAlign: TextAlign.center,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -247,6 +253,7 @@ class AirspaceInteractionService {
                 Shadow(color: Colors.black, blurRadius: 3, offset: Offset(-1, -1)),
               ],
             ),
+            textAlign: TextAlign.center,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
