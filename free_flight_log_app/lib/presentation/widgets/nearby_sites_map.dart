@@ -7,6 +7,7 @@ import '../../data/models/paragliding_site.dart';
 import '../../data/models/wind_data.dart';
 import '../../data/models/flyability_status.dart';
 import '../../services/logging_service.dart';
+import '../../utils/map_calculation_utils.dart';
 import '../../utils/map_constants.dart';
 import '../../utils/site_marker_utils.dart';
 import '../../utils/site_utils.dart';
@@ -141,7 +142,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     // Re-center on user location if it changes significantly
     if (widget.userLocation != null && oldWidget.userLocation != widget.userLocation) {
       final distance = oldWidget.userLocation != null
-          ? _calculateDistance(oldWidget.userLocation!, widget.userLocation!)
+          ? MapCalculationUtils.quickDistanceMeters(oldWidget.userLocation!, widget.userLocation!)
           : double.infinity;
 
       if (distance > 100) {
@@ -414,13 +415,6 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     // Don't show map info card - parent handles site selection with PGE dialog
 
     return overlays;
-  }
-
-  double _calculateDistance(LatLng point1, LatLng point2) {
-    // Simple distance calculation for nearby checking
-    final latDiff = (point2.latitude - point1.latitude).abs();
-    final lngDiff = (point2.longitude - point1.longitude).abs();
-    return (latDiff * latDiff + lngDiff * lngDiff) * 111000; // Rough meters
   }
 
   @override
