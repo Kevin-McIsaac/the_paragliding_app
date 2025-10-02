@@ -797,6 +797,13 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         paraglidingSite: paraglidingSite,
         userPosition: _userPosition,
         windData: windData,
+        onWindDataFetched: (fetchedWindData) {
+          // Update parent's cache when dialog fetches wind data
+          setState(() {
+            _siteWindData[windKey] = fetchedWindData;
+            _updateFlyabilityStatus(forceRecalculation: true);
+          });
+        },
       ),
     );
   }
@@ -1246,12 +1253,14 @@ class _SiteDetailsDialog extends StatefulWidget {
   final ParaglidingSite? paraglidingSite;
   final Position? userPosition;
   final WindData? windData;
+  final Function(WindData)? onWindDataFetched;
 
   const _SiteDetailsDialog({
     this.site,
     this.paraglidingSite,
     this.userPosition,
     this.windData,
+    this.onWindDataFetched,
   });
 
   @override
@@ -1264,12 +1273,17 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
   String? _loadingError;
   TabController? _tabController;
 
+  // Wind data state
+  WindData? _windData;
+  bool _isLoadingWind = false;
+
   @override
   void initState() {
     super.initState();
     // Create tab controller for both local and API sites - both can have detailed data
     _tabController = TabController(length: 2, vsync: this); // 2 tabs: Takeoff, Weather
     _loadSiteDetails();
+    _loadWindData();
   }
 
   @override
@@ -1328,6 +1342,61 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
         });
         LoggingService.error('Error loading site details', e);
       }
+    }
+  }
+
+  Future<void> _loadWindData() async {
+    // If wind data was already provided by parent, use it
+    if (widget.windData != null) {
+      _windData = widget.windData;
+      return;
+    }
+
+    // Otherwise, fetch wind data ourselves
+    setState(() => _isLoadingWind = true);
+
+    try {
+      // Get coordinates from either paraglidingSite or site
+      double latitude;
+      double longitude;
+
+      if (widget.paraglidingSite != null) {
+        latitude = widget.paraglidingSite!.latitude;
+        longitude = widget.paraglidingSite!.longitude;
+      } else if (widget.site != null) {
+        latitude = widget.site!.latitude;
+        longitude = widget.site!.longitude;
+      } else {
+        setState(() => _isLoadingWind = false);
+        return;
+      }
+
+      LoggingService.info('[SITE_DIALOG] Fetching wind data for site at $latitude, $longitude');
+
+      final windData = await WeatherService.instance.getWindData(
+        latitude,
+        longitude,
+        DateTime.now(),
+      );
+
+      if (mounted) {
+        setState(() {
+          _windData = windData;
+          _isLoadingWind = false;
+        });
+
+        // Notify parent to update its cache
+        if (windData != null && widget.onWindDataFetched != null) {
+          widget.onWindDataFetched!(windData);
+        }
+
+        LoggingService.info('[SITE_DIALOG] Wind data fetched successfully: ${windData?.compassDirection} ${windData?.speedKmh}km/h');
+      }
+    } catch (e, stackTrace) {
+      if (mounted) {
+        setState(() => _isLoadingWind = false);
+      }
+      LoggingService.error('Failed to fetch wind data for site dialog', e, stackTrace);
     }
   }
 
@@ -1887,8 +1956,8 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                         child: WindRoseWidget(
                           launchableDirections: windDirections,
                           size: 100.0,
-                          windSpeed: widget.windData?.speedKmh,
-                          windDirection: widget.windData?.directionDegrees,
+                          windSpeed: _windData?.speedKmh,
+                          windDirection: _windData?.directionDegrees,
                         ),
                       ),
                       // Weather text on the right, flexible to use remaining space
