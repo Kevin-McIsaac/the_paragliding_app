@@ -19,6 +19,13 @@ class MapConstants {
   static const double maxZoom = 22.0;
   static const double maxAltitudeFt = 10000.0;
 
+  // Weather forecast and station display
+  static const double minForecastZoom = 10.0; // Minimum zoom for forecasts and weather stations
+
+  // Weather station caching (METAR data)
+  static const Duration weatherStationCacheTTL = Duration(minutes: 30); // METAR updates every 30min
+  static const Duration stationListCacheTTL = Duration(minutes: 30); // Combined with weather data
+
   // Map UI constants
   static const double mapPadding = 0.005;
 

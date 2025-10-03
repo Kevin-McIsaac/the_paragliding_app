@@ -5,22 +5,24 @@ import '../../data/models/airspace_enums.dart';
 import 'package:multi_dropdown/multi_dropdown.dart';
 
 /// Filter dialog for controlling map layer visibility
-/// Supports sites toggle, airspace type filtering, ICAO class filtering, altitude filtering, and clipping
+/// Supports sites toggle, airspace type filtering, ICAO class filtering, altitude filtering, clipping, and weather stations
 class MapFilterDialog extends StatefulWidget {
   final bool sitesEnabled;
   final bool airspaceEnabled;
   final bool forecastEnabled;
+  final bool weatherStationsEnabled;
   final Map<String, bool> airspaceTypes;
   final Map<String, bool> icaoClasses;
   final double maxAltitudeFt;
   final bool clippingEnabled;
-  final Function(bool sitesEnabled, bool airspaceEnabled, bool forecastEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) onApply;
+  final Function(bool sitesEnabled, bool airspaceEnabled, bool forecastEnabled, bool weatherStationsEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) onApply;
 
   const MapFilterDialog({
     super.key,
     required this.sitesEnabled,
     required this.airspaceEnabled,
     required this.forecastEnabled,
+    required this.weatherStationsEnabled,
     required this.airspaceTypes,
     required this.icaoClasses,
     required this.maxAltitudeFt,
@@ -36,6 +38,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
   late bool _sitesEnabled;
   late bool _airspaceEnabled;
   late bool _forecastEnabled;
+  late bool _weatherStationsEnabled;
   late Map<String, bool> _airspaceTypes;
   late Map<String, bool> _icaoClasses;
   late double _maxAltitudeFt;
@@ -74,6 +77,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
     _sitesEnabled = widget.sitesEnabled;
     _airspaceEnabled = widget.airspaceEnabled;
     _forecastEnabled = widget.forecastEnabled;
+    _weatherStationsEnabled = widget.weatherStationsEnabled;
     _airspaceTypes = Map<String, bool>.from(widget.airspaceTypes);
     _icaoClasses = Map<String, bool>.from(widget.icaoClasses);
     _maxAltitudeFt = widget.maxAltitudeFt;
@@ -179,29 +183,24 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                   children: [
                     // Horizontal Layers section
                     _buildLayersSection(),
-                    const SizedBox(height: 16),
-
-                    // Divider line (no title)
-                    Opacity(
-                      opacity: _airspaceEnabled ? 1.0 : 0.3,
-                      child: Container(
-                        height: 1,
-                        color: Colors.grey.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
 
                     // Two-column layout: (Types + Classes) | Altitude
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Left column: Types and Classes stacked
-                        Expanded(
-                          flex: 7,  // Much wider column (78% width)
-                          child: Opacity(
-                            opacity: _airspaceEnabled ? 1.0 : 0.3,
-                            child: IgnorePointer(
-                              ignoring: !_airspaceEnabled,
+                    // Only shown when airspace is enabled
+                    if (_airspaceEnabled) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.05),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.white.withOpacity(0.1)),
+                        ),
+                        padding: const EdgeInsets.all(8),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Left column: Types and Classes stacked
+                            Expanded(
+                              flex: 7,  // Much wider column (78% width)
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
@@ -213,23 +212,17 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                                 ],
                               ),
                             ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
+                            const SizedBox(width: 12),
 
-                        // Right column: Altitude
-                        Expanded(
-                          flex: 2,  // Narrower column (33% width)
-                          child: Opacity(
-                            opacity: _airspaceEnabled ? 1.0 : 0.3,
-                            child: IgnorePointer(
-                              ignoring: !_airspaceEnabled,
+                            // Right column: Altitude
+                            Expanded(
+                              flex: 2,  // Narrower column (33% width)
                               child: _buildAltitudeColumn(),
                             ),
-                          ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -262,7 +255,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
           ),
         ),
         const SizedBox(height: 8),
-        // Horizontal layout for Sites, Airspace, and Clip checkboxes
+        // Row 1: Sites, Forecast
         Row(
           children: [
             // Sites checkbox
@@ -359,7 +352,63 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                   ),
                 ),
               ),
-            const SizedBox(width: 16), // Space between checkboxes
+          ],
+        ),
+        const SizedBox(height: 8),
+        // Row 2: Weather
+        Row(
+          children: [
+            Tooltip(
+              message: 'Show actual weather stations with real-time wind data',
+              textStyle: const TextStyle(color: Colors.white, fontSize: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E1E1E),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.white24),
+              ),
+              child: InkWell(
+                onTap: () => setState(() {
+                  _weatherStationsEnabled = !_weatherStationsEnabled;
+                  _applyFiltersDebounced();
+                }),
+                borderRadius: BorderRadius.circular(4),
+                child: SizedBox(
+                  height: 24,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: Checkbox(
+                          value: _weatherStationsEnabled,
+                          onChanged: (value) => setState(() {
+                            _weatherStationsEnabled = value ?? true;
+                            _applyFiltersDebounced();
+                          }),
+                          activeColor: Colors.blue,
+                          checkColor: Colors.white,
+                          side: const BorderSide(color: Colors.white54),
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Text(
+                        'Weather',
+                        style: TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        // Row 3: Airspace, Clip
+        Row(
+          children: [
             // Airspace checkbox
             Tooltip(
               message: 'Overlay the OpenAIP airspaces for this area',
@@ -839,6 +888,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
       'sites_enabled': _sitesEnabled,
       'airspace_enabled': _airspaceEnabled,
       'forecast_enabled': _forecastEnabled,
+      'weather_stations_enabled': _weatherStationsEnabled,
       'selected_types': selectedTypes,
       'selected_classes': selectedClasses,
       'total_types': _airspaceTypes.length,
@@ -847,7 +897,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
       'clipping_enabled': _clippingEnabled,
     });
 
-    widget.onApply(_sitesEnabled, _airspaceEnabled, _forecastEnabled, _airspaceTypes, _icaoClasses, _maxAltitudeFt, _clippingEnabled);
+    widget.onApply(_sitesEnabled, _airspaceEnabled, _forecastEnabled, _weatherStationsEnabled, _airspaceTypes, _icaoClasses, _maxAltitudeFt, _clippingEnabled);
   }
 }
 

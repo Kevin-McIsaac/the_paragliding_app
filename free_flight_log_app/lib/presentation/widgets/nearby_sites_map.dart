@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/wind_data.dart';
 import '../../data/models/flyability_status.dart';
+import '../../data/models/weather_station.dart';
 import '../../services/logging_service.dart';
 import '../../utils/map_calculation_utils.dart';
 import '../../utils/map_constants.dart';
@@ -15,6 +16,7 @@ import '../models/site_marker_presentation.dart';
 import 'common/base_map_widget.dart';
 import 'common/map_overlays.dart';
 import 'common/user_location_marker.dart';
+import 'weather_station_marker.dart';
 
 /// Clean implementation of nearby sites map using BaseMapWidget architecture
 /// Replaces the monolithic 1400+ line nearby_sites_map_widget.dart
@@ -34,6 +36,9 @@ class NearbySitesMap extends BaseMapWidget {
   final double maxWindGusts;
   final DateTime selectedDateTime;
   final bool forecastEnabled;
+  final List<WeatherStation> weatherStations;
+  final Map<String, WindData> stationWindData;
+  final bool weatherStationsEnabled;
 
   const NearbySitesMap({
     super.key,
@@ -52,6 +57,9 @@ class NearbySitesMap extends BaseMapWidget {
     this.maxWindGusts = 30.0,
     required this.selectedDateTime,
     this.forecastEnabled = true,
+    this.weatherStations = const [],
+    this.stationWindData = const {},
+    this.weatherStationsEnabled = true,
     super.height = 400,
     super.initialCenter,
     super.initialZoom = 10.0,
@@ -341,7 +349,47 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
       );
     }
 
+    // Weather station markers (only if enabled and zoom ≥ 10)
+    // Check if map controller is initialized before accessing camera
+    if (widget.weatherStationsEnabled && widget.weatherStations.isNotEmpty) {
+      try {
+        final zoom = mapController.camera.zoom;
+        if (zoom >= MapConstants.minForecastZoom) {
+          layers.add(
+            MarkerLayer(
+              markers: _buildWeatherStationMarkers(),
+            ),
+          );
+        }
+      } catch (e) {
+        // Map controller not yet initialized, skip weather stations for this frame
+        LoggingService.debug('Map controller not yet initialized, skipping weather stations');
+      }
+    }
+
     return layers;
+  }
+
+  /// Build weather station markers
+  List<Marker> _buildWeatherStationMarkers() {
+    return widget.weatherStations.map((station) {
+      // Get wind data for this station
+      final windData = widget.stationWindData[station.id];
+
+      // Create station with wind data
+      final stationWithWind = station.copyWith(windData: windData);
+
+      return Marker(
+        point: LatLng(station.latitude, station.longitude),
+        width: WeatherStationMarker.markerSize,
+        height: WeatherStationMarker.markerSize,
+        child: WeatherStationMarker(
+          station: stationWithWind,
+          maxWindSpeed: widget.maxWindSpeed,
+          maxWindGusts: widget.maxWindGusts,
+        ),
+      );
+    }).toList();
   }
 
   @override
@@ -391,6 +439,38 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     if (widget.showUserLocation) {
       items.add(const SizedBox(height: 4));
       items.add(const UserLocationLegendItem());
+    }
+
+    // Weather stations legend
+    if (widget.weatherStationsEnabled) {
+      items.add(const SizedBox(height: 4));
+      items.add(const Padding(
+        padding: EdgeInsets.only(bottom: 2.0),
+        child: Text(
+          'Weather',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 11,
+            color: Colors.white60,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ));
+      items.add(SiteMarkerUtils.buildLegendItem(
+        context,
+        null,
+        Colors.green,
+        'Station (good)',
+        isCircle: true,
+      ));
+      items.add(const SizedBox(height: 2));
+      items.add(SiteMarkerUtils.buildLegendItem(
+        context,
+        null,
+        Colors.red,
+        'Station (strong)',
+        isCircle: true,
+      ));
     }
 
     return items;
