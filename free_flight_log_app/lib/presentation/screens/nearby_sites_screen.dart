@@ -1437,9 +1437,20 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
       siteType: 'launch',
     );
 
+    // Calculate flyability status using the same logic as site markers
+    FlyabilityStatus? status;
+    if (windDirections.isNotEmpty) {
+      final isFlyable = _windData!.isFlyable(
+        tempSite.windDirections,
+        25.0, // maxWindSpeed
+        30.0, // maxWindGusts
+      );
+      status = isFlyable ? FlyabilityStatus.flyable : FlyabilityStatus.notFlyable;
+    }
+
     return SiteMarkerPresentation.forFlyability(
       site: tempSite,
-      status: null, // Will be calculated from wind data
+      status: status, // Now properly calculated!
       windData: _windData,
       maxWindSpeed: 25.0, // Default max wind speed
       maxWindGusts: 30.0, // Default max gusts
@@ -1999,7 +2010,7 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
               const Center(child: CircularProgressIndicator())
             else if (_loadingError != null)
               Center(child: Text(_loadingError!, style: TextStyle(color: Colors.red)))
-            else if (windDirections.isNotEmpty) ...[
+            else ...[
               // Compact single-column layout with inline wind rose
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2056,37 +2067,6 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                     ],
                   ),
                 ],
-              ),
-            ] else ...[
-              // No wind directions - center message
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 32.0),
-                  child: Column(
-                    children: [
-                      Icon(
-                        Icons.info_outline,
-                        size: 48,
-                        color: Colors.grey.shade400,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No wind direction restrictions',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'This site has no specific wind direction requirements.',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.grey.shade600,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
               ),
             ],
           ],
