@@ -33,7 +33,7 @@ class WeatherStationMarker extends StatelessWidget {
   Widget build(BuildContext context) {
     final windData = station.windData;
     final tooltipText = windData != null
-        ? '${station.name ?? station.id}\n${windData.speedKmh.toStringAsFixed(0)} km/h from ${windData.directionDegrees.toStringAsFixed(0)}°'
+        ? '${station.name ?? station.id}\n${windData.speedKmh.toStringAsFixed(0)}-${windData.gustsKmh.toStringAsFixed(0)} km/h from ${windData.directionDegrees.toStringAsFixed(0)}°'
         : '${station.name ?? station.id}\nNo wind data';
 
     return Tooltip(
