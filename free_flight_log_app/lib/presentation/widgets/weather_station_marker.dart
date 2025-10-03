@@ -192,6 +192,25 @@ class _WeatherStationDialog extends StatelessWidget {
     required this.maxWindGusts,
   });
 
+  String _getTimeAgo(DateTime timestamp) {
+    final now = DateTime.now();
+    final difference = now.difference(timestamp);
+
+    if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m ago';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours}h ago';
+    } else {
+      return '${difference.inDays}d ago';
+    }
+  }
+
+  bool get _isWindGood {
+    if (station.windData == null) return false;
+    final windData = station.windData!;
+    return windData.speedKmh <= maxWindSpeed && windData.gustsKmh <= maxWindGusts;
+  }
+
   @override
   Widget build(BuildContext context) {
     final windData = station.windData;
@@ -199,138 +218,140 @@ class _WeatherStationDialog extends StatelessWidget {
     return Dialog(
       backgroundColor: const Color(0xFF1E1E1E),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 280),
+        child: Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
+            // Compact header with station name and close button
             Row(
               children: [
-                const Icon(Icons.cloud, color: Colors.blue, size: 24),
-                const SizedBox(width: 8),
+                const Icon(Icons.cloud, color: Colors.blue, size: 20),
+                const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    station.name ?? 'Station ${station.id}',
+                    '${station.name ?? station.id} (${station.id})',
                     style: const TextStyle(
-                      fontSize: 18,
+                      fontSize: 15,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                     ),
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white70),
+                  icon: const Icon(Icons.close, color: Colors.white70, size: 18),
                   onPressed: () => Navigator.of(context).pop(),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
 
-            // Station details
-            _buildInfoRow('Station ID', station.id),
-            _buildInfoRow('Location', '${station.latitude.toStringAsFixed(4)}, ${station.longitude.toStringAsFixed(4)}'),
-            if (station.elevation != null)
-              _buildInfoRow('Elevation', '${station.elevation!.toStringAsFixed(0)} m'),
-
-            const Divider(color: Colors.white24, height: 24),
-
-            // Wind data
+            // Wind data - prominent display with barb graphic
             if (windData != null) ...[
-              Text(
-                'Wind Conditions',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white.withValues(alpha: 0.7),
-                ),
+              // Wind barb graphic and speed/direction
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Wind barb visualization
+                  SizedBox(
+                    width: 60,
+                    height: 60,
+                    child: CustomPaint(
+                      painter: _WeatherStationPainter(
+                        windData: windData,
+                        color: _isWindGood ? Colors.green : Colors.red,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Wind info
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Speed range with status indicator
+                        Row(
+                          children: [
+                            Text(
+                              '${windData.speedKmh.toStringAsFixed(0)}-${windData.gustsKmh.toStringAsFixed(0)} km/h',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Icon(
+                              _isWindGood ? Icons.check_circle : Icons.warning,
+                              color: _isWindGood ? Colors.green : Colors.red,
+                              size: 18,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'from ${windData.compassDirection} (${windData.directionDegrees.toStringAsFixed(0)}°)',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Colors.white70,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _getTimeAgo(windData.timestamp),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.white54,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        // Location and elevation on same line with icons
+                        Row(
+                          children: [
+                            const Icon(Icons.location_on, size: 12, color: Colors.white54),
+                            const SizedBox(width: 3),
+                            Text(
+                              '${station.latitude.toStringAsFixed(2)}°, ${station.longitude.toStringAsFixed(2)}°',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Colors.white54,
+                              ),
+                            ),
+                            if (station.elevation != null) ...[
+                              const SizedBox(width: 8),
+                              const Icon(Icons.terrain, size: 12, color: Colors.white54),
+                              const SizedBox(width: 3),
+                              Text(
+                                '${station.elevation!.toStringAsFixed(0)}m',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.white54,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              _buildWindInfo('Speed', '${windData.speedKmh.toStringAsFixed(1)} km/h', windData.speedKmh <= maxWindSpeed),
-              _buildWindInfo('Gusts', '${windData.gustsKmh.toStringAsFixed(1)} km/h', windData.gustsKmh <= maxWindGusts),
-              _buildInfoRow('Direction', '${windData.directionDegrees.toStringAsFixed(0)}° (${windData.compassDirection})'),
-              _buildInfoRow('Time', DateFormat('MMM d, h:mm a').format(windData.timestamp)),
+              const SizedBox(height: 10),
             ] else ...[
               const Text(
                 'No wind data available',
-                style: TextStyle(color: Colors.white54, fontSize: 14),
+                style: TextStyle(color: Colors.white54, fontSize: 13),
               ),
+              const SizedBox(height: 10),
             ],
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 100,
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white54,
-                fontSize: 13,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildWindInfo(String label, String value, bool isGood) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 100,
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white54,
-                fontSize: 13,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Row(
-              children: [
-                Text(
-                  value,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Icon(
-                  isGood ? Icons.check_circle : Icons.warning,
-                  color: isGood ? Colors.green : Colors.red,
-                  size: 16,
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
