@@ -179,18 +179,9 @@ class WindRosePainter extends CustomPainter {
   void _drawCenterPoint(Canvas canvas, Offset center, double radius) {
     final centerDotRadius = 15.0; // Same fixed size as used in _drawWindSectors
 
-    // Use provided color if available, otherwise determine based on wind suitability
-    Color centerColor;
-    if (centerDotColor != null) {
-      centerColor = centerDotColor!;
-    } else if (windDirection != null) {
-      final isLaunchable = _isWindDirectionLaunchable();
-      centerColor = isLaunchable
-          ? Colors.green.withValues(alpha: 0.3)  // Same as green wedges
-          : Colors.grey.withValues(alpha: 0.1);   // Same as grey wedges
-    } else {
-      centerColor = theme.colorScheme.primary; // Default blue if no wind data
-    }
+    // Use provided color from parent (which uses SiteMarkerPresentation logic)
+    // If no color provided, fall back to theme default
+    final centerColor = centerDotColor ?? theme.colorScheme.primary;
 
     final centerPaint = Paint()
       ..color = centerColor
@@ -200,7 +191,7 @@ class WindRosePainter extends CustomPainter {
   }
 
   void _drawWindArrow(Canvas canvas, Offset center, double radius) {
-    final gap = 5.0;
+    final gap = 3.0;
     final centerDotRadius = 15.0;
     final arrowStartRadius = radius - gap; // Start from outer edge
     final arrowEndRadius = centerDotRadius; // End at center
@@ -220,7 +211,7 @@ class WindRosePainter extends CustomPainter {
     final arrowPaint = Paint()
       ..color = theme.colorScheme.outline
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5  // Thinner arrow line
+      ..strokeWidth = 1.75  // Thicker arrow line for better visibility
       ..strokeCap = StrokeCap.round;
 
     // Draw arrow line from outer edge toward center
@@ -231,7 +222,7 @@ class WindRosePainter extends CustomPainter {
     );
 
     // Draw arrowhead pointing inward (toward center)
-    final arrowheadLength = 6.0;  // Smaller arrowhead
+    final arrowheadLength = 7.0;  // Larger arrowhead for better visibility
     final arrowheadAngle = 25 * pi / 180; // Narrower angle
 
     // Arrowhead at the END point (center), pointing inward
@@ -278,37 +269,6 @@ class WindRosePainter extends CustomPainter {
     );
 
     speedTextPainter.paint(canvas, speedOffset);
-  }
-
-  bool _isWindDirectionLaunchable() {
-    if (windDirection == null) return false;
-
-    // Convert wind direction to compass direction
-    final windCompassDirection = _degreesToCompassDirection(windDirection!);
-
-    // Check if wind direction matches any launchable direction
-
-    // Check if it matches any launchable direction
-    return launchableDirections.contains(windCompassDirection);
-  }
-
-  String _degreesToCompassDirection(double degrees) {
-    // Normalize to 0-360 range
-    double normalizedDegrees = degrees % 360;
-    if (normalizedDegrees < 0) normalizedDegrees += 360;
-
-    // 16-point compass for better accuracy
-    const directions = [
-      'N', 'NNE', 'NE', 'ENE',
-      'E', 'ESE', 'SE', 'SSE',
-      'S', 'SSW', 'SW', 'WSW',
-      'W', 'WNW', 'NW', 'NNW'
-    ];
-
-    // Each direction covers 22.5 degrees, offset by 11.25 degrees
-    final index = ((normalizedDegrees + 11.25) / 22.5).floor() % 16;
-
-    return directions[index];
   }
 
   double _degreesToRadians(double degrees) {
