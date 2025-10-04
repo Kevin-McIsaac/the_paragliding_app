@@ -25,6 +25,7 @@ import '../../utils/map_provider.dart';
 import '../../utils/map_constants.dart';
 import '../../utils/site_utils.dart';
 import '../../utils/preferences_helper.dart';
+import '../../utils/ui_utils.dart';
 import '../widgets/nearby_sites_map.dart';
 import '../widgets/map_filter_dialog.dart';
 import '../widgets/common/app_error_state.dart';
@@ -417,11 +418,19 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         }
       } catch (e, stackTrace) {
         LoggingService.error('Failed to fetch weather stations', e, stackTrace);
+
+        // Show user-friendly error message
+        if (mounted && context.mounted) {
+          UiUtils.showErrorMessage(
+            context,
+            'Unable to load weather stations. Check your connection.',
+          );
+        }
+
         if (mounted) {
           setState(() {
             _isStationsLoading = false;
-            _weatherStations = [];
-            _stationWindData.clear();
+            // Keep existing stations visible on error instead of clearing
           });
         }
       }
