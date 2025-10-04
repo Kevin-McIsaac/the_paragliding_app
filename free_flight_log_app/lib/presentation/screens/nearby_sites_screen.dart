@@ -1023,13 +1023,50 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         MapBoundsManager.instance.clearCache('nearby_sites');
         LoggingService.action('MapFilter', 'sites_disabled', {'cleared_sites_count': _displayedSites.length});
       } else if (sitesEnabled && !previousSitesEnabled) {
-        // Sites were enabled - reload sites for current bounds or trigger map refresh
+        // Sites were enabled - reload sites immediately (no debouncing for user toggle)
         if (_currentBounds != null) {
-          // Force reload using MapBoundsManager
+          // Clear cache and load immediately
           MapBoundsManager.instance.clearCache('nearby_sites');
-          if (_currentBounds != null) {
-            _onBoundsChanged(_currentBounds!);
-          }
+          await MapBoundsManager.instance.loadSitesForBoundsImmediate(
+            context: 'nearby_sites',
+            bounds: _currentBounds!,
+            zoomLevel: _mapController.camera.zoom,
+            onLoaded: (result) {
+              if (mounted) {
+                setState(() {
+                  _allSites = result.sites;
+                  _siteFlightStatus = {};
+
+                  // Clean up stale flyability status and wind data for sites no longer visible
+                  final currentSiteKeys = result.sites.map((site) => SiteUtils.createSiteKey(site.latitude, site.longitude)).toSet();
+                  _siteFlyabilityStatus.removeWhere((key, value) => !currentSiteKeys.contains(key));
+                  _siteWindData.removeWhere((key, value) => !currentSiteKeys.contains(key));
+
+                  for (final site in result.sites) {
+                    final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
+                    _siteFlightStatus[siteKey] = site.hasFlights;
+                  }
+                  _updateDisplayedSites();
+                });
+
+                LoggingService.structured('NEARBY_SITES_ENABLED_LOADED', {
+                  'sites_count': result.sites.length,
+                  'flown_sites': result.sitesWithFlights.length,
+                  'new_sites': result.sitesWithoutFlights.length,
+                });
+
+                // Fetch wind data if forecast enabled and zoomed in enough
+                Future.delayed(const Duration(milliseconds: 50), () {
+                  if (!mounted) return;
+                  if (_displayedSites.isNotEmpty && (_hasMissingWindData() || _siteWindData.isEmpty)) {
+                    _fetchWindDataForSites();
+                  }
+                  // Also fetch weather stations
+                  _fetchWeatherStations();
+                });
+              }
+            },
+          );
         }
         LoggingService.action('MapFilter', 'sites_enabled', {'reloading_sites': true, 'has_bounds': _currentBounds != null});
       }

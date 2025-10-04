@@ -126,6 +126,29 @@ class MapBoundsManager {
     return completer.future;
   }
 
+  /// Load sites immediately without debouncing (for explicit user actions like toggle)
+  Future<void> loadSitesForBoundsImmediate({
+    required String context,
+    required LatLngBounds bounds,
+    required Function(SiteBoundsLoadResult) onLoaded,
+    int siteLimit = defaultSiteLimit,
+    bool includeFlightCounts = true,
+    double? zoomLevel,
+  }) async {
+    // Cancel any pending debounce to avoid double-loading
+    cancelDebounce(context);
+
+    // Load immediately
+    await _loadSitesForBounds(
+      context: context,
+      bounds: bounds,
+      onLoaded: onLoaded,
+      siteLimit: siteLimit,
+      includeFlightCounts: includeFlightCounts,
+      zoomLevel: zoomLevel,
+    );
+  }
+
   /// Internal method to load sites for bounds
   Future<void> _loadSitesForBounds({
     required String context,
