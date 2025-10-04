@@ -25,7 +25,10 @@ class WeatherStationMarker extends StatelessWidget {
   bool get _isWindGood {
     if (station.windData == null) return false;
     final windData = station.windData!;
-    return windData.speedKmh <= maxWindSpeed && windData.gustsKmh <= maxWindGusts;
+    // Check speed, and gusts only if reported
+    if (windData.speedKmh > maxWindSpeed) return false;
+    if (windData.gustsKmh != null && windData.gustsKmh! > maxWindGusts) return false;
+    return true;
   }
 
   Color get _markerColor => _isWindGood ? Colors.green : Colors.red;
@@ -33,9 +36,15 @@ class WeatherStationMarker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final windData = station.windData;
-    final tooltipText = windData != null
-        ? '${station.name ?? station.id}\n${windData.speedKmh.toStringAsFixed(0)}-${windData.gustsKmh.toStringAsFixed(0)} km/h from ${windData.directionDegrees.toStringAsFixed(0)}°'
-        : '${station.name ?? station.id}\nNo wind data';
+    final String tooltipText;
+    if (windData != null) {
+      final gustsStr = windData.gustsKmh != null
+          ? '-${windData.gustsKmh!.toStringAsFixed(0)}'
+          : '';
+      tooltipText = '${station.name ?? station.id}\n${windData.speedKmh.toStringAsFixed(0)}$gustsStr km/h from ${windData.directionDegrees.toStringAsFixed(0)}°';
+    } else {
+      tooltipText = '${station.name ?? station.id}\nNo wind data';
+    }
 
     return Tooltip(
       message: tooltipText,
@@ -209,7 +218,10 @@ class _WeatherStationDialog extends StatelessWidget {
   bool get _isWindGood {
     if (station.windData == null) return false;
     final windData = station.windData!;
-    return windData.speedKmh <= maxWindSpeed && windData.gustsKmh <= maxWindGusts;
+    // Check speed, and gusts only if reported
+    if (windData.speedKmh > maxWindSpeed) return false;
+    if (windData.gustsKmh != null && windData.gustsKmh! > maxWindGusts) return false;
+    return true;
   }
 
   @override
@@ -276,7 +288,12 @@ class _WeatherStationDialog extends StatelessWidget {
                           children: [
                             // Wind speed and direction
                             Text(
-                              '${windData.speedKmh.toStringAsFixed(0)}-${windData.gustsKmh.toStringAsFixed(0)} km/h from ${windData.compassDirection} (${windData.directionDegrees.toStringAsFixed(0)}°)',
+                              () {
+                                final gustsStr = windData.gustsKmh != null
+                                    ? '-${windData.gustsKmh!.toStringAsFixed(0)}'
+                                    : '';
+                                return '${windData.speedKmh.toStringAsFixed(0)}$gustsStr km/h from ${windData.compassDirection} (${windData.directionDegrees.toStringAsFixed(0)}°)';
+                              }(),
                               style: const TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w500,

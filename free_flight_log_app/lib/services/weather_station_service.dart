@@ -201,10 +201,8 @@ class WeatherStationService {
         // Convert wind speed from knots to km/h
         final windSpeedKmh = wspd * knotsToKmh;
 
-        // Use actual gusts if available, otherwise estimate
-        final windGustsKmh = wgst != null
-            ? wgst * knotsToKmh
-            : windSpeedKmh * 1.2; // Estimate gusts as 20% higher if not reported
+        // Convert gusts only if actually reported (null = no gust data)
+        final windGustsKmh = wgst != null ? wgst * knotsToKmh : null;
 
         windData = WindData(
           speedKmh: windSpeedKmh,
