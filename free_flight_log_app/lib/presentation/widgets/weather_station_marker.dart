@@ -22,17 +22,6 @@ class WeatherStationMarker extends StatelessWidget {
     this.onTap,
   });
 
-  bool get _isWindGood {
-    if (station.windData == null) return false;
-    final windData = station.windData!;
-    // Check speed, and gusts only if reported
-    if (windData.speedKmh > maxWindSpeed) return false;
-    if (windData.gustsKmh != null && windData.gustsKmh! > maxWindGusts) return false;
-    return true;
-  }
-
-  Color get _markerColor => _isWindGood ? Colors.green : Colors.red;
-
   @override
   Widget build(BuildContext context) {
     final windData = station.windData;
@@ -62,7 +51,6 @@ class WeatherStationMarker extends StatelessWidget {
           child: CustomPaint(
             painter: _WeatherStationPainter(
               windData: station.windData,
-              color: _markerColor,
             ),
           ),
         ),
@@ -85,11 +73,9 @@ class WeatherStationMarker extends StatelessWidget {
 /// Custom painter for weather station marker with barbed arrow
 class _WeatherStationPainter extends CustomPainter {
   final WindData? windData;
-  final Color color;
 
   _WeatherStationPainter({
     required this.windData,
-    required this.color,
   });
 
   @override
@@ -186,7 +172,7 @@ class _WeatherStationPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_WeatherStationPainter oldDelegate) {
-    return oldDelegate.windData != windData || oldDelegate.color != color;
+    return oldDelegate.windData != windData;
   }
 }
 
@@ -213,15 +199,6 @@ class _WeatherStationDialog extends StatelessWidget {
     } else {
       return '${difference.inDays}d ago';
     }
-  }
-
-  bool get _isWindGood {
-    if (station.windData == null) return false;
-    final windData = station.windData!;
-    // Check speed, and gusts only if reported
-    if (windData.speedKmh > maxWindSpeed) return false;
-    if (windData.gustsKmh != null && windData.gustsKmh! > maxWindGusts) return false;
-    return true;
   }
 
   @override
@@ -274,7 +251,6 @@ class _WeatherStationDialog extends StatelessWidget {
                         child: CustomPaint(
                           painter: _WeatherStationPainter(
                             windData: windData,
-                            color: _isWindGood ? Colors.green : Colors.red,
                           ),
                         ),
                       ),

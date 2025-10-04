@@ -1340,7 +1340,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
               label: 'Loading weather stations',
               icon: Icons.cloud,
               iconColor: Colors.orange,
-              count: _weatherStations.length,
             ),
 
           // Search dropdown overlay
