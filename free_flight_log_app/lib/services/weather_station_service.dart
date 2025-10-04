@@ -103,8 +103,14 @@ class WeatherStationService {
       ).timeout(
         const Duration(seconds: 30),
         onTimeout: () {
-          LoggingService.error('METAR API timeout after 30s');
-          throw TimeoutException('METAR API request timed out');
+          stopwatch.stop();
+          LoggingService.structured('METAR_TIMEOUT', {
+            'bbox': bbox,
+            'duration_ms': stopwatch.elapsedMilliseconds,
+            'timeout_seconds': 30,
+          });
+          // Return mock response with 408 (Request Timeout) status
+          return http.Response('{"error": "Request timeout"}', 408);
         },
       );
 
@@ -168,6 +174,9 @@ class WeatherStationService {
           timestamp: DateTime.now(),
         );
 
+        return [];
+      } else if (response.statusCode == 408) {
+        // Request timeout (handled by timeout callback above)
         return [];
       } else {
         LoggingService.error('METAR API error: ${response.statusCode} - ${response.body}');
