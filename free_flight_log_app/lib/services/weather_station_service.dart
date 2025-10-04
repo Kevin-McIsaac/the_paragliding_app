@@ -28,11 +28,29 @@ class WeatherStationService {
     // Generate cache key from bounds
     final cacheKey = _getBoundsCacheKey(bounds);
 
-    // Check cache first
+    // Check exact cache match first
     final cached = _stationCache[cacheKey];
     if (cached != null && !cached.isExpired) {
       LoggingService.info('Weather station cache hit for $cacheKey (${cached.stations.length} stations)');
       return cached.stations;
+    }
+
+    // Check if any cached bbox contains the requested bbox (to avoid duplicate requests)
+    final containingCache = _findContainingCache(bounds);
+    if (containingCache != null) {
+      // Filter stations to only those within requested bounds
+      final filteredStations = containingCache.stations.where((station) {
+        return bounds.contains(LatLng(station.latitude, station.longitude));
+      }).toList();
+
+      LoggingService.structured('WEATHER_STATION_CACHE_SUBSET', {
+        'cache_key': cacheKey,
+        'cached_total': containingCache.stations.length,
+        'filtered_count': filteredStations.length,
+        'message': 'Using subset of larger cached area',
+      });
+
+      return filteredStations;
     }
 
     // Check if request is already pending
@@ -91,6 +109,10 @@ class WeatherStationService {
       );
 
       if (response.statusCode == 200) {
+        final networkTime = stopwatch.elapsedMilliseconds;
+
+        // Start parse timing
+        final parseStopwatch = Stopwatch()..start();
         final List<dynamic> stationList = jsonDecode(response.body) as List;
         final List<WeatherStation> stations = [];
 
@@ -105,7 +127,15 @@ class WeatherStationService {
           }
         }
 
+        parseStopwatch.stop();
         stopwatch.stop();
+
+        // Log parse performance separately
+        LoggingService.performance(
+          'METAR parsing',
+          Duration(milliseconds: parseStopwatch.elapsedMilliseconds),
+          '${stations.length} stations parsed',
+        );
 
         // Cache the results
         _stationCache[cacheKey] = _StationCacheEntry(
@@ -115,11 +145,30 @@ class WeatherStationService {
 
         LoggingService.structured('METAR_STATIONS_SUCCESS', {
           'station_count': stations.length,
-          'duration_ms': stopwatch.elapsedMilliseconds,
+          'network_ms': networkTime,
+          'parse_ms': parseStopwatch.elapsedMilliseconds,
+          'total_ms': stopwatch.elapsedMilliseconds,
           'cache_key': cacheKey,
         });
 
         return stations;
+      } else if (response.statusCode == 204) {
+        // 204 No Content - expected response when no stations exist in this region
+        stopwatch.stop();
+
+        LoggingService.structured('METAR_NO_DATA', {
+          'bbox': bbox,
+          'duration_ms': stopwatch.elapsedMilliseconds,
+          'message': 'No weather stations available in this region',
+        });
+
+        // Cache empty result to avoid repeated requests to same area
+        _stationCache[cacheKey] = _StationCacheEntry(
+          stations: [],
+          timestamp: DateTime.now(),
+        );
+
+        return [];
       } else {
         LoggingService.error('METAR API error: ${response.statusCode} - ${response.body}');
         return [];
@@ -215,6 +264,37 @@ class WeatherStationService {
     final north = (bounds.north * 10).round() / 10;
 
     return '$west,$south,$east,$north';
+  }
+
+  /// Find a cached entry whose bounds contain the requested bounds
+  /// This helps avoid duplicate API requests for similar/overlapping areas
+  _StationCacheEntry? _findContainingCache(LatLngBounds requestedBounds) {
+    for (final entry in _stationCache.entries) {
+      if (entry.value.isExpired) continue;
+
+      // Parse cached bbox from key (format: "west,south,east,north")
+      final parts = entry.key.split(',');
+      if (parts.length != 4) continue;
+
+      try {
+        final cachedWest = double.parse(parts[0]);
+        final cachedSouth = double.parse(parts[1]);
+        final cachedEast = double.parse(parts[2]);
+        final cachedNorth = double.parse(parts[3]);
+
+        // Check if cached bounds fully contain requested bounds
+        if (cachedWest <= requestedBounds.west &&
+            cachedSouth <= requestedBounds.south &&
+            cachedEast >= requestedBounds.east &&
+            cachedNorth >= requestedBounds.north) {
+          return entry.value;
+        }
+      } catch (e) {
+        // Skip malformed cache keys
+        continue;
+      }
+    }
+    return null;
   }
 
   /// Clear all caches (useful for testing or memory management)

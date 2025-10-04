@@ -1038,12 +1038,13 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
       // Handle weather stations visibility changes
       if (!weatherStationsEnabled && previousWeatherStationsEnabled) {
-        // Weather stations were disabled - clear station data
+        // Weather stations were disabled - clear station data and cache
         setState(() {
           _weatherStations.clear();
           _stationWindData.clear();
         });
-        LoggingService.action('MapFilter', 'weather_stations_disabled', {'cleared_stations': true});
+        WeatherStationService.instance.clearCache();
+        LoggingService.action('MapFilter', 'weather_stations_disabled', {'cleared_stations': true, 'cleared_cache': true});
       } else if (weatherStationsEnabled && !previousWeatherStationsEnabled) {
         // Weather stations were enabled - fetch stations if zoomed in
         final currentZoom = _mapController.camera.zoom;
