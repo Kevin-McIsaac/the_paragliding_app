@@ -91,35 +91,70 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
       _icaoClasses[icaoClass] ??= false;
     }
 
-    // Initialize controllers with selected items
+    // Initialize controllers
     _typesController = MultiSelectController<String>();
     _classesController = MultiSelectController<String>();
 
-    // Set initial selected items (those that are hidden)
+    // Update controller selections after first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final hiddenTypes = _airspaceTypes.entries
-          .where((e) => e.value)
-          .map((e) => e.key)
-          .toList();
-      final hiddenClasses = _icaoClasses.entries
-          .where((e) => e.value)
-          .map((e) => e.key)
-          .toList();
-
-      // Set initial selected items using the controller methods
-      for (final key in hiddenTypes) {
-        final index = _typeDescriptions.keys.toList().indexOf(key);
-        if (index >= 0) {
-          _typesController.selectAtIndex(index);
-        }
-      }
-      for (final key in hiddenClasses) {
-        final index = _classDescriptions.keys.toList().indexOf(key);
-        if (index >= 0) {
-          _classesController.selectAtIndex(index);
-        }
-      }
+      _updateControllerSelections();
     });
+  }
+
+  @override
+  void didUpdateWidget(MapFilterDialog oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // Update local maps if widget props changed
+    if (oldWidget.airspaceTypes != widget.airspaceTypes) {
+      _airspaceTypes = Map<String, bool>.from(widget.airspaceTypes);
+      for (final type in _typeDescriptions.keys) {
+        _airspaceTypes[type] ??= false;
+      }
+    }
+
+    if (oldWidget.icaoClasses != widget.icaoClasses) {
+      _icaoClasses = Map<String, bool>.from(widget.icaoClasses);
+      for (final icaoClass in _classDescriptions.keys) {
+        _icaoClasses[icaoClass] ??= false;
+      }
+    }
+
+    // Update controller selections if filter data changed
+    if (oldWidget.airspaceTypes != widget.airspaceTypes ||
+        oldWidget.icaoClasses != widget.icaoClasses) {
+      _updateControllerSelections();
+    }
+  }
+
+  /// Update dropdown controller selections based on current filter state
+  void _updateControllerSelections() {
+    final hiddenTypes = _airspaceTypes.entries
+        .where((e) => e.value)
+        .map((e) => e.key)
+        .toList();
+    final hiddenClasses = _icaoClasses.entries
+        .where((e) => e.value)
+        .map((e) => e.key)
+        .toList();
+
+    // Clear and reset type selections
+    _typesController.clearAll();
+    for (final key in hiddenTypes) {
+      final index = _typeDescriptions.keys.toList().indexOf(key);
+      if (index >= 0) {
+        _typesController.selectAtIndex(index);
+      }
+    }
+
+    // Clear and reset class selections
+    _classesController.clearAll();
+    for (final key in hiddenClasses) {
+      final index = _classDescriptions.keys.toList().indexOf(key);
+      if (index >= 0) {
+        _classesController.selectAtIndex(index);
+      }
+    }
   }
 
 

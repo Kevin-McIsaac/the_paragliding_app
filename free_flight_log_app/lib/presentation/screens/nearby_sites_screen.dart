@@ -990,9 +990,10 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       final previousForecastEnabled = _forecastEnabled;
       final previousWeatherStationsEnabled = _weatherStationsEnabled;
 
+      // Update non-airspace states immediately
       setState(() {
         _sitesEnabled = sitesEnabled;
-        _airspaceEnabled = airspaceEnabled;
+        // Don't update _airspaceEnabled yet - will be set after async operations complete
         _forecastEnabled = forecastEnabled;
         _weatherStationsEnabled = weatherStationsEnabled;
         _maxAltitudeFt = maxAltitudeFt;
@@ -1074,15 +1075,17 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
             IcaoClass.values.where((c) => c.abbreviation == entry.key).firstOrNull ?? IcaoClass.none: entry.value
         };
 
-        // Enable airspace and update filters
-        await _openAipService.setAirspaceEnabled(true);
+        // Update filters first, then enable airspace
         await _openAipService.setExcludedAirspaceTypes(typesEnum);
         await _openAipService.setExcludedIcaoClasses(classesEnum);
         await _openAipService.setClippingEnabled(clippingEnabled);
+        await _openAipService.setAirspaceEnabled(true);
 
-        // Update local state for immediate UI updates
+        // Update local state AFTER all async operations complete
+        // This ensures the map widget rebuilds with correct service state
         setState(() {
           _excludedIcaoClasses = classesEnum;
+          _airspaceEnabled = true;
         });
 
         if (!previousAirspaceEnabled) {
@@ -1091,6 +1094,11 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       } else if (!airspaceEnabled) {
         // Disable airspace completely
         await _openAipService.setAirspaceEnabled(false);
+
+        // Update local state AFTER async operation completes
+        setState(() {
+          _airspaceEnabled = false;
+        });
 
         // Note: We preserve _excludedIcaoClasses in memory so filters are retained
         // when airspace is re-enabled. This provides better UX for quick toggles.
