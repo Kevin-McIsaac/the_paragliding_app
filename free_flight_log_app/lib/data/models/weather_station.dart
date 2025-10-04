@@ -1,6 +1,6 @@
 import 'wind_data.dart';
 
-/// Weather station from Open-Meteo Customer API
+/// METAR weather station from aviationweather.gov
 /// Represents an actual meteorological station with location and weather data
 class WeatherStation {
   /// Unique station identifier
@@ -30,7 +30,8 @@ class WeatherStation {
     this.elevation,
   });
 
-  /// Create from Open-Meteo Customer API station-list JSON response
+  /// Create from generic JSON response (legacy compatibility)
+  /// Note: Current implementation uses direct parsing in WeatherStationService
   factory WeatherStation.fromJson(Map<String, dynamic> json) {
     return WeatherStation(
       id: json['id']?.toString() ?? json['wmo_id']?.toString() ?? 'unknown',
