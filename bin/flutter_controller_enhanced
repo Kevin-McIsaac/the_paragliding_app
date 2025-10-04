@@ -10,12 +10,19 @@ mkdir -p "$LOG_DIR" "$SCREENSHOT_DIR"
 
 PIPE="$LOG_DIR/flutter_cmd"
 LOG_FILE="$LOG_DIR/flutter_output.log"
+RAW_LOG_FILE="$LOG_DIR/flutter_raw.log"
+ERROR_LOG_FILE="$LOG_DIR/flutter_errors.log"
 PID_FILE="$LOG_DIR/flutter.pid"
 STATUS_FILE="$LOG_DIR/flutter_status"
 WORKDIR_FILE="$LOG_DIR/flutter_workdir"
+FILTER_LEVEL_FILE="$LOG_DIR/filter_level"
 MAX_LOG_SIZE=10485760  # 10MB
 READINESS_TIMEOUT=30   # seconds
 PIPE_CHECK_TIMEOUT=5   # seconds
+MAX_ERRORS_BUFFER=100  # Maximum errors to keep in buffer
+
+# Default filter level (ALL, DEBUG, INFO, WARN, ERROR)
+DEFAULT_FILTER_LEVEL="INFO"
 
 # Utility functions
 log_message() {
