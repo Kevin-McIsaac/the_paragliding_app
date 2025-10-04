@@ -441,38 +441,6 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
       items.add(const UserLocationLegendItem());
     }
 
-    // Weather stations legend
-    if (widget.weatherStationsEnabled) {
-      items.add(const SizedBox(height: 4));
-      items.add(const Padding(
-        padding: EdgeInsets.only(bottom: 2.0),
-        child: Text(
-          'Weather',
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-            fontSize: 11,
-            color: Colors.white60,
-            letterSpacing: 0.5,
-          ),
-        ),
-      ));
-      items.add(SiteMarkerUtils.buildLegendItem(
-        context,
-        null,
-        Colors.green,
-        'Station (good)',
-        isCircle: true,
-      ));
-      items.add(const SizedBox(height: 2));
-      items.add(SiteMarkerUtils.buildLegendItem(
-        context,
-        null,
-        Colors.red,
-        'Station (strong)',
-        isCircle: true,
-      ));
-    }
-
     return items;
   }
 
