@@ -25,6 +25,7 @@ class NearbySitesMap extends BaseMapWidget {
   final List<ParaglidingSite> sites;
   final bool airspaceEnabled;
   final double maxAltitudeFt;
+  final bool airspaceClippingEnabled;
   final Function(ParaglidingSite)? onSiteSelected;
   final VoidCallback? onLocationRequest;
   final bool showUserLocation;
@@ -46,6 +47,7 @@ class NearbySitesMap extends BaseMapWidget {
     this.sites = const [],
     this.airspaceEnabled = false,
     this.maxAltitudeFt = 10000.0,
+    this.airspaceClippingEnabled = true,
     this.onSiteSelected,
     this.onLocationRequest,
     this.showUserLocation = true,
@@ -148,6 +150,12 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
           // Clear airspace layers when disabled
         });
       }
+    }
+    // Reload airspace when settings change (affects clipping and filtering)
+    else if (widget.airspaceEnabled &&
+             (oldWidget.maxAltitudeFt != widget.maxAltitudeFt ||
+              oldWidget.airspaceClippingEnabled != widget.airspaceClippingEnabled)) {
+      loadAirspaceLayers(mapController.camera.visibleBounds);
     }
 
     // Clear weather station marker cache when any weather station parameter changes

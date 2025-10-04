@@ -88,6 +88,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   bool _weatherStationsEnabled = true; // Controls weather station loading and display (default: enabled)
   bool _hasActiveFilters = false; // Cached value to avoid FutureBuilder rebuilds
   double _maxAltitudeFt = 10000.0; // Default altitude filter
+  bool _airspaceClippingEnabled = true; // Default clipping enabled
   Map<IcaoClass, bool> _excludedIcaoClasses = {}; // Current ICAO class filter state
   final OpenAipService _openAipService = OpenAipService.instance;
 
@@ -191,9 +192,11 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   Future<void> _loadFilterSettings() async {
     try {
       final icaoClasses = await _openAipService.getExcludedIcaoClasses();
+      final clippingEnabled = await _openAipService.isClippingEnabled();
       if (mounted) {
         setState(() {
           _excludedIcaoClasses = icaoClasses;
+          _airspaceClippingEnabled = clippingEnabled;
         });
       }
     } catch (e) {
@@ -990,6 +993,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       final previousForecastEnabled = _forecastEnabled;
       final previousWeatherStationsEnabled = _weatherStationsEnabled;
 
+      // Get previous clipping state to detect changes
+      final previousClippingEnabled = await _openAipService.isClippingEnabled();
+
       // Update non-airspace states immediately
       setState(() {
         _sitesEnabled = sitesEnabled;
@@ -1086,6 +1092,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         setState(() {
           _excludedIcaoClasses = classesEnum;
           _airspaceEnabled = true;
+          _airspaceClippingEnabled = clippingEnabled;
         });
 
         if (!previousAirspaceEnabled) {
@@ -1257,6 +1264,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                               : null,
                           airspaceEnabled: _airspaceEnabled,
                           maxAltitudeFt: _maxAltitudeFt,
+                          airspaceClippingEnabled: _airspaceClippingEnabled,
                           onSiteSelected: _onSiteSelected,
                           onLocationRequest: _onRefreshLocation,
                           siteWindData: _siteWindData,
