@@ -1325,21 +1325,30 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                       ],
                     ),
 
-          // Wind loading overlay
-          if (_isWindLoading)
-            MapLoadingOverlay.single(
-              label: 'Loading wind forecast',
-              icon: Icons.air,
-              iconColor: Colors.lightBlue,
-              count: _displayedSites.length,
-            ),
-
-          // Weather stations loading overlay
-          if (_isStationsLoading)
-            MapLoadingOverlay.single(
-              label: 'Loading weather stations',
-              icon: Icons.cloud,
-              iconColor: Colors.orange,
+          // Combined loading overlay for sites, wind, and weather stations
+          if (MapBoundsManager.instance.isLoading('nearby_sites') || _isWindLoading || _isStationsLoading)
+            MapLoadingOverlay.multiple(
+              items: [
+                if (MapBoundsManager.instance.isLoading('nearby_sites'))
+                  const MapLoadingItem(
+                    label: 'Sites',
+                    icon: Icons.place,
+                    iconColor: Colors.blue,
+                  ),
+                if (_isWindLoading)
+                  MapLoadingItem(
+                    label: 'Wind forecast',
+                    icon: Icons.air,
+                    iconColor: Colors.lightBlue,
+                    count: _displayedSites.length,
+                  ),
+                if (_isStationsLoading)
+                  const MapLoadingItem(
+                    label: 'Weather stations',
+                    icon: Icons.cloud,
+                    iconColor: Colors.orange,
+                  ),
+              ],
             ),
 
           // Search dropdown overlay
