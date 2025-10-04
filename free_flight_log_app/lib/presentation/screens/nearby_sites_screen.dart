@@ -395,10 +395,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           'zoom_level': currentZoom,
         });
 
-        // Fetch weather data for stations
+        // Fetch weather data for stations (METAR always returns current data)
         final weatherData = await _weatherStationService.getWeatherForStations(
           stations,
-          _selectedDateTime,
         );
 
         if (mounted) {

@@ -230,9 +230,9 @@ class WeatherStationService {
 
   /// Get weather data for a list of stations
   /// Since METAR data comes with wind embedded, this just extracts it
+  /// Note: METAR always returns current real-time data, no historical queries
   Future<Map<String, WindData>> getWeatherForStations(
     List<WeatherStation> stations,
-    DateTime dateTime, // Ignored for METAR - always uses current data
   ) async {
     if (stations.isEmpty) return {};
 
