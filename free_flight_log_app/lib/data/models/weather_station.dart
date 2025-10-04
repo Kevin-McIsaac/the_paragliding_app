@@ -30,18 +30,6 @@ class WeatherStation {
     this.elevation,
   });
 
-  /// Create from generic JSON response (legacy compatibility)
-  /// Note: Current implementation uses direct parsing in WeatherStationService
-  factory WeatherStation.fromJson(Map<String, dynamic> json) {
-    return WeatherStation(
-      id: json['id']?.toString() ?? json['wmo_id']?.toString() ?? 'unknown',
-      name: json['name'] as String?,
-      latitude: (json['latitude'] ?? json['lat'] as num).toDouble(),
-      longitude: (json['longitude'] ?? json['lon'] as num).toDouble(),
-      elevation: json['elevation'] != null ? (json['elevation'] as num).toDouble() : null,
-    );
-  }
-
   /// Create a copy with updated wind data
   WeatherStation copyWith({WindData? windData}) {
     return WeatherStation(
