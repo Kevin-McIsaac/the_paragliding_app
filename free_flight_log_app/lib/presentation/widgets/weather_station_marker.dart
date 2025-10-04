@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import '../../data/models/weather_station.dart';
 import '../../data/models/wind_data.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Weather station marker showing wind direction and speed with barbed arrow
 class WeatherStationMarker extends StatelessWidget {
@@ -219,140 +220,136 @@ class _WeatherStationDialog extends StatelessWidget {
       backgroundColor: const Color(0xFF1E1E1E),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 280),
+        constraints: const BoxConstraints(maxWidth: 350),
         child: Padding(
-          padding: const EdgeInsets.all(12.0),
+          padding: const EdgeInsets.all(16.0),
           child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Compact header with station name and close button
-            Row(
-              children: [
-                const Icon(Icons.cloud, color: Colors.blue, size: 20),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    '${station.name ?? station.id} (${station.id})',
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white70, size: 18),
-                  onPressed: () => Navigator.of(context).pop(),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-
-            // Wind data - prominent display with barb graphic
-            if (windData != null) ...[
-              // Wind barb graphic and speed/direction
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Header: Station name and close button
               Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Wind barb visualization
-                  SizedBox(
-                    width: 60,
-                    height: 60,
-                    child: CustomPaint(
-                      painter: _WeatherStationPainter(
-                        windData: windData,
-                        color: _isWindGood ? Colors.green : Colors.red,
+                  Expanded(
+                    child: Text(
+                      '${station.name ?? station.id} (${station.id})',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white70,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  // Wind info
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Speed range with status indicator
-                        Row(
-                          children: [
-                            Text(
-                              '${windData.speedKmh.toStringAsFixed(0)}-${windData.gustsKmh.toStringAsFixed(0)} km/h',
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Icon(
-                              _isWindGood ? Icons.check_circle : Icons.warning,
-                              color: _isWindGood ? Colors.green : Colors.red,
-                              size: 18,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'from ${windData.compassDirection} (${windData.directionDegrees.toStringAsFixed(0)}°)',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: Colors.white70,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _getTimeAgo(windData.timestamp),
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Colors.white54,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        // Location and elevation on same line with icons
-                        Row(
-                          children: [
-                            const Icon(Icons.location_on, size: 12, color: Colors.white54),
-                            const SizedBox(width: 3),
-                            Text(
-                              '${station.latitude.toStringAsFixed(2)}°, ${station.longitude.toStringAsFixed(2)}°',
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: Colors.white54,
-                              ),
-                            ),
-                            if (station.elevation != null) ...[
-                              const SizedBox(width: 8),
-                              const Icon(Icons.terrain, size: 12, color: Colors.white54),
-                              const SizedBox(width: 3),
-                              Text(
-                                '${station.elevation!.toStringAsFixed(0)}m',
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.white54,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ],
-                    ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 18, color: Colors.white70),
+                    onPressed: () => Navigator.of(context).pop(),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
-            ] else ...[
-              const Text(
-                'No wind data available',
-                style: TextStyle(color: Colors.white54, fontSize: 13),
+              const SizedBox(height: 12),
+
+              // Wind data section
+              if (windData != null) ...[
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Wind barb
+                      SizedBox(
+                        width: 50,
+                        child: CustomPaint(
+                          painter: _WeatherStationPainter(
+                            windData: windData,
+                            color: _isWindGood ? Colors.green : Colors.red,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // Wind info
+                      Expanded(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.start,
+                          children: [
+                            // Wind speed and direction
+                            Text(
+                              '${windData.speedKmh.toStringAsFixed(0)}-${windData.gustsKmh.toStringAsFixed(0)} km/h from ${windData.compassDirection} (${windData.directionDegrees.toStringAsFixed(0)}°)',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.white70,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            // Time, location, elevation
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
+                                _buildInfoChip(Icons.access_time, _getTimeAgo(windData.timestamp)),
+                                _buildInfoChip(Icons.location_on, '${station.latitude.toStringAsFixed(2)}°, ${station.longitude.toStringAsFixed(2)}°'),
+                                if (station.elevation != null)
+                                  _buildInfoChip(Icons.terrain, '${station.elevation!.toStringAsFixed(0)}m'),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else ...[
+                const Text(
+                  'No wind data available',
+                  style: TextStyle(color: Colors.white54, fontSize: 13),
+                ),
+              ],
+              const SizedBox(height: 12),
+              // Attribution
+              TextButton(
+                onPressed: () async {
+                  await launchUrl(
+                    Uri.parse('https://aviationweather.gov/'),
+                    mode: LaunchMode.externalApplication,
+                  );
+                },
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text(
+                  'Data: Aviation Weather Center',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.white38,
+                  ),
+                ),
               ),
-              const SizedBox(height: 10),
             ],
-          ],
+          ),
         ),
       ),
-      ),
+    );
+  }
+
+  Widget _buildInfoChip(IconData icon, String text) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12, color: Colors.white54),
+        const SizedBox(width: 3),
+        Text(
+          text,
+          style: const TextStyle(
+            fontSize: 11,
+            color: Colors.white54,
+          ),
+        ),
+      ],
     );
   }
 }
