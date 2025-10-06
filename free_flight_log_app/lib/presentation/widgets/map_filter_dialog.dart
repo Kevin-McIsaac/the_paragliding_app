@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../services/logging_service.dart';
 import '../../data/models/airspace_enums.dart';
+import '../../data/models/weather_station_source.dart';
+import '../../services/weather_providers/weather_station_provider_registry.dart';
 import 'package:multi_dropdown/multi_dropdown.dart';
 
 /// Filter dialog for controlling map layer visibility
@@ -11,11 +13,24 @@ class MapFilterDialog extends StatefulWidget {
   final bool airspaceEnabled;
   final bool forecastEnabled;
   final bool weatherStationsEnabled;
+  final bool metarEnabled;
+  final bool nwsEnabled;
   final Map<String, bool> airspaceTypes;
   final Map<String, bool> icaoClasses;
   final double maxAltitudeFt;
   final bool clippingEnabled;
-  final Function(bool sitesEnabled, bool airspaceEnabled, bool forecastEnabled, bool weatherStationsEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) onApply;
+  final Function(
+    bool sitesEnabled,
+    bool airspaceEnabled,
+    bool forecastEnabled,
+    bool weatherStationsEnabled,
+    bool metarEnabled,
+    bool nwsEnabled,
+    Map<String, bool> types,
+    Map<String, bool> classes,
+    double maxAltitudeFt,
+    bool clippingEnabled,
+  ) onApply;
 
   const MapFilterDialog({
     super.key,
@@ -23,6 +38,8 @@ class MapFilterDialog extends StatefulWidget {
     required this.airspaceEnabled,
     required this.forecastEnabled,
     required this.weatherStationsEnabled,
+    required this.metarEnabled,
+    required this.nwsEnabled,
     required this.airspaceTypes,
     required this.icaoClasses,
     required this.maxAltitudeFt,
@@ -39,6 +56,8 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
   late bool _airspaceEnabled;
   late bool _forecastEnabled;
   late bool _weatherStationsEnabled;
+  late bool _metarEnabled;
+  late bool _nwsEnabled;
   late Map<String, bool> _airspaceTypes;
   late Map<String, bool> _icaoClasses;
   late double _maxAltitudeFt;
@@ -78,6 +97,8 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
     _airspaceEnabled = widget.airspaceEnabled;
     _forecastEnabled = widget.forecastEnabled;
     _weatherStationsEnabled = widget.weatherStationsEnabled;
+    _metarEnabled = widget.metarEnabled;
+    _nwsEnabled = widget.nwsEnabled;
     _airspaceTypes = Map<String, bool>.from(widget.airspaceTypes);
     _icaoClasses = Map<String, bool>.from(widget.icaoClasses);
     _maxAltitudeFt = widget.maxAltitudeFt;
@@ -440,6 +461,39 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
             ),
           ],
         ),
+        // Weather provider checkboxes (indented, only visible when stations enabled)
+        if (_weatherStationsEnabled) ...[
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(left: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // METAR provider
+                _buildProviderCheckbox(
+                  value: _metarEnabled,
+                  label: 'METAR (Aviation)',
+                  subtitle: WeatherStationProviderRegistry.getProvider(WeatherStationSource.metar).description,
+                  onChanged: (value) => setState(() {
+                    _metarEnabled = value ?? true;
+                    _applyFiltersDebounced();
+                  }),
+                ),
+                const SizedBox(height: 2),
+                // NWS provider (US only)
+                _buildProviderCheckbox(
+                  value: _nwsEnabled,
+                  label: 'NWS (US only)',
+                  subtitle: WeatherStationProviderRegistry.getProvider(WeatherStationSource.nws).description,
+                  onChanged: (value) => setState(() {
+                    _nwsEnabled = value ?? true;
+                    _applyFiltersDebounced();
+                  }),
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 8),
         // Row 3: Airspace, Clip
         Row(
@@ -932,7 +986,58 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
       'clipping_enabled': _clippingEnabled,
     });
 
-    widget.onApply(_sitesEnabled, _airspaceEnabled, _forecastEnabled, _weatherStationsEnabled, _airspaceTypes, _icaoClasses, _maxAltitudeFt, _clippingEnabled);
+    widget.onApply(_sitesEnabled, _airspaceEnabled, _forecastEnabled, _weatherStationsEnabled, _metarEnabled, _nwsEnabled, _airspaceTypes, _icaoClasses, _maxAltitudeFt, _clippingEnabled);
   }
+
+  /// Build a provider checkbox widget
+  Widget _buildProviderCheckbox({
+    required bool value,
+    required String label,
+    required String subtitle,
+    required ValueChanged<bool?> onChanged,
+  }) {
+    return InkWell(
+      onTap: () => onChanged(!value),
+      borderRadius: BorderRadius.circular(4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: Checkbox(
+                value: value,
+                onChanged: onChanged,
+                activeColor: Colors.blue,
+                checkColor: Colors.white,
+                side: const BorderSide(color: Colors.white54),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(color: Colors.white, fontSize: 11),
+                  ),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(color: Colors.white54, fontSize: 9),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
 }
 

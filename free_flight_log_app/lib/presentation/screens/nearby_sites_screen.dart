@@ -12,6 +12,7 @@ import '../../data/models/airspace_enums.dart';
 import '../../data/models/wind_data.dart';
 import '../../data/models/flyability_status.dart';
 import '../../data/models/weather_station.dart';
+import '../../data/models/weather_station_source.dart';
 import '../models/site_marker_presentation.dart';
 import '../../services/location_service.dart';
 import '../../services/paragliding_earth_api.dart';
@@ -54,7 +55,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   bool _isLocationLoading = false;
   String? _errorMessage;
   LatLng? _mapCenterPosition;
-  final double _mapZoom = 10.0; // Dynamic zoom level for map
+  bool _mapReady = false; // Track if map is initialized
+  double _currentZoom = 10.0; // Current zoom level (updated reactively)
   
   // Key to force map widget refresh when airspace settings change
   final Key _mapWidgetKey = UniqueKey();
@@ -65,7 +67,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   static const String _airspaceEnabledKey = 'nearby_sites_airspace_enabled';
   static const String _forecastEnabledKey = 'nearby_sites_forecast_enabled';
   static const String _weatherStationsEnabledKey = 'nearby_sites_weather_stations_enabled';
-  
+
   // Bounds-based loading state using MapBoundsManager
   LatLngBounds? _currentBounds;
   
@@ -86,6 +88,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   bool _airspaceEnabled = true; // Controls airspace loading and display
   bool _forecastEnabled = true; // Controls wind forecast fetching and display
   bool _weatherStationsEnabled = true; // Controls weather station loading and display (default: enabled)
+  bool _metarEnabled = true; // METAR provider enabled (default: true)
+  bool _nwsEnabled = true; // NWS provider enabled (default: true, free/no API key)
   bool _hasActiveFilters = false; // Cached value to avoid FutureBuilder rebuilds
   double _maxAltitudeFt = 10000.0; // Default altitude filter
   bool _airspaceClippingEnabled = true; // Default clipping enabled
@@ -167,6 +171,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       final airspaceEnabled = prefs.getBool(_airspaceEnabledKey) ?? true;
       final forecastEnabled = prefs.getBool(_forecastEnabledKey) ?? true;
       final weatherStationsEnabled = prefs.getBool(_weatherStationsEnabledKey) ?? true;
+      final metarEnabled = prefs.getBool('weather_provider_${WeatherStationSource.metar.name}_enabled') ?? true;
+      final nwsEnabled = prefs.getBool('weather_provider_${WeatherStationSource.nws.name}_enabled') ?? true;
 
       // Map provider loaded from preferences if needed
       if (savedProviderName != null) {
@@ -182,6 +188,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           _airspaceEnabled = airspaceEnabled;
           _forecastEnabled = forecastEnabled;
           _weatherStationsEnabled = weatherStationsEnabled;
+          _metarEnabled = metarEnabled;
+          _nwsEnabled = nwsEnabled;
         });
       }
     } catch (e) {
@@ -811,6 +819,14 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     final currentZoom = _mapController.camera.zoom;
     LoggingService.debug('_onBoundsChanged called: zoom=$currentZoom');
 
+    // Update zoom overlay in real-time (also set map ready on first call)
+    if (!_mapReady || _currentZoom != currentZoom) {
+      setState(() {
+        _mapReady = true;
+        _currentZoom = currentZoom;
+      });
+    }
+
     // Check if bounds have changed significantly using MapBoundsManager
     final boundsChangedSignificantly = MapBoundsManager.instance.haveBoundsChangedSignificantly('nearby_sites', bounds, _currentBounds);
 
@@ -968,6 +984,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           airspaceEnabled: _airspaceEnabled,
           forecastEnabled: _forecastEnabled,
           weatherStationsEnabled: _weatherStationsEnabled,
+          metarEnabled: _metarEnabled,
+          nwsEnabled: _nwsEnabled,
           airspaceTypes: airspaceTypes,
           icaoClasses: icaoClasses,
           maxAltitudeFt: _maxAltitudeFt,
@@ -999,7 +1017,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   }
 
   /// Handle filter apply from dialog
-  void _handleFilterApply(bool sitesEnabled, bool airspaceEnabled, bool forecastEnabled, bool weatherStationsEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) async {
+  void _handleFilterApply(bool sitesEnabled, bool airspaceEnabled, bool forecastEnabled, bool weatherStationsEnabled, bool metarEnabled, bool nwsEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) async {
     try {
       // Update filter states
       final previousSitesEnabled = _sitesEnabled;
@@ -1013,6 +1031,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         // Don't update _airspaceEnabled yet - will be set after async operations complete
         _forecastEnabled = forecastEnabled;
         _weatherStationsEnabled = weatherStationsEnabled;
+        _metarEnabled = metarEnabled;
+        _nwsEnabled = nwsEnabled;
         _maxAltitudeFt = maxAltitudeFt;
       });
 
@@ -1022,6 +1042,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       await prefs.setBool(_airspaceEnabledKey, airspaceEnabled);
       await prefs.setBool(_forecastEnabledKey, forecastEnabled);
       await prefs.setBool(_weatherStationsEnabledKey, weatherStationsEnabled);
+      await prefs.setBool('weather_provider_${WeatherStationSource.metar.name}_enabled', metarEnabled);
+      await prefs.setBool('weather_provider_${WeatherStationSource.nws.name}_enabled', nwsEnabled);
 
       // Handle sites visibility changes
       if (!sitesEnabled && previousSitesEnabled) {
@@ -1328,7 +1350,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                           showUserLocation: true,
                           isLocationLoading: _isLocationLoading,
                           initialCenter: _mapCenterPosition,
-                          initialZoom: _mapZoom,
+                          initialZoom: _currentZoom,
                         ),
 
                         // Search results overlay - below AppBar
@@ -1413,6 +1435,28 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                     iconColor: Colors.orange,
                   ),
               ],
+            ),
+
+          // Zoom level indicator overlay (bottom-left) - only show when map is ready
+          if (_mapReady)
+            Positioned(
+              bottom: 20,
+              left: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  'Z${_currentZoom.toStringAsFixed(1)}',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 11,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
             ),
 
           // Search dropdown overlay
@@ -2848,17 +2892,32 @@ class _DraggableFilterDialog extends StatefulWidget {
   final bool airspaceEnabled;
   final bool forecastEnabled;
   final bool weatherStationsEnabled;
+  final bool metarEnabled;
+  final bool nwsEnabled;
   final Map<String, bool> airspaceTypes;
   final Map<String, bool> icaoClasses;
   final double maxAltitudeFt;
   final bool clippingEnabled;
-  final Function(bool sitesEnabled, bool airspaceEnabled, bool forecastEnabled, bool weatherStationsEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) onApply;
+  final Function(
+    bool sitesEnabled,
+    bool airspaceEnabled,
+    bool forecastEnabled,
+    bool weatherStationsEnabled,
+    bool metarEnabled,
+    bool nwsEnabled,
+    Map<String, bool> types,
+    Map<String, bool> classes,
+    double maxAltitudeFt,
+    bool clippingEnabled,
+  ) onApply;
 
   const _DraggableFilterDialog({
     required this.sitesEnabled,
     required this.airspaceEnabled,
     required this.forecastEnabled,
     required this.weatherStationsEnabled,
+    required this.metarEnabled,
+    required this.nwsEnabled,
     required this.airspaceTypes,
     required this.icaoClasses,
     required this.maxAltitudeFt,
@@ -2900,6 +2959,8 @@ class _DraggableFilterDialogState extends State<_DraggableFilterDialog> {
                 airspaceEnabled: widget.airspaceEnabled,
                 forecastEnabled: widget.forecastEnabled,
                 weatherStationsEnabled: widget.weatherStationsEnabled,
+                metarEnabled: widget.metarEnabled,
+                nwsEnabled: widget.nwsEnabled,
                 airspaceTypes: widget.airspaceTypes,
                 icaoClasses: widget.icaoClasses,
                 maxAltitudeFt: widget.maxAltitudeFt,

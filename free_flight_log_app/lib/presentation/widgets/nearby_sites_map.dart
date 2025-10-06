@@ -114,6 +114,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
   @override
   void onMapReady() {
     super.onMapReady();
+
     // Notify parent of initial bounds
     if (widget.onBoundsChanged != null) {
       final bounds = mapController.camera.visibleBounds;
@@ -403,8 +404,8 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
 
     // Build new markers and cache them
     final markers = widget.weatherStations.map((station) {
-      // Get wind data for this station
-      final windData = widget.stationWindData[station.id];
+      // Get wind data for this station using the unique key (source:id)
+      final windData = widget.stationWindData[station.key];
 
       // Create station with wind data
       final stationWithWind = station.copyWith(windData: windData);

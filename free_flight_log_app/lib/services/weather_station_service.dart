@@ -1,430 +1,335 @@
 import 'dart:async';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../data/models/weather_station.dart';
+import '../data/models/weather_station_source.dart';
 import '../data/models/wind_data.dart';
-import '../utils/map_constants.dart';
 import 'logging_service.dart';
+import 'weather_providers/weather_station_provider.dart';
+import 'weather_providers/weather_station_provider_registry.dart';
 
-/// Service for fetching METAR weather stations from aviationweather.gov
-/// Provides actual meteorological stations with real-time wind data
+/// Orchestrator service for weather station data from multiple providers
+/// Manages METAR, NOAA CDO, and potentially other providers
+/// Handles deduplication, caching, and parallel fetching
 class WeatherStationService {
   static final WeatherStationService instance = WeatherStationService._();
   WeatherStationService._();
 
-  /// Conversion factor: knots to km/h
-  static const double knotsToKmh = 1.852;
 
-  /// Cache for station lists: "bbox_key" -> {stations, timestamp}
-  final Map<String, _StationCacheEntry> _stationCache = {};
+  /// Distance threshold for considering stations as duplicates (meters)
+  static const double _deduplicationDistanceMeters = 100.0;
 
-  /// Cache for pending station list requests to prevent duplicate API calls
-  final Map<String, Future<List<WeatherStation>>> _pendingStationRequests = {};
-
-  /// Get weather stations in a bounding box
+  /// Get weather stations in a bounding box from all enabled providers
+  /// Fetches in parallel, then deduplicates and returns combined results
   Future<List<WeatherStation>> getStationsInBounds(LatLngBounds bounds) async {
-    // Generate cache key from bounds
-    final cacheKey = _getBoundsCacheKey(bounds);
-
-    // Check exact cache match first
-    final cached = _stationCache[cacheKey];
-    if (cached != null && !cached.isExpired) {
-      LoggingService.info('Weather station cache hit for $cacheKey (${cached.stations.length} stations)');
-      return cached.stations;
-    }
-
-    // Check if any cached bbox contains the requested bbox (to avoid duplicate requests)
-    final containingCache = _findContainingCache(bounds);
-    if (containingCache != null) {
-      // Filter stations to only those within requested bounds
-      final filteredStations = containingCache.stations.where((station) {
-        return bounds.contains(LatLng(station.latitude, station.longitude));
-      }).toList();
-
-      LoggingService.structured('WEATHER_STATION_CACHE_SUBSET', {
-        'cache_key': cacheKey,
-        'cached_total': containingCache.stations.length,
-        'filtered_count': filteredStations.length,
-        'message': 'Using subset of larger cached area',
-      });
-
-      return filteredStations;
-    }
-
-    // Check if request is already pending
-    if (_pendingStationRequests.containsKey(cacheKey)) {
-      LoggingService.info('Waiting for pending station request: $cacheKey');
-      return _pendingStationRequests[cacheKey]!;
-    }
-
-    // Create new request
-    final future = _fetchStationsInBounds(bounds, cacheKey);
-    _pendingStationRequests[cacheKey] = future;
-
-    try {
-      final result = await future;
-      return result;
-    } finally {
-      _pendingStationRequests.remove(cacheKey);
-    }
-  }
-
-  /// Fetch METAR stations from aviationweather.gov
-  /// Returns stations with embedded wind data
-  Future<List<WeatherStation>> _fetchStationsInBounds(
-    LatLngBounds bounds,
-    String cacheKey,
-  ) async {
     try {
       final stopwatch = Stopwatch()..start();
 
-      // Build bbox string: minLat,minLon,maxLat,maxLon
-      final bbox = '${bounds.south.toStringAsFixed(2)},${bounds.west.toStringAsFixed(2)},'
-                   '${bounds.north.toStringAsFixed(2)},${bounds.east.toStringAsFixed(2)}';
+      // Get enabled providers
+      final enabledProviders = await _getEnabledProviders();
 
-      // Build METAR API URL
-      final url = Uri.parse(
-        'https://aviationweather.gov/api/data/metar?bbox=$bbox&format=json',
-      );
+      if (enabledProviders.isEmpty) {
+        LoggingService.info('No weather station providers enabled');
+        return [];
+      }
 
-      LoggingService.structured('METAR_REQUEST_START', {
-        'bbox': bbox,
-        'url': url.toString(),
-        'cache_key': cacheKey,
+      LoggingService.structured('WEATHER_STATION_FETCH_START', {
+        'enabled_providers': enabledProviders.map((p) => p.source.name).toList(),
+        'bounds': '${bounds.south},${bounds.west},${bounds.north},${bounds.east}',
       });
 
-      // Make API request with appropriate headers
-      final response = await http.get(
-        url,
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'FreeFlightLog/1.0',
-        },
-      ).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          stopwatch.stop();
-          final region = _identifyRegion(bounds);
-          final estimatedStations = _estimateStationsInBounds(bounds);
-          LoggingService.structured('METAR_TIMEOUT', {
-            'bbox': bbox,
-            'url': url.toString(),
-            'duration_ms': stopwatch.elapsedMilliseconds,
-            'timeout_seconds': 30,
-            'region': region,
-            'estimated_affected_stations': estimatedStations,
-            'message': 'HTTP request timed out waiting for response',
-          });
-          // Return mock response with 408 (Request Timeout) status
-          return http.Response('{"error": "Request timeout"}', 408);
-        },
-      );
+      // Fetch from all enabled providers in parallel
+      final futures = enabledProviders.map((provider) async {
+        try {
+          final stations = await provider.fetchStations(bounds);
+          LoggingService.info('${provider.displayName}: fetched ${stations.length} stations');
+          return stations;
+        } catch (e, stackTrace) {
+          LoggingService.error('${provider.displayName}: fetch failed', e, stackTrace);
+          return <WeatherStation>[];
+        }
+      });
+
+      final results = await Future.wait(futures);
+
+      // Combine all results
+      final allStations = results.expand((list) => list).toList();
 
       stopwatch.stop();
 
-      // Log response details
-      LoggingService.structured('METAR_RESPONSE_RECEIVED', {
-        'status_code': response.statusCode,
-        'duration_ms': stopwatch.elapsedMilliseconds,
-        'content_length': response.body.length,
-        'bbox': bbox,
+      LoggingService.structured('WEATHER_STATION_FETCH_COMPLETE', {
+        'total_stations_before_dedup': allStations.length,
+        'fetch_time_ms': stopwatch.elapsedMilliseconds,
+        'by_provider': {
+          for (var i = 0; i < enabledProviders.length; i++)
+            enabledProviders[i].source.name: results[i].length,
+        },
       });
 
-      if (response.statusCode == 200) {
-        final networkTime = stopwatch.elapsedMilliseconds;
+      // Deduplicate stations
+      final dedupStopwatch = Stopwatch()..start();
+      final deduplicatedStations = _deduplicateStations(allStations);
+      dedupStopwatch.stop();
 
-        // Start parse timing
-        final parseStopwatch = Stopwatch()..start();
-        final List<dynamic> stationList = jsonDecode(response.body) as List;
-        final List<WeatherStation> stations = [];
+      LoggingService.performance(
+        'Station deduplication',
+        Duration(milliseconds: dedupStopwatch.elapsedMilliseconds),
+        '${allStations.length} → ${deduplicatedStations.length} stations',
+      );
 
-        for (final stationJson in stationList) {
-          try {
-            final station = _parseMetarStation(stationJson as Map<String, dynamic>);
-            if (station != null) {
-              stations.add(station);
-            }
-          } catch (e) {
-            LoggingService.error('Failed to parse METAR station', e);
-          }
-        }
-
-        parseStopwatch.stop();
-
-        // Log parse performance separately
-        LoggingService.performance(
-          'METAR parsing',
-          Duration(milliseconds: parseStopwatch.elapsedMilliseconds),
-          '${stations.length} stations parsed',
-        );
-
-        // Cache the results
-        _stationCache[cacheKey] = _StationCacheEntry(
-          stations: stations,
-          timestamp: DateTime.now(),
-        );
-
-        LoggingService.structured('METAR_STATIONS_SUCCESS', {
-          'station_count': stations.length,
-          'network_ms': networkTime,
-          'parse_ms': parseStopwatch.elapsedMilliseconds,
-          'total_ms': stopwatch.elapsedMilliseconds,
-          'cache_key': cacheKey,
-        });
-
-        return stations;
-      } else if (response.statusCode == 204) {
-        // 204 No Content - expected response when no stations exist in this region
-        LoggingService.structured('METAR_NO_DATA', {
-          'bbox': bbox,
-          'duration_ms': stopwatch.elapsedMilliseconds,
-          'message': 'No weather stations available in this region',
-        });
-
-        // Cache empty result to avoid repeated requests to same area
-        _stationCache[cacheKey] = _StationCacheEntry(
-          stations: [],
-          timestamp: DateTime.now(),
-        );
-
-        return [];
-      } else if (response.statusCode == 408) {
-        // Request timeout (handled by timeout callback above)
-        return [];
-      } else {
-        // Log detailed error information
-        LoggingService.structured('METAR_HTTP_ERROR', {
-          'status_code': response.statusCode,
-          'bbox': bbox,
-          'response_body': response.body.substring(0, response.body.length > 500 ? 500 : response.body.length),
-          'duration_ms': stopwatch.elapsedMilliseconds,
-        });
-        return [];
-      }
+      return deduplicatedStations;
     } catch (e, stackTrace) {
-      // Detailed error logging with exception type
-      LoggingService.structured('METAR_REQUEST_FAILED', {
-        'error_type': e.runtimeType.toString(),
-        'error_message': e.toString(),
-        'bbox': '${bounds.south.toStringAsFixed(2)},${bounds.west.toStringAsFixed(2)},${bounds.north.toStringAsFixed(2)},${bounds.east.toStringAsFixed(2)}',
-        'cache_key': cacheKey,
-      });
-      LoggingService.error('Failed to fetch METAR stations', e, stackTrace);
+      LoggingService.error('Failed to fetch weather stations', e, stackTrace);
       return [];
     }
   }
 
-  /// Parse a METAR station JSON object into a WeatherStation
-  WeatherStation? _parseMetarStation(Map<String, dynamic> json) {
-    try {
-      final icaoId = json['icaoId'] as String?;
-      final lat = json['lat'] as num?;
-      final lon = json['lon'] as num?;
-
-      if (icaoId == null || lat == null || lon == null) {
-        return null; // Skip stations without required fields
-      }
-
-      // Extract wind data
-      WindData? windData;
-      final wdir = json['wdir'] as int?;
-      final wspd = json['wspd'] as int?;
-      final wgst = json['wgst'] as int?; // Wind gusts (optional)
-      final reportTime = json['reportTime'] as String?;
-
-      if (wdir != null && wspd != null) {
-        // Convert wind speed from knots to km/h
-        final windSpeedKmh = wspd * knotsToKmh;
-
-        // Convert gusts only if actually reported (null = no gust data)
-        final windGustsKmh = wgst != null ? wgst * knotsToKmh : null;
-
-        windData = WindData(
-          speedKmh: windSpeedKmh,
-          directionDegrees: wdir.toDouble(),
-          gustsKmh: windGustsKmh,
-          timestamp: reportTime != null
-              ? DateTime.parse(reportTime)
-              : DateTime.now(),
-        );
-      }
-
-      return WeatherStation(
-        id: icaoId,
-        name: json['name'] as String?,
-        latitude: lat.toDouble(),
-        longitude: lon.toDouble(),
-        elevation: json['elev'] != null ? (json['elev'] as num).toDouble() : null,
-        windData: windData,
-      );
-    } catch (e) {
-      LoggingService.error('Error parsing METAR station', e);
-      return null;
-    }
-  }
-
   /// Get weather data for a list of stations
-  /// Since METAR data comes with wind embedded, this just extracts it
-  /// Note: METAR always returns current real-time data, no historical queries
+  /// Routes each station to its appropriate provider
   Future<Map<String, WindData>> getWeatherForStations(
     List<WeatherStation> stations,
   ) async {
     if (stations.isEmpty) return {};
 
-    // METAR stations already have wind data embedded from the API response
-    // Just extract it and map by station ID
-    final Map<String, WindData> result = {};
+    try {
+      // Group stations by provider
+      final stationsByProvider = <WeatherStationSource, List<WeatherStation>>{};
+      for (final station in stations) {
+        stationsByProvider.putIfAbsent(station.source, () => []).add(station);
+      }
+
+      // Fetch weather data from each provider in parallel
+      final futures = stationsByProvider.entries.map((entry) async {
+        final provider = WeatherStationProviderRegistry.getProvider(entry.key);
+
+        try {
+          return await provider.fetchWeatherData(entry.value);
+        } catch (e, stackTrace) {
+          LoggingService.error('${provider.displayName}: weather data fetch failed', e, stackTrace);
+          return <String, WindData>{};
+        }
+      });
+
+      final results = await Future.wait(futures);
+
+      // Combine all results
+      final combinedData = <String, WindData>{};
+      for (final result in results) {
+        combinedData.addAll(result);
+      }
+
+      LoggingService.structured('WEATHER_DATA_FETCHED', {
+        'total_stations': stations.length,
+        'stations_with_data': combinedData.length,
+      });
+
+      return combinedData;
+    } catch (e, stackTrace) {
+      LoggingService.error('Failed to fetch weather data', e, stackTrace);
+      return {};
+    }
+  }
+
+  /// Deduplicate stations from multiple providers
+  /// Keeps station with newest data when duplicates found within threshold distance
+  List<WeatherStation> _deduplicateStations(List<WeatherStation> stations) {
+    if (stations.length <= 1) return stations;
+
+    final result = <WeatherStation>[];
+    final discarded = <WeatherStation>[];
+
     for (final station in stations) {
-      if (station.windData != null) {
-        result[station.id] = station.windData!;
+      // Check if this station is a duplicate of any in result
+      WeatherStation? duplicate;
+      double? duplicateDistance;
+
+      for (final existing in result) {
+        final distance = _calculateDistance(
+          station.latitude,
+          station.longitude,
+          existing.latitude,
+          existing.longitude,
+        );
+
+        if (distance <= _deduplicationDistanceMeters) {
+          duplicate = existing;
+          duplicateDistance = distance;
+          break;
+        }
+      }
+
+      if (duplicate != null) {
+        // Found a duplicate - decide which to keep
+        final shouldReplace = _shouldReplaceStation(duplicate, station);
+
+        if (shouldReplace) {
+          // Replace existing with new station
+          result.remove(duplicate);
+          result.add(station);
+          discarded.add(duplicate);
+
+          LoggingService.structured('WEATHER_STATION_DEDUPLICATION', {
+            'kept_station': {
+              'id': station.id,
+              'source': station.source.name,
+              'lat': station.latitude,
+              'lon': station.longitude,
+              'has_wind_data': station.windData != null,
+              'timestamp': station.windData?.timestamp.toIso8601String(),
+            },
+            'discarded_station': {
+              'id': duplicate.id,
+              'source': duplicate.source.name,
+              'lat': duplicate.latitude,
+              'lon': duplicate.longitude,
+              'has_wind_data': duplicate.windData != null,
+              'timestamp': duplicate.windData?.timestamp.toIso8601String(),
+            },
+            'distance_m': duplicateDistance!.toStringAsFixed(1),
+            'reason': station.windData != null && duplicate.windData == null
+                ? 'newer_has_data'
+                : 'newer_data',
+          });
+        } else {
+          // Keep existing, discard new
+          discarded.add(station);
+
+          LoggingService.structured('WEATHER_STATION_DEDUPLICATION', {
+            'kept_station': {
+              'id': duplicate.id,
+              'source': duplicate.source.name,
+              'lat': duplicate.latitude,
+              'lon': duplicate.longitude,
+              'has_wind_data': duplicate.windData != null,
+              'timestamp': duplicate.windData?.timestamp.toIso8601String(),
+            },
+            'discarded_station': {
+              'id': station.id,
+              'source': station.source.name,
+              'lat': station.latitude,
+              'lon': station.longitude,
+              'has_wind_data': station.windData != null,
+              'timestamp': station.windData?.timestamp.toIso8601String(),
+            },
+            'distance_m': duplicateDistance!.toStringAsFixed(1),
+            'reason': duplicate.windData != null && station.windData == null
+                ? 'existing_has_data'
+                : 'existing_newer',
+          });
+        }
+      } else {
+        // No duplicate found, add to result
+        result.add(station);
       }
     }
 
-    LoggingService.structured('METAR_WEATHER_EXTRACTED', {
-      'total_stations': stations.length,
-      'stations_with_data': result.length,
-    });
+    // Log summary
+    if (discarded.isNotEmpty) {
+      final keptByProvider = <String, int>{};
+      for (final station in result) {
+        final providerId = station.source.name;
+        keptByProvider[providerId] = (keptByProvider[providerId] ?? 0) + 1;
+      }
+
+      LoggingService.structured('WEATHER_STATION_DEDUPLICATION_SUMMARY', {
+        'original_count': stations.length,
+        'final_count': result.length,
+        'duplicates_removed': discarded.length,
+        'by_provider': keptByProvider,
+      });
+    }
 
     return result;
   }
 
-  /// Generate cache key from bounding box (rounded to reduce cache entries)
-  String _getBoundsCacheKey(LatLngBounds bounds) {
-    // Round to 0.1 degrees (~10km) for reasonable cache granularity
-    final west = (bounds.west * 10).round() / 10;
-    final south = (bounds.south * 10).round() / 10;
-    final east = (bounds.east * 10).round() / 10;
-    final north = (bounds.north * 10).round() / 10;
-
-    return '$west,$south,$east,$north';
-  }
-
-  /// Find a cached entry whose bounds contain the requested bounds
-  /// This helps avoid duplicate API requests for similar/overlapping areas
-  _StationCacheEntry? _findContainingCache(LatLngBounds requestedBounds) {
-    for (final entry in _stationCache.entries) {
-      if (entry.value.isExpired) continue;
-
-      // Parse cached bbox from key (format: "west,south,east,north")
-      final parts = entry.key.split(',');
-      if (parts.length != 4) continue;
-
-      try {
-        final cachedWest = double.parse(parts[0]);
-        final cachedSouth = double.parse(parts[1]);
-        final cachedEast = double.parse(parts[2]);
-        final cachedNorth = double.parse(parts[3]);
-
-        // Check if cached bounds fully contain requested bounds
-        if (cachedWest <= requestedBounds.west &&
-            cachedSouth <= requestedBounds.south &&
-            cachedEast >= requestedBounds.east &&
-            cachedNorth >= requestedBounds.north) {
-          return entry.value;
-        }
-      } catch (e) {
-        // Skip malformed cache keys
-        continue;
-      }
+  /// Determine if we should replace an existing station with a new one
+  /// Prioritizes: 1) Has wind data, 2) Newer timestamp
+  bool _shouldReplaceStation(WeatherStation existing, WeatherStation newStation) {
+    // If one has data and the other doesn't, prefer the one with data
+    if (existing.windData == null && newStation.windData != null) {
+      return true;
     }
-    return null;
+    if (existing.windData != null && newStation.windData == null) {
+      return false;
+    }
+
+    // If both have data (or both don't), prefer newer timestamp
+    if (existing.windData != null && newStation.windData != null) {
+      return newStation.windData!.timestamp.isAfter(existing.windData!.timestamp);
+    }
+
+    // Neither has data - keep existing (arbitrary choice)
+    return false;
   }
 
-  /// Clear all caches (useful for testing or memory management)
+  /// Calculate distance between two lat/lon points in meters
+  double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+    const distance = Distance();
+    return distance.distance(LatLng(lat1, lon1), LatLng(lat2, lon2));
+  }
+
+  /// Get list of enabled providers based on preferences
+  Future<List<WeatherStationProvider>> _getEnabledProviders() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final enabled = <WeatherStationProvider>[];
+
+      for (final source in WeatherStationProviderRegistry.getAllSources()) {
+        final key = 'weather_provider_${source.name}_enabled';
+        final isEnabled = prefs.getBool(key) ?? true; // Default enabled
+
+        if (isEnabled) {
+          final provider = WeatherStationProviderRegistry.getProvider(source);
+          if (await provider.isConfigured()) {
+            enabled.add(provider);
+          }
+        }
+      }
+
+      return enabled;
+    } catch (e) {
+      LoggingService.error('Failed to get enabled providers', e);
+      return [];
+    }
+  }
+
+  /// Set provider enabled state
+  static Future<void> setProviderEnabled(WeatherStationSource source, bool enabled) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('weather_provider_${source.name}_enabled', enabled);
+      LoggingService.action('WeatherProvider', source.name, {'enabled': enabled});
+    } catch (e) {
+      LoggingService.error('Failed to set provider enabled state', e);
+    }
+  }
+
+  /// Get provider enabled state
+  static Future<bool> isProviderEnabled(WeatherStationSource source) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool('weather_provider_${source.name}_enabled') ?? true;
+    } catch (e) {
+      LoggingService.error('Failed to get provider enabled state', e);
+      return true; // Fallback - enable by default
+    }
+  }
+
+  /// Clear all caches for all providers
   void clearCache() {
-    _stationCache.clear();
-    LoggingService.info('Weather station cache cleared');
+    for (final provider in WeatherStationProviderRegistry.getAllProviders()) {
+      provider.clearCache();
+    }
+    LoggingService.info('All weather station caches cleared');
   }
 
   /// Get cache statistics for debugging
   Map<String, dynamic> getCacheStats() {
-    final validEntries = _stationCache.values.where((e) => !e.isExpired).length;
-    final totalStations = _stationCache.values
-        .where((e) => !e.isExpired)
-        .fold<int>(0, (sum, entry) => sum + entry.stations.length);
-
-    return {
-      'total_cache_entries': _stationCache.length,
-      'valid_cache_entries': validEntries,
-      'total_cached_stations': totalStations,
-      'pending_requests': _pendingStationRequests.length,
-    };
-  }
-
-  /// Identify geographic region from bounding box coordinates
-  String _identifyRegion(LatLngBounds bounds) {
-    final centerLat = (bounds.north + bounds.south) / 2;
-    final centerLng = (bounds.east + bounds.west) / 2;
-
-    // Australia regions
-    if (centerLat >= -44 && centerLat <= -10 && centerLng >= 113 && centerLng <= 154) {
-      if (centerLat >= -35 && centerLat <= -26 && centerLng >= 113 && centerLng <= 129) {
-        return 'Western Australia';
-      } else if (centerLat >= -29 && centerLat <= -16 && centerLng >= 138 && centerLng <= 141) {
-        return 'South Australia';
-      } else if (centerLat >= -39 && centerLat <= -34 && centerLng >= 140 && centerLng <= 150) {
-        return 'Victoria';
-      } else if (centerLat >= -37 && centerLat <= -28 && centerLng >= 141 && centerLng <= 154) {
-        return 'New South Wales';
-      } else if (centerLat >= -29 && centerLat <= -10 && centerLng >= 138 && centerLng <= 154) {
-        return 'Queensland';
-      } else if (centerLat >= -43 && centerLat <= -40 && centerLng >= 144 && centerLng <= 149) {
-        return 'Tasmania';
-      }
-      return 'Australia';
+    final stats = <String, dynamic>{};
+    for (final provider in WeatherStationProviderRegistry.getAllProviders()) {
+      stats[provider.source.name] = provider.getCacheStats();
     }
-
-    // Europe regions
-    if (centerLat >= 36 && centerLat <= 71 && centerLng >= -10 && centerLng <= 40) {
-      return 'Europe';
-    }
-
-    // North America regions
-    if (centerLat >= 25 && centerLat <= 50 && centerLng >= -125 && centerLng <= -66) {
-      return 'North America';
-    }
-
-    // South America regions
-    if (centerLat >= -56 && centerLat <= 13 && centerLng >= -82 && centerLng <= -34) {
-      return 'South America';
-    }
-
-    // Asia regions
-    if (centerLat >= -10 && centerLat <= 55 && centerLng >= 60 && centerLng <= 150) {
-      return 'Asia';
-    }
-
-    return 'Unknown Region';
-  }
-
-  /// Estimate number of weather stations in bounds based on bbox size
-  /// Rough estimate: 1 station per 0.5° x 0.5° area in populated regions
-  int _estimateStationsInBounds(LatLngBounds bounds) {
-    final latRange = bounds.north - bounds.south;
-    final lngRange = bounds.east - bounds.west;
-    final areaInDegrees = latRange * lngRange;
-
-    // Rough estimate: 1 station per 0.25 square degrees (0.5° x 0.5°)
-    final estimated = (areaInDegrees / 0.25).round();
-
-    // Cap at reasonable values
-    return estimated.clamp(0, 20);
-  }
-}
-
-/// Cache entry for station lists with expiration
-class _StationCacheEntry {
-  final List<WeatherStation> stations;
-  final DateTime timestamp;
-
-  _StationCacheEntry({
-    required this.stations,
-    required this.timestamp,
-  });
-
-  bool get isExpired {
-    return DateTime.now().difference(timestamp) > MapConstants.stationListCacheTTL;
+    return stats;
   }
 }
