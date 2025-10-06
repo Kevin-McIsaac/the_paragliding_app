@@ -164,9 +164,11 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
         oldWidget.stationWindData != widget.stationWindData ||
         oldWidget.maxWindSpeed != widget.maxWindSpeed ||
         oldWidget.maxWindGusts != widget.maxWindGusts) {
+      // Only log if cache had significant content
+      if (_cachedWeatherStationMarkers != null && _cachedWeatherStationMarkers!.length > 10) {
+        LoggingService.debug('Weather station markers cache cleared | cached_count=${_cachedWeatherStationMarkers!.length}');
+      }
       _cachedWeatherStationMarkers = null;
-
-      LoggingService.debug('Weather station markers cache cleared due to data change');
     }
 
     // Re-center on user location if it changes significantly

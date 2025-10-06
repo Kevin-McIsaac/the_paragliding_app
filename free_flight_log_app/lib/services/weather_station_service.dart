@@ -84,14 +84,16 @@ class WeatherStationService {
       final bbox = '${bounds.south.toStringAsFixed(2)},${bounds.west.toStringAsFixed(2)},'
                    '${bounds.north.toStringAsFixed(2)},${bounds.east.toStringAsFixed(2)}';
 
-      LoggingService.structured('METAR_STATIONS_REQUEST', {
-        'bbox': bbox,
-      });
-
       // Build METAR API URL
       final url = Uri.parse(
         'https://aviationweather.gov/api/data/metar?bbox=$bbox&format=json',
       );
+
+      LoggingService.structured('METAR_REQUEST_START', {
+        'bbox': bbox,
+        'url': url.toString(),
+        'cache_key': cacheKey,
+      });
 
       // Make API request with appropriate headers
       final response = await http.get(
@@ -104,15 +106,31 @@ class WeatherStationService {
         const Duration(seconds: 30),
         onTimeout: () {
           stopwatch.stop();
+          final region = _identifyRegion(bounds);
+          final estimatedStations = _estimateStationsInBounds(bounds);
           LoggingService.structured('METAR_TIMEOUT', {
             'bbox': bbox,
+            'url': url.toString(),
             'duration_ms': stopwatch.elapsedMilliseconds,
             'timeout_seconds': 30,
+            'region': region,
+            'estimated_affected_stations': estimatedStations,
+            'message': 'HTTP request timed out waiting for response',
           });
           // Return mock response with 408 (Request Timeout) status
           return http.Response('{"error": "Request timeout"}', 408);
         },
       );
+
+      stopwatch.stop();
+
+      // Log response details
+      LoggingService.structured('METAR_RESPONSE_RECEIVED', {
+        'status_code': response.statusCode,
+        'duration_ms': stopwatch.elapsedMilliseconds,
+        'content_length': response.body.length,
+        'bbox': bbox,
+      });
 
       if (response.statusCode == 200) {
         final networkTime = stopwatch.elapsedMilliseconds;
@@ -134,7 +152,6 @@ class WeatherStationService {
         }
 
         parseStopwatch.stop();
-        stopwatch.stop();
 
         // Log parse performance separately
         LoggingService.performance(
@@ -160,8 +177,6 @@ class WeatherStationService {
         return stations;
       } else if (response.statusCode == 204) {
         // 204 No Content - expected response when no stations exist in this region
-        stopwatch.stop();
-
         LoggingService.structured('METAR_NO_DATA', {
           'bbox': bbox,
           'duration_ms': stopwatch.elapsedMilliseconds,
@@ -179,10 +194,24 @@ class WeatherStationService {
         // Request timeout (handled by timeout callback above)
         return [];
       } else {
-        LoggingService.error('METAR API error: ${response.statusCode} - ${response.body}');
+        // Log detailed error information
+        LoggingService.structured('METAR_HTTP_ERROR', {
+          'status_code': response.statusCode,
+          'bbox': bbox,
+          'response_body': response.body.substring(0, response.body.length > 500 ? 500 : response.body.length),
+          'duration_ms': stopwatch.elapsedMilliseconds,
+        });
         return [];
       }
     } catch (e, stackTrace) {
+      // Detailed error logging with exception type
+      LoggingService.structured('METAR_REQUEST_FAILED', {
+        'error_type': e.runtimeType.toString(),
+        'error_message': e.toString(),
+        'bbox': bounds.south.toStringAsFixed(2) + ',' + bounds.west.toStringAsFixed(2) + ',' +
+                bounds.north.toStringAsFixed(2) + ',' + bounds.east.toStringAsFixed(2),
+        'cache_key': cacheKey,
+      });
       LoggingService.error('Failed to fetch METAR stations', e, stackTrace);
       return [];
     }
@@ -323,6 +352,66 @@ class WeatherStationService {
       'total_cached_stations': totalStations,
       'pending_requests': _pendingStationRequests.length,
     };
+  }
+
+  /// Identify geographic region from bounding box coordinates
+  String _identifyRegion(LatLngBounds bounds) {
+    final centerLat = (bounds.north + bounds.south) / 2;
+    final centerLng = (bounds.east + bounds.west) / 2;
+
+    // Australia regions
+    if (centerLat >= -44 && centerLat <= -10 && centerLng >= 113 && centerLng <= 154) {
+      if (centerLat >= -35 && centerLat <= -26 && centerLng >= 113 && centerLng <= 129) {
+        return 'Western Australia';
+      } else if (centerLat >= -29 && centerLat <= -16 && centerLng >= 138 && centerLng <= 141) {
+        return 'South Australia';
+      } else if (centerLat >= -39 && centerLat <= -34 && centerLng >= 140 && centerLng <= 150) {
+        return 'Victoria';
+      } else if (centerLat >= -37 && centerLat <= -28 && centerLng >= 141 && centerLng <= 154) {
+        return 'New South Wales';
+      } else if (centerLat >= -29 && centerLat <= -10 && centerLng >= 138 && centerLng <= 154) {
+        return 'Queensland';
+      } else if (centerLat >= -43 && centerLat <= -40 && centerLng >= 144 && centerLng <= 149) {
+        return 'Tasmania';
+      }
+      return 'Australia';
+    }
+
+    // Europe regions
+    if (centerLat >= 36 && centerLat <= 71 && centerLng >= -10 && centerLng <= 40) {
+      return 'Europe';
+    }
+
+    // North America regions
+    if (centerLat >= 25 && centerLat <= 50 && centerLng >= -125 && centerLng <= -66) {
+      return 'North America';
+    }
+
+    // South America regions
+    if (centerLat >= -56 && centerLat <= 13 && centerLng >= -82 && centerLng <= -34) {
+      return 'South America';
+    }
+
+    // Asia regions
+    if (centerLat >= -10 && centerLat <= 55 && centerLng >= 60 && centerLng <= 150) {
+      return 'Asia';
+    }
+
+    return 'Unknown Region';
+  }
+
+  /// Estimate number of weather stations in bounds based on bbox size
+  /// Rough estimate: 1 station per 0.5° x 0.5° area in populated regions
+  int _estimateStationsInBounds(LatLngBounds bounds) {
+    final latRange = bounds.north - bounds.south;
+    final lngRange = bounds.east - bounds.west;
+    final areaInDegrees = latRange * lngRange;
+
+    // Rough estimate: 1 station per 0.25 square degrees (0.5° x 0.5°)
+    final estimated = (areaInDegrees / 0.25).round();
+
+    // Cap at reasonable values
+    return estimated.clamp(0, 20);
   }
 }
 

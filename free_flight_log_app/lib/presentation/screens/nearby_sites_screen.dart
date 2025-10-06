@@ -310,7 +310,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         LoggingService.structured('WIND_FETCH_START', {
           'total_sites': _displayedSites.length,
           'unique_locations': locationsToFetch.length,
-          'zoom_level': currentZoom,
+          'zoom_level': currentZoom.toStringAsFixed(2),
         });
 
         // Fetch wind data in batch
@@ -333,7 +333,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           'sites_count': _displayedSites.length,
           'fetched_count': windDataResults.length,
           'time': _selectedDateTime.toIso8601String(),
-          'zoom_level': currentZoom,
+          'zoom_level': currentZoom.toStringAsFixed(2),
         });
       } catch (e, stackTrace) {
         LoggingService.error('Failed to fetch wind data', e, stackTrace);
@@ -390,12 +390,18 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       });
 
       try {
+        // Log before fetching stations
+        LoggingService.structured('STATION_FETCH_START', {
+          'zoom_level': currentZoom.toStringAsFixed(2),
+          'bounds': _currentBounds.toString(),
+        });
+
         // Fetch stations in visible bounds
         final stations = await _weatherStationService.getStationsInBounds(_currentBounds!);
 
-        LoggingService.structured('STATION_FETCH_START', {
+        LoggingService.structured('STATION_FETCH_RECEIVED', {
           'station_count': stations.length,
-          'zoom_level': currentZoom,
+          'zoom_level': currentZoom.toStringAsFixed(2),
         });
 
         // Fetch weather data for stations (METAR always returns current data)
@@ -415,7 +421,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
             'total_stations': stations.length,
             'stations_with_data': weatherData.length,
             'time': _selectedDateTime.toIso8601String(),
-            'zoom_level': currentZoom,
+            'zoom_level': currentZoom.toStringAsFixed(2),
           });
         }
       } catch (e, stackTrace) {
@@ -862,7 +868,11 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           Future.delayed(const Duration(milliseconds: 50), () {
             if (!mounted) return;
             if (_displayedSites.isNotEmpty && (_hasMissingWindData() || _siteWindData.isEmpty)) {
-              _fetchWindDataForSites();
+              if (!_isWindLoading) {
+                _fetchWindDataForSites();
+              } else {
+                LoggingService.debug('Skipping wind fetch (already loading)');
+              }
             }
             // Also fetch weather stations
             _fetchWeatherStations();
@@ -888,8 +898,12 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           final missingWindData = _hasMissingWindData(includeUnknownStatus: true);
           LoggingService.info('Missing wind data check: $missingWindData');
           if (missingWindData) {
-            LoggingService.info('Triggering wind fetch after bounds load completion');
-            _fetchWindDataForSites();
+            if (!_isWindLoading) {
+              LoggingService.info('Triggering wind fetch after bounds load completion');
+              _fetchWindDataForSites();
+            } else {
+              LoggingService.debug('Skipping duplicate wind fetch (already loading)');
+            }
           }
         }
       });

@@ -112,6 +112,10 @@ class LocationService {
 
       return position;
     } catch (e, stackTrace) {
+      // Get device state for diagnostic context
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      final permission = await Geolocator.checkPermission();
+
       LoggingService.error('Error getting current position', e, stackTrace);
 
       // If we have a cached position, return it as fallback
@@ -119,12 +123,40 @@ class LocationService {
         final age = DateTime.now().difference(_lastPositionTime!);
         LoggingService.structured('LOCATION_FALLBACK', {
           'error_type': e.runtimeType.toString(),
+          'fallback_strategy': 'cached_memory',
           'cached_age_minutes': age.inMinutes,
+          'cached_age_hours': age.inHours,
           'latitude': _lastKnownPosition!.latitude.toStringAsFixed(6),
           'longitude': _lastKnownPosition!.longitude.toStringAsFixed(6),
+          'gps_service_enabled': serviceEnabled,
+          'permission_status': permission.toString(),
         });
         return _lastKnownPosition;
       }
+
+      // Try persistent storage as fallback
+      final persistentPosition = await _loadPositionFromPersistentStorage();
+      if (persistentPosition != null) {
+        final age = DateTime.now().difference(persistentPosition.timestamp);
+        LoggingService.structured('LOCATION_FALLBACK', {
+          'error_type': e.runtimeType.toString(),
+          'fallback_strategy': 'persistent_storage',
+          'cached_age_hours': age.inHours,
+          'latitude': persistentPosition.latitude.toStringAsFixed(6),
+          'longitude': persistentPosition.longitude.toStringAsFixed(6),
+          'gps_service_enabled': serviceEnabled,
+          'permission_status': permission.toString(),
+        });
+        return persistentPosition;
+      }
+
+      // No fallback available
+      LoggingService.structured('LOCATION_FALLBACK_UNAVAILABLE', {
+        'error_type': e.runtimeType.toString(),
+        'gps_service_enabled': serviceEnabled,
+        'permission_status': permission.toString(),
+        'message': 'No cached or persistent location available',
+      });
 
       return null;
     }
