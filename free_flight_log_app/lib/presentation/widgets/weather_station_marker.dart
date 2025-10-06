@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import '../../data/models/weather_station.dart';
 import '../../data/models/wind_data.dart';
-import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Weather station marker showing wind direction and speed with barbed arrow

@@ -1007,9 +1007,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       final previousForecastEnabled = _forecastEnabled;
       final previousWeatherStationsEnabled = _weatherStationsEnabled;
 
-      // Get previous clipping state to detect changes
-      final previousClippingEnabled = await _openAipService.isClippingEnabled();
-
       // Update non-airspace states immediately
       setState(() {
         _sitesEnabled = sitesEnabled;

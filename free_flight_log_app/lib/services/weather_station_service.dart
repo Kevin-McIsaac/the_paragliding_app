@@ -208,8 +208,7 @@ class WeatherStationService {
       LoggingService.structured('METAR_REQUEST_FAILED', {
         'error_type': e.runtimeType.toString(),
         'error_message': e.toString(),
-        'bbox': bounds.south.toStringAsFixed(2) + ',' + bounds.west.toStringAsFixed(2) + ',' +
-                bounds.north.toStringAsFixed(2) + ',' + bounds.east.toStringAsFixed(2),
+        'bbox': '${bounds.south.toStringAsFixed(2)},${bounds.west.toStringAsFixed(2)},${bounds.north.toStringAsFixed(2)},${bounds.east.toStringAsFixed(2)}',
         'cache_key': cacheKey,
       });
       LoggingService.error('Failed to fetch METAR stations', e, stackTrace);
