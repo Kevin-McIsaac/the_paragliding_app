@@ -143,7 +143,7 @@ class _AboutScreenState extends State<AboutScreen> {
                     ),
                     const SizedBox(height: 12),
                     InkWell(
-                      onTap: () => _launchUrl('mailto:support@freeflightlog.com'),
+                      onTap: () => _launchUrl('mailto:kevin.mcisaac+the.paragliding.app@gmail.com'),
                       child: Row(
                         children: [
                           Icon(
@@ -153,7 +153,7 @@ class _AboutScreenState extends State<AboutScreen> {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            'support@freeflightlog.com',
+                            'kevin.mcisaac+the.paragliding.app@gmail.com',
                             style: TextStyle(
                               color: Theme.of(context).colorScheme.primary,
                               decoration: TextDecoration.underline,
@@ -201,7 +201,7 @@ class _AboutScreenState extends State<AboutScreen> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Map data and tiles are provided by:',
+                      'Map data and imagery are provided by:',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 12),
@@ -246,9 +246,19 @@ class _AboutScreenState extends State<AboutScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 16),
                     Text(
-                      'Satellite imagery courtesy of Esri.',
+                      'Additional map providers:',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '• Esri World Imagery - Satellite and aerial imagery\n'
+                      '• Esri World Topo - Topographic maps\n'
+                      '• Google Maps - Street and terrain data\n'
+                      '• Cesium Ion - 3D terrain and global base maps',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Colors.grey[600],
                       ),
@@ -312,9 +322,106 @@ class _AboutScreenState extends State<AboutScreen> {
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 24),
-            
+
+            // Weather Data Attribution Card
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.cloud,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Weather Data',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Weather information is provided by:',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Weather Forecasts:',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    InkWell(
+                      onTap: () => _launchUrl('https://open-meteo.com'),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.wb_sunny,
+                            size: 20,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Open-Meteo - Free weather API',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.primary,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Weather Station Data (METAR):',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    InkWell(
+                      onTap: () => _launchUrl('https://aviationweather.gov'),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.airplanemode_active,
+                            size: 20,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Aviation Weather Center (NOAA/NWS)',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.primary,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Real-time METAR reports from airports and weather stations worldwide.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
             // Privacy & Data Card
             Card(
               child: Padding(
@@ -339,16 +446,33 @@ class _AboutScreenState extends State<AboutScreen> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'This is a local-only application. All flight data is stored on your device and is not transmitted to any external servers.',
-                      style: Theme.of(context).textTheme.bodyMedium,
+                      'Your flight data stays on your device:',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                     Text(
-                      '• Flight logs are stored locally in SQLite database\n'
-                      '• Track files are stored on device storage\n'
+                      '• Flight logs stored locally in SQLite database\n'
+                      '• Track files stored on device storage\n'
                       '• No user accounts or cloud synchronization\n'
-                      '• Map tiles downloaded as needed from OSM servers\n'
-                      '• Site data fetched from ParaglidingEarth API when available',
+                      '• No flight data transmitted to external servers',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'External data services (fetched as needed):',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '• Map imagery: OpenStreetMap, Google Maps, Esri, Cesium Ion\n'
+                      '• Paragliding sites: ParaglidingEarth API\n'
+                      '• Airspace data: OpenAIP API\n'
+                      '• Weather forecasts: Open-Meteo API\n'
+                      '• METAR station data: Aviation Weather Center (NOAA)',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
