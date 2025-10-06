@@ -2,13 +2,13 @@
 class WindData {
   final double speedKmh;
   final double directionDegrees;
-  final double gustsKmh;
+  final double? gustsKmh;
   final DateTime timestamp;
 
   const WindData({
     required this.speedKmh,
     required this.directionDegrees,
-    required this.gustsKmh,
+    this.gustsKmh,
     required this.timestamp,
   });
 
@@ -25,7 +25,8 @@ class WindData {
     if (siteDirections.isEmpty) return false;
 
     // Check wind speed and gusts limits
-    if (speedKmh > maxSpeed || gustsKmh > maxGusts) return false;
+    if (speedKmh > maxSpeed) return false;
+    if (gustsKmh != null && gustsKmh! > maxGusts) return false;
 
     // Light wind (< 1 km/h) - any direction is acceptable
     if (speedKmh < 1.0) return true;
@@ -43,8 +44,8 @@ class WindData {
       return '${speedKmh.toStringAsFixed(1)} km/h from $compassDirection - too strong (max: ${maxSpeed.toInt()} km/h)';
     }
 
-    if (gustsKmh > maxGusts) {
-      return 'Gusts ${gustsKmh.toStringAsFixed(1)} km/h - too strong (max: ${maxGusts.toInt()} km/h)';
+    if (gustsKmh != null && gustsKmh! > maxGusts) {
+      return 'Gusts ${gustsKmh!.toStringAsFixed(1)} km/h - too strong (max: ${maxGusts.toInt()} km/h)';
     }
 
     if (speedKmh < 1.0) {
@@ -114,7 +115,7 @@ class WindData {
     return WindData(
       speedKmh: (json['wind_speed_10m'] ?? 0.0).toDouble(),
       directionDegrees: (json['wind_direction_10m'] ?? 0.0).toDouble(),
-      gustsKmh: (json['wind_gusts_10m'] ?? 0.0).toDouble(),
+      gustsKmh: json['wind_gusts_10m']?.toDouble(),
       timestamp: timestamp,
     );
   }
@@ -127,8 +128,9 @@ class WindData {
 
   @override
   String toString() {
+    final gustsStr = gustsKmh != null ? '${gustsKmh!.toStringAsFixed(1)} km/h' : 'N/A';
     return 'WindData(speed: ${speedKmh.toStringAsFixed(1)} km/h, '
            'direction: ${directionDegrees.toStringAsFixed(0)}° ($compassDirection), '
-           'gusts: ${gustsKmh.toStringAsFixed(1)} km/h)';
+           'gusts: $gustsStr)';
   }
 }

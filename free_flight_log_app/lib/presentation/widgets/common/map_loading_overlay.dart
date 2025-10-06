@@ -52,7 +52,7 @@ class MapLoadingOverlay extends StatelessWidget {
       top: 60,
       right: 16,
       child: Container(
-        width: 220,
+        width: 240,
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.85),
           borderRadius: BorderRadius.circular(12),
