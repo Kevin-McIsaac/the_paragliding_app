@@ -2964,7 +2964,7 @@ class _DraggableFilterDialogState extends State<_DraggableFilterDialog> {
                 final screenSize = MediaQuery.of(context).size;
                 _position = Offset(
                   _position.dx.clamp(0, screenSize.width - 300), // Assume dialog width ~300
-                  _position.dy.clamp(0, screenSize.height - 400), // Assume dialog height ~400
+                  _position.dy.clamp(0, screenSize.height - 600), // Assume dialog height ~600
                 );
               });
             },

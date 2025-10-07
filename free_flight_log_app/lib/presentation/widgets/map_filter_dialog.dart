@@ -185,7 +185,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
       backgroundColor: Colors.transparent,
       child: Container(
         width: MediaQuery.of(context).size.width > 350 ? 320 : MediaQuery.of(context).size.width * 0.9,
-        constraints: const BoxConstraints(maxHeight: 500),
+        constraints: const BoxConstraints(maxHeight: 600),
         decoration: BoxDecoration(
           color: const Color(0xFF1E1E1E),
           borderRadius: BorderRadius.circular(12),
@@ -241,44 +241,51 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                     _buildLayersSection(),
 
                     // Two-column layout: (Types + Classes) | Altitude
-                    // Only shown when airspace is enabled
-                    if (_airspaceEnabled) ...[
-                      const SizedBox(height: 16),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.05),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                        ),
-                        padding: const EdgeInsets.all(8),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Left column: Types and Classes stacked
-                            Expanded(
-                              flex: 7,  // Much wider column (78% width)
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  // Airspace Types
-                                  _buildTypesColumn(),
-                                  const SizedBox(height: 12),
-                                  // ICAO Classes
-                                  _buildClassesColumn(),
-                                ],
-                              ),
+                    // Always shown, indented, disabled when airspace is disabled
+                    const SizedBox(height: 8),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 24),
+                      child: IgnorePointer(
+                        ignoring: !_airspaceEnabled,
+                        child: Opacity(
+                          opacity: _airspaceEnabled ? 1.0 : 0.4,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.05),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
                             ),
-                            const SizedBox(width: 12),
+                            padding: const EdgeInsets.all(8),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Left column: Types and Classes stacked
+                                Expanded(
+                                  flex: 7,  // Much wider column (78% width)
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      // Airspace Types
+                                      _buildTypesColumn(),
+                                      const SizedBox(height: 12),
+                                      // ICAO Classes
+                                      _buildClassesColumn(),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
 
-                            // Right column: Altitude
-                            Expanded(
-                              flex: 2,  // Narrower column (33% width)
-                              child: _buildAltitudeColumn(),
+                                // Right column: Altitude
+                                Expanded(
+                                  flex: 2,  // Narrower column (33% width)
+                                  child: _buildAltitudeColumn(),
+                                ),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
                       ),
-                    ],
+                    ),
                   ],
                 ),
               ),
@@ -311,103 +318,65 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
           ),
         ),
         const SizedBox(height: 8),
-        // Row 1: Sites, Forecast
-        Row(
-          children: [
-            // Sites checkbox
-            Tooltip(
-              message: 'Show all the Paragliding Earth flying sites for this area',
-              textStyle: const TextStyle(color: Colors.white, fontSize: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E1E1E),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.white24),
-              ),
-              child: InkWell(
-                onTap: () => setState(() {
-                  _sitesEnabled = !_sitesEnabled;
-                  _applyFiltersImmediately();
-                }),
-                borderRadius: BorderRadius.circular(4),
-                child: SizedBox(
-                  height: 24,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: Checkbox(
-                          value: _sitesEnabled,
-                          onChanged: (value) => setState(() {
-                            _sitesEnabled = value ?? true;
-                            _applyFiltersImmediately();
-                          }),
-                          activeColor: Colors.blue,
-                          checkColor: Colors.white,
-                          side: const BorderSide(color: Colors.white54),
-                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      const Text(
-                        'Sites',
-                        style: TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-                    ],
+        // Row 1: Sites
+        Tooltip(
+          message: 'Show all the Paragliding Earth flying sites for this area',
+          textStyle: const TextStyle(color: Colors.white, fontSize: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E1E),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: Colors.white24),
+          ),
+          child: InkWell(
+            onTap: () => setState(() {
+              _sitesEnabled = !_sitesEnabled;
+              _applyFiltersImmediately();
+            }),
+            borderRadius: BorderRadius.circular(4),
+            child: SizedBox(
+              height: 24,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: Checkbox(
+                      value: _sitesEnabled,
+                      onChanged: (value) => setState(() {
+                        _sitesEnabled = value ?? true;
+                        _applyFiltersImmediately();
+                      }),
+                      activeColor: Colors.blue,
+                      checkColor: Colors.white,
+                      side: const BorderSide(color: Colors.white54),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 4),
+                  const Text(
+                    'Sites',
+                    style: TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 16), // Space between checkboxes
-            // Forecast checkbox (disabled when sites are disabled)
-            Tooltip(
-              message: 'Show wind forecast and flyability for sites',
-              textStyle: const TextStyle(color: Colors.white, fontSize: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E1E1E),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.white24),
-              ),
-              child: InkWell(
-                onTap: _sitesEnabled ? () => setState(() {
-                  _forecastEnabled = !_forecastEnabled;
-                  _applyFiltersImmediately();
-                }) : null,
-                borderRadius: BorderRadius.circular(4),
-                child: SizedBox(
-                  height: 24,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: Checkbox(
-                          value: _forecastEnabled,
-                          onChanged: _sitesEnabled ? (value) => setState(() {
-                            _forecastEnabled = value ?? true;
-                            _applyFiltersImmediately();
-                          }) : null,
-                          activeColor: Colors.blue,
-                          checkColor: Colors.white,
-                          side: const BorderSide(color: Colors.white54),
-                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      const Text(
-                        'Forecast',
-                        style: TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
+          ),
+        ),
+        // Forecast checkbox (indented, disabled when sites are disabled)
+        const SizedBox(height: 4),
+        Padding(
+          padding: const EdgeInsets.only(left: 24),
+          child: _buildProviderCheckbox(
+            value: _forecastEnabled,
+            label: 'Forecast',
+            subtitle: 'Wind forecast and flyability for sites',
+            onChanged: _sitesEnabled ? (value) => setState(() {
+              _forecastEnabled = value ?? true;
+              _applyFiltersImmediately();
+            }) : null,
+          ),
         ),
         const SizedBox(height: 8),
         // Row 2: Weather
@@ -492,125 +461,83 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
           ),
         ),
         const SizedBox(height: 8),
-        // Row 3: Airspace, Clip
-        Row(
-          children: [
-            // Airspace checkbox
-            Tooltip(
-              message: 'Overlay the OpenAIP airspaces for this area',
-              textStyle: const TextStyle(color: Colors.white, fontSize: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E1E1E),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.white24),
-              ),
-              child: InkWell(
-                onTap: () {
-                  final wasDisabled = !_airspaceEnabled;
-                  setState(() {
-                    _airspaceEnabled = !_airspaceEnabled;
-                    _applyFiltersImmediately();
-                  });
-                  // Update controllers after enabling airspace so dropdowns reflect saved values
-                  if (wasDisabled && _airspaceEnabled) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      _updateControllerSelections();
-                    });
-                  }
-                },
-                borderRadius: BorderRadius.circular(4),
-                child: SizedBox(
-                  height: 24,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: Checkbox(
-                          value: _airspaceEnabled,
-                          onChanged: (value) {
-                            final wasDisabled = !_airspaceEnabled;
-                            setState(() {
-                              _airspaceEnabled = value ?? true;
-                              _applyFiltersImmediately();
-                            });
-                            // Update controllers after enabling airspace so dropdowns reflect saved values
-                            if (wasDisabled && _airspaceEnabled) {
-                              WidgetsBinding.instance.addPostFrameCallback((_) {
-                                _updateControllerSelections();
-                              });
-                            }
-                          },
-                          activeColor: Colors.blue,
-                          checkColor: Colors.white,
-                          side: const BorderSide(color: Colors.white54),
-                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      const Text(
-                        'Airspace',
-                        style: TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-                    ],
+        // Row 3: Airspace
+        Tooltip(
+          message: 'Overlay the OpenAIP airspaces for this area',
+          textStyle: const TextStyle(color: Colors.white, fontSize: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E1E),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: Colors.white24),
+          ),
+          child: InkWell(
+            onTap: () {
+              final wasDisabled = !_airspaceEnabled;
+              setState(() {
+                _airspaceEnabled = !_airspaceEnabled;
+                _applyFiltersImmediately();
+              });
+              // Update controllers after enabling airspace so dropdowns reflect saved values
+              if (wasDisabled && _airspaceEnabled) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _updateControllerSelections();
+                });
+              }
+            },
+            borderRadius: BorderRadius.circular(4),
+            child: SizedBox(
+              height: 24,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: Checkbox(
+                      value: _airspaceEnabled,
+                      onChanged: (value) {
+                        final wasDisabled = !_airspaceEnabled;
+                        setState(() {
+                          _airspaceEnabled = value ?? true;
+                          _applyFiltersImmediately();
+                        });
+                        // Update controllers after enabling airspace so dropdowns reflect saved values
+                        if (wasDisabled && _airspaceEnabled) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            _updateControllerSelections();
+                          });
+                        }
+                      },
+                      activeColor: Colors.blue,
+                      checkColor: Colors.white,
+                      side: const BorderSide(color: Colors.white54),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 4),
+                  const Text(
+                    'Airspace',
+                    style: TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 16), // Space between checkboxes
-            // Clip checkbox (disabled when airspace is disabled)
-            Tooltip(
-              message: 'Only show the bottom layer at each point',
-              textStyle: const TextStyle(color: Colors.white, fontSize: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E1E1E),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.white24),
-              ),
-              child: InkWell(
-                onTap: _airspaceEnabled ? () {
-                  setState(() {
-                    _clippingEnabled = !_clippingEnabled;
-                    _applyFiltersImmediately();
-                  });
-                } : null,
-                borderRadius: BorderRadius.circular(4),
-                child: SizedBox(
-                  height: 24,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: Checkbox(
-                          value: _clippingEnabled,
-                          onChanged: _airspaceEnabled ? (value) {
-                            setState(() {
-                              _clippingEnabled = value ?? true;
-                              _applyFiltersImmediately();
-                            });
-                          } : null,
-                          activeColor: Colors.blue,
-                          checkColor: Colors.white,
-                          side: const BorderSide(color: Colors.white54),
-                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      const Text(
-                        'Clip',
-                        style: TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
+          ),
+        ),
+        // Clip checkbox (indented, disabled when airspace is disabled)
+        const SizedBox(height: 4),
+        Padding(
+          padding: const EdgeInsets.only(left: 24),
+          child: _buildProviderCheckbox(
+            value: _clippingEnabled,
+            label: 'Clip',
+            subtitle: 'Only show the bottom layer at each point',
+            onChanged: _airspaceEnabled ? (value) => setState(() {
+              _clippingEnabled = value ?? true;
+              _applyFiltersImmediately();
+            }) : null,
+          ),
         ),
       ],
     );
@@ -866,7 +793,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
 
   Widget _buildAltitudeColumn() {
     return Padding(
-      padding: const EdgeInsets.only(left: 8),
+      padding: const EdgeInsets.only(left: 4), // Reduced from 8 to 4
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -896,7 +823,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                   Text('0', style: TextStyle(color: Colors.white54, fontSize: 8)),
                 ],
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 2), // Reduced from 4 to 2
               // Vertical slider
               Expanded(
                 child: Padding(
@@ -942,7 +869,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                   ),
                 ),
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 2), // Reduced from 4 to 2
               // Current value display
               SizedBox(
                 width: 25,
