@@ -326,7 +326,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
               child: InkWell(
                 onTap: () => setState(() {
                   _sitesEnabled = !_sitesEnabled;
-                  _applyFiltersDebounced();
+                  _applyFiltersImmediately();
                 }),
                 borderRadius: BorderRadius.circular(4),
                 child: SizedBox(
@@ -341,7 +341,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                           value: _sitesEnabled,
                           onChanged: (value) => setState(() {
                             _sitesEnabled = value ?? true;
-                            _applyFiltersDebounced();
+                            _applyFiltersImmediately();
                           }),
                           activeColor: Colors.blue,
                           checkColor: Colors.white,
@@ -361,53 +361,52 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
               ),
             ),
             const SizedBox(width: 16), // Space between checkboxes
-            // Forecast checkbox (only shown when sites are enabled)
-            if (_sitesEnabled)
-              Tooltip(
-                message: 'Show wind forecast and flyability for sites',
-                textStyle: const TextStyle(color: Colors.white, fontSize: 12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E1E1E),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: Colors.white24),
-                ),
-                child: InkWell(
-                  onTap: () => setState(() {
-                    _forecastEnabled = !_forecastEnabled;
-                    _applyFiltersDebounced();
-                  }),
-                  borderRadius: BorderRadius.circular(4),
-                  child: SizedBox(
-                    height: 24,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: Checkbox(
-                            value: _forecastEnabled,
-                            onChanged: (value) => setState(() {
-                              _forecastEnabled = value ?? true;
-                              _applyFiltersDebounced();
-                            }),
-                            activeColor: Colors.blue,
-                            checkColor: Colors.white,
-                            side: const BorderSide(color: Colors.white54),
-                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            visualDensity: VisualDensity.compact,
-                          ),
+            // Forecast checkbox (disabled when sites are disabled)
+            Tooltip(
+              message: 'Show wind forecast and flyability for sites',
+              textStyle: const TextStyle(color: Colors.white, fontSize: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E1E1E),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.white24),
+              ),
+              child: InkWell(
+                onTap: _sitesEnabled ? () => setState(() {
+                  _forecastEnabled = !_forecastEnabled;
+                  _applyFiltersImmediately();
+                }) : null,
+                borderRadius: BorderRadius.circular(4),
+                child: SizedBox(
+                  height: 24,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: Checkbox(
+                          value: _forecastEnabled,
+                          onChanged: _sitesEnabled ? (value) => setState(() {
+                            _forecastEnabled = value ?? true;
+                            _applyFiltersImmediately();
+                          }) : null,
+                          activeColor: Colors.blue,
+                          checkColor: Colors.white,
+                          side: const BorderSide(color: Colors.white54),
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
                         ),
-                        const SizedBox(width: 4),
-                        const Text(
-                          'Forecast',
-                          style: TextStyle(color: Colors.white, fontSize: 12),
-                        ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Text(
+                        'Forecast',
+                        style: TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                    ],
                   ),
                 ),
               ),
+            ),
           ],
         ),
         const SizedBox(height: 8),
@@ -425,7 +424,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
               child: InkWell(
                 onTap: () => setState(() {
                   _weatherStationsEnabled = !_weatherStationsEnabled;
-                  _applyFiltersDebounced();
+                  _applyFiltersImmediately();
                 }),
                 borderRadius: BorderRadius.circular(4),
                 child: SizedBox(
@@ -440,7 +439,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                           value: _weatherStationsEnabled,
                           onChanged: (value) => setState(() {
                             _weatherStationsEnabled = value ?? true;
-                            _applyFiltersDebounced();
+                            _applyFiltersImmediately();
                           }),
                           activeColor: Colors.blue,
                           checkColor: Colors.white,
@@ -451,7 +450,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                       ),
                       const SizedBox(width: 4),
                       const Text(
-                        'Weather',
+                        'Weather Stations',
                         style: TextStyle(color: Colors.white, fontSize: 12),
                       ),
                     ],
@@ -461,39 +460,37 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
             ),
           ],
         ),
-        // Weather provider checkboxes (indented, only visible when stations enabled)
-        if (_weatherStationsEnabled) ...[
-          const SizedBox(height: 4),
-          Padding(
-            padding: const EdgeInsets.only(left: 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // METAR provider
-                _buildProviderCheckbox(
-                  value: _metarEnabled,
-                  label: 'METAR (Aviation)',
-                  subtitle: WeatherStationProviderRegistry.getProvider(WeatherStationSource.metar).description,
-                  onChanged: (value) => setState(() {
-                    _metarEnabled = value ?? true;
-                    _applyFiltersDebounced();
-                  }),
-                ),
-                const SizedBox(height: 2),
-                // NWS provider (US only)
-                _buildProviderCheckbox(
-                  value: _nwsEnabled,
-                  label: 'NWS (US only)',
-                  subtitle: WeatherStationProviderRegistry.getProvider(WeatherStationSource.nws).description,
-                  onChanged: (value) => setState(() {
-                    _nwsEnabled = value ?? true;
-                    _applyFiltersDebounced();
-                  }),
-                ),
-              ],
-            ),
+        // Weather provider checkboxes (indented, disabled when stations disabled)
+        const SizedBox(height: 4),
+        Padding(
+          padding: const EdgeInsets.only(left: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // METAR provider
+              _buildProviderCheckbox(
+                value: _metarEnabled,
+                label: 'METAR (Aviation)',
+                subtitle: WeatherStationProviderRegistry.getProvider(WeatherStationSource.metar).description,
+                onChanged: _weatherStationsEnabled ? (value) => setState(() {
+                  _metarEnabled = value ?? true;
+                  _applyFiltersImmediately();
+                }) : null,
+              ),
+              const SizedBox(height: 2),
+              // NWS provider (US only)
+              _buildProviderCheckbox(
+                value: _nwsEnabled,
+                label: 'NWS (US only)',
+                subtitle: WeatherStationProviderRegistry.getProvider(WeatherStationSource.nws).description,
+                onChanged: _weatherStationsEnabled ? (value) => setState(() {
+                  _nwsEnabled = value ?? true;
+                  _applyFiltersImmediately();
+                }) : null,
+              ),
+            ],
           ),
-        ],
+        ),
         const SizedBox(height: 8),
         // Row 3: Airspace, Clip
         Row(
@@ -508,10 +505,19 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                 border: Border.all(color: Colors.white24),
               ),
               child: InkWell(
-                onTap: () => setState(() {
-                  _airspaceEnabled = !_airspaceEnabled;
-                  _applyFiltersDebounced();
-                }),
+                onTap: () {
+                  final wasDisabled = !_airspaceEnabled;
+                  setState(() {
+                    _airspaceEnabled = !_airspaceEnabled;
+                    _applyFiltersImmediately();
+                  });
+                  // Update controllers after enabling airspace so dropdowns reflect saved values
+                  if (wasDisabled && _airspaceEnabled) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      _updateControllerSelections();
+                    });
+                  }
+                },
                 borderRadius: BorderRadius.circular(4),
                 child: SizedBox(
                   height: 24,
@@ -523,10 +529,19 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                         height: 20,
                         child: Checkbox(
                           value: _airspaceEnabled,
-                          onChanged: (value) => setState(() {
-                            _airspaceEnabled = value ?? true;
-                            _applyFiltersDebounced();
-                          }),
+                          onChanged: (value) {
+                            final wasDisabled = !_airspaceEnabled;
+                            setState(() {
+                              _airspaceEnabled = value ?? true;
+                              _applyFiltersImmediately();
+                            });
+                            // Update controllers after enabling airspace so dropdowns reflect saved values
+                            if (wasDisabled && _airspaceEnabled) {
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                _updateControllerSelections();
+                              });
+                            }
+                          },
                           activeColor: Colors.blue,
                           checkColor: Colors.white,
                           side: const BorderSide(color: Colors.white54),
@@ -545,57 +560,56 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
               ),
             ),
             const SizedBox(width: 16), // Space between checkboxes
-            // Clip checkbox (only shown when airspace is enabled)
-            if (_airspaceEnabled)
-              Tooltip(
-                message: 'Only show the bottom layer at each point',
-                textStyle: const TextStyle(color: Colors.white, fontSize: 12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E1E1E),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: Colors.white24),
-                ),
-                child: InkWell(
-                  onTap: () {
-                    setState(() {
-                      _clippingEnabled = !_clippingEnabled;
-                      _applyFiltersDebounced();
-                    });
-                  },
-                  borderRadius: BorderRadius.circular(4),
-                  child: SizedBox(
-                    height: 24,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: Checkbox(
-                            value: _clippingEnabled,
-                            onChanged: (value) {
-                              setState(() {
-                                _clippingEnabled = value ?? true;
-                                _applyFiltersDebounced();
-                              });
-                            },
-                            activeColor: Colors.blue,
-                            checkColor: Colors.white,
-                            side: const BorderSide(color: Colors.white54),
-                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            visualDensity: VisualDensity.compact,
-                          ),
+            // Clip checkbox (disabled when airspace is disabled)
+            Tooltip(
+              message: 'Only show the bottom layer at each point',
+              textStyle: const TextStyle(color: Colors.white, fontSize: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E1E1E),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.white24),
+              ),
+              child: InkWell(
+                onTap: _airspaceEnabled ? () {
+                  setState(() {
+                    _clippingEnabled = !_clippingEnabled;
+                    _applyFiltersImmediately();
+                  });
+                } : null,
+                borderRadius: BorderRadius.circular(4),
+                child: SizedBox(
+                  height: 24,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: Checkbox(
+                          value: _clippingEnabled,
+                          onChanged: _airspaceEnabled ? (value) {
+                            setState(() {
+                              _clippingEnabled = value ?? true;
+                              _applyFiltersImmediately();
+                            });
+                          } : null,
+                          activeColor: Colors.blue,
+                          checkColor: Colors.white,
+                          side: const BorderSide(color: Colors.white54),
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
                         ),
-                        const SizedBox(width: 4),
-                        const Text(
-                          'Clip',
-                          style: TextStyle(color: Colors.white, fontSize: 12),
-                        ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Text(
+                        'Clip',
+                        style: TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                    ],
                   ),
                 ),
               ),
+            ),
           ],
         ),
       ],
@@ -994,10 +1008,10 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
     required bool value,
     required String label,
     required String subtitle,
-    required ValueChanged<bool?> onChanged,
+    required ValueChanged<bool?>? onChanged,
   }) {
     return InkWell(
-      onTap: () => onChanged(!value),
+      onTap: onChanged != null ? () => onChanged(!value) : null,
       borderRadius: BorderRadius.circular(4),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),

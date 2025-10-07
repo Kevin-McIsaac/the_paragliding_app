@@ -535,3 +535,4 @@ Use format `file_path:line_number` in logs:
 - always run flutter_controller_enhanced in background
 - DOnt try to contol the app
 - don't try to controll app with adb
+- Filters in Map FIlter, e.g, checkboxes, should have immediate effect in the map

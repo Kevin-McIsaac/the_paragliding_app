@@ -1024,6 +1024,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       final previousAirspaceEnabled = _airspaceEnabled;
       final previousForecastEnabled = _forecastEnabled;
       final previousWeatherStationsEnabled = _weatherStationsEnabled;
+      final previousMetarEnabled = _metarEnabled;
+      final previousNwsEnabled = _nwsEnabled;
 
       // Update non-airspace states immediately
       setState(() {
@@ -1137,6 +1139,20 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           _fetchWeatherStations();
         }
         LoggingService.action('MapFilter', 'weather_stations_enabled', {'will_fetch': currentZoom >= MapConstants.minForecastZoom});
+      } else if (weatherStationsEnabled && (metarEnabled != previousMetarEnabled || nwsEnabled != previousNwsEnabled)) {
+        // Weather station providers changed - refresh stations
+        final currentZoom = _mapController.camera.zoom;
+        if (currentZoom >= MapConstants.minForecastZoom) {
+          // Clear existing stations and re-fetch with new provider configuration
+          WeatherStationService.instance.clearCache();
+          _fetchWeatherStations();
+        }
+        LoggingService.action('MapFilter', 'weather_providers_changed', {
+          'metar_enabled': metarEnabled,
+          'nws_enabled': nwsEnabled,
+          'metar_changed': metarEnabled != previousMetarEnabled,
+          'nws_changed': nwsEnabled != previousNwsEnabled,
+        });
       }
 
       // Handle airspace visibility changes
