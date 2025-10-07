@@ -21,9 +21,11 @@ WeatherStationProvider (interface)
 ## Core Components
 
 ### 1. WeatherStationSource Enum
+
 **File:** `lib/data/models/weather_station_source.dart`
 
 Add your provider identifier:
+
 ```dart
 enum WeatherStationSource {
   metar,
@@ -33,6 +35,7 @@ enum WeatherStationSource {
 ```
 
 ### 2. WeatherStationProvider Interface
+
 **File:** `lib/services/weather_providers/weather_station_provider.dart`
 
 All providers must implement this interface:
@@ -62,6 +65,7 @@ abstract class WeatherStationProvider {
 ```
 
 ### 3. Create Provider Implementation
+
 **File:** `lib/services/weather_providers/your_provider_weather_provider.dart`
 
 ```dart
@@ -129,6 +133,7 @@ class YourProviderWeatherProvider implements WeatherStationProvider {
 ```
 
 ### 4. Register Provider
+
 **File:** `lib/services/weather_providers/weather_station_provider.dart`
 
 Add to the registry:
@@ -148,6 +153,7 @@ class WeatherStationProviderRegistry {
 ## Data Flow
 
 ### Station Fetching
+
 ```
 1. User views map at zoom ≥ 10
 2. WeatherStationService.getStationsInBounds() called
@@ -158,6 +164,7 @@ class WeatherStationProviderRegistry {
 ```
 
 ### Weather Data Fetching
+
 ```
 1. WeatherStationService.getWeatherForStations() called
 2. Stations grouped by source
@@ -207,11 +214,13 @@ _buildProviderCheckbox(
 ## Example APIs to Consider
 
 ### Global Coverage
+
 - **OpenWeatherMap** - Global, requires API key, paid tiers available
 - **WeatherAPI.com** - Global, free tier available
 - **Tomorrow.io** - Global, weather stations and observations
 
 ### Regional Coverage
+
 - **DWD (Germany)** - Free, German weather service
 - **Met Office (UK)** - Free, UK weather service
 - **Météo-France** - Free, French weather service
@@ -219,12 +228,14 @@ _buildProviderCheckbox(
 - **MetService (NZ)** - Free, New Zealand weather service
 
 ### Aviation-Specific
+
 - **CheckWX** - Global METAR/TAF aggregator, free tier
 - **AWC Text Data Server** - US aviation weather text products
 
 ## Best Practices
 
 ### Performance
+
 - Cache station lists (they rarely change)
 - Batch weather data requests when possible
 - Use connection pooling for multiple requests
@@ -232,12 +243,14 @@ _buildProviderCheckbox(
 - Set reasonable timeouts (10-30 seconds)
 
 ### Error Handling
+
 - Log all API errors with structured logging
 - Return empty lists/maps on failure (don't crash)
 - Handle rate limiting gracefully
 - Provide user-friendly error messages
 
 ### Caching Strategy
+
 ```dart
 // Station list: Long TTL (1 hour+)
 Duration get cacheTTL => MapConstants.stationListCacheTTL;
@@ -247,6 +260,7 @@ Duration get cacheTTL => MapConstants.weatherStationCacheTTL;
 ```
 
 ### API Etiquette
+
 - Always include `User-Agent: FreeFlightLog/1.0`
 - Respect rate limits
 - Cache aggressively to minimize requests
@@ -267,6 +281,7 @@ Duration get cacheTTL => MapConstants.weatherStationCacheTTL;
 ## Debugging
 
 Enable debug logging in `LoggingService` to see:
+
 - `[WEATHER_STATION_FETCH_START]` - Provider fetch initiated
 - `[WEATHER_STATION_FETCH_COMPLETE]` - Station count by provider
 - `[STATION_FETCH_SUCCESS]` - Total stations with data
@@ -298,6 +313,7 @@ await prefs.setString(apiKeyKey, apiKey);
 ## Support
 
 For questions or issues, check:
+
 - [Technical Design Document](TECHNICAL_DESIGN.md)
 - [Functional Specification](FUNCTIONAL_SPECIFICATION.md)
 - Existing provider implementations for reference

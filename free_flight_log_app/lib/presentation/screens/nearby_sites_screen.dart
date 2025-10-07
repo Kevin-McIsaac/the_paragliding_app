@@ -22,6 +22,7 @@ import '../../services/nearby_sites_search_manager_v2.dart';
 import '../../services/map_bounds_manager.dart';
 import '../../services/weather_service.dart';
 import '../../services/weather_station_service.dart';
+import '../../services/weather_providers/weather_station_provider_registry.dart';
 import '../../utils/map_provider.dart';
 import '../../utils/map_constants.dart';
 import '../../utils/site_utils.dart';
@@ -110,6 +111,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   List<WeatherStation> _weatherStations = [];
   final Map<String, WindData> _stationWindData = {};
   bool _isStationsLoading = false;
+  final Map<WeatherStationSource, LoadingItemState> _providerStates = {};
   final WeatherStationService _weatherStationService = WeatherStationService.instance;
   Timer? _stationFetchDebounce;
 
@@ -395,6 +397,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
       setState(() {
         _isStationsLoading = true;
+        _providerStates.clear();
       });
 
       try {
@@ -404,8 +407,24 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           'bounds': _currentBounds.toString(),
         });
 
-        // Fetch stations in visible bounds
-        final stations = await _weatherStationService.getStationsInBounds(_currentBounds!);
+        // Fetch stations in visible bounds with progress tracking
+        final stations = await _weatherStationService.getStationsInBounds(
+          _currentBounds!,
+          onProgress: ({
+            required source,
+            required displayName,
+            required success,
+            required stationCount,
+          }) {
+            if (mounted) {
+              setState(() {
+                _providerStates[source] = success
+                    ? LoadingItemState.completed
+                    : LoadingItemState.error;
+              });
+            }
+          },
+        );
 
         LoggingService.structured('STATION_FETCH_RECEIVED', {
           'station_count': stations.length,
@@ -422,7 +441,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
             _weatherStations = stations;
             _stationWindData.clear();
             _stationWindData.addAll(weatherData);
-            _isStationsLoading = false;
           });
 
           LoggingService.structured('STATION_FETCH_SUCCESS', {
@@ -430,6 +448,16 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
             'stations_with_data': weatherData.length,
             'time': _selectedDateTime.toIso8601String(),
             'zoom_level': currentZoom.toStringAsFixed(2),
+          });
+
+          // Keep overlay visible briefly to show completion checkmarks
+          Future.delayed(const Duration(milliseconds: 1500), () {
+            if (mounted) {
+              setState(() {
+                _isStationsLoading = false;
+                _providerStates.clear();
+              });
+            }
           });
         }
       } catch (e, stackTrace) {
@@ -1444,12 +1472,19 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                     iconColor: Colors.lightBlue,
                     count: _displayedSites.length,
                   ),
-                if (_isStationsLoading)
-                  const MapLoadingItem(
-                    label: 'Weather stations',
-                    icon: Icons.cloud,
-                    iconColor: Colors.orange,
-                  ),
+                // Individual weather station providers with progress tracking
+                if (_isStationsLoading || _providerStates.isNotEmpty)
+                  ...WeatherStationProviderRegistry.getAllSources().map((source) {
+                    final provider = WeatherStationProviderRegistry.getProvider(source);
+                    final state = _providerStates[source] ?? LoadingItemState.loading;
+
+                    return MapLoadingItem(
+                      label: provider.displayName,
+                      icon: Icons.cloud,
+                      iconColor: Colors.orange,
+                      state: state,
+                    );
+                  }),
               ],
             ),
 

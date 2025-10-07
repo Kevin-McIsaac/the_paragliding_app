@@ -9,6 +9,14 @@ import 'logging_service.dart';
 import 'weather_providers/weather_station_provider.dart';
 import 'weather_providers/weather_station_provider_registry.dart';
 
+/// Progress callback for individual provider completion
+typedef ProviderProgressCallback = void Function({
+  required WeatherStationSource source,
+  required String displayName,
+  required bool success,
+  required int stationCount,
+});
+
 /// Orchestrator service for weather station data from multiple providers
 /// Manages METAR, NOAA CDO, and potentially other providers
 /// Handles deduplication, caching, and parallel fetching
@@ -22,7 +30,11 @@ class WeatherStationService {
 
   /// Get weather stations in a bounding box from all enabled providers
   /// Fetches in parallel, then deduplicates and returns combined results
-  Future<List<WeatherStation>> getStationsInBounds(LatLngBounds bounds) async {
+  /// Optional [onProgress] callback reports each provider's completion
+  Future<List<WeatherStation>> getStationsInBounds(
+    LatLngBounds bounds, {
+    ProviderProgressCallback? onProgress,
+  }) async {
     try {
       final stopwatch = Stopwatch()..start();
 
@@ -39,14 +51,32 @@ class WeatherStationService {
         'bounds': '${bounds.south},${bounds.west},${bounds.north},${bounds.east}',
       });
 
-      // Fetch from all enabled providers in parallel
+      // Fetch from all enabled providers in parallel with progress reporting
       final futures = enabledProviders.map((provider) async {
         try {
           final stations = await provider.fetchStations(bounds);
           LoggingService.info('${provider.displayName}: fetched ${stations.length} stations');
+
+          // Report progress if callback provided
+          onProgress?.call(
+            source: provider.source,
+            displayName: provider.displayName,
+            success: true,
+            stationCount: stations.length,
+          );
+
           return stations;
         } catch (e, stackTrace) {
           LoggingService.error('${provider.displayName}: fetch failed', e, stackTrace);
+
+          // Report error if callback provided
+          onProgress?.call(
+            source: provider.source,
+            displayName: provider.displayName,
+            success: false,
+            stationCount: 0,
+          );
+
           return <WeatherStation>[];
         }
       });
