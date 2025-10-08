@@ -506,6 +506,21 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     });
   }
 
+  /// Refresh all weather data (stations and forecasts) by clearing caches
+  /// and re-fetching from APIs
+  Future<void> _refreshAllWeatherData() async {
+    LoggingService.action('NearbySites', 'refresh_all_weather');
+
+    // Clear all caches to force fresh data fetch
+    _weatherStationService.clearCache();
+    _weatherService.clearCache();
+
+    // Re-fetch both weather stations and wind forecasts
+    // The existing fetch methods handle loading states, debouncing, and UI updates
+    await _fetchWeatherStations();
+    await _fetchWindDataForSites();
+  }
+
   /// Check if any displayed site is missing wind data
   bool _hasMissingWindData({bool includeUnknownStatus = false}) {
     return _displayedSites.any((site) {
@@ -1372,6 +1387,13 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           ),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: (_isStationsLoading || _isWindLoading)
+                ? null
+                : _refreshAllWeatherData,
+            tooltip: 'Refresh all',
+          ),
           IconButton(
             icon: const Icon(Icons.access_time),
             onPressed: _showDateTimePicker,
