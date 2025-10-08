@@ -10,11 +10,13 @@ import 'weather_providers/weather_station_provider.dart';
 import 'weather_providers/weather_station_provider_registry.dart';
 
 /// Progress callback for individual provider completion
+/// Called as each provider completes with its stations for progressive updates
 typedef ProviderProgressCallback = void Function({
   required WeatherStationSource source,
   required String displayName,
   required bool success,
   required int stationCount,
+  required List<WeatherStation> stations,  // Progressive station updates
 });
 
 /// Orchestrator service for weather station data from multiple providers
@@ -52,30 +54,47 @@ class WeatherStationService {
         'bounds': '${bounds.south},${bounds.west},${bounds.north},${bounds.east}',
       });
 
-      // Fetch from all enabled providers in parallel with progress reporting
-      final futures = enabledProviders.map((provider) async {
+      // Accumulator for progressive results
+      final List<WeatherStation> allStations = [];
+      final List<List<WeatherStation>> providerResults = List.filled(enabledProviders.length, []);
+
+      // Fetch from all enabled providers with progressive updates
+      final futures = enabledProviders.asMap().entries.map((entry) async {
+        final index = entry.key;
+        final provider = entry.value;
+
         try {
           final stations = await provider.fetchStations(bounds);
           LoggingService.info('${provider.displayName}: fetched ${stations.length} stations');
 
-          // Report progress if callback provided
+          // Store result
+          providerResults[index] = stations;
+
+          // Add to running total and deduplicate
+          allStations.addAll(stations);
+          final deduplicatedSoFar = _deduplicateStations(allStations);
+
+          // Report progress with deduplicated stations SO FAR
           onProgress?.call(
             source: provider.source,
             displayName: provider.displayName,
             success: true,
             stationCount: stations.length,
+            stations: deduplicatedSoFar,
           );
 
           return stations;
         } catch (e, stackTrace) {
           LoggingService.error('${provider.displayName}: fetch failed', e, stackTrace);
 
-          // Report error if callback provided
+          // Report error with current stations (no new ones from this provider)
+          final deduplicatedSoFar = _deduplicateStations(allStations);
           onProgress?.call(
             source: provider.source,
             displayName: provider.displayName,
             success: false,
             stationCount: 0,
+            stations: deduplicatedSoFar,
           );
 
           return <WeatherStation>[];
@@ -84,8 +103,9 @@ class WeatherStationService {
 
       final results = await Future.wait(futures);
 
-      // Combine all results
-      final allStations = results.expand((list) => list).toList();
+      // Final combined results (for return value compatibility)
+      allStations.clear();
+      allStations.addAll(results.expand((list) => list));
 
       stopwatch.stop();
 

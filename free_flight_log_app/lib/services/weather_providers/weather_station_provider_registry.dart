@@ -2,6 +2,7 @@ import '../../data/models/weather_station_source.dart';
 import 'weather_station_provider.dart';
 import 'metar_weather_provider.dart';
 import 'nws_weather_provider.dart';
+import 'pioupiou_weather_provider.dart';
 
 /// Centralized registry mapping sources to provider implementations
 ///
@@ -12,6 +13,7 @@ class WeatherStationProviderRegistry {
   static final Map<WeatherStationSource, WeatherStationProvider> _providers = {
     WeatherStationSource.metar: MetarWeatherProvider.instance,
     WeatherStationSource.nws: NwsWeatherProvider.instance,
+    WeatherStationSource.pioupiou: PioupiouWeatherProvider.instance,
   };
 
   /// Get provider for a specific source

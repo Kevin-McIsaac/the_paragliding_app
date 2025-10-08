@@ -91,6 +91,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   bool _weatherStationsEnabled = true; // Controls weather station loading and display (default: enabled)
   bool _metarEnabled = true; // METAR provider enabled (default: true)
   bool _nwsEnabled = true; // NWS provider enabled (default: true, free/no API key)
+  bool _pioupiouEnabled = true; // Pioupiou provider enabled (default: true, free/no API key)
   bool _hasActiveFilters = false; // Cached value to avoid FutureBuilder rebuilds
   double _maxAltitudeFt = 10000.0; // Default altitude filter
   bool _airspaceClippingEnabled = true; // Default clipping enabled
@@ -175,6 +176,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       final weatherStationsEnabled = prefs.getBool(_weatherStationsEnabledKey) ?? true;
       final metarEnabled = prefs.getBool('weather_provider_${WeatherStationSource.metar.name}_enabled') ?? true;
       final nwsEnabled = prefs.getBool('weather_provider_${WeatherStationSource.nws.name}_enabled') ?? true;
+      final pioupiouEnabled = prefs.getBool('weather_provider_${WeatherStationSource.pioupiou.name}_enabled') ?? true;
 
       // Map provider loaded from preferences if needed
       if (savedProviderName != null) {
@@ -192,6 +194,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           _weatherStationsEnabled = weatherStationsEnabled;
           _metarEnabled = metarEnabled;
           _nwsEnabled = nwsEnabled;
+          _pioupiouEnabled = pioupiouEnabled;
         });
       }
     } catch (e) {
@@ -407,7 +410,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           'bounds': _currentBounds.toString(),
         });
 
-        // Fetch stations in visible bounds with progress tracking
+        // Fetch stations in visible bounds with progressive updates
         final stations = await _weatherStationService.getStationsInBounds(
           _currentBounds!,
           onProgress: ({
@@ -415,13 +418,34 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
             required displayName,
             required success,
             required stationCount,
-          }) {
+            required stations,
+          }) async {
             if (mounted) {
+              // Update loading state
               setState(() {
                 _providerStates[source] = success
                     ? LoadingItemState.completed
                     : LoadingItemState.error;
               });
+
+              // Progressive update: fetch weather data and update UI immediately
+              if (stations.isNotEmpty) {
+                final weatherData = await _weatherStationService.getWeatherForStations(stations);
+
+                if (mounted) {
+                  setState(() {
+                    _weatherStations = stations;
+                    _stationWindData.clear();
+                    _stationWindData.addAll(weatherData);
+                  });
+
+                  LoggingService.structured('STATION_PROGRESSIVE_UPDATE', {
+                    'provider': source.name,
+                    'station_count': stations.length,
+                    'stations_with_data': weatherData.length,
+                  });
+                }
+              }
             }
           },
         );
@@ -1014,6 +1038,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           weatherStationsEnabled: _weatherStationsEnabled,
           metarEnabled: _metarEnabled,
           nwsEnabled: _nwsEnabled,
+          pioupiouEnabled: _pioupiouEnabled,
           airspaceTypes: airspaceTypes,
           icaoClasses: icaoClasses,
           maxAltitudeFt: _maxAltitudeFt,
@@ -1045,7 +1070,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   }
 
   /// Handle filter apply from dialog
-  void _handleFilterApply(bool sitesEnabled, bool airspaceEnabled, bool forecastEnabled, bool weatherStationsEnabled, bool metarEnabled, bool nwsEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) async {
+  void _handleFilterApply(bool sitesEnabled, bool airspaceEnabled, bool forecastEnabled, bool weatherStationsEnabled, bool metarEnabled, bool nwsEnabled, bool pioupiouEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) async {
     try {
       // Update filter states
       final previousSitesEnabled = _sitesEnabled;
@@ -1054,6 +1079,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       final previousWeatherStationsEnabled = _weatherStationsEnabled;
       final previousMetarEnabled = _metarEnabled;
       final previousNwsEnabled = _nwsEnabled;
+      final previousPioupiouEnabled = _pioupiouEnabled;
 
       // Update non-airspace states immediately
       setState(() {
@@ -1063,6 +1089,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         _weatherStationsEnabled = weatherStationsEnabled;
         _metarEnabled = metarEnabled;
         _nwsEnabled = nwsEnabled;
+        _pioupiouEnabled = pioupiouEnabled;
         _maxAltitudeFt = maxAltitudeFt;
       });
 
@@ -1074,6 +1101,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       await prefs.setBool(_weatherStationsEnabledKey, weatherStationsEnabled);
       await prefs.setBool('weather_provider_${WeatherStationSource.metar.name}_enabled', metarEnabled);
       await prefs.setBool('weather_provider_${WeatherStationSource.nws.name}_enabled', nwsEnabled);
+      await prefs.setBool('weather_provider_${WeatherStationSource.pioupiou.name}_enabled', pioupiouEnabled);
 
       // Handle sites visibility changes
       if (!sitesEnabled && previousSitesEnabled) {
@@ -1167,7 +1195,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           _fetchWeatherStations();
         }
         LoggingService.action('MapFilter', 'weather_stations_enabled', {'will_fetch': currentZoom >= MapConstants.minForecastZoom});
-      } else if (weatherStationsEnabled && (metarEnabled != previousMetarEnabled || nwsEnabled != previousNwsEnabled)) {
+      } else if (weatherStationsEnabled && (metarEnabled != previousMetarEnabled || nwsEnabled != previousNwsEnabled || pioupiouEnabled != previousPioupiouEnabled)) {
         // Weather station providers changed - refresh stations
         final currentZoom = _mapController.camera.zoom;
         if (currentZoom >= MapConstants.minForecastZoom) {
@@ -1178,8 +1206,10 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         LoggingService.action('MapFilter', 'weather_providers_changed', {
           'metar_enabled': metarEnabled,
           'nws_enabled': nwsEnabled,
+          'pioupiou_enabled': pioupiouEnabled,
           'metar_changed': metarEnabled != previousMetarEnabled,
           'nws_changed': nwsEnabled != previousNwsEnabled,
+          'pioupiou_changed': pioupiouEnabled != previousPioupiouEnabled,
         });
       }
 
@@ -1474,7 +1504,15 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                   ),
                 // Individual weather station providers with progress tracking
                 if (_isStationsLoading || _providerStates.isNotEmpty)
-                  ...WeatherStationProviderRegistry.getAllSources().map((source) {
+                  ...WeatherStationProviderRegistry.getAllSources()
+                      .where((source) {
+                        // Only show enabled providers in loading overlay
+                        if (source == WeatherStationSource.metar) return _metarEnabled;
+                        if (source == WeatherStationSource.nws) return _nwsEnabled;
+                        if (source == WeatherStationSource.pioupiou) return _pioupiouEnabled;
+                        return false;
+                      })
+                      .map((source) {
                     final provider = WeatherStationProviderRegistry.getProvider(source);
                     final state = _providerStates[source] ?? LoadingItemState.loading;
 
@@ -2945,6 +2983,7 @@ class _DraggableFilterDialog extends StatefulWidget {
   final bool weatherStationsEnabled;
   final bool metarEnabled;
   final bool nwsEnabled;
+  final bool pioupiouEnabled;
   final Map<String, bool> airspaceTypes;
   final Map<String, bool> icaoClasses;
   final double maxAltitudeFt;
@@ -2956,6 +2995,7 @@ class _DraggableFilterDialog extends StatefulWidget {
     bool weatherStationsEnabled,
     bool metarEnabled,
     bool nwsEnabled,
+    bool pioupiouEnabled,
     Map<String, bool> types,
     Map<String, bool> classes,
     double maxAltitudeFt,
@@ -2969,6 +3009,7 @@ class _DraggableFilterDialog extends StatefulWidget {
     required this.weatherStationsEnabled,
     required this.metarEnabled,
     required this.nwsEnabled,
+    required this.pioupiouEnabled,
     required this.airspaceTypes,
     required this.icaoClasses,
     required this.maxAltitudeFt,
@@ -3012,6 +3053,7 @@ class _DraggableFilterDialogState extends State<_DraggableFilterDialog> {
                 weatherStationsEnabled: widget.weatherStationsEnabled,
                 metarEnabled: widget.metarEnabled,
                 nwsEnabled: widget.nwsEnabled,
+                pioupiouEnabled: widget.pioupiouEnabled,
                 airspaceTypes: widget.airspaceTypes,
                 icaoClasses: widget.icaoClasses,
                 maxAltitudeFt: widget.maxAltitudeFt,

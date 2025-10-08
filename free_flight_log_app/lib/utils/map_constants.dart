@@ -30,6 +30,10 @@ class MapConstants {
   static const Duration nwsStationListCacheTTL = Duration(hours: 24); // Stations don't move/change
   static const Duration nwsObservationCacheTTL = Duration(minutes: 10); // Observations update 1-60min
 
+  // Pioupiou-specific caching (global station list strategy)
+  static const Duration pioupiouStationListCacheTTL = Duration(hours: 24); // Stations don't move
+  static const Duration pioupiouMeasurementsCacheTTL = Duration(minutes: 20); // Wind updates frequently
+
   // Map UI constants
   static const double mapPadding = 0.005;
 

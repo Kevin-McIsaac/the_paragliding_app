@@ -287,10 +287,20 @@ class MetarWeatherProvider implements WeatherStationProvider {
 
       // Extract wind data
       WindData? windData;
-      final wdir = json['wdir'] as int?;
+      final wdirRaw = json['wdir'];  // Can be int or String ("VRB" for variable)
       final wspd = json['wspd'] as int?;
       final wgst = json['wgst'] as int?;
       final reportTime = json['reportTime'] as String?;
+
+      // Parse wind direction - can be int or "VRB" for variable winds
+      int? wdir;
+      if (wdirRaw is int) {
+        wdir = wdirRaw;
+      } else if (wdirRaw is String && wdirRaw != 'VRB') {
+        // Try parsing string as int (some APIs return string numbers)
+        wdir = int.tryParse(wdirRaw);
+      }
+      // If VRB or null, wdir remains null and wind data won't be created
 
       if (wdir != null && wspd != null) {
         // Convert from knots to km/h

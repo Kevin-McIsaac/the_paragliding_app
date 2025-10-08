@@ -11,4 +11,8 @@ enum WeatherStationSource {
   /// National Weather Service (NWS) from api.weather.gov
   /// Real-time weather observations from non-airport stations
   nws,
+
+  /// Pioupiou/OpenWindMap from api.pioupiou.fr
+  /// Community wind stations with global coverage
+  pioupiou,
 }
