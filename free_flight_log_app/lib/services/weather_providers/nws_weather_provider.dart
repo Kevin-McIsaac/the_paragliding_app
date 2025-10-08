@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -13,7 +14,12 @@ import 'weather_station_provider.dart';
 /// Provides real-time weather observations from api.weather.gov
 ///
 /// IMPORTANT: This provider only works for locations within the United States.
-/// International locations will return 0 stations.
+/// International locations will return 0 stations quickly (no timeout).
+///
+/// Uses bbox-containment caching strategy:
+/// - Station lists cached for 24 hours (stations don't move)
+/// - Observations cached for 10 minutes (update frequency varies 1-60min)
+/// - Reuses cached data across zoom/pan operations
 ///
 /// Free, no API key required
 class NwsWeatherProvider implements WeatherStationProvider {
@@ -22,11 +28,18 @@ class NwsWeatherProvider implements WeatherStationProvider {
 
   static const String _baseUrl = 'https://api.weather.gov';
 
-  /// Cache for station lists: "bbox_key" -> {stations, timestamp}
+  /// Cache for station lists: "bbox_key" -> {stations, bounds, timestamp}
+  /// Stores bbox containing all stations from grid point lookup
   final Map<String, _StationCacheEntry> _stationCache = {};
 
-  /// Cache for pending requests
+  /// Cache for individual station observations: "station_id" -> {windData, timestamp}
+  final Map<String, _ObservationCacheEntry> _observationCache = {};
+
+  /// Pending station list requests to prevent duplicate API calls
   final Map<String, Future<List<WeatherStation>>> _pendingStationRequests = {};
+
+  /// Pending observation requests to prevent duplicate API calls
+  final Map<String, Future<WindData?>> _pendingObservationRequests = {};
 
   @override
   WeatherStationSource get source => WeatherStationSource.nws;
@@ -44,7 +57,7 @@ class NwsWeatherProvider implements WeatherStationProvider {
   String get attributionUrl => 'https://www.weather.gov/';
 
   @override
-  Duration get cacheTTL => MapConstants.weatherStationCacheTTL;
+  Duration get cacheTTL => MapConstants.nwsObservationCacheTTL;
 
   @override
   bool get requiresApiKey => false;
@@ -57,24 +70,45 @@ class NwsWeatherProvider implements WeatherStationProvider {
 
   @override
   Future<List<WeatherStation>> fetchStations(LatLngBounds bounds) async {
-    // Generate cache key
+    // Generate cache key from rounded bounds
     final cacheKey = _getBoundsCacheKey(bounds);
 
-    // Check cache
+    // Step 1: Check exact cache match
     final cached = _stationCache[cacheKey];
     if (cached != null && !cached.isExpired) {
-      LoggingService.info('NWS station cache hit for $cacheKey (${cached.stations.length} stations)');
+      LoggingService.structured('NWS_CACHE_HIT', {
+        'cache_key': cacheKey,
+        'stations': cached.stations.length,
+      });
       return cached.stations;
     }
 
-    // Check if request pending
+    // Step 2: Check if any cached bbox contains requested bbox
+    final containingCache = _findContainingCache(bounds);
+    if (containingCache != null) {
+      // Filter cached stations to requested bbox
+      final filtered = containingCache.stations.where((station) {
+        return bounds.contains(LatLng(station.latitude, station.longitude));
+      }).toList();
+
+      LoggingService.structured('NWS_CACHE_SUBSET', {
+        'cached_total': containingCache.stations.length,
+        'filtered_count': filtered.length,
+        'cached_bbox': _boundsToString(containingCache.bounds),
+        'requested_bbox': _boundsToString(bounds),
+      });
+
+      return filtered;
+    }
+
+    // Step 3: Check if request is already pending
     if (_pendingStationRequests.containsKey(cacheKey)) {
       LoggingService.info('Waiting for pending NWS station request: $cacheKey');
       return _pendingStationRequests[cacheKey]!;
     }
 
-    // Create new request
-    final future = _fetchStationsInBounds(bounds, cacheKey);
+    // Step 4: Fetch from API
+    final future = _fetchStationsFromGrid(bounds, cacheKey);
     _pendingStationRequests[cacheKey] = future;
 
     try {
@@ -91,10 +125,8 @@ class NwsWeatherProvider implements WeatherStationProvider {
   ) async {
     if (stations.isEmpty) return {};
 
-    // NWS stations fetch latest observations individually
+    // Fetch observations in parallel with per-station caching
     final Map<String, WindData> result = {};
-
-    // Fetch observations for stations in parallel (limit to avoid overwhelming API)
     final futures = <Future<void>>[];
 
     for (final station in stations) {
@@ -107,7 +139,7 @@ class NwsWeatherProvider implements WeatherStationProvider {
 
     await Future.wait(futures);
 
-    LoggingService.structured('NWS_WEATHER_EXTRACTED', {
+    LoggingService.structured('NWS_WEATHER_FETCHED', {
       'total_stations': stations.length,
       'stations_with_data': result.length,
     });
@@ -118,39 +150,161 @@ class NwsWeatherProvider implements WeatherStationProvider {
   @override
   void clearCache() {
     _stationCache.clear();
-    LoggingService.info('NWS station cache cleared');
+    _observationCache.clear();
+    LoggingService.info('NWS cache cleared (stations and observations)');
   }
 
   @override
   Map<String, dynamic> getCacheStats() {
-    final validEntries = _stationCache.values.where((e) => !e.isExpired).length;
+    final validStationEntries = _stationCache.values.where((e) => !e.isExpired).length;
     final totalStations = _stationCache.values
         .where((e) => !e.isExpired)
         .fold<int>(0, (sum, entry) => sum + entry.stations.length);
 
+    final validObservationEntries = _observationCache.values.where((e) => !e.isExpired).length;
+
     return {
-      'total_cache_entries': _stationCache.length,
-      'valid_cache_entries': validEntries,
+      'station_cache_entries': _stationCache.length,
+      'valid_station_entries': validStationEntries,
       'total_cached_stations': totalStations,
-      'pending_requests': _pendingStationRequests.length,
+      'observation_cache_entries': _observationCache.length,
+      'valid_observation_entries': validObservationEntries,
+      'pending_station_requests': _pendingStationRequests.length,
+      'pending_observation_requests': _pendingObservationRequests.length,
     };
   }
 
-  /// Fetch NWS stations within bounds
-  Future<List<WeatherStation>> _fetchStationsInBounds(
-    LatLngBounds bounds,
+  /// Fetch stations from NWS grid point lookup
+  Future<List<WeatherStation>> _fetchStationsFromGrid(
+    LatLngBounds requestedBounds,
     String cacheKey,
   ) async {
     try {
-      final stopwatch = Stopwatch()..start();
+      // Calculate bbox center for grid point lookup
+      final centerLat = (requestedBounds.north + requestedBounds.south) / 2;
+      final centerLon = (requestedBounds.east + requestedBounds.west) / 2;
 
-      // NWS doesn't support bbox query, so we fetch all stations and filter
-      final url = Uri.parse('$_baseUrl/stations?limit=500');
-
-      LoggingService.structured('NWS_REQUEST_START', {
-        'bounds': '${bounds.south},${bounds.west},${bounds.north},${bounds.east}',
-        'url': url.toString(),
+      LoggingService.structured('NWS_CACHE_MISS', {
         'cache_key': cacheKey,
+        'center_lat': centerLat.toStringAsFixed(4),
+        'center_lon': centerLon.toStringAsFixed(4),
+      });
+
+      // NWS API Step 1: Get grid stations URL from point
+      final gridUrl = await _getGridStationsUrl(centerLat, centerLon);
+      if (gridUrl == null) {
+        // Non-US location (404 from /points endpoint)
+        return [];
+      }
+
+      // NWS API Step 2: Fetch all stations for this grid (~50 stations)
+      final allStations = await _fetchGridStations(gridUrl);
+      if (allStations.isEmpty) {
+        return [];
+      }
+
+      // Calculate bbox that contains all returned stations
+      final containingBbox = _calculateContainingBbox(allStations);
+
+      // Cache with expanded bbox
+      _stationCache[cacheKey] = _StationCacheEntry(
+        stations: allStations,
+        bounds: containingBbox,
+        timestamp: DateTime.now(),
+      );
+
+      // Filter to requested bbox
+      final filtered = allStations.where((station) {
+        return requestedBounds.contains(LatLng(station.latitude, station.longitude));
+      }).toList();
+
+      LoggingService.structured('NWS_GRID_FETCHED', {
+        'total_stations': allStations.length,
+        'in_bbox': filtered.length,
+        'cached_bbox': _boundsToString(containingBbox),
+        'requested_bbox': _boundsToString(requestedBounds),
+      });
+
+      return filtered;
+    } catch (e, stackTrace) {
+      LoggingService.error('Failed to fetch NWS stations from grid', e, stackTrace);
+      return [];
+    }
+  }
+
+  /// Get observationStations URL from NWS /points endpoint
+  /// Returns null if location is outside US (404 response)
+  Future<String?> _getGridStationsUrl(double lat, double lon) async {
+    try {
+      final stopwatch = Stopwatch()..start();
+      final url = Uri.parse('$_baseUrl/points/${lat.toStringAsFixed(4)},${lon.toStringAsFixed(4)}');
+
+      LoggingService.structured('NWS_POINT_REQUEST', {
+        'lat': lat.toStringAsFixed(4),
+        'lon': lon.toStringAsFixed(4),
+      });
+
+      final response = await http.get(
+        url,
+        headers: {
+          'Accept': 'application/geo+json',
+          'User-Agent': 'FreeFlightLog/1.0',
+        },
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          LoggingService.structured('NWS_POINT_TIMEOUT', {
+            'lat': lat,
+            'lon': lon,
+          });
+          return http.Response('{"error": "Timeout"}', 408);
+        },
+      );
+
+      stopwatch.stop();
+
+      if (response.statusCode == 404) {
+        // Location outside US coverage
+        LoggingService.structured('NWS_NON_US_LOCATION', {
+          'lat': lat,
+          'lon': lon,
+          'duration_ms': stopwatch.elapsedMilliseconds,
+        });
+        return null;
+      }
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final properties = data['properties'] as Map<String, dynamic>?;
+        final gridUrl = properties?['observationStations'] as String?;
+
+        LoggingService.structured('NWS_POINT_SUCCESS', {
+          'grid_url': gridUrl,
+          'duration_ms': stopwatch.elapsedMilliseconds,
+        });
+
+        return gridUrl;
+      }
+
+      LoggingService.structured('NWS_POINT_ERROR', {
+        'status_code': response.statusCode,
+        'response': response.body.substring(0, min(200, response.body.length)),
+      });
+      return null;
+    } catch (e, stackTrace) {
+      LoggingService.error('Failed to get NWS grid URL', e, stackTrace);
+      return null;
+    }
+  }
+
+  /// Fetch station list from NWS gridpoints stations endpoint
+  Future<List<WeatherStation>> _fetchGridStations(String gridUrl) async {
+    try {
+      final stopwatch = Stopwatch()..start();
+      final url = Uri.parse(gridUrl);
+
+      LoggingService.structured('NWS_GRID_REQUEST', {
+        'grid_url': gridUrl,
       });
 
       final response = await http.get(
@@ -162,102 +316,57 @@ class NwsWeatherProvider implements WeatherStationProvider {
       ).timeout(
         const Duration(seconds: 30),
         onTimeout: () {
-          stopwatch.stop();
-          LoggingService.structured('NWS_TIMEOUT', {
-            'duration_ms': stopwatch.elapsedMilliseconds,
-            'timeout_seconds': 30,
+          LoggingService.structured('NWS_GRID_TIMEOUT', {
+            'grid_url': gridUrl,
           });
-          return http.Response('{"error": "Request timeout"}', 408);
+          return http.Response('{"error": "Timeout"}', 408);
         },
       );
 
       stopwatch.stop();
 
-      LoggingService.structured('NWS_RESPONSE_RECEIVED', {
-        'status_code': response.statusCode,
-        'duration_ms': stopwatch.elapsedMilliseconds,
-        'content_length': response.body.length,
-      });
-
-      if (response.statusCode == 200) {
-        final networkTime = stopwatch.elapsedMilliseconds;
-
-        // Parse GeoJSON response
-        final parseStopwatch = Stopwatch()..start();
-        final responseData = jsonDecode(response.body) as Map<String, dynamic>;
-        final features = responseData['features'] as List?;
-
-        if (features == null) {
-          LoggingService.info('NWS: No features in response');
-          _stationCache[cacheKey] = _StationCacheEntry(
-            stations: [],
-            timestamp: DateTime.now(),
-          );
-          return [];
-        }
-
-        final List<WeatherStation> allStations = [];
-        for (final feature in features) {
-          try {
-            final station = _parseNwsStation(feature as Map<String, dynamic>);
-            if (station != null) {
-              allStations.add(station);
-            }
-          } catch (e) {
-            LoggingService.error('Failed to parse NWS station', e);
-          }
-        }
-
-        // Filter stations within bounds
-        final stationsInBounds = allStations.where((station) {
-          return bounds.contains(LatLng(station.latitude, station.longitude));
-        }).toList();
-
-        parseStopwatch.stop();
-
-        LoggingService.performance(
-          'NWS parsing',
-          Duration(milliseconds: parseStopwatch.elapsedMilliseconds),
-          '${stationsInBounds.length} stations in bounds (${allStations.length} total)',
-        );
-
-        // Cache the filtered results
-        _stationCache[cacheKey] = _StationCacheEntry(
-          stations: stationsInBounds,
-          timestamp: DateTime.now(),
-        );
-
-        LoggingService.structured('NWS_STATIONS_SUCCESS', {
-          'station_count': stationsInBounds.length,
-          'total_fetched': allStations.length,
-          'network_ms': networkTime,
-          'parse_ms': parseStopwatch.elapsedMilliseconds,
-          'cache_key': cacheKey,
-        });
-
-        return stationsInBounds;
-      } else if (response.statusCode == 408) {
-        // Request timeout
-        return [];
-      } else {
-        LoggingService.structured('NWS_HTTP_ERROR', {
+      if (response.statusCode != 200) {
+        LoggingService.structured('NWS_GRID_ERROR', {
           'status_code': response.statusCode,
-          'response_body': response.body.substring(0, response.body.length > 500 ? 500 : response.body.length),
+          'response': response.body.substring(0, min(200, response.body.length)),
         });
         return [];
       }
-    } catch (e, stackTrace) {
-      LoggingService.structured('NWS_REQUEST_FAILED', {
-        'error_type': e.runtimeType.toString(),
-        'error_message': e.toString(),
-        'cache_key': cacheKey,
+
+      // Parse GeoJSON response
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final features = data['features'] as List?;
+
+      if (features == null || features.isEmpty) {
+        LoggingService.info('NWS: No stations in grid response');
+        return [];
+      }
+
+      final List<WeatherStation> stations = [];
+      for (final feature in features) {
+        try {
+          final station = _parseNwsStation(feature as Map<String, dynamic>);
+          if (station != null) {
+            stations.add(station);
+          }
+        } catch (e) {
+          LoggingService.error('Failed to parse NWS station', e);
+        }
+      }
+
+      LoggingService.structured('NWS_GRID_SUCCESS', {
+        'total_stations': stations.length,
+        'duration_ms': stopwatch.elapsedMilliseconds,
       });
-      LoggingService.error('Failed to fetch NWS stations', e, stackTrace);
+
+      return stations;
+    } catch (e, stackTrace) {
+      LoggingService.error('Failed to fetch NWS grid stations', e, stackTrace);
       return [];
     }
   }
 
-  /// Parse NWS GeoJSON station feature
+  /// Parse NWS GeoJSON station feature into WeatherStation
   WeatherStation? _parseNwsStation(Map<String, dynamic> feature) {
     try {
       final properties = feature['properties'] as Map<String, dynamic>?;
@@ -274,7 +383,7 @@ class NwsWeatherProvider implements WeatherStationProvider {
       final longitude = (coordinates[0] as num).toDouble();
       final latitude = (coordinates[1] as num).toDouble();
 
-      // Extract elevation
+      // Extract elevation if available
       double? elevation;
       final elevData = properties['elevation'] as Map<String, dynamic>?;
       if (elevData != null) {
@@ -296,10 +405,51 @@ class NwsWeatherProvider implements WeatherStationProvider {
     }
   }
 
-  /// Fetch latest observation for a station
+  /// Fetch observation for a single station with caching
   Future<WindData?> _fetchStationObservation(WeatherStation station) async {
+    // Check observation cache (10-minute TTL)
+    final cached = _observationCache[station.id];
+    if (cached != null && !cached.isExpired) {
+      LoggingService.structured('NWS_OBSERVATION_CACHE_HIT', {
+        'station_id': station.id,
+      });
+      return cached.windData;
+    }
+
+    // Check if request is already pending
+    if (_pendingObservationRequests.containsKey(station.id)) {
+      return _pendingObservationRequests[station.id]!;
+    }
+
+    // Create new request
+    final future = _fetchObservationFromApi(station.id);
+    _pendingObservationRequests[station.id] = future;
+
     try {
-      final url = Uri.parse('$_baseUrl/stations/${station.id}/observations/latest');
+      final windData = await future;
+
+      // Cache successful fetch
+      if (windData != null) {
+        _observationCache[station.id] = _ObservationCacheEntry(
+          windData: windData,
+          timestamp: DateTime.now(),
+        );
+      }
+
+      return windData;
+    } finally {
+      _pendingObservationRequests.remove(station.id);
+    }
+  }
+
+  /// Fetch latest observation from NWS API
+  Future<WindData?> _fetchObservationFromApi(String stationId) async {
+    try {
+      final url = Uri.parse('$_baseUrl/stations/$stationId/observations/latest');
+
+      LoggingService.structured('NWS_OBSERVATION_REQUEST', {
+        'station_id': stationId,
+      });
 
       final response = await http.get(
         url,
@@ -309,71 +459,121 @@ class NwsWeatherProvider implements WeatherStationProvider {
         },
       ).timeout(const Duration(seconds: 10));
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final properties = data['properties'] as Map<String, dynamic>?;
-
-        if (properties == null) return null;
-
-        // Extract wind data
-        final windSpeed = properties['windSpeed'] as Map<String, dynamic>?;
-        final windDirection = properties['windDirection'] as Map<String, dynamic>?;
-        final windGust = properties['windGust'] as Map<String, dynamic>?;
-        final timestamp = properties['timestamp'] as String?;
-
-        if (windSpeed == null || windDirection == null || timestamp == null) {
-          LoggingService.structured('NWS_OBSERVATION_MISSING_DATA', {
-            'station_id': station.id,
-            'has_wind_speed': windSpeed != null,
-            'has_wind_direction': windDirection != null,
-            'has_timestamp': timestamp != null,
-          });
-          return null;
-        }
-
-        final speedValue = windSpeed['value'] as num?;
-        final directionValue = windDirection['value'] as num?;
-
-        if (speedValue == null || directionValue == null) {
-          LoggingService.structured('NWS_OBSERVATION_NULL_VALUES', {
-            'station_id': station.id,
-            'speed_value': speedValue,
-            'direction_value': directionValue,
-          });
-          return null;
-        }
-
-        final gustValue = windGust?['value'] as num?;
-
-        LoggingService.structured('NWS_OBSERVATION_SUCCESS', {
-          'station_id': station.id,
-          'speed_kmh': speedValue.toDouble(),
-          'direction_deg': directionValue.toDouble(),
-          'gust_kmh': gustValue?.toDouble(),
+      if (response.statusCode != 200) {
+        LoggingService.structured('NWS_OBSERVATION_ERROR', {
+          'station_id': stationId,
+          'status_code': response.statusCode,
         });
-
-        return WindData(
-          speedKmh: speedValue.toDouble(),
-          directionDegrees: directionValue.toDouble(),
-          gustsKmh: gustValue?.toDouble(),
-          timestamp: DateTime.parse(timestamp),
-        );
+        return null;
       }
 
-      return null;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final properties = data['properties'] as Map<String, dynamic>?;
+
+      if (properties == null) {
+        LoggingService.structured('NWS_OBSERVATION_NO_PROPERTIES', {
+          'station_id': stationId,
+        });
+        return null;
+      }
+
+      // Extract wind data
+      final windSpeed = properties['windSpeed'] as Map<String, dynamic>?;
+      final windDirection = properties['windDirection'] as Map<String, dynamic>?;
+      final windGust = properties['windGust'] as Map<String, dynamic>?;
+      final timestamp = properties['timestamp'] as String?;
+
+      if (windSpeed == null || windDirection == null || timestamp == null) {
+        LoggingService.structured('NWS_OBSERVATION_MISSING_DATA', {
+          'station_id': stationId,
+          'has_wind_speed': windSpeed != null,
+          'has_wind_direction': windDirection != null,
+          'has_timestamp': timestamp != null,
+        });
+        return null;
+      }
+
+      final speedValue = windSpeed['value'] as num?;
+      final directionValue = windDirection['value'] as num?;
+
+      if (speedValue == null || directionValue == null) {
+        LoggingService.structured('NWS_OBSERVATION_NULL_VALUES', {
+          'station_id': stationId,
+          'speed_value': speedValue,
+          'direction_value': directionValue,
+        });
+        return null;
+      }
+
+      final gustValue = windGust?['value'] as num?;
+
+      // NWS API returns wind speed already in km/h (unitCode: "wmoUnit:km_h-1")
+      final speedKmh = speedValue.toDouble();
+      final gustKmh = gustValue?.toDouble();
+
+      LoggingService.structured('NWS_OBSERVATION_SUCCESS', {
+        'station_id': stationId,
+        'wind_kmh': speedKmh.toStringAsFixed(1),
+        'dir_deg': directionValue.toDouble().toStringAsFixed(0),
+        'gusts_kmh': gustKmh?.toStringAsFixed(1),
+      });
+
+      return WindData(
+        speedKmh: speedKmh,
+        directionDegrees: directionValue.toDouble(),
+        gustsKmh: gustKmh,
+        timestamp: DateTime.parse(timestamp),
+      );
     } catch (e) {
-      LoggingService.structured('NWS_OBSERVATION_ERROR', {
-        'station_id': station.id,
-        'station_name': station.name,
+      LoggingService.structured('NWS_OBSERVATION_FAILED', {
+        'station_id': stationId,
         'error': e.toString(),
       });
       return null;
     }
   }
 
-  /// Generate cache key from bounding box
+  /// Find cached entry whose bounds contain the requested bounds
+  _StationCacheEntry? _findContainingCache(LatLngBounds requestedBounds) {
+    for (final entry in _stationCache.values) {
+      if (!entry.isExpired && _boundsContains(entry.bounds, requestedBounds)) {
+        return entry;
+      }
+    }
+    return null;
+  }
+
+  /// Check if container bounds fully contain the contained bounds
+  bool _boundsContains(LatLngBounds container, LatLngBounds contained) {
+    return container.north >= contained.north &&
+           container.south <= contained.south &&
+           container.east >= contained.east &&
+           container.west <= contained.west;
+  }
+
+  /// Calculate bbox that contains all stations
+  LatLngBounds _calculateContainingBbox(List<WeatherStation> stations) {
+    if (stations.isEmpty) {
+      return LatLngBounds(LatLng(0, 0), LatLng(0, 0));
+    }
+
+    double north = stations.first.latitude;
+    double south = stations.first.latitude;
+    double east = stations.first.longitude;
+    double west = stations.first.longitude;
+
+    for (final station in stations) {
+      north = max(north, station.latitude);
+      south = min(south, station.latitude);
+      east = max(east, station.longitude);
+      west = min(west, station.longitude);
+    }
+
+    return LatLngBounds(LatLng(south, west), LatLng(north, east));
+  }
+
+  /// Generate cache key from bounding box (rounded to 0.1 degrees)
   String _getBoundsCacheKey(LatLngBounds bounds) {
-    // Round to 0.1 degrees for reasonable cache granularity
     final west = (bounds.west * 10).round() / 10;
     final south = (bounds.south * 10).round() / 10;
     final east = (bounds.east * 10).round() / 10;
@@ -381,19 +581,42 @@ class NwsWeatherProvider implements WeatherStationProvider {
 
     return '$west,$south,$east,$north';
   }
+
+  /// Convert bounds to string for logging
+  String _boundsToString(LatLngBounds bounds) {
+    return '${bounds.south.toStringAsFixed(2)},${bounds.west.toStringAsFixed(2)},'
+           '${bounds.north.toStringAsFixed(2)},${bounds.east.toStringAsFixed(2)}';
+  }
 }
 
-/// Cache entry for station lists with expiration
+/// Cache entry for station lists with bbox and expiration
 class _StationCacheEntry {
   final List<WeatherStation> stations;
+  final LatLngBounds bounds; // Bbox containing all stations
   final DateTime timestamp;
 
   _StationCacheEntry({
     required this.stations,
+    required this.bounds,
     required this.timestamp,
   });
 
   bool get isExpired {
-    return DateTime.now().difference(timestamp) > MapConstants.stationListCacheTTL;
+    return DateTime.now().difference(timestamp) > MapConstants.nwsStationListCacheTTL;
+  }
+}
+
+/// Cache entry for individual station observations with expiration
+class _ObservationCacheEntry {
+  final WindData windData;
+  final DateTime timestamp;
+
+  _ObservationCacheEntry({
+    required this.windData,
+    required this.timestamp,
+  });
+
+  bool get isExpired {
+    return DateTime.now().difference(timestamp) > MapConstants.nwsObservationCacheTTL;
   }
 }
