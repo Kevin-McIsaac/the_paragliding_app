@@ -319,11 +319,76 @@ For questions or issues, check:
 - Existing provider implementations for reference
 
 
+## Testing API Endpoints
+
+### METAR (Aviation Weather Center)
+
+Get observations for a specific station:
+
+```bash
+curl -s "https://aviationweather.gov/api/data/metar?ids=KSNS&format=json" \
+  -H "Accept: application/json" \
+  -H "User-Agent: FreeFlightLog/1.0" | python3 -m json.tool
+```
+
+Get observations for multiple stations:
+
+```bash
+curl -s "https://aviationweather.gov/api/data/metar?ids=KSNS,KSFO,KOAK&format=json" \
+  -H "Accept: application/json" \
+  -H "User-Agent: FreeFlightLog/1.0" | python3 -m json.tool
+```
+
+Get observations in a bounding box:
+
+```bash
+# Format: bbox=south,west,north,east
+curl -s "https://aviationweather.gov/api/data/metar?bbox=36.5,-122,37,-121&format=json" \
+  -H "Accept: application/json" \
+  -H "User-Agent: FreeFlightLog/1.0" | python3 -m json.tool
+```
+
+**Response format:** JSON array with wind speed in knots (`wspd`), direction in degrees (`wdir`)
+
+### NWS (National Weather Service)
+
+Get observation for a specific station (two-step process):
+
+Step 1: Get station metadata:
+```bash
+curl -s "https://api.weather.gov/stations/KSNS" \
+  -H "Accept: application/geo+json" \
+  -H "User-Agent: FreeFlightLog/1.0" | python3 -m json.tool
+```
+
+Step 2: Get latest observation:
+```bash
+curl -s "https://api.weather.gov/stations/KSNS/observations/latest" \
+  -H "Accept: application/geo+json" \
+  -H "User-Agent: FreeFlightLog/1.0" | python3 -m json.tool
+```
+
+Extract wind data:
+```bash
+curl -s "https://api.weather.gov/stations/KSNS/observations/latest" \
+  -H "Accept: application/geo+json" \
+  -H "User-Agent: FreeFlightLog/1.0" | \
+  python3 -c "import sys, json; data=json.load(sys.stdin); props=data['properties']; \
+print(f\"Station: {props['stationName']}\"); \
+print(f\"Wind: {props['windDirection']['value']}° at {props['windSpeed']['value']} {props['windSpeed']['unitCode'].split(':')[1]}\"); \
+print(f\"Gusts: {props['windGust']['value']}\"); \
+print(f\"Time: {props['timestamp']}\")"
+```
+
+**Response format:** GeoJSON with wind speed already in km/h (`unitCode: "wmoUnit:km_h-1"`), direction in degrees
+
+**Note:** NWS API is US-only. International coordinates return 404.
+
 ## Data Sources
 
-### NWS
+### NWS (National Weather Service)
 The US national weather service
 - Limited to US only
-- Two approaches. 
-  - Get the n nearest stations to a point by looing up the station nearest a grid (2.5km area). Then find the stations that are in teh BB and look up each individually. Use agressive caching
-  - DOwnload 
+- Two approaches for fetching stations:
+  - Get the n nearest stations to a point by looking up the station nearest a grid (2.5km area). Then find the stations that are in the bounding box and look up each individually. Use aggressive caching.
+  - Download all stations in a grid point's observation network (~50 stations per grid) 
