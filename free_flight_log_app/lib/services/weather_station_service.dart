@@ -26,7 +26,8 @@ class WeatherStationService {
 
 
   /// Distance threshold for considering stations as duplicates (meters)
-  static const double _deduplicationDistanceMeters = 100.0;
+  /// Increased to 150m to handle coordinate precision differences between providers
+  static const double _deduplicationDistanceMeters = 150.0;
 
   /// Get weather stations in a bounding box from all enabled providers
   /// Fetches in parallel, then deduplicates and returns combined results

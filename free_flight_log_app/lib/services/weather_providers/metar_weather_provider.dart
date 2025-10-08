@@ -315,6 +315,7 @@ class MetarWeatherProvider implements WeatherStationProvider {
         longitude: lon.toDouble(),
         elevation: json['elev'] != null ? (json['elev'] as num).toDouble() : null,
         windData: windData,
+        observationType: 'Airport (METAR)',
       );
     } catch (e) {
       LoggingService.error('Error parsing METAR station', e);

@@ -28,6 +28,9 @@ class WeatherStation {
   /// Dataset ID (for providers like NOAA CDO that have multiple datasets)
   final String? datasetId;
 
+  /// Observation type (e.g., "Airport (METAR)", "CWOP Citizen Station")
+  final String? observationType;
+
   const WeatherStation({
     required this.id,
     required this.source,
@@ -37,6 +40,7 @@ class WeatherStation {
     this.windData,
     this.elevation,
     this.datasetId,
+    this.observationType,
   });
 
   /// Create a copy with updated wind data
@@ -50,7 +54,26 @@ class WeatherStation {
       windData: windData ?? this.windData,
       elevation: elevation,
       datasetId: datasetId,
+      observationType: observationType,
     );
+  }
+
+  /// Infer observation type from station ID pattern
+  /// Different station ID prefixes indicate different types of observation stations
+  static String inferObservationType(String stationId) {
+    if (stationId.startsWith('K') && stationId.length == 4) {
+      return 'Airport (METAR)';
+    } else if (stationId.startsWith('P') && stationId.length == 4) {
+      return 'Pacific Airport';
+    } else if (stationId.startsWith('C') || stationId.startsWith('CW')) {
+      return 'CWOP Citizen Station';
+    } else if (stationId.startsWith('DW')) {
+      return 'Military Station';
+    } else if (RegExp(r'^\d+$').hasMatch(stationId)) {
+      return 'Marine Buoy';
+    } else {
+      return 'Weather Station';
+    }
   }
 
   /// Create a unique key for this station based on source and ID

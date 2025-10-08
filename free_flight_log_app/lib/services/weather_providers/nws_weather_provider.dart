@@ -398,6 +398,7 @@ class NwsWeatherProvider implements WeatherStationProvider {
         longitude: longitude,
         elevation: elevation,
         windData: null, // Fetched separately
+        observationType: WeatherStation.inferObservationType(stationId),
       );
     } catch (e) {
       LoggingService.error('Error parsing NWS station', e);

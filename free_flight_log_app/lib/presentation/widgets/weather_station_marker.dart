@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import '../../data/models/weather_station.dart';
+import '../../data/models/weather_station_source.dart';
 import '../../data/models/wind_data.dart';
 import '../../services/weather_providers/weather_station_provider_registry.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -290,12 +291,22 @@ class _WeatherStationDialog extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 8),
-                            // Time, location, elevation
+                            // Time and type on first line
                             Wrap(
                               spacing: 8,
                               runSpacing: 4,
                               children: [
                                 _buildInfoChip(Icons.access_time, _getTimeAgo(windData.timestamp)),
+                                if (station.observationType != null)
+                                  _buildInfoChip(Icons.sensors, station.observationType!),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            // Location and elevation on second line
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
                                 _buildInfoChip(Icons.location_on, '${station.latitude.toStringAsFixed(2)}°, ${station.longitude.toStringAsFixed(2)}°'),
                                 if (station.elevation != null)
                                   _buildInfoChip(Icons.terrain, '${station.elevation!.toStringAsFixed(0)}m'),
@@ -343,10 +354,15 @@ class _WeatherStationDialog extends StatelessWidget {
   Widget _buildAttribution(WeatherStation station) {
     final provider = WeatherStationProviderRegistry.getProvider(station.source);
 
+    // For METAR stations, link to specific station observation page
+    final url = station.source == WeatherStationSource.metar
+        ? 'https://aviationweather.gov/data/metar/?decoded=1&ids=${station.id}'
+        : provider.attributionUrl;
+
     return TextButton(
       onPressed: () async {
         await launchUrl(
-          Uri.parse(provider.attributionUrl),
+          Uri.parse(url),
           mode: LaunchMode.externalApplication,
         );
       },
