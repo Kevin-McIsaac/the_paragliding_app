@@ -136,9 +136,12 @@ class _WeatherStationPainter extends CustomPainter {
   }
 
   void _drawSpeedBarbs(Canvas canvas, Offset shaftEnd, double angle, double speedKmh, Paint paint) {
+    // Round to nearest 5 km/h (meteorological standard)
+    final roundedSpeed = (speedKmh / 5).round() * 5.0;
+
     // Wind barbs: each full barb = 10 km/h, half barb = 5 km/h
-    final fullBarbs = (speedKmh / 10).floor();
-    final halfBarb = (speedKmh % 10) >= 5;
+    final fullBarbs = (roundedSpeed / 10).floor();
+    final halfBarb = (roundedSpeed % 10) >= 5;
 
     final barbLength = 10.0;  // Longer barbs (more prominent)
     final barbSpacing = 5.0;  // Spacing between barbs
