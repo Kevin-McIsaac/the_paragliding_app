@@ -352,32 +352,18 @@ curl -s "https://aviationweather.gov/api/data/metar?bbox=36.5,-122,37,-121&forma
 
 ### NWS (National Weather Service)
 
-Get observation for a specific station (two-step process):
-
-Step 1: Get station metadata:
+Get station metadata:
 ```bash
 curl -s "https://api.weather.gov/stations/KSNS" \
   -H "Accept: application/geo+json" \
   -H "User-Agent: FreeFlightLog/1.0" | python3 -m json.tool
 ```
 
-Step 2: Get latest observation:
+Get latest observation:
 ```bash
 curl -s "https://api.weather.gov/stations/KSNS/observations/latest" \
   -H "Accept: application/geo+json" \
   -H "User-Agent: FreeFlightLog/1.0" | python3 -m json.tool
-```
-
-Extract wind data:
-```bash
-curl -s "https://api.weather.gov/stations/KSNS/observations/latest" \
-  -H "Accept: application/geo+json" \
-  -H "User-Agent: FreeFlightLog/1.0" | \
-  python3 -c "import sys, json; data=json.load(sys.stdin); props=data['properties']; \
-print(f\"Station: {props['stationName']}\"); \
-print(f\"Wind: {props['windDirection']['value']}° at {props['windSpeed']['value']} {props['windSpeed']['unitCode'].split(':')[1]}\"); \
-print(f\"Gusts: {props['windGust']['value']}\"); \
-print(f\"Time: {props['timestamp']}\")"
 ```
 
 **Response format:** GeoJSON with wind speed already in km/h (`unitCode: "wmoUnit:km_h-1"`), direction in degrees
