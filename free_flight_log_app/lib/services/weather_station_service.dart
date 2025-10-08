@@ -10,13 +10,15 @@ import 'weather_providers/weather_station_provider.dart';
 import 'weather_providers/weather_station_provider_registry.dart';
 
 /// Progress callback for individual provider completion
-/// Called as each provider completes with its stations for progressive updates
+/// Provides cumulative deduplicated stations after each provider completes.
+/// UI should REPLACE (not add to) its station list with the provided stations
+/// to create a progressive appearance as the cumulative list grows.
 typedef ProviderProgressCallback = void Function({
   required WeatherStationSource source,
   required String displayName,
   required bool success,
   required int stationCount,
-  required List<WeatherStation> stations,  // Progressive station updates
+  required List<WeatherStation> stations,  // Cumulative deduplicated list
 });
 
 /// Orchestrator service for weather station data from multiple providers
@@ -74,13 +76,13 @@ class WeatherStationService {
           allStations.addAll(stations);
           final deduplicatedSoFar = _deduplicateStations(allStations);
 
-          // Report progress with deduplicated stations SO FAR
+          // Report cumulative stations (deduplicated) - UI will replace all stations with this list
           onProgress?.call(
             source: provider.source,
             displayName: provider.displayName,
             success: true,
             stationCount: stations.length,
-            stations: deduplicatedSoFar,
+            stations: deduplicatedSoFar,  // Cumulative deduplicated list, not incremental
           );
 
           return stations;

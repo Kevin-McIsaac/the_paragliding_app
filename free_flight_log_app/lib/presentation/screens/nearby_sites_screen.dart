@@ -428,13 +428,14 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                     : LoadingItemState.error;
               });
 
-              // Progressive update: fetch weather data and update UI immediately
+              // Cumulative update: Replace all stations with deduplicated cumulative list
+              // This creates progressive appearance as cumulative list grows with each provider
               if (stations.isNotEmpty) {
                 final weatherData = await _weatherStationService.getWeatherForStations(stations);
 
                 if (mounted) {
                   setState(() {
-                    _weatherStations = stations;
+                    _weatherStations = stations;  // Replace (not add) with cumulative deduplicated stations
                     _stationWindData.clear();
                     _stationWindData.addAll(weatherData);
                   });
