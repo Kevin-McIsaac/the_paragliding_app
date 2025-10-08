@@ -317,3 +317,13 @@ For questions or issues, check:
 - [Technical Design Document](TECHNICAL_DESIGN.md)
 - [Functional Specification](FUNCTIONAL_SPECIFICATION.md)
 - Existing provider implementations for reference
+
+
+## Data Sources
+
+### NWS
+The US national weather service
+- Limited to US only
+- Two approaches. 
+  - Get the n nearest stations to a point by looing up the station nearest a grid (2.5km area). Then find the stations that are in teh BB and look up each individually. Use agressive caching
+  - DOwnload 
