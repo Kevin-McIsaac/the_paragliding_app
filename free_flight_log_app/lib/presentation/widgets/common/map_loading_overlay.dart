@@ -1,17 +1,26 @@
 import 'package:flutter/material.dart';
 
+/// State of a loading item
+enum LoadingItemState {
+  loading,
+  completed,
+  error,
+}
+
 /// Data class for a single loading item in the overlay
 class MapLoadingItem {
   final String label;
   final IconData icon;
   final Color iconColor;
   final int? count;
+  final LoadingItemState state;
 
   const MapLoadingItem({
     required this.label,
     this.icon = Icons.place,
     this.iconColor = Colors.green,
     this.count,
+    this.state = LoadingItemState.loading,
   });
 }
 
@@ -99,23 +108,17 @@ class MapLoadingOverlay extends StatelessWidget {
           color: item.iconColor.withValues(alpha: 0.8),
         ),
         const SizedBox(width: 10),
-        // Loading spinner
-        const SizedBox(
-          width: 14,
-          height: 14,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
-            strokeCap: StrokeCap.round,
-          ),
-        ),
+        // State indicator (spinner, checkmark, or error)
+        _buildStateIndicator(item.state),
         const SizedBox(width: 10),
         // Text label with optional count
         Flexible(
           child: Text(
             item.count != null ? '${item.label} (${item.count})' : item.label,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: item.state == LoadingItemState.error
+                  ? Colors.red.shade300
+                  : Colors.white,
               fontSize: 13,
               fontWeight: FontWeight.w500,
             ),
@@ -124,5 +127,32 @@ class MapLoadingOverlay extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  Widget _buildStateIndicator(LoadingItemState state) {
+    switch (state) {
+      case LoadingItemState.loading:
+        return const SizedBox(
+          width: 14,
+          height: 14,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+            strokeCap: StrokeCap.round,
+          ),
+        );
+      case LoadingItemState.completed:
+        return Icon(
+          Icons.check_circle,
+          size: 14,
+          color: Colors.green.shade400,
+        );
+      case LoadingItemState.error:
+        return Icon(
+          Icons.error,
+          size: 14,
+          color: Colors.red.shade400,
+        );
+    }
   }
 }

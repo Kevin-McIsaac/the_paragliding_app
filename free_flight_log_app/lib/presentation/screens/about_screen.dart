@@ -399,7 +399,7 @@ class _AboutScreenState extends State<AboutScreen> {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            'Aviation Weather Center (NOAA/NWS)',
+                            'Weather Data Sources',
                             style: TextStyle(
                               color: Theme.of(context).colorScheme.primary,
                               decoration: TextDecoration.underline,
@@ -410,7 +410,7 @@ class _AboutScreenState extends State<AboutScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Real-time METAR reports from airports and weather stations worldwide.',
+                      'Real-time weather observations from multiple providers.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Colors.grey[600],
                       ),
@@ -472,7 +472,8 @@ class _AboutScreenState extends State<AboutScreen> {
                       '• Paragliding sites: ParaglidingEarth API\n'
                       '• Airspace data: OpenAIP API\n'
                       '• Weather forecasts: Open-Meteo API\n'
-                      '• METAR station data: Aviation Weather Center (NOAA)',
+                      '• METAR stations: Aviation Weather Center (NOAA)\n'
+                      '• NWS stations: US National Weather Service (NOAA)',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],

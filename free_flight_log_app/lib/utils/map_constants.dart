@@ -26,6 +26,10 @@ class MapConstants {
   static const Duration weatherStationCacheTTL = Duration(minutes: 30); // METAR updates every 30min
   static const Duration stationListCacheTTL = Duration(minutes: 30); // Combined with weather data
 
+  // NWS-specific caching
+  static const Duration nwsStationListCacheTTL = Duration(hours: 24); // Stations don't move/change
+  static const Duration nwsObservationCacheTTL = Duration(minutes: 10); // Observations update 1-60min
+
   // Map UI constants
   static const double mapPadding = 0.005;
 

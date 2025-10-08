@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import '../../data/models/weather_station.dart';
+import '../../data/models/weather_station_source.dart';
 import '../../data/models/wind_data.dart';
+import '../../services/weather_providers/weather_station_provider_registry.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Weather station marker showing wind direction and speed with barbed arrow
@@ -26,10 +28,15 @@ class WeatherStationMarker extends StatelessWidget {
     final windData = station.windData;
     final String tooltipText;
     if (windData != null) {
-      final gustsStr = windData.gustsKmh != null
-          ? '-${windData.gustsKmh!.toStringAsFixed(0)}'
-          : '';
-      tooltipText = '${station.name ?? station.id}\n${windData.speedKmh.toStringAsFixed(0)}$gustsStr km/h from ${windData.directionDegrees.toStringAsFixed(0)}°';
+      // Show "CALM" for winds < 1 km/h (direction meaningless when no wind)
+      if (windData.speedKmh < 1.0) {
+        tooltipText = '${station.name ?? station.id}\nCALM';
+      } else {
+        final gustsStr = windData.gustsKmh != null
+            ? '-${windData.gustsKmh!.toStringAsFixed(0)}'
+            : '';
+        tooltipText = '${station.name ?? station.id}\n${windData.speedKmh.toStringAsFixed(0)}$gustsStr km/h from ${windData.directionDegrees.toStringAsFixed(0)}°';
+      }
     } else {
       tooltipText = '${station.name ?? station.id}\nNo wind data';
     }
@@ -92,9 +99,10 @@ class _WeatherStationPainter extends CustomPainter {
 
     canvas.drawCircle(center, circleRadius, circlePaint);
 
-    // Draw wind barb if wind data is available
-    if (windData != null) {
-      _drawWindBarb(canvas, center, circleRadius, windData!);
+    // Draw wind barb only if wind speed >= 1 km/h (calm winds show circle only)
+    final data = windData;
+    if (data != null && data.speedKmh >= 1.0) {
+      _drawWindBarb(canvas, center, circleRadius, data);
     }
   }
 
@@ -129,9 +137,12 @@ class _WeatherStationPainter extends CustomPainter {
   }
 
   void _drawSpeedBarbs(Canvas canvas, Offset shaftEnd, double angle, double speedKmh, Paint paint) {
+    // Round to nearest 5 km/h (meteorological standard)
+    final roundedSpeed = (speedKmh / 5).round() * 5.0;
+
     // Wind barbs: each full barb = 10 km/h, half barb = 5 km/h
-    final fullBarbs = (speedKmh / 10).floor();
-    final halfBarb = (speedKmh % 10) >= 5;
+    final fullBarbs = (roundedSpeed / 10).floor();
+    final halfBarb = (roundedSpeed % 10) >= 5;
 
     final barbLength = 10.0;  // Longer barbs (more prominent)
     final barbSpacing = 5.0;  // Spacing between barbs
@@ -264,6 +275,10 @@ class _WeatherStationDialog extends StatelessWidget {
                             // Wind speed and direction
                             Text(
                               () {
+                                // Show "CALM" for winds < 1 km/h
+                                if (windData.speedKmh < 1.0) {
+                                  return 'CALM';
+                                }
                                 final gustsStr = windData.gustsKmh != null
                                     ? '-${windData.gustsKmh!.toStringAsFixed(0)}'
                                     : '';
@@ -276,12 +291,22 @@ class _WeatherStationDialog extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 8),
-                            // Time, location, elevation
+                            // Time and type on first line
                             Wrap(
                               spacing: 8,
                               runSpacing: 4,
                               children: [
                                 _buildInfoChip(Icons.access_time, _getTimeAgo(windData.timestamp)),
+                                if (station.observationType != null)
+                                  _buildInfoChip(Icons.sensors, station.observationType!),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            // Location and elevation on second line
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
                                 _buildInfoChip(Icons.location_on, '${station.latitude.toStringAsFixed(2)}°, ${station.longitude.toStringAsFixed(2)}°'),
                                 if (station.elevation != null)
                                   _buildInfoChip(Icons.terrain, '${station.elevation!.toStringAsFixed(0)}m'),
@@ -301,26 +326,7 @@ class _WeatherStationDialog extends StatelessWidget {
               ],
               const SizedBox(height: 12),
               // Attribution
-              TextButton(
-                onPressed: () async {
-                  await launchUrl(
-                    Uri.parse('https://aviationweather.gov/'),
-                    mode: LaunchMode.externalApplication,
-                  );
-                },
-                style: TextButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                child: const Text(
-                  'Data: Aviation Weather Center',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.white38,
-                  ),
-                ),
-              ),
+              _buildAttribution(station),
             ],
           ),
         ),
@@ -342,6 +348,36 @@ class _WeatherStationDialog extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildAttribution(WeatherStation station) {
+    final provider = WeatherStationProviderRegistry.getProvider(station.source);
+
+    // For METAR stations, link to specific station observation page
+    final url = station.source == WeatherStationSource.metar
+        ? 'https://aviationweather.gov/data/metar/?decoded=1&ids=${station.id}'
+        : provider.attributionUrl;
+
+    return TextButton(
+      onPressed: () async {
+        await launchUrl(
+          Uri.parse(url),
+          mode: LaunchMode.externalApplication,
+        );
+      },
+      style: TextButton.styleFrom(
+        padding: EdgeInsets.zero,
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      child: Text(
+        'Data: ${provider.attributionName}',
+        style: const TextStyle(
+          fontSize: 10,
+          color: Colors.white38,
+        ),
+      ),
     );
   }
 }
