@@ -13,7 +13,7 @@ WeatherStationProviderRegistry
     ↓ (manages available providers)
 WeatherStationProvider (interface)
     ↓ (implemented by each source)
-├─ MetarWeatherProvider
+├─ AviationWeatherCenterProvider
 ├─ NwsWeatherProvider
 └─ YourNewProvider
 ```
@@ -28,7 +28,7 @@ Add your provider identifier:
 
 ```dart
 enum WeatherStationSource {
-  metar,
+  awcMetar,
   nws,
   yourProvider,  // Add here
 }
@@ -141,7 +141,7 @@ Add to the registry:
 ```dart
 class WeatherStationProviderRegistry {
   static final Map<WeatherStationSource, WeatherStationProvider> _providers = {
-    WeatherStationSource.metar: MetarWeatherProvider.instance,
+    WeatherStationSource.awcMetar: AviationWeatherCenterProvider.instance,
     WeatherStationSource.nws: NwsWeatherProvider.instance,
     WeatherStationSource.yourProvider: YourProviderWeatherProvider.instance, // Add here
   };
@@ -305,7 +305,7 @@ void _handleFilterApply(
 ...WeatherStationProviderRegistry.getAllSources()
     .where((source) {
       // Only show enabled providers in loading overlay
-      if (source == WeatherStationSource.metar) return _metarEnabled;
+      if (source == WeatherStationSource.awcMetar) return _metarEnabled;
       if (source == WeatherStationSource.nws) return _nwsEnabled;
       if (source == WeatherStationSource.yourProvider) return _yourProviderEnabled;
       return false;
@@ -400,7 +400,7 @@ class _DraggableFilterDialog extends StatefulWidget {
 
 Choose the appropriate strategy based on your provider's network size and API characteristics:
 
-#### Strategy 1: Bbox-Based Caching (METAR, NWS)
+#### Strategy 1: Bbox-Based Caching (Aviation Weather Center, NWS)
 **Best for: Large networks (1000s+ stations), bbox-based APIs**
 
 ```dart
@@ -513,7 +513,7 @@ Future<void> _refreshMeasurements() async {
 
 | Provider | Strategy | Network Size | Cache TTL | Memory Usage | API Calls/Hour |
 |----------|----------|--------------|-----------|--------------|----------------|
-| **METAR** | Bbox | ~10,000 stations | 30 min | Low (~100KB) | High (varies) |
+| **Aviation Weather Center** | Bbox | ~10,000 stations | 30 min | Low (~100KB) | High (varies) |
 | **NWS** | Bbox + Grid | ~2,000 stations | Station: 24hr<br>Obs: 10min | Medium (~200KB) | Medium (1-2) |
 | **Pioupiou** | Global | ~1,000 stations | List: 24hr<br>Data: 20min | Medium (~500KB) | Low (1-3) |
 
@@ -523,13 +523,13 @@ Future<void> _refreshMeasurements() async {
 // Station metadata (lat/lon, name, ID) - Changes rarely
 Duration.hours(24)     // Global networks (Pioupiou)
 Duration.hours(1)      // Regional networks (NWS)
-Duration.minutes(30)   // Large networks (METAR)
+Duration.minutes(30)   // Large networks (Aviation Weather Center)
 
 // Wind measurements - Updates frequently
 Duration.minutes(5)    // Real-time critical
 Duration.minutes(10)   // Standard updates (NWS)
 Duration.minutes(20)   // Less frequent updates (Pioupiou)
-Duration.minutes(30)   // Slow-updating networks (METAR)
+Duration.minutes(30)   // Slow-updating networks (Aviation Weather Center)
 ```
 
 ### API Etiquette
@@ -558,7 +558,7 @@ Enable debug logging in `LoggingService` to see:
 - `[WEATHER_STATION_FETCH_START]` - Provider fetch initiated
 - `[WEATHER_STATION_FETCH_COMPLETE]` - Station count by provider
 - `[STATION_FETCH_SUCCESS]` - Total stations with data
-- Provider-specific logs (e.g., `[METAR_API_REQUEST]`, `[NWS_OBSERVATION_SUCCESS]`)
+- Provider-specific logs (e.g., `[AWC_METAR_API_REQUEST]`, `[NWS_OBSERVATION_SUCCESS]`)
 
 ## Configuration Storage
 
@@ -581,7 +581,7 @@ await prefs.setString(apiKeyKey, apiKey);
 - **Data Models:** `lib/data/models/weather_station.dart`, `lib/data/models/wind_data.dart`
 - **UI Integration:** `lib/presentation/widgets/map_filter_dialog.dart`
 - **Map Display:** `lib/presentation/widgets/weather_station_marker.dart`
-- **Examples:** `lib/services/weather_providers/metar_weather_provider.dart`, `lib/services/weather_providers/nws_weather_provider.dart`
+- **Examples:** `lib/services/weather_providers/aviation_weather_center_provider.dart`, `lib/services/weather_providers/nws_weather_provider.dart`
 
 ## Support
 
@@ -594,7 +594,7 @@ For questions or issues, check:
 
 ## Testing API Endpoints
 
-### METAR (Aviation Weather Center)
+### Aviation Weather Center (METAR Format)
 
 Get observations for a specific station:
 

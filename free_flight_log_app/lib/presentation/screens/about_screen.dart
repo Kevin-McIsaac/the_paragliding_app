@@ -472,7 +472,7 @@ class _AboutScreenState extends State<AboutScreen> {
                       '• Paragliding sites: ParaglidingEarth API\n'
                       '• Airspace data: OpenAIP API\n'
                       '• Weather forecasts: Open-Meteo API\n'
-                      '• METAR stations: Aviation Weather Center (NOAA)\n'
+                      '• Aviation Weather Center: Airport weather (METAR format)\n'
                       '• NWS stations: US National Weather Service (NOAA)',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),

@@ -1,4 +1,4 @@
-# METAR API Integration
+# Aviation Weather Center API Integration (METAR Format)
 
 ## API Endpoint
 

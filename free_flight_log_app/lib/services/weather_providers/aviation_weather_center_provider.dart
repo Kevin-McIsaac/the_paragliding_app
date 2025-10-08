@@ -9,11 +9,11 @@ import '../../utils/map_constants.dart';
 import '../logging_service.dart';
 import 'weather_station_provider.dart';
 
-/// METAR weather station provider from aviationweather.gov
-/// Provides airport weather stations with real-time observations
-class MetarWeatherProvider implements WeatherStationProvider {
-  static final MetarWeatherProvider instance = MetarWeatherProvider._();
-  MetarWeatherProvider._();
+/// Aviation Weather Center provider from aviationweather.gov
+/// Provides airport weather stations with real-time observations in METAR format
+class AviationWeatherCenterProvider implements WeatherStationProvider {
+  static final AviationWeatherCenterProvider instance = AviationWeatherCenterProvider._();
+  AviationWeatherCenterProvider._();
 
   /// Conversion factor: knots to km/h
   static const double knotsToKmh = 1.852;
@@ -25,13 +25,13 @@ class MetarWeatherProvider implements WeatherStationProvider {
   final Map<String, Future<List<WeatherStation>>> _pendingStationRequests = {};
 
   @override
-  WeatherStationSource get source => WeatherStationSource.metar;
+  WeatherStationSource get source => WeatherStationSource.awcMetar;
 
   @override
-  String get displayName => 'METAR (Aviation)';
+  String get displayName => 'Aviation Weather Center';
 
   @override
-  String get description => 'Airport weather stations';
+  String get description => 'Airport weather (METAR format)';
 
   @override
   String get attributionName => 'Aviation Weather Center';
@@ -47,7 +47,7 @@ class MetarWeatherProvider implements WeatherStationProvider {
 
   @override
   Future<bool> isConfigured() async {
-    // METAR doesn't require configuration
+    // Aviation Weather Center doesn't require configuration
     return true;
   }
 
@@ -59,7 +59,7 @@ class MetarWeatherProvider implements WeatherStationProvider {
     // Check exact cache match first
     final cached = _stationCache[cacheKey];
     if (cached != null && !cached.isExpired) {
-      LoggingService.info('METAR station cache hit for $cacheKey (${cached.stations.length} stations)');
+      LoggingService.info('AWC_METAR station cache hit for $cacheKey (${cached.stations.length} stations)');
       return cached.stations;
     }
 
@@ -70,7 +70,7 @@ class MetarWeatherProvider implements WeatherStationProvider {
         return bounds.contains(LatLng(station.latitude, station.longitude));
       }).toList();
 
-      LoggingService.structured('METAR_CACHE_SUBSET', {
+      LoggingService.structured('AWC_METAR_CACHE_SUBSET', {
         'cache_key': cacheKey,
         'cached_total': containingCache.stations.length,
         'filtered_count': filteredStations.length,
@@ -81,7 +81,7 @@ class MetarWeatherProvider implements WeatherStationProvider {
 
     // Check if request is already pending
     if (_pendingStationRequests.containsKey(cacheKey)) {
-      LoggingService.info('Waiting for pending METAR station request: $cacheKey');
+      LoggingService.info('Waiting for pending AWC_METAR station request: $cacheKey');
       return _pendingStationRequests[cacheKey]!;
     }
 
@@ -103,7 +103,7 @@ class MetarWeatherProvider implements WeatherStationProvider {
   ) async {
     if (stations.isEmpty) return {};
 
-    // METAR stations already have wind data embedded from the API response
+    // Aviation Weather Center stations already have wind data embedded from the API response
     // Just extract it and map by station key
     final Map<String, WindData> result = {};
     for (final station in stations) {
@@ -112,7 +112,7 @@ class MetarWeatherProvider implements WeatherStationProvider {
       }
     }
 
-    LoggingService.structured('METAR_WEATHER_EXTRACTED', {
+    LoggingService.structured('AWC_METAR_WEATHER_EXTRACTED', {
       'total_stations': stations.length,
       'stations_with_data': result.length,
     });
@@ -123,7 +123,7 @@ class MetarWeatherProvider implements WeatherStationProvider {
   @override
   void clearCache() {
     _stationCache.clear();
-    LoggingService.info('METAR station cache cleared');
+    LoggingService.info('AWC_METAR station cache cleared');
   }
 
   @override
@@ -141,8 +141,8 @@ class MetarWeatherProvider implements WeatherStationProvider {
     };
   }
 
-  /// Fetch METAR stations from aviationweather.gov
-  /// Returns stations with embedded wind data
+  /// Fetch Aviation Weather Center stations from aviationweather.gov
+  /// Returns stations with embedded wind data in METAR format
   Future<List<WeatherStation>> _fetchStationsInBounds(
     LatLngBounds bounds,
     String cacheKey,
@@ -154,12 +154,12 @@ class MetarWeatherProvider implements WeatherStationProvider {
       final bbox = '${bounds.south.toStringAsFixed(2)},${bounds.west.toStringAsFixed(2)},'
                    '${bounds.north.toStringAsFixed(2)},${bounds.east.toStringAsFixed(2)}';
 
-      // Build METAR API URL
+      // Build Aviation Weather Center METAR API URL
       final url = Uri.parse(
         'https://aviationweather.gov/api/data/metar?bbox=$bbox&format=json',
       );
 
-      LoggingService.structured('METAR_REQUEST_START', {
+      LoggingService.structured('AWC_METAR_REQUEST_START', {
         'bbox': bbox,
         'url': url.toString(),
         'cache_key': cacheKey,
@@ -176,7 +176,7 @@ class MetarWeatherProvider implements WeatherStationProvider {
         const Duration(seconds: 30),
         onTimeout: () {
           stopwatch.stop();
-          LoggingService.structured('METAR_TIMEOUT', {
+          LoggingService.structured('AWC_METAR_TIMEOUT', {
             'bbox': bbox,
             'duration_ms': stopwatch.elapsedMilliseconds,
             'timeout_seconds': 30,
@@ -187,7 +187,7 @@ class MetarWeatherProvider implements WeatherStationProvider {
 
       stopwatch.stop();
 
-      LoggingService.structured('METAR_RESPONSE_RECEIVED', {
+      LoggingService.structured('AWC_METAR_RESPONSE_RECEIVED', {
         'status_code': response.statusCode,
         'duration_ms': stopwatch.elapsedMilliseconds,
         'content_length': response.body.length,
@@ -209,14 +209,14 @@ class MetarWeatherProvider implements WeatherStationProvider {
               stations.add(station);
             }
           } catch (e) {
-            LoggingService.error('Failed to parse METAR station', e);
+            LoggingService.error('Failed to parse AWC_METAR station', e);
           }
         }
 
         parseStopwatch.stop();
 
         LoggingService.performance(
-          'METAR parsing',
+          'AWC_METAR parsing',
           Duration(milliseconds: parseStopwatch.elapsedMilliseconds),
           '${stations.length} stations parsed',
         );
@@ -227,7 +227,7 @@ class MetarWeatherProvider implements WeatherStationProvider {
           timestamp: DateTime.now(),
         );
 
-        LoggingService.structured('METAR_STATIONS_SUCCESS', {
+        LoggingService.structured('AWC_METAR_STATIONS_SUCCESS', {
           'station_count': stations.length,
           'network_ms': networkTime,
           'parse_ms': parseStopwatch.elapsedMilliseconds,
@@ -238,7 +238,7 @@ class MetarWeatherProvider implements WeatherStationProvider {
         return stations;
       } else if (response.statusCode == 204) {
         // 204 No Content - no stations in this region
-        LoggingService.structured('METAR_NO_DATA', {
+        LoggingService.structured('AWC_METAR_NO_DATA', {
           'bbox': bbox,
           'duration_ms': stopwatch.elapsedMilliseconds,
         });
@@ -254,7 +254,7 @@ class MetarWeatherProvider implements WeatherStationProvider {
         // Request timeout
         return [];
       } else {
-        LoggingService.structured('METAR_HTTP_ERROR', {
+        LoggingService.structured('AWC_METAR_HTTP_ERROR', {
           'status_code': response.statusCode,
           'bbox': bbox,
           'response_body': response.body.substring(0, response.body.length > 500 ? 500 : response.body.length),
@@ -263,18 +263,18 @@ class MetarWeatherProvider implements WeatherStationProvider {
         return [];
       }
     } catch (e, stackTrace) {
-      LoggingService.structured('METAR_REQUEST_FAILED', {
+      LoggingService.structured('AWC_METAR_REQUEST_FAILED', {
         'error_type': e.runtimeType.toString(),
         'error_message': e.toString(),
         'bbox': '${bounds.south.toStringAsFixed(2)},${bounds.west.toStringAsFixed(2)},${bounds.north.toStringAsFixed(2)},${bounds.east.toStringAsFixed(2)}',
         'cache_key': cacheKey,
       });
-      LoggingService.error('Failed to fetch METAR stations', e, stackTrace);
+      LoggingService.error('Failed to fetch AWC_METAR stations', e, stackTrace);
       return [];
     }
   }
 
-  /// Parse a METAR station JSON object into a WeatherStation
+  /// Parse an Aviation Weather Center METAR station JSON object into a WeatherStation
   WeatherStation? _parseMetarStation(Map<String, dynamic> json) {
     try {
       final icaoId = json['icaoId'] as String?;
@@ -319,7 +319,7 @@ class MetarWeatherProvider implements WeatherStationProvider {
 
       return WeatherStation(
         id: icaoId,
-        source: WeatherStationSource.metar,
+        source: WeatherStationSource.awcMetar,
         name: json['name'] as String?,
         latitude: lat.toDouble(),
         longitude: lon.toDouble(),
@@ -328,7 +328,7 @@ class MetarWeatherProvider implements WeatherStationProvider {
         observationType: 'Airport (METAR)',
       );
     } catch (e) {
-      LoggingService.error('Error parsing METAR station', e);
+      LoggingService.error('Error parsing AWC_METAR station', e);
       return null;
     }
   }
