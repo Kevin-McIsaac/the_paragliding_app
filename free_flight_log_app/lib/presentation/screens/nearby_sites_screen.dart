@@ -174,7 +174,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       final airspaceEnabled = prefs.getBool(_airspaceEnabledKey) ?? true;
       final forecastEnabled = prefs.getBool(_forecastEnabledKey) ?? true;
       final weatherStationsEnabled = prefs.getBool(_weatherStationsEnabledKey) ?? true;
-      final metarEnabled = prefs.getBool('weather_provider_${WeatherStationSource.metar.name}_enabled') ?? true;
+      final metarEnabled = prefs.getBool('weather_provider_${WeatherStationSource.awcMetar.name}_enabled') ?? true;
       final nwsEnabled = prefs.getBool('weather_provider_${WeatherStationSource.nws.name}_enabled') ?? true;
       final pioupiouEnabled = prefs.getBool('weather_provider_${WeatherStationSource.pioupiou.name}_enabled') ?? true;
 
@@ -1100,7 +1100,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
       await prefs.setBool(_airspaceEnabledKey, airspaceEnabled);
       await prefs.setBool(_forecastEnabledKey, forecastEnabled);
       await prefs.setBool(_weatherStationsEnabledKey, weatherStationsEnabled);
-      await prefs.setBool('weather_provider_${WeatherStationSource.metar.name}_enabled', metarEnabled);
+      await prefs.setBool('weather_provider_${WeatherStationSource.awcMetar.name}_enabled', metarEnabled);
       await prefs.setBool('weather_provider_${WeatherStationSource.nws.name}_enabled', nwsEnabled);
       await prefs.setBool('weather_provider_${WeatherStationSource.pioupiou.name}_enabled', pioupiouEnabled);
 
@@ -1508,7 +1508,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                   ...WeatherStationProviderRegistry.getAllSources()
                       .where((source) {
                         // Only show enabled providers in loading overlay
-                        if (source == WeatherStationSource.metar) return _metarEnabled;
+                        if (source == WeatherStationSource.awcMetar) return _metarEnabled;
                         if (source == WeatherStationSource.nws) return _nwsEnabled;
                         if (source == WeatherStationSource.pioupiou) return _pioupiouEnabled;
                         return false;

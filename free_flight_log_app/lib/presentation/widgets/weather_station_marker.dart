@@ -354,9 +354,9 @@ class _WeatherStationDialog extends StatelessWidget {
   Widget _buildAttribution(WeatherStation station) {
     final provider = WeatherStationProviderRegistry.getProvider(station.source);
 
-    // For METAR and Pioupiou stations, link to specific station observation page
+    // For Aviation Weather Center and Pioupiou stations, link to specific station observation page
     final String url;
-    if (station.source == WeatherStationSource.metar) {
+    if (station.source == WeatherStationSource.awcMetar) {
       url = 'https://aviationweather.gov/data/metar/?decoded=1&ids=${station.id}';
     } else if (station.source == WeatherStationSource.pioupiou) {
       url = 'https://www.openwindmap.org/windbird-${station.id}';
