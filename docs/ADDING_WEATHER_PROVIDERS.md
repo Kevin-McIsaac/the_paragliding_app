@@ -173,28 +173,175 @@ class WeatherStationProviderRegistry {
 5. Wind data displayed on markers
 ```
 
-## UI Integration
+## UI Integration - Map Filter Dialog
 
-The provider automatically appears in the Map Filter dialog once registered:
+### Adding Provider Checkbox to Filter Map Dialog
 
-**File:** `lib/presentation/widgets/map_filter_dialog.dart`
+When adding a new provider, you **must** update both the dialog and parent screen to properly enable/disable it:
 
-The dialog dynamically generates checkboxes from `WeatherStationProviderRegistry.getAllSources()`:
+**Step 1: Add to `map_filter_dialog.dart`**
+
+1. Add parameter to constructor:
+```dart
+const MapFilterDialog({
+  required this.metarEnabled,
+  required this.nwsEnabled,
+  required this.yourProviderEnabled,  // Add here
+  // ... other parameters
+});
+```
+
+2. Add state variable:
+```dart
+class _MapFilterDialogState extends State<MapFilterDialog> {
+  late bool _metarEnabled;
+  late bool _nwsEnabled;
+  late bool _yourProviderEnabled;  // Add here
+```
+
+3. Initialize in `initState()`:
+```dart
+_yourProviderEnabled = widget.yourProviderEnabled;
+```
+
+4. Add checkbox widget in weather providers section:
+```dart
+_buildProviderCheckbox(
+  value: _yourProviderEnabled,
+  label: 'Your Provider Name',
+  subtitle: WeatherStationProviderRegistry.getProvider(
+    WeatherStationSource.yourProvider
+  ).description,
+  onChanged: _weatherStationsEnabled ? (value) => setState(() {
+    _yourProviderEnabled = value ?? true;
+    _applyFiltersImmediately();
+  }) : null,
+),
+```
+
+5. Update `onApply` callback signature:
+```dart
+widget.onApply(
+  _sitesEnabled,
+  _airspaceEnabled,
+  _forecastEnabled,
+  _weatherStationsEnabled,
+  _metarEnabled,
+  _nwsEnabled,
+  _yourProviderEnabled,  // Add here
+  _airspaceTypes,
+  _icaoClasses,
+  _maxAltitudeFt,
+  _clippingEnabled,
+);
+```
+
+**Step 2: Update `nearby_sites_screen.dart`**
+
+1. Add state variable:
+```dart
+bool _yourProviderEnabled = true;  // Default: true
+```
+
+2. Load from preferences in `initState()`:
+```dart
+final yourProviderEnabled = prefs.getBool(
+  'weather_provider_${WeatherStationSource.yourProvider.name}_enabled'
+) ?? true;
+```
+
+3. Set state in `initState()`:
+```dart
+_yourProviderEnabled = yourProviderEnabled;
+```
+
+4. Pass to dialog when opening:
+```dart
+_DraggableFilterDialog(
+  metarEnabled: _metarEnabled,
+  nwsEnabled: _nwsEnabled,
+  yourProviderEnabled: _yourProviderEnabled,  // Add here
+  // ... other parameters
+)
+```
+
+5. Handle in `_handleFilterApply()`:
+```dart
+void _handleFilterApply(
+  bool sitesEnabled,
+  bool airspaceEnabled,
+  bool forecastEnabled,
+  bool weatherStationsEnabled,
+  bool metarEnabled,
+  bool nwsEnabled,
+  bool yourProviderEnabled,  // Add here
+  // ... other parameters
+) async {
+  // Track previous state
+  final previousYourProviderEnabled = _yourProviderEnabled;
+
+  // Update state
+  setState(() {
+    _yourProviderEnabled = yourProviderEnabled;
+  });
+
+  // Save to preferences
+  await prefs.setBool(
+    'weather_provider_${WeatherStationSource.yourProvider.name}_enabled',
+    yourProviderEnabled
+  );
+
+  // Handle provider changes
+  if (weatherStationsEnabled &&
+      yourProviderEnabled != previousYourProviderEnabled) {
+    WeatherStationService.instance.clearCache();
+    _fetchWeatherStations();
+  }
+}
+```
+
+6. Update loading overlay to filter disabled providers:
+```dart
+...WeatherStationProviderRegistry.getAllSources()
+    .where((source) {
+      // Only show enabled providers in loading overlay
+      if (source == WeatherStationSource.metar) return _metarEnabled;
+      if (source == WeatherStationSource.nws) return _nwsEnabled;
+      if (source == WeatherStationSource.yourProvider) return _yourProviderEnabled;
+      return false;
+    })
+    .map((source) {
+      // ... create MapLoadingItem
+    })
+```
+
+**Step 3: Update `_DraggableFilterDialog` wrapper**
+
+Add parameter to the wrapper widget in `nearby_sites_screen.dart`:
 
 ```dart
-// METAR provider
-_buildProviderCheckbox(
-  value: _metarEnabled,
-  label: 'METAR (Aviation)',
-  subtitle: WeatherStationProviderRegistry.getProvider(WeatherStationSource.metar).description,
-  onChanged: (value) => setState(() {
-    _metarEnabled = value ?? true;
-    _applyFiltersImmediately();
-  }),
-),
+class _DraggableFilterDialog extends StatefulWidget {
+  final bool yourProviderEnabled;  // Add here
 
-// Your provider will appear here automatically
+  const _DraggableFilterDialog({
+    required this.yourProviderEnabled,  // Add here
+    // ... other parameters
+  });
+}
 ```
+
+### Provider Enable/Disable Flow
+
+1. **User toggles checkbox** → `_applyFiltersImmediately()` called
+2. **State updated** → `_yourProviderEnabled` changes
+3. **Saved to preferences** → `weather_provider_yourProvider_enabled` key
+4. **Cache cleared** → If provider changed, all caches cleared
+5. **Stations re-fetched** → `WeatherStationService.getStationsInBounds()` called
+6. **Service reads preferences** → `_getEnabledProviders()` checks `yourProvider_enabled`
+7. **Provider filtered** → Only enabled providers added to `enabledProviders` list
+8. **API not called** → Disabled providers never enter fetch pipeline
+9. **No loading indicator** → Disabled providers excluded from overlay filter
+10. **No markers** → Disabled providers never appear on map
 
 ## Implementation Checklist
 
@@ -251,12 +398,138 @@ _buildProviderCheckbox(
 
 ### Caching Strategy
 
-```dart
-// Station list: Long TTL (1 hour+)
-Duration get cacheTTL => MapConstants.stationListCacheTTL;
+Choose the appropriate strategy based on your provider's network size and API characteristics:
 
-// Weather data: Short TTL (5-15 minutes)
-Duration get cacheTTL => MapConstants.weatherStationCacheTTL;
+#### Strategy 1: Bbox-Based Caching (METAR, NWS)
+**Best for: Large networks (1000s+ stations), bbox-based APIs**
+
+```dart
+// Cache key includes bounding box
+final cacheKey = '${bounds.west.toStringAsFixed(1)},${bounds.south.toStringAsFixed(1)},'
+                 '${bounds.east.toStringAsFixed(1)},${bounds.north.toStringAsFixed(1)}';
+
+// Cache entry with timestamp
+class _CacheEntry {
+  final List<WeatherStation> stations;
+  final DateTime timestamp;
+  final LatLngBounds bounds;
+
+  bool isExpired() =>
+      DateTime.now().difference(timestamp) > MapConstants.weatherStationCacheTTL;
+}
+
+// LRU cache (Least Recently Used)
+final LinkedHashMap<String, _CacheEntry> _cache = LinkedHashMap();
+static const int _maxCacheSize = 20;  // Limit memory usage
+```
+
+**Advantages:**
+- Minimal memory footprint (only caches visible areas)
+- Fast for repeated pan/zoom in same region
+- Works with bbox-based APIs
+
+**Disadvantages:**
+- Cache miss on every pan/zoom to new area
+- Multiple API calls when exploring map
+
+#### Strategy 2: Global Caching (Pioupiou/OpenWindMap)
+**Best for: Small networks (<5000 stations), global APIs**
+
+```dart
+// Single global cache for ALL stations
+class _GlobalCacheEntry {
+  final List<WeatherStation> stations;
+  final DateTime stationListTimestamp;    // 24hr TTL
+  final DateTime measurementsTimestamp;   // 20min TTL
+
+  bool get stationListExpired =>
+      DateTime.now().difference(stationListTimestamp) >
+      MapConstants.pioupiouStationListCacheTTL;  // 24 hours
+
+  bool get measurementsExpired =>
+      DateTime.now().difference(measurementsTimestamp) >
+      MapConstants.pioupiouMeasurementsCacheTTL;  // 20 minutes
+}
+
+_GlobalCacheEntry? _globalCache;
+
+Future<List<WeatherStation>> fetchStations(LatLngBounds bounds) async {
+  // Check if station list cache is valid
+  if (_globalCache != null && !_globalCache!.stationListExpired) {
+    // Refresh measurements if stale
+    if (_globalCache!.measurementsExpired) {
+      await _refreshMeasurements();
+    }
+    // Filter in-memory to bbox
+    return _filterStationsToBounds(_globalCache!.stations, bounds);
+  }
+
+  // Fetch all stations from API
+  final stations = await _fetchAllStations();
+  _globalCache = _GlobalCacheEntry(
+    stations: stations,
+    stationListTimestamp: DateTime.now(),
+    measurementsTimestamp: DateTime.now(),
+  );
+
+  return _filterStationsToBounds(stations, bounds);
+}
+```
+
+**Advantages:**
+- Instant pan/zoom (in-memory bbox filter)
+- Single API call for entire network
+- Measurements refresh without re-fetching station list
+
+**Disadvantages:**
+- Higher memory usage (~1000 stations = ~500KB)
+- Overkill for large networks (10000+ stations)
+
+#### Dual-TTL Pattern (Pioupiou)
+
+Separate TTLs for station locations vs. measurements:
+
+```dart
+// Station locations: Rarely change (24hr TTL)
+static const Duration pioupiouStationListCacheTTL = Duration(hours: 24);
+
+// Wind measurements: Update frequently (20min TTL)
+static const Duration pioupiouMeasurementsCacheTTL = Duration(minutes: 20);
+
+Future<void> _refreshMeasurements() async {
+  final stations = await _fetchAllStations();
+  if (stations.isNotEmpty && _globalCache != null) {
+    // Keep original station list timestamp
+    _globalCache = _GlobalCacheEntry(
+      stations: stations,
+      stationListTimestamp: _globalCache!.stationListTimestamp,  // Keep old
+      measurementsTimestamp: DateTime.now(),  // Update new
+    );
+  }
+}
+```
+
+### Caching Strategy Comparison
+
+| Provider | Strategy | Network Size | Cache TTL | Memory Usage | API Calls/Hour |
+|----------|----------|--------------|-----------|--------------|----------------|
+| **METAR** | Bbox | ~10,000 stations | 30 min | Low (~100KB) | High (varies) |
+| **NWS** | Bbox + Grid | ~2,000 stations | Station: 24hr<br>Obs: 10min | Medium (~200KB) | Medium (1-2) |
+| **Pioupiou** | Global | ~1,000 stations | List: 24hr<br>Data: 20min | Medium (~500KB) | Low (1-3) |
+
+### Recommended TTLs by Data Type
+
+```dart
+// Station metadata (lat/lon, name, ID) - Changes rarely
+Duration.hours(24)     // Global networks (Pioupiou)
+Duration.hours(1)      // Regional networks (NWS)
+Duration.minutes(30)   // Large networks (METAR)
+
+// Wind measurements - Updates frequently
+Duration.minutes(5)    // Real-time critical
+Duration.minutes(10)   // Standard updates (NWS)
+Duration.minutes(20)   // Less frequent updates (Pioupiou)
+Duration.minutes(30)   // Slow-updating networks (METAR)
 ```
 
 ### API Etiquette
@@ -369,6 +642,66 @@ curl -s "https://api.weather.gov/stations/KSNS/observations/latest" \
 **Response format:** GeoJSON with wind speed already in km/h (`unitCode: "wmoUnit:km_h-1"`), direction in degrees
 
 **Note:** NWS API is US-only. International coordinates return 404.
+
+### Pioupiou/OpenWindMap
+
+Get all stations globally with latest measurements:
+```bash
+curl -s "http://api.pioupiou.fr/v1/live-with-meta/all" \
+  -H "Accept: application/json" \
+  -H "User-Agent: FreeFlightLog/1.0" | python3 -m json.tool
+```
+
+Get metadata for a specific station:
+```bash
+# Station ID: 1701 (Tuniberg, Germany)
+curl -s "http://api.pioupiou.fr/v1/stations/1701" \
+  -H "Accept: application/json" \
+  -H "User-Agent: FreeFlightLog/1.0" | python3 -m json.tool
+```
+
+Get latest measurement for a specific station:
+```bash
+# Station ID: 1701
+curl -s "http://api.pioupiou.fr/v1/live/1701" \
+  -H "Accept: application/json" \
+  -H "User-Agent: FreeFlightLog/1.0" | python3 -m json.tool
+```
+
+**Example Response (live-with-meta/all):**
+```json
+{
+  "data": [
+    {
+      "id": 1701,
+      "location": {
+        "latitude": 47.967,
+        "longitude": 7.766,
+        "date": "2024-10-21T09:30:00.000Z"
+      },
+      "meta": {
+        "name": "Tuniberg"
+      },
+      "status": {
+        "state": "on",
+        "date": "2025-01-15T10:23:45.000Z"
+      },
+      "measurements": {
+        "wind_heading": 270,
+        "wind_speed_avg": 1.75,
+        "wind_speed_max": 3.75,
+        "date": "2025-01-15T10:23:00.000Z"
+      }
+    }
+  ]
+}
+```
+
+**Response format:**
+- Wind speeds already in km/h (`wind_speed_avg`, `wind_speed_max`)
+- Direction in degrees (`wind_heading`)
+- Measurements represent 4-minute average before `measurements.date`
+- Check `status.state == "on"` to verify station is online
 
 ## Data Sources
 

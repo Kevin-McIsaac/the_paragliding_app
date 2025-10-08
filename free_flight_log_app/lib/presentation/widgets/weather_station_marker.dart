@@ -33,9 +33,9 @@ class WeatherStationMarker extends StatelessWidget {
         tooltipText = '${station.name ?? station.id}\nCALM';
       } else {
         final gustsStr = windData.gustsKmh != null
-            ? '-${windData.gustsKmh!.toStringAsFixed(0)}'
+            ? '-${windData.gustsKmh!.toStringAsFixed(1)}'
             : '';
-        tooltipText = '${station.name ?? station.id}\n${windData.speedKmh.toStringAsFixed(0)}$gustsStr km/h from ${windData.directionDegrees.toStringAsFixed(0)}°';
+        tooltipText = '${station.name ?? station.id}\n${windData.speedKmh.toStringAsFixed(1)}$gustsStr km/h from ${windData.directionDegrees.toStringAsFixed(0)}°';
       }
     } else {
       tooltipText = '${station.name ?? station.id}\nNo wind data';
@@ -280,9 +280,9 @@ class _WeatherStationDialog extends StatelessWidget {
                                   return 'CALM';
                                 }
                                 final gustsStr = windData.gustsKmh != null
-                                    ? '-${windData.gustsKmh!.toStringAsFixed(0)}'
+                                    ? '-${windData.gustsKmh!.toStringAsFixed(1)}'
                                     : '';
-                                return '${windData.speedKmh.toStringAsFixed(0)}$gustsStr km/h from ${windData.compassDirection} (${windData.directionDegrees.toStringAsFixed(0)}°)';
+                                return '${windData.speedKmh.toStringAsFixed(1)}$gustsStr km/h from ${windData.compassDirection} (${windData.directionDegrees.toStringAsFixed(0)}°)';
                               }(),
                               style: const TextStyle(
                                 fontSize: 14,
@@ -354,10 +354,15 @@ class _WeatherStationDialog extends StatelessWidget {
   Widget _buildAttribution(WeatherStation station) {
     final provider = WeatherStationProviderRegistry.getProvider(station.source);
 
-    // For METAR stations, link to specific station observation page
-    final url = station.source == WeatherStationSource.metar
-        ? 'https://aviationweather.gov/data/metar/?decoded=1&ids=${station.id}'
-        : provider.attributionUrl;
+    // For METAR and Pioupiou stations, link to specific station observation page
+    final String url;
+    if (station.source == WeatherStationSource.metar) {
+      url = 'https://aviationweather.gov/data/metar/?decoded=1&ids=${station.id}';
+    } else if (station.source == WeatherStationSource.pioupiou) {
+      url = 'https://www.openwindmap.org/windbird-${station.id}';
+    } else {
+      url = provider.attributionUrl;
+    }
 
     return TextButton(
       onPressed: () async {
