@@ -194,6 +194,18 @@ class NwsWeatherProvider implements WeatherStationProvider {
       final gridUrl = await _getGridStationsUrl(centerLat, centerLon);
       if (gridUrl == null) {
         // Non-US location (404 from /points endpoint)
+        // Cache empty result to avoid repeated API calls for same non-US location
+        _stationCache[cacheKey] = _StationCacheEntry(
+          stations: [],
+          bounds: requestedBounds,  // Use requested bounds for non-US cache
+          timestamp: DateTime.now(),
+        );
+
+        LoggingService.structured('NWS_NON_US_CACHED', {
+          'cache_key': cacheKey,
+          'bounds': _boundsToString(requestedBounds),
+        });
+
         return [];
       }
 
