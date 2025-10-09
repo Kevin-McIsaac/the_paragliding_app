@@ -51,6 +51,10 @@ class _FlightListScreenState extends State<FlightListScreen> {
   Set<int> _selectedFlightIds = {};
   bool _isDeleting = false;
 
+  // Search state
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
   @override
   void initState() {
     super.initState();
@@ -65,6 +69,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
   
   @override
   void dispose() {
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -108,10 +113,27 @@ class _FlightListScreenState extends State<FlightListScreen> {
     }
   }
 
-  // Sort flights based on current column and direction
+  // Sort and filter flights based on current column, direction, and search query
   void _sortFlights() {
-    _sortedFlights = List.from(_flights);
+    // First apply search filter if there's a query
+    if (_searchQuery.isNotEmpty) {
+      _sortedFlights = _flights.where((flight) {
+        final siteName = flight.launchSiteName?.toLowerCase() ?? '';
+        return siteName.contains(_searchQuery.toLowerCase());
+      }).toList();
+    } else {
+      _sortedFlights = List.from(_flights);
+    }
+
+    // Then apply sorting
     FlightSortingUtils.sortFlights(_sortedFlights, _sortColumn, _sortAscending);
+  }
+
+  void _onSearchChanged(String query) {
+    setState(() {
+      _searchQuery = query;
+      _sortFlights();
+    });
   }
   
   void _sort(String column) {
@@ -247,8 +269,254 @@ class _FlightListScreenState extends State<FlightListScreen> {
     });
   }
 
+  /// Build dark functional bar (like Sites/Statistics)
+  Widget _buildFunctionalBar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey[900],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: SafeArea(
+        bottom: false,
+        child: Row(
+          children: [
+            // Search field
+            Expanded(
+              child: TextField(
+                controller: _searchController,
+                onChanged: _onSearchChanged,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: 'Search site name...',
+                  hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
+                  prefixIcon: const Icon(Icons.search, color: Colors.white70, size: 20),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, color: Colors.white70, size: 20),
+                          onPressed: () {
+                            _searchController.clear();
+                            _onSearchChanged('');
+                          },
+                        )
+                      : null,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Colors.blue, width: 2),
+                  ),
+                  filled: true,
+                  fillColor: Colors.black.withValues(alpha: 0.3),
+                  isDense: true,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Menu button
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, color: Colors.white70),
+              onSelected: (value) async {
+                if (value == 'import') {
+                  final result = await Navigator.of(context).push<bool>(
+                    MaterialPageRoute(
+                      builder: (context) => const IgcImportScreen(),
+                    ),
+                  );
+
+                  if (result == true) {
+                    _loadData();
+                  }
+                } else if (value == 'select') {
+                  _toggleSelectionMode();
+                } else if (value == 'wings') {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const WingManagementScreen(),
+                    ),
+                  );
+                } else if (value == 'sites') {
+                  final result = await Navigator.of(context).push<bool>(
+                    MaterialPageRoute(
+                      builder: (context) => const ManageSitesScreen(),
+                    ),
+                  );
+                  if (result == true && mounted) {
+                    await _loadData();
+                  }
+                } else if (value == 'database') {
+                  final result = await Navigator.of(context).push<bool>(
+                    MaterialPageRoute(
+                      builder: (context) => const DataManagementScreen(),
+                    ),
+                  );
+
+                  if (result == true) {
+                    _loadData();
+                  }
+                } else if (value == 'about') {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const AboutScreen(),
+                    ),
+                  );
+                } else if (value == 'preferences') {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const PreferencesScreen(),
+                    ),
+                  );
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'sites',
+                  child: Row(
+                    children: [
+                      Icon(Icons.location_on),
+                      SizedBox(width: 8),
+                      Text('Manage Sites'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'wings',
+                  child: Row(
+                    children: [
+                      Icon(Icons.paragliding),
+                      SizedBox(width: 8),
+                      Text('Manage Wings'),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(),
+                const PopupMenuItem(
+                  value: 'import',
+                  child: Row(
+                    children: [
+                      Icon(Icons.upload_file),
+                      SizedBox(width: 8),
+                      Text('Import IGC'),
+                    ],
+                  ),
+                ),
+                if (_flights.isNotEmpty)
+                  const PopupMenuItem(
+                    value: 'select',
+                    child: Row(
+                      children: [
+                        Icon(Icons.checklist),
+                        SizedBox(width: 8),
+                        Text('Select Flights'),
+                      ],
+                    ),
+                  ),
+                const PopupMenuDivider(),
+                const PopupMenuItem(
+                  value: 'database',
+                  child: Row(
+                    children: [
+                      Icon(Icons.storage),
+                      SizedBox(width: 8),
+                      Text('Data Management'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'preferences',
+                  child: Row(
+                    children: [
+                      Icon(Icons.settings),
+                      SizedBox(width: 8),
+                      Text('Preferences'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'about',
+                  child: Row(
+                    children: [
+                      Icon(Icons.info),
+                      SizedBox(width: 8),
+                      Text('About'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build main content (used by both navigation and non-navigation modes)
+  Widget _buildMainContent() {
+    if (_isLoading && _flights.isEmpty) {
+      return AppPageLoadingSkeleton.flightList();
+    }
+
+    if (_errorMessage != null) {
+      return Center(
+        child: AppErrorState.loading(
+          message: _errorMessage!,
+          onRetry: () {
+            _clearError();
+            _loadData();
+          },
+        ),
+      );
+    }
+
+    if (_flights.isEmpty) {
+      return AppEmptyState.flights(
+        onAddFlight: () async {
+          final result = await Navigator.of(context).push<bool>(
+            MaterialPageRoute(
+              builder: (context) => const IgcImportScreen(),
+            ),
+          );
+
+          if (result == true) {
+            _loadData();
+          }
+        },
+      );
+    }
+
+    return _buildFlightList(_sortedFlights);
+  }
+
   @override
   Widget build(BuildContext context) {
+    // When in navigation mode, use dark functional bar instead of AppBar
+    if (widget.showInNavigation) {
+      return Scaffold(
+        body: Column(
+          children: [
+            _buildFunctionalBar(),
+            Expanded(
+              child: _buildMainContent(),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // When not in navigation mode, use traditional AppBar
     return Scaffold(
       appBar: AppBar(
         title: _isSelectionMode
@@ -455,33 +723,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
               ),
             ],
       ),
-      body: _isLoading && _flights.isEmpty
-          ? AppPageLoadingSkeleton.flightList()
-          : _errorMessage != null
-              ? Center(
-                  child: AppErrorState.loading(
-                    message: _errorMessage!,
-                    onRetry: () {
-                      _clearError();
-                      _loadData();
-                    },
-                  ),
-                )
-              : _flights.isEmpty
-                  ? AppEmptyState.flights(
-                      onAddFlight: () async {
-                        final result = await Navigator.of(context).push<bool>(
-                          MaterialPageRoute(
-                            builder: (context) => const IgcImportScreen(),
-                          ),
-                        );
-                        
-                        if (result == true) {
-                          _loadData();
-                        }
-                      },
-                    )
-                  : _buildFlightList(_sortedFlights),
+      body: _buildMainContent(),
       // Only show FAB when NOT in navigation mode (MainNavigationScreen handles it)
       floatingActionButton: widget.showInNavigation
           ? null

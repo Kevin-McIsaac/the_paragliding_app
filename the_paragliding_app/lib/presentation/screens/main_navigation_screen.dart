@@ -30,6 +30,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 
   void _onDestinationSelected(int index) {
+    // Capture old index before updating state
+    final oldIndex = _selectedIndex;
+
     setState(() {
       _selectedIndex = index;
     });
@@ -38,7 +41,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     final destinations = ['Log Book', 'Nearby Sites', 'Statistics'];
     LoggingService.action('Navigation', 'bottom_nav_tap', {
       'destination': destinations[index],
-      'from_index': _selectedIndex,
+      'from_index': oldIndex,
       'to_index': index,
     });
   }
