@@ -297,9 +297,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   }
 
   Widget _buildDateRangeSelector() {
-    // Define preset options for SegmentedButton (max 5 as per M3 guidelines)
-    final segmentedPresets = ['all', 'this_year', '3_months', '6_months', '12_months'];
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -308,18 +305,13 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // SegmentedButton for common presets
+              // SegmentedButton with custom as last option
               SegmentedButton<String>(
                 segments: [
                   ButtonSegment<String>(
                     value: 'all',
                     label: const Text('All'),
                     tooltip: 'Show all time statistics',
-                  ),
-                  ButtonSegment<String>(
-                    value: 'this_year',
-                    label: const Text('Year'),
-                    tooltip: 'Show this year statistics',
                   ),
                   ButtonSegment<String>(
                     value: '12_months',
@@ -336,53 +328,50 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                     label: const Text('3mo'),
                     tooltip: 'Show last 3 months statistics',
                   ),
+                  ButtonSegment<String>(
+                    value: 'custom',
+                    label: const Text('Custom'),
+                    tooltip: 'Select custom date range',
+                  ),
                 ],
-                selected: _selectedPreset == 'custom' || _selectedPreset == '30_days'
-                    ? <String>{}
+                selected: _selectedPreset == '30_days'
+                    ? {'all'}
                     : {_selectedPreset},
                 onSelectionChanged: (Set<String> newSelection) {
                   _selectPreset(newSelection.first);
                 },
                 multiSelectionEnabled: false,
-                emptySelectionAllowed: true,
                 style: ButtonStyle(
                   visualDensity: VisualDensity.compact,
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // Custom range button
-              FilledButton.tonalIcon(
-                onPressed: () => _selectPreset('custom'),
-                icon: const Icon(Icons.calendar_month),
-                label: Text(_selectedPreset == 'custom'
-                    ? 'Custom: ${_formatDateRange(_selectedDateRange)}'
-                    : 'Custom date range'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: _selectedPreset == 'custom'
-                      ? Theme.of(context).colorScheme.primaryContainer
-                      : null,
-                  foregroundColor: _selectedPreset == 'custom'
-                      ? Theme.of(context).colorScheme.onPrimaryContainer
-                      : null,
                 ),
               ),
             ],
           ),
         ),
 
-        // Flight count display
+        // Flight count display and date range info
         if (!_isLoading && _errorMessage == null) ...[
           const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              _buildFlightCountText(),
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w500,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Range: ${_formatDateRange(_selectedDateRange)}',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Text(
+                  _buildFlightCountText(),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
