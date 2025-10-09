@@ -286,4 +286,4 @@ The surprising victory of Linear O(n²) over theoretically superior algorithms s
 *Document Version: 1.0*
 *Author: Claude (AI Assistant)*
 *Date: September 20, 2025*
-*Project: Free Flight Log v1.0*
+*Project: The Paragliding App v1.0*

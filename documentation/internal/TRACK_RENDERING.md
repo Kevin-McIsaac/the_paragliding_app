@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Free Flight Log application uses advanced Cesium 3D rendering to visualize flight tracks with color-coded climb rate information. Both static and dynamic tracks use a unified primitive-based rendering approach with per-vertex colors for smooth gradients. This was particularly difficult to animate
+The The Paragliding App application uses advanced Cesium 3D rendering to visualize flight tracks with color-coded climb rate information. Both static and dynamic tracks use a unified primitive-based rendering approach with per-vertex colors for smooth gradients. This was particularly difficult to animate
 
 ## Color Coding System
 

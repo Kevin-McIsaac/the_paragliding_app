@@ -11,7 +11,7 @@ https://aviationweather.gov/api/data/metar
 ```bash
 curl -s "https://aviationweather.gov/api/data/metar?bbox={minLat},{minLon},{maxLat},{maxLon}&format=json" \
   -H "Accept: application/json" \
-  -H "User-Agent: FreeFlightLog/1.0"
+  -H "User-Agent: TheParaglidingApp/1.0"
 ```
 
 ### Parameters

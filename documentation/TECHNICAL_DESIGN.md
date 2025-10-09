@@ -1,9 +1,9 @@
-# Free Flight Log - Technical Design Document
+# The Paragliding App - Technical Design Document
 
 ## 1. Introduction
 
 ### 1.1 Purpose
-This document outlines the technical architecture, technology stack, and implementation strategy for the Free Flight Log mobile application based on the functional requirements.
+This document outlines the technical architecture, technology stack, and implementation strategy for the The Paragliding App mobile application based on the functional requirements.
 
 ### 1.2 Goals
 
@@ -83,14 +83,14 @@ dependencies:
 ### 2.4 Key Dependencies
 
 ```yaml
-name: free_flight_log_app
+name: the_paragliding_app
 description: "A mobile app for logging paraglider, hang glider, and microlight flights"
 
 dependencies:
   flutter:
     sdk: flutter
     
-  # Core dependencies for Free Flight Log
+  # Core dependencies for The Paragliding App
   cupertino_icons: ^1.0.8     # iOS-style icons
   async: ^2.11.0              # Async utilities including CancelableOperation
   
@@ -489,7 +489,7 @@ export PATH="$PATH:`pwd`/flutter/bin"
 flutter doctor
 
 # Create project
-flutter create free_flight_log --org com.example
+flutter create the_paragliding_app --org com.theparaglidingapp
 
 # Run on device
 flutter run

@@ -11,7 +11,7 @@
 ## 🚀 Essential Commands
 
 ```bash
-# WORKING DIRECTORY: /home/kmcisaac/Projects/free_flight_log/free_flight_log_app
+# WORKING DIRECTORY: /home/kmcisaac/Projects/the_paragliding_app/the_paragliding_app
 flutter_controller_enhanced run        # Start app with logging. ALWAYS run in background
 flutter_controller_enhanced r          # Hot reload with readiness check (most used)
 flutter_controller_enhanced R          # Hot restart with readiness check (for state issues)
@@ -90,7 +90,7 @@ lib/
 
 ## Project Overview
 
-Free Flight Log is a free, Android-first, cross-platform application for logging, reporting, and visualizing paraglider, hang glider, and microlight flights.
+The Paragliding App is a free, Android-first, cross-platform application for logging, reporting, and visualizing paraglider, hang glider, and microlight flights.
 
 **Architecture**: MVVM with Repository pattern, Flutter + Material Design 3, SQLite database
 
@@ -166,7 +166,7 @@ genhtml coverage/lcov.info -o coverage/html/
 ### Logging (ALWAYS use LoggingService)
 
 ```dart
-import 'package:free_flight_log/services/logging_service.dart';
+import 'package:the_paragliding_app/services/logging_service.dart';
 
 // ✅ Correct logging patterns
 LoggingService.info('General information');
@@ -368,7 +368,7 @@ setState(() {}); // In build() method - causes infinite rebuilds
 
 ### Schema Change Process
 
-1. Clear app data: Settings → Apps → Free Flight Log → Storage → Clear Data
+1. Clear app data: Settings → Apps → The Paragliding App → Storage → Clear Data
 2. Hot restart app to recreate database
 3. Re-import test data
 
@@ -398,7 +398,7 @@ setState(() {}); // In build() method - causes infinite rebuilds
 
 ### Overview
 
-Free Flight Log integrates with OpenAIP Core API for aviation data overlays including airspaces, airports, navigation aids, and reporting points.
+The Paragliding App integrates with OpenAIP Core API for aviation data overlays including airspaces, airports, navigation aids, and reporting points.
 
 ### API Endpoints & Authentication
 
@@ -420,7 +420,7 @@ Authentication: API key as query parameter (?apiKey=xxx)
 GET /api/{endpoint}?bbox=west,south,east,north&limit=500&apiKey={key}
 Headers:
   Accept: application/json
-  User-Agent: FreeFlightLog/1.0
+  User-Agent: TheParaglidingApp/1.0
 ```
 
 ### Response Format
@@ -459,7 +459,7 @@ final url = 'https://api.core.openaip.net/api/airports'
 // ✅ Standard headers (same as working airspace service)
 final headers = {
   'Accept': 'application/json',
-  'User-Agent': 'FreeFlightLog/1.0',
+  'User-Agent': 'TheParaglidingApp/1.0',
 };
 
 // ✅ Individual caching per data type

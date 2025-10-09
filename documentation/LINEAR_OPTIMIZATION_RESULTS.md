@@ -139,7 +139,7 @@ The Linear algorithm optimization project successfully demonstrated that:
 - **Understanding hardware characteristics is crucial**
 - **Incremental optimization with measurement works**
 
-The optimized Linear algorithm is now the **recommended default** for airspace clipping in Free Flight Log, providing:
+The optimized Linear algorithm is now the **recommended default** for airspace clipping in The Paragliding App, providing:
 - Best overall performance
 - Simplest code to maintain
 - Most predictable behavior
@@ -159,4 +159,4 @@ The Linear algorithm, once considered the "naive" approach, now stands as the op
 
 *Document Version: 1.0*
 *Date: September 20, 2025*
-*Project: Free Flight Log - Airspace Clipping Optimization*
+*Project: The Paragliding App - Airspace Clipping Optimization*

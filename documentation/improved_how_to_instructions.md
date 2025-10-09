@@ -1,4 +1,4 @@
-# Improved Instructions for Free Flight Log User Manual
+# Improved Instructions for The Paragliding App User Manual
 
 ## Documentation Guidelines
 
@@ -21,7 +21,7 @@
 
 ---
 
-# Free Flight Log User Guide
+# The Paragliding App User Guide
 
 ## Getting Started (5 minutes)
 

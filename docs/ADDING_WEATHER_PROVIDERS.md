@@ -1,6 +1,6 @@
 # Adding Weather Station Providers
 
-This guide explains how to add a new weather station data provider to Free Flight Log.
+This guide explains how to add a new weather station data provider to The Paragliding App.
 
 ## Architecture Overview
 
@@ -353,7 +353,7 @@ class _DraggableFilterDialog extends StatefulWidget {
 - [ ] Implement proper caching (stations and weather data)
 - [ ] Add structured logging for debugging
 - [ ] Handle errors gracefully (timeouts, invalid responses)
-- [ ] Add user agent header: `User-Agent: FreeFlightLog/1.0`
+- [ ] Add user agent header: `User-Agent: TheParaglidingApp/1.0`
 - [ ] Test with various bounding boxes and zoom levels
 - [ ] Add attribution to About screen (automatic via `attributionName`/`attributionUrl`)
 - [ ] Update preferences handling if API key required
@@ -534,7 +534,7 @@ Duration.minutes(30)   // Slow-updating networks (Aviation Weather Center)
 
 ### API Etiquette
 
-- Always include `User-Agent: FreeFlightLog/1.0`
+- Always include `User-Agent: TheParaglidingApp/1.0`
 - Respect rate limits
 - Cache aggressively to minimize requests
 - Include attribution as required by terms of service
@@ -601,7 +601,7 @@ Get observations for a specific station:
 ```bash
 curl -s "https://aviationweather.gov/api/data/metar?ids=KSNS&format=json" \
   -H "Accept: application/json" \
-  -H "User-Agent: FreeFlightLog/1.0" | python3 -m json.tool
+  -H "User-Agent: TheParaglidingApp/1.0" | python3 -m json.tool
 ```
 
 Get observations for multiple stations:
@@ -609,7 +609,7 @@ Get observations for multiple stations:
 ```bash
 curl -s "https://aviationweather.gov/api/data/metar?ids=KSNS,KSFO,KOAK&format=json" \
   -H "Accept: application/json" \
-  -H "User-Agent: FreeFlightLog/1.0" | python3 -m json.tool
+  -H "User-Agent: TheParaglidingApp/1.0" | python3 -m json.tool
 ```
 
 Get observations in a bounding box:
@@ -618,7 +618,7 @@ Get observations in a bounding box:
 # Format: bbox=south,west,north,east
 curl -s "https://aviationweather.gov/api/data/metar?bbox=36.5,-122,37,-121&format=json" \
   -H "Accept: application/json" \
-  -H "User-Agent: FreeFlightLog/1.0" | python3 -m json.tool
+  -H "User-Agent: TheParaglidingApp/1.0" | python3 -m json.tool
 ```
 
 **Response format:** JSON array with wind speed in knots (`wspd`), direction in degrees (`wdir`)
@@ -629,14 +629,14 @@ Get station metadata:
 ```bash
 curl -s "https://api.weather.gov/stations/KSNS" \
   -H "Accept: application/geo+json" \
-  -H "User-Agent: FreeFlightLog/1.0" | python3 -m json.tool
+  -H "User-Agent: TheParaglidingApp/1.0" | python3 -m json.tool
 ```
 
 Get latest observation:
 ```bash
 curl -s "https://api.weather.gov/stations/KSNS/observations/latest" \
   -H "Accept: application/geo+json" \
-  -H "User-Agent: FreeFlightLog/1.0" | python3 -m json.tool
+  -H "User-Agent: TheParaglidingApp/1.0" | python3 -m json.tool
 ```
 
 **Response format:** GeoJSON with wind speed already in km/h (`unitCode: "wmoUnit:km_h-1"`), direction in degrees
@@ -649,7 +649,7 @@ Get all stations globally with latest measurements:
 ```bash
 curl -s "http://api.pioupiou.fr/v1/live-with-meta/all" \
   -H "Accept: application/json" \
-  -H "User-Agent: FreeFlightLog/1.0" | python3 -m json.tool
+  -H "User-Agent: TheParaglidingApp/1.0" | python3 -m json.tool
 ```
 
 Get metadata for a specific station:
@@ -657,7 +657,7 @@ Get metadata for a specific station:
 # Station ID: 1701 (Tuniberg, Germany)
 curl -s "http://api.pioupiou.fr/v1/stations/1701" \
   -H "Accept: application/json" \
-  -H "User-Agent: FreeFlightLog/1.0" | python3 -m json.tool
+  -H "User-Agent: TheParaglidingApp/1.0" | python3 -m json.tool
 ```
 
 Get latest measurement for a specific station:
@@ -665,7 +665,7 @@ Get latest measurement for a specific station:
 # Station ID: 1701
 curl -s "http://api.pioupiou.fr/v1/live/1701" \
   -H "Accept: application/json" \
-  -H "User-Agent: FreeFlightLog/1.0" | python3 -m json.tool
+  -H "User-Agent: TheParaglidingApp/1.0" | python3 -m json.tool
 ```
 
 **Example Response (live-with-meta/all):**
