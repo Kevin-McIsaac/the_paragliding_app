@@ -22,6 +22,7 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _selectedIndex = 0;
+  final GlobalKey<State<FlightListScreen>> _flightListKey = GlobalKey();
 
   @override
   void initState() {
@@ -57,10 +58,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             ),
           );
 
-          // Notify FlightListScreen to reload if needed
+          // Reload FlightListScreen if flight was added
           if (result == true && mounted) {
-            // The FlightListScreen will handle its own reload via setState
-            LoggingService.info('MainNavigationScreen: Flight added, triggering reload');
+            // Use dynamic to access private state method
+            (_flightListKey.currentState as dynamic)?._loadData();
+            LoggingService.info('MainNavigationScreen: Flight added, reloading flight list');
           }
         },
         tooltip: 'Add Flight',
@@ -77,10 +79,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     return Scaffold(
       body: IndexedStack(
         index: _selectedIndex,
-        children: const [
-          FlightListScreen(showInNavigation: true),
-          NearbySitesScreen(),
-          StatisticsScreen(),
+        children: [
+          FlightListScreen(key: _flightListKey, showInNavigation: true),
+          const NearbySitesScreen(),
+          const StatisticsScreen(),
         ],
       ),
       floatingActionButton: _buildFloatingActionButton(),
