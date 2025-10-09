@@ -297,66 +297,96 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   }
 
   Widget _buildDateRangeSelector() {
-    final presets = ['all', '12_months', 'this_year', '6_months', '3_months', '30_days', 'custom'];
-    
+    // Define preset options for SegmentedButton (max 5 as per M3 guidelines)
+    final segmentedPresets = ['all', 'this_year', '3_months', '6_months', '12_months'];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Preset chips
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            children: presets.map((preset) {
-              final isSelected = _selectedPreset == preset;
-              return Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: FilterChip(
-                  label: Text(_getPresetLabel(preset)),
-                  selected: isSelected,
-                  onSelected: (_) => _selectPreset(preset),
-                  selectedColor: Theme.of(context).colorScheme.primaryContainer,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // SegmentedButton for common presets
+              SegmentedButton<String>(
+                segments: [
+                  ButtonSegment<String>(
+                    value: 'all',
+                    label: const Text('All'),
+                    tooltip: 'Show all time statistics',
+                  ),
+                  ButtonSegment<String>(
+                    value: 'this_year',
+                    label: const Text('Year'),
+                    tooltip: 'Show this year statistics',
+                  ),
+                  ButtonSegment<String>(
+                    value: '12_months',
+                    label: const Text('12mo'),
+                    tooltip: 'Show last 12 months statistics',
+                  ),
+                  ButtonSegment<String>(
+                    value: '6_months',
+                    label: const Text('6mo'),
+                    tooltip: 'Show last 6 months statistics',
+                  ),
+                  ButtonSegment<String>(
+                    value: '3_months',
+                    label: const Text('3mo'),
+                    tooltip: 'Show last 3 months statistics',
+                  ),
+                ],
+                selected: _selectedPreset == 'custom' || _selectedPreset == '30_days'
+                    ? <String>{}
+                    : {_selectedPreset},
+                onSelectionChanged: (Set<String> newSelection) {
+                  _selectPreset(newSelection.first);
+                },
+                multiSelectionEnabled: false,
+                emptySelectionAllowed: true,
+                style: ButtonStyle(
                   visualDensity: VisualDensity.compact,
-                  // Add semantic labels for accessibility
-                  tooltip: isSelected 
-                    ? 'Currently showing ${_getPresetLabel(preset)} statistics'
-                    : 'Show ${_getPresetLabel(preset)} statistics',
                 ),
-              );
-            }).toList(),
+              ),
+
+              const SizedBox(height: 12),
+
+              // Custom range button
+              FilledButton.tonalIcon(
+                onPressed: () => _selectPreset('custom'),
+                icon: const Icon(Icons.calendar_month),
+                label: Text(_selectedPreset == 'custom'
+                    ? 'Custom: ${_formatDateRange(_selectedDateRange)}'
+                    : 'Custom date range'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _selectedPreset == 'custom'
+                      ? Theme.of(context).colorScheme.primaryContainer
+                      : null,
+                  foregroundColor: _selectedPreset == 'custom'
+                      ? Theme.of(context).colorScheme.onPrimaryContainer
+                      : null,
+                ),
+              ),
+            ],
           ),
         ),
-        
-        // Selected range display and flight count
-        if (_selectedDateRange != null || !_isLoading) ...[
-          const SizedBox(height: 8),
+
+        // Flight count display
+        if (!_isLoading && _errorMessage == null) ...[
+          const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (_selectedDateRange != null)
-                  Text(
-                    'Showing: ${_formatDateRange(_selectedDateRange)}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                if (!_isLoading && _errorMessage == null)
-                  Text(
-                    _buildFlightCountText(),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-              ],
+            child: Text(
+              _buildFlightCountText(),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ],
-        
+
         const SizedBox(height: 16),
       ],
     );
