@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!--
+        Android Auto Backup Configuration for The Paragliding App
+
+        WHAT GETS BACKED UP:
+        - FlightLog.db (includes user flights, sites, wings, wing_aliases)
+          + Also includes pge_sites, pge_sites_metadata, country_codes tables
+          + These reference tables are backed up but can be re-downloaded from bundled assets
+        - App preferences (SharedPreferences)
+        - IGC files (compressed via custom IGCBackupAgent - see IGCBackupAgent.kt)
+
+        WHAT DOESN'T GET BACKED UP (can be re-downloaded/regenerated):
+        - Airspace database (airspace_cache.db) - downloaded from OpenAIP, max 100MB
+        - PGE sites CSV file - bundled with app in assets/
+        - Map tiles - downloaded from tile servers
+        - Cache and temporary files
+
+        LIMITATIONS:
+        - Android Auto Backup backs up entire database files, not individual tables
+        - Cannot selectively exclude pge_sites or country_codes tables from FlightLog.db
+        - This is acceptable since they're re-downloadable from bundled assets
+
+        See IGCBackupAgent.kt for custom IGC file compression (4-5x reduction)
+    -->
+
+    <!-- Include SQLite databases (flight logs, sites, wings) -->
+    <include domain="database" />
+
+    <!-- Include shared preferences (app settings) -->
+    <include domain="sharedpref" />
+
+    <!-- Include internal app files but exclude IGC files (handled by BackupAgent) -->
+    <include domain="file" />
+    <exclude domain="file" path="igc_files/" />
+    <exclude domain="file" path="imported_igc/" />
+    <exclude domain="file" path="flight_tracks/" />
+    <exclude domain="file" path="igc_tracks/" />
+
+    <!-- Exclude airspace database (can be re-downloaded from OpenAIP) -->
+    <exclude domain="file" path="airspace_cache.db" />
+    <exclude domain="file" path="airspace_cache.db-wal" />
+    <exclude domain="file" path="airspace_cache.db-shm" />
+
+    <!-- Exclude PGE sites download (bundled with app, can be reloaded) -->
+    <exclude domain="file" path="pge_sites/" />
+
+    <!-- Exclude cache and temporary files -->
+    <exclude domain="cache" />
+    <exclude domain="file" path="temp/" />
+    <exclude domain="file" path="cache/" />
+
+    <!-- Exclude large files that can be re-downloaded -->
+    <exclude domain="file" path="maps/" />
+    <exclude domain="file" path="tiles/" />
+</full-backup-content>

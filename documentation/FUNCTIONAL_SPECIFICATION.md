@@ -1,12 +1,12 @@
-# Free Flight Log - Functional Specification
+# The Paragliding App - Functional Specification
 
 ## 1. Introduction
 
 ### 1.1 Purpose
-Free Flight Log is a mobile application designed to simplify flight logging for paraglider, hang glider, and microlight pilots. The app automates data collection from flight computers while providing manual entry options, comprehensive flight analysis, and regulatory compliance reporting.
+The Paragliding App is a mobile application designed to simplify flight logging for paraglider, hang glider, and microlight pilots. The app automates data collection from flight computers while providing manual entry options, comprehensive flight analysis, and regulatory compliance reporting.
 
 ### 1.2 Scope
-This document defines the functional requirements for the Free Flight Log mobile application, including all user-facing features, data management capabilities, and integration requirements.
+This document defines the functional requirements for the The Paragliding App mobile application, including all user-facing features, data management capabilities, and integration requirements.
 
 ### 1.3 Target Users
 - Paraglider pilots

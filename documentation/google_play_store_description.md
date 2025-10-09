@@ -1,4 +1,4 @@
-# Free Flight Log - Google Play Store Description
+# The Paragliding App - Google Play Store Description
 
 ## Short Description (80 characters max)
 **Option 1 (78 characters):**
@@ -15,9 +15,9 @@ Smart flight logbook for paragliding, hang gliding & microlight pilots.
 
 ## Full Description (4000 characters max)
 
-**Free Flight Log - The Smart Logbook for Free Flight Pilots**
+**The Paragliding App - The Smart Logbook for Free Flight Pilots**
 
-Transform your flight logging experience with Free Flight Log, the comprehensive digital logbook designed specifically for paragliding, hang gliding, and microlight pilots. Whether you're a weekend warrior or competition pilot, track every flight with precision and ease.
+Transform your flight logging experience with The Paragliding App, the comprehensive digital logbook designed specifically for paragliding, hang gliding, and microlight pilots. Whether you're a weekend warrior or competition pilot, track every flight with precision and ease.
 
 **🚀 Key Features:**
 
@@ -48,9 +48,9 @@ Transform your flight logging experience with Free Flight Log, the comprehensive
 • Monthly and lifetime flight summaries
 • Climb and sink rate performance metrics
 
-**Why Choose Free Flight Log?**
+**Why Choose The Paragliding App?**
 
-Unlike basic logbooks, Free Flight Log combines the power of modern IGC analysis with intuitive manual logging. Our app works completely offline - no internet required for core functionality. Whether you're logging a simple site flight or analyzing a cross-country adventure, every detail is captured and visualized.
+Unlike basic logbooks, The Paragliding App combines the power of modern IGC analysis with intuitive manual logging. Our app works completely offline - no internet required for core functionality. Whether you're logging a simple site flight or analyzing a cross-country adventure, every detail is captured and visualized.
 
 **Perfect for:**
 • Paragliding pilots of all skill levels
@@ -62,9 +62,9 @@ Unlike basic logbooks, Free Flight Log combines the power of modern IGC analysis
 **Technical Excellence:**
 Built with Flutter for native performance across all platforms. Features Material Design 3 UI, robust data validation, and professional-grade flight analysis tools used by thousands of pilots worldwide.
 
-**Free Flight Log respects your privacy** - all data stays on your device. No accounts, no subscriptions, no data mining.
+**The Paragliding App respects your privacy** - all data stays on your device. No accounts, no subscriptions, no data mining.
 
-Start logging your flights professionally. Download Free Flight Log today and take your flight logging to new heights!
+Start logging your flights professionally. Download The Paragliding App today and take your flight logging to new heights!
 
 *Compatible with IGC files from all major flight computers including XCTrack, SkyDrop, LX Navigation, and more.*
 
@@ -134,7 +134,7 @@ Start logging your flights professionally. Download Free Flight Log today and ta
 5. **IGC Import Screenshot**: "Import IGC files from any flight computer with one-tap convenience"
 
 ### Elevator Pitch (30 seconds)
-"Free Flight Log is the smart digital logbook for paragliding, hang gliding, and microlight pilots. Import IGC files automatically, visualize your flights on interactive maps, and track detailed statistics including climb rates and thermal analysis. Works completely offline on all devices - your data never leaves your phone."
+"The Paragliding App is the smart digital logbook for paragliding, hang gliding, and microlight pilots. Import IGC files automatically, visualize your flights on interactive maps, and track detailed statistics including climb rates and thermal analysis. Works completely offline on all devices - your data never leaves your phone."
 
 ### Technical Summary (for developers)
 "Cross-platform Flutter application with SQLite database, OpenStreetMap integration, comprehensive IGC file parsing, and advanced flight analytics. Features Material Design 3 UI, offline-first architecture, and professional-grade data visualization tools."
