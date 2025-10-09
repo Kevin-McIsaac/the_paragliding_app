@@ -92,8 +92,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             tooltip: 'View flight log book',
           ),
           NavigationDestination(
-            icon: Icon(Icons.map_outlined),
-            selectedIcon: Icon(Icons.map),
+            icon: Icon(Icons.location_on_outlined),
+            selectedIcon: Icon(Icons.location_on),
             label: 'Sites',
             tooltip: 'Find nearby flying sites',
           ),
