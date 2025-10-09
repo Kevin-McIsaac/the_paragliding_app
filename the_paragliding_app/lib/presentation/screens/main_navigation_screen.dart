@@ -35,7 +35,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     });
 
     // Log navigation for debugging
-    final destinations = ['Flight Log', 'Nearby Sites', 'Statistics'];
+    final destinations = ['Log Book', 'Nearby Sites', 'Statistics'];
     LoggingService.action('Navigation', 'bottom_nav_tap', {
       'destination': destinations[index],
       'from_index': _selectedIndex,
@@ -88,8 +88,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           NavigationDestination(
             icon: Icon(Icons.flight),
             selectedIcon: Icon(Icons.flight),
-            label: 'Flights',
-            tooltip: 'View flight log',
+            label: 'Log Book',
+            tooltip: 'View flight log book',
           ),
           NavigationDestination(
             icon: Icon(Icons.map_outlined),
