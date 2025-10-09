@@ -297,166 +297,184 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   }
 
   Widget _buildDateRangeSelector() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // SegmentedButton with custom as last option
-              SegmentedButton<String>(
-                segments: [
-                  ButtonSegment<String>(
-                    value: 'all',
-                    label: const Text('All'),
-                    tooltip: 'Show all time statistics',
-                  ),
-                  ButtonSegment<String>(
-                    value: '12_months',
-                    label: const Text('12mo'),
-                    tooltip: 'Show last 12 months statistics',
-                  ),
-                  ButtonSegment<String>(
-                    value: '6_months',
-                    label: const Text('6mo'),
-                    tooltip: 'Show last 6 months statistics',
-                  ),
-                  ButtonSegment<String>(
-                    value: '3_months',
-                    label: const Text('3mo'),
-                    tooltip: 'Show last 3 months statistics',
-                  ),
-                  ButtonSegment<String>(
-                    value: 'custom',
-                    label: const Text('Custom'),
-                    tooltip: 'Select custom date range',
-                  ),
-                ],
-                selected: _selectedPreset == '30_days'
-                    ? {'all'}
-                    : {_selectedPreset},
-                onSelectionChanged: (Set<String> newSelection) {
-                  _selectPreset(newSelection.first);
-                },
-                multiSelectionEnabled: false,
-                style: ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                ),
-              ),
-            ],
-          ),
-        ),
+    // Only show range info (SegmentedButton is now in top bar)
+    if (_isLoading || _errorMessage != null) {
+      return const SizedBox.shrink();
+    }
 
-        // Flight count display and date range info
-        if (!_isLoading && _errorMessage == null) ...[
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Range: ${_formatDateRange(_selectedDateRange)}',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.primary,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                Text(
-                  _buildFlightCountText(),
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Range: ${_formatDateRange(_selectedDateRange)}',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _buildFlightCountText(),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ],
-
-        const SizedBox(height: 16),
-      ],
+      ),
     );
   }
   
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Flight Statistics'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
-      // Add semantic label for the main content area
+      // No AppBar - use custom dark bar instead
       body: Semantics(
         label: 'Flight statistics with date range filtering',
-        child: _buildMainContent(),
+        child: Column(
+          children: [
+            // Dark filter bar at top (like Sites screen)
+            _buildFilterBar(),
+            // Main content below
+            Expanded(child: _buildMainContent()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build dark filter bar at top with SegmentedButton
+  Widget _buildFilterBar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey[900],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: SafeArea(
+        bottom: false,
+        child: SegmentedButton<String>(
+          segments: const [
+            ButtonSegment<String>(
+              value: 'all',
+              label: Text('All'),
+              tooltip: 'Show all time statistics',
+            ),
+            ButtonSegment<String>(
+              value: '12_months',
+              label: Text('12mo'),
+              tooltip: 'Show last 12 months statistics',
+            ),
+            ButtonSegment<String>(
+              value: '6_months',
+              label: Text('6mo'),
+              tooltip: 'Show last 6 months statistics',
+            ),
+            ButtonSegment<String>(
+              value: '3_months',
+              label: Text('3mo'),
+              tooltip: 'Show last 3 months statistics',
+            ),
+            ButtonSegment<String>(
+              value: 'custom',
+              label: Text('Custom'),
+              tooltip: 'Select custom date range',
+            ),
+          ],
+          selected: _selectedPreset == '30_days'
+              ? {'all'}
+              : {_selectedPreset},
+          onSelectionChanged: (Set<String> newSelection) {
+            _selectPreset(newSelection.first);
+          },
+          multiSelectionEnabled: false,
+          style: ButtonStyle(
+            visualDensity: VisualDensity.compact,
+          ),
+        ),
       ),
     );
   }
 
   Widget _buildMainContent() {
-    return _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _errorMessage != null
-              ? Column(
-                  children: [
-                    // Always show date range selector
-                    _buildDateRangeSelector(),
-                    Expanded(
-                      child: AppErrorState.loading(
-                        message: _errorMessage!,
-                        onRetry: () {
-                          _clearError();
-                          _loadData();
-                        },
-                      ),
-                    ),
-                  ],
-                )
-              : Column(
-                  children: [
-                    // Always show date range selector
-                    _buildDateRangeSelector(),
-                    Expanded(
-                      child: _yearlyStats.isEmpty && 
-                              _wingStats.isEmpty && 
-                              _siteStats.isEmpty
-                          ? AppEmptyState.statistics()
-                          : SingleChildScrollView(
-                              padding: _scrollPadding,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  // Yearly Statistics Section
-                                  if (_yearlyStats.isNotEmpty) ...[
-                                    _buildSectionHeader('Flights by Year', Icons.calendar_today),
-                                    const SizedBox(height: 8),
-                                    _buildYearlyStatsTable(_yearlyStats),
-                                    const SizedBox(height: _sectionSpacing),
-                                  ],
-                                  
-                                  // Wing Statistics Section
-                                  if (_wingStats.isNotEmpty) ...[
-                                    _buildSectionHeader('Flights by Wing', Icons.paragliding),
-                                    const SizedBox(height: 8),
-                                    _buildWingStatsTable(_wingStats),
-                                    const SizedBox(height: _sectionSpacing),
-                                  ],
-                                  
-                                  // Site Statistics Section
-                                  if (_siteStats.isNotEmpty) ...[
-                                    _buildSectionHeader('Flights by Site', Icons.location_on),
-                                    const SizedBox(height: 8),
-                                    _buildSiteStatsTable(_siteStats),
-                                  ],
-                                ],
-                              ),
-                            ),
-                    ),
-                  ],
-                );
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_errorMessage != null) {
+      return AppErrorState.loading(
+        message: _errorMessage!,
+        onRetry: () {
+          _clearError();
+          _loadData();
+        },
+      );
+    }
+
+    if (_yearlyStats.isEmpty && _wingStats.isEmpty && _siteStats.isEmpty) {
+      return AppEmptyState.statistics();
+    }
+
+    return SingleChildScrollView(
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Date range info at top
+          _buildDateRangeSelector(),
+
+          // Yearly Statistics Section
+          if (_yearlyStats.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _buildSectionHeader('Flights by Year', Icons.calendar_today),
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _buildYearlyStatsTable(_yearlyStats),
+            ),
+            const SizedBox(height: _sectionSpacing),
+          ],
+
+          // Wing Statistics Section
+          if (_wingStats.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _buildSectionHeader('Flights by Wing', Icons.paragliding),
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _buildWingStatsTable(_wingStats),
+            ),
+            const SizedBox(height: _sectionSpacing),
+          ],
+
+          // Site Statistics Section
+          if (_siteStats.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _buildSectionHeader('Flights by Site', Icons.location_on),
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _buildSiteStatsTable(_siteStats),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ],
+      ),
+    );
   }
   
   
