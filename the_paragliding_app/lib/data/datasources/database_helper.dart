@@ -2,6 +2,26 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../../services/logging_service.dart';
 
+/// FlightLog.db - Main application database
+///
+/// BACKUP STRATEGY:
+/// - This database is stored in getDatabasesPath() (databases directory)
+/// - Automatically backed up via Android Auto Backup (domain="database")
+/// - Includes all user data: flights, sites, wings, wing_aliases
+/// - Also includes reference tables: pge_sites, pge_sites_metadata, country_codes
+///
+/// REFERENCE TABLES IN BACKUP:
+/// - pge_sites: Worldwide paragliding sites from bundled CSV (re-downloadable)
+/// - country_codes: ISO 3166-1 alpha-2 lookup table (static reference data)
+/// - These tables MUST stay in this database for JOINs to work efficiently
+/// - Cannot selectively exclude tables (Android backs up entire database files)
+/// - Acceptable tradeoff: They're small and re-loadable from assets/data/world_sites_extracted.csv.gz
+///
+/// DATABASE LOCATIONS:
+/// - FlightLog.db (this file): getDatabasesPath() - BACKED UP
+/// - airspace_cache.db: getApplicationDocumentsDirectory() - NOT backed up (re-downloadable)
+///
+/// See: android/app/src/main/res/xml/backup_rules.xml for full backup configuration
 class DatabaseHelper {
   static const _databaseName = "FlightLog.db";
   static const _databaseVersion = 2; // v2: Added pge_site_id foreign key for deduplication

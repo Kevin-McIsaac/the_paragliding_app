@@ -3,7 +3,6 @@ import '../../utils/preferences_helper.dart';
 import '../../utils/ui_utils.dart';
 import '../../utils/card_expansion_manager.dart';
 import '../../services/logging_service.dart';
-import '../widgets/airspace_country_selector.dart';
 
 class PreferencesScreen extends StatefulWidget {
   const PreferencesScreen({super.key});
@@ -313,14 +312,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                       _savePreference('rendering quality', value, PreferencesHelper.setCesiumQuality);
                     }
                   },
-                ),
-              ]),
-
-              // Airspace Countries
-              _buildSection('Airspace Data', expansionKey: 'airspace_data', [
-                SizedBox(
-                  height: 450, // Increased height to show more countries
-                  child: const AirspaceCountrySelector(),
                 ),
               ]),
 

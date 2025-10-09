@@ -8,6 +8,26 @@ import '../services/logging_service.dart';
 import '../services/airspace_geojson_service.dart' show ClipperData;
 import '../data/models/airspace_cache_models.dart';
 
+/// airspace_cache.db - OpenAIP airspace data cache
+///
+/// BACKUP STRATEGY:
+/// - This database is stored in getApplicationDocumentsDirectory() (documents directory)
+/// - NOT backed up via Android Auto Backup (explicitly excluded in backup_rules.xml)
+/// - Contains downloaded airspace data from OpenAIP API (can be re-downloaded)
+/// - Max size: 100MB with automatic cleanup
+/// - Re-downloadable on demand per country
+///
+/// WHY NOT BACKED UP:
+/// - Large size (up to 100MB) would consume significant backup quota
+/// - Can be re-downloaded from OpenAIP API on app restore
+/// - User airspace country selections are backed up via SharedPreferences
+/// - Cache is regenerated automatically when user selects countries in Settings
+///
+/// DATABASE LOCATIONS:
+/// - airspace_cache.db (this file): getApplicationDocumentsDirectory() - NOT backed up
+/// - FlightLog.db: getDatabasesPath() - BACKED UP (see database_helper.dart)
+///
+/// See: android/app/src/main/res/xml/backup_rules.xml for full backup configuration
 class AirspaceDiskCache {
   static const String _databaseName = 'airspace_cache.db';
   static const int _databaseVersion = 7; // Version 7: Removed redundant indexes and tile table

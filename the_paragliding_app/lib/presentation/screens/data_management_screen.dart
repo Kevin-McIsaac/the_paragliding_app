@@ -15,6 +15,7 @@ import '../../services/logging_service.dart';
 import '../../utils/card_expansion_manager.dart';
 import '../widgets/common/app_expansion_card.dart';
 import '../widgets/common/app_stat_row.dart';
+import '../widgets/airspace_country_selector.dart';
 import '../../services/airspace_geojson_service.dart';
 import '../../services/airspace_country_service.dart';
 import '../../services/pge_sites_download_service.dart';
@@ -49,6 +50,9 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
   String? _cesiumToken;
   bool _isCesiumTokenValidated = false;
   bool _isValidatingCesium = false;
+
+  // Airspace refresh key to force widget recreation
+  int _airspaceRefreshKey = 0;
 
   // Helper method to format numbers with thousands separator
   String _formatNumber(int number) {
@@ -1045,8 +1049,10 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
 
       if (mounted) Navigator.of(context).pop(); // Close loading
 
-      // Refresh UI to show updated stats
-      if (mounted) setState(() {});
+      // Refresh UI to show updated stats and force country selector refresh
+      if (mounted) setState(() {
+        _airspaceRefreshKey++;
+      });
 
       _showSuccessDialog(
         'Database Cleared',
@@ -1275,49 +1281,6 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
 
-                  // Map Cache Statistics
-                  AppExpansionCard.dataManagement(
-                    icon: Icons.map,
-                    title: 'Map Tile Cache',
-                    subtitle: '${CacheUtils.getCurrentCacheCount()} tiles • ${CacheUtils.formatBytes(CacheUtils.getCurrentCacheSize())}',
-                    expansionKey: 'map_cache',
-                    expansionManager: _expansionManager,
-                    onExpansionChanged: (expanded) {
-                      setState(() {
-                        _expansionManager.setState('map_cache', expanded);
-                      });
-                    },
-                    children: [
-                      AppStatRowGroup.dataManagement(
-                        rows: [
-                          AppStatRow.dataManagement(
-                            label: 'Cached Tiles',
-                            value: CacheUtils.getCurrentCacheCount().toString(),
-                          ),
-                          AppStatRow.dataManagement(
-                            label: 'Cache Size',
-                            value: CacheUtils.formatBytes(CacheUtils.getCurrentCacheSize()),
-                          ),
-                        ],
-                        padding: EdgeInsets.zero,
-                      ),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: CacheUtils.getCurrentCacheCount() > 0 ? _clearMapCache : null,
-                          icon: const Icon(Icons.cleaning_services),
-                          label: const Text('Clear Map Cache'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.blue,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 24),
-
                   // Airspace Database (Local copy of OpenAIP data)
                   FutureBuilder<Map<String, dynamic>>(
                     future: AirspaceGeoJsonService.instance.getCacheStatistics(),
@@ -1325,7 +1288,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                       final airspaceCacheStats = snapshot.data;
                       return AppExpansionCard.dataManagement(
                         icon: Icons.layers,
-                        title: 'Airspace DB',
+                        title: 'Airspace Database',
                         subtitle: airspaceCacheStats != null
                             ? '${airspaceCacheStats['summary']['country_count'] ?? 0} countries • ${airspaceCacheStats['summary']['total_unique_airspaces']} airspaces • ${airspaceCacheStats['summary']['database_size_mb'] ?? '0.00'}MB'
                             : 'Loading...',
@@ -1337,67 +1300,31 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                           });
                         },
                         children: [
-                          if (snapshot.connectionState == ConnectionState.waiting)
-                            const Center(
-                              child: Padding(
-                                padding: EdgeInsets.all(16.0),
-                                child: CircularProgressIndicator(),
-                              ),
-                            )
-                          else if (snapshot.hasError)
-                            Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(16.0),
-                                child: Text(
-                                  'Error loading airspace data: ${snapshot.error}',
-                                  style: const TextStyle(color: Colors.red),
-                                ),
-                              ),
-                            )
-                          else if (airspaceCacheStats != null) ...[
-                            AppStatRowGroup.dataManagement(
-                              rows: [
-                                AppStatRow.dataManagement(
-                                  label: 'Countries Loaded',
-                                  value: airspaceCacheStats['summary']['loaded_countries'] != null &&
-                                         (airspaceCacheStats['summary']['loaded_countries'] as List).isNotEmpty
-                                      ? (airspaceCacheStats['summary']['loaded_countries'] as List).join(', ')
-                                      : 'None',
-                                ),
-                                AppStatRow.dataManagement(
-                                  label: 'Total Airspaces',
-                                  value: airspaceCacheStats['summary']['total_unique_airspaces'].toString(),
-                                ),
-                                AppStatRow.dataManagement(
-                                  label: 'Database Size',
-                                  value: '${airspaceCacheStats['summary']['database_size_mb'] ?? '0.00'}MB',
-                                ),
-                                AppStatRow.dataManagement(
-                                  label: 'Schema Version',
-                                  value: 'v${airspaceCacheStats['summary']['database_version'] ?? 'Unknown'}',
-                                ),
-                              ],
-                              padding: EdgeInsets.zero,
+                          // Country Selection
+                          const Text(
+                            'Select countries to download their airspace data for offline use. '
+                            'Downloaded data will be used to display controlled airspace on maps.',
+                            style: TextStyle(color: Colors.grey, fontSize: 12),
+                          ),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            height: 350,
+                            child: AirspaceCountrySelector(
+                              key: ValueKey(_airspaceRefreshKey),
                             ),
-                            const SizedBox(height: 16),
-                            SizedBox(
-                              width: double.infinity,
-                              child: OutlinedButton.icon(
-                                onPressed: _clearAirspaceCache, // Always enabled
-                                icon: const Icon(Icons.cleaning_services),
-                                label: const Text('Clear Airspace Database'),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.blue,
-                                ),
+                          ),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: _clearAirspaceCache,
+                              icon: const Icon(Icons.cleaning_services),
+                              label: const Text('Clear All Airspace Data'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.blue,
                               ),
                             ),
-                          ] else
-                            const Center(
-                              child: Padding(
-                                padding: EdgeInsets.all(16.0),
-                                child: Text('No airspace data available'),
-                              ),
-                            ),
+                          ),
                         ],
                       );
                     },
@@ -1409,7 +1336,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                   AppExpansionCard.dataManagement(
                     icon: Icons.backup,
                     title: 'Android Backup',
-                    subtitle: _backupStatus?['success'] == true 
+                    subtitle: _backupStatus?['success'] == true
                         ? '${_backupStatus!['backupEnabled'] ? '✓ Enabled' : '✗ Disabled'} • ${_igcStats?.fileCount ?? 0} IGC files'
                         : 'Loading...',
                     expansionKey: 'backup_status',
@@ -1420,6 +1347,11 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                       });
                     },
                     children: [
+                      const Text(
+                        'Flight data, including the raw IGC files, is automatically backed up to the cloud and can be restored when the app is installed on another device.',
+                        style: TextStyle(color: Colors.grey, fontSize: 12),
+                      ),
+                      const SizedBox(height: 16),
                       if (_backupStatus?['success'] == true) ...[
                         AppStatRowGroup.dataManagement(
                           rows: [
@@ -1481,13 +1413,352 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                       ),
                     ],
                   ),
-                  
+
                   const SizedBox(height: 24),
+
+                  // Database Management
+                  AppExpansionCard.dataManagement(
+                    icon: Icons.storage,
+                    title: 'Flight DB',
+                    subtitle: _dbStats != null
+                        ? '${_dbStats!['flights'] ?? 0} flights • ${_dbStats!['sites'] ?? 0} sites • ${_dbStats!['wings'] ?? 0} wings'
+                        : 'Loading...',
+                    expansionKey: 'database_stats',
+                    expansionManager: _expansionManager,
+                    onExpansionChanged: (expanded) {
+                      setState(() {
+                        _expansionManager.setState('database_stats', expanded);
+                      });
+                    },
+                    children: [
+                      const Text(
+                        'The the core Flight Track database. Can be deleted, or recreated from the raw IGC file but any manual changes will be lost.',
+                        style: TextStyle(color: Colors.grey, fontSize: 12),
+                      ),
+                      const SizedBox(height: 16),
+                      if (_dbStats != null) ...[
+                        AppStatRowGroup.dataManagement(
+                          rows: [
+                            AppStatRow.dataManagement(
+                              label: 'Version',
+                              value: '${_dbStats!['version'] ?? 'Unknown'}',
+                            ),
+                            AppStatRow.dataManagement(
+                              label: 'Flights',
+                              value: '${_dbStats!['flights'] ?? 0}',
+                            ),
+                            AppStatRow.dataManagement(
+                              label: 'Sites',
+                              value: '${_dbStats!['sites'] ?? 0}',
+                            ),
+                            AppStatRow.dataManagement(
+                              label: 'Wings',
+                              value: '${_dbStats!['wings'] ?? 0}',
+                            ),
+                            AppStatRow.dataManagement(
+                              label: 'Total Records',
+                              value: '${_dbStats!['total_records'] ?? 0}',
+                            ),
+                            AppStatRow.dataManagement(
+                              label: 'Database Size',
+                              value: '${_dbStats!['size_kb'] ?? '0'}KB',
+                            ),
+                          ],
+                          padding: EdgeInsets.zero,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Path: ${_dbStats!['path'] ?? 'Unknown'}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+
+                        const SizedBox(height: 24),
+
+                        // Recreate Information Box
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                            borderRadius: BorderRadius.circular(8),
+                            color: Colors.blue.withValues(alpha: 0.1),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(Icons.info, color: Colors.blue),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Recreate from IGC Files',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blue,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                '• Resets the database and reimports all IGC files found on device\n'
+                                '• Use when database is corrupted but IGC files are intact\n'
+                                '• Rebuilds complete database from your existing track files\n'
+                                '• Preserves all IGC files, only rebuilds database records',
+                                style: TextStyle(color: Colors.blue[700]),
+                              ),
+                              const SizedBox(height: 16),
+
+                              // Recreate from IGC Files button
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: _recreateDatabaseFromIGC,
+                                  icon: const Icon(Icons.restore),
+                                  label: const Text('Recreate from IGC Files'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.blue,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 24),
+
+                        // Danger Zone
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                            borderRadius: BorderRadius.circular(8),
+                            color: Colors.red.withValues(alpha: 0.1),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(Icons.warning, color: Colors.red),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Danger Zone',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.red,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              const Text(
+                                'Delete All Flight Data\n\n'
+                                '• Completely removes ALL data (database + IGC files)\n'
+                                '• Use when starting completely fresh or freeing storage space\n'
+                                '• Deletes everything - database records AND IGC files\n'
+                                '• Warning: This is irreversible - all flight data will be lost\n\n'
+                                'This action cannot be undone.',
+                                style: TextStyle(color: Colors.red),
+                              ),
+                              const SizedBox(height: 16),
+                              SizedBox(
+                                width: double.infinity,
+                                child: FilledButton.icon(
+                                  onPressed: (_dbStats?['total_records'] ?? 0) > 0 ? _deleteAllFlightData : null,
+                                  icon: const Icon(Icons.delete_forever),
+                                  label: const Text('Delete All Flight Data'),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: Colors.red,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // Free Premium Maps
+                  AppExpansionCard.dataManagement(
+                    icon: Icons.map,
+                    title: 'Free Premium Maps',
+                    subtitle: _cesiumToken != null
+                        ? (_isCesiumTokenValidated ? 'Active' : 'Not validated')
+                        : 'No token configured',
+                    expansionKey: 'premium_maps',
+                    expansionManager: _expansionManager,
+                    onExpansionChanged: (expanded) {
+                      setState(() {
+                        _expansionManager.setState('premium_maps', expanded);
+                      });
+                    },
+                    children: [
+                      const Text(
+                        'To unlock free access to premium Bing Maps you need to provide your own Cesium ION access token. '
+                        'Registering with Cesium is free, quick and easy.',
+                        style: TextStyle(fontSize: 14, color: Colors.grey),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Status: ${_cesiumToken != null ? (_isCesiumTokenValidated ? "Active" : "Not validated") : "No token configured"}',
+                        style: TextStyle(
+                          color: _cesiumToken != null
+                            ? (_isCesiumTokenValidated ? Colors.green : Colors.orange)
+                            : Colors.grey,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      if (_cesiumToken != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Token: ${CesiumTokenValidator.maskToken(_cesiumToken!)}',
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      Text(
+                        _cesiumToken != null && _isCesiumTokenValidated
+                          ? 'You now have access to the Premium maps.'
+                          : 'To access premium Bing maps for free follow these 4 steps:',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: _cesiumToken != null && _isCesiumTokenValidated ? Colors.green : null,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+
+                      // 4-step instructions when no token
+                      if (_cesiumToken == null) ...[
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('1. ', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: _launchCesiumSignup,
+                                child: const Text(
+                                  'Create a free account with Cesium ION.',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.blue,
+                                    decoration: TextDecoration.underline,
+                                    decorationColor: Colors.blue,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('2. ', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: _launchCesiumTokens,
+                                child: const Text(
+                                  'Navigate to Access Tokens',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.blue,
+                                    decoration: TextDecoration.underline,
+                                    decorationColor: Colors.blue,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        const Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('3. ', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                            Expanded(
+                              child: Text(
+                                'Copy the Default Token',
+                                style: TextStyle(fontSize: 14),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('4. ', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: _showTokenDialog,
+                                child: const Text(
+                                  'Add your token to this app',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.blue,
+                                    decoration: TextDecoration.underline,
+                                    decorationColor: Colors.blue,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                      ] else
+                        const SizedBox(height: 16),
+                      // Token management buttons
+                      if (_cesiumToken != null)
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: _isValidatingCesium ? null : _testCesiumToken,
+                              icon: _isValidatingCesium
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.wifi_protected_setup),
+                              label: const Text('Test Connection'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.blue,
+                              ),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: _showRemoveConfirmDialog,
+                              icon: const Icon(Icons.delete_outline),
+                              label: const Text('Remove Token'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.red,
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 24),
+
                   // IGC File Cleanup
                   AppExpansionCard.dataManagement(
                     icon: Icons.cleaning_services,
                     title: 'IGC File Cleanup',
-                    subtitle: _cleanupStats != null 
+                    subtitle: _cleanupStats != null
                         ? '${_cleanupStats!.totalIgcFiles} (${_cleanupStats!.formattedTotalSize}) • ${_cleanupStats!.orphanedFiles} orphaned'
                         : 'Analyzing files...',
                     expansionKey: 'igc_cleanup',
@@ -1498,6 +1769,11 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                       });
                     },
                     children: [
+                      const Text(
+                        'The raw IGC files are retained on your device. IGC files no longer linked to any Flight DB record can be safely removed to free up storage space',
+                        style: TextStyle(color: Colors.grey, fontSize: 12),
+                      ),
+                      const SizedBox(height: 16),
                       if (_cleanupStats != null) ...[
                         AppStatRowGroup.dataManagement(
                           rows: [
@@ -1563,7 +1839,89 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                       ),
                     ],
                   ),
-                  
+
+                  const SizedBox(height: 24),
+
+                  // Map Cache Statistics
+                  AppExpansionCard.dataManagement(
+                    icon: Icons.map,
+                    title: 'Map Tile Cache',
+                    subtitle: '${CacheUtils.getCurrentCacheCount()} tiles • ${CacheUtils.formatBytes(CacheUtils.getCurrentCacheSize())}',
+                    expansionKey: 'map_cache',
+                    expansionManager: _expansionManager,
+                    onExpansionChanged: (expanded) {
+                      setState(() {
+                        _expansionManager.setState('map_cache', expanded);
+                      });
+                    },
+                    children: [
+                      const Text(
+                        'Map tiles are cached when first used to improve map performance. Clear the Map Cache to free up storage space.',
+                        style: TextStyle(color: Colors.grey, fontSize: 12),
+                      ),
+                      const SizedBox(height: 16),
+                      AppStatRowGroup.dataManagement(
+                        rows: [
+                          AppStatRow.dataManagement(
+                            label: 'Cached Tiles',
+                            value: CacheUtils.getCurrentCacheCount().toString(),
+                          ),
+                          AppStatRow.dataManagement(
+                            label: 'Cache Size',
+                            value: CacheUtils.formatBytes(CacheUtils.getCurrentCacheSize()),
+                          ),
+                        ],
+                        padding: EdgeInsets.zero,
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: CacheUtils.getCurrentCacheCount() > 0 ? _clearMapCache : null,
+                          icon: const Icon(Icons.cleaning_services),
+                          label: const Text('Clear Map Cache'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.blue,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // ParaglidingEarth API
+                  AppExpansionCard.dataManagement(
+                    icon: Icons.cloud_sync,
+                    title: 'ParaglidingEarth API',
+                    subtitle: 'Lookup site details, eg., name, latitude/longitude, country',
+                    expansionKey: 'api_test',
+                    expansionManager: _expansionManager,
+                    onExpansionChanged: (expanded) {
+                      setState(() {
+                        _expansionManager.setState('api_test', expanded);
+                      });
+                    },
+                    children: [
+                      const Text(
+                        'Test the connection to ParaglidingEarth.com API to lookup site details like name, latitude/longitude, and country.',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _testApiConnection,
+                          icon: const Icon(Icons.cloud_sync),
+                          label: const Text('Test ParaglidingEarth API'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.green,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
                   const SizedBox(height: 24),
 
                   // PGE Sites Database
@@ -1581,6 +1939,11 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                       });
                     },
                     children: [
+                      const Text(
+                        'The location of every PGE site is stored locally to improve site map performance.',
+                        style: TextStyle(color: Colors.grey, fontSize: 12),
+                      ),
+                      const SizedBox(height: 16),
                       if (_pgeSitesStats != null) ...[
                         AppStatRowGroup.dataManagement(
                           rows: [
@@ -1669,373 +2032,6 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                     ],
                   ),
 
-                  const SizedBox(height: 24),
-
-                  // ParaglidingEarth API
-                  AppExpansionCard.dataManagement(
-                    icon: Icons.cloud_sync,
-                    title: 'ParaglidingEarth API',
-                    subtitle: 'Lookup site details, eg., name, latitude/longitude, country',
-                    expansionKey: 'api_test',
-                    expansionManager: _expansionManager,
-                    onExpansionChanged: (expanded) {
-                      setState(() {
-                        _expansionManager.setState('api_test', expanded);
-                      });
-                    },
-                    children: [
-                      const Text(
-                        'Test the connection to ParaglidingEarth.com API to lookup site details like name, latitude/longitude, and country.',
-                        style: TextStyle(color: Colors.grey),
-                      ),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: _testApiConnection,
-                          icon: const Icon(Icons.cloud_sync),
-                          label: const Text('Test ParaglidingEarth API'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.green,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  
-                  const SizedBox(height: 24),
-                  
-                  // Free Premium Maps
-                  AppExpansionCard.dataManagement(
-                    icon: Icons.map,
-                    title: 'Free Premium Maps',
-                    subtitle: _cesiumToken != null 
-                        ? (_isCesiumTokenValidated ? 'Active' : 'Not validated') 
-                        : 'No token configured',
-                    expansionKey: 'premium_maps',
-                    expansionManager: _expansionManager,
-                    onExpansionChanged: (expanded) {
-                      setState(() {
-                        _expansionManager.setState('premium_maps', expanded);
-                      });
-                    },
-                    children: [
-                      const Text(
-                        'To unlock free access to premium Bing Maps you need to provide your own Cesium ION access token. '
-                        'Registering with Cesium is free, quick and easy.',
-                        style: TextStyle(fontSize: 14, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Status: ${_cesiumToken != null ? (_isCesiumTokenValidated ? "Active" : "Not validated") : "No token configured"}',
-                        style: TextStyle(
-                          color: _cesiumToken != null 
-                            ? (_isCesiumTokenValidated ? Colors.green : Colors.orange)
-                            : Colors.grey,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      if (_cesiumToken != null) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          'Token: ${CesiumTokenValidator.maskToken(_cesiumToken!)}',
-                          style: const TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 12,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 8),
-                      Text(
-                        _cesiumToken != null && _isCesiumTokenValidated
-                          ? 'You now have access to the Premium maps.'
-                          : 'To access premium Bing maps for free follow these 4 steps:',
-                        style: TextStyle(
-                          fontSize: 14, 
-                          fontWeight: FontWeight.w500,
-                          color: _cesiumToken != null && _isCesiumTokenValidated ? Colors.green : null,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      
-                      // 4-step instructions when no token
-                      if (_cesiumToken == null) ...[
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('1. ', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                            Expanded(
-                              child: GestureDetector(
-                                onTap: _launchCesiumSignup,
-                                child: const Text(
-                                  'Create a free account with Cesium ION.',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.blue,
-                                    decoration: TextDecoration.underline,
-                                    decorationColor: Colors.blue,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('2. ', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                            Expanded(
-                              child: GestureDetector(
-                                onTap: _launchCesiumTokens,
-                                child: const Text(
-                                  'Navigate to Access Tokens',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.blue,
-                                    decoration: TextDecoration.underline,
-                                    decorationColor: Colors.blue,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        const Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('3. ', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                            Expanded(
-                              child: Text(
-                                'Copy the Default Token',
-                                style: TextStyle(fontSize: 14),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('4. ', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                            Expanded(
-                              child: GestureDetector(
-                                onTap: _showTokenDialog,
-                                child: const Text(
-                                  'Add your token to this app',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.blue,
-                                    decoration: TextDecoration.underline,
-                                    decorationColor: Colors.blue,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                      ] else 
-                        const SizedBox(height: 16),
-                      // Token management buttons
-                      if (_cesiumToken != null)
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            OutlinedButton.icon(
-                              onPressed: _isValidatingCesium ? null : _testCesiumToken,
-                              icon: _isValidatingCesium 
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.wifi_protected_setup),
-                              label: const Text('Test Connection'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.blue,
-                              ),
-                            ),
-                            OutlinedButton.icon(
-                              onPressed: _showRemoveConfirmDialog,
-                              icon: const Icon(Icons.delete_outline),
-                              label: const Text('Remove Token'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.red,
-                              ),
-                            ),
-                          ],
-                        ),
-                    ],
-                  ),
-                  
-                  const SizedBox(height: 24),
-                  
-                  // Database Management
-                  AppExpansionCard.dataManagement(
-                    icon: Icons.storage,
-                    title: 'Flight DB',
-                    subtitle: _dbStats != null 
-                        ? '${_dbStats!['flights'] ?? 0} flights • ${_dbStats!['sites'] ?? 0} sites • ${_dbStats!['wings'] ?? 0} wings'
-                        : 'Loading...',
-                    expansionKey: 'database_stats',
-                    expansionManager: _expansionManager,
-                    onExpansionChanged: (expanded) {
-                      setState(() {
-                        _expansionManager.setState('database_stats', expanded);
-                      });
-                    },
-                    children: [
-                      if (_dbStats != null) ...[
-                        AppStatRowGroup.dataManagement(
-                          rows: [
-                            AppStatRow.dataManagement(
-                              label: 'Version',
-                              value: '${_dbStats!['version'] ?? 'Unknown'}',
-                            ),
-                            AppStatRow.dataManagement(
-                              label: 'Flights',
-                              value: '${_dbStats!['flights'] ?? 0}',
-                            ),
-                            AppStatRow.dataManagement(
-                              label: 'Sites',
-                              value: '${_dbStats!['sites'] ?? 0}',
-                            ),
-                            AppStatRow.dataManagement(
-                              label: 'Wings',
-                              value: '${_dbStats!['wings'] ?? 0}',
-                            ),
-                            AppStatRow.dataManagement(
-                              label: 'Total Records',
-                              value: '${_dbStats!['total_records'] ?? 0}',
-                            ),
-                            AppStatRow.dataManagement(
-                              label: 'Database Size',
-                              value: '${_dbStats!['size_kb'] ?? '0'}KB',
-                            ),
-                          ],
-                          padding: EdgeInsets.zero,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Path: ${_dbStats!['path'] ?? 'Unknown'}',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                        
-                        const SizedBox(height: 24),
-                        
-                        // Recreate Information Box
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
-                            borderRadius: BorderRadius.circular(8),
-                            color: Colors.blue.withValues(alpha: 0.1),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Row(
-                                children: [
-                                  Icon(Icons.info, color: Colors.blue),
-                                  SizedBox(width: 8),
-                                  Text(
-                                    'Recreate from IGC Files',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blue,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                '• Resets the database and reimports all IGC files found on device\n'
-                                '• Use when database is corrupted but IGC files are intact\n'
-                                '• Rebuilds complete database from your existing track files\n'
-                                '• Preserves all IGC files, only rebuilds database records',
-                                style: TextStyle(color: Colors.blue[700]),
-                              ),
-                              const SizedBox(height: 16),
-                              
-                              // Recreate from IGC Files button
-                              SizedBox(
-                                width: double.infinity,
-                                child: OutlinedButton.icon(
-                                  onPressed: _recreateDatabaseFromIGC,
-                                  icon: const Icon(Icons.restore),
-                                  label: const Text('Recreate from IGC Files'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: Colors.blue,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        
-                        const SizedBox(height: 24),
-                        
-                        // Danger Zone
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
-                            borderRadius: BorderRadius.circular(8),
-                            color: Colors.red.withValues(alpha: 0.1),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Row(
-                                children: [
-                                  Icon(Icons.warning, color: Colors.red),
-                                  SizedBox(width: 8),
-                                  Text(
-                                    'Danger Zone',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.red,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              const Text(
-                                'Delete All Flight Data\n\n'
-                                '• Completely removes ALL data (database + IGC files)\n'
-                                '• Use when starting completely fresh or freeing storage space\n'
-                                '• Deletes everything - database records AND IGC files\n'
-                                '• Warning: This is irreversible - all flight data will be lost\n\n'
-                                'This action cannot be undone.',
-                                style: TextStyle(color: Colors.red),
-                              ),
-                              const SizedBox(height: 16),
-                              SizedBox(
-                                width: double.infinity,
-                                child: FilledButton.icon(
-                                  onPressed: (_dbStats?['total_records'] ?? 0) > 0 ? _deleteAllFlightData : null,
-                                  icon: const Icon(Icons.delete_forever),
-                                  label: const Text('Delete All Flight Data'),
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: Colors.red,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  
                   const SizedBox(height: 24),
                 ],
               ),

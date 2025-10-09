@@ -224,39 +224,13 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
 
         final countries = snapshot.data ?? [];
 
-        return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Airspace Countries',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Select countries to download their airspace data for offline use',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).textTheme.bodySmall?.color,
-                ),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: ListView.builder(
-            itemCount: countries.length,
-            itemBuilder: (context, index) {
-              final country = countries[index];
-              return _buildCountryTile(country);
-            },
-          ),
-        ),
-        ],
-      );
+        return ListView.builder(
+          itemCount: countries.length,
+          itemBuilder: (context, index) {
+            final country = countries[index];
+            return _buildCountryTile(country);
+          },
+        );
       },
     );
   }
