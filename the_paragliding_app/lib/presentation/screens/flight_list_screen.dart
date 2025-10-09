@@ -521,7 +521,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
       appBar: AppBar(
         title: _isSelectionMode
           ? Text('${_selectedFlightIds.length} selected')
-          : Text(widget.showInNavigation ? 'Flight Log' : 'The Paragliding App'),
+          : const Text('The Paragliding App'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         leading: _isSelectionMode 
           ? IconButton(
