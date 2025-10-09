@@ -55,6 +55,10 @@ class _FlightListScreenState extends State<FlightListScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
+  // Date range filtering
+  DateTimeRange? _selectedDateRange;
+  String _selectedPreset = 'all';
+
   @override
   void initState() {
     super.initState();
@@ -113,19 +117,28 @@ class _FlightListScreenState extends State<FlightListScreen> {
     }
   }
 
-  // Sort and filter flights based on current column, direction, and search query
+  // Sort and filter flights based on current column, direction, date range, and search query
   void _sortFlights() {
-    // First apply search filter if there's a query
+    // Start with all flights
+    _sortedFlights = List.from(_flights);
+
+    // First apply date range filter if one is selected
+    if (_selectedDateRange != null) {
+      _sortedFlights = _sortedFlights.where((flight) {
+        return flight.date.isAfter(_selectedDateRange!.start.subtract(const Duration(days: 1))) &&
+               flight.date.isBefore(_selectedDateRange!.end.add(const Duration(days: 1)));
+      }).toList();
+    }
+
+    // Then apply search filter if there's a query
     if (_searchQuery.isNotEmpty) {
-      _sortedFlights = _flights.where((flight) {
+      _sortedFlights = _sortedFlights.where((flight) {
         final siteName = flight.launchSiteName?.toLowerCase() ?? '';
         return siteName.contains(_searchQuery.toLowerCase());
       }).toList();
-    } else {
-      _sortedFlights = List.from(_flights);
     }
 
-    // Then apply sorting
+    // Finally apply sorting
     FlightSortingUtils.sortFlights(_sortedFlights, _sortColumn, _sortAscending);
   }
 
@@ -135,7 +148,119 @@ class _FlightListScreenState extends State<FlightListScreen> {
       _sortFlights();
     });
   }
-  
+
+  // Date range helper methods
+  DateTimeRange? _getDateRangeForPreset(String preset) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    switch (preset) {
+      case 'all':
+        return null;
+      case '12_months':
+        return DateTimeRange(
+          start: today.subtract(const Duration(days: 365)),
+          end: today,
+        );
+      case '6_months':
+        return DateTimeRange(
+          start: today.subtract(const Duration(days: 183)),
+          end: today,
+        );
+      case '3_months':
+        return DateTimeRange(
+          start: today.subtract(const Duration(days: 91)),
+          end: today,
+        );
+      default:
+        return null;
+    }
+  }
+
+  String _formatDateRangeCompact(DateTimeRange? range) {
+    if (range == null) return 'All time';
+
+    // Compact format for button: "dd/mm-dd/mm" or "dd/mm/yy-dd/mm/yy"
+    final start = range.start;
+    final end = range.end;
+    final now = DateTime.now();
+
+    // If both dates are in current year, omit year
+    if (start.year == now.year && end.year == now.year) {
+      return '${start.day.toString().padLeft(2, '0')}/${start.month.toString().padLeft(2, '0')}-${end.day.toString().padLeft(2, '0')}/${end.month.toString().padLeft(2, '0')}';
+    }
+
+    // Include year for clarity
+    final startYear = start.year.toString().substring(2);
+    final endYear = end.year.toString().substring(2);
+    return '${start.day.toString().padLeft(2, '0')}/${start.month.toString().padLeft(2, '0')}/$startYear-${end.day.toString().padLeft(2, '0')}/${end.month.toString().padLeft(2, '0')}/$endYear';
+  }
+
+  Future<void> _selectDateRange() async {
+    // Show popup menu with presets + custom option
+    final RenderBox button = context.findRenderObject() as RenderBox;
+    final RenderBox overlay = Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
+    final RelativeRect position = RelativeRect.fromRect(
+      Rect.fromPoints(
+        button.localToGlobal(Offset.zero, ancestor: overlay),
+        button.localToGlobal(button.size.bottomRight(Offset.zero), ancestor: overlay),
+      ),
+      Offset.zero & overlay.size,
+    );
+
+    final String? selected = await showMenu<String>(
+      context: context,
+      position: position,
+      items: [
+        const PopupMenuItem(value: 'all', child: Text('All time')),
+        const PopupMenuItem(value: '12_months', child: Text('Last 12 months')),
+        const PopupMenuItem(value: '6_months', child: Text('Last 6 months')),
+        const PopupMenuItem(value: '3_months', child: Text('Last 3 months')),
+        const PopupMenuDivider(),
+        const PopupMenuItem(value: 'custom', child: Text('Custom range...')),
+      ],
+    );
+
+    if (selected == null) return;
+
+    if (selected == 'custom') {
+      // Show date picker
+      final DateTimeRange? picked = await showDateRangePicker(
+        context: context,
+        firstDate: DateTime(2000),
+        lastDate: DateTime.now(),
+        initialDateRange: _selectedDateRange,
+        helpText: 'Select date range for flights',
+      );
+
+      if (picked != null) {
+        LoggingService.structured('FLIGHT_LIST_CUSTOM_RANGE', {
+          'start_date': picked.start.toIso8601String().split('T')[0],
+          'end_date': picked.end.toIso8601String().split('T')[0],
+          'duration_days': picked.end.difference(picked.start).inDays,
+        });
+
+        setState(() {
+          _selectedPreset = 'custom';
+          _selectedDateRange = picked;
+          _sortFlights();
+        });
+      }
+    } else {
+      // Preset selected
+      final newRange = _getDateRangeForPreset(selected);
+      LoggingService.action('FlightList', 'select_date_preset', {
+        'preset': selected,
+      });
+
+      setState(() {
+        _selectedPreset = selected;
+        _selectedDateRange = newRange;
+        _sortFlights();
+      });
+    }
+  }
+
   void _sort(String column) {
     setState(() {
       if (_sortColumn == column) {
@@ -269,6 +394,60 @@ class _FlightListScreenState extends State<FlightListScreen> {
     });
   }
 
+  /// Build date filter button for functional bar
+  Widget _buildDateFilterButton() {
+    final dateText = _selectedPreset == 'all'
+        ? 'All time'
+        : _selectedPreset == 'custom'
+            ? _formatDateRangeCompact(_selectedDateRange)
+            : _selectedPreset == '12_months'
+                ? '12mo'
+                : _selectedPreset == '6_months'
+                    ? '6mo'
+                    : '3mo';
+
+    return InkWell(
+      onTap: _selectDateRange,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 90),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.3),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.3),
+          ),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.calendar_today,
+              color: Colors.white70,
+              size: 16,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              dateText,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(
+              Icons.arrow_drop_down,
+              color: Colors.white70,
+              size: 18,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Build dark functional bar (like Sites/Statistics)
   Widget _buildFunctionalBar() {
     return Container(
@@ -287,6 +466,9 @@ class _FlightListScreenState extends State<FlightListScreen> {
         bottom: false,
         child: Row(
           children: [
+            // Date filter button
+            _buildDateFilterButton(),
+            const SizedBox(width: 8),
             // Search field
             Expanded(
               child: TextField(
