@@ -21,7 +21,11 @@ import 'about_screen.dart';
 import 'preferences_screen.dart';
 
 class FlightListScreen extends StatefulWidget {
-  const FlightListScreen({super.key});
+  /// Whether this screen is shown within MainNavigationScreen's bottom navigation.
+  /// When true, removes Statistics and Nearby Sites from menu and hides FAB.
+  final bool showInNavigation;
+
+  const FlightListScreen({super.key, this.showInNavigation = false});
 
   @override
   State<FlightListScreen> createState() => _FlightListScreenState();
@@ -247,9 +251,9 @@ class _FlightListScreenState extends State<FlightListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: _isSelectionMode 
+        title: _isSelectionMode
           ? Text('${_selectedFlightIds.length} selected')
-          : const Text('The Paragliding App'),
+          : Text(widget.showInNavigation ? 'Flight Log' : 'The Paragliding App'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         leading: _isSelectionMode 
           ? IconButton(
@@ -351,26 +355,29 @@ class _FlightListScreenState extends State<FlightListScreen> {
                   }
                 },
                 itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'statistics',
-                    child: Row(
-                      children: [
-                        Icon(Icons.bar_chart),
-                        SizedBox(width: 8),
-                        Text('Statistics'),
-                      ],
+                  // Show Statistics and Nearby Sites only when NOT in navigation mode
+                  if (!widget.showInNavigation) ...[
+                    const PopupMenuItem(
+                      value: 'statistics',
+                      child: Row(
+                        children: [
+                          Icon(Icons.bar_chart),
+                          SizedBox(width: 8),
+                          Text('Statistics'),
+                        ],
+                      ),
                     ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'nearby_sites',
-                    child: Row(
-                      children: [
-                        Icon(Icons.map),
-                        SizedBox(width: 8),
-                        Text('Nearby Sites'),
-                      ],
+                    const PopupMenuItem(
+                      value: 'nearby_sites',
+                      child: Row(
+                        children: [
+                          Icon(Icons.map),
+                          SizedBox(width: 8),
+                          Text('Nearby Sites'),
+                        ],
+                      ),
                     ),
-                  ),
+                  ],
                   const PopupMenuItem(
                     value: 'sites',
                     child: Row(
@@ -475,21 +482,24 @@ class _FlightListScreenState extends State<FlightListScreen> {
                       },
                     )
                   : _buildFlightList(_sortedFlights),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          final result = await Navigator.of(context).push<bool>(
-            MaterialPageRoute(
-              builder: (context) => const AddFlightScreen(),
+      // Only show FAB when NOT in navigation mode (MainNavigationScreen handles it)
+      floatingActionButton: widget.showInNavigation
+          ? null
+          : FloatingActionButton(
+              onPressed: () async {
+                final result = await Navigator.of(context).push<bool>(
+                  MaterialPageRoute(
+                    builder: (context) => const AddFlightScreen(),
+                  ),
+                );
+
+                if (result == true) {
+                  _loadData();
+                }
+              },
+              tooltip: 'Add Flight',
+              child: const Icon(Icons.add),
             ),
-          );
-          
-          if (result == true) {
-            _loadData();
-          }
-        },
-        tooltip: 'Add Flight',
-        child: const Icon(Icons.add),
-      ),
     );
   }
 
