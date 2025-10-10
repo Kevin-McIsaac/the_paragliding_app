@@ -346,7 +346,76 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     );
   }
 
-  /// Build dark filter bar at top with SegmentedButton and menu
+  /// Build filter dropdown button for selecting date range preset
+  Widget _buildFilterButton() {
+    final filterText = _getPresetLabel(_selectedPreset);
+
+    return PopupMenuButton<String>(
+      onSelected: _selectPreset,
+      offset: const Offset(0, 48),
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.3),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.3),
+          ),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.calendar_today,
+              color: Colors.white70,
+              size: 16,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              filterText,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(
+              Icons.arrow_drop_down,
+              color: Colors.white70,
+              size: 18,
+            ),
+          ],
+        ),
+      ),
+      itemBuilder: (context) => [
+        const PopupMenuItem(
+          value: 'all',
+          child: Text('All time'),
+        ),
+        const PopupMenuItem(
+          value: '12_months',
+          child: Text('Last 12 months'),
+        ),
+        const PopupMenuItem(
+          value: '6_months',
+          child: Text('Last 6 months'),
+        ),
+        const PopupMenuItem(
+          value: '3_months',
+          child: Text('Last 3 months'),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: 'custom',
+          child: Text('Custom range...'),
+        ),
+      ],
+    );
+  }
+
+  /// Build dark filter bar at top with dropdown and menu
   Widget _buildFilterBar() {
     return Container(
       decoration: BoxDecoration(
@@ -364,48 +433,10 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         bottom: false,
         child: Row(
           children: [
-            // SegmentedButton takes available space
-            Expanded(
-              child: SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment<String>(
-                    value: 'all',
-                    label: Text('All'),
-                    tooltip: 'Show all time statistics',
-                  ),
-                  ButtonSegment<String>(
-                    value: '12_months',
-                    label: Text('12mo'),
-                    tooltip: 'Show last 12 months statistics',
-                  ),
-                  ButtonSegment<String>(
-                    value: '6_months',
-                    label: Text('6mo'),
-                    tooltip: 'Show last 6 months statistics',
-                  ),
-                  ButtonSegment<String>(
-                    value: '3_months',
-                    label: Text('3mo'),
-                    tooltip: 'Show last 3 months statistics',
-                  ),
-                  ButtonSegment<String>(
-                    value: 'custom',
-                    label: Text('Custom'),
-                    tooltip: 'Select custom date range',
-                  ),
-                ],
-                selected: _selectedPreset == '30_days'
-                    ? {'all'}
-                    : {_selectedPreset},
-                onSelectionChanged: (Set<String> newSelection) {
-                  _selectPreset(newSelection.first);
-                },
-                multiSelectionEnabled: false,
-                style: ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                ),
-              ),
-            ),
+            // Spacer to push buttons to the right
+            const Spacer(),
+            // Filter dropdown button
+            _buildFilterButton(),
             const SizedBox(width: 8),
             // Menu button on the right
             AppMenuButton(onDataChanged: _loadData),
