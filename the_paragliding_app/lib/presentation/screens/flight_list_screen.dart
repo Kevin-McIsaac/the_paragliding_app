@@ -9,16 +9,8 @@ import '../widgets/common/app_error_state.dart';
 import '../widgets/common/app_empty_state.dart';
 import '../widgets/common/app_loading_skeleton.dart';
 import '../widgets/common/app_menu_button.dart';
-import 'add_flight_screen.dart';
 import 'igc_import_screen.dart';
 import 'flight_detail_screen.dart';
-import 'wing_management_screen.dart';
-import 'manage_sites_screen.dart';
-import 'statistics_screen.dart';
-import 'nearby_sites_screen.dart';
-import 'data_management_screen.dart';
-import 'about_screen.dart';
-import 'preferences_screen.dart';
 
 /// Flight list screen displaying all logged flights in a sortable, filterable table.
 ///
@@ -63,6 +55,7 @@ class FlightListScreenState extends State<FlightListScreen> {
 
   // Date range filtering
   DateTimeRange? _selectedDateRange;
+  String _selectedPreset = 'all';
 
   @override
   void initState() {
@@ -169,53 +162,109 @@ class FlightListScreenState extends State<FlightListScreen> {
     });
   }
 
-  String _formatDateRangeCompact(DateTimeRange? range) {
-    if (range == null) return 'All dates';
+  DateTimeRange? _getDateRangeForPreset(String preset) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
 
-    // Format: "dd-MMM to dd-MMM" (e.g., "02-Oct to 10-Oct")
-    final start = range.start;
-    final end = range.end;
-
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-    final startMonth = monthNames[start.month - 1];
-    final endMonth = monthNames[end.month - 1];
-    final startDay = start.day.toString().padLeft(2, '0');
-    final endDay = end.day.toString().padLeft(2, '0');
-
-    return '$startDay-$startMonth to $endDay-$endMonth';
-  }
-
-  Future<void> _selectDateRange() async {
-    // Directly show date picker (no preset menu)
-    final DateTimeRange? picked = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now(),
-      initialDateRange: _selectedDateRange,
-      helpText: 'Select date range for flights',
-    );
-
-    if (picked != null) {
-      LoggingService.structured('FLIGHT_LIST_CUSTOM_RANGE', {
-        'start_date': picked.start.toIso8601String().split('T')[0],
-        'end_date': picked.end.toIso8601String().split('T')[0],
-        'duration_days': picked.end.difference(picked.start).inDays,
-      });
-
-      setState(() {
-        _selectedDateRange = picked;
-        _sortFlights();
-      });
+    switch (preset) {
+      case 'all':
+        return null;
+      case 'this_year':
+        return DateTimeRange(
+          start: DateTime(now.year, 1, 1),
+          end: today,
+        );
+      case '12_months':
+        return DateTimeRange(
+          start: today.subtract(const Duration(days: 365)),
+          end: today,
+        );
+      case '6_months':
+        return DateTimeRange(
+          start: today.subtract(const Duration(days: 183)),
+          end: today,
+        );
+      case '3_months':
+        return DateTimeRange(
+          start: today.subtract(const Duration(days: 91)),
+          end: today,
+        );
+      case '30_days':
+        return DateTimeRange(
+          start: today.subtract(const Duration(days: 30)),
+          end: today,
+        );
+      default:
+        return null;
     }
   }
 
-  void _clearDateRange() {
-    setState(() {
-      _selectedDateRange = null;
-      _sortFlights();
+  String _getPresetLabel(String preset) {
+    switch (preset) {
+      case 'all':
+        return 'All time';
+      case 'this_year':
+        return 'This year';
+      case '12_months':
+        return 'Last 12 months';
+      case '6_months':
+        return 'Last 6 months';
+      case '3_months':
+        return 'Last 3 months';
+      case '30_days':
+        return 'Last 30 days';
+      case 'custom':
+        return 'Custom range';
+      default:
+        return preset;
+    }
+  }
+
+  String _formatDateRange(DateTimeRange? range) {
+    if (range == null) return 'All time';
+
+    final startFormatted = DateTimeUtils.formatDateSmart(range.start);
+    final endFormatted = DateTimeUtils.formatDateSmart(range.end);
+
+    return '$startFormatted - $endFormatted';
+  }
+
+  Future<void> _selectPreset(String preset) async {
+    LoggingService.action('FlightList', 'select_date_preset', {
+      'new_preset': preset,
+      'previous_preset': _selectedPreset,
     });
+
+    if (preset == 'custom') {
+      final DateTimeRange? picked = await showDateRangePicker(
+        context: context,
+        firstDate: DateTime(2000),
+        lastDate: DateTime.now(),
+        initialDateRange: _selectedDateRange,
+        helpText: 'Select date range for flights',
+      );
+
+      if (picked != null) {
+        LoggingService.structured('FLIGHT_LIST_CUSTOM_RANGE', {
+          'start_date': picked.start.toIso8601String().split('T')[0],
+          'end_date': picked.end.toIso8601String().split('T')[0],
+          'duration_days': picked.end.difference(picked.start).inDays,
+        });
+
+        setState(() {
+          _selectedPreset = 'custom';
+          _selectedDateRange = picked;
+          _sortFlights();
+        });
+      }
+    } else {
+      final newRange = _getDateRangeForPreset(preset);
+      setState(() {
+        _selectedPreset = preset;
+        _selectedDateRange = newRange;
+        _sortFlights();
+      });
+    }
   }
 
   void _sort(String column) {
@@ -236,131 +285,7 @@ class FlightListScreenState extends State<FlightListScreen> {
     });
   }
 
-  /// Build date filter button for functional bar
-  Widget _buildDateFilterButton() {
-    final dateText = _formatDateRangeCompact(_selectedDateRange);
-    final hasDateFilter = _selectedDateRange != null;
-
-    return InkWell(
-      onTap: _selectDateRange,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        constraints: const BoxConstraints(minWidth: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.3),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.3),
-          ),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.calendar_today,
-              color: Colors.white70,
-              size: 16,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              dateText,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            if (hasDateFilter) ...[
-              const SizedBox(width: 6),
-              InkWell(
-                onTap: _clearDateRange,
-                borderRadius: BorderRadius.circular(12),
-                child: const Padding(
-                  padding: EdgeInsets.all(2),
-                  child: Icon(
-                    Icons.clear,
-                    color: Colors.white70,
-                    size: 16,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build dark functional bar (like Sites/Statistics)
-  Widget _buildFunctionalBar() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.grey[900],
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: SafeArea(
-        bottom: false,
-        child: Row(
-          children: [
-            // Search field
-            Expanded(
-              child: TextField(
-                controller: _searchController,
-                onChanged: _onSearchChanged,
-                style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  hintText: 'Search site name...',
-                  hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
-                  prefixIcon: const Icon(Icons.search, color: Colors.white70, size: 20),
-                  suffixIcon: _searchQuery.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear, color: Colors.white70, size: 20),
-                          onPressed: () {
-                            _searchController.clear();
-                            _onSearchChanged('');
-                          },
-                        )
-                      : null,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Colors.blue, width: 2),
-                  ),
-                  filled: true,
-                  fillColor: Colors.black.withValues(alpha: 0.3),
-                  isDense: true,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            // Date filter button
-            _buildDateFilterButton(),
-            const SizedBox(width: 8),
-            // Menu button
-            AppMenuButton(onDataChanged: _loadData),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build main content (used by both navigation and non-navigation modes)
+  /// Build main content
   Widget _buildMainContent() {
     if (_isLoading && _flights.isEmpty) {
       return AppPageLoadingSkeleton.flightList();
@@ -400,14 +325,83 @@ class FlightListScreenState extends State<FlightListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Column(
-        children: [
-          _buildFunctionalBar(),
-          Expanded(
-            child: _buildMainContent(),
+      appBar: AppBar(
+        title: Container(
+          height: 38,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(4),
           ),
+          child: TextField(
+            controller: _searchController,
+            onChanged: _onSearchChanged,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: 'Search site name...',
+              hintStyle: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white.withValues(alpha: 0.7)),
+              prefixIcon: const Icon(Icons.search, size: 16, color: Colors.white),
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, size: 16, color: Colors.white),
+                      onPressed: () {
+                        _searchController.clear();
+                        _onSearchChanged('');
+                      },
+                      padding: EdgeInsets.zero,
+                    )
+                  : null,
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+          ),
+        ),
+        actions: [
+          // Date filter dropdown button
+          PopupMenuButton<String>(
+            onSelected: _selectPreset,
+            icon: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.calendar_today, size: 16),
+                const SizedBox(width: 4),
+                Text(
+                  _selectedPreset == 'custom' && _selectedDateRange != null
+                      ? _formatDateRange(_selectedDateRange)
+                      : _getPresetLabel(_selectedPreset),
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                ),
+                const Icon(Icons.arrow_drop_down, size: 18),
+              ],
+            ),
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'all',
+                child: Text('All time'),
+              ),
+              const PopupMenuItem(
+                value: '12_months',
+                child: Text('Last 12 months'),
+              ),
+              const PopupMenuItem(
+                value: '6_months',
+                child: Text('Last 6 months'),
+              ),
+              const PopupMenuItem(
+                value: '3_months',
+                child: Text('Last 3 months'),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'custom',
+                child: Text('Custom range...'),
+              ),
+            ],
+          ),
+          AppMenuButton(onDataChanged: _loadData),
         ],
       ),
+      body: _buildMainContent(),
     );
   }
 

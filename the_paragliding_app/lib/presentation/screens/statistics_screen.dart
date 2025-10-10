@@ -19,7 +19,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   // Constants
   static const double _cardElevation = 2.0;
   static const EdgeInsets _cardPadding = EdgeInsets.all(16.0);
-  static const EdgeInsets _scrollPadding = EdgeInsets.only(top: 16.0, bottom: 16.0);
   static const EdgeInsets _rowPadding = EdgeInsets.symmetric(vertical: 12);
   static const double _headerBorderWidth = 2.0;
   static const double _sectionSpacing = 24.0;
@@ -331,120 +330,55 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // No AppBar - use custom dark bar instead
-      body: Semantics(
-        label: 'Flight statistics with date range filtering',
-        child: Column(
-          children: [
-            // Dark filter bar at top (like Sites screen)
-            _buildFilterBar(),
-            // Main content below
-            Expanded(child: _buildMainContent()),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build filter dropdown button for selecting date range preset
-  Widget _buildFilterButton() {
-    // Show actual date range when custom is selected, otherwise show preset label
-    final filterText = _selectedPreset == 'custom' && _selectedDateRange != null
-        ? _formatDateRange(_selectedDateRange)
-        : _getPresetLabel(_selectedPreset);
-
-    return PopupMenuButton<String>(
-      onSelected: _selectPreset,
-      offset: const Offset(0, 48),
-      child: Container(
-        constraints: const BoxConstraints(minWidth: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.3),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.3),
-          ),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.calendar_today,
-              color: Colors.white70,
-              size: 16,
+      appBar: AppBar(
+        actions: [
+          // Date filter dropdown button
+          PopupMenuButton<String>(
+            onSelected: _selectPreset,
+            icon: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.calendar_today, size: 16),
+                const SizedBox(width: 4),
+                Text(
+                  _selectedPreset == 'custom' && _selectedDateRange != null
+                      ? _formatDateRange(_selectedDateRange)
+                      : _getPresetLabel(_selectedPreset),
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                ),
+                const Icon(Icons.arrow_drop_down, size: 18),
+              ],
             ),
-            const SizedBox(width: 8),
-            Text(
-              filterText,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'all',
+                child: Text('All time'),
               ),
-            ),
-            const SizedBox(width: 4),
-            const Icon(
-              Icons.arrow_drop_down,
-              color: Colors.white70,
-              size: 18,
-            ),
-          ],
-        ),
-      ),
-      itemBuilder: (context) => [
-        const PopupMenuItem(
-          value: 'all',
-          child: Text('All time'),
-        ),
-        const PopupMenuItem(
-          value: '12_months',
-          child: Text('Last 12 months'),
-        ),
-        const PopupMenuItem(
-          value: '6_months',
-          child: Text('Last 6 months'),
-        ),
-        const PopupMenuItem(
-          value: '3_months',
-          child: Text('Last 3 months'),
-        ),
-        const PopupMenuDivider(),
-        const PopupMenuItem(
-          value: 'custom',
-          child: Text('Custom range...'),
-        ),
-      ],
-    );
-  }
-
-  /// Build dark filter bar at top with dropdown and menu
-  Widget _buildFilterBar() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.grey[900],
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+              const PopupMenuItem(
+                value: '12_months',
+                child: Text('Last 12 months'),
+              ),
+              const PopupMenuItem(
+                value: '6_months',
+                child: Text('Last 6 months'),
+              ),
+              const PopupMenuItem(
+                value: '3_months',
+                child: Text('Last 3 months'),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'custom',
+                child: Text('Custom range...'),
+              ),
+            ],
           ),
+          AppMenuButton(onDataChanged: _loadData),
         ],
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: SafeArea(
-        bottom: false,
-        child: Row(
-          children: [
-            // Spacer to push buttons to the right
-            const Spacer(),
-            // Filter dropdown button
-            _buildFilterButton(),
-            const SizedBox(width: 8),
-            // Menu button on the right
-            AppMenuButton(onDataChanged: _loadData),
-          ],
-        ),
+      body: Semantics(
+        label: 'Flight statistics with date range filtering',
+        child: _buildMainContent(),
       ),
     );
   }

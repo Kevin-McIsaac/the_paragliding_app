@@ -32,27 +32,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     LoggingService.info('MainNavigationScreen: Initialized with bottom navigation');
   }
 
-  /// Refresh flight list data (e.g., after adding a new flight).
-  ///
-  /// This is now completely type-safe:
-  /// ```dart
-  /// // ✅ Type-safe - compiler checks method exists
-  /// await _flightListKey.currentState?.refreshData();
-  ///
-  /// // ❌ NEVER do this - unsafe and fragile
-  /// // (_flightListKey.currentState as dynamic)?._loadData();
-  /// ```
-  ///
-  /// Note: For new code, prefer callback pattern over GlobalKey when possible:
-  /// ```dart
-  /// // Preferred pattern for looser coupling
-  /// FlightListScreen(onDataChanged: _handleDataChanged)
-  /// ```
-  Future<void> _refreshFlightList() async {
-    // Type-safe call - compile-time checked, IDE autocomplete works
-    await _flightListKey.currentState?.refreshData();
-  }
-
   void _onDestinationSelected(int index) {
     // Capture old index before updating state
     final oldIndex = _selectedIndex;
