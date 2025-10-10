@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import '../../data/models/flight.dart';
 import '../../services/database_service.dart';
 import '../../utils/date_time_utils.dart';
-import '../../utils/ui_utils.dart';
 import '../../utils/flight_sorting_utils.dart';
 import '../../services/logging_service.dart';
 import '../widgets/common/app_stat_card.dart';
 import '../widgets/common/app_error_state.dart';
 import '../widgets/common/app_empty_state.dart';
 import '../widgets/common/app_loading_skeleton.dart';
+import '../widgets/common/app_menu_button.dart';
 import 'add_flight_screen.dart';
 import 'igc_import_screen.dart';
 import 'flight_detail_screen.dart';
@@ -20,18 +20,29 @@ import 'data_management_screen.dart';
 import 'about_screen.dart';
 import 'preferences_screen.dart';
 
+/// Flight list screen displaying all logged flights in a sortable, filterable table.
+///
+/// This screen is designed to be used within MainNavigationScreen's bottom navigation.
+/// It provides search, date range filtering, and access to the app menu.
 class FlightListScreen extends StatefulWidget {
-  /// Whether this screen is shown within MainNavigationScreen's bottom navigation.
-  /// When true, removes Statistics and Nearby Sites from menu and hides FAB.
-  final bool showInNavigation;
-
-  const FlightListScreen({super.key, this.showInNavigation = false});
+  const FlightListScreen({super.key});
 
   @override
-  State<FlightListScreen> createState() => _FlightListScreenState();
+  State<FlightListScreen> createState() => FlightListScreenState();
 }
 
-class _FlightListScreenState extends State<FlightListScreen> {
+/// State class for FlightListScreen.
+///
+/// Made public (not prefixed with _) to allow parent widgets to access
+/// the refreshData() method through GlobalKey in a type-safe manner.
+///
+/// Example:
+/// ```dart
+/// final key = GlobalKey<FlightListScreenState>();
+/// // ...
+/// await key.currentState?.refreshData();
+/// ```
+class FlightListScreenState extends State<FlightListScreen> {
   final DatabaseService _databaseService = DatabaseService.instance;
   
   // State variables
@@ -45,11 +56,6 @@ class _FlightListScreenState extends State<FlightListScreen> {
   // Sorting state
   String _sortColumn = 'datetime';
   bool _sortAscending = false;
-  
-  // Selection mode state
-  bool _isSelectionMode = false;
-  Set<int> _selectedFlightIds = {};
-  bool _isDeleting = false;
 
   // Search state
   final TextEditingController _searchController = TextEditingController();
@@ -57,7 +63,6 @@ class _FlightListScreenState extends State<FlightListScreen> {
 
   // Date range filtering
   DateTimeRange? _selectedDateRange;
-  String _selectedPreset = 'all';
 
   @override
   void initState() {
@@ -70,11 +75,26 @@ class _FlightListScreenState extends State<FlightListScreen> {
       }
     });
   }
-  
+
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  /// Public method to refresh flight data.
+  ///
+  /// This method can be called by parent widgets using a GlobalKey:
+  /// ```dart
+  /// final key = GlobalKey<State<FlightListScreen>>();
+  /// // ...
+  /// (key.currentState as _FlightListScreenState?)?.refreshData();
+  /// ```
+  ///
+  /// However, prefer using callbacks (e.g., onDataChanged) when possible
+  /// to avoid tight coupling between parent and child widgets.
+  Future<void> refreshData() async {
+    await _loadData();
   }
 
   // Load flights from database
@@ -149,116 +169,53 @@ class _FlightListScreenState extends State<FlightListScreen> {
     });
   }
 
-  // Date range helper methods
-  DateTimeRange? _getDateRangeForPreset(String preset) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-
-    switch (preset) {
-      case 'all':
-        return null;
-      case '12_months':
-        return DateTimeRange(
-          start: today.subtract(const Duration(days: 365)),
-          end: today,
-        );
-      case '6_months':
-        return DateTimeRange(
-          start: today.subtract(const Duration(days: 183)),
-          end: today,
-        );
-      case '3_months':
-        return DateTimeRange(
-          start: today.subtract(const Duration(days: 91)),
-          end: today,
-        );
-      default:
-        return null;
-    }
-  }
-
   String _formatDateRangeCompact(DateTimeRange? range) {
-    if (range == null) return 'All time';
+    if (range == null) return 'All dates';
 
-    // Compact format for button: "dd/mm-dd/mm" or "dd/mm/yy-dd/mm/yy"
+    // Format: "dd-MMM to dd-MMM" (e.g., "02-Oct to 10-Oct")
     final start = range.start;
     final end = range.end;
-    final now = DateTime.now();
 
-    // If both dates are in current year, omit year
-    if (start.year == now.year && end.year == now.year) {
-      return '${start.day.toString().padLeft(2, '0')}/${start.month.toString().padLeft(2, '0')}-${end.day.toString().padLeft(2, '0')}/${end.month.toString().padLeft(2, '0')}';
-    }
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-    // Include year for clarity
-    final startYear = start.year.toString().substring(2);
-    final endYear = end.year.toString().substring(2);
-    return '${start.day.toString().padLeft(2, '0')}/${start.month.toString().padLeft(2, '0')}/$startYear-${end.day.toString().padLeft(2, '0')}/${end.month.toString().padLeft(2, '0')}/$endYear';
+    final startMonth = monthNames[start.month - 1];
+    final endMonth = monthNames[end.month - 1];
+    final startDay = start.day.toString().padLeft(2, '0');
+    final endDay = end.day.toString().padLeft(2, '0');
+
+    return '$startDay-$startMonth to $endDay-$endMonth';
   }
 
   Future<void> _selectDateRange() async {
-    // Show popup menu with presets + custom option
-    final RenderBox button = context.findRenderObject() as RenderBox;
-    final RenderBox overlay = Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
-    final RelativeRect position = RelativeRect.fromRect(
-      Rect.fromPoints(
-        button.localToGlobal(Offset.zero, ancestor: overlay),
-        button.localToGlobal(button.size.bottomRight(Offset.zero), ancestor: overlay),
-      ),
-      Offset.zero & overlay.size,
-    );
-
-    final String? selected = await showMenu<String>(
+    // Directly show date picker (no preset menu)
+    final DateTimeRange? picked = await showDateRangePicker(
       context: context,
-      position: position,
-      items: [
-        const PopupMenuItem(value: 'all', child: Text('All time')),
-        const PopupMenuItem(value: '12_months', child: Text('Last 12 months')),
-        const PopupMenuItem(value: '6_months', child: Text('Last 6 months')),
-        const PopupMenuItem(value: '3_months', child: Text('Last 3 months')),
-        const PopupMenuDivider(),
-        const PopupMenuItem(value: 'custom', child: Text('Custom range...')),
-      ],
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+      initialDateRange: _selectedDateRange,
+      helpText: 'Select date range for flights',
     );
 
-    if (selected == null) return;
-
-    if (selected == 'custom') {
-      // Show date picker
-      final DateTimeRange? picked = await showDateRangePicker(
-        context: context,
-        firstDate: DateTime(2000),
-        lastDate: DateTime.now(),
-        initialDateRange: _selectedDateRange,
-        helpText: 'Select date range for flights',
-      );
-
-      if (picked != null) {
-        LoggingService.structured('FLIGHT_LIST_CUSTOM_RANGE', {
-          'start_date': picked.start.toIso8601String().split('T')[0],
-          'end_date': picked.end.toIso8601String().split('T')[0],
-          'duration_days': picked.end.difference(picked.start).inDays,
-        });
-
-        setState(() {
-          _selectedPreset = 'custom';
-          _selectedDateRange = picked;
-          _sortFlights();
-        });
-      }
-    } else {
-      // Preset selected
-      final newRange = _getDateRangeForPreset(selected);
-      LoggingService.action('FlightList', 'select_date_preset', {
-        'preset': selected,
+    if (picked != null) {
+      LoggingService.structured('FLIGHT_LIST_CUSTOM_RANGE', {
+        'start_date': picked.start.toIso8601String().split('T')[0],
+        'end_date': picked.end.toIso8601String().split('T')[0],
+        'duration_days': picked.end.difference(picked.start).inDays,
       });
 
       setState(() {
-        _selectedPreset = selected;
-        _selectedDateRange = newRange;
+        _selectedDateRange = picked;
         _sortFlights();
       });
     }
+  }
+
+  void _clearDateRange() {
+    setState(() {
+      _selectedDateRange = null;
+      _sortFlights();
+    });
   }
 
   void _sort(String column) {
@@ -273,121 +230,6 @@ class _FlightListScreenState extends State<FlightListScreen> {
     });
   }
 
-  void _toggleSelectionMode() {
-    setState(() {
-      _isSelectionMode = !_isSelectionMode;
-      if (!_isSelectionMode) {
-        _selectedFlightIds.clear();
-      }
-    });
-  }
-
-  void _toggleFlightSelection(int flightId) {
-    setState(() {
-      if (_selectedFlightIds.contains(flightId)) {
-        _selectedFlightIds.remove(flightId);
-      } else {
-        _selectedFlightIds.add(flightId);
-      }
-    });
-  }
-
-  void _selectAllFlights() {
-    setState(() {
-      _selectedFlightIds = _flights.map((flight) => flight.id!).toSet();
-    });
-  }
-
-  void _clearSelection() {
-    setState(() {
-      _selectedFlightIds.clear();
-    });
-  }
-
-  Future<void> _deleteSelectedFlights() async {
-    if (_selectedFlightIds.isEmpty || _isDeleting) return;
-
-    // Set deleting state immediately to prevent double-tap
-    setState(() {
-      _isDeleting = true;
-    });
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Flights'),
-        content: Text(
-          'Are you sure you want to delete ${_selectedFlightIds.length} flight${_selectedFlightIds.length != 1 ? 's' : ''}? This action cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) {
-      // User cancelled, reset deleting state
-      setState(() {
-        _isDeleting = false;
-      });
-      return;
-    }
-
-    try {
-      final flightCount = _selectedFlightIds.length;
-      bool allDeleted = true;
-      
-      // Delete each flight
-      for (final flightId in _selectedFlightIds) {
-        try {
-          await _databaseService.deleteFlight(flightId);
-        } catch (e) {
-          LoggingService.error('FlightListScreen: Failed to delete flight $flightId', e);
-          allDeleted = false;
-        }
-      }
-      
-      if (mounted) {
-        setState(() {
-          _isDeleting = false;
-          if (allDeleted) {
-            _isSelectionMode = false;
-            _selectedFlightIds.clear();
-          }
-        });
-        
-        if (allDeleted) {
-          UiUtils.showSuccessMessage(context, '$flightCount flight${flightCount != 1 ? 's' : ''} deleted successfully');
-          // Reload flights
-          await _loadData();
-        } else {
-          UiUtils.showErrorMessage(context, 'Some flights could not be deleted');
-        }
-      }
-    } catch (e) {
-      // Handle any unexpected errors and reset state
-      if (mounted) {
-        setState(() {
-          _isDeleting = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Unexpected error during deletion: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
   void _clearError() {
     setState(() {
       _errorMessage = null;
@@ -396,21 +238,14 @@ class _FlightListScreenState extends State<FlightListScreen> {
 
   /// Build date filter button for functional bar
   Widget _buildDateFilterButton() {
-    final dateText = _selectedPreset == 'all'
-        ? 'All time'
-        : _selectedPreset == 'custom'
-            ? _formatDateRangeCompact(_selectedDateRange)
-            : _selectedPreset == '12_months'
-                ? '12mo'
-                : _selectedPreset == '6_months'
-                    ? '6mo'
-                    : '3mo';
+    final dateText = _formatDateRangeCompact(_selectedDateRange);
+    final hasDateFilter = _selectedDateRange != null;
 
     return InkWell(
       onTap: _selectDateRange,
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        constraints: const BoxConstraints(minWidth: 90),
+        constraints: const BoxConstraints(minWidth: 160),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.3),
@@ -427,7 +262,7 @@ class _FlightListScreenState extends State<FlightListScreen> {
               color: Colors.white70,
               size: 16,
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
             Text(
               dateText,
               style: const TextStyle(
@@ -436,12 +271,21 @@ class _FlightListScreenState extends State<FlightListScreen> {
                 fontWeight: FontWeight.w500,
               ),
             ),
-            const SizedBox(width: 4),
-            const Icon(
-              Icons.arrow_drop_down,
-              color: Colors.white70,
-              size: 18,
-            ),
+            if (hasDateFilter) ...[
+              const SizedBox(width: 6),
+              InkWell(
+                onTap: _clearDateRange,
+                borderRadius: BorderRadius.circular(12),
+                child: const Padding(
+                  padding: EdgeInsets.all(2),
+                  child: Icon(
+                    Icons.clear,
+                    color: Colors.white70,
+                    size: 16,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -466,9 +310,6 @@ class _FlightListScreenState extends State<FlightListScreen> {
         bottom: false,
         child: Row(
           children: [
-            // Date filter button
-            _buildDateFilterButton(),
-            const SizedBox(width: 8),
             // Search field
             Expanded(
               child: TextField(
@@ -508,137 +349,11 @@ class _FlightListScreenState extends State<FlightListScreen> {
               ),
             ),
             const SizedBox(width: 8),
+            // Date filter button
+            _buildDateFilterButton(),
+            const SizedBox(width: 8),
             // Menu button
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert, color: Colors.white70),
-              onSelected: (value) async {
-                if (value == 'import') {
-                  final result = await Navigator.of(context).push<bool>(
-                    MaterialPageRoute(
-                      builder: (context) => const IgcImportScreen(),
-                    ),
-                  );
-
-                  if (result == true) {
-                    _loadData();
-                  }
-                } else if (value == 'select') {
-                  _toggleSelectionMode();
-                } else if (value == 'wings') {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => const WingManagementScreen(),
-                    ),
-                  );
-                } else if (value == 'sites') {
-                  final result = await Navigator.of(context).push<bool>(
-                    MaterialPageRoute(
-                      builder: (context) => const ManageSitesScreen(),
-                    ),
-                  );
-                  if (result == true && mounted) {
-                    await _loadData();
-                  }
-                } else if (value == 'database') {
-                  final result = await Navigator.of(context).push<bool>(
-                    MaterialPageRoute(
-                      builder: (context) => const DataManagementScreen(),
-                    ),
-                  );
-
-                  if (result == true) {
-                    _loadData();
-                  }
-                } else if (value == 'about') {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => const AboutScreen(),
-                    ),
-                  );
-                } else if (value == 'preferences') {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => const PreferencesScreen(),
-                    ),
-                  );
-                }
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'sites',
-                  child: Row(
-                    children: [
-                      Icon(Icons.location_on),
-                      SizedBox(width: 8),
-                      Text('Manage Sites'),
-                    ],
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'wings',
-                  child: Row(
-                    children: [
-                      Icon(Icons.paragliding),
-                      SizedBox(width: 8),
-                      Text('Manage Wings'),
-                    ],
-                  ),
-                ),
-                const PopupMenuDivider(),
-                const PopupMenuItem(
-                  value: 'import',
-                  child: Row(
-                    children: [
-                      Icon(Icons.upload_file),
-                      SizedBox(width: 8),
-                      Text('Import IGC'),
-                    ],
-                  ),
-                ),
-                if (_flights.isNotEmpty)
-                  const PopupMenuItem(
-                    value: 'select',
-                    child: Row(
-                      children: [
-                        Icon(Icons.checklist),
-                        SizedBox(width: 8),
-                        Text('Select Flights'),
-                      ],
-                    ),
-                  ),
-                const PopupMenuDivider(),
-                const PopupMenuItem(
-                  value: 'database',
-                  child: Row(
-                    children: [
-                      Icon(Icons.storage),
-                      SizedBox(width: 8),
-                      Text('Data Management'),
-                    ],
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'preferences',
-                  child: Row(
-                    children: [
-                      Icon(Icons.settings),
-                      SizedBox(width: 8),
-                      Text('Preferences'),
-                    ],
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'about',
-                  child: Row(
-                    children: [
-                      Icon(Icons.info),
-                      SizedBox(width: 8),
-                      Text('About'),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+            AppMenuButton(onDataChanged: _loadData),
           ],
         ),
       ),
@@ -684,281 +399,31 @@ class _FlightListScreenState extends State<FlightListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // When in navigation mode, use dark functional bar instead of AppBar
-    if (widget.showInNavigation) {
-      return Scaffold(
-        body: Column(
-          children: [
-            _buildFunctionalBar(),
-            Expanded(
-              child: _buildMainContent(),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // When not in navigation mode, use traditional AppBar
     return Scaffold(
-      appBar: AppBar(
-        title: _isSelectionMode
-          ? Text('${_selectedFlightIds.length} selected')
-          : const Text('The Paragliding App'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        leading: _isSelectionMode 
-          ? IconButton(
-              icon: const Icon(Icons.close),
-              onPressed: _toggleSelectionMode,
-            )
-          : null,
-        actions: _isSelectionMode 
-          ? [
-              IconButton(
-                icon: const Icon(Icons.select_all),
-                tooltip: 'Select All',
-                onPressed: _selectAllFlights,
-                ),
-              if (_selectedFlightIds.isNotEmpty)
-                IconButton(
-                  icon: const Icon(Icons.clear),
-                  tooltip: 'Clear Selection',
-                  onPressed: _clearSelection,
-                ),
-              if (_selectedFlightIds.isNotEmpty)
-                IconButton(
-                  icon: _isDeleting 
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.delete),
-                  tooltip: 'Delete Selected',
-                  onPressed: _isDeleting ? null : _deleteSelectedFlights,
-                ),
-            ]
-          : [
-              PopupMenuButton<String>(
-                onSelected: (value) async {
-                  if (value == 'import') {
-                    final result = await Navigator.of(context).push<bool>(
-                      MaterialPageRoute(
-                        builder: (context) => const IgcImportScreen(),
-                      ),
-                    );
-                    
-                    if (result == true) {
-                      _loadData();
-                    }
-                  } else if (value == 'select') {
-                    _toggleSelectionMode();
-                  } else if (value == 'wings') {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const WingManagementScreen(),
-                      ),
-                    );
-                  } else if (value == 'sites') {
-                    final result = await Navigator.of(context).push<bool>(
-                      MaterialPageRoute(
-                        builder: (context) => const ManageSitesScreen(),
-                      ),
-                    );
-                    // Reload flights if sites were modified
-                    if (result == true && mounted) {
-                      await _loadData();
-                    }
-                  } else if (value == 'statistics') {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const StatisticsScreen(),
-                      ),
-                    );
-                  } else if (value == 'nearby_sites') {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const NearbySitesScreen(),
-                      ),
-                    );
-                  } else if (value == 'database') {
-                    final result = await Navigator.of(context).push<bool>(
-                      MaterialPageRoute(
-                        builder: (context) => const DataManagementScreen(),
-                      ),
-                    );
-                    
-                    if (result == true) {
-                      _loadData(); // Reload flights if database was modified
-                    }
-                  } else if (value == 'about') {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const AboutScreen(),
-                      ),
-                    );
-                  } else if (value == 'preferences') {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const PreferencesScreen(),
-                      ),
-                    );
-                  }
-                },
-                itemBuilder: (context) => [
-                  // Show Statistics and Nearby Sites only when NOT in navigation mode
-                  if (!widget.showInNavigation) ...[
-                    const PopupMenuItem(
-                      value: 'statistics',
-                      child: Row(
-                        children: [
-                          Icon(Icons.bar_chart),
-                          SizedBox(width: 8),
-                          Text('Statistics'),
-                        ],
-                      ),
-                    ),
-                    const PopupMenuItem(
-                      value: 'nearby_sites',
-                      child: Row(
-                        children: [
-                          Icon(Icons.map),
-                          SizedBox(width: 8),
-                          Text('Nearby Sites'),
-                        ],
-                      ),
-                    ),
-                  ],
-                  const PopupMenuItem(
-                    value: 'sites',
-                    child: Row(
-                      children: [
-                        Icon(Icons.location_on),
-                        SizedBox(width: 8),
-                        Text('Manage Sites'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'wings',
-                    child: Row(
-                      children: [
-                        Icon(Icons.paragliding),
-                        SizedBox(width: 8),
-                        Text('Manage Wings'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuDivider(),
-                  const PopupMenuItem(
-                    value: 'import',
-                    child: Row(
-                      children: [
-                        Icon(Icons.upload_file),
-                        SizedBox(width: 8),
-                        Text('Import IGC'),
-                      ],
-                    ),
-                  ),
-                  if (_flights.isNotEmpty)
-                    const PopupMenuItem(
-                      value: 'select',
-                      child: Row(
-                        children: [
-                          Icon(Icons.checklist),
-                          SizedBox(width: 8),
-                          Text('Select Flights'),
-                        ],
-                      ),
-                    ),
-                  const PopupMenuDivider(),
-                  const PopupMenuItem(
-                    value: 'database',
-                    child: Row(
-                      children: [
-                        Icon(Icons.storage),
-                        SizedBox(width: 8),
-                        Text('Data Management'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'preferences',
-                    child: Row(
-                      children: [
-                        Icon(Icons.settings),
-                        SizedBox(width: 8),
-                        Text('Preferences'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'about',
-                    child: Row(
-                      children: [
-                        Icon(Icons.info),
-                        SizedBox(width: 8),
-                        Text('About'),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ],
+      body: Column(
+        children: [
+          _buildFunctionalBar(),
+          Expanded(
+            child: _buildMainContent(),
+          ),
+        ],
       ),
-      body: _buildMainContent(),
-      // Only show FAB when NOT in navigation mode (MainNavigationScreen handles it)
-      floatingActionButton: widget.showInNavigation
-          ? null
-          : FloatingActionButton(
-              onPressed: () async {
-                final result = await Navigator.of(context).push<bool>(
-                  MaterialPageRoute(
-                    builder: (context) => const AddFlightScreen(),
-                  ),
-                );
-
-                if (result == true) {
-                  _loadData();
-                }
-              },
-              tooltip: 'Add Flight',
-              child: const Icon(Icons.add),
-            ),
     );
   }
 
 
   Widget _buildFlightList(List<Flight> flights) {
-    // Calculate stats based on selection mode
-    int totalFlights;
-    int totalTime;
-    
-    if (_isSelectionMode && _selectedFlightIds.isNotEmpty) {
-      // In selection mode, count only selected flights
-      final selectedFlights = flights.where((flight) => _selectedFlightIds.contains(flight.id)).toList();
-      totalFlights = selectedFlights.length;
-      totalTime = selectedFlights.fold(0, (sum, flight) => sum + flight.effectiveDuration);
-    } else {
-      // Normal mode: use totals from the database
-      totalFlights = _totalFlights;
-      totalTime = _totalDuration;
-    }
-    
     return Column(
       children: [
         AppStatCardGroup.flightList(
           cards: [
             AppStatCard.flightList(
-              label: _isSelectionMode && _selectedFlightIds.isNotEmpty 
-                  ? 'Selected Flights' 
-                  : 'Total Flights',
-              value: totalFlights.toString(),
+              label: 'Total Flights',
+              value: _totalFlights.toString(),
             ),
             AppStatCard.flightList(
-              label: _isSelectionMode && _selectedFlightIds.isNotEmpty 
-                  ? 'Selected Time' 
-                  : 'Total Time',
-              value: DateTimeUtils.formatDuration(totalTime),
+              label: 'Total Time',
+              value: DateTimeUtils.formatDuration(_totalDuration),
             ),
           ],
           backgroundColor: Theme.of(context).colorScheme.surface,
@@ -977,7 +442,6 @@ class _FlightListScreenState extends State<FlightListScreen> {
         child: Column(
           children: [
             DataTable(
-          showCheckboxColumn: _isSelectionMode,
           sortColumnIndex: _sortColumn == 'launch_site' ? 0
               : _sortColumn == 'datetime' ? 1
               : _sortColumn == 'duration' ? 2
@@ -1016,36 +480,23 @@ class _FlightListScreenState extends State<FlightListScreen> {
             ),
           ],
           rows: flights.map((flight) {
-            final isSelected = _selectedFlightIds.contains(flight.id);
             return DataRow(
-              selected: isSelected,
-              onSelectChanged: _isSelectionMode 
-                  ? (selected) => _toggleFlightSelection(flight.id!)
-                  : null,
-              onLongPress: () {
-                if (!_isSelectionMode) {
-                  _toggleSelectionMode();
-                  _toggleFlightSelection(flight.id!);
-                }
-              },
               cells: [
                 DataCell(
                   Text(
                     flight.launchSiteName ?? 'Unknown Site',
                     overflow: TextOverflow.ellipsis,
                   ),
-                  onTap: _isSelectionMode 
-                      ? null 
-                      : () async {
-                          final result = await Navigator.of(context).push<bool>(
-                            MaterialPageRoute(
-                              builder: (context) => FlightDetailScreen(flight: flight),
-                            ),
-                          );
-                          if (result == true) {
-                            _loadData(); // Reload if flight was deleted or modified
-                          }
-                        },
+                  onTap: () async {
+                    final result = await Navigator.of(context).push<bool>(
+                      MaterialPageRoute(
+                        builder: (context) => FlightDetailScreen(flight: flight),
+                      ),
+                    );
+                    if (result == true) {
+                      _loadData(); // Reload if flight was deleted or modified
+                    }
+                  },
                 ),
                 DataCell(
                   Text(
@@ -1053,33 +504,29 @@ class _FlightListScreenState extends State<FlightListScreen> {
                     '${flight.date.month.toString().padLeft(2, '0')}/'
                     '${flight.date.year} ${flight.effectiveLaunchTime}',
                   ),
-                  onTap: _isSelectionMode 
-                      ? null 
-                      : () async {
-                          final result = await Navigator.of(context).push<bool>(
-                            MaterialPageRoute(
-                              builder: (context) => FlightDetailScreen(flight: flight),
-                            ),
-                          );
-                          if (result == true) {
-                            _loadData(); // Reload if flight was deleted or modified
-                          }
-                        },
+                  onTap: () async {
+                    final result = await Navigator.of(context).push<bool>(
+                      MaterialPageRoute(
+                        builder: (context) => FlightDetailScreen(flight: flight),
+                      ),
+                    );
+                    if (result == true) {
+                      _loadData(); // Reload if flight was deleted or modified
+                    }
+                  },
                 ),
                 DataCell(
                   Text(DateTimeUtils.formatDuration(flight.effectiveDuration)),
-                  onTap: _isSelectionMode 
-                      ? null 
-                      : () async {
-                          final result = await Navigator.of(context).push<bool>(
-                            MaterialPageRoute(
-                              builder: (context) => FlightDetailScreen(flight: flight),
-                            ),
-                          );
-                          if (result == true) {
-                            _loadData(); // Reload if flight was deleted or modified
-                          }
-                        },
+                  onTap: () async {
+                    final result = await Navigator.of(context).push<bool>(
+                      MaterialPageRoute(
+                        builder: (context) => FlightDetailScreen(flight: flight),
+                      ),
+                    );
+                    if (result == true) {
+                      _loadData(); // Reload if flight was deleted or modified
+                    }
+                  },
                 ),
                 DataCell(
                   Text(
@@ -1087,18 +534,16 @@ class _FlightListScreenState extends State<FlightListScreen> {
                         ? flight.distance!.toStringAsFixed(1)
                         : '-',
                   ),
-                  onTap: _isSelectionMode 
-                      ? null 
-                      : () async {
-                          final result = await Navigator.of(context).push<bool>(
-                            MaterialPageRoute(
-                              builder: (context) => FlightDetailScreen(flight: flight),
-                            ),
-                          );
-                          if (result == true) {
-                            _loadData(); // Reload if flight was deleted or modified
-                          }
-                        },
+                  onTap: () async {
+                    final result = await Navigator.of(context).push<bool>(
+                      MaterialPageRoute(
+                        builder: (context) => FlightDetailScreen(flight: flight),
+                      ),
+                    );
+                    if (result == true) {
+                      _loadData(); // Reload if flight was deleted or modified
+                    }
+                  },
                 ),
                 DataCell(
                   Text(
@@ -1106,18 +551,16 @@ class _FlightListScreenState extends State<FlightListScreen> {
                         ? flight.straightDistance!.toStringAsFixed(1)
                         : '-',
                   ),
-                  onTap: _isSelectionMode 
-                      ? null 
-                      : () async {
-                          final result = await Navigator.of(context).push<bool>(
-                            MaterialPageRoute(
-                              builder: (context) => FlightDetailScreen(flight: flight),
-                            ),
-                          );
-                          if (result == true) {
-                            _loadData(); // Reload if flight was deleted or modified
-                          }
-                        },
+                  onTap: () async {
+                    final result = await Navigator.of(context).push<bool>(
+                      MaterialPageRoute(
+                        builder: (context) => FlightDetailScreen(flight: flight),
+                      ),
+                    );
+                    if (result == true) {
+                      _loadData(); // Reload if flight was deleted or modified
+                    }
+                  },
                 ),
                 DataCell(
                   Text(
@@ -1125,18 +568,16 @@ class _FlightListScreenState extends State<FlightListScreen> {
                         ? flight.maxAltitude!.toInt().toString()
                         : '-',
                   ),
-                  onTap: _isSelectionMode 
-                      ? null 
-                      : () async {
-                          final result = await Navigator.of(context).push<bool>(
-                            MaterialPageRoute(
-                              builder: (context) => FlightDetailScreen(flight: flight),
-                            ),
-                          );
-                          if (result == true) {
-                            _loadData(); // Reload if flight was deleted or modified
-                          }
-                        },
+                  onTap: () async {
+                    final result = await Navigator.of(context).push<bool>(
+                      MaterialPageRoute(
+                        builder: (context) => FlightDetailScreen(flight: flight),
+                      ),
+                    );
+                    if (result == true) {
+                      _loadData(); // Reload if flight was deleted or modified
+                    }
+                  },
                 ),
               ],
             );

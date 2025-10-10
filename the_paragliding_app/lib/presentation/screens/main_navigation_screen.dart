@@ -2,15 +2,14 @@ import 'package:flutter/material.dart';
 import 'flight_list_screen.dart';
 import 'nearby_sites_screen.dart';
 import 'statistics_screen.dart';
-import 'add_flight_screen.dart';
 import '../../services/logging_service.dart';
 
 /// Main navigation screen with bottom navigation bar.
 ///
 /// Manages three primary views:
-/// - Flight Log (with Add Flight FAB)
-/// - Nearby Sites (no FAB)
-/// - Statistics (no FAB)
+/// - Flight Log
+/// - Nearby Sites
+/// - Statistics
 ///
 /// Uses IndexedStack to preserve state when switching tabs.
 class MainNavigationScreen extends StatefulWidget {
@@ -22,12 +21,36 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _selectedIndex = 0;
-  final GlobalKey<State<FlightListScreen>> _flightListKey = GlobalKey();
+
+  // Type-safe GlobalKey using the public state class
+  // This allows calling public methods like refreshData() without dynamic cast
+  final GlobalKey<FlightListScreenState> _flightListKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
     LoggingService.info('MainNavigationScreen: Initialized with bottom navigation');
+  }
+
+  /// Refresh flight list data (e.g., after adding a new flight).
+  ///
+  /// This is now completely type-safe:
+  /// ```dart
+  /// // ✅ Type-safe - compiler checks method exists
+  /// await _flightListKey.currentState?.refreshData();
+  ///
+  /// // ❌ NEVER do this - unsafe and fragile
+  /// // (_flightListKey.currentState as dynamic)?._loadData();
+  /// ```
+  ///
+  /// Note: For new code, prefer callback pattern over GlobalKey when possible:
+  /// ```dart
+  /// // Preferred pattern for looser coupling
+  /// FlightListScreen(onDataChanged: _handleDataChanged)
+  /// ```
+  Future<void> _refreshFlightList() async {
+    // Type-safe call - compile-time checked, IDE autocomplete works
+    await _flightListKey.currentState?.refreshData();
   }
 
   void _onDestinationSelected(int index) {
@@ -47,45 +70,17 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     });
   }
 
-  Widget? _buildFloatingActionButton() {
-    // Only show FAB on Flight Log tab (index 0)
-    if (_selectedIndex == 0) {
-      return FloatingActionButton(
-        onPressed: () async {
-          final result = await Navigator.of(context).push<bool>(
-            MaterialPageRoute(
-              builder: (context) => const AddFlightScreen(),
-            ),
-          );
-
-          // Reload FlightListScreen if flight was added
-          if (result == true && mounted) {
-            // Use dynamic to access private state method
-            (_flightListKey.currentState as dynamic)?._loadData();
-            LoggingService.info('MainNavigationScreen: Flight added, reloading flight list');
-          }
-        },
-        tooltip: 'Add Flight',
-        child: const Icon(Icons.add),
-      );
-    }
-
-    // No FAB for other tabs
-    return null;
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: IndexedStack(
         index: _selectedIndex,
         children: [
-          FlightListScreen(key: _flightListKey, showInNavigation: true),
+          FlightListScreen(key: _flightListKey),
           const NearbySitesScreen(),
           const StatisticsScreen(),
         ],
       ),
-      floatingActionButton: _buildFloatingActionButton(),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: _onDestinationSelected,
