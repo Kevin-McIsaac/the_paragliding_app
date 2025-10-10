@@ -4,6 +4,7 @@ import '../../services/database_service.dart';
 import '../../services/logging_service.dart';
 import '../widgets/common/app_error_state.dart';
 import '../widgets/common/app_empty_state.dart';
+import '../widgets/common/app_menu_button.dart';
 
 class StatisticsScreen extends StatefulWidget {
   const StatisticsScreen({super.key});
@@ -345,7 +346,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     );
   }
 
-  /// Build dark filter bar at top with SegmentedButton
+  /// Build dark filter bar at top with SegmentedButton and menu
   Widget _buildFilterBar() {
     return Container(
       decoration: BoxDecoration(
@@ -361,44 +362,54 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: SafeArea(
         bottom: false,
-        child: SegmentedButton<String>(
-          segments: const [
-            ButtonSegment<String>(
-              value: 'all',
-              label: Text('All'),
-              tooltip: 'Show all time statistics',
+        child: Row(
+          children: [
+            // SegmentedButton takes available space
+            Expanded(
+              child: SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment<String>(
+                    value: 'all',
+                    label: Text('All'),
+                    tooltip: 'Show all time statistics',
+                  ),
+                  ButtonSegment<String>(
+                    value: '12_months',
+                    label: Text('12mo'),
+                    tooltip: 'Show last 12 months statistics',
+                  ),
+                  ButtonSegment<String>(
+                    value: '6_months',
+                    label: Text('6mo'),
+                    tooltip: 'Show last 6 months statistics',
+                  ),
+                  ButtonSegment<String>(
+                    value: '3_months',
+                    label: Text('3mo'),
+                    tooltip: 'Show last 3 months statistics',
+                  ),
+                  ButtonSegment<String>(
+                    value: 'custom',
+                    label: Text('Custom'),
+                    tooltip: 'Select custom date range',
+                  ),
+                ],
+                selected: _selectedPreset == '30_days'
+                    ? {'all'}
+                    : {_selectedPreset},
+                onSelectionChanged: (Set<String> newSelection) {
+                  _selectPreset(newSelection.first);
+                },
+                multiSelectionEnabled: false,
+                style: ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
             ),
-            ButtonSegment<String>(
-              value: '12_months',
-              label: Text('12mo'),
-              tooltip: 'Show last 12 months statistics',
-            ),
-            ButtonSegment<String>(
-              value: '6_months',
-              label: Text('6mo'),
-              tooltip: 'Show last 6 months statistics',
-            ),
-            ButtonSegment<String>(
-              value: '3_months',
-              label: Text('3mo'),
-              tooltip: 'Show last 3 months statistics',
-            ),
-            ButtonSegment<String>(
-              value: 'custom',
-              label: Text('Custom'),
-              tooltip: 'Select custom date range',
-            ),
+            const SizedBox(width: 8),
+            // Menu button on the right
+            AppMenuButton(onDataChanged: _loadData),
           ],
-          selected: _selectedPreset == '30_days'
-              ? {'all'}
-              : {_selectedPreset},
-          onSelectionChanged: (Set<String> newSelection) {
-            _selectPreset(newSelection.first);
-          },
-          multiSelectionEnabled: false,
-          style: ButtonStyle(
-            visualDensity: VisualDensity.compact,
-          ),
         ),
       ),
     );
