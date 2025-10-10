@@ -32,6 +32,7 @@ import '../widgets/nearby_sites_map.dart';
 import '../widgets/map_filter_dialog.dart';
 import '../widgets/common/app_error_state.dart';
 import '../widgets/common/map_loading_overlay.dart';
+import '../widgets/common/app_menu_button.dart';
 import '../widgets/wind_rose_widget.dart';
 import '../../services/openaip_service.dart';
 
@@ -1407,6 +1408,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
             onPressed: _showMapFilterDialog,
             tooltip: 'Map Filters',
           ),
+          const AppMenuButton(),
         ],
       ),
       body: Stack(

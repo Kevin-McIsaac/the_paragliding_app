@@ -41,6 +41,32 @@ class NwsWeatherProvider implements WeatherStationProvider {
   /// Pending observation requests to prevent duplicate API calls
   final Map<String, Future<WindData?>> _pendingObservationRequests = {};
 
+  /// NWS coverage areas (US and territories only)
+  /// Format: [west, south, east, north] in WGS84 (EPSG:4326)
+  /// Based on nws_bounding_boxes.py
+  static const Map<String, List<double>> _coverageAreas = {
+    // Continental United States (Lower 48 + DC)
+    'CONUS': [-125.0, 24.5, -66.9, 49.6],
+
+    // Alaska - split into two regions to handle International Date Line crossing
+    // Main Alaska and most Aleutians (western hemisphere)
+    'Alaska_Main': [-180.0, 51.214183, -130.0, 71.365162],
+    // Western Aleutian Islands extending past the dateline (eastern hemisphere)
+    'Alaska_West_Aleutians': [172.0, 51.214183, 180.0, 71.365162],
+
+    // Hawaii
+    'Hawaii': [-178.334698, 18.910361, -154.806773, 28.402123],
+
+    // Caribbean territories
+    'Puerto_Rico': [-67.945404, 17.88328, -65.220703, 18.515683],
+    'US_Virgin_Islands': [-65.085452, 17.673976, -64.564907, 18.412655],
+
+    // Pacific territories
+    'Guam': [144.618068, 13.234189, 144.956712, 13.654383],
+    'Northern_Mariana_Islands': [144.886331, 14.110472, 146.064818, 20.553802],
+    'American_Samoa': [-171.089874, -14.548699, -168.1433, -11.046934],
+  };
+
   @override
   WeatherStationSource get source => WeatherStationSource.nws;
 
@@ -70,6 +96,15 @@ class NwsWeatherProvider implements WeatherStationProvider {
 
   @override
   Future<List<WeatherStation>> fetchStations(LatLngBounds bounds) async {
+    // Early return if outside NWS coverage area
+    if (!_isBoundsInCoverageArea(bounds)) {
+      LoggingService.structured('NWS_OUTSIDE_COVERAGE', {
+        'bounds': _boundsToString(bounds),
+        'reason': 'Requested bounds outside US territories',
+      });
+      return [];
+    }
+
     // Generate cache key from rounded bounds
     final cacheKey = _getBoundsCacheKey(bounds);
 
@@ -247,6 +282,16 @@ class NwsWeatherProvider implements WeatherStationProvider {
   /// Get observationStations URL from NWS /points endpoint
   /// Returns null if location is outside US (404 response)
   Future<String?> _getGridStationsUrl(double lat, double lon) async {
+    // Early return if outside NWS coverage area
+    if (!_isPointInCoverageArea(lat, lon)) {
+      LoggingService.structured('NWS_POINT_OUTSIDE_COVERAGE', {
+        'lat': lat.toStringAsFixed(4),
+        'lon': lon.toStringAsFixed(4),
+        'reason': 'Point outside US territories',
+      });
+      return null;
+    }
+
     try {
       final stopwatch = Stopwatch()..start();
       final url = Uri.parse('$_baseUrl/points/${lat.toStringAsFixed(4)},${lon.toStringAsFixed(4)}');
@@ -544,6 +589,40 @@ class NwsWeatherProvider implements WeatherStationProvider {
       });
       return null;
     }
+  }
+
+  /// Check if a point is within NWS coverage area
+  bool _isPointInCoverageArea(double lat, double lon) {
+    for (final bbox in _coverageAreas.values) {
+      final west = bbox[0];
+      final south = bbox[1];
+      final east = bbox[2];
+      final north = bbox[3];
+
+      if (lon >= west && lon <= east && lat >= south && lat <= north) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Check if requested bounds overlap with any NWS coverage area
+  bool _isBoundsInCoverageArea(LatLngBounds bounds) {
+    for (final bbox in _coverageAreas.values) {
+      final coverageWest = bbox[0];
+      final coverageSouth = bbox[1];
+      final coverageEast = bbox[2];
+      final coverageNorth = bbox[3];
+
+      // Check if bounding boxes overlap
+      if (bounds.west <= coverageEast &&
+          bounds.east >= coverageWest &&
+          bounds.south <= coverageNorth &&
+          bounds.north >= coverageSouth) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /// Find cached entry whose bounds contain the requested bounds

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'flight_list_screen.dart';
+import 'main_navigation_screen.dart';
 import '../../services/logging_service.dart';
 import '../../services/app_initialization_service.dart';
 
@@ -26,11 +26,11 @@ class _SplashScreenState extends State<SplashScreen> {
     if (mounted) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (context) => const FlightListScreen(),
+          builder: (context) => const MainNavigationScreen(),
         ),
       );
 
-      LoggingService.info('App startup completed');
+      LoggingService.info('App startup completed with bottom navigation');
 
       // Start background initialization after navigation
       // This includes downloading PGE sites on first launch

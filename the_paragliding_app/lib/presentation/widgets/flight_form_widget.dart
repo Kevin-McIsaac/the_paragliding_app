@@ -310,10 +310,24 @@ class _FlightFormWidgetState extends State<FlightFormWidget> {
                 ),
                 initialValue: _selectedLaunchSite,
                 hint: const Text('Select launch site'),
+                isExpanded: true,
+                selectedItemBuilder: (BuildContext context) {
+                  return widget.sites.map<Widget>((Site site) {
+                    return Text(
+                      site.name,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    );
+                  }).toList();
+                },
                 items: widget.sites.map((site) {
                   return DropdownMenuItem<Site>(
                     value: site,
-                    child: Text(site.name),
+                    child: Text(
+                      site.name,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
                   );
                 }).toList(),
                 onChanged: (Site? value) {
@@ -334,12 +348,34 @@ class _FlightFormWidgetState extends State<FlightFormWidget> {
                 ),
                 initialValue: _selectedWing,
                 hint: const Text('Select wing'),
+                isExpanded: true,
+                selectedItemBuilder: (BuildContext context) {
+                  return [
+                    ...widget.wings.map<Widget>((Wing wing) {
+                      return Text(
+                        wing.name,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      );
+                    }),
+                    if (widget.allowAddWing)
+                      const Text(
+                        '+ Add New Wing',
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                  ];
+                },
                 items: [
                   // Regular wings
                   ...widget.wings.map((wing) {
                     return DropdownMenuItem<Wing>(
                       value: wing,
-                      child: Text(wing.name),
+                      child: Text(
+                        wing.name,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
                     );
                   }),
                   // Add "Add New Wing" option if allowed
