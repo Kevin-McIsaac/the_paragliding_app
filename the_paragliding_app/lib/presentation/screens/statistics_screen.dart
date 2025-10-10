@@ -357,7 +357,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       onSelected: _selectPreset,
       offset: const Offset(0, 48),
       child: Container(
-        constraints: const BoxConstraints(minWidth: 140),
+        constraints: const BoxConstraints(minWidth: 160),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.3),
