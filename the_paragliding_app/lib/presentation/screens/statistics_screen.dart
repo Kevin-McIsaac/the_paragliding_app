@@ -348,7 +348,10 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
 
   /// Build filter dropdown button for selecting date range preset
   Widget _buildFilterButton() {
-    final filterText = _getPresetLabel(_selectedPreset);
+    // Show actual date range when custom is selected, otherwise show preset label
+    final filterText = _selectedPreset == 'custom' && _selectedDateRange != null
+        ? _formatDateRange(_selectedDateRange)
+        : _getPresetLabel(_selectedPreset);
 
     return PopupMenuButton<String>(
       onSelected: _selectPreset,
