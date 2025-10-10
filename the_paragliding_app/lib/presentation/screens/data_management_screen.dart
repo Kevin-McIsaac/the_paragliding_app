@@ -1047,12 +1047,16 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
       // Clear all airspace data including country metadata and preferences
       await AirspaceCountryService.instance.clearAllData();
 
-      if (mounted) Navigator.of(context).pop(); // Close loading
+      if (mounted) {
+        Navigator.of(context).pop(); // Close loading
+      }
 
       // Refresh UI to show updated stats and force country selector refresh
-      if (mounted) setState(() {
-        _airspaceRefreshKey++;
-      });
+      if (mounted) {
+        setState(() {
+          _airspaceRefreshKey++;
+        });
+      }
 
       _showSuccessDialog(
         'Database Cleared',

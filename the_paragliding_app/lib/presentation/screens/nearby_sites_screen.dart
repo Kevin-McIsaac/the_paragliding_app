@@ -1351,7 +1351,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Container(
-          height: 40,
+          height: 38,
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(4),
@@ -1364,15 +1364,15 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
               _searchManager.onSearchQueryChanged(value);
               _isUpdatingFromTextField = false;
             },
-            style: const TextStyle(fontSize: 16, color: Colors.white),
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white),
             decoration: InputDecoration(
               isDense: true,
               hintText: 'Search nearby sites...',
-              hintStyle: TextStyle(fontSize: 16, color: Colors.white.withValues(alpha: 0.7)),
-              prefixIcon: const Icon(Icons.search, size: 20, color: Colors.white),
+              hintStyle: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white.withValues(alpha: 0.7)),
+              prefixIcon: const Icon(Icons.search, size: 16, color: Colors.white),
               suffixIcon: _searchManager.state.query.isNotEmpty
                   ? IconButton(
-                      icon: const Icon(Icons.clear, size: 18, color: Colors.white),
+                      icon: const Icon(Icons.clear, size: 16, color: Colors.white),
                       onPressed: () {
                         _isUpdatingFromTextField = true;
                         _searchController.clear();

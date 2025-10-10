@@ -154,6 +154,16 @@ class _AppInitializerState extends State<AppInitializer> {
             brightness: Brightness.dark,
           ),
           useMaterial3: true,
+          appBarTheme: AppBarTheme(
+            backgroundColor: ColorScheme.fromSeed(
+              seedColor: Colors.blue,
+              brightness: Brightness.dark,
+            ).surfaceContainer,
+            foregroundColor: ColorScheme.fromSeed(
+              seedColor: Colors.blue,
+              brightness: Brightness.dark,
+            ).onSurface,
+          ),
           popupMenuTheme: _popupMenuTheme,
           tooltipTheme: _getTooltipTheme(ColorScheme.fromSeed(
             seedColor: Colors.blue,
@@ -187,6 +197,16 @@ class _AppInitializerState extends State<AppInitializer> {
           brightness: Brightness.dark,
         ),
         useMaterial3: true,
+        appBarTheme: AppBarTheme(
+          backgroundColor: ColorScheme.fromSeed(
+            seedColor: Colors.blue,
+            brightness: Brightness.dark,
+          ).surfaceContainer,
+          foregroundColor: ColorScheme.fromSeed(
+            seedColor: Colors.blue,
+            brightness: Brightness.dark,
+          ).onSurface,
+        ),
         popupMenuTheme: _popupMenuTheme,
         tooltipTheme: _getTooltipTheme(ColorScheme.fromSeed(
           seedColor: Colors.blue,
