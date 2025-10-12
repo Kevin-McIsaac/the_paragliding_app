@@ -863,7 +863,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
 
       // Explicitly center map on user location (only when user requests it)
       _mapCenterPosition = userLocation;
-      _mapController.move(userLocation, _currentZoom);
+      _mapController.move(userLocation, MapConstants.minForecastZoom);
 
       final bounds = LatLngBounds(
         LatLng(userLocation.latitude - 0.5, userLocation.longitude - 0.5),
