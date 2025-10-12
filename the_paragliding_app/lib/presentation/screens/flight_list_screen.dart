@@ -333,7 +333,12 @@ class FlightListScreenState extends State<FlightListScreen> {
           );
 
           if (result == true) {
-            _loadData();
+            // Refresh all tabs when importing succeeds
+            if (widget.onRefreshAllTabs != null) {
+              await widget.onRefreshAllTabs!();
+            } else {
+              _loadData();
+            }
           }
         },
       );

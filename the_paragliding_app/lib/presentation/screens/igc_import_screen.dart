@@ -404,6 +404,10 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
     // Show results dialog
     if (mounted) {
       await _showResultsDialog();
+      // After dialog is closed, return true if any flights were imported or replaced
+      if (successCount > 0 && mounted) {
+        Navigator.of(context).pop(true);
+      }
     }
   }
 
@@ -438,9 +442,11 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
   /// Show final results dialog
   Future<void> _showResultsDialog() async {
     final summary = ImportSummary(_importResults);
-    
-    return showDialog(
+
+    // Always return true to trigger refresh when dialog is dismissed
+    await showDialog(
       context: context,
+      barrierDismissible: false,  // Prevent dismissing by tapping background
       builder: (context) => AlertDialog(
         title: Text(summary.failedCount == 0 ? 'Import Complete' : 'Import Complete with Errors'),
         content: SingleChildScrollView(
@@ -563,8 +569,7 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.of(context).pop();  // Close dialog
-              Navigator.of(context).pop(true); // Always return to flight list
+              Navigator.of(context).pop();  // Close dialog only
             },
             child: const Text('OK'),
           ),
