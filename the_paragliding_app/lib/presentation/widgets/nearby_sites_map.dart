@@ -391,7 +391,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     // Check if map controller is initialized before accessing camera
     if (widget.weatherStationsEnabled && widget.weatherStations.isNotEmpty) {
       try {
-        final zoom = mapController.camera.zoom;
+        final zoom = MapConstants.roundZoomForDisplay(mapController.camera.zoom);
         if (zoom >= MapConstants.minForecastZoom) {
           layers.add(
             MarkerLayer(

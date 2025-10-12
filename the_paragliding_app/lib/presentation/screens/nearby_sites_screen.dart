@@ -332,9 +332,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
     _windFetchDebounce?.cancel();
 
     // Only fetch wind data if zoom level is high enough (≥10)
-    final currentZoom = _mapController.camera.zoom;
-    if (currentZoom < 10) {
-      LoggingService.info('Skipping wind fetch: zoom level $currentZoom < 10');
+    final currentZoom = MapConstants.roundZoomForDisplay(_mapController.camera.zoom);
+    if (currentZoom < MapConstants.minForecastZoom) {
+      LoggingService.info('Skipping wind fetch: zoom level $currentZoom < ${MapConstants.minForecastZoom}');
       // Mark sites as unknown if they don't have wind data
       setState(() {
         for (final site in _displayedSites) {
@@ -439,7 +439,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
     _stationFetchDebounce?.cancel();
 
     // Only fetch weather stations if zoom level is high enough (≥10)
-    final currentZoom = _mapController.camera.zoom;
+    final currentZoom = MapConstants.roundZoomForDisplay(_mapController.camera.zoom);
     if (currentZoom < MapConstants.minForecastZoom) {
       LoggingService.info('Skipping station fetch: zoom level $currentZoom < ${MapConstants.minForecastZoom}');
       setState(() {
@@ -1041,10 +1041,10 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
           return;
         }
         // Capture zoom AFTER delay, when cluster zoom animation is complete
-        final currentZoom = _mapController.camera.zoom;
+        final currentZoom = MapConstants.roundZoomForDisplay(_mapController.camera.zoom);
         LoggingService.info('Wind check: sites=${_displayedSites.length}, zoom=$currentZoom');
 
-        if (_displayedSites.isNotEmpty && currentZoom >= 10) {
+        if (_displayedSites.isNotEmpty && currentZoom >= MapConstants.minForecastZoom) {
           final missingWindData = _hasMissingWindData(includeUnknownStatus: true);
           LoggingService.info('Missing wind data check: $missingWindData');
           if (missingWindData) {
@@ -1254,11 +1254,11 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
         LoggingService.action('MapFilter', 'forecast_disabled', {'cleared_wind_data': true});
       } else if (forecastEnabled && !previousForecastEnabled) {
         // Forecast was enabled - fetch wind data for visible sites if zoomed in
-        final currentZoom = _mapController.camera.zoom;
-        if (_displayedSites.isNotEmpty && currentZoom >= 10) {
+        final currentZoom = MapConstants.roundZoomForDisplay(_mapController.camera.zoom);
+        if (_displayedSites.isNotEmpty && currentZoom >= MapConstants.minForecastZoom) {
           _fetchWindDataForSites();
         }
-        LoggingService.action('MapFilter', 'forecast_enabled', {'will_fetch': currentZoom >= 10});
+        LoggingService.action('MapFilter', 'forecast_enabled', {'will_fetch': currentZoom >= MapConstants.minForecastZoom});
       }
 
       // Handle weather stations visibility changes
@@ -1272,14 +1272,14 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
         LoggingService.action('MapFilter', 'weather_stations_disabled', {'cleared_stations': true, 'cleared_cache': true});
       } else if (weatherStationsEnabled && !previousWeatherStationsEnabled) {
         // Weather stations were enabled - fetch stations if zoomed in
-        final currentZoom = _mapController.camera.zoom;
+        final currentZoom = MapConstants.roundZoomForDisplay(_mapController.camera.zoom);
         if (currentZoom >= MapConstants.minForecastZoom) {
           _fetchWeatherStations();
         }
         LoggingService.action('MapFilter', 'weather_stations_enabled', {'will_fetch': currentZoom >= MapConstants.minForecastZoom});
       } else if (weatherStationsEnabled && (metarEnabled != previousMetarEnabled || nwsEnabled != previousNwsEnabled || pioupiouEnabled != previousPioupiouEnabled)) {
         // Weather station providers changed - refresh stations
-        final currentZoom = _mapController.camera.zoom;
+        final currentZoom = MapConstants.roundZoomForDisplay(_mapController.camera.zoom);
         if (currentZoom >= MapConstants.minForecastZoom) {
           // Clear existing stations and re-fetch with new provider configuration
           WeatherStationService.instance.clearCache();
@@ -1621,18 +1621,23 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
             Positioned(
               bottom: 20,
               left: 16,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  'Z${_currentZoom.toStringAsFixed(1)}',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 11,
-                    fontFamily: 'monospace',
+              child: Tooltip(
+                message: MapConstants.roundZoomForDisplay(_currentZoom) < MapConstants.minForecastZoom
+                    ? 'Zoom in to 10 or greater to see flyability forecasts and weather station observations'
+                    : 'Zoom level',
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    'Z${MapConstants.roundZoomForDisplay(_currentZoom).toStringAsFixed(1)}',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                    ),
                   ),
                 ),
               ),

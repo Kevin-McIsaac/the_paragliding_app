@@ -343,7 +343,7 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
 
   String _getStatusText(CountrySelectionModel country) {
     if (_downloadingCountry == country.info.code) {
-      return 'Downloading... ${(_downloadProgress ?? 0 * 100).toStringAsFixed(0)}%';
+      return 'Downloading... ${((_downloadProgress ?? 0) * 100).toStringAsFixed(0)}%';
     }
 
     if (country.isDownloaded) {
