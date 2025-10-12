@@ -153,11 +153,12 @@ class AirspaceDiskCache {
   Future<void> _onCreate(Database db, int version) async {
     LoggingService.info('Creating airspace cache tables');
 
-    // Geometry table - Version 6 with expanded native columns for direct pipeline
+    // Geometry table - Version 7 with country_code tracking
     await db.execute('''
       CREATE TABLE $_geometryTable (
         -- Core identifiers
         id TEXT PRIMARY KEY,
+        country_code TEXT NOT NULL,        -- Download source country (e.g., 'au', 'ar')
         name TEXT NOT NULL,
         type_code INTEGER NOT NULL,
 
@@ -184,7 +185,7 @@ class AirspaceDiskCache {
         -- Classification fields
         icao_class INTEGER,                -- ICAO class code (extracted)
         activity INTEGER,                  -- Activity bitmask
-        country TEXT,                      -- Country code
+        country TEXT,                      -- Country code from airspace properties
 
         -- Metadata
         fetch_time INTEGER NOT NULL,
@@ -209,6 +210,9 @@ class AirspaceDiskCache {
 
     // Create spatial index for bounding box queries (most critical for performance)
     await db.execute('CREATE INDEX idx_geometry_spatial ON $_geometryTable(bounds_west, bounds_east, bounds_south, bounds_north)');
+
+    // Create index for country-based queries
+    await db.execute('CREATE INDEX idx_country_code ON $_geometryTable(country_code)');
 
   }
 
@@ -303,7 +307,7 @@ class AirspaceDiskCache {
   }
 
   // Geometry cache operations - Version 2 with binary storage
-  Future<void> putGeometry(CachedAirspaceGeometry geometry) async {
+  Future<void> putGeometry(CachedAirspaceGeometry geometry, {required String countryCode}) async {
     // Check database size before inserting
     await _enforceSizeLimit();
 
@@ -361,6 +365,7 @@ class AirspaceDiskCache {
         {
           // Core identifiers
           'id': geometry.id,
+          'country_code': countryCode,
           'name': geometry.name,
           'type_code': geometry.typeCode,
 
@@ -407,7 +412,7 @@ class AirspaceDiskCache {
         LoggingService.performance(
           '[PUT_GEOMETRY_SLOW]',
           stopwatch.elapsed,
-          'id=${geometry.id}, name=${geometry.name}, binary_size=${coordinatesBinary.length}',
+          'id=${geometry.id}, name=${geometry.name}, country=$countryCode, binary_size=${coordinatesBinary.length}',
         );
       }
     } catch (e, stack) {
@@ -448,7 +453,7 @@ class AirspaceDiskCache {
   }
 
   /// Batch insert multiple geometries in a single transaction
-  Future<void> putGeometryBatch(List<CachedAirspaceGeometry> geometries) async {
+  Future<void> putGeometryBatch(List<CachedAirspaceGeometry> geometries, {required String countryCode}) async {
     if (geometries.isEmpty) return;
 
     final db = await database;
@@ -507,6 +512,7 @@ class AirspaceDiskCache {
           {
             // Core identifiers
             'id': geometry.id,
+            'country_code': countryCode,
             'name': geometry.name,
             'type_code': geometry.typeCode,
 
@@ -556,7 +562,7 @@ class AirspaceDiskCache {
       LoggingService.performance(
         '[BATCH_GEOMETRY_INSERT]',
         stopwatch.elapsed,
-        'count=${geometries.length}',
+        'count=${geometries.length}, country=$countryCode',
       );
     } catch (e, stack) {
       LoggingService.error('Failed to batch insert geometries', e, stack);
@@ -944,6 +950,62 @@ class AirspaceDiskCache {
     final db = await database;
     final result = await db.rawQuery('SELECT COUNT(*) as count FROM $_geometryTable');
     return result.first['count'] as int;
+  }
+
+  /// Get statistics for a specific country
+  Future<Map<String, dynamic>> getCountryStatistics(String countryCode) async {
+    final db = await database;
+
+    try {
+      // Count airspaces for this country
+      final result = await db.rawQuery('''
+        SELECT
+          COUNT(*) as count,
+          SUM(LENGTH(coordinates_binary) + LENGTH(polygon_offsets)) as bytes
+        FROM $_geometryTable
+        WHERE country_code = ?
+      ''', [countryCode]);
+
+      final row = result.first;
+      final count = row['count'] as int? ?? 0;
+      final bytes = row['bytes'] as int? ?? 0;
+
+      return {
+        'airspace_count': count,
+        'storage_bytes': bytes,
+        'has_data': count > 0,
+      };
+    } catch (e, stack) {
+      LoggingService.error('Failed to get country statistics for $countryCode', e, stack);
+      return {
+        'airspace_count': 0,
+        'storage_bytes': 0,
+        'has_data': false,
+      };
+    }
+  }
+
+  /// Delete all airspaces for a specific country
+  Future<void> deleteCountryData(String countryCode) async {
+    final db = await database;
+
+    try {
+      final deletedCount = await db.delete(
+        _geometryTable,
+        where: 'country_code = ?',
+        whereArgs: [countryCode],
+      );
+
+      LoggingService.info('Deleted $deletedCount airspaces for country: $countryCode');
+
+      // Vacuum if significant data was deleted
+      if (deletedCount > 100) {
+        await db.execute('VACUUM');
+      }
+    } catch (e, stack) {
+      LoggingService.error('Failed to delete country data for $countryCode', e, stack);
+      rethrow;
+    }
   }
 
   // Get statistics as a simple map (for compatibility)

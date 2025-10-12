@@ -3,7 +3,14 @@ import '../../services/airspace_country_service.dart';
 import '../../data/models/airspace_country_models.dart';
 
 class AirspaceCountrySelector extends StatefulWidget {
-  const AirspaceCountrySelector({super.key});
+  /// Optional callback to notify parent when airspace data changes.
+  /// Called after downloading or deleting country data.
+  final VoidCallback? onDataChanged;
+
+  const AirspaceCountrySelector({
+    super.key,
+    this.onDataChanged,
+  });
 
   @override
   State<AirspaceCountrySelector> createState() => _AirspaceCountrySelectorState();
@@ -126,6 +133,8 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
         setState(() {
           _refreshCountries();
         });
+        // Notify parent that airspace data changed
+        widget.onDataChanged?.call();
       }
     } else {
       // Select and download if needed
@@ -139,6 +148,8 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
         setState(() {
           _refreshCountries();
         });
+        // Notify parent that selection changed
+        widget.onDataChanged?.call();
       }
     }
   }
@@ -192,6 +203,8 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
       setState(() {
         _refreshCountries();
       });
+      // Notify parent that airspace data changed
+      widget.onDataChanged?.call();
     }
   }
 
@@ -308,6 +321,8 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
                   setState(() {
                     _refreshCountries();
                   });
+                  // Notify parent that airspace data changed
+                  widget.onDataChanged?.call();
                 }
               },
               tooltip: 'Delete data',
@@ -328,7 +343,7 @@ class _AirspaceCountrySelectorState extends State<AirspaceCountrySelector> {
 
   String _getStatusText(CountrySelectionModel country) {
     if (_downloadingCountry == country.info.code) {
-      return 'Downloading... ${(_downloadProgress ?? 0 * 100).toStringAsFixed(0)}%';
+      return 'Downloading... ${((_downloadProgress ?? 0) * 100).toStringAsFixed(0)}%';
     }
 
     if (country.isDownloaded) {

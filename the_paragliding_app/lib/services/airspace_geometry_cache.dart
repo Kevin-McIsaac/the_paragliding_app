@@ -62,7 +62,7 @@ class AirspaceGeometryCache {
   }
 
   /// Store an airspace geometry
-  Future<void> putGeometry(Map<String, dynamic> feature) async {
+  Future<void> putGeometry(Map<String, dynamic> feature, {required String countryCode}) async {
     final stopwatch = Stopwatch()..start();
 
     try {
@@ -124,14 +124,14 @@ class AirspaceGeometryCache {
       );
 
       // Store to disk only
-      await _diskCache.putGeometry(cachedGeometry);
+      await _diskCache.putGeometry(cachedGeometry, countryCode: countryCode);
 
       // Only log slow operations or errors
       if (stopwatch.elapsedMilliseconds > 50) {
         LoggingService.performance(
           'Stored airspace geometry',
           stopwatch.elapsed,
-          'id=$id, polygons=${polygons.length}, name=${cachedGeometry.name}, typeCode=${cachedGeometry.typeCode}',
+          'id=$id, polygons=${polygons.length}, name=${cachedGeometry.name}, typeCode=${cachedGeometry.typeCode}, country=$countryCode',
         );
       }
     } catch (e, stack) {
@@ -140,7 +140,7 @@ class AirspaceGeometryCache {
   }
 
   /// Batch store multiple geometries efficiently
-  Future<void> putGeometryBatch(List<Map<String, dynamic>> features) async {
+  Future<void> putGeometryBatch(List<Map<String, dynamic>> features, {required String countryCode}) async {
     final stopwatch = Stopwatch()..start();
     var newGeometries = 0;
     var duplicates = 0;
@@ -185,11 +185,11 @@ class AirspaceGeometryCache {
 
     // Batch insert all new geometries at once
     if (geometriesToInsert.isNotEmpty) {
-      await _diskCache.putGeometryBatch(geometriesToInsert);
+      await _diskCache.putGeometryBatch(geometriesToInsert, countryCode: countryCode);
     }
 
     LoggingService.debug(
-      'Processed ${features.length} features: $newGeometries new, $duplicates duplicates (${stopwatch.elapsedMilliseconds}ms)'
+      'Processed ${features.length} features for $countryCode: $newGeometries new, $duplicates duplicates (${stopwatch.elapsedMilliseconds}ms)'
     );
   }
 

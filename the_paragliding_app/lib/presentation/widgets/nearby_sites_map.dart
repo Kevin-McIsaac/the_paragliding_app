@@ -31,6 +31,7 @@ class NearbySitesMap extends BaseMapWidget {
   final bool showUserLocation;
   final bool isLocationLoading;
   final Function(LatLngBounds)? onBoundsChanged;
+  final VoidCallback? onSitesDataVersionChanged; // Called when sites data changes (bypasses bounds check)
   final Map<String, WindData> siteWindData;
   final Map<String, FlyabilityStatus> siteFlyabilityStatus;
   final double maxWindSpeed;
@@ -40,6 +41,8 @@ class NearbySitesMap extends BaseMapWidget {
   final List<WeatherStation> weatherStations;
   final Map<String, WindData> stationWindData;
   final bool weatherStationsEnabled;
+  final int airspaceDataVersion; // Increment to trigger airspace reload
+  final int sitesDataVersion; // Increment to trigger sites reload
 
   const NearbySitesMap({
     super.key,
@@ -53,6 +56,7 @@ class NearbySitesMap extends BaseMapWidget {
     this.showUserLocation = true,
     this.isLocationLoading = false,
     this.onBoundsChanged,
+    this.onSitesDataVersionChanged,
     this.siteWindData = const {},
     this.siteFlyabilityStatus = const {},
     this.maxWindSpeed = 25.0,
@@ -62,6 +66,8 @@ class NearbySitesMap extends BaseMapWidget {
     this.weatherStations = const [],
     this.stationWindData = const {},
     this.weatherStationsEnabled = true,
+    this.airspaceDataVersion = 0,
+    this.sitesDataVersion = 0,
     super.height = 400,
     super.initialCenter,
     super.initialZoom = 10.0,
@@ -157,6 +163,29 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
              (oldWidget.maxAltitudeFt != widget.maxAltitudeFt ||
               oldWidget.airspaceClippingEnabled != widget.airspaceClippingEnabled)) {
       loadAirspaceLayers(mapController.camera.visibleBounds);
+    }
+    // Reload airspace when data version changes (new airspace data downloaded)
+    else if (widget.airspaceEnabled &&
+             oldWidget.airspaceDataVersion != widget.airspaceDataVersion) {
+      LoggingService.info('Airspace data version changed (${oldWidget.airspaceDataVersion} -> ${widget.airspaceDataVersion}), scheduling airspace reload');
+      // Schedule reload after build completes to avoid setState during build
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          loadAirspaceLayers(mapController.camera.visibleBounds);
+        }
+      });
+    }
+
+    // Reload sites when data version changes (PGE sites downloaded/deleted)
+    if (oldWidget.sitesDataVersion != widget.sitesDataVersion) {
+      LoggingService.info('[SITES_VERSION] Sites data version changed (${oldWidget.sitesDataVersion} -> ${widget.sitesDataVersion}), triggering immediate reload');
+      // Call dedicated callback that bypasses bounds-changed check (like Map Filter does)
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && widget.onSitesDataVersionChanged != null) {
+          LoggingService.info('[SITES_VERSION] Calling onSitesDataVersionChanged for immediate database reload');
+          widget.onSitesDataVersionChanged!();
+        }
+      });
     }
 
     // Clear weather station marker cache when any weather station parameter changes
@@ -378,7 +407,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     // Check if map controller is initialized before accessing camera
     if (widget.weatherStationsEnabled && widget.weatherStations.isNotEmpty) {
       try {
-        final zoom = mapController.camera.zoom;
+        final zoom = MapConstants.roundZoomForDisplay(mapController.camera.zoom);
         if (zoom >= MapConstants.minForecastZoom) {
           layers.add(
             MarkerLayer(

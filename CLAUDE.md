@@ -536,3 +536,4 @@ Use format `file_path:line_number` in logs:
 - DOnt try to contol the app
 - don't try to controll app with adb
 - Filters in Map FIlter, e.g, checkboxes, should have immediate effect in the map
+- When proposing a solution, look for the simple, idomatic solution suitable for a mobile app

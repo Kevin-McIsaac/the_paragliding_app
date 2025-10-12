@@ -17,7 +17,14 @@ import 'flight_detail_screen.dart';
 /// This screen is designed to be used within MainNavigationScreen's bottom navigation.
 /// It provides search, date range filtering, and access to the app menu.
 class FlightListScreen extends StatefulWidget {
-  const FlightListScreen({super.key});
+  final VoidCallback? onDataChanged;
+  final Future<void> Function()? onRefreshAllTabs;
+
+  const FlightListScreen({
+    super.key,
+    this.onDataChanged,
+    this.onRefreshAllTabs,
+  });
 
   @override
   State<FlightListScreen> createState() => FlightListScreenState();
@@ -96,19 +103,32 @@ class FlightListScreenState extends State<FlightListScreen> {
       _isLoading = true;
       _errorMessage = null;
     });
-    
+
     try {
-      final startTime = DateTime.now();
-      
+      final totalStartTime = DateTime.now();
+
       // Load flights with all joined data
+      final flightsStartTime = DateTime.now();
       final flights = await _databaseService.getAllFlights();
-      
+      final flightsDuration = DateTime.now().difference(flightsStartTime);
+
       // Get totals from database
+      final statsStartTime = DateTime.now();
       final stats = await _databaseService.getOverallStatistics();
-      
-      final duration = DateTime.now().difference(startTime);
-      LoggingService.performance('Load flights', duration, '${flights.length} flights loaded');
-      
+      final statsDuration = DateTime.now().difference(statsStartTime);
+
+      final totalDuration = DateTime.now().difference(totalStartTime);
+
+      // Log breakdown of timings
+      LoggingService.structured('FLIGHT_LIST_LOAD_BREAKDOWN', {
+        'flights_query_ms': flightsDuration.inMilliseconds,
+        'stats_query_ms': statsDuration.inMilliseconds,
+        'total_ms': totalDuration.inMilliseconds,
+        'flight_count': flights.length,
+      });
+
+      LoggingService.performance('Load flights', totalDuration, '${flights.length} flights loaded');
+
       if (mounted) {
         setState(() {
           _flights = flights;
@@ -285,7 +305,7 @@ class FlightListScreenState extends State<FlightListScreen> {
     });
   }
 
-  /// Build main content
+  /// Build main content (used by both navigation and non-navigation modes)
   Widget _buildMainContent() {
     if (_isLoading && _flights.isEmpty) {
       return AppPageLoadingSkeleton.flightList();
@@ -313,7 +333,12 @@ class FlightListScreenState extends State<FlightListScreen> {
           );
 
           if (result == true) {
-            _loadData();
+            // Refresh all tabs when importing succeeds
+            if (widget.onRefreshAllTabs != null) {
+              await widget.onRefreshAllTabs!();
+            } else {
+              _loadData();
+            }
           }
         },
       );
@@ -398,7 +423,10 @@ class FlightListScreenState extends State<FlightListScreen> {
               ),
             ],
           ),
-          AppMenuButton(onDataChanged: _loadData),
+          AppMenuButton(
+            onDataChanged: _loadData,
+            onRefreshAllTabs: widget.onRefreshAllTabs,
+          ),
         ],
       ),
       body: _buildMainContent(),

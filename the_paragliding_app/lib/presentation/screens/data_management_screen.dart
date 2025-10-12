@@ -23,8 +23,13 @@ import '../../services/pge_sites_database_service.dart';
 
 class DataManagementScreen extends StatefulWidget {
   final bool expandPremiumMaps;
-  
-  const DataManagementScreen({super.key, this.expandPremiumMaps = false});
+  final Future<void> Function()? onRefreshAllTabs;
+
+  const DataManagementScreen({
+    super.key,
+    this.expandPremiumMaps = false,
+    this.onRefreshAllTabs,
+  });
 
   @override
   State<DataManagementScreen> createState() => _DataManagementScreenState();
@@ -304,6 +309,15 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
       if (mounted) Navigator.of(context).pop(); // Close loading dialog
 
       if (importSuccess) {
+        setState(() {
+          _dataModified = true; // Mark as modified to trigger parent refresh
+        });
+
+        // Refresh all tabs BEFORE showing dialog so Sites screen has fresh data
+        if (widget.onRefreshAllTabs != null) {
+          await widget.onRefreshAllTabs!();
+        }
+
         _showSuccessDialog(
           'Sites Downloaded',
           'Successfully downloaded and imported worldwide paragliding sites.'
@@ -335,6 +349,15 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
 
     try {
       await PgeSitesDatabaseService.instance.clearData();
+
+      setState(() {
+        _dataModified = true; // Mark as modified to trigger parent refresh
+      });
+
+      // Refresh all tabs BEFORE showing dialog so Sites screen has fresh data
+      if (widget.onRefreshAllTabs != null) {
+        await widget.onRefreshAllTabs!();
+      }
 
       _showSuccessDialog('Data Cleared', 'PGE sites data has been removed.');
 
@@ -621,10 +644,11 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
       'Delete All Flight Data',
       'This will permanently delete ALL flight data including:\n\n'
       '• All flight records\n'
-      '• All sites\n' 
+      '• All flown sites\n'
       '• All wings\n'
       '• All IGC track files\n\n'
-      'This is a complete data wipe and cannot be undone.\n\n'
+      'PGE sites database will be preserved.\n\n'
+      'This action cannot be undone.\n\n'
       'Are you sure you want to continue?',
     );
 
@@ -640,7 +664,8 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
     _showLoadingDialog('Deleting all flight data...');
 
     try {
-      final result = await DatabaseResetHelper.deleteAllFlightData();
+      // Use deleteFlightDataOnly to preserve PGE sites database
+      final result = await DatabaseResetHelper.deleteFlightDataOnly();
       
       // Close loading dialog
       if (mounted) Navigator.of(context).pop();
@@ -1034,6 +1059,20 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
 
 
 
+  /// Handle airspace data changes from AirspaceCountrySelector.
+  ///
+  /// This is called when airspace data is downloaded or deleted,
+  /// increments the refresh key to force the FutureBuilder to re-fetch statistics,
+  /// and marks data as modified so the parent screen can refresh when this screen closes.
+  void _handleAirspaceDataChanged() {
+    if (mounted) {
+      setState(() {
+        _airspaceRefreshKey++;
+        _dataModified = true; // Mark as modified to trigger parent refresh
+      });
+    }
+  }
+
   Future<void> _clearAirspaceCache() async {
     final confirmed = await _showConfirmationDialog(
       'Clear Airspace Database',
@@ -1052,11 +1091,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
       }
 
       // Refresh UI to show updated stats and force country selector refresh
-      if (mounted) {
-        setState(() {
-          _airspaceRefreshKey++;
-        });
-      }
+      _handleAirspaceDataChanged();
 
       _showSuccessDialog(
         'Database Cleared',
@@ -1112,13 +1147,15 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
     }
   }
 
-  Future<void> _analyzeIGCFiles() async {
-    LoggingService.action('DataManagement', 'analyze_igc_files');
+  Future<void> _analyzeIGCFiles({bool forceRefresh = false}) async {
+    LoggingService.action('DataManagement', 'analyze_igc_files', {
+      'force_refresh': forceRefresh,
+    });
     final stopwatch = Stopwatch()..start();
-    
+
     _showLoadingDialog('Analyzing IGC files...');
     try {
-      final cleanupStats = await IGCCleanupService.analyzeIGCFiles();
+      final cleanupStats = await IGCCleanupService.analyzeIGCFiles(forceRefresh: forceRefresh);
       
       if (mounted) Navigator.of(context).pop(); // Close loading
       
@@ -1219,10 +1256,10 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
         setState(() {
           _dataModified = true;
         });
-        
-        // Refresh the analysis
-        await _analyzeIGCFiles();
-        
+
+        // Refresh the analysis with forced refresh to bypass cache
+        await _analyzeIGCFiles(forceRefresh: true);
+
         String message = 'Cleanup completed successfully!\n\n'
             'Files deleted: $filesDeleted\n'
             'Space freed: $sizeFreed';
@@ -1287,6 +1324,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
 
                   // Airspace Database (Local copy of OpenAIP data)
                   FutureBuilder<Map<String, dynamic>>(
+                    key: ValueKey(_airspaceRefreshKey),
                     future: AirspaceGeoJsonService.instance.getCacheStatistics(),
                     builder: (context, snapshot) {
                       final airspaceCacheStats = snapshot.data;
@@ -1306,8 +1344,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                         children: [
                           // Country Selection
                           const Text(
-                            'Select countries to download their airspace data for offline use. '
-                            'Downloaded data will be used to display controlled airspace on maps.',
+                            'Select countries to display controlled airspace on maps.',
                             style: TextStyle(color: Colors.grey, fontSize: 12),
                           ),
                           const SizedBox(height: 16),
@@ -1315,6 +1352,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                             height: 350,
                             child: AirspaceCountrySelector(
                               key: ValueKey(_airspaceRefreshKey),
+                              onDataChanged: _handleAirspaceDataChanged,
                             ),
                           ),
                           const SizedBox(height: 16),
@@ -1561,10 +1599,11 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                               const SizedBox(height: 12),
                               const Text(
                                 'Delete All Flight Data\n\n'
-                                '• Completely removes ALL data (database + IGC files)\n'
-                                '• Use when starting completely fresh or freeing storage space\n'
-                                '• Deletes everything - database records AND IGC files\n'
-                                '• Warning: This is irreversible - all flight data will be lost\n\n'
+                                '• Removes all flight records and IGC files\n'
+                                '• Deletes all flown sites and wings\n'
+                                '• Preserves PGE sites database\n'
+                                '• Use when starting fresh or freeing storage space\n'
+                                '• Warning: This is irreversible - flight data will be lost\n\n'
                                 'This action cannot be undone.',
                                 style: TextStyle(color: Colors.red),
                               ),

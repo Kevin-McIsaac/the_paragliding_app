@@ -28,11 +28,7 @@ class SiteBoundsLoaderV2 {
     final boundsKey = _getBoundsKey(bounds);
 
     try {
-      // Check if local PGE database is available
-      final isPgeDataAvailable = await PgeSitesDatabaseService.instance.isDataAvailable();
-
       LoggingService.structured('SITES_BOUNDS_LOADER_V2', {
-        'pge_data_available': isPgeDataAvailable,
         'bounds': boundsKey,
       });
 
@@ -47,19 +43,14 @@ class SiteBoundsLoaderV2 {
         west: bounds.west,
       ));
 
-      // 2. Load PGE sites from local database only
-      if (isPgeDataAvailable) {
-        // Use local PGE database (fast)
-        futures.add(PgeSitesDatabaseService.instance.getSitesInBounds(
-          north: bounds.north,
-          south: bounds.south,
-          east: bounds.east,
-          west: bounds.west,
-        ));
-      } else {
-        // No local database available - return empty list
-        futures.add(Future.value(<ParaglidingSite>[]));
-      }
+      // 2. Always load PGE sites from local database
+      // The database will return empty list if no sites exist
+      futures.add(PgeSitesDatabaseService.instance.getSitesInBounds(
+        north: bounds.north,
+        south: bounds.south,
+        east: bounds.east,
+        west: bounds.west,
+      ));
 
       final results = await Future.wait(futures);
 
@@ -118,7 +109,7 @@ class SiteBoundsLoaderV2 {
         'pge_sites': pgeSites.length,
         'flown_sites': enrichedSites.where((s) => s.hasFlights).length,
         'new_sites': enrichedSites.where((s) => !s.hasFlights).length,
-        'data_source': isPgeDataAvailable ? 'local_database' : 'none',
+        'data_source': 'local_database',
         'load_time_ms': stopwatch.elapsedMilliseconds,
         'cached': false,
       });
@@ -143,21 +134,12 @@ class SiteBoundsLoaderV2 {
     double? centerLongitude,
   }) async {
     try {
-      // Check if local PGE database is available
-      final isPgeDataAvailable = await PgeSitesDatabaseService.instance.isDataAvailable();
-
-      if (isPgeDataAvailable) {
-        // Use local database for search (fast)
-        return await PgeSitesDatabaseService.instance.searchSitesByName(
-          query: query,
-          centerLatitude: centerLatitude,
-          centerLongitude: centerLongitude,
-        );
-      } else {
-        // No local database available
-        LoggingService.info('SiteBoundsLoaderV2: Local database not available for search');
-        return [];
-      }
+      // Always query the local database - it will return empty list if no sites exist
+      return await PgeSitesDatabaseService.instance.searchSitesByName(
+        query: query,
+        centerLatitude: centerLatitude,
+        centerLongitude: centerLongitude,
+      );
     } catch (error, stackTrace) {
       LoggingService.error('SiteBoundsLoaderV2: Search failed', error, stackTrace);
       return [];

@@ -77,35 +77,33 @@ class AirspaceCountryService {
     LoggingService.info('Updated selected countries: ${countryCodes.join(", ")}');
   }
 
-  /// Get metadata for all countries using simplified tracking
+  /// Get metadata for all countries with real database statistics
   Future<Map<String, CountryMetadata>> getCountryMetadata() async {
     try {
-      // Check if any airspace data exists
-      final geometryCount = await _diskCache.getGeometryCount();
-      if (geometryCount == 0) {
-        return {};
-      }
-
       // Get currently selected countries from preferences
       final selectedCountries = await getSelectedCountries();
 
-      // Return metadata for selected countries, assuming they have data
-      // since we can't track individual countries anymore
+      // Query real statistics for each country
       final metadata = <String, CountryMetadata>{};
       for (final countryCode in selectedCountries) {
-        metadata[countryCode] = CountryMetadata(
-          countryCode: countryCode,
-          airspaceCount: geometryCount, // Total airspace count for all countries
-          downloadTime: DateTime.now(), // Approximate download time
-          etag: null,
-          lastModified: null,
-          version: 1,
-        );
+        final stats = await _diskCache.getCountryStatistics(countryCode);
+
+        // Only include countries that actually have data
+        if (stats['has_data'] == true) {
+          metadata[countryCode] = CountryMetadata(
+            countryCode: countryCode,
+            airspaceCount: stats['airspace_count'] ?? 0,
+            downloadTime: DateTime.now(), // TODO: Store real download time
+            etag: null,
+            lastModified: null,
+            version: 1,
+          );
+        }
       }
 
       return metadata;
     } catch (e, stack) {
-      LoggingService.error('Failed to get simplified country metadata', e, stack);
+      LoggingService.error('Failed to get country metadata', e, stack);
       return {};
     }
   }

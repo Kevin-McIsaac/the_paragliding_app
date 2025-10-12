@@ -21,6 +21,13 @@ class MapConstants {
 
   // Weather forecast and station display
   static const double minForecastZoom = 10.0; // Minimum zoom for forecasts and weather stations
+  static const int zoomDisplayDecimals = 1; // Zoom display precision (0.1 increments)
+
+  /// Round zoom level to display precision (1 decimal place)
+  /// This ensures behavior matches what users see in the UI
+  static double roundZoomForDisplay(double zoom) {
+    return (zoom * 10).round() / 10.0;
+  }
 
   // Weather station caching (METAR data)
   static const Duration weatherStationCacheTTL = Duration(minutes: 30); // METAR updates every 30min

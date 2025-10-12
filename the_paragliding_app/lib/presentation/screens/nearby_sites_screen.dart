@@ -38,13 +38,33 @@ import '../../services/openaip_service.dart';
 
 
 class NearbySitesScreen extends StatefulWidget {
-  const NearbySitesScreen({super.key});
+  /// Optional callback to reload data after database changes.
+  /// Used by MainNavigationScreen to coordinate refreshes across all tabs.
+  final VoidCallback? onDataChanged;
+  final Future<void> Function()? onRefreshAllTabs;
+
+  const NearbySitesScreen({
+    super.key,
+    this.onDataChanged,
+    this.onRefreshAllTabs,
+  });
 
   @override
-  State<NearbySitesScreen> createState() => _NearbySitesScreenState();
+  State<NearbySitesScreen> createState() => NearbySitesScreenState();
 }
 
-class _NearbySitesScreenState extends State<NearbySitesScreen> {
+/// State class for NearbySitesScreen.
+///
+/// Made public (not prefixed with _) to allow parent widgets to access
+/// the refreshData() method through GlobalKey in a type-safe manner.
+///
+/// Example:
+/// ```dart
+/// final key = GlobalKey<NearbySitesScreenState>();
+/// // ...
+/// await key.currentState?.refreshData();
+/// ```
+class NearbySitesScreenState extends State<NearbySitesScreen> {
   final LocationService _locationService = LocationService.instance;
   final MapController _mapController = MapController();
 
@@ -59,9 +79,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   LatLng? _mapCenterPosition;
   bool _mapReady = false; // Track if map is initialized
   double _currentZoom = 10.0; // Current zoom level (updated reactively)
-  
-  // Key to force map widget refresh when airspace settings change
-  final Key _mapWidgetKey = UniqueKey();
+  int _airspaceDataVersion = 0; // Increment to trigger airspace reload without full widget recreation
+  int _sitesDataVersion = 0; // Increment to trigger sites reload when site data changes (e.g., deletion)
+
   static const String _mapProviderKey = 'nearby_sites_map_provider';
 
   // Preference keys for filter states
@@ -129,6 +149,123 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
     // Listen to search state changes to update controller
     _searchController.text = _searchManager.state.query;
+  }
+
+  /// Public method to refresh sites and airspace data.
+  ///
+  /// This method can be called by parent widgets using a GlobalKey:
+  /// ```dart
+  /// final key = GlobalKey<NearbySitesScreenState>();
+  /// // ...
+  /// await key.currentState?.refreshData();
+  /// ```
+  ///
+  /// This clears the MapBoundsManager cache and reloads both sites and airspace
+  /// for the current map bounds, which is useful after database changes
+  /// (e.g., Import IGC, Manage Sites, or downloading new airspace data).
+  Future<void> refreshData() async {
+    final currentPosition = _mapController.camera.center;
+    final currentZoom = _mapController.camera.zoom;
+
+    LoggingService.info('[REFRESH] Starting refresh | position=$currentPosition | zoom=$currentZoom');
+
+    // Clear the cache to force fresh data load
+    MapBoundsManager.instance.clearCache('nearby_sites');
+
+    // Trigger rebuild - Flutter will naturally preserve map position via mapController
+    // Increment data versions to trigger didUpdateWidget in map, causing both airspace and sites reload
+    if (mounted) {
+      setState(() {
+        _airspaceDataVersion++; // Triggers didUpdateWidget without full widget recreation
+        _sitesDataVersion++; // Also increment sites version for consistency
+      });
+
+      // Schedule bounds reload after widget rebuild completes
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _currentBounds != null) {
+          final newPosition = _mapController.camera.center;
+          LoggingService.info('[REFRESH] Post-rebuild | old_position=$currentPosition | new_position=$newPosition | position_preserved=${currentPosition.latitude == newPosition.latitude && currentPosition.longitude == newPosition.longitude}');
+          _onBoundsChanged(_currentBounds!);
+        }
+      });
+    }
+  }
+
+  /// Handle site data changes (deletions, additions, edits) from child screens.
+  ///
+  /// This method is called via onDataChanged callback when sites are modified
+  /// in screens like Data Management or Manage Sites. It clears the cache and
+  /// increments the version counter to trigger immediate map updates.
+  ///
+  /// Works the same way as airspace data changes - version counter triggers
+  /// natural widget updates without requiring explicit reload calls.
+  void _handleSiteDataChanged() {
+    LoggingService.info('[SITE_DATA] Site data changed, clearing cache and incrementing version | old_version=$_sitesDataVersion');
+
+    // Clear the cache to force fresh data load
+    MapBoundsManager.instance.clearCache('nearby_sites');
+    LoggingService.info('[SITE_DATA] Cache cleared for nearby_sites');
+
+    // Increment sites data version to trigger immediate map update
+    // The version counter change will cause widget rebuild and natural reload
+    if (mounted) {
+      setState(() {
+        _sitesDataVersion++; // Triggers immediate sites reload via widget system
+        LoggingService.info('[SITE_DATA] Version incremented | new_version=$_sitesDataVersion');
+      });
+    }
+  }
+
+  /// Handle sites version change by loading sites immediately (bypasses bounds-changed check).
+  ///
+  /// This is called from NearbySitesMap when sitesDataVersion changes.
+  /// Uses loadSitesForBoundsImmediate() to bypass the bounds-changed-significantly check,
+  /// matching the behavior of the Map Filter Sites checkbox for immediate updates.
+  Future<void> _handleSitesVersionChanged() async {
+    LoggingService.info('[SITES_VERSION_HANDLER] Sites version changed, loading sites immediately');
+
+    if (_currentBounds == null) {
+      LoggingService.info('[SITES_VERSION_HANDLER] No current bounds, skipping load');
+      return;
+    }
+
+    // Clear the bounds cache to force a reload (sites data changed, must reload from DB)
+    MapBoundsManager.instance.clearCache('nearby_sites');
+
+    // Load sites immediately without debouncing or bounds check (like Map Filter)
+    await MapBoundsManager.instance.loadSitesForBoundsImmediate(
+      context: 'nearby_sites',
+      bounds: _currentBounds!,
+      zoomLevel: _mapController.camera.zoom,
+      onLoaded: (result) {
+        if (mounted) {
+          setState(() {
+            _allSites = result.sites;
+            _siteFlightStatus = {};
+
+            // Clean up stale flyability status and wind data for sites no longer visible
+            final currentSiteKeys = result.sites.map((site) => SiteUtils.createSiteKey(site.latitude, site.longitude)).toSet();
+            _siteFlyabilityStatus.removeWhere((key, value) => !currentSiteKeys.contains(key));
+            _siteWindData.removeWhere((key, value) => !currentSiteKeys.contains(key));
+
+            for (final site in result.sites) {
+              final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
+              _siteFlightStatus[key] = site.hasFlights;
+            }
+
+            LoggingService.info('[SITES_VERSION_HANDLER] Loaded ${result.sites.length} sites | flown_sites=${result.sites.where((s) => s.hasFlights).length} | pge_sites=${result.sites.where((s) => !s.hasFlights).length}');
+          });
+
+          // Apply filter to update displayed sites
+          _updateDisplayedSites();
+
+          // Fetch wind forecast for newly loaded sites if forecast is enabled
+          if (_forecastEnabled && result.sites.isNotEmpty) {
+            _fetchWindDataForSites();
+          }
+        }
+      },
+    );
   }
 
   @override
@@ -276,9 +413,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     _windFetchDebounce?.cancel();
 
     // Only fetch wind data if zoom level is high enough (≥10)
-    final currentZoom = _mapController.camera.zoom;
-    if (currentZoom < 10) {
-      LoggingService.info('Skipping wind fetch: zoom level $currentZoom < 10');
+    final currentZoom = MapConstants.roundZoomForDisplay(_mapController.camera.zoom);
+    if (currentZoom < MapConstants.minForecastZoom) {
+      LoggingService.info('Skipping wind fetch: zoom level $currentZoom < ${MapConstants.minForecastZoom}');
       // Mark sites as unknown if they don't have wind data
       setState(() {
         for (final site in _displayedSites) {
@@ -383,7 +520,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     _stationFetchDebounce?.cancel();
 
     // Only fetch weather stations if zoom level is high enough (≥10)
-    final currentZoom = _mapController.camera.zoom;
+    final currentZoom = MapConstants.roundZoomForDisplay(_mapController.camera.zoom);
     if (currentZoom < MapConstants.minForecastZoom) {
       LoggingService.info('Skipping station fetch: zoom level $currentZoom < ${MapConstants.minForecastZoom}');
       setState(() {
@@ -669,10 +806,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           _isLocationLoading = false;
         });
 
-        // Update map center to user position when location is acquired
+        // Hide location notification if location was successfully obtained
         if (position != null) {
-          _mapCenterPosition = LatLng(position.latitude, position.longitude);
-          // Hide location notification if location was successfully obtained
           _hideLocationNotification();
         }
         _updateDisplayedSites();
@@ -802,15 +937,20 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     LoggingService.action('NearbySites', 'refresh_location', {});
     _locationService.clearCache();
     final position = await _updateUserLocation();
-    
+
     // Trigger bounds loading for the user's location area
     if (position != null) {
       final userLocation = LatLng(position.latitude, position.longitude);
+
+      // Explicitly center map on user location (only when user requests it)
+      _mapCenterPosition = userLocation;
+      _mapController.move(userLocation, MapConstants.minForecastZoom);
+
       final bounds = LatLngBounds(
         LatLng(userLocation.latitude - 0.5, userLocation.longitude - 0.5),
         LatLng(userLocation.latitude + 0.5, userLocation.longitude + 0.5),
       );
-      
+
       // Use a short delay to allow the map to update its center
       Future.delayed(const Duration(milliseconds: 100), () {
         if (mounted) {
@@ -886,7 +1026,13 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   // Bounds-based loading methods (copied from EditSiteScreen)
   void _onBoundsChanged(LatLngBounds bounds) {
     final currentZoom = _mapController.camera.zoom;
-    LoggingService.debug('_onBoundsChanged called: zoom=$currentZoom');
+    final oldCenter = _mapCenterPosition;
+    final newCenter = _mapController.camera.center;
+
+    LoggingService.debug('[BOUNDS] _onBoundsChanged called: zoom=$currentZoom, old center=$oldCenter, new center=$newCenter');
+
+    // Always update center position for map refresh (captures pans AND zooms)
+    _mapCenterPosition = newCenter;
 
     // Update zoom overlay in real-time (also set map ready on first call)
     if (!_mapReady || _currentZoom != currentZoom) {
@@ -897,6 +1043,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     }
 
     // Check if bounds have changed significantly using MapBoundsManager
+    // This prevents unnecessary reloads during minor map movements
     final boundsChangedSignificantly = MapBoundsManager.instance.haveBoundsChangedSignificantly('nearby_sites', bounds, _currentBounds);
 
     if (!boundsChangedSignificantly) {
@@ -976,10 +1123,10 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           return;
         }
         // Capture zoom AFTER delay, when cluster zoom animation is complete
-        final currentZoom = _mapController.camera.zoom;
+        final currentZoom = MapConstants.roundZoomForDisplay(_mapController.camera.zoom);
         LoggingService.info('Wind check: sites=${_displayedSites.length}, zoom=$currentZoom');
 
-        if (_displayedSites.isNotEmpty && currentZoom >= 10) {
+        if (_displayedSites.isNotEmpty && currentZoom >= MapConstants.minForecastZoom) {
           final missingWindData = _hasMissingWindData(includeUnknownStatus: true);
           LoggingService.info('Missing wind data check: $missingWindData');
           if (missingWindData) {
@@ -1189,11 +1336,11 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         LoggingService.action('MapFilter', 'forecast_disabled', {'cleared_wind_data': true});
       } else if (forecastEnabled && !previousForecastEnabled) {
         // Forecast was enabled - fetch wind data for visible sites if zoomed in
-        final currentZoom = _mapController.camera.zoom;
-        if (_displayedSites.isNotEmpty && currentZoom >= 10) {
+        final currentZoom = MapConstants.roundZoomForDisplay(_mapController.camera.zoom);
+        if (_displayedSites.isNotEmpty && currentZoom >= MapConstants.minForecastZoom) {
           _fetchWindDataForSites();
         }
-        LoggingService.action('MapFilter', 'forecast_enabled', {'will_fetch': currentZoom >= 10});
+        LoggingService.action('MapFilter', 'forecast_enabled', {'will_fetch': currentZoom >= MapConstants.minForecastZoom});
       }
 
       // Handle weather stations visibility changes
@@ -1207,14 +1354,14 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         LoggingService.action('MapFilter', 'weather_stations_disabled', {'cleared_stations': true, 'cleared_cache': true});
       } else if (weatherStationsEnabled && !previousWeatherStationsEnabled) {
         // Weather stations were enabled - fetch stations if zoomed in
-        final currentZoom = _mapController.camera.zoom;
+        final currentZoom = MapConstants.roundZoomForDisplay(_mapController.camera.zoom);
         if (currentZoom >= MapConstants.minForecastZoom) {
           _fetchWeatherStations();
         }
         LoggingService.action('MapFilter', 'weather_stations_enabled', {'will_fetch': currentZoom >= MapConstants.minForecastZoom});
       } else if (weatherStationsEnabled && (metarEnabled != previousMetarEnabled || nwsEnabled != previousNwsEnabled || pioupiouEnabled != previousPioupiouEnabled)) {
         // Weather station providers changed - refresh stations
-        final currentZoom = _mapController.camera.zoom;
+        final currentZoom = MapConstants.roundZoomForDisplay(_mapController.camera.zoom);
         if (currentZoom >= MapConstants.minForecastZoom) {
           // Clear existing stations and re-fetch with new provider configuration
           WeatherStationService.instance.clearCache();
@@ -1248,16 +1395,32 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
         await _openAipService.setClippingEnabled(clippingEnabled);
         await _openAipService.setAirspaceEnabled(true);
 
+        // Check if filters changed (requires reload even if airspace was already enabled)
+        final filtersChanged = _excludedIcaoClasses != classesEnum ||
+                               _maxAltitudeFt != maxAltitudeFt ||
+                               _airspaceClippingEnabled != clippingEnabled;
+
         // Update local state AFTER all async operations complete
         // This ensures the map widget rebuilds with correct service state
         setState(() {
           _excludedIcaoClasses = classesEnum;
+          _maxAltitudeFt = maxAltitudeFt;
           _airspaceEnabled = true;
           _airspaceClippingEnabled = clippingEnabled;
+          // Increment version to trigger immediate airspace reload
+          if (filtersChanged || !previousAirspaceEnabled) {
+            _airspaceDataVersion++;
+          }
         });
 
         if (!previousAirspaceEnabled) {
           LoggingService.action('MapFilter', 'airspace_enabled');
+        } else if (filtersChanged) {
+          LoggingService.action('MapFilter', 'airspace_filters_changed', {
+            'classes_changed': _excludedIcaoClasses != classesEnum,
+            'altitude_changed': _maxAltitudeFt != maxAltitudeFt,
+            'clipping_changed': _airspaceClippingEnabled != clippingEnabled,
+          });
         }
       } else if (!airspaceEnabled) {
         // Disable airspace completely
@@ -1278,12 +1441,6 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           });
         }
       }
-
-
-      // Refresh map to apply airspace filter changes
-      setState(() {
-        // This preserves the map position and zoom level
-      });
 
       LoggingService.structured('MAP_FILTER_APPLIED_SUCCESS', {
         'sites_enabled': sitesEnabled,
@@ -1408,7 +1565,10 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
             onPressed: _showMapFilterDialog,
             tooltip: 'Map Filters',
           ),
-          const AppMenuButton(),
+          AppMenuButton(
+            onDataChanged: _handleSiteDataChanged, // Call local handler which clears cache and reloads
+            onRefreshAllTabs: widget.onRefreshAllTabs,
+          ),
         ],
       ),
       body: Stack(
@@ -1425,8 +1585,9 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                       children: [
                         // Map - using new BaseMapWidget-based implementation
                         NearbySitesMap(
-                          key: _mapWidgetKey, // Force rebuild when settings change
                           mapController: _mapController,
+                          airspaceDataVersion: _airspaceDataVersion,
+                          sitesDataVersion: _sitesDataVersion,
                           sites: _displayedSites,
                           userLocation: _userPosition != null
                               ? LatLng(_userPosition!.latitude, _userPosition!.longitude)
@@ -1436,6 +1597,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                           airspaceClippingEnabled: _airspaceClippingEnabled,
                           onSiteSelected: _onSiteSelected,
                           onLocationRequest: _onRefreshLocation,
+                          onSitesDataVersionChanged: _handleSitesVersionChanged,
                           siteWindData: _siteWindData,
                           siteFlyabilityStatus: _siteFlyabilityStatus,
                           maxWindSpeed: _maxWindSpeed,
@@ -1556,18 +1718,23 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
             Positioned(
               bottom: 20,
               left: 16,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  'Z${_currentZoom.toStringAsFixed(1)}',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 11,
-                    fontFamily: 'monospace',
+              child: Tooltip(
+                message: MapConstants.roundZoomForDisplay(_currentZoom) < MapConstants.minForecastZoom
+                    ? 'Zoom in to 10 or greater to see flyability forecasts and weather station observations'
+                    : 'Zoom level',
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    'Z${MapConstants.roundZoomForDisplay(_currentZoom).toStringAsFixed(1)}',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                    ),
                   ),
                 ),
               ),
