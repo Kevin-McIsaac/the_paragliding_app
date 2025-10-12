@@ -22,9 +22,14 @@ class AppMenuButton extends StatelessWidget {
   /// Used in Log Book screen to refresh flight list.
   final VoidCallback? onDataChanged;
 
+  /// Optional callback to refresh all three main tabs.
+  /// Used when data changes affect all screens (Import IGC, Data Management, etc.)
+  final Future<void> Function()? onRefreshAllTabs;
+
   const AppMenuButton({
     super.key,
     this.onDataChanged,
+    this.onRefreshAllTabs,
   });
 
   @override
@@ -39,8 +44,13 @@ class AppMenuButton extends StatelessWidget {
             ),
           );
 
-          if (result == true && onDataChanged != null) {
-            onDataChanged!();
+          // Import IGC affects all tabs - refresh everything
+          if (result == true) {
+            if (onRefreshAllTabs != null) {
+              await onRefreshAllTabs!();
+            } else if (onDataChanged != null) {
+              onDataChanged!();
+            }
           }
         } else if (value == 'add_flight') {
           final result = await Navigator.of(context).push<bool>(
@@ -49,8 +59,13 @@ class AppMenuButton extends StatelessWidget {
             ),
           );
 
-          if (result == true && onDataChanged != null) {
-            onDataChanged!();
+          // Add flight affects all tabs - refresh everything
+          if (result == true) {
+            if (onRefreshAllTabs != null) {
+              await onRefreshAllTabs!();
+            } else if (onDataChanged != null) {
+              onDataChanged!();
+            }
           }
         } else if (value == 'wings') {
           final result = await Navigator.of(context).push<bool>(
@@ -58,9 +73,13 @@ class AppMenuButton extends StatelessWidget {
               builder: (context) => const WingManagementScreen(),
             ),
           );
-          // Reload data if wings were modified (affects Statistics)
-          if (result == true && onDataChanged != null) {
-            onDataChanged!();
+          // Wing changes affect Statistics - refresh all tabs
+          if (result == true) {
+            if (onRefreshAllTabs != null) {
+              await onRefreshAllTabs!();
+            } else if (onDataChanged != null) {
+              onDataChanged!();
+            }
           }
         } else if (value == 'sites') {
           final result = await Navigator.of(context).push<bool>(
@@ -68,19 +87,30 @@ class AppMenuButton extends StatelessWidget {
               builder: (context) => const ManageSitesScreen(),
             ),
           );
-          // Reload data if sites were modified (mainly for Log Book)
-          if (result == true && onDataChanged != null) {
-            onDataChanged!();
+          // Site changes affect Log Book and Sites screen - refresh all tabs
+          if (result == true) {
+            if (onRefreshAllTabs != null) {
+              await onRefreshAllTabs!();
+            } else if (onDataChanged != null) {
+              onDataChanged!();
+            }
           }
         } else if (value == 'database') {
           final result = await Navigator.of(context).push<bool>(
             MaterialPageRoute(
-              builder: (context) => const DataManagementScreen(),
+              builder: (context) => DataManagementScreen(
+                onRefreshAllTabs: onRefreshAllTabs,
+              ),
             ),
           );
 
-          if (result == true && onDataChanged != null) {
-            onDataChanged!();
+          // Data management can affect everything - refresh all tabs
+          if (result == true) {
+            if (onRefreshAllTabs != null) {
+              await onRefreshAllTabs!();
+            } else if (onDataChanged != null) {
+              onDataChanged!();
+            }
           }
         } else if (value == 'about') {
           Navigator.of(context).push(

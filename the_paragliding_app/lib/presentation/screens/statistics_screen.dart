@@ -10,10 +10,12 @@ class StatisticsScreen extends StatefulWidget {
   /// Optional callback to reload data after database changes.
   /// Used by MainNavigationScreen to coordinate refreshes across all tabs.
   final VoidCallback? onDataChanged;
+  final Future<void> Function()? onRefreshAllTabs;
 
   const StatisticsScreen({
     super.key,
     this.onDataChanged,
+    this.onRefreshAllTabs,
   });
 
   @override
@@ -443,7 +445,10 @@ class StatisticsScreenState extends State<StatisticsScreen> {
               ),
             ],
           ),
-          AppMenuButton(onDataChanged: _loadData),
+          AppMenuButton(
+            onDataChanged: _loadData,
+            onRefreshAllTabs: widget.onRefreshAllTabs,
+          ),
         ],
       ),
       body: Semantics(

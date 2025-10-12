@@ -86,6 +86,17 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     ]);
   }
 
+  /// Public method to refresh all tabs.
+  ///
+  /// This method can be called by child screens (via callback) when they
+  /// modify data that affects all three navigation tabs. For example:
+  /// - IGC Import adds new flights → refreshes all tabs
+  /// - Data Management deletes data → refreshes all tabs
+  /// - Wing/Site Management modifies data → refreshes all tabs
+  Future<void> refreshAllTabs() async {
+    await _handleDataChanged();
+  }
+
   void _onDestinationSelected(int index) {
     // Capture old index before updating state
     final oldIndex = _selectedIndex;
@@ -112,14 +123,17 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           FlightListScreen(
             key: _flightListKey,
             onDataChanged: _handleDataChanged,
+            onRefreshAllTabs: refreshAllTabs,
           ),
           NearbySitesScreen(
             key: _nearbySitesKey,
             onDataChanged: _handleDataChanged,
+            onRefreshAllTabs: refreshAllTabs,
           ),
           StatisticsScreen(
             key: _statisticsKey,
             onDataChanged: _handleDataChanged,
+            onRefreshAllTabs: refreshAllTabs,
           ),
         ],
       ),

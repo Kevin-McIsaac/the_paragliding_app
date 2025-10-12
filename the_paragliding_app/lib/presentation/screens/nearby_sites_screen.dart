@@ -200,18 +200,72 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
   /// Works the same way as airspace data changes - version counter triggers
   /// natural widget updates without requiring explicit reload calls.
   void _handleSiteDataChanged() {
-    LoggingService.info('[SITE_DATA] Site data changed, clearing cache and incrementing version');
+    LoggingService.info('[SITE_DATA] Site data changed, clearing cache and incrementing version | old_version=$_sitesDataVersion');
 
     // Clear the cache to force fresh data load
     MapBoundsManager.instance.clearCache('nearby_sites');
+    LoggingService.info('[SITE_DATA] Cache cleared for nearby_sites');
 
     // Increment sites data version to trigger immediate map update
     // The version counter change will cause widget rebuild and natural reload
     if (mounted) {
       setState(() {
         _sitesDataVersion++; // Triggers immediate sites reload via widget system
+        LoggingService.info('[SITE_DATA] Version incremented | new_version=$_sitesDataVersion');
       });
     }
+  }
+
+  /// Handle sites version change by loading sites immediately (bypasses bounds-changed check).
+  ///
+  /// This is called from NearbySitesMap when sitesDataVersion changes.
+  /// Uses loadSitesForBoundsImmediate() to bypass the bounds-changed-significantly check,
+  /// matching the behavior of the Map Filter Sites checkbox for immediate updates.
+  Future<void> _handleSitesVersionChanged() async {
+    LoggingService.info('[SITES_VERSION_HANDLER] Sites version changed, loading sites immediately');
+
+    if (_currentBounds == null) {
+      LoggingService.info('[SITES_VERSION_HANDLER] No current bounds, skipping load');
+      return;
+    }
+
+    // Clear the bounds cache to force a reload (sites data changed, must reload from DB)
+    MapBoundsManager.instance.clearCache('nearby_sites');
+
+    // Load sites immediately without debouncing or bounds check (like Map Filter)
+    await MapBoundsManager.instance.loadSitesForBoundsImmediate(
+      context: 'nearby_sites',
+      bounds: _currentBounds!,
+      zoomLevel: _mapController.camera.zoom,
+      onLoaded: (result) {
+        if (mounted) {
+          setState(() {
+            _allSites = result.sites;
+            _siteFlightStatus = {};
+
+            // Clean up stale flyability status and wind data for sites no longer visible
+            final currentSiteKeys = result.sites.map((site) => SiteUtils.createSiteKey(site.latitude, site.longitude)).toSet();
+            _siteFlyabilityStatus.removeWhere((key, value) => !currentSiteKeys.contains(key));
+            _siteWindData.removeWhere((key, value) => !currentSiteKeys.contains(key));
+
+            for (final site in result.sites) {
+              final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
+              _siteFlightStatus[key] = site.hasFlights;
+            }
+
+            LoggingService.info('[SITES_VERSION_HANDLER] Loaded ${result.sites.length} sites | flown_sites=${result.sites.where((s) => s.hasFlights).length} | pge_sites=${result.sites.where((s) => !s.hasFlights).length}');
+          });
+
+          // Apply filter to update displayed sites
+          _updateDisplayedSites();
+
+          // Fetch wind forecast for newly loaded sites if forecast is enabled
+          if (_forecastEnabled && result.sites.isNotEmpty) {
+            _fetchWindDataForSites();
+          }
+        }
+      },
+    );
   }
 
   @override
@@ -1533,6 +1587,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
                         NearbySitesMap(
                           mapController: _mapController,
                           airspaceDataVersion: _airspaceDataVersion,
+                          sitesDataVersion: _sitesDataVersion,
                           sites: _displayedSites,
                           userLocation: _userPosition != null
                               ? LatLng(_userPosition!.latitude, _userPosition!.longitude)
@@ -1542,6 +1597,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
                           airspaceClippingEnabled: _airspaceClippingEnabled,
                           onSiteSelected: _onSiteSelected,
                           onLocationRequest: _onRefreshLocation,
+                          onSitesDataVersionChanged: _handleSitesVersionChanged,
                           siteWindData: _siteWindData,
                           siteFlyabilityStatus: _siteFlyabilityStatus,
                           maxWindSpeed: _maxWindSpeed,

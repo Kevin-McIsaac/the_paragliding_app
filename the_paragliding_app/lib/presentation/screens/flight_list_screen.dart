@@ -18,10 +18,12 @@ import 'flight_detail_screen.dart';
 /// It provides search, date range filtering, and access to the app menu.
 class FlightListScreen extends StatefulWidget {
   final VoidCallback? onDataChanged;
+  final Future<void> Function()? onRefreshAllTabs;
 
   const FlightListScreen({
     super.key,
     this.onDataChanged,
+    this.onRefreshAllTabs,
   });
 
   @override
@@ -416,7 +418,10 @@ class FlightListScreenState extends State<FlightListScreen> {
               ),
             ],
           ),
-          AppMenuButton(onDataChanged: _loadData),
+          AppMenuButton(
+            onDataChanged: _loadData,
+            onRefreshAllTabs: widget.onRefreshAllTabs,
+          ),
         ],
       ),
       body: _buildMainContent(),

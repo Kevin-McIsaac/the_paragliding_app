@@ -31,6 +31,7 @@ class NearbySitesMap extends BaseMapWidget {
   final bool showUserLocation;
   final bool isLocationLoading;
   final Function(LatLngBounds)? onBoundsChanged;
+  final VoidCallback? onSitesDataVersionChanged; // Called when sites data changes (bypasses bounds check)
   final Map<String, WindData> siteWindData;
   final Map<String, FlyabilityStatus> siteFlyabilityStatus;
   final double maxWindSpeed;
@@ -41,6 +42,7 @@ class NearbySitesMap extends BaseMapWidget {
   final Map<String, WindData> stationWindData;
   final bool weatherStationsEnabled;
   final int airspaceDataVersion; // Increment to trigger airspace reload
+  final int sitesDataVersion; // Increment to trigger sites reload
 
   const NearbySitesMap({
     super.key,
@@ -54,6 +56,7 @@ class NearbySitesMap extends BaseMapWidget {
     this.showUserLocation = true,
     this.isLocationLoading = false,
     this.onBoundsChanged,
+    this.onSitesDataVersionChanged,
     this.siteWindData = const {},
     this.siteFlyabilityStatus = const {},
     this.maxWindSpeed = 25.0,
@@ -64,6 +67,7 @@ class NearbySitesMap extends BaseMapWidget {
     this.stationWindData = const {},
     this.weatherStationsEnabled = true,
     this.airspaceDataVersion = 0,
+    this.sitesDataVersion = 0,
     super.height = 400,
     super.initialCenter,
     super.initialZoom = 10.0,
@@ -168,6 +172,18 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           loadAirspaceLayers(mapController.camera.visibleBounds);
+        }
+      });
+    }
+
+    // Reload sites when data version changes (PGE sites downloaded/deleted)
+    if (oldWidget.sitesDataVersion != widget.sitesDataVersion) {
+      LoggingService.info('[SITES_VERSION] Sites data version changed (${oldWidget.sitesDataVersion} -> ${widget.sitesDataVersion}), triggering immediate reload');
+      // Call dedicated callback that bypasses bounds-changed check (like Map Filter does)
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && widget.onSitesDataVersionChanged != null) {
+          LoggingService.info('[SITES_VERSION] Calling onSitesDataVersionChanged for immediate database reload');
+          widget.onSitesDataVersionChanged!();
         }
       });
     }

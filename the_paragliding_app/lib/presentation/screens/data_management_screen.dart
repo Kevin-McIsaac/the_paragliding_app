@@ -23,8 +23,13 @@ import '../../services/pge_sites_database_service.dart';
 
 class DataManagementScreen extends StatefulWidget {
   final bool expandPremiumMaps;
-  
-  const DataManagementScreen({super.key, this.expandPremiumMaps = false});
+  final Future<void> Function()? onRefreshAllTabs;
+
+  const DataManagementScreen({
+    super.key,
+    this.expandPremiumMaps = false,
+    this.onRefreshAllTabs,
+  });
 
   @override
   State<DataManagementScreen> createState() => _DataManagementScreenState();
@@ -308,6 +313,11 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
           _dataModified = true; // Mark as modified to trigger parent refresh
         });
 
+        // Refresh all tabs BEFORE showing dialog so Sites screen has fresh data
+        if (widget.onRefreshAllTabs != null) {
+          await widget.onRefreshAllTabs!();
+        }
+
         _showSuccessDialog(
           'Sites Downloaded',
           'Successfully downloaded and imported worldwide paragliding sites.'
@@ -343,6 +353,11 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
       setState(() {
         _dataModified = true; // Mark as modified to trigger parent refresh
       });
+
+      // Refresh all tabs BEFORE showing dialog so Sites screen has fresh data
+      if (widget.onRefreshAllTabs != null) {
+        await widget.onRefreshAllTabs!();
+      }
 
       _showSuccessDialog('Data Cleared', 'PGE sites data has been removed.');
 
@@ -1130,13 +1145,15 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
     }
   }
 
-  Future<void> _analyzeIGCFiles() async {
-    LoggingService.action('DataManagement', 'analyze_igc_files');
+  Future<void> _analyzeIGCFiles({bool forceRefresh = false}) async {
+    LoggingService.action('DataManagement', 'analyze_igc_files', {
+      'force_refresh': forceRefresh,
+    });
     final stopwatch = Stopwatch()..start();
-    
+
     _showLoadingDialog('Analyzing IGC files...');
     try {
-      final cleanupStats = await IGCCleanupService.analyzeIGCFiles();
+      final cleanupStats = await IGCCleanupService.analyzeIGCFiles(forceRefresh: forceRefresh);
       
       if (mounted) Navigator.of(context).pop(); // Close loading
       
@@ -1237,10 +1254,10 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
         setState(() {
           _dataModified = true;
         });
-        
-        // Refresh the analysis
-        await _analyzeIGCFiles();
-        
+
+        // Refresh the analysis with forced refresh to bypass cache
+        await _analyzeIGCFiles(forceRefresh: true);
+
         String message = 'Cleanup completed successfully!\n\n'
             'Files deleted: $filesDeleted\n'
             'Space freed: $sizeFreed';
