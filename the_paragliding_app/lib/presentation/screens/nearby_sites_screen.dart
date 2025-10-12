@@ -41,10 +41,12 @@ class NearbySitesScreen extends StatefulWidget {
   /// Optional callback to reload data after database changes.
   /// Used by MainNavigationScreen to coordinate refreshes across all tabs.
   final VoidCallback? onDataChanged;
+  final Future<void> Function()? onRefreshAllTabs;
 
   const NearbySitesScreen({
     super.key,
     this.onDataChanged,
+    this.onRefreshAllTabs,
   });
 
   @override
@@ -78,6 +80,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
   bool _mapReady = false; // Track if map is initialized
   double _currentZoom = 10.0; // Current zoom level (updated reactively)
   int _airspaceDataVersion = 0; // Increment to trigger airspace reload without full widget recreation
+  int _sitesDataVersion = 0; // Increment to trigger sites reload when site data changes (e.g., deletion)
 
   static const String _mapProviderKey = 'nearby_sites_map_provider';
 
@@ -170,10 +173,11 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
     MapBoundsManager.instance.clearCache('nearby_sites');
 
     // Trigger rebuild - Flutter will naturally preserve map position via mapController
-    // Increment data version to trigger didUpdateWidget in map, causing airspace reload
+    // Increment data versions to trigger didUpdateWidget in map, causing both airspace and sites reload
     if (mounted) {
       setState(() {
         _airspaceDataVersion++; // Triggers didUpdateWidget without full widget recreation
+        _sitesDataVersion++; // Also increment sites version for consistency
       });
 
       // Schedule bounds reload after widget rebuild completes
@@ -183,6 +187,29 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
           LoggingService.info('[REFRESH] Post-rebuild | old_position=$currentPosition | new_position=$newPosition | position_preserved=${currentPosition.latitude == newPosition.latitude && currentPosition.longitude == newPosition.longitude}');
           _onBoundsChanged(_currentBounds!);
         }
+      });
+    }
+  }
+
+  /// Handle site data changes (deletions, additions, edits) from child screens.
+  ///
+  /// This method is called via onDataChanged callback when sites are modified
+  /// in screens like Data Management or Manage Sites. It clears the cache and
+  /// increments the version counter to trigger immediate map updates.
+  ///
+  /// Works the same way as airspace data changes - version counter triggers
+  /// natural widget updates without requiring explicit reload calls.
+  void _handleSiteDataChanged() {
+    LoggingService.info('[SITE_DATA] Site data changed, clearing cache and incrementing version');
+
+    // Clear the cache to force fresh data load
+    MapBoundsManager.instance.clearCache('nearby_sites');
+
+    // Increment sites data version to trigger immediate map update
+    // The version counter change will cause widget rebuild and natural reload
+    if (mounted) {
+      setState(() {
+        _sitesDataVersion++; // Triggers immediate sites reload via widget system
       });
     }
   }
@@ -962,6 +989,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
     }
 
     // Check if bounds have changed significantly using MapBoundsManager
+    // This prevents unnecessary reloads during minor map movements
     final boundsChangedSignificantly = MapBoundsManager.instance.haveBoundsChangedSignificantly('nearby_sites', bounds, _currentBounds);
 
     if (!boundsChangedSignificantly) {
@@ -1483,7 +1511,10 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
             onPressed: _showMapFilterDialog,
             tooltip: 'Map Filters',
           ),
-          AppMenuButton(onDataChanged: widget.onDataChanged),
+          AppMenuButton(
+            onDataChanged: _handleSiteDataChanged, // Call local handler which clears cache and reloads
+            onRefreshAllTabs: widget.onRefreshAllTabs,
+          ),
         ],
       ),
       body: Stack(
