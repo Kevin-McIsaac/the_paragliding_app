@@ -48,3 +48,10 @@ app.*.map.json
 **/android/key.properties
 **/android/*.jks
 **/android/*.keystore
+
+# Environment variables (NEVER commit these!)
+.env
+.env.local
+.env.production
+.env.*
+!.env.example

@@ -336,39 +336,6 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
     }
   }
 
-  Future<void> _clearPgeSites() async {
-    final confirmed = await _showConfirmationDialog(
-      'Clear PGE Sites Data',
-      'This will remove all downloaded ParaglidingEarth sites from the local database.\n\n'
-      'You can re-download them anytime.',
-    );
-
-    if (!confirmed) return;
-
-    LoggingService.action('DataManagement', 'clear_pge_sites');
-
-    try {
-      await PgeSitesDatabaseService.instance.clearData();
-
-      setState(() {
-        _dataModified = true; // Mark as modified to trigger parent refresh
-      });
-
-      // Refresh all tabs BEFORE showing dialog so Sites screen has fresh data
-      if (widget.onRefreshAllTabs != null) {
-        await widget.onRefreshAllTabs!();
-      }
-
-      _showSuccessDialog('Data Cleared', 'PGE sites data has been removed.');
-
-      // Reload statistics
-      await _loadPgeSitesStats();
-
-    } catch (e, stackTrace) {
-      LoggingService.error('DataManagementScreen: Failed to clear PGE sites', e, stackTrace);
-      _showErrorDialog('Error', 'Failed to clear sites data: $e');
-    }
-  }
 
   Future<void> _testCesiumToken() async {
     if (_cesiumToken == null) return;
@@ -2039,38 +2006,22 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                         style: TextStyle(color: Colors.grey, fontSize: 12),
                       ),
                       const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: _pgeSitesProgress?.status == PgeSitesDownloadStatus.downloading
-                                  ? null
-                                  : _downloadPgeSites,
-                              icon: const Icon(Icons.download),
-                              label: Text(
-                                (_pgeSitesStats?['sites_count'] ?? 0) > 0
-                                  ? 'Re-download Sites'
-                                  : 'Download Sites'
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.blue,
-                              ),
-                            ),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _pgeSitesProgress?.status == PgeSitesDownloadStatus.downloading
+                              ? null
+                              : _downloadPgeSites,
+                          icon: const Icon(Icons.download),
+                          label: Text(
+                            (_pgeSitesStats?['sites_count'] ?? 0) > 0
+                              ? 'Re-download Sites'
+                              : 'Download Sites'
                           ),
-                          if ((_pgeSitesStats?['sites_count'] ?? 0) > 0) ...[
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: _clearPgeSites,
-                                icon: const Icon(Icons.clear),
-                                label: const Text('Clear Data'),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.orange,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.blue,
+                          ),
+                        ),
                       ),
                     ],
                   ),

@@ -41,6 +41,10 @@ class MapConstants {
   static const Duration pioupiouStationListCacheTTL = Duration(hours: 24); // Stations don't move
   static const Duration pioupiouMeasurementsCacheTTL = Duration(minutes: 20); // Wind updates frequently
 
+  // FFVL-specific caching (global beacon list strategy, similar to Pioupiou)
+  static const Duration ffvlBeaconListCacheTTL = Duration(hours: 24); // Beacons don't move
+  static const Duration ffvlMeasurementsCacheTTL = Duration(minutes: 5); // FFVL updates every minute
+
   // Map UI constants
   static const double mapPadding = 0.005;
 

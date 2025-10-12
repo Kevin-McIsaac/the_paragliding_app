@@ -15,4 +15,8 @@ enum WeatherStationSource {
   /// Pioupiou/OpenWindMap from api.pioupiou.fr
   /// Community wind stations with global coverage
   pioupiou,
+
+  /// FFVL (French Free Flight Federation) from data.ffvl.fr
+  /// Weather beacons primarily in France and Europe
+  ffvl,
 }

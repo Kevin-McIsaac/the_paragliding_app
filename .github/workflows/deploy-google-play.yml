@@ -1,0 +1,199 @@
+name: Deploy to Google Play
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger on version tags like v1.0.0
+  workflow_dispatch: # Allow manual trigger
+    inputs:
+      track:
+        description: 'Deployment track'
+        required: true
+        default: 'internal'
+        type: choice
+        options:
+          - internal
+          - alpha
+          - beta
+          - production
+      status:
+        description: 'Release status'
+        required: true
+        default: 'draft'
+        type: choice
+        options:
+          - draft
+          - completed
+
+env:
+  FLUTTER_VERSION: "3.24.5"
+  JAVA_VERSION: "17"
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy to Google Play
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Needed for version extraction
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+            echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+            echo "VERSION_CODE=$(echo $VERSION | sed 's/\.//g')" >> $GITHUB_OUTPUT
+          else
+            # For manual runs, use run number
+            echo "VERSION=0.0.${GITHUB_RUN_NUMBER}" >> $GITHUB_OUTPUT
+            echo "VERSION_CODE=${GITHUB_RUN_NUMBER}" >> $GITHUB_OUTPUT
+          fi
+          echo "Extracted version: $VERSION"
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+
+      - name: Get dependencies
+        run: |
+          cd the_paragliding_app
+          flutter pub get
+
+      # Option A: If using Google Play App Signing (recommended)
+      - name: Decode and setup keystore (if self-signing)
+        if: ${{ secrets.ANDROID_KEYSTORE }}
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE }}" | base64 --decode > the_paragliding_app/android/app/keystore.jks
+          echo "storeFile=keystore.jks" >> the_paragliding_app/android/key.properties
+          echo "storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" >> the_paragliding_app/android/key.properties
+          echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> the_paragliding_app/android/key.properties
+          echo "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}" >> the_paragliding_app/android/key.properties
+
+      - name: Update version in pubspec.yaml
+        run: |
+          cd the_paragliding_app
+          # Update version and build number
+          sed -i "s/^version: .*/version: ${{ steps.version.outputs.VERSION }}+${{ steps.version.outputs.VERSION_CODE }}/" pubspec.yaml
+          cat pubspec.yaml | grep version:
+
+      - name: Build App Bundle with signing
+        env:
+          FFVL_API_KEY: ${{ secrets.FFVL_API_KEY }}
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          OPENAIP_API_KEY: ${{ secrets.OPENAIP_API_KEY }}
+          CESIUM_ION_TOKEN: ${{ secrets.CESIUM_ION_TOKEN }}
+        run: |
+          cd the_paragliding_app
+          flutter build appbundle --release \
+            --build-number=${{ steps.version.outputs.VERSION_CODE }} \
+            --build-name=${{ steps.version.outputs.VERSION }} \
+            --dart-define=FFVL_API_KEY=${{ secrets.FFVL_API_KEY }} \
+            --dart-define=GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }} \
+            --dart-define=OPENAIP_API_KEY=${{ secrets.OPENAIP_API_KEY }} \
+            --dart-define=CESIUM_ION_TOKEN=${{ secrets.CESIUM_ION_TOKEN }}
+
+      - name: Upload to Google Play
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_SERVICE_ACCOUNT_JSON }}
+          packageName: com.theparaglidingapp
+          releaseFiles: the_paragliding_app/build/app/outputs/bundle/release/app-release.aab
+          track: ${{ github.event.inputs.track || 'internal' }}
+          status: ${{ github.event.inputs.status || 'draft' }}
+          changesNotSentForReview: false
+          whatsNewDirectory: the_paragliding_app/android/release-notes/
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-bundle-${{ steps.version.outputs.VERSION }}
+          path: the_paragliding_app/build/app/outputs/bundle/release/app-release.aab
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            the_paragliding_app/build/app/outputs/bundle/release/app-release.aab
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ github.event.inputs.track != 'production' }}
+          body: |
+            ## The Paragliding App ${{ steps.version.outputs.VERSION }}
+
+            This release has been automatically deployed to Google Play Store.
+
+            **Track:** ${{ github.event.inputs.track || 'internal' }}
+            **Status:** ${{ github.event.inputs.status || 'draft' }}
+
+            ### Installation
+            - Direct APK download from GitHub
+            - Google Play Store (may take a few hours to appear)
+
+            ### What's New
+            See automatically generated release notes below.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Separate job for building APK for direct downloads
+  build-apk:
+    name: Build APK for Direct Download
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "VERSION_CODE=$(echo $VERSION | sed 's/\.//g')" >> $GITHUB_OUTPUT
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+
+      - name: Get dependencies
+        run: |
+          cd the_paragliding_app
+          flutter pub get
+
+      - name: Build APK
+        env:
+          FFVL_API_KEY: ${{ secrets.FFVL_API_KEY }}
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          OPENAIP_API_KEY: ${{ secrets.OPENAIP_API_KEY }}
+          CESIUM_ION_TOKEN: ${{ secrets.CESIUM_ION_TOKEN }}
+        run: |
+          cd the_paragliding_app
+          flutter build apk --release \
+            --build-number=${{ steps.version.outputs.VERSION_CODE }} \
+            --build-name=${{ steps.version.outputs.VERSION }} \
+            --dart-define=FFVL_API_KEY=${{ secrets.FFVL_API_KEY }} \
+            --dart-define=GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }} \
+            --dart-define=OPENAIP_API_KEY=${{ secrets.OPENAIP_API_KEY }} \
+            --dart-define=CESIUM_ION_TOKEN=${{ secrets.CESIUM_ION_TOKEN }}
+
+      - name: Upload APK to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: the_paragliding_app/build/app/outputs/flutter-apk/app-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

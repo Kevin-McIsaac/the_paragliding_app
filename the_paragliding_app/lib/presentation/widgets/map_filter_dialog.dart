@@ -16,6 +16,7 @@ class MapFilterDialog extends StatefulWidget {
   final bool metarEnabled;
   final bool nwsEnabled;
   final bool pioupiouEnabled;
+  final bool ffvlEnabled;
   final Map<String, bool> airspaceTypes;
   final Map<String, bool> icaoClasses;
   final double maxAltitudeFt;
@@ -28,6 +29,7 @@ class MapFilterDialog extends StatefulWidget {
     bool metarEnabled,
     bool nwsEnabled,
     bool pioupiouEnabled,
+    bool ffvlEnabled,
     Map<String, bool> types,
     Map<String, bool> classes,
     double maxAltitudeFt,
@@ -43,6 +45,7 @@ class MapFilterDialog extends StatefulWidget {
     required this.metarEnabled,
     required this.nwsEnabled,
     required this.pioupiouEnabled,
+    required this.ffvlEnabled,
     required this.airspaceTypes,
     required this.icaoClasses,
     required this.maxAltitudeFt,
@@ -62,6 +65,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
   late bool _metarEnabled;
   late bool _nwsEnabled;
   late bool _pioupiouEnabled;
+  late bool _ffvlEnabled;
   late Map<String, bool> _airspaceTypes;
   late Map<String, bool> _icaoClasses;
   late double _maxAltitudeFt;
@@ -104,6 +108,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
     _metarEnabled = widget.metarEnabled;
     _nwsEnabled = widget.nwsEnabled;
     _pioupiouEnabled = widget.pioupiouEnabled;
+    _ffvlEnabled = widget.ffvlEnabled;
     _airspaceTypes = Map<String, bool>.from(widget.airspaceTypes);
     _icaoClasses = Map<String, bool>.from(widget.icaoClasses);
     _maxAltitudeFt = widget.maxAltitudeFt;
@@ -464,6 +469,17 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                 subtitle: WeatherStationProviderRegistry.getProvider(WeatherStationSource.pioupiou).description,
                 onChanged: _weatherStationsEnabled ? (value) => setState(() {
                   _pioupiouEnabled = value ?? true;
+                  _applyFiltersImmediately();
+                }) : null,
+              ),
+              const SizedBox(height: 2),
+              // FFVL provider (France)
+              _buildProviderCheckbox(
+                value: _ffvlEnabled,
+                label: 'FFVL Beacons (France)',
+                subtitle: WeatherStationProviderRegistry.getProvider(WeatherStationSource.ffvl).description,
+                onChanged: _weatherStationsEnabled ? (value) => setState(() {
+                  _ffvlEnabled = value ?? true;
                   _applyFiltersImmediately();
                 }) : null,
               ),
@@ -936,7 +952,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
       'clipping_enabled': _clippingEnabled,
     });
 
-    widget.onApply(_sitesEnabled, _airspaceEnabled, _forecastEnabled, _weatherStationsEnabled, _metarEnabled, _nwsEnabled, _pioupiouEnabled, _airspaceTypes, _icaoClasses, _maxAltitudeFt, _clippingEnabled);
+    widget.onApply(_sitesEnabled, _airspaceEnabled, _forecastEnabled, _weatherStationsEnabled, _metarEnabled, _nwsEnabled, _pioupiouEnabled, _ffvlEnabled, _airspaceTypes, _icaoClasses, _maxAltitudeFt, _clippingEnabled);
   }
 
   /// Build a provider checkbox widget
