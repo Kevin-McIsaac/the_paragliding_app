@@ -20,6 +20,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
   Map<int, int> _flightCounts = {};
   bool _isLoading = false;
   String? _errorMessage;
+  bool _wingsModified = false; // Track if any wings were modified
 
   @override
   void initState() {
@@ -119,6 +120,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
       LoggingService.action('WingManagement', 'add_wing_completed', {
         'wing_added': true,
       });
+      _wingsModified = true;
       _loadData();
     } else {
       LoggingService.action('WingManagement', 'add_wing_cancelled', {});
@@ -144,6 +146,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
         'wing_id': wing.id,
         'wing_edited': true,
       });
+      _wingsModified = true;
       _loadData();
     } else {
       LoggingService.action('WingManagement', 'edit_wing_cancelled', {
@@ -196,6 +199,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
         } else {
           await _databaseService.deleteWing(wing.id!);
           success = true;
+          _wingsModified = true;
           LoggingService.summary('WING_DELETED', {
             'wing_id': wing.id,
             'wing_name': wing.displayName,
@@ -237,6 +241,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
     try {
       await _databaseService.updateWing(updatedWing);
       success = true;
+      _wingsModified = true;
       LoggingService.structured('WING_STATUS_CHANGED', {
         'wing_id': wing.id,
         'wing_name': wing.displayName,
@@ -278,6 +283,7 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
       LoggingService.action('WingManagement', 'merge_wings_completed', {
         'wings_merged': true,
       });
+      _wingsModified = true;
       _loadData();
     } else {
       LoggingService.action('WingManagement', 'merge_wings_cancelled', {});
@@ -286,19 +292,27 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Wing Management'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        actions: [
-          if (_wings.length >= 2)
-            IconButton(
-              icon: const Icon(Icons.merge_type),
-              tooltip: 'Merge Wings',
-              onPressed: _showMergeDialog,
-            ),
-        ],
-      ),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (!didPop) {
+          // Return whether wings were modified when popping
+          Navigator.of(context).pop(_wingsModified);
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Wing Management'),
+          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+          actions: [
+            if (_wings.length >= 2)
+              IconButton(
+                icon: const Icon(Icons.merge_type),
+                tooltip: 'Merge Wings',
+                onPressed: _showMergeDialog,
+              ),
+          ],
+        ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
@@ -314,10 +328,11 @@ class _WingManagementScreenState extends State<WingManagementScreen> {
                       onAddWing: _addNewWing,
                     )
                   : _buildWingList(_wings),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _addNewWing,
-        tooltip: 'Add Wing',
-        child: const Icon(Icons.add),
+        floatingActionButton: FloatingActionButton(
+          onPressed: _addNewWing,
+          tooltip: 'Add Wing',
+          child: const Icon(Icons.add),
+        ),
       ),
     );
   }

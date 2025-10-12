@@ -7,37 +7,70 @@ import '../widgets/common/app_empty_state.dart';
 import '../widgets/common/app_menu_button.dart';
 
 class StatisticsScreen extends StatefulWidget {
-  const StatisticsScreen({super.key});
+  /// Optional callback to reload data after database changes.
+  /// Used by MainNavigationScreen to coordinate refreshes across all tabs.
+  final VoidCallback? onDataChanged;
+
+  const StatisticsScreen({
+    super.key,
+    this.onDataChanged,
+  });
 
   @override
-  State<StatisticsScreen> createState() => _StatisticsScreenState();
+  State<StatisticsScreen> createState() => StatisticsScreenState();
 }
 
-class _StatisticsScreenState extends State<StatisticsScreen> {
+/// State class for StatisticsScreen.
+///
+/// Made public (not prefixed with _) to allow parent widgets to access
+/// the refreshData() method through GlobalKey in a type-safe manner.
+///
+/// Example:
+/// ```dart
+/// final key = GlobalKey<StatisticsScreenState>();
+/// // ...
+/// await key.currentState?.refreshData();
+/// ```
+class StatisticsScreenState extends State<StatisticsScreen> {
   final DatabaseService _databaseService = DatabaseService.instance;
-  
+
   // Constants
   static const double _cardElevation = 2.0;
   static const EdgeInsets _cardPadding = EdgeInsets.all(16.0);
   static const EdgeInsets _rowPadding = EdgeInsets.symmetric(vertical: 12);
   static const double _headerBorderWidth = 2.0;
   static const double _sectionSpacing = 24.0;
-  
+
   // State variables
   List<Map<String, dynamic>> _yearlyStats = [];
   List<Map<String, dynamic>> _wingStats = [];
   List<Map<String, dynamic>> _siteStats = [];
   bool _isLoading = false;
   String? _errorMessage;
-  
+
   // Date range filtering
   DateTimeRange? _selectedDateRange;
   String _selectedPreset = 'all';
-  
+
   @override
   void initState() {
     super.initState();
     _loadData();
+  }
+
+  /// Public method to refresh statistics data.
+  ///
+  /// This method can be called by parent widgets using a GlobalKey:
+  /// ```dart
+  /// final key = GlobalKey<StatisticsScreenState>();
+  /// // ...
+  /// await key.currentState?.refreshData();
+  /// ```
+  ///
+  /// However, prefer using callbacks (e.g., onDataChanged) when possible
+  /// to avoid tight coupling between parent and child widgets.
+  Future<void> refreshData() async {
+    await _loadData();
   }
   
   Future<void> _loadData() async {

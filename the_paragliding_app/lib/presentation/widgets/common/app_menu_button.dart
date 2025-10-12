@@ -53,11 +53,15 @@ class AppMenuButton extends StatelessWidget {
             onDataChanged!();
           }
         } else if (value == 'wings') {
-          Navigator.of(context).push(
+          final result = await Navigator.of(context).push<bool>(
             MaterialPageRoute(
               builder: (context) => const WingManagementScreen(),
             ),
           );
+          // Reload data if wings were modified (affects Statistics)
+          if (result == true && onDataChanged != null) {
+            onDataChanged!();
+          }
         } else if (value == 'sites') {
           final result = await Navigator.of(context).push<bool>(
             MaterialPageRoute(

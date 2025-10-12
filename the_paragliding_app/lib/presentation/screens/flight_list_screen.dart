@@ -17,7 +17,12 @@ import 'flight_detail_screen.dart';
 /// This screen is designed to be used within MainNavigationScreen's bottom navigation.
 /// It provides search, date range filtering, and access to the app menu.
 class FlightListScreen extends StatefulWidget {
-  const FlightListScreen({super.key});
+  final VoidCallback? onDataChanged;
+
+  const FlightListScreen({
+    super.key,
+    this.onDataChanged,
+  });
 
   @override
   State<FlightListScreen> createState() => FlightListScreenState();
@@ -285,7 +290,7 @@ class FlightListScreenState extends State<FlightListScreen> {
     });
   }
 
-  /// Build main content
+  /// Build main content (used by both navigation and non-navigation modes)
   Widget _buildMainContent() {
     if (_isLoading && _flights.isEmpty) {
       return AppPageLoadingSkeleton.flightList();

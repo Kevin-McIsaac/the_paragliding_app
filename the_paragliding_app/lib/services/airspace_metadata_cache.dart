@@ -47,7 +47,7 @@ class AirspaceMetadataCache {
       }
 
       // Store all geometries in batch - much faster than individual inserts
-      await _geometryCache.putGeometryBatch(features);
+      await _geometryCache.putGeometryBatch(features, countryCode: countryCode);
 
       // Update memory cache for UI purposes
       _updateCountryCache(countryCode, airspaceIds.toSet());
@@ -106,18 +106,18 @@ class AirspaceMetadataCache {
     }
   }
 
-  /// Delete country data (simplified - clears all airspace data)
+  /// Delete country data for a specific country
   Future<void> deleteCountryData(String countryCode) async {
-    LoggingService.info('Clearing airspace data for: $countryCode');
+    LoggingService.info('Deleting airspace data for: $countryCode');
 
     // Remove from memory cache
     _countryAirspaceCache.remove(countryCode);
     _countryAccessOrder.remove(countryCode);
 
-    // Since we no longer track by country, clear all cache data
-    await clearAllCache();
+    // Delete from disk cache (now country-specific)
+    await _diskCache.deleteCountryData(countryCode);
 
-    LoggingService.info('Successfully cleared airspace data');
+    LoggingService.info('Successfully deleted airspace data for $countryCode');
   }
 
   /// Get cache statistics

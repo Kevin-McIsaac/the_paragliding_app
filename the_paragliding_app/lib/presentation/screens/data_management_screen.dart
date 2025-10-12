@@ -304,6 +304,10 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
       if (mounted) Navigator.of(context).pop(); // Close loading dialog
 
       if (importSuccess) {
+        setState(() {
+          _dataModified = true; // Mark as modified to trigger parent refresh
+        });
+
         _showSuccessDialog(
           'Sites Downloaded',
           'Successfully downloaded and imported worldwide paragliding sites.'
@@ -335,6 +339,10 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
 
     try {
       await PgeSitesDatabaseService.instance.clearData();
+
+      setState(() {
+        _dataModified = true; // Mark as modified to trigger parent refresh
+      });
 
       _showSuccessDialog('Data Cleared', 'PGE sites data has been removed.');
 
@@ -1034,6 +1042,20 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
 
 
 
+  /// Handle airspace data changes from AirspaceCountrySelector.
+  ///
+  /// This is called when airspace data is downloaded or deleted,
+  /// increments the refresh key to force the FutureBuilder to re-fetch statistics,
+  /// and marks data as modified so the parent screen can refresh when this screen closes.
+  void _handleAirspaceDataChanged() {
+    if (mounted) {
+      setState(() {
+        _airspaceRefreshKey++;
+        _dataModified = true; // Mark as modified to trigger parent refresh
+      });
+    }
+  }
+
   Future<void> _clearAirspaceCache() async {
     final confirmed = await _showConfirmationDialog(
       'Clear Airspace Database',
@@ -1052,11 +1074,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
       }
 
       // Refresh UI to show updated stats and force country selector refresh
-      if (mounted) {
-        setState(() {
-          _airspaceRefreshKey++;
-        });
-      }
+      _handleAirspaceDataChanged();
 
       _showSuccessDialog(
         'Database Cleared',
@@ -1287,6 +1305,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
 
                   // Airspace Database (Local copy of OpenAIP data)
                   FutureBuilder<Map<String, dynamic>>(
+                    key: ValueKey(_airspaceRefreshKey),
                     future: AirspaceGeoJsonService.instance.getCacheStatistics(),
                     builder: (context, snapshot) {
                       final airspaceCacheStats = snapshot.data;
@@ -1306,8 +1325,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                         children: [
                           // Country Selection
                           const Text(
-                            'Select countries to download their airspace data for offline use. '
-                            'Downloaded data will be used to display controlled airspace on maps.',
+                            'Select countries to display controlled airspace on maps.',
                             style: TextStyle(color: Colors.grey, fontSize: 12),
                           ),
                           const SizedBox(height: 16),
@@ -1315,6 +1333,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                             height: 350,
                             child: AirspaceCountrySelector(
                               key: ValueKey(_airspaceRefreshKey),
+                              onDataChanged: _handleAirspaceDataChanged,
                             ),
                           ),
                           const SizedBox(height: 16),
