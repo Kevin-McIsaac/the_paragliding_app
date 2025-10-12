@@ -31,6 +31,9 @@ class WeatherStation {
   /// Observation type (e.g., "Airport (METAR)", "CWOP Citizen Station")
   final String? observationType;
 
+  /// URL to view detailed data for this station
+  final String? dataUrl;
+
   const WeatherStation({
     required this.id,
     required this.source,
@@ -41,6 +44,7 @@ class WeatherStation {
     this.elevation,
     this.datasetId,
     this.observationType,
+    this.dataUrl,
   });
 
   /// Create a copy with updated wind data
@@ -55,6 +59,7 @@ class WeatherStation {
       elevation: elevation,
       datasetId: datasetId,
       observationType: observationType,
+      dataUrl: dataUrl,
     );
   }
 
