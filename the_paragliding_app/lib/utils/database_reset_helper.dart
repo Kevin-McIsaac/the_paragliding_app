@@ -436,6 +436,146 @@ class DatabaseResetHelper {
     }
   }
 
+  /// Delete only flight-related data (flights, sites, wings, IGC files)
+  /// Preserves PGE sites database tables (pge_sites, pge_sites_metadata, country_codes)
+  static Future<Map<String, dynamic>> deleteFlightDataOnly() async {
+    try {
+      LoggingService.info('DatabaseResetHelper: Starting flight data deletion (preserving PGE sites)...');
+
+      // First, find all IGC files before we delete flight data
+      final igcFiles = await _findAllIGCFiles();
+      final totalIGCFiles = igcFiles.length;
+
+      LoggingService.info('DatabaseResetHelper: Found $totalIGCFiles IGC files to delete');
+
+      // Get current database stats before deletion
+      final flightCount = await _getTableCount('flights');
+      final siteCount = await _getTableCount('sites');
+      final wingCount = await _getTableCount('wings');
+      final pgeSiteCount = await _getTableCount('pge_sites');
+
+      // Calculate total IGC file size
+      int totalIGCSize = 0;
+      for (final file in igcFiles) {
+        try {
+          if (await file.exists()) {
+            totalIGCSize += await file.length();
+          }
+        } catch (e) {
+          LoggingService.warning('DatabaseResetHelper: Error checking IGC file size: ${file.path}', e);
+        }
+      }
+
+      LoggingService.info('DatabaseResetHelper: Total IGC file size: ${(totalIGCSize / 1024).toStringAsFixed(1)}KB');
+      LoggingService.info('DatabaseResetHelper: Preserving $pgeSiteCount PGE sites');
+
+      // Delete flight-related tables only (not PGE sites)
+      final db = await _databaseHelper.database;
+
+      try {
+        // Delete in correct order to respect foreign key constraints
+        await db.delete('flights');
+        await db.delete('sites');  // User's flown sites
+        await db.delete('wings');
+
+        LoggingService.info('DatabaseResetHelper: Deleted $flightCount flights, $siteCount sites, $wingCount wings');
+        LoggingService.info('DatabaseResetHelper: Preserved $pgeSiteCount PGE sites');
+      } catch (e) {
+        LoggingService.error('DatabaseResetHelper: Error deleting flight data from database', e);
+        return {
+          'success': false,
+          'message': 'Failed to delete flight data from database: $e',
+          'database': {
+            'flights_deleted': 0,
+            'sites_deleted': 0,
+            'wings_deleted': 0,
+            'pge_sites_preserved': pgeSiteCount,
+          },
+          'igc_files': {
+            'found': totalIGCFiles,
+            'deleted': 0,
+            'failed': 0,
+            'size_deleted_bytes': 0,
+          },
+        };
+      }
+
+      LoggingService.info('DatabaseResetHelper: Flight database tables cleared, now deleting IGC files...');
+
+      // Delete all IGC files
+      int deletedIGCFiles = 0;
+      int failedIGCFiles = 0;
+      int deletedIGCSize = 0;
+      final igcErrors = <String>[];
+
+      for (final file in igcFiles) {
+        try {
+          if (await file.exists()) {
+            final fileSize = await file.length();
+            await file.delete();
+            deletedIGCFiles++;
+            deletedIGCSize += fileSize;
+            LoggingService.debug('DatabaseResetHelper: Deleted IGC file: ${file.path}');
+          }
+        } catch (e) {
+          failedIGCFiles++;
+          final errorMsg = 'Failed to delete ${file.path}: $e';
+          igcErrors.add(errorMsg);
+          LoggingService.warning('DatabaseResetHelper: $errorMsg');
+        }
+      }
+
+      LoggingService.info('DatabaseResetHelper: IGC file deletion complete - $deletedIGCFiles deleted, $failedIGCFiles failed');
+      LoggingService.info('DatabaseResetHelper: Total space freed: ${(deletedIGCSize / 1024).toStringAsFixed(1)}KB');
+
+      final String message;
+      if (failedIGCFiles == 0) {
+        message = 'Flight data deleted successfully!\n\n'
+                 'Deleted: $flightCount flights, $siteCount sites, $wingCount wings\n'
+                 'Preserved: $pgeSiteCount PGE sites\n'
+                 'IGC Files: $deletedIGCFiles files (${(deletedIGCSize / 1024).toStringAsFixed(1)}KB)';
+      } else {
+        message = 'Flight data deletion completed with warnings!\n\n'
+                 'Deleted: $flightCount flights, $siteCount sites, $wingCount wings\n'
+                 'Preserved: $pgeSiteCount PGE sites\n'
+                 'IGC Files: $deletedIGCFiles deleted, $failedIGCFiles failed to delete';
+      }
+
+      return {
+        'success': true,
+        'message': message,
+        'database': {
+          'flights_deleted': flightCount,
+          'sites_deleted': siteCount,
+          'wings_deleted': wingCount,
+          'pge_sites_preserved': pgeSiteCount,
+        },
+        'igc_files': {
+          'found': totalIGCFiles,
+          'deleted': deletedIGCFiles,
+          'failed': failedIGCFiles,
+          'size_deleted_bytes': deletedIGCSize,
+          'size_deleted_kb': (deletedIGCSize / 1024).toStringAsFixed(1),
+          'errors': igcErrors,
+        },
+      };
+
+    } catch (e) {
+      LoggingService.error('DatabaseResetHelper: Error deleting flight data', e);
+      return {
+        'success': false,
+        'message': 'Error deleting flight data: $e',
+        'database': {'success': false},
+        'igc_files': {
+          'found': 0,
+          'deleted': 0,
+          'failed': 0,
+          'size_deleted_bytes': 0,
+        },
+      };
+    }
+  }
+
   /// Delete all flight data including database records AND all IGC files
   /// This is a complete data wipe - removes everything flight-related
   static Future<Map<String, dynamic>> deleteAllFlightData() async {

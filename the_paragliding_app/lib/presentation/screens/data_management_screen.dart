@@ -644,10 +644,11 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
       'Delete All Flight Data',
       'This will permanently delete ALL flight data including:\n\n'
       '• All flight records\n'
-      '• All sites\n' 
+      '• All flown sites\n'
       '• All wings\n'
       '• All IGC track files\n\n'
-      'This is a complete data wipe and cannot be undone.\n\n'
+      'PGE sites database will be preserved.\n\n'
+      'This action cannot be undone.\n\n'
       'Are you sure you want to continue?',
     );
 
@@ -663,7 +664,8 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
     _showLoadingDialog('Deleting all flight data...');
 
     try {
-      final result = await DatabaseResetHelper.deleteAllFlightData();
+      // Use deleteFlightDataOnly to preserve PGE sites database
+      final result = await DatabaseResetHelper.deleteFlightDataOnly();
       
       // Close loading dialog
       if (mounted) Navigator.of(context).pop();
@@ -1597,10 +1599,11 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                               const SizedBox(height: 12),
                               const Text(
                                 'Delete All Flight Data\n\n'
-                                '• Completely removes ALL data (database + IGC files)\n'
-                                '• Use when starting completely fresh or freeing storage space\n'
-                                '• Deletes everything - database records AND IGC files\n'
-                                '• Warning: This is irreversible - all flight data will be lost\n\n'
+                                '• Removes all flight records and IGC files\n'
+                                '• Deletes all flown sites and wings\n'
+                                '• Preserves PGE sites database\n'
+                                '• Use when starting fresh or freeing storage space\n'
+                                '• Warning: This is irreversible - flight data will be lost\n\n'
                                 'This action cannot be undone.',
                                 style: TextStyle(color: Colors.red),
                               ),
