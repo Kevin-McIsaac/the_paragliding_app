@@ -7,8 +7,9 @@ import 'presentation/screens/igc_import_screen.dart';
 import 'utils/file_sharing_handler.dart';
 import 'utils/performance_monitor.dart';
 import 'data/datasources/database_helper.dart';
+import 'services/api_keys.dart';
 
-void main() {
+void main() async {
   // Ensure Flutter is initialized
   WidgetsFlutterBinding.ensureInitialized();
   
@@ -17,13 +18,17 @@ void main() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   }
-  
-  // OPTIMIZATION: Lazy load timezone data - only needed for IGC imports  
+
+  // Initialize API keys from environment variables
+  await ApiKeys.initialize();
+  ApiKeys.logStatus(); // Log API key configuration status
+
+  // OPTIMIZATION: Lazy load timezone data - only needed for IGC imports
   // TimezoneService.initialize() will be called lazily in TimezoneService
-  
+
   // Initialize performance monitoring
   PerformanceMonitor.initializeFrameRateMonitoring();
-  
+
   runApp(const TheParaglidingApp());
 }
 

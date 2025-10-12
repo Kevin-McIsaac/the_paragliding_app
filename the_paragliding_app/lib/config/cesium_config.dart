@@ -1,18 +1,22 @@
 /// Configuration for Cesium 3D Map
-/// This file contains the Cesium Ion access token and other configuration
-/// 
-/// TODO: In production, this should be stored securely and not committed to version control
-/// Consider using:
-/// - Environment variables
-/// - Flutter secure storage
-/// - Remote configuration service
-/// - Build-time injection
 library;
 
+import '../services/api_keys.dart';
+
 class CesiumConfig {
-  // WARNING: This token should not be hardcoded in production
-  // Move to secure storage or environment variables
-  static const String ionAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIzYzkwM2EwNS00YjU2LTRiMzEtYjE3NC01ODlkYWM3MjMzNmEiLCJpZCI6MzMwMjc0LCJpYXQiOjE3NTQ3MjUxMjd9.IizVx3Z5iR9Xe1TbswK-FKidO9UoWa5pqa4t66NK8W0';
+  /// Get the Cesium Ion access token
+  /// First checks for user-configured token, then falls back to environment/default
+  static String get ionAccessToken {
+    // Get from environment/default
+    final token = ApiKeys.cesiumIonToken;
+    if (token.isNotEmpty) {
+      return token;
+    }
+
+    // Return empty string if no token configured
+    // User can still provide their own token via the UI
+    return '';
+  }
   
   // Memory management settings
   static const int tileCacheSize = 25;

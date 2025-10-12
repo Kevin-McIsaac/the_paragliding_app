@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/logging_service.dart';
+import '../services/api_keys.dart';
 import '../data/models/airspace_enums.dart';
 
 /// Available OpenAIP data layers for aviation maps
@@ -95,12 +96,20 @@ class OpenAipService {
   
   /// Get stored OpenAIP API key
   Future<String?> getApiKey() async {
-    // Restore the API key with simplified authentication method
-    return 'a75461fcd8a0e9cbca91058d23c78f4c';
+    // First check if there's a user-configured key
+    final prefs = await SharedPreferences.getInstance();
+    final userKey = prefs.getString(_apiKeyKey);
+    if (userKey != null && userKey.isNotEmpty) {
+      return userKey;
+    }
 
-    // TODO: Later implement user-configurable API keys
-    // final prefs = await SharedPreferences.getInstance();
-    // return prefs.getString(_apiKeyKey);
+    // Fall back to environment/default key
+    final defaultKey = ApiKeys.openAipApiKey;
+    if (defaultKey.isNotEmpty) {
+      return defaultKey;
+    }
+
+    return null;
   }
   
   /// Store OpenAIP API key

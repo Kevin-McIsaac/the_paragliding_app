@@ -7,6 +7,7 @@ import '../../data/models/weather_station_source.dart';
 import '../../data/models/wind_data.dart';
 import '../../utils/map_constants.dart';
 import '../logging_service.dart';
+import '../api_keys.dart';
 import 'weather_station_provider.dart';
 
 /// FFVL (French Free Flight Federation) weather beacon provider from data.ffvl.fr
@@ -25,7 +26,6 @@ class FfvlWeatherProvider implements WeatherStationProvider {
 
   // FFVL API endpoints (HTTPS with trailing slash)
   static const String _baseUrl = 'https://data.ffvl.fr/api/';
-  static const String _apiKey = '12fbb9720455a2abb825c29233ac8bd0';
 
   /// Global cache entry (single entry for all beacons)
   _GlobalCacheEntry? _globalCache;
@@ -56,8 +56,8 @@ class FfvlWeatherProvider implements WeatherStationProvider {
 
   @override
   Future<bool> isConfigured() async {
-    // API key is hardcoded for now
-    return true;
+    // Check if API key is configured
+    return ApiKeys.ffvlApiKey.isNotEmpty;
   }
 
   @override
@@ -89,7 +89,14 @@ class FfvlWeatherProvider implements WeatherStationProvider {
       if (_pendingGlobalRequest != null) {
         LoggingService.info('Waiting for pending FFVL global request');
         await _pendingGlobalRequest;
-        return _filterStationsToBounds(_globalCache!.stations, bounds);
+        // Check if the request succeeded and cache was populated
+        if (_globalCache != null) {
+          return _filterStationsToBounds(_globalCache!.stations, bounds);
+        } else {
+          // Request failed, return empty list
+          LoggingService.warning('FFVL global request completed but cache is null');
+          return [];
+        }
       }
 
       // Fetch all beacons
@@ -169,12 +176,13 @@ class FfvlWeatherProvider implements WeatherStationProvider {
       final stopwatch = Stopwatch()..start();
 
       // Fetch beacon list first
+      final apiKey = ApiKeys.ffvlApiKey;
       final beaconListUrl = Uri.parse(
-        '$_baseUrl?base=balises&r=list&mode=json&key=$_apiKey',
+        '$_baseUrl?base=balises&r=list&mode=json&key=$apiKey',
       );
 
       LoggingService.structured('FFVL_REQUEST_START', {
-        'url': beaconListUrl.toString().replaceAll(_apiKey, '***'),
+        'url': beaconListUrl.toString().replaceAll(apiKey, '***'),
         'strategy': 'fetch_all_global',
       });
 
@@ -220,7 +228,7 @@ class FfvlWeatherProvider implements WeatherStationProvider {
 
       // Fetch current measurements
       final measurementsUrl = Uri.parse(
-        '$_baseUrl?base=balises&r=releves_meteo&key=$_apiKey',
+        '$_baseUrl?base=balises&r=releves_meteo&key=$apiKey',
       );
 
       final measurementsResponse = await http.get(
@@ -381,13 +389,22 @@ class FfvlWeatherProvider implements WeatherStationProvider {
         final measurementDate = measurements['date'] as String?;
 
         if (windSpeedAvg != null && windDirection != null) {
+          // Parse timestamp safely with fallback to current time
+          DateTime timestamp = DateTime.now();
+          if (measurementDate != null) {
+            final parsed = DateTime.tryParse(measurementDate);
+            if (parsed != null) {
+              timestamp = parsed;
+            } else {
+              LoggingService.warning('Invalid measurement date format: $measurementDate');
+            }
+          }
+
           windData = WindData(
             speedKmh: windSpeedAvg,
             gustsKmh: windSpeedMax,
             directionDegrees: windDirection,
-            timestamp: measurementDate != null
-                ? DateTime.parse(measurementDate)
-                : DateTime.now(),
+            timestamp: timestamp,
           );
         }
       } else {
@@ -399,16 +416,20 @@ class FfvlWeatherProvider implements WeatherStationProvider {
 
         // Check if data is fresh (less than 1 hour old)
         if (lastDataTimestamp != null && lastWindSpeed != null && lastWindDir != null) {
-          final dataTime = DateTime.parse(lastDataTimestamp);
-          final dataAge = DateTime.now().difference(dataTime);
+          final dataTime = DateTime.tryParse(lastDataTimestamp);
+          if (dataTime != null) {
+            final dataAge = DateTime.now().difference(dataTime);
 
-          if (dataAge.inHours < 1) {
-            windData = WindData(
-              speedKmh: lastWindSpeed,
-              gustsKmh: lastWindGust,
-              directionDegrees: lastWindDir,
-              timestamp: dataTime,
-            );
+            if (dataAge.inHours < 1) {
+              windData = WindData(
+                speedKmh: lastWindSpeed,
+                gustsKmh: lastWindGust,
+                directionDegrees: lastWindDir,
+                timestamp: dataTime,
+              );
+            }
+          } else {
+            LoggingService.warning('Invalid beacon timestamp format: $lastDataTimestamp');
           }
         }
       }
@@ -584,17 +605,17 @@ class FfvlWeatherProvider implements WeatherStationProvider {
   static String _getDepartmentName(String? code) {
     if (code == null || code.isEmpty) return '';
 
-    // Handle both padded and unpadded codes
-    final normalizedCode = code.padLeft(2, '0');
-
-    // Try exact match first
-    if (_frenchDepartments.containsKey(normalizedCode)) {
-      return _frenchDepartments[normalizedCode]!;
-    }
-
-    // Try without padding for single digits
+    // Try exact match first (handles 3-digit overseas territories)
     if (_frenchDepartments.containsKey(code)) {
       return _frenchDepartments[code]!;
+    }
+
+    // For metropolitan departments (1-2 digits), try with zero padding
+    if (code.length <= 2) {
+      final normalizedCode = code.padLeft(2, '0');
+      if (_frenchDepartments.containsKey(normalizedCode)) {
+        return _frenchDepartments[normalizedCode]!;
+      }
     }
 
     // Return code if not found (shouldn't happen with complete map)
