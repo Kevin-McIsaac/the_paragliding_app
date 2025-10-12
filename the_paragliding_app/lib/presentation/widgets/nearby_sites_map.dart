@@ -40,6 +40,7 @@ class NearbySitesMap extends BaseMapWidget {
   final List<WeatherStation> weatherStations;
   final Map<String, WindData> stationWindData;
   final bool weatherStationsEnabled;
+  final int airspaceDataVersion; // Increment to trigger airspace reload
 
   const NearbySitesMap({
     super.key,
@@ -62,6 +63,7 @@ class NearbySitesMap extends BaseMapWidget {
     this.weatherStations = const [],
     this.stationWindData = const {},
     this.weatherStationsEnabled = true,
+    this.airspaceDataVersion = 0,
     super.height = 400,
     super.initialCenter,
     super.initialZoom = 10.0,
@@ -157,6 +159,17 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
              (oldWidget.maxAltitudeFt != widget.maxAltitudeFt ||
               oldWidget.airspaceClippingEnabled != widget.airspaceClippingEnabled)) {
       loadAirspaceLayers(mapController.camera.visibleBounds);
+    }
+    // Reload airspace when data version changes (new airspace data downloaded)
+    else if (widget.airspaceEnabled &&
+             oldWidget.airspaceDataVersion != widget.airspaceDataVersion) {
+      LoggingService.info('Airspace data version changed (${oldWidget.airspaceDataVersion} -> ${widget.airspaceDataVersion}), scheduling airspace reload');
+      // Schedule reload after build completes to avoid setState during build
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          loadAirspaceLayers(mapController.camera.visibleBounds);
+        }
+      });
     }
 
     // Clear weather station marker cache when any weather station parameter changes

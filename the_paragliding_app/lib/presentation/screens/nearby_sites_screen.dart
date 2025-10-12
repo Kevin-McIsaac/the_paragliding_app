@@ -38,13 +38,31 @@ import '../../services/openaip_service.dart';
 
 
 class NearbySitesScreen extends StatefulWidget {
-  const NearbySitesScreen({super.key});
+  /// Optional callback to reload data after database changes.
+  /// Used by MainNavigationScreen to coordinate refreshes across all tabs.
+  final VoidCallback? onDataChanged;
+
+  const NearbySitesScreen({
+    super.key,
+    this.onDataChanged,
+  });
 
   @override
-  State<NearbySitesScreen> createState() => _NearbySitesScreenState();
+  State<NearbySitesScreen> createState() => NearbySitesScreenState();
 }
 
-class _NearbySitesScreenState extends State<NearbySitesScreen> {
+/// State class for NearbySitesScreen.
+///
+/// Made public (not prefixed with _) to allow parent widgets to access
+/// the refreshData() method through GlobalKey in a type-safe manner.
+///
+/// Example:
+/// ```dart
+/// final key = GlobalKey<NearbySitesScreenState>();
+/// // ...
+/// await key.currentState?.refreshData();
+/// ```
+class NearbySitesScreenState extends State<NearbySitesScreen> {
   final LocationService _locationService = LocationService.instance;
   final MapController _mapController = MapController();
 
@@ -59,9 +77,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   LatLng? _mapCenterPosition;
   bool _mapReady = false; // Track if map is initialized
   double _currentZoom = 10.0; // Current zoom level (updated reactively)
-  
-  // Key to force map widget refresh when airspace settings change
-  final Key _mapWidgetKey = UniqueKey();
+  int _airspaceDataVersion = 0; // Increment to trigger airspace reload without full widget recreation
+
   static const String _mapProviderKey = 'nearby_sites_map_provider';
 
   // Preference keys for filter states
@@ -129,6 +146,45 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
 
     // Listen to search state changes to update controller
     _searchController.text = _searchManager.state.query;
+  }
+
+  /// Public method to refresh sites and airspace data.
+  ///
+  /// This method can be called by parent widgets using a GlobalKey:
+  /// ```dart
+  /// final key = GlobalKey<NearbySitesScreenState>();
+  /// // ...
+  /// await key.currentState?.refreshData();
+  /// ```
+  ///
+  /// This clears the MapBoundsManager cache and reloads both sites and airspace
+  /// for the current map bounds, which is useful after database changes
+  /// (e.g., Import IGC, Manage Sites, or downloading new airspace data).
+  Future<void> refreshData() async {
+    final currentPosition = _mapController.camera.center;
+    final currentZoom = _mapController.camera.zoom;
+
+    LoggingService.info('[REFRESH] Starting refresh | position=$currentPosition | zoom=$currentZoom');
+
+    // Clear the cache to force fresh data load
+    MapBoundsManager.instance.clearCache('nearby_sites');
+
+    // Trigger rebuild - Flutter will naturally preserve map position via mapController
+    // Increment data version to trigger didUpdateWidget in map, causing airspace reload
+    if (mounted) {
+      setState(() {
+        _airspaceDataVersion++; // Triggers didUpdateWidget without full widget recreation
+      });
+
+      // Schedule bounds reload after widget rebuild completes
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _currentBounds != null) {
+          final newPosition = _mapController.camera.center;
+          LoggingService.info('[REFRESH] Post-rebuild | old_position=$currentPosition | new_position=$newPosition | position_preserved=${currentPosition.latitude == newPosition.latitude && currentPosition.longitude == newPosition.longitude}');
+          _onBoundsChanged(_currentBounds!);
+        }
+      });
+    }
   }
 
   @override
@@ -669,10 +725,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
           _isLocationLoading = false;
         });
 
-        // Update map center to user position when location is acquired
+        // Hide location notification if location was successfully obtained
         if (position != null) {
-          _mapCenterPosition = LatLng(position.latitude, position.longitude);
-          // Hide location notification if location was successfully obtained
           _hideLocationNotification();
         }
         _updateDisplayedSites();
@@ -802,15 +856,20 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
     LoggingService.action('NearbySites', 'refresh_location', {});
     _locationService.clearCache();
     final position = await _updateUserLocation();
-    
+
     // Trigger bounds loading for the user's location area
     if (position != null) {
       final userLocation = LatLng(position.latitude, position.longitude);
+
+      // Explicitly center map on user location (only when user requests it)
+      _mapCenterPosition = userLocation;
+      _mapController.move(userLocation, _currentZoom);
+
       final bounds = LatLngBounds(
         LatLng(userLocation.latitude - 0.5, userLocation.longitude - 0.5),
         LatLng(userLocation.latitude + 0.5, userLocation.longitude + 0.5),
       );
-      
+
       // Use a short delay to allow the map to update its center
       Future.delayed(const Duration(milliseconds: 100), () {
         if (mounted) {
@@ -886,7 +945,13 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
   // Bounds-based loading methods (copied from EditSiteScreen)
   void _onBoundsChanged(LatLngBounds bounds) {
     final currentZoom = _mapController.camera.zoom;
-    LoggingService.debug('_onBoundsChanged called: zoom=$currentZoom');
+    final oldCenter = _mapCenterPosition;
+    final newCenter = _mapController.camera.center;
+
+    LoggingService.debug('[BOUNDS] _onBoundsChanged called: zoom=$currentZoom, old center=$oldCenter, new center=$newCenter');
+
+    // Always update center position for map refresh (captures pans AND zooms)
+    _mapCenterPosition = newCenter;
 
     // Update zoom overlay in real-time (also set map ready on first call)
     if (!_mapReady || _currentZoom != currentZoom) {
@@ -1408,7 +1473,7 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
             onPressed: _showMapFilterDialog,
             tooltip: 'Map Filters',
           ),
-          const AppMenuButton(),
+          AppMenuButton(onDataChanged: widget.onDataChanged),
         ],
       ),
       body: Stack(
@@ -1425,8 +1490,8 @@ class _NearbySitesScreenState extends State<NearbySitesScreen> {
                       children: [
                         // Map - using new BaseMapWidget-based implementation
                         NearbySitesMap(
-                          key: _mapWidgetKey, // Force rebuild when settings change
                           mapController: _mapController,
+                          airspaceDataVersion: _airspaceDataVersion,
                           sites: _displayedSites,
                           userLocation: _userPosition != null
                               ? LatLng(_userPosition!.latitude, _userPosition!.longitude)
