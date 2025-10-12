@@ -1313,16 +1313,32 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
         await _openAipService.setClippingEnabled(clippingEnabled);
         await _openAipService.setAirspaceEnabled(true);
 
+        // Check if filters changed (requires reload even if airspace was already enabled)
+        final filtersChanged = _excludedIcaoClasses != classesEnum ||
+                               _maxAltitudeFt != maxAltitudeFt ||
+                               _airspaceClippingEnabled != clippingEnabled;
+
         // Update local state AFTER all async operations complete
         // This ensures the map widget rebuilds with correct service state
         setState(() {
           _excludedIcaoClasses = classesEnum;
+          _maxAltitudeFt = maxAltitudeFt;
           _airspaceEnabled = true;
           _airspaceClippingEnabled = clippingEnabled;
+          // Increment version to trigger immediate airspace reload
+          if (filtersChanged || !previousAirspaceEnabled) {
+            _airspaceDataVersion++;
+          }
         });
 
         if (!previousAirspaceEnabled) {
           LoggingService.action('MapFilter', 'airspace_enabled');
+        } else if (filtersChanged) {
+          LoggingService.action('MapFilter', 'airspace_filters_changed', {
+            'classes_changed': _excludedIcaoClasses != classesEnum,
+            'altitude_changed': _maxAltitudeFt != maxAltitudeFt,
+            'clipping_changed': _airspaceClippingEnabled != clippingEnabled,
+          });
         }
       } else if (!airspaceEnabled) {
         // Disable airspace completely
@@ -1343,12 +1359,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
           });
         }
       }
-
-
-      // Refresh map to apply airspace filter changes
-      setState(() {
-        // This preserves the map position and zoom level
-      });
 
       LoggingService.structured('MAP_FILTER_APPLIED_SUCCESS', {
         'sites_enabled': sitesEnabled,
