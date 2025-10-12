@@ -25,9 +25,25 @@ class BackupDiagnosticsCache {
   /// Get cached IGC backup stats if valid
   static IGCBackupStats? getCachedIGCStats() {
     if (_isIGCStatsCacheValid()) {
-      LoggingService.debug('BackupDiagnosticsCache: Using cached IGC stats');
+      _cacheHits['igc_stats'] = (_cacheHits['igc_stats'] ?? 0) + 1;
+      final age = _igcStatsTime != null ? DateTime.now().difference(_igcStatsTime!) : null;
+      LoggingService.structured('BACKUP_CACHE_HIT', {
+        'type': 'igc_stats',
+        'age_seconds': age?.inSeconds,
+        'file_count': _cachedIGCStats?.fileCount,
+      });
       return _cachedIGCStats;
     }
+    _cacheMisses['igc_stats'] = (_cacheMisses['igc_stats'] ?? 0) + 1;
+    final reason = _cachedIGCStats == null ? 'no_data' :
+                   _igcStatsTime == null ? 'no_timestamp' : 'expired';
+    final age = _igcStatsTime != null ? DateTime.now().difference(_igcStatsTime!) : null;
+    LoggingService.structured('BACKUP_CACHE_MISS', {
+      'type': 'igc_stats',
+      'reason': reason,
+      'age_seconds': age?.inSeconds,
+      'validity_seconds': _igcStatsCacheValidity.inSeconds,
+    });
     return null;
   }
 
@@ -45,9 +61,26 @@ class BackupDiagnosticsCache {
   /// Get cached cleanup stats if valid
   static IGCCleanupStats? getCachedCleanupStats() {
     if (_isCleanupStatsCacheValid()) {
-      LoggingService.debug('BackupDiagnosticsCache: Using cached cleanup stats');
+      _cacheHits['cleanup_stats'] = (_cacheHits['cleanup_stats'] ?? 0) + 1;
+      final age = _cleanupStatsTime != null ? DateTime.now().difference(_cleanupStatsTime!) : null;
+      LoggingService.structured('BACKUP_CACHE_HIT', {
+        'type': 'cleanup_stats',
+        'age_seconds': age?.inSeconds,
+        'total_files': _cachedCleanupStats?.totalIgcFiles,
+        'orphaned_files': _cachedCleanupStats?.orphanedFiles,
+      });
       return _cachedCleanupStats;
     }
+    _cacheMisses['cleanup_stats'] = (_cacheMisses['cleanup_stats'] ?? 0) + 1;
+    final reason = _cachedCleanupStats == null ? 'no_data' :
+                   _cleanupStatsTime == null ? 'no_timestamp' : 'expired';
+    final age = _cleanupStatsTime != null ? DateTime.now().difference(_cleanupStatsTime!) : null;
+    LoggingService.structured('BACKUP_CACHE_MISS', {
+      'type': 'cleanup_stats',
+      'reason': reason,
+      'age_seconds': age?.inSeconds,
+      'validity_seconds': _cleanupStatsCacheValidity.inSeconds,
+    });
     return null;
   }
 
@@ -66,9 +99,25 @@ class BackupDiagnosticsCache {
   /// Get cached backup status if valid
   static Map<String, dynamic>? getCachedBackupStatus() {
     if (_isBackupStatusCacheValid()) {
-      LoggingService.debug('BackupDiagnosticsCache: Using cached backup status');
+      _cacheHits['backup_status'] = (_cacheHits['backup_status'] ?? 0) + 1;
+      final age = _backupStatusTime != null ? DateTime.now().difference(_backupStatusTime!) : null;
+      LoggingService.structured('BACKUP_CACHE_HIT', {
+        'type': 'backup_status',
+        'age_seconds': age?.inSeconds,
+        'backup_enabled': _cachedBackupStatus?['backupEnabled'],
+      });
       return _cachedBackupStatus;
     }
+    _cacheMisses['backup_status'] = (_cacheMisses['backup_status'] ?? 0) + 1;
+    final reason = _cachedBackupStatus == null ? 'no_data' :
+                   _backupStatusTime == null ? 'no_timestamp' : 'expired';
+    final age = _backupStatusTime != null ? DateTime.now().difference(_backupStatusTime!) : null;
+    LoggingService.structured('BACKUP_CACHE_MISS', {
+      'type': 'backup_status',
+      'reason': reason,
+      'age_seconds': age?.inSeconds,
+      'validity_seconds': _backupStatusCacheValidity.inSeconds,
+    });
     return null;
   }
 

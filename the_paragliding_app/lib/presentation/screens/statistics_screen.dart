@@ -97,15 +97,43 @@ class StatisticsScreenState extends State<StatisticsScreen> {
         'has_date_filter': startDate != null || endDate != null,
       });
       
-      // Load all statistics in parallel
+      // Load all statistics in parallel with individual timing
+      final yearlyStart = DateTime.now();
+      final wingStart = DateTime.now();
+      final siteStart = DateTime.now();
+
       final results = await Future.wait([
-        _databaseService.getYearlyStatistics(startDate: startDate, endDate: endDate),
-        _databaseService.getWingStatistics(startDate: startDate, endDate: endDate),
-        _databaseService.getSiteStatistics(startDate: startDate, endDate: endDate),
+        _databaseService.getYearlyStatistics(startDate: startDate, endDate: endDate)
+            .then((result) {
+              final yearlyDuration = DateTime.now().difference(yearlyStart);
+              LoggingService.structured('STATS_QUERY_YEARLY', {
+                'duration_ms': yearlyDuration.inMilliseconds,
+                'result_count': result.length,
+              });
+              return result;
+            }),
+        _databaseService.getWingStatistics(startDate: startDate, endDate: endDate)
+            .then((result) {
+              final wingDuration = DateTime.now().difference(wingStart);
+              LoggingService.structured('STATS_QUERY_WING', {
+                'duration_ms': wingDuration.inMilliseconds,
+                'result_count': result.length,
+              });
+              return result;
+            }),
+        _databaseService.getSiteStatistics(startDate: startDate, endDate: endDate)
+            .then((result) {
+              final siteDuration = DateTime.now().difference(siteStart);
+              LoggingService.structured('STATS_QUERY_SITE', {
+                'duration_ms': siteDuration.inMilliseconds,
+                'result_count': result.length,
+              });
+              return result;
+            }),
       ]);
-      
+
       stopwatch.stop();
-      
+
       // Calculate total flights for performance context
       int totalFlights = 0;
       double totalHours = 0.0;
@@ -113,7 +141,16 @@ class StatisticsScreenState extends State<StatisticsScreen> {
         totalFlights += stat['flight_count'] as int;
         totalHours += (stat['total_hours'] as num?)?.toDouble() ?? 0.0;
       }
-      
+
+      // Log breakdown summary
+      LoggingService.structured('STATS_LOAD_BREAKDOWN', {
+        'total_ms': stopwatch.elapsedMilliseconds,
+        'yearly_count': results[0].length,
+        'wing_count': results[1].length,
+        'site_count': results[2].length,
+        'total_flights': totalFlights,
+      });
+
       // Log performance with threshold monitoring
       LoggingService.performance(
         'Statistics Load',

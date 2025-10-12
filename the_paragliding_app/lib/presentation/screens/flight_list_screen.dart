@@ -101,19 +101,32 @@ class FlightListScreenState extends State<FlightListScreen> {
       _isLoading = true;
       _errorMessage = null;
     });
-    
+
     try {
-      final startTime = DateTime.now();
-      
+      final totalStartTime = DateTime.now();
+
       // Load flights with all joined data
+      final flightsStartTime = DateTime.now();
       final flights = await _databaseService.getAllFlights();
-      
+      final flightsDuration = DateTime.now().difference(flightsStartTime);
+
       // Get totals from database
+      final statsStartTime = DateTime.now();
       final stats = await _databaseService.getOverallStatistics();
-      
-      final duration = DateTime.now().difference(startTime);
-      LoggingService.performance('Load flights', duration, '${flights.length} flights loaded');
-      
+      final statsDuration = DateTime.now().difference(statsStartTime);
+
+      final totalDuration = DateTime.now().difference(totalStartTime);
+
+      // Log breakdown of timings
+      LoggingService.structured('FLIGHT_LIST_LOAD_BREAKDOWN', {
+        'flights_query_ms': flightsDuration.inMilliseconds,
+        'stats_query_ms': statsDuration.inMilliseconds,
+        'total_ms': totalDuration.inMilliseconds,
+        'flight_count': flights.length,
+      });
+
+      LoggingService.performance('Load flights', totalDuration, '${flights.length} flights loaded');
+
       if (mounted) {
         setState(() {
           _flights = flights;
