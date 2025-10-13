@@ -2677,23 +2677,23 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
   }
 
   Widget _buildWeatherTab(List<String> windDirections) {
+    // Handle loading and error states first
+    if (_isLoadingForecast) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_windForecast == null) {
+      return const Center(child: Text('No forecast data available'));
+    }
+
+    // Return scrollable table directly without Column wrapper
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: SingleChildScrollView(
         scrollDirection: Axis.vertical,
         child: Padding(
           padding: const EdgeInsets.all(8.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (_isLoadingForecast)
-                const Center(child: CircularProgressIndicator())
-              else if (_windForecast == null)
-                const Center(child: Text('No forecast data available'))
-              else
-                _build7DayForecastTable(windDirections),
-            ],
-          ),
+          child: _build7DayForecastTable(windDirections),
         ),
       ),
     );
@@ -2722,13 +2722,15 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     final sortedDays = dayHourIndices.keys.toList()..sort();
     final displayDays = sortedDays.take(7).toList();
 
-    return DataTable(
-      headingRowHeight: 32,
-      dataRowMinHeight: 32,
-      dataRowMaxHeight: 32,
-      columnSpacing: 0,
-      horizontalMargin: 8,
-      dataRowColor: MaterialStateProperty.all(Colors.transparent),
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 500),
+      child: DataTable(
+        headingRowHeight: 32,
+        dataRowMinHeight: 32,
+        dataRowMaxHeight: 32,
+        columnSpacing: 0,
+        horizontalMargin: 8,
+        dataRowColor: MaterialStateProperty.all(Colors.transparent),
       columns: [
         const DataColumn(label: Text('Day', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
         ...List.generate(13, (hour) => DataColumn(
@@ -2804,6 +2806,7 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
           ],
         );
       }).toList(),
+      ),
     );
   }
 
