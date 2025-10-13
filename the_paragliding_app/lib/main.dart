@@ -122,7 +122,7 @@ class _AppInitializerState extends State<AppInitializer> {
       final db = DatabaseHelper.instance;
       // Pre-warm database connection
       await db.database;
-      
+
       if (mounted) {
         setState(() {
           _isInitialized = true;
