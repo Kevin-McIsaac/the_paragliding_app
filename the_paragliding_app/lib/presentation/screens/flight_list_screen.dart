@@ -107,7 +107,7 @@ class FlightListScreenState extends State<FlightListScreen> {
     try {
       final totalStartTime = DateTime.now();
 
-      // Load flights with all joined data
+      // Load flights from database
       final flightsStartTime = DateTime.now();
       final flights = await _databaseService.getAllFlights();
       final flightsDuration = DateTime.now().difference(flightsStartTime);

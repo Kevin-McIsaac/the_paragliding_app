@@ -81,7 +81,7 @@ class DatabaseService {
       rethrow;
     }
   }
-  
+
   /// Get all flights as raw maps for isolate processing
   Future<List<Map<String, dynamic>>> getAllFlightsRaw() async {
     Database db = await _databaseHelper.database;
