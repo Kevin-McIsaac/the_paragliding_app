@@ -8,6 +8,7 @@ import 'utils/file_sharing_handler.dart';
 import 'utils/performance_monitor.dart';
 import 'data/datasources/database_helper.dart';
 import 'services/api_keys.dart';
+import 'services/performance_metrics_service.dart';
 
 void main() async {
   // Ensure Flutter is initialized
@@ -28,6 +29,7 @@ void main() async {
 
   // Initialize performance monitoring
   PerformanceMonitor.initializeFrameRateMonitoring();
+  PerformanceMetricsService.initialize();  // Initialize the metrics service for periodic summaries
 
   runApp(const TheParaglidingApp());
 }

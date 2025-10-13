@@ -31,6 +31,9 @@ class PerformanceMetricsService {
   static Timer? _summaryTimer;
   static bool _initialized = false;
 
+  // Thread-safe random instance
+  static final math.Random _random = math.Random();
+
   /// Initialize the metrics service
   static void initialize() {
     if (_initialized) return;
@@ -171,7 +174,9 @@ class PerformanceMetricsService {
     final sorted = List<int>.from(values)..sort();
 
     int percentile(double p) {
-      final index = (sorted.length * p).round().clamp(0, sorted.length - 1);
+      // Use ceil for more consistent percentile calculation
+      // This ensures we get proper distribution especially for small datasets
+      final index = (sorted.length * p).ceil().clamp(1, sorted.length) - 1;
       return sorted[index];
     }
 
@@ -209,7 +214,7 @@ class PerformanceMetricsService {
   static bool _shouldSample(String operation) {
     final rate = _samplingRates[operation] ?? 1;
     if (rate == 1) return true;
-    return math.Random().nextInt(rate) == 0;
+    return _random.nextInt(rate) == 0;
   }
 
   /// Log comprehensive performance summary

@@ -12,7 +12,8 @@ class LoggingService {
   // Operation tracking
   static String? _currentOperationId;
   static final Map<String, int> _operationCounters = {};
-  
+  static const int _maxCounterEntries = 100;  // Prevent unbounded growth
+
   // Duplicate operation detection
   static final Set<String> _recentOperations = <String>{};
 
@@ -59,16 +60,25 @@ class LoggingService {
 
   /// Log general information with duplicate detection for IGC parsing
   static void info(String message, [dynamic error, StackTrace? stackTrace]) {
-    // Suppress duplicate IGC parsing operations  
-    if (message.contains('Successfully parsed date:') || 
-        message.contains('Parsed ') && message.contains('track points')) {
-      final operationKey = 'igc_parse_${message.hashCode % 1000}';
+    // Suppress duplicate IGC parsing operations using structured keys
+    if (message.contains('Successfully parsed date:')) {
+      // Extract the date from the message for a unique key
+      final dateMatch = RegExp(r'\d{4}-\d{2}-\d{2}').firstMatch(message);
+      final operationKey = 'igc_parse_date_${dateMatch?.group(0) ?? 'unknown'}';
+      if (_isRecentDuplicateOperation(operationKey)) {
+        _logger.d('[IGC_DUPLICATE_SUPPRESSED] $message | at=logging_service.dart:${StackTrace.current.toString().split('\n')[1].split(':')[2]}');
+        return;
+      }
+    } else if (message.contains('Parsed ') && message.contains('track points')) {
+      // Extract point count for unique key
+      final pointMatch = RegExp(r'\d+').firstMatch(message);
+      final operationKey = 'igc_parse_points_${pointMatch?.group(0) ?? 'unknown'}';
       if (_isRecentDuplicateOperation(operationKey)) {
         _logger.d('[IGC_DUPLICATE_SUPPRESSED] $message | at=logging_service.dart:${StackTrace.current.toString().split('\n')[1].split(':')[2]}');
         return;
       }
     }
-    
+
     _logger.i(message, error: error, stackTrace: stackTrace);
   }
 
@@ -223,11 +233,28 @@ class LoggingService {
 
     final frequency = highFrequencyOps[operation];
     if (frequency != null) {
-      _operationCounters[operation] = (_operationCounters[operation] ?? 0) + 1;
+      _incrementCounter(operation);
       return _operationCounters[operation]! % frequency == 0;
     }
 
     return true; // Log all other operations
+  }
+
+  /// Increment counter with bounds checking to prevent memory leak
+  static void _incrementCounter(String operation) {
+    // Check if we need to clean up old entries
+    if (_operationCounters.length >= _maxCounterEntries &&
+        !_operationCounters.containsKey(operation)) {
+      // Remove oldest entries (clear 25% to avoid frequent cleanup)
+      final toRemove = _operationCounters.keys
+          .take(_maxCounterEntries ~/ 4)
+          .toList();
+      for (final key in toRemove) {
+        _operationCounters.remove(key);
+      }
+    }
+
+    _operationCounters[operation] = (_operationCounters[operation] ?? 0) + 1;
   }
 
   /// Log structured data with key-value pairs for better Claude parsing
@@ -314,8 +341,8 @@ class LoggingService {
   
   /// Start a new operation with correlation ID
   static String startOperation(String type) {
-    final count = (_operationCounters[type] ?? 0) + 1;
-    _operationCounters[type] = count;
+    _incrementCounter(type);
+    final count = _operationCounters[type] ?? 1;
     final id = '${type.toLowerCase()}_${count.toString().padLeft(3, '0')}';
     _currentOperationId = id;
     _logger.i('[WORKFLOW:$type] started | id=$id');

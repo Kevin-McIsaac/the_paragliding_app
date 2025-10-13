@@ -108,7 +108,7 @@ class DatabaseService {
     } catch (e, stackTrace) {
       LoggingService.error('DatabaseService: Failed to get flight count', e, stackTrace);
       LoggingService.database('SELECT', 'Error counting flights', e);
-      return 0; // Return 0 on error to prevent UI crash
+      rethrow; // Consistent with other methods - let caller handle error
     }
   }
 
