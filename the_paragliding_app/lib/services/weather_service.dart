@@ -322,6 +322,22 @@ class WeatherService {
     return '${locationKeys.join('|')}_${hour.toIso8601String()}';
   }
 
+  /// Get a cached forecast for a specific location
+  /// Returns null if no forecast is cached or if the forecast is stale
+  WindForecast? getCachedForecast(double lat, double lon) {
+    final cacheKey = _getLocationKey(lat, lon);
+    if (_forecastCache.containsKey(cacheKey)) {
+      final forecast = _forecastCache[cacheKey]!;
+      if (forecast.isFresh) {
+        return forecast;
+      } else {
+        // Remove stale forecast
+        _forecastCache.remove(cacheKey);
+      }
+    }
+    return null;
+  }
+
   /// Clear the forecast cache (useful for testing or memory management)
   void clearCache() {
     final clearedCount = _forecastCache.length;

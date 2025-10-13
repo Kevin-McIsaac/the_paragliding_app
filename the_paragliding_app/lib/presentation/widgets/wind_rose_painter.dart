@@ -8,9 +8,14 @@ class WindRosePainter extends CustomPainter {
   final double? windDirection; // Wind direction in degrees (0 = North)
   final Color? centerDotColor; // Optional color for center dot based on flyability
 
-  // 8 cardinal and intercardinal directions
+  // 8 directions for sectors (all directions for wind display)
   static const List<String> _allDirections = [
     'N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'
+  ];
+
+  // 4 cardinal directions for labels (cleaner display, especially at small sizes)
+  static const List<String> _labelDirections = [
+    'N', 'E', 'S', 'W'
   ];
 
   // Direction angles in degrees (North = 0°, clockwise)
@@ -73,10 +78,10 @@ class WindRosePainter extends CustomPainter {
   }
 
   void _drawWindSectors(Canvas canvas, Offset center, double radius) {
-    final gap = 5.0; // Gap size for all spacing
-    final centerDotRadius = 15.0; // Fixed size for center dot
-    final sectorOuterRadius = radius - gap; // Outer edge of wedges (5px gap from outer ring)
-    final sectorInnerRadius = centerDotRadius + gap; // Inner edge of wedges (5px gap from center dot)
+    final gap = radius * 0.05; // Gap size proportional to radius (5%)
+    final centerDotRadius = radius * 0.15; // Center dot scales with radius (15%)
+    final sectorOuterRadius = radius - gap; // Outer edge of wedges (gap from outer ring)
+    final sectorInnerRadius = centerDotRadius + gap; // Inner edge of wedges (gap from center dot)
 
     for (final direction in _allDirections) {
       final isLaunchable = launchableDirections.contains(direction);
@@ -140,7 +145,8 @@ class WindRosePainter extends CustomPainter {
   void _drawDirectionLabels(Canvas canvas, Offset center, double radius) {
     final labelRadius = radius + 15;
 
-    for (final direction in _allDirections) {
+    // Only draw labels for cardinal directions (N, E, S, W) for cleaner display
+    for (final direction in _labelDirections) {
       final angle = _directionAngles[direction]!;
       final isLaunchable = launchableDirections.contains(direction);
 
@@ -177,7 +183,7 @@ class WindRosePainter extends CustomPainter {
   }
 
   void _drawCenterPoint(Canvas canvas, Offset center, double radius) {
-    final centerDotRadius = 15.0; // Same fixed size as used in _drawWindSectors
+    final centerDotRadius = radius * 0.15; // Scale with radius (15%)
 
     // Use provided color from parent (which uses SiteMarkerPresentation logic)
     // If no color provided, fall back to theme default
@@ -191,8 +197,8 @@ class WindRosePainter extends CustomPainter {
   }
 
   void _drawWindArrow(Canvas canvas, Offset center, double radius) {
-    final gap = 3.0;
-    final centerDotRadius = 15.0;
+    final gap = radius * 0.03; // Proportional gap
+    final centerDotRadius = radius * 0.15; // Match other methods
     final arrowStartRadius = radius - gap; // Start from outer edge
     final arrowEndRadius = centerDotRadius; // End at center
 
@@ -211,7 +217,7 @@ class WindRosePainter extends CustomPainter {
     final arrowPaint = Paint()
       ..color = theme.colorScheme.outline
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.75  // Thicker arrow line for better visibility
+      ..strokeWidth = radius * 0.025  // Scale with radius (2.5% - more visible)
       ..strokeCap = StrokeCap.round;
 
     // Draw arrow line from outer edge toward center
@@ -222,7 +228,7 @@ class WindRosePainter extends CustomPainter {
     );
 
     // Draw arrowhead pointing inward (toward center)
-    final arrowheadLength = 7.0;  // Larger arrowhead for better visibility
+    final arrowheadLength = radius * 0.12;  // Scale with radius (12%)
     final arrowheadAngle = 25 * pi / 180; // Narrower angle
 
     // Arrowhead at the END point (center), pointing inward
@@ -242,10 +248,10 @@ class WindRosePainter extends CustomPainter {
   }
 
   void _drawWindSpeedText(Canvas canvas, Offset center, double radius) {
-    // Use fixed center dot radius to ensure text fits properly
-    final centerDotRadius = 15.0;
-    // Make font size relative to center dot, not full radius
-    final speedFontSize = centerDotRadius * 1.2; // Larger text to fill center dot better
+    // Use proportional center dot radius
+    final centerDotRadius = radius * 0.15;
+    // Make font size relative to center dot
+    final speedFontSize = centerDotRadius * 1.0; // Scale text with center dot
 
     // Draw speed number (centered)
     final speedTextPainter = TextPainter(

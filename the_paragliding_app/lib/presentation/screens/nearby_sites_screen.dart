@@ -10,6 +10,7 @@ import '../../data/models/site.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/airspace_enums.dart';
 import '../../data/models/wind_data.dart';
+import '../../data/models/wind_forecast.dart';
 import '../../data/models/flyability_status.dart';
 import '../../data/models/weather_station.dart';
 import '../../data/models/weather_station_source.dart';
@@ -1853,6 +1854,8 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
 
   // Wind data state
   WindData? _windData;
+  WindForecast? _windForecast;
+  bool _isLoadingForecast = false;
 
   @override
   void initState() {
@@ -1861,6 +1864,7 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     _tabController = TabController(length: 2, vsync: this); // 2 tabs: Takeoff, Weather
     _loadSiteDetails();
     _loadWindData();
+    _loadWindForecast();
   }
 
   @override
@@ -1971,6 +1975,56 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     }
   }
 
+  Future<void> _loadWindForecast() async {
+    setState(() {
+      _isLoadingForecast = true;
+    });
+
+    try {
+      // Get coordinates from either paraglidingSite or site
+      double latitude;
+      double longitude;
+
+      if (widget.paraglidingSite != null) {
+        latitude = widget.paraglidingSite!.latitude;
+        longitude = widget.paraglidingSite!.longitude;
+      } else if (widget.site != null) {
+        latitude = widget.site!.latitude;
+        longitude = widget.site!.longitude;
+      } else {
+        return;
+      }
+
+      LoggingService.info('[SITE_DIALOG] Fetching 7-day forecast for site at $latitude, $longitude');
+
+      // Fetch wind data which will cache the 7-day forecast
+      await WeatherService.instance.getWindData(
+        latitude,
+        longitude,
+        DateTime.now(),
+      );
+
+      // Access the cached forecast
+      final forecast = WeatherService.instance.getCachedForecast(latitude, longitude);
+
+      if (mounted) {
+        setState(() {
+          _windForecast = forecast;
+          _isLoadingForecast = false;
+        });
+
+        LoggingService.info('[SITE_DIALOG] 7-day forecast loaded: ${forecast?.timestamps.length ?? 0} hours');
+      }
+    } catch (e, stackTrace) {
+      LoggingService.error('Failed to fetch wind forecast for site dialog', e, stackTrace);
+      if (mounted) {
+        setState(() {
+          _isLoadingForecast = false;
+        });
+      }
+    }
+  }
+
   /// Get wind rose center dot presentation (color and tooltip) based on flyability
   SiteMarkerPresentation? _getWindRosePresentation(List<String> windDirections) {
     // If no wind data available, return null (wind rose will use default styling)
@@ -2047,7 +2101,12 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     }
     final String? siteType = widget.paraglidingSite?.siteType ?? _detailedData?['site_type'];
     final int? flightCount = widget.site?.flightCount;
-    
+
+    // Extract flight characteristics flags
+    final String? thermalFlag = _detailedData?['thermals']?.toString();
+    final String? soaringFlag = _detailedData?['soaring']?.toString();
+    final String? xcFlag = _detailedData?['xc']?.toString();
+
     // Calculate distance if user position is available
     String? distanceText;
     if (widget.userPosition != null) {
@@ -2064,7 +2123,7 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
       elevation: 16,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
-        constraints: const BoxConstraints(maxWidth: 400, maxHeight: 500),
+        constraints: const BoxConstraints(maxWidth: 400, maxHeight: 550),
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
@@ -2082,9 +2141,22 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header with name, rating, and close button
+            // Header with wind rose, name, rating, and close button
             Row(
               children: [
+                // Wind rose widget (compact size for header)
+                if (windDirections.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 12.0),
+                    child: WindRoseWidget(
+                      launchableDirections: windDirections,
+                      size: 60.0,
+                      windSpeed: _windData?.speedKmh,
+                      windDirection: _windData?.directionDegrees,
+                      centerDotColor: _getCenterDotColor(windDirections),
+                      centerDotTooltip: _getCenterDotTooltip(windDirections),
+                    ),
+                  ),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -2125,7 +2197,7 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
             // Show detailed view if we have a tab controller and either ParaglidingSite or fetched API data
             if (_tabController != null && (_detailedData != null || widget.paraglidingSite != null)) ...[
               // Overview content (always visible)
-              ..._buildOverviewContent(name, latitude, longitude, altitude, country, region, rating, siteType, windDirections, flightCount, distanceText),
+              ..._buildOverviewContent(name, latitude, longitude, altitude, country, region, rating, siteType, windDirections, flightCount, distanceText, thermalFlag, soaringFlag, xcFlag),
               
               const SizedBox(height: 8),
               
@@ -2169,7 +2241,7 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     );
   }
 
-  List<Widget> _buildOverviewContent(String name, double latitude, double longitude, int? altitude, String? country, String? region, int? rating, String? siteType, List<String> windDirections, int? flightCount, String? distanceText) {
+  List<Widget> _buildOverviewContent(String name, double latitude, double longitude, int? altitude, String? country, String? region, int? rating, String? siteType, List<String> windDirections, int? flightCount, String? distanceText, String? thermalFlag, String? soaringFlag, String? xcFlag) {
     return [
             // Row 2: Site Type + Altitude + Wind + Directions
             Row(
@@ -2298,6 +2370,44 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
               ),
               const SizedBox(height: 8),
             ],
+
+            // Flight characteristics row - show if any flags are set
+            if (thermalFlag == '1' || soaringFlag == '1' || xcFlag == '1') ...[
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  if (thermalFlag == '1')
+                    Chip(
+                      avatar: const Icon(Icons.wb_sunny, size: 16, color: Colors.orange),
+                      label: const Text('Thermals', style: TextStyle(fontSize: 12)),
+                      backgroundColor: Colors.orange.withOpacity(0.1),
+                      side: BorderSide(color: Colors.orange.withOpacity(0.3)),
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  if (soaringFlag == '1')
+                    Chip(
+                      avatar: const Icon(Icons.waves, size: 16, color: Colors.blue),
+                      label: const Text('Soaring', style: TextStyle(fontSize: 12)),
+                      backgroundColor: Colors.blue.withOpacity(0.1),
+                      side: BorderSide(color: Colors.blue.withOpacity(0.3)),
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  if (xcFlag == '1')
+                    Chip(
+                      avatar: const Icon(Icons.flight_takeoff, size: 16, color: Colors.green),
+                      label: const Text('Cross Country', style: TextStyle(fontSize: 12)),
+                      backgroundColor: Colors.green.withOpacity(0.1),
+                      side: BorderSide(color: Colors.green.withOpacity(0.3)),
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                ],
+              ),
+            ],
     ];
   }
 
@@ -2334,6 +2444,29 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
             if (_detailedData!['takeoff_description'] != null && _detailedData!['takeoff_description']!.toString().isNotEmpty) ...[
               Text(
                 _detailedData!['takeoff_description']!.toString(),
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // ===== WEATHER SECTION =====
+            if (_detailedData!['weather'] != null && _detailedData!['weather']!.toString().isNotEmpty) ...[
+              Row(
+                children: [
+                  Icon(Icons.cloud, size: 18, color: Colors.grey[300]),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Weather Information',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[300],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _detailedData!['weather']!.toString(),
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 16),
@@ -2544,87 +2677,146 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
   }
 
   Widget _buildWeatherTab(List<String> windDirections) {
-    // Extract weather information early for better layout control
-    final weatherInfo = _detailedData?['weather']?.toString();
-    final thermalFlag = _detailedData?['thermals']?.toString();
-    final soaringFlag = _detailedData?['soaring']?.toString();
-    final xcFlag = _detailedData?['xc']?.toString();
-
-    return Scrollbar(
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
       child: SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (_isLoadingDetails)
-              const Center(child: CircularProgressIndicator())
-            else if (_loadingError != null)
-              Center(child: Text(_loadingError!, style: TextStyle(color: Colors.red)))
-            else ...[
-              // Compact single-column layout with inline wind rose
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+        scrollDirection: Axis.vertical,
+        child: Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_isLoadingForecast)
+                const Center(child: CircularProgressIndicator())
+              else if (_windForecast == null)
+                const Center(child: Text('No forecast data available'))
+              else
+                _build7DayForecastTable(windDirections),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _build7DayForecastTable(List<String> windDirections) {
+    if (_windForecast == null) return const SizedBox.shrink();
+
+    // Group forecast data by day
+    final now = DateTime.now();
+    final Map<String, List<int>> dayHourIndices = {};
+
+    for (int i = 0; i < _windForecast!.timestamps.length; i++) {
+      final timestamp = _windForecast!.timestamps[i];
+      final hour = timestamp.hour;
+
+      // Only include hours between 7am and 7pm
+      if (hour >= 7 && hour <= 19) {
+        final dayKey = '${timestamp.year}-${timestamp.month}-${timestamp.day}';
+        dayHourIndices.putIfAbsent(dayKey, () => []);
+        dayHourIndices[dayKey]!.add(i);
+      }
+    }
+
+    // Take first 7 days only
+    final sortedDays = dayHourIndices.keys.toList()..sort();
+    final displayDays = sortedDays.take(7).toList();
+
+    return DataTable(
+      headingRowHeight: 32,
+      dataRowMinHeight: 32,
+      dataRowMaxHeight: 32,
+      columnSpacing: 0,
+      horizontalMargin: 8,
+      dataRowColor: MaterialStateProperty.all(Colors.transparent),
+      columns: [
+        const DataColumn(label: Text('Day', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+        ...List.generate(13, (hour) => DataColumn(
+          label: Text('${hour + 7}h', style: const TextStyle(fontSize: 10)),
+        )),
+      ],
+      rows: displayDays.map((dayKey) {
+        final indices = dayHourIndices[dayKey]!;
+        final dayDate = _windForecast!.timestamps[indices.first];
+        final dayName = _formatDayName(dayDate);
+
+        return DataRow(
+          cells: [
+            DataCell(Text(dayName, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500))),
+            ...List.generate(13, (hourOffset) {
+              final targetHour = 7 + hourOffset;
+              // Find index for this specific hour
+              final index = indices.firstWhere(
+                (i) => _windForecast!.timestamps[i].hour == targetHour,
+                orElse: () => -1,
+              );
+
+              if (index == -1) {
+                return const DataCell(Text('-', style: TextStyle(fontSize: 10)));
+              }
+
+              final speed = _windForecast!.speedsKmh[index];
+              final direction = _windForecast!.directionsDegs[index];
+              final gusts = _windForecast!.gustsKmh[index];
+
+              // Calculate flyability
+              final windData = WindData(
+                speedKmh: speed,
+                directionDegrees: direction,
+                gustsKmh: gusts,
+                timestamp: _windForecast!.timestamps[index],
+              );
+
+              final isFlyable = windDirections.isNotEmpty && windData.isFlyable(windDirections, 25.0, 30.0);
+              final isStrong = speed > 20 || gusts > 25;
+
+              Color bgColor;
+              if (!isFlyable) {
+                bgColor = Colors.red.withOpacity(0.2);
+              } else if (isStrong) {
+                bgColor = Colors.orange.withOpacity(0.2);
+              } else {
+                bgColor = Colors.green.withOpacity(0.2);
+              }
+
+              return DataCell(
+                Container(
+                  width: 32,
+                  height: 32,
+                  color: bgColor,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // Wind rose on the left
-                      Padding(
-                        padding: const EdgeInsets.only(right: 12.0),
-                        child: WindRoseWidget(
-                          launchableDirections: windDirections,
-                          size: 100.0,
-                          windSpeed: _windData?.speedKmh,
-                          windDirection: _windData?.directionDegrees,
-                          centerDotColor: _getCenterDotColor(windDirections),
-                          centerDotTooltip: _getCenterDotTooltip(windDirections),
-                        ),
+                      Transform.rotate(
+                        angle: direction * 3.14159 / 180,
+                        child: const Icon(Icons.arrow_upward, size: 10),
                       ),
-                      // Weather text on the right, flexible to use remaining space
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Weather description
-                            if (weatherInfo != null && weatherInfo.isNotEmpty) ...[
-                              Text(
-                                weatherInfo,
-                                style: Theme.of(context).textTheme.bodyMedium,
-                                softWrap: true,
-                              ),
-                              const SizedBox(height: 8),
-                            ],
-
-                            // Flight characteristics
-                            if (thermalFlag == '1' || soaringFlag == '1' || xcFlag == '1') ...[
-                              _buildCompactFlightCharacteristics(thermalFlag, soaringFlag, xcFlag),
-                            ],
-
-                            // If no weather content at all
-                            if ((weatherInfo == null || weatherInfo.isEmpty) &&
-                                thermalFlag != '1' && soaringFlag != '1' && xcFlag != '1') ...[
-                              Text(
-                                'No weather information available for this site.',
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  color: Colors.grey.shade600,
-                                ),
-                                softWrap: true,
-                              ),
-                            ],
-                          ],
-                        ),
+                      Text('${speed.round()}',
+                        style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold, height: 1.0),
                       ),
                     ],
                   ),
-                ],
-              ),
-            ],
+                ),
+              );
+            }),
           ],
-        ),
-      ),
-      ),
+        );
+      }).toList(),
     );
+  }
+
+  String _formatDayName(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final checkDate = DateTime(date.year, date.month, date.day);
+
+    if (checkDate == today) return 'Today';
+    if (checkDate == today.add(const Duration(days: 1))) return 'Tomorrow';
+
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return '${days[date.weekday - 1]} ${date.day}/${date.month}';
   }
 
   Widget _buildCompactFlightCharacteristics(String? thermalFlag, String? soaringFlag, String? xcFlag) {
