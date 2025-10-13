@@ -1,6 +1,7 @@
 import 'package:logger/logger.dart';
 import 'package:flutter/foundation.dart';
 import 'claude_log_printer.dart';
+import 'performance_metrics_service.dart';
 
 /// Centralized logging service for The Paragliding App application
 class LoggingService {
@@ -86,12 +87,66 @@ class LoggingService {
     _logger.f(message, error: error, stackTrace: stackTrace);
   }
 
-  /// Log database operations with structured format
+  /// Log database operations with structured format and performance tracking
   static void database(String operation, String message, [dynamic error]) {
     if (error != null) {
       _logger.e('[DB:$operation] $message | error=$error');
     } else {
       _logger.d('[DB:$operation] $message');
+    }
+  }
+
+  /// Log database query with SQL and performance tracking
+  static void databaseQuery(String operation, String sql, Duration duration, {
+    int? resultCount,
+    Map<String, dynamic>? parameters,
+  }) {
+    final ms = duration.inMilliseconds;
+
+    // Track in PerformanceMetricsService
+    PerformanceMetricsService.trackOperation(
+      'db_$operation',
+      ms,
+      sql: sql,
+      resultCount: resultCount,
+      metadata: parameters,
+    );
+
+    // Only log if slow or sampled
+    if (ms > 100 || _shouldLogPerformance('database_query')) {
+      structured('DB_QUERY', {
+        'operation': operation,
+        'duration_ms': ms,
+        'result_count': resultCount ?? 0,
+        if (ms > 500) 'sql': sql, // Only include SQL for slow queries
+        if (parameters != null && parameters.isNotEmpty) 'params': parameters,
+      });
+    }
+  }
+
+  /// Log cache operations with hit/miss tracking
+  static void cache(String cacheName, bool hit, {
+    String? key,
+    int? sizeBytes,
+    Duration? lookupTime,
+  }) {
+    // Track in PerformanceMetricsService
+    PerformanceMetricsService.trackCacheOperation(
+      cacheName,
+      hit,
+      sizeBytes: sizeBytes,
+      key: key,
+    );
+
+    // Only log if miss or slow lookup
+    if (!hit || (lookupTime != null && lookupTime.inMilliseconds > 10)) {
+      structured('CACHE_OPERATION', {
+        'cache': cacheName,
+        'hit': hit,
+        if (key != null) 'key': key,
+        if (sizeBytes != null) 'size_bytes': sizeBytes,
+        if (lookupTime != null) 'lookup_ms': lookupTime.inMilliseconds,
+      });
     }
   }
 
@@ -131,6 +186,13 @@ class LoggingService {
   static void performance(String operation, Duration duration, [String? details]) {
     final ms = duration.inMilliseconds;
 
+    // Track in PerformanceMetricsService for percentile tracking
+    PerformanceMetricsService.trackOperation(
+      operation,
+      ms,
+      metadata: details != null ? {'details': details} : null,
+    );
+
     // Build base message
     final message = details != null
         ? '[PERF] $operation | ${ms}ms | $details'
@@ -144,8 +206,28 @@ class LoggingService {
       _logger.w('[PERF_THRESHOLD_$severity] $operation | actual=${ms}ms | target=${threshold}ms$detailsStr');
     }
 
-    // Log normal performance metric
-    _logger.d(message);
+    // Reduce duplicate [PERF] logs - only log if significant
+    if (threshold == null || ms > threshold || _shouldLogPerformance(operation)) {
+      _logger.d(message);
+    }
+  }
+
+  /// Determine if performance metric should be logged to reduce duplicates
+  static bool _shouldLogPerformance(String operation) {
+    // Log every Nth performance metric for high-frequency operations
+    const highFrequencyOps = {
+      'database_query': 10,
+      'cache_lookup': 20,
+      'widget_rebuild': 50,
+    };
+
+    final frequency = highFrequencyOps[operation];
+    if (frequency != null) {
+      _operationCounters[operation] = (_operationCounters[operation] ?? 0) + 1;
+      return _operationCounters[operation]! % frequency == 0;
+    }
+
+    return true; // Log all other operations
   }
 
   /// Log structured data with key-value pairs for better Claude parsing

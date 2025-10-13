@@ -52,19 +52,34 @@ class DatabaseService {
 
   /// Get all flights ordered by date (most recent first) with launch site names
   Future<List<Flight>> getAllFlights() async {
-    Database db = await _databaseHelper.database;
-    List<Map<String, dynamic>> maps = await db.rawQuery('''
-      SELECT f.*, 
-             ls.name as launch_site_name
-      FROM flights f
-      LEFT JOIN sites ls ON f.launch_site_id = ls.id
-      ORDER BY f.date DESC, f.launch_time DESC
-    ''');
-    
-    final flights = maps.map((map) => Flight.fromMap(map)).toList();
-    LoggingService.debug('DatabaseService: Retrieved ${flights.length} flights');
-    
-    return flights;
+    final stopwatch = Stopwatch()..start();
+    try {
+      Database db = await _databaseHelper.database;
+
+      final sql = '''
+        SELECT f.*,
+               ls.name as launch_site_name
+        FROM flights f
+        LEFT JOIN sites ls ON f.launch_site_id = ls.id
+        ORDER BY f.date DESC, f.launch_time DESC
+      ''';
+
+      List<Map<String, dynamic>> maps = await db.rawQuery(sql);
+      stopwatch.stop();
+
+      LoggingService.databaseQuery('getAllFlights', sql, stopwatch.elapsed,
+        resultCount: maps.length);
+
+      final flights = maps.map((map) => Flight.fromMap(map)).toList();
+      LoggingService.debug('DatabaseService: Retrieved ${flights.length} flights');
+
+      return flights;
+    } catch (e, stackTrace) {
+      stopwatch.stop();
+      LoggingService.error('DatabaseService: Failed to get all flights', e, stackTrace);
+      LoggingService.database('SELECT', 'Error fetching flights after ${stopwatch.elapsedMilliseconds}ms', e);
+      rethrow;
+    }
   }
   
   /// Get all flights as raw maps for isolate processing
@@ -84,12 +99,17 @@ class DatabaseService {
   
   /// Get total number of flights
   Future<int> getFlightCount() async {
-    
-    Database db = await _databaseHelper.database;
-    final result = await db.rawQuery('SELECT COUNT(*) as count FROM flights');
-    final count = result.first['count'] as int;
-    
-    return count;
+    try {
+      Database db = await _databaseHelper.database;
+      final result = await db.rawQuery('SELECT COUNT(*) as count FROM flights');
+      final count = result.first['count'] as int;
+
+      return count;
+    } catch (e, stackTrace) {
+      LoggingService.error('DatabaseService: Failed to get flight count', e, stackTrace);
+      LoggingService.database('SELECT', 'Error counting flights', e);
+      return 0; // Return 0 on error to prevent UI crash
+    }
   }
 
   /// Get a specific flight by ID
@@ -112,34 +132,44 @@ class DatabaseService {
 
   /// Update an existing flight
   Future<int> updateFlight(Flight flight) async {
-    
-    Database db = await _databaseHelper.database;
-    var map = flight.toMap();
-    map['updated_at'] = DateTime.now().toIso8601String();
-    
-    final result = await db.update(
-      'flights',
-      map,
-      where: 'id = ?',
-      whereArgs: [flight.id],
-    );
-    
-    LoggingService.database('UPDATE', 'Updated flight ${flight.id}');
-    return result;
+    try {
+      Database db = await _databaseHelper.database;
+      var map = flight.toMap();
+      map['updated_at'] = DateTime.now().toIso8601String();
+
+      final result = await db.update(
+        'flights',
+        map,
+        where: 'id = ?',
+        whereArgs: [flight.id],
+      );
+
+      LoggingService.database('UPDATE', 'Updated flight ${flight.id}');
+      return result;
+    } catch (e, stackTrace) {
+      LoggingService.error('DatabaseService: Failed to update flight ${flight.id}', e, stackTrace);
+      LoggingService.database('UPDATE', 'Error updating flight ${flight.id}', e);
+      rethrow;
+    }
   }
 
   /// Delete a flight by ID
   Future<int> deleteFlight(int id) async {
-    
-    Database db = await _databaseHelper.database;
-    final result = await db.delete(
-      'flights',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-    
-    LoggingService.database('DELETE', 'Deleted flight $id');
-    return result;
+    try {
+      Database db = await _databaseHelper.database;
+      final result = await db.delete(
+        'flights',
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+
+      LoggingService.database('DELETE', 'Deleted flight $id');
+      return result;
+    } catch (e, stackTrace) {
+      LoggingService.error('DatabaseService: Failed to delete flight $id', e, stackTrace);
+      LoggingService.database('DELETE', 'Error deleting flight $id', e);
+      rethrow;
+    }
   }
 
   // ========================================================================
@@ -586,10 +616,18 @@ class DatabaseService {
   // ========================================================================
   
   Future<int> insertSite(Site site) async {
-    Database db = await _databaseHelper.database;
-    var map = site.toMap();
-    map.remove('id');
-    return await db.insert('sites', map);
+    try {
+      Database db = await _databaseHelper.database;
+      var map = site.toMap();
+      map.remove('id');
+      final result = await db.insert('sites', map);
+      LoggingService.database('INSERT', 'Successfully inserted site with ID $result');
+      return result;
+    } catch (e, stackTrace) {
+      LoggingService.error('DatabaseService: Failed to insert site', e, stackTrace);
+      LoggingService.database('INSERT', 'Error inserting site: ${site.name}', e);
+      rethrow;
+    }
   }
 
   Future<List<Site>> getAllSites() async {

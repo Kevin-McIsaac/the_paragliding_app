@@ -95,12 +95,15 @@ class FlightTrackLoader {
         cachedEntry.fileSize == fileSize) {
       // Cache hit with valid file
       fullIgcFile = cachedEntry.file;
-      
+
       // Update LRU access order
       _accessOrder.remove(cacheKey);
       _accessOrder.add(cacheKey); // Move to end (most recent)
-      
+
       LoggingService.debug('$logContext: Using cached IGC file for flight ${flight.id}');
+      LoggingService.cache('IGC_FILE_CACHE', true,
+        key: cacheKey,
+        sizeBytes: fileSize);
     } else {
       // Cache miss or stale entry
       if (cachedEntry != null) {
@@ -109,11 +112,19 @@ class FlightTrackLoader {
         _accessOrder.remove(cacheKey);
       } else {
         LoggingService.info('$logContext: Parsing IGC file from disk for flight ${flight.id}');
+        LoggingService.cache('IGC_FILE_CACHE', false,
+          key: cacheKey,
+          sizeBytes: fileSize);
       }
-      
+
       // Parse full IGC file
+      final parseStart = DateTime.now();
       fullIgcFile = await _parser.parseFile(flight.trackLogPath!);
-      
+      final parseDuration = DateTime.now().difference(parseStart);
+
+      LoggingService.performance('IGC_FILE_PARSE', parseDuration,
+        'points: ${fullIgcFile.trackPoints.length}, size: ${fileSize ~/ 1024}KB');
+
       // Evict LRU entry if cache is full
       if (_igcCache.length >= _maxCacheSize && _accessOrder.isNotEmpty) {
         final lruKey = _accessOrder.removeAt(0); // Remove least recently used
