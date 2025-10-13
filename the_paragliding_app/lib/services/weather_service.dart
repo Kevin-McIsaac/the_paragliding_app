@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import '../data/models/wind_data.dart';
+import '../data/models/wind_forecast.dart';
 import '../utils/site_utils.dart';
 import 'logging_service.dart';
 
@@ -11,11 +12,12 @@ class WeatherService {
   static final WeatherService instance = WeatherService._();
   WeatherService._();
 
-  /// Cache for wind data: "lat_lon_hour" -> WindData
-  final Map<String, WindData> _cache = {};
+  /// Cache for 7-day wind forecasts: "lat_lon" -> WindForecast
+  /// Changed from single-hour cache to full forecast cache for better efficiency
+  final Map<String, WindForecast> _forecastCache = {};
 
   /// Cache for pending requests to prevent duplicate API calls
-  final Map<String, Future<WindData?>> _pendingRequests = {};
+  final Map<String, Future<WindForecast?>> _pendingRequests = {};
 
   /// Cache for pending batch requests to prevent duplicate batch API calls
   final Map<String, Future<Map<String, WindData>>> _pendingBatchRequests = {};
@@ -29,42 +31,51 @@ class WeatherService {
     double lon,
     DateTime dateTime,
   ) async {
-    // Generate cache key
-    final cacheKey = _getCacheKey(lat, lon, dateTime);
+    // Generate cache key (location-only, no time component)
+    final cacheKey = _getLocationKey(lat, lon);
 
-    // Check cache first
-    if (_cache.containsKey(cacheKey)) {
-      LoggingService.info('Weather cache hit for $cacheKey');
-      return _cache[cacheKey];
+    // Check forecast cache first
+    if (_forecastCache.containsKey(cacheKey)) {
+      final forecast = _forecastCache[cacheKey]!;
+
+      // Check if forecast is still fresh
+      if (forecast.isFresh) {
+        LoggingService.info('Weather forecast cache hit for $cacheKey');
+        return forecast.getAtTime(dateTime);
+      } else {
+        // Forecast is stale, remove it
+        LoggingService.info('Removing stale forecast for $cacheKey');
+        _forecastCache.remove(cacheKey);
+      }
     }
 
     // Check if request is already pending
     if (_pendingRequests.containsKey(cacheKey)) {
       LoggingService.info('Waiting for pending weather request: $cacheKey');
-      return _pendingRequests[cacheKey];
+      final forecast = await _pendingRequests[cacheKey];
+      return forecast?.getAtTime(dateTime);
     }
 
     // Create new request
-    final future = _fetchWindData(lat, lon, dateTime, cacheKey);
+    final future = _fetchWindForecast(lat, lon, cacheKey);
     _pendingRequests[cacheKey] = future;
 
     try {
-      final result = await future;
-      return result;
+      final forecast = await future;
+      return forecast?.getAtTime(dateTime);
     } finally {
       _pendingRequests.remove(cacheKey);
     }
   }
 
-  /// Fetch wind data from Open-Meteo API
-  Future<WindData?> _fetchWindData(
+  /// Fetch 7-day wind forecast from Open-Meteo API
+  Future<WindForecast?> _fetchWindForecast(
     double lat,
     double lon,
-    DateTime dateTime,
     String cacheKey,
   ) async {
     try {
-      LoggingService.info('Fetching weather data for $lat, $lon at ${dateTime.toIso8601String()}');
+      LoggingService.info('Fetching 7-day weather forecast for $lat, $lon');
 
       // Build API URL
       final url = Uri.parse(
@@ -88,86 +99,44 @@ class WeatherService {
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body);
 
-        // Parse hourly data
+        // Parse full 7-day hourly forecast
         final hourlyData = json['hourly'] as Map<String, dynamic>;
-        final times = List<String>.from(hourlyData['time']);
-        final windSpeeds = List<num>.from(hourlyData['wind_speed_10m']);
-        final windDirections = List<num>.from(hourlyData['wind_direction_10m']);
-        final windGusts = List<num>.from(hourlyData['wind_gusts_10m']);
 
-        // Find the closest hour to requested time
-        final index = _findClosestTimeIndex(times, dateTime);
+        // Create forecast from API response
+        final forecast = WindForecast.fromOpenMeteo(
+          latitude: lat,
+          longitude: lon,
+          hourlyData: hourlyData,
+        );
 
-        if (index >= 0 && index < times.length) {
-          final windData = WindData(
-            speedKmh: windSpeeds[index].toDouble(),
-            directionDegrees: windDirections[index].toDouble(),
-            gustsKmh: windGusts[index].toDouble(),
-            timestamp: DateTime.parse(times[index]),
-          );
+        // Cache the full forecast
+        _forecastCache[cacheKey] = forecast;
 
-          // Cache the result
-          _cache[cacheKey] = windData;
+        LoggingService.structured('WEATHER_FORECAST_FETCHED', {
+          'lat': lat,
+          'lon': lon,
+          'hours_count': forecast.timestamps.length,
+          'time_range': forecast.timeRange,
+          'memory_bytes': forecast.approximateMemorySize,
+        });
 
-          LoggingService.structured('WEATHER_DATA_FETCHED', {
-            'lat': lat,
-            'lon': lon,
-            'time': dateTime.toIso8601String(),
-            'wind_speed': windData.speedKmh,
-            'wind_direction': windData.compassDirection,
-            'wind_gusts': windData.gustsKmh,
-          });
-
-          return windData;
-        }
+        return forecast;
       } else {
         LoggingService.error('Weather API error: ${response.statusCode} - ${response.body}');
       }
     } catch (e, stackTrace) {
-      LoggingService.error('Failed to fetch weather data', e, stackTrace);
+      LoggingService.error('Failed to fetch weather forecast', e, stackTrace);
     }
 
     return null;
   }
 
-  /// Find the index of the time closest to the target
-  int _findClosestTimeIndex(List<String> times, DateTime target) {
-    int closestIndex = -1;
-    Duration closestDiff = const Duration(days: 365);
-
-    for (int i = 0; i < times.length; i++) {
-      final time = DateTime.parse(times[i]);
-      final diff = time.difference(target).abs();
-
-      if (diff < closestDiff) {
-        closestDiff = diff;
-        closestIndex = i;
-      }
-
-      // If we find an exact match or close enough (within 30 minutes), use it
-      if (diff.inMinutes <= 30) {
-        return i;
-      }
-    }
-
-    return closestIndex;
-  }
-
-  /// Generate cache key based on location (1km grid) and hour
-  String _getCacheKey(double lat, double lon, DateTime dateTime) {
-    // Round to approximately 1km grid (0.01 degrees ≈ 1km)
+  /// Generate cache key based on location only (no time component)
+  /// Round to approximately 1km grid (0.01 degrees ≈ 1km)
+  String _getLocationKey(double lat, double lon) {
     final gridLat = (lat * 100).round() / 100;
     final gridLon = (lon * 100).round() / 100;
-
-    // Round to hour
-    final hour = DateTime(
-      dateTime.year,
-      dateTime.month,
-      dateTime.day,
-      dateTime.hour,
-    );
-
-    return '${gridLat.toStringAsFixed(2)}_${gridLon.toStringAsFixed(2)}_${hour.toIso8601String()}';
+    return '${gridLat.toStringAsFixed(2)}_${gridLon.toStringAsFixed(2)}';
   }
 
   /// Get wind data for multiple locations in a single batch API call
@@ -202,18 +171,32 @@ class WeatherService {
       return _pendingBatchRequests[batchKey]!;
     }
 
-    // Check cache first - separate cached from uncached locations
+    // Check forecast cache first - separate cached from uncached locations
     final results = <String, WindData>{};
     final uncachedLocations = <LatLng>[];
 
     for (final location in locations) {
-      final cacheKey = _getCacheKey(location.latitude, location.longitude, dateTime);
-      if (_cache.containsKey(cacheKey)) {
-        final locationKey = SiteUtils.createSiteKey(location.latitude, location.longitude);
-        results[locationKey] = _cache[cacheKey]!;
-      } else {
-        uncachedLocations.add(location);
+      final cacheKey = _getLocationKey(location.latitude, location.longitude);
+
+      // Check if we have a fresh forecast for this location
+      if (_forecastCache.containsKey(cacheKey)) {
+        final forecast = _forecastCache[cacheKey]!;
+
+        if (forecast.isFresh) {
+          // Get wind data at requested time from cached forecast
+          final windData = forecast.getAtTime(dateTime);
+          if (windData != null) {
+            final locationKey = SiteUtils.createSiteKey(location.latitude, location.longitude);
+            results[locationKey] = windData;
+            continue; // Skip adding to uncached list
+          }
+        } else {
+          // Forecast is stale, remove it
+          _forecastCache.remove(cacheKey);
+        }
       }
+
+      uncachedLocations.add(location);
     }
 
     // If all locations are cached, return immediately
@@ -226,7 +209,7 @@ class WeatherService {
     }
 
     // Fetch uncached locations
-    final future = _fetchWindDataBatch(uncachedLocations, dateTime);
+    final future = _fetchWindForecastBatch(uncachedLocations, dateTime);
     _pendingBatchRequests[batchKey] = future;
 
     try {
@@ -238,8 +221,8 @@ class WeatherService {
     }
   }
 
-  /// Fetch wind data for multiple locations from Open-Meteo batch API
-  Future<Map<String, WindData>> _fetchWindDataBatch(
+  /// Fetch 7-day wind forecasts for multiple locations from Open-Meteo batch API
+  Future<Map<String, WindData>> _fetchWindForecastBatch(
     List<LatLng> locations,
     DateTime dateTime,
   ) async {
@@ -289,29 +272,23 @@ class WeatherService {
           final locationData = jsonArray[i] as Map<String, dynamic>;
           final location = locations[i];
 
-          // Parse hourly data
+          // Parse full 7-day hourly forecast
           final hourlyData = locationData['hourly'] as Map<String, dynamic>;
-          final times = List<String>.from(hourlyData['time']);
-          final windSpeeds = List<num>.from(hourlyData['wind_speed_10m']);
-          final windDirections = List<num>.from(hourlyData['wind_direction_10m']);
-          final windGusts = List<num>.from(hourlyData['wind_gusts_10m']);
 
-          // Find the closest hour to requested time
-          final index = _findClosestTimeIndex(times, dateTime);
+          // Create forecast from API response
+          final forecast = WindForecast.fromOpenMeteo(
+            latitude: location.latitude,
+            longitude: location.longitude,
+            hourlyData: hourlyData,
+          );
 
-          if (index >= 0 && index < times.length) {
-            final windData = WindData(
-              speedKmh: windSpeeds[index].toDouble(),
-              directionDegrees: windDirections[index].toDouble(),
-              gustsKmh: windGusts[index].toDouble(),
-              timestamp: DateTime.parse(times[index]),
-            );
+          // Cache the full forecast
+          final cacheKey = _getLocationKey(location.latitude, location.longitude);
+          _forecastCache[cacheKey] = forecast;
 
-            // Cache the result
-            final cacheKey = _getCacheKey(location.latitude, location.longitude, dateTime);
-            _cache[cacheKey] = windData;
-
-            // Add to results using SiteUtils for consistent key format
+          // Get wind data at requested time for immediate results
+          final windData = forecast.getAtTime(dateTime);
+          if (windData != null) {
             final locationKey = SiteUtils.createSiteKey(location.latitude, location.longitude);
             results[locationKey] = windData;
           }
@@ -323,12 +300,13 @@ class WeatherService {
           'requested_count': locations.length,
           'fetched_count': results.length,
           'duration_ms': stopwatch.elapsedMilliseconds,
+          'forecasts_cached': _forecastCache.length,
         });
       } else {
         LoggingService.error('Weather batch API error: ${response.statusCode} - ${response.body}');
       }
     } catch (e, stackTrace) {
-      LoggingService.error('Failed to fetch batch weather data', e, stackTrace);
+      LoggingService.error('Failed to fetch batch weather forecasts', e, stackTrace);
     }
 
     return results;
@@ -344,18 +322,38 @@ class WeatherService {
     return '${locationKeys.join('|')}_${hour.toIso8601String()}';
   }
 
-  /// Clear the cache (useful for testing or memory management)
+  /// Clear the forecast cache (useful for testing or memory management)
   void clearCache() {
-    _cache.clear();
-    LoggingService.info('Weather cache cleared');
+    final clearedCount = _forecastCache.length;
+    _forecastCache.clear();
+    LoggingService.info('Weather forecast cache cleared: $clearedCount forecasts removed');
   }
 
   /// Get cache statistics for debugging
   Map<String, dynamic> getCacheStats() {
+    // Calculate total memory usage
+    int totalMemory = 0;
+    int freshCount = 0;
+    int staleCount = 0;
+
+    for (final forecast in _forecastCache.values) {
+      totalMemory += forecast.approximateMemorySize;
+      if (forecast.isFresh) {
+        freshCount++;
+      } else {
+        staleCount++;
+      }
+    }
+
     return {
-      'size': _cache.length,
+      'forecast_count': _forecastCache.length,
+      'fresh_forecasts': freshCount,
+      'stale_forecasts': staleCount,
       'pending_requests': _pendingRequests.length,
-      'keys': _cache.keys.toList(),
+      'pending_batch_requests': _pendingBatchRequests.length,
+      'total_memory_bytes': totalMemory,
+      'total_memory_kb': (totalMemory / 1024).toStringAsFixed(1),
+      'keys': _forecastCache.keys.toList(),
     };
   }
 }
