@@ -1,6 +1,7 @@
 import 'package:logger/logger.dart';
 import 'package:flutter/foundation.dart';
 import 'claude_log_printer.dart';
+import 'performance_metrics_service.dart';
 
 /// Centralized logging service for The Paragliding App application
 class LoggingService {
@@ -11,7 +12,8 @@ class LoggingService {
   // Operation tracking
   static String? _currentOperationId;
   static final Map<String, int> _operationCounters = {};
-  
+  static const int _maxCounterEntries = 100;  // Prevent unbounded growth
+
   // Duplicate operation detection
   static final Set<String> _recentOperations = <String>{};
 
@@ -58,16 +60,25 @@ class LoggingService {
 
   /// Log general information with duplicate detection for IGC parsing
   static void info(String message, [dynamic error, StackTrace? stackTrace]) {
-    // Suppress duplicate IGC parsing operations  
-    if (message.contains('Successfully parsed date:') || 
-        message.contains('Parsed ') && message.contains('track points')) {
-      final operationKey = 'igc_parse_${message.hashCode % 1000}';
+    // Suppress duplicate IGC parsing operations using structured keys
+    if (message.contains('Successfully parsed date:')) {
+      // Extract the date from the message for a unique key
+      final dateMatch = RegExp(r'\d{4}-\d{2}-\d{2}').firstMatch(message);
+      final operationKey = 'igc_parse_date_${dateMatch?.group(0) ?? 'unknown'}';
+      if (_isRecentDuplicateOperation(operationKey)) {
+        _logger.d('[IGC_DUPLICATE_SUPPRESSED] $message | at=logging_service.dart:${StackTrace.current.toString().split('\n')[1].split(':')[2]}');
+        return;
+      }
+    } else if (message.contains('Parsed ') && message.contains('track points')) {
+      // Extract point count for unique key
+      final pointMatch = RegExp(r'\d+').firstMatch(message);
+      final operationKey = 'igc_parse_points_${pointMatch?.group(0) ?? 'unknown'}';
       if (_isRecentDuplicateOperation(operationKey)) {
         _logger.d('[IGC_DUPLICATE_SUPPRESSED] $message | at=logging_service.dart:${StackTrace.current.toString().split('\n')[1].split(':')[2]}');
         return;
       }
     }
-    
+
     _logger.i(message, error: error, stackTrace: stackTrace);
   }
 
@@ -86,12 +97,66 @@ class LoggingService {
     _logger.f(message, error: error, stackTrace: stackTrace);
   }
 
-  /// Log database operations with structured format
+  /// Log database operations with structured format and performance tracking
   static void database(String operation, String message, [dynamic error]) {
     if (error != null) {
       _logger.e('[DB:$operation] $message | error=$error');
     } else {
       _logger.d('[DB:$operation] $message');
+    }
+  }
+
+  /// Log database query with SQL and performance tracking
+  static void databaseQuery(String operation, String sql, Duration duration, {
+    int? resultCount,
+    Map<String, dynamic>? parameters,
+  }) {
+    final ms = duration.inMilliseconds;
+
+    // Track in PerformanceMetricsService
+    PerformanceMetricsService.trackOperation(
+      'db_$operation',
+      ms,
+      sql: sql,
+      resultCount: resultCount,
+      metadata: parameters,
+    );
+
+    // Only log if slow or sampled
+    if (ms > 100 || _shouldLogPerformance('database_query')) {
+      structured('DB_QUERY', {
+        'operation': operation,
+        'duration_ms': ms,
+        'result_count': resultCount ?? 0,
+        if (ms > 500) 'sql': sql, // Only include SQL for slow queries
+        if (parameters != null && parameters.isNotEmpty) 'params': parameters,
+      });
+    }
+  }
+
+  /// Log cache operations with hit/miss tracking
+  static void cache(String cacheName, bool hit, {
+    String? key,
+    int? sizeBytes,
+    Duration? lookupTime,
+  }) {
+    // Track in PerformanceMetricsService
+    PerformanceMetricsService.trackCacheOperation(
+      cacheName,
+      hit,
+      sizeBytes: sizeBytes,
+      key: key,
+    );
+
+    // Only log if miss or slow lookup
+    if (!hit || (lookupTime != null && lookupTime.inMilliseconds > 10)) {
+      structured('CACHE_OPERATION', {
+        'cache': cacheName,
+        'hit': hit,
+        if (key != null) 'key': key,
+        if (sizeBytes != null) 'size_bytes': sizeBytes,
+        if (lookupTime != null) 'lookup_ms': lookupTime.inMilliseconds,
+      });
     }
   }
 
@@ -131,6 +196,13 @@ class LoggingService {
   static void performance(String operation, Duration duration, [String? details]) {
     final ms = duration.inMilliseconds;
 
+    // Track in PerformanceMetricsService for percentile tracking
+    PerformanceMetricsService.trackOperation(
+      operation,
+      ms,
+      metadata: details != null ? {'details': details} : null,
+    );
+
     // Build base message
     final message = details != null
         ? '[PERF] $operation | ${ms}ms | $details'
@@ -144,8 +216,45 @@ class LoggingService {
       _logger.w('[PERF_THRESHOLD_$severity] $operation | actual=${ms}ms | target=${threshold}ms$detailsStr');
     }
 
-    // Log normal performance metric
-    _logger.d(message);
+    // Reduce duplicate [PERF] logs - only log if significant
+    if (threshold == null || ms > threshold || _shouldLogPerformance(operation)) {
+      _logger.d(message);
+    }
+  }
+
+  /// Determine if performance metric should be logged to reduce duplicates
+  static bool _shouldLogPerformance(String operation) {
+    // Log every Nth performance metric for high-frequency operations
+    const highFrequencyOps = {
+      'database_query': 10,
+      'cache_lookup': 20,
+      'widget_rebuild': 50,
+    };
+
+    final frequency = highFrequencyOps[operation];
+    if (frequency != null) {
+      _incrementCounter(operation);
+      return _operationCounters[operation]! % frequency == 0;
+    }
+
+    return true; // Log all other operations
+  }
+
+  /// Increment counter with bounds checking to prevent memory leak
+  static void _incrementCounter(String operation) {
+    // Check if we need to clean up old entries
+    if (_operationCounters.length >= _maxCounterEntries &&
+        !_operationCounters.containsKey(operation)) {
+      // Remove oldest entries (clear 25% to avoid frequent cleanup)
+      final toRemove = _operationCounters.keys
+          .take(_maxCounterEntries ~/ 4)
+          .toList();
+      for (final key in toRemove) {
+        _operationCounters.remove(key);
+      }
+    }
+
+    _operationCounters[operation] = (_operationCounters[operation] ?? 0) + 1;
   }
 
   /// Log structured data with key-value pairs for better Claude parsing
@@ -232,8 +341,8 @@ class LoggingService {
   
   /// Start a new operation with correlation ID
   static String startOperation(String type) {
-    final count = (_operationCounters[type] ?? 0) + 1;
-    _operationCounters[type] = count;
+    _incrementCounter(type);
+    final count = _operationCounters[type] ?? 1;
     final id = '${type.toLowerCase()}_${count.toString().padLeft(3, '0')}';
     _currentOperationId = id;
     _logger.i('[WORKFLOW:$type] started | id=$id');
