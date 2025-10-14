@@ -71,21 +71,23 @@ class NearbySitesSearchManagerV2 {
         query: '',
         results: [],
         isSearching: false,
+        isSearchMode: false,
       ).clearPinnedSite());
       return;
     }
 
-    // Update state with new query and start searching
-    _updateState(_state.copyWith(
-      query: trimmedQuery,
-      isSearching: true,
-    ));
-
-    // Don't search for very short queries
+    // Don't search for very short queries, but enter search mode
     if (trimmedQuery.length < _minQueryLength) {
-      _updateState(_state.copyWith(isSearching: false));
+      _updateState(_state.copyWith(
+        query: trimmedQuery,
+        isSearchMode: true,
+        isSearching: false,
+      ));
       return;
     }
+
+    // Update state with new query and enter search mode
+    _updateState(_state.enterSearchMode(query: trimmedQuery));
 
     // Debounce the actual search
     _searchDebounce = Timer(_searchDebounceDelay, () {
@@ -161,18 +163,15 @@ class NearbySitesSearchManagerV2 {
       final results = await _searchSites(query);
       final limitedResults = results.take(_maxResults).toList();
 
-      var newState = _state.copyWith(
-        results: limitedResults,
-        isSearching: false,
-      );
-
-      // Auto-jump to single result
+      // Auto-jump to single result and close dropdown
       if (limitedResults.length == 1) {
         final site = limitedResults.first;
         _onAutoJump?.call(site);
-        exitSearchMode(preservePinnedSite: site, pinnedSiteIsFromAutoJump: true);
 
-        LoggingService.action('NearbySitesV2', 'live_search_single_result_auto_exit', {
+        // Reuse selectSearchResult to close dropdown (idiomatic)
+        selectSearchResult(site);
+
+        LoggingService.action('NearbySitesV2', 'live_search_single_result_auto_jump', {
           'site_name': site.name,
           'country': site.country,
           'data_source': 'local_db',
@@ -181,21 +180,19 @@ class NearbySitesSearchManagerV2 {
         return;
       }
 
-      _updateState(newState);
+      // Show dropdown for multiple results
+      _updateState(_state.withResults(limitedResults));
 
       LoggingService.action('NearbySitesV2', 'search_performed', {
         'query': query,
         'results_count': results.length,
-        'auto_selected': limitedResults.length == 1,
+        'limited_results': limitedResults.length,
         'data_source': 'local_db',
       });
 
     } catch (e) {
       LoggingService.error('Search failed', e);
-      _updateState(_state.copyWith(
-        results: [],
-        isSearching: false,
-      ));
+      _updateState(_state.withResults([]));
     }
   }
 

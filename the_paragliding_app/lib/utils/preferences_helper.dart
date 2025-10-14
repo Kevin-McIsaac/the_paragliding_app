@@ -59,7 +59,7 @@ class PreferencesHelper {
   static const double defaultMaxWindSpeed = 25.0; // km/h
   static const double defaultMaxWindGusts = 35.0; // km/h
   static const double defaultCautionWindSpeed = 20.0; // km/h
-  static const double defaultCautionWindGusts = 25.0; // km/h
+  static const double defaultCautionWindGusts = 30.0; // km/h (caution range: 30-35)
 
   // Cesium 3D Map methods
   static Future<String?> getCesiumSceneMode() async {

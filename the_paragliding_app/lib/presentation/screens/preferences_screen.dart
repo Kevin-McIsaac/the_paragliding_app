@@ -569,8 +569,8 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 const SizedBox(height: 16),
                 _buildRangeSliderRow(
                   'Wind Gusts',
-                  'Caution (left) to unsafe (right) thresholds (default: 25-35 km/h)',
-                  _windGustRange ?? const RangeValues(25.0, 35.0),
+                  'Caution (left) to unsafe (right) thresholds (default: 30-35 km/h)',
+                  _windGustRange ?? const RangeValues(30.0, 35.0),
                   20.0,
                   50.0,
                   // onChanged: Update UI immediately while dragging
