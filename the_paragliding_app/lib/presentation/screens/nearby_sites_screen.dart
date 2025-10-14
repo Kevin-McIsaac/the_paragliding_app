@@ -2740,12 +2740,15 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Forecast table with horizontal scroll
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: _build7DayForecastTable(windDirections),
+          // Forecast table with horizontal scroll - constrain height for nested scrolling
+          SizedBox(
+            height: 350, // Fixed height to enable horizontal scrolling in nested ScrollView
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: _build7DayForecastTable(windDirections),
+              ),
             ),
           ),
           // Weather description info box
