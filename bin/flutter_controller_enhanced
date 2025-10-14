@@ -57,12 +57,24 @@ take_screenshot() {
     fi
 }
 
+# Check if device is connected via ADB
+check_device_connected() {
+    local device="$1"
+
+    # Check if device appears in adb devices output
+    if adb devices 2>/dev/null | grep -q "^${device}[[:space:]]"; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 # Check if pipe is responsive
 check_pipe_responsiveness() {
     if [[ ! -p "$PIPE" ]]; then
         return 1
     fi
-    
+
     # Try to write to pipe with timeout
     if timeout "$PIPE_CHECK_TIMEOUT" bash -c "echo 'h' > '$PIPE'" 2>/dev/null; then
         return 0
@@ -117,7 +129,15 @@ flutter_health_check() {
     local pid_check=false
     local pipe_check=false
     local ready_check=false
-    
+    local device_check=false
+    local device="emulator-5554"  # default
+
+    # Try to determine device from workdir or status
+    if [[ -f "$WORKDIR_FILE" ]]; then
+        # Device info not stored, use default
+        device="emulator-5554"
+    fi
+
     # Check PID
     if [[ -f "$PID_FILE" ]]; then
         local pid=$(cat "$PID_FILE")
@@ -125,24 +145,35 @@ flutter_health_check() {
             pid_check=true
         fi
     fi
-    
+
     # Check pipe responsiveness
     if check_pipe_responsiveness; then
         pipe_check=true
     fi
-    
+
     # Check for ready state in logs
     if [[ -f "$LOG_FILE" ]] && tail -n 20 "$LOG_FILE" | grep -q "Flutter run key commands"; then
         ready_check=true
     fi
-    
+
+    # Check device connectivity
+    if check_device_connected "$device"; then
+        device_check=true
+    fi
+
+    # Check for disconnection in recent logs
+    if [[ -f "$LOG_FILE" ]] && tail -n 20 "$LOG_FILE" | grep -q "Lost connection to device"; then
+        echo "⚠ Device disconnection detected in recent logs"
+    fi
+
     echo "Health Check Results:"
     echo "  PID alive: $([ "$pid_check" = true ] && echo "✓" || echo "✗")"
     echo "  Pipe responsive: $([ "$pipe_check" = true ] && echo "✓" || echo "✗")"
     echo "  Flutter ready: $([ "$ready_check" = true ] && echo "✓" || echo "✗")"
-    
+    echo "  Device connected: $([ "$device_check" = true ] && echo "✓ ($device)" || echo "✗ ($device)")"
+
     # Return 0 only if all checks pass
-    [ "$pid_check" = true ] && [ "$pipe_check" = true ] && [ "$ready_check" = true ]
+    [ "$pid_check" = true ] && [ "$pipe_check" = true ] && [ "$ready_check" = true ] && [ "$device_check" = true ]
 }
 
 # Clean stale state files when detecting issues
@@ -230,6 +261,10 @@ setup_flutter_pipe() {
                     ;;
                 *"Application finished"*)
                     update_status "STOPPED"
+                    ;;
+                *"Lost connection to device"*)
+                    log_message "Device connection lost - updating status"
+                    update_status "DISCONNECTED"
                     ;;
                 *"EXCEPTION CAUGHT"*|*"ERROR"*|*"FATAL"*)
                     update_status "ERROR"
@@ -334,13 +369,17 @@ check_flutter_status() {
     fi
     
     case "$status" in
-        "RUNNING") 
+        "RUNNING")
             # Additional validation for RUNNING status
             if [[ "$pid_exists" == true ]] && [[ "$pipe_responsive" == true ]]; then
                 return 0
             else
                 return 1
             fi
+            ;;
+        "DISCONNECTED")
+            echo "⚠ Device has disconnected. Run 'cleanup' and 'run' to restart."
+            return 1
             ;;
         "STARTING") return 0 ;;
         "HOT_RELOAD") return 0 ;;
@@ -416,9 +455,13 @@ pre_command_check() {
                 return 1
             fi
             ;;
-        "STOPPED"|"CRASHED"|"ERROR")
+        "STOPPED"|"CRASHED"|"ERROR"|"DISCONNECTED")
             if [[ "$auto_start" == true ]] && [[ "$cmd" =~ ^[rR]$ ]]; then
-                echo "Flutter is not running. Auto-starting..."
+                if [[ "$status" == "DISCONNECTED" ]]; then
+                    echo "Device disconnected. Auto-restarting Flutter..."
+                else
+                    echo "Flutter is not running. Auto-starting..."
+                fi
                 cleanup_flutter_process  # Clean up any remnants
                 setup_flutter_pipe "emulator-5554"
                 if wait_for_flutter_ready 30; then
@@ -428,7 +471,11 @@ pre_command_check() {
                     return 1
                 fi
             else
-                echo "ERROR: Flutter is not running (status: $status)"
+                if [[ "$status" == "DISCONNECTED" ]]; then
+                    echo "ERROR: Device disconnected (status: $status)"
+                else
+                    echo "ERROR: Flutter is not running (status: $status)"
+                fi
                 echo "Run: flutter_controller_enhanced run"
                 return 1
             fi
@@ -650,8 +697,29 @@ case "$1" in
     "wait-ready")
         wait_for_flutter_ready "$2"
         ;;
+    "reconnect")
+        # Reconnect after device sleep/wake
+        echo "Attempting to reconnect to device..."
+
+        # Check if device is available
+        shift  # Remove "reconnect" from arguments
+        device=$(parse_device_args "$@")
+
+        if check_device_connected "$device"; then
+            echo "✓ Device $device is connected"
+            echo "Restarting Flutter..."
+            cleanup_flutter_process
+            sleep 2
+            setup_flutter_pipe "$device"
+        else
+            echo "✗ Device $device not found"
+            echo "Available devices:"
+            adb devices
+            exit 1
+        fi
+        ;;
     *)
-        echo "Enhanced Flutter Controller v2.2"
+        echo "Enhanced Flutter Controller v2.3"
         echo "Usage: $0 {command} [options]"
         echo ""
         echo "Commands:"
@@ -668,8 +736,9 @@ case "$1" in
         echo ""
         echo "Enhanced Commands:"
         echo "  screenshot, ss [options] - Take screenshot via adb"
-        echo "  health           - Comprehensive health check (PID, pipe, readiness)"
+        echo "  health           - Comprehensive health check (PID, pipe, readiness, device)"
         echo "  wait-ready [timeout] - Wait for Flutter to be ready (default: 30s)"
+        echo "  reconnect [options] - Reconnect after device sleep/wake or ADB disconnect"
         echo ""
         echo "Log Files:"
         echo "  Directory: $LOG_DIR"
@@ -692,5 +761,6 @@ case "$1" in
         echo "  $0 monitor                       # Watch logs in real-time"
         echo "  $0 screenshot                    # Take screenshot from current device"
         echo "  $0 ss -d emulator-5556           # Take screenshot from specific device"
+        echo "  $0 reconnect                     # Reconnect after ChromeOS sleep/wake"
         ;;
 esac
