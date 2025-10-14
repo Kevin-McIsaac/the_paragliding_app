@@ -28,6 +28,7 @@ import '../../utils/map_provider.dart';
 import '../../utils/map_constants.dart';
 import '../../utils/site_utils.dart';
 import '../../utils/preferences_helper.dart';
+import '../../utils/flyability_helper.dart';
 import '../../utils/ui_utils.dart';
 import '../widgets/nearby_sites_map.dart';
 import '../widgets/map_filter_dialog.dart';
@@ -1857,6 +1858,13 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
   WindForecast? _windForecast;
   bool _isLoadingForecast = false;
 
+  // Forecast table constants
+  static const double _cellSize = 36.0;
+  static const double _dayColumnWidth = 80.0;
+  static const int _startHour = 7;
+  static const int _endHour = 19;
+  static const int _hoursToShow = 13; // 7am to 7pm inclusive
+
   @override
   void initState() {
     super.initState();
@@ -2686,15 +2694,12 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
       return const Center(child: Text('No forecast data available'));
     }
 
-    // Return scrollable table directly without Column wrapper
+    // Simple horizontal scroll with fixed-height table
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.vertical,
-        child: Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: _build7DayForecastTable(windDirections),
-        ),
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: _build7DayForecastTable(windDirections),
       ),
     );
   }
@@ -2703,7 +2708,31 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     if (_windForecast == null) return const SizedBox.shrink();
 
     // Group forecast data by day
-    final now = DateTime.now();
+    final dayHourIndices = _groupForecastByDay();
+    final displayDays = dayHourIndices.keys.toList()
+      ..sort()
+      ..take(7);
+
+    // Build simple Table widget
+    return Table(
+      defaultColumnWidth: const FixedColumnWidth(_cellSize),
+      columnWidths: const {
+        0: FixedColumnWidth(_dayColumnWidth), // Day column wider
+      },
+      border: TableBorder.all(
+        color: Theme.of(context).dividerColor,
+        width: 1.0,
+      ),
+      children: [
+        // Header row
+        _buildHeaderRow(),
+        // Data rows
+        ...displayDays.map((dayKey) => _buildDataRow(dayKey, dayHourIndices[dayKey]!, windDirections)),
+      ],
+    );
+  }
+
+  Map<String, List<int>> _groupForecastByDay() {
     final Map<String, List<int>> dayHourIndices = {};
 
     for (int i = 0; i < _windForecast!.timestamps.length; i++) {
@@ -2711,101 +2740,149 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
       final hour = timestamp.hour;
 
       // Only include hours between 7am and 7pm
-      if (hour >= 7 && hour <= 19) {
-        final dayKey = '${timestamp.year}-${timestamp.month}-${timestamp.day}';
+      if (hour >= _startHour && hour <= _endHour) {
+        final dayKey = '${timestamp.year}-${timestamp.month.toString().padLeft(2, '0')}-${timestamp.day.toString().padLeft(2, '0')}';
         dayHourIndices.putIfAbsent(dayKey, () => []);
         dayHourIndices[dayKey]!.add(i);
       }
     }
 
-    // Take first 7 days only
-    final sortedDays = dayHourIndices.keys.toList()..sort();
-    final displayDays = sortedDays.take(7).toList();
+    return dayHourIndices;
+  }
 
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minWidth: 500),
-      child: DataTable(
-        headingRowHeight: 32,
-        dataRowMinHeight: 32,
-        dataRowMaxHeight: 32,
-        columnSpacing: 0,
-        horizontalMargin: 8,
-        dataRowColor: MaterialStateProperty.all(Colors.transparent),
-      columns: [
-        const DataColumn(label: Text('Day', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-        ...List.generate(13, (hour) => DataColumn(
-          label: Text('${hour + 7}h', style: const TextStyle(fontSize: 10)),
-        )),
+  TableRow _buildHeaderRow() {
+    return TableRow(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
+      ),
+      children: [
+        _buildHeaderCell('Day', isFirst: true),
+        ...List.generate(_hoursToShow, (hour) =>
+          _buildHeaderCell('${hour + _startHour}h')),
       ],
-      rows: displayDays.map((dayKey) {
-        final indices = dayHourIndices[dayKey]!;
-        final dayDate = _windForecast!.timestamps[indices.first];
-        final dayName = _formatDayName(dayDate);
+    );
+  }
 
-        return DataRow(
-          cells: [
-            DataCell(Text(dayName, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500))),
-            ...List.generate(13, (hourOffset) {
-              final targetHour = 7 + hourOffset;
-              // Find index for this specific hour
-              final index = indices.firstWhere(
-                (i) => _windForecast!.timestamps[i].hour == targetHour,
-                orElse: () => -1,
-              );
+  Widget _buildHeaderCell(String text, {bool isFirst = false}) {
+    return Container(
+      height: _cellSize,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 2.0),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontWeight: isFirst ? FontWeight.bold : FontWeight.w500,
+          fontSize: isFirst ? 12 : 10,
+        ),
+      ),
+    );
+  }
 
-              if (index == -1) {
-                return const DataCell(Text('-', style: TextStyle(fontSize: 10)));
-              }
+  TableRow _buildDataRow(String dayKey, List<int> indices, List<String> windDirections) {
+    final dayDate = _windForecast!.timestamps[indices.first];
+    final dayName = _formatDayName(dayDate);
 
-              final speed = _windForecast!.speedsKmh[index];
-              final direction = _windForecast!.directionsDegs[index];
-              final gusts = _windForecast!.gustsKmh[index];
+    return TableRow(
+      children: [
+        // Day name cell
+        Container(
+          height: _cellSize,
+          alignment: Alignment.center,
+          child: Text(
+            dayName,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+          ),
+        ),
+        // Hour cells
+        ...List.generate(_hoursToShow, (hourOffset) {
+          final targetHour = _startHour + hourOffset;
+          final index = indices.firstWhere(
+            (i) => _windForecast!.timestamps[i].hour == targetHour,
+            orElse: () => -1,
+          );
 
-              // Calculate flyability
-              final windData = WindData(
-                speedKmh: speed,
-                directionDegrees: direction,
-                gustsKmh: gusts,
-                timestamp: _windForecast!.timestamps[index],
-              );
+          if (index == -1) {
+            return _buildEmptyCell();
+          }
 
-              final isFlyable = windDirections.isNotEmpty && windData.isFlyable(windDirections, 25.0, 30.0);
-              final isStrong = speed > 20 || gusts > 25;
+          return _buildForecastCell(
+            speed: _windForecast!.speedsKmh[index],
+            direction: _windForecast!.directionsDegs[index],
+            gusts: _windForecast!.gustsKmh[index],
+            timestamp: _windForecast!.timestamps[index],
+            windDirections: windDirections,
+          );
+        }),
+      ],
+    );
+  }
 
-              Color bgColor;
-              if (!isFlyable) {
-                bgColor = Colors.red.withOpacity(0.2);
-              } else if (isStrong) {
-                bgColor = Colors.orange.withOpacity(0.2);
-              } else {
-                bgColor = Colors.green.withOpacity(0.2);
-              }
+  Widget _buildEmptyCell() {
+    return Container(
+      height: _cellSize,
+      alignment: Alignment.center,
+      child: const Text('-', style: TextStyle(fontSize: 10, color: Colors.grey)),
+    );
+  }
 
-              return DataCell(
-                Container(
-                  width: 32,
-                  height: 32,
-                  color: bgColor,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Transform.rotate(
-                        angle: direction * 3.14159 / 180,
-                        child: const Icon(Icons.arrow_upward, size: 10),
-                      ),
-                      Text('${speed.round()}',
-                        style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold, height: 1.0),
-                      ),
-                    ],
-                  ),
+  Widget _buildForecastCell({
+    required double speed,
+    required double direction,
+    required double? gusts,
+    required DateTime timestamp,
+    required List<String> windDirections,
+  }) {
+    // Calculate flyability using centralized helper
+    final windData = WindData(
+      speedKmh: speed,
+      directionDegrees: direction,
+      gustsKmh: gusts,
+      timestamp: timestamp,
+    );
+
+    final flyabilityLevel = FlyabilityHelper.getFlyabilityLevel(
+      windData: windData,
+      siteDirections: windDirections,
+      maxSpeed: 25.0,
+      maxGusts: 30.0,
+    );
+
+    // Get color with full opacity
+    final bgColor = FlyabilityHelper.getColorForLevel(flyabilityLevel);
+
+    return Container(
+      height: _cellSize,
+      color: bgColor,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Wind arrow and speed with white color for contrast
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Using Transform.rotate for wind direction arrow
+              Transform.rotate(
+                angle: direction * (3.14159265359 / 180), // Convert degrees to radians
+                child: const Icon(
+                  Icons.arrow_upward,
+                  size: 12,
+                  color: Colors.white,
                 ),
-              );
-            }),
-          ],
-        );
-      }).toList(),
+              ),
+              const SizedBox(height: 1),
+              Text(
+                '${speed.round()}',
+                style: const TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.bold,
+                  height: 1.0,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
