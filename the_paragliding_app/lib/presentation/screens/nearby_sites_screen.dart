@@ -1,22 +1,16 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
-import '../../data/models/site.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/airspace_enums.dart';
 import '../../data/models/wind_data.dart';
-import '../../data/models/wind_forecast.dart';
 import '../../data/models/flyability_status.dart';
 import '../../data/models/weather_station.dart';
 import '../../data/models/weather_station_source.dart';
-import '../models/site_marker_presentation.dart';
 import '../../services/location_service.dart';
-import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
 import '../../services/nearby_sites_search_state.dart';
 import '../../services/nearby_sites_search_manager_v2.dart';
@@ -24,7 +18,6 @@ import '../../services/map_bounds_manager.dart';
 import '../../services/weather_service.dart';
 import '../../services/weather_station_service.dart';
 import '../../services/weather_providers/weather_station_provider_registry.dart';
-import '../../utils/map_provider.dart';
 import '../../utils/map_constants.dart';
 import '../../utils/site_utils.dart';
 import '../../utils/preferences_helper.dart';
@@ -36,7 +29,6 @@ import '../widgets/site_details_dialog.dart';
 import '../widgets/common/app_error_state.dart';
 import '../widgets/common/map_loading_overlay.dart';
 import '../widgets/common/app_menu_button.dart';
-import '../widgets/wind_rose_widget.dart';
 import '../../services/openaip_service.dart';
 
 
@@ -84,8 +76,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
   double _currentZoom = 10.0; // Current zoom level (updated reactively)
   int _airspaceDataVersion = 0; // Increment to trigger airspace reload without full widget recreation
   int _sitesDataVersion = 0; // Increment to trigger sites reload when site data changes (e.g., deletion)
-
-  static const String _mapProviderKey = 'nearby_sites_map_provider';
 
   // Preference keys for filter states
   static const String _sitesEnabledKey = 'nearby_sites_sites_enabled';
@@ -220,6 +210,57 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
     }
   }
 
+  /// Process loaded sites result - consolidates common logic for handling site data.
+  ///
+  /// This helper is called by all site loading paths to ensure consistent behavior:
+  /// - Updates site collections and flight status
+  /// - Cleans up stale wind/flyability data
+  /// - Refreshes displayed sites
+  /// - Optionally triggers wind data fetch
+  void _processSitesLoaded(dynamic result, {bool fetchWindData = false}) {
+    _allSites = result.sites;
+    _siteFlightStatus = {};
+
+    // Clean up stale flyability status and wind data for sites no longer visible
+    final currentSiteKeys = result.sites.map((site) => SiteUtils.createSiteKey(site.latitude, site.longitude)).toSet();
+    _siteFlyabilityStatus.removeWhere((key, value) => !currentSiteKeys.contains(key));
+    _siteWindData.removeWhere((key, value) => !currentSiteKeys.contains(key));
+
+    for (final site in result.sites) {
+      final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
+      _siteFlightStatus[key] = site.hasFlights;
+    }
+
+    _updateDisplayedSites();
+
+    // Fetch wind data if requested and forecast is enabled
+    if (fetchWindData && _forecastEnabled && result.sites.isNotEmpty) {
+      _fetchWindDataForSites();
+    }
+  }
+
+  /// Save filter preferences to SharedPreferences
+  Future<void> _saveFilterPreferences({
+    required bool sitesEnabled,
+    required bool airspaceEnabled,
+    required bool forecastEnabled,
+    required bool weatherStationsEnabled,
+    required bool metarEnabled,
+    required bool nwsEnabled,
+    required bool pioupiouEnabled,
+    required bool ffvlEnabled,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_sitesEnabledKey, sitesEnabled);
+    await prefs.setBool(_airspaceEnabledKey, airspaceEnabled);
+    await prefs.setBool(_forecastEnabledKey, forecastEnabled);
+    await prefs.setBool(_weatherStationsEnabledKey, weatherStationsEnabled);
+    await prefs.setBool('weather_provider_${WeatherStationSource.awcMetar.name}_enabled', metarEnabled);
+    await prefs.setBool('weather_provider_${WeatherStationSource.nws.name}_enabled', nwsEnabled);
+    await prefs.setBool('weather_provider_${WeatherStationSource.pioupiou.name}_enabled', pioupiouEnabled);
+    await prefs.setBool('weather_provider_${WeatherStationSource.ffvl.name}_enabled', ffvlEnabled);
+  }
+
   /// Handle sites version change by loading sites immediately (bypasses bounds-changed check).
   ///
   /// This is called from NearbySitesMap when sitesDataVersion changes.
@@ -244,29 +285,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
       onLoaded: (result) {
         if (mounted) {
           setState(() {
-            _allSites = result.sites;
-            _siteFlightStatus = {};
-
-            // Clean up stale flyability status and wind data for sites no longer visible
-            final currentSiteKeys = result.sites.map((site) => SiteUtils.createSiteKey(site.latitude, site.longitude)).toSet();
-            _siteFlyabilityStatus.removeWhere((key, value) => !currentSiteKeys.contains(key));
-            _siteWindData.removeWhere((key, value) => !currentSiteKeys.contains(key));
-
-            for (final site in result.sites) {
-              final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
-              _siteFlightStatus[key] = site.hasFlights;
-            }
-
+            _processSitesLoaded(result, fetchWindData: true);
             LoggingService.info('[SITES_VERSION_HANDLER] Loaded ${result.sites.length} sites | flown_sites=${result.sites.where((s) => s.hasFlights).length} | pge_sites=${result.sites.where((s) => !s.hasFlights).length}');
           });
-
-          // Apply filter to update displayed sites
-          _updateDisplayedSites();
-
-          // Fetch wind forecast for newly loaded sites if forecast is enabled
-          if (_forecastEnabled && result.sites.isNotEmpty) {
-            _fetchWindDataForSites();
-          }
         }
       },
     );
@@ -311,7 +332,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
   Future<void> _loadPreferences() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final savedProviderName = prefs.getString(_mapProviderKey);
       final sitesEnabled = prefs.getBool(_sitesEnabledKey) ?? true;
       final airspaceEnabled = prefs.getBool(_airspaceEnabledKey) ?? true;
       final forecastEnabled = prefs.getBool(_forecastEnabledKey) ?? true;
@@ -320,14 +340,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
       final nwsEnabled = prefs.getBool('weather_provider_${WeatherStationSource.nws.name}_enabled') ?? true;
       final pioupiouEnabled = prefs.getBool('weather_provider_${WeatherStationSource.pioupiou.name}_enabled') ?? true;
       final ffvlEnabled = prefs.getBool('weather_provider_${WeatherStationSource.ffvl.name}_enabled') ?? true;
-
-      // Map provider loaded from preferences if needed
-      if (savedProviderName != null) {
-        MapProvider.values.firstWhere(
-          (p) => p.name == savedProviderName,
-          orElse: () => MapProvider.openStreetMap,
-        );
-      }
 
       if (mounted) {
         setState(() {
@@ -990,11 +1002,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
     final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
     final hasFlights = _siteFlightStatus[siteKey] ?? false;
 
-    // Debug logging for site 21842
-    if (site.id == 21842) {
-      LoggingService.debug('_onSiteSelected for site 21842: windDirections=${site.windDirections}');
-    }
-
     LoggingService.action('NearbySites', hasFlights ? 'flown_site_selected' : 'new_site_selected', {
       'site_id': site.id,
       'site_name': site.name,
@@ -1003,13 +1010,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
       'has_flights': hasFlights,
     });
     _showSiteDetailsDialog(paraglidingSite: site);
-  }
-
-  // Callback for search result selection (prevents creating new function on every build)
-  void _onSearchResultSelected(ParaglidingSite site) {
-    _searchManager.selectSearchResult(site);
-    // Also jump to location for smooth UX
-    _jumpToLocation(site);
   }
 
 
@@ -1095,19 +1095,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
       onLoaded: (result) {
         if (mounted) {
           setState(() {
-            _allSites = result.sites;
-            _siteFlightStatus = {};
-
-            // Clean up stale flyability status and wind data for sites no longer visible
-            final currentSiteKeys = result.sites.map((site) => SiteUtils.createSiteKey(site.latitude, site.longitude)).toSet();
-            _siteFlyabilityStatus.removeWhere((key, value) => !currentSiteKeys.contains(key));
-            _siteWindData.removeWhere((key, value) => !currentSiteKeys.contains(key));
-
-            for (final site in result.sites) {
-              final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
-              _siteFlightStatus[siteKey] = site.hasFlights;
-            }
-            _updateDisplayedSites();
+            _processSitesLoaded(result);
           });
 
           LoggingService.structured('NEARBY_SITES_LOADED', {
@@ -1318,19 +1306,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
             onLoaded: (result) {
               if (mounted) {
                 setState(() {
-                  _allSites = result.sites;
-                  _siteFlightStatus = {};
-
-                  // Clean up stale flyability status and wind data for sites no longer visible
-                  final currentSiteKeys = result.sites.map((site) => SiteUtils.createSiteKey(site.latitude, site.longitude)).toSet();
-                  _siteFlyabilityStatus.removeWhere((key, value) => !currentSiteKeys.contains(key));
-                  _siteWindData.removeWhere((key, value) => !currentSiteKeys.contains(key));
-
-                  for (final site in result.sites) {
-                    final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
-                    _siteFlightStatus[siteKey] = site.hasFlights;
-                  }
-                  _updateDisplayedSites();
+                  _processSitesLoaded(result);
                 });
 
                 LoggingService.structured('NEARBY_SITES_ENABLED_LOADED', {
@@ -1490,49 +1466,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
     }
   }
 
-  Widget _buildSearchResults() {
-    return Container(
-      constraints: const BoxConstraints(maxHeight: 200),
-      decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: const [
-          BoxShadow(
-            color: Colors.black26,
-            blurRadius: 4,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: _searchManager.state.isSearching
-          ? const Center(
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: CircularProgressIndicator(),
-              ),
-            )
-          : ListView.builder(
-              shrinkWrap: true,
-              itemCount: _searchManager.state.results.length,
-              itemBuilder: (context, index) {
-                final site = _searchManager.state.results[index];
-                return ListTile(
-                  leading: Icon(
-                    Icons.location_on,
-                    color: site.hasFlights ? Colors.blue : Colors.deepPurple,
-                  ),
-                  title: Text(site.name),
-                  subtitle: Text(
-                    site.hasFlights
-                        ? '${site.flightCount} flights'
-                        : 'New site',
-                  ),
-                  onTap: () => _onSearchResultSelected(site),
-                );
-              },
-            ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -1644,15 +1577,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
                           initialCenter: _mapCenterPosition,
                           initialZoom: _currentZoom,
                         ),
-
-                        // Search results overlay - below AppBar
-                        if (_searchManager.state.isSearching || _searchManager.state.results.isNotEmpty)
-                          Positioned(
-                            top: 8,  // Below the AppBar
-                            left: 16,
-                            right: 16,
-                            child: _buildSearchResults(),
-                          ),
 
                         // Auto-dismissing location notification
                         if (_showLocationNotification)
@@ -1780,30 +1704,39 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
               right: 0,
               child: Material(
                 elevation: 8,
+                color: Theme.of(context).colorScheme.surface,
                 child: Container(
                   constraints: const BoxConstraints(maxHeight: 300),
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black26,
+                        color: Colors.black.withValues(alpha: 0.3),
                         blurRadius: 8,
-                        offset: Offset(0, 2),
+                        offset: const Offset(0, 2),
                       ),
                     ],
                   ),
                   child: _searchManager.state.isSearching
-                    ? const Padding(
-                        padding: EdgeInsets.all(16),
+                    ? Padding(
+                        padding: const EdgeInsets.all(16),
                         child: Row(
                           children: [
                             SizedBox(
                               width: 20,
                               height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
                             ),
-                            SizedBox(width: 12),
-                            Text('Searching sites...'),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Searching sites...',
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
+                            ),
                           ],
                         ),
                       )
@@ -1815,22 +1748,34 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
                           return ListTile(
                             leading: CircleAvatar(
                               radius: 16,
-                              backgroundColor: Theme.of(context).primaryColor.withValues(alpha: 0.1),
+                              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
                               child: Text(
                                 site.country?.toUpperCase().substring(0, 2) ?? '??',
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.bold,
-                                  color: Theme.of(context).primaryColor,
+                                  color: Theme.of(context).colorScheme.onPrimaryContainer,
                                 ),
                               ),
                             ),
                             title: Text(
                               site.name,
-                              style: const TextStyle(fontWeight: FontWeight.w500),
+                              style: TextStyle(
+                                fontWeight: FontWeight.w500,
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
                             ),
-                            subtitle: Text(site.country ?? 'Unknown'),
-                            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                            subtitle: Text(
+                              site.country ?? 'Unknown',
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            trailing: Icon(
+                              Icons.arrow_forward_ios,
+                              size: 16,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
                             onTap: () {
                               _searchManager.selectSearchResult(site);
                               _jumpToLocation(site);
