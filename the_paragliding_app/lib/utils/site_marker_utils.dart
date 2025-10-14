@@ -16,6 +16,7 @@ class SiteMarkerUtils {
 
   // Nearby Sites map flyability colors
   static const Color flyableSiteColor = Colors.green;    // Flyable with current wind
+  static const Color strongWindSiteColor = Colors.orange; // Flyable but strong winds (caution)
   static const Color notFlyableSiteColor = Colors.red;   // Not flyable with current wind
   static const Color unknownFlyabilitySiteColor = Colors.blue; // No wind directions or wind data not available - same as new sites
 
