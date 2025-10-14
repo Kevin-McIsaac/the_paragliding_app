@@ -186,6 +186,7 @@ class CardExpansionManagers {
       '3d_visualization': true,
       'airspace_data': true,
       'flight_detection': true,
+      'wind_thresholds': true,
     });
     return manager;
   }

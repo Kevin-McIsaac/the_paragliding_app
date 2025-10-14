@@ -25,11 +25,9 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   double? _triangleClosingDistance;
   int? _triangleSamplingInterval;
 
-  // Wind Threshold preferences
-  double? _maxWindSpeed;
-  double? _maxWindGusts;
-  double? _cautionWindSpeed;
-  double? _cautionWindGusts;
+  // Wind Threshold preferences (using RangeValues: start = caution, end = unsafe)
+  RangeValues? _windSpeedRange;
+  RangeValues? _windGustRange;
 
   bool _isLoading = true;
   bool _isSaving = false;
@@ -67,7 +65,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       final triangleClosingDistance = await PreferencesHelper.getTriangleClosingDistance();
       final triangleSamplingInterval = await PreferencesHelper.getTriangleSamplingInterval();
 
-      // Load Wind Threshold preferences
+      // Load Wind Threshold preferences and combine into RangeValues
       final maxWindSpeed = await PreferencesHelper.getMaxWindSpeed();
       final maxWindGusts = await PreferencesHelper.getMaxWindGusts();
       final cautionWindSpeed = await PreferencesHelper.getCautionWindSpeed();
@@ -86,10 +84,21 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           _triangleClosingDistance = triangleClosingDistance;
           _triangleSamplingInterval = triangleSamplingInterval;
 
-          _maxWindSpeed = maxWindSpeed;
-          _maxWindGusts = maxWindGusts;
-          _cautionWindSpeed = cautionWindSpeed;
-          _cautionWindGusts = cautionWindGusts;
+          // Combine caution and max values into RangeValues (start = caution, end = unsafe)
+          // Clamp values to valid ranges
+          final cautionSpeed = cautionWindSpeed.clamp(20.0, 50.0);
+          final maxSpeed = maxWindSpeed.clamp(20.0, 50.0);
+          _windSpeedRange = RangeValues(
+            cautionSpeed < maxSpeed ? cautionSpeed : maxSpeed - 1,
+            maxSpeed > cautionSpeed ? maxSpeed : cautionSpeed + 1,
+          );
+
+          final cautionGusts = cautionWindGusts.clamp(20.0, 50.0);
+          final maxGusts = maxWindGusts.clamp(20.0, 50.0);
+          _windGustRange = RangeValues(
+            cautionGusts < maxGusts ? cautionGusts : maxGusts - 1,
+            maxGusts > cautionGusts ? maxGusts : cautionGusts + 1,
+          );
 
           _isLoading = false;
         });
@@ -223,7 +232,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     double value,
     double min,
     double max,
-    int divisions,
     Function(double) onChanged,
   ) {
     return Column(
@@ -244,9 +252,86 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           value: value,
           min: min,
           max: max,
-          divisions: divisions,
           label: '${value.toInt()} km/h',
           onChanged: onChanged,
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '${min.toInt()} km/h',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.grey,
+                ),
+              ),
+              Text(
+                '${max.toInt()} km/h',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.grey,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRangeSliderRow(
+    String title,
+    String subtitle,
+    RangeValues values,
+    double min,
+    double max,
+    Function(RangeValues) onChanged,
+    Function(RangeValues)? onChangeEnd,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ListTile(
+          title: Text(title),
+          subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
+          trailing: Text(
+            '${values.start.toInt()}-${values.end.toInt()} km/h',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          contentPadding: EdgeInsets.zero,
+        ),
+        RangeSlider(
+          values: values,
+          min: min,
+          max: max,
+          labels: RangeLabels(
+            '${values.start.toInt()} km/h',
+            '${values.end.toInt()} km/h',
+          ),
+          onChanged: onChanged,
+          onChangeEnd: onChangeEnd,
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '${min.toInt()} km/h',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.grey,
+                ),
+              ),
+              Text(
+                '${max.toInt()} km/h',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.grey,
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -450,63 +535,58 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
 
               // Wind Threshold Settings
               _buildSection('Wind Thresholds for Flyability', expansionKey: 'wind_thresholds', [
-                _buildSliderRow(
-                  'Maximum Wind Speed',
-                  'Wind speed above this is unsafe for flying',
-                  _maxWindSpeed ?? 25.0,
-                  15.0,
-                  50.0,
-                  7,
-                  (value) {
-                    setState(() {
-                      _maxWindSpeed = value;
-                    });
-                    _savePreference('max wind speed', value, PreferencesHelper.setMaxWindSpeed);
-                  },
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16.0),
+                  child: Text(
+                    'These settings determine what is considered safe flyable (launching) conditions which determines the colour of the site marker in the map',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 16),
-                _buildSliderRow(
-                  'Maximum Wind Gusts',
-                  'Wind gusts above this are unsafe',
-                  _maxWindGusts ?? 30.0,
+                _buildRangeSliderRow(
+                  'Wind Speed',
+                  'Caution (left) to unsafe (right) thresholds (default: 20-25 km/h)',
+                  _windSpeedRange ?? const RangeValues(20.0, 25.0),
                   20.0,
-                  60.0,
-                  8,
-                  (value) {
+                  50.0,
+                  // onChanged: Update UI immediately while dragging
+                  (values) {
                     setState(() {
-                      _maxWindGusts = value;
+                      _windSpeedRange = values;
                     });
-                    _savePreference('max wind gusts', value, PreferencesHelper.setMaxWindGusts);
+                  },
+                  // onChangeEnd: Save to preferences only when user releases slider
+                  (values) async {
+                    await PreferencesHelper.setCautionWindSpeed(values.start);
+                    await PreferencesHelper.setMaxWindSpeed(values.end);
+                    LoggingService.info('PreferencesScreen: Saved wind speed | caution=${values.start.toInt()} unsafe=${values.end.toInt()} km/h');
+                    if (mounted) {
+                      UiUtils.showSuccessMessage(context, 'Saved wind speed thresholds');
+                    }
                   },
                 ),
                 const SizedBox(height: 16),
-                _buildSliderRow(
-                  'Caution Wind Speed',
-                  'Wind speed above this triggers caution warning',
-                  _cautionWindSpeed ?? 20.0,
-                  10.0,
-                  28.0,
-                  9,
-                  (value) {
+                _buildRangeSliderRow(
+                  'Wind Gusts',
+                  'Caution (left) to unsafe (right) thresholds (default: 25-35 km/h)',
+                  _windGustRange ?? const RangeValues(25.0, 35.0),
+                  20.0,
+                  50.0,
+                  // onChanged: Update UI immediately while dragging
+                  (values) {
                     setState(() {
-                      _cautionWindSpeed = value;
+                      _windGustRange = values;
                     });
-                    _savePreference('caution wind speed', value, PreferencesHelper.setCautionWindSpeed);
                   },
-                ),
-                const SizedBox(height: 16),
-                _buildSliderRow(
-                  'Caution Wind Gusts',
-                  'Wind gusts above this trigger caution warning',
-                  _cautionWindGusts ?? 25.0,
-                  15.0,
-                  35.0,
-                  10,
-                  (value) {
-                    setState(() {
-                      _cautionWindGusts = value;
-                    });
-                    _savePreference('caution wind gusts', value, PreferencesHelper.setCautionWindGusts);
+                  // onChangeEnd: Save to preferences only when user releases slider
+                  (values) async {
+                    await PreferencesHelper.setCautionWindGusts(values.start);
+                    await PreferencesHelper.setMaxWindGusts(values.end);
+                    LoggingService.info('PreferencesScreen: Saved wind gusts | caution=${values.start.toInt()} unsafe=${values.end.toInt()} km/h');
+                    if (mounted) {
+                      UiUtils.showSuccessMessage(context, 'Saved wind gust thresholds');
+                    }
                   },
                 ),
               ]),

@@ -1183,6 +1183,8 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
         paraglidingSite: paraglidingSite,
         userPosition: _userPosition,
         windData: windData,
+        maxWindSpeed: _maxWindSpeed,
+        maxWindGusts: _maxWindGusts,
         onWindDataFetched: (fetchedWindData) {
           // Update parent's cache when dialog fetches wind data
           setState(() {
@@ -1850,6 +1852,8 @@ class _SiteDetailsDialog extends StatefulWidget {
   final ParaglidingSite? paraglidingSite;
   final Position? userPosition;
   final WindData? windData;
+  final double maxWindSpeed;
+  final double maxWindGusts;
   final Function(WindData)? onWindDataFetched;
 
   const _SiteDetailsDialog({
@@ -1857,6 +1861,8 @@ class _SiteDetailsDialog extends StatefulWidget {
     this.paraglidingSite,
     this.userPosition,
     this.windData,
+    required this.maxWindSpeed,
+    required this.maxWindGusts,
     this.onWindDataFetched,
   });
 
@@ -2927,8 +2933,8 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     final flyabilityLevel = FlyabilityHelper.getFlyabilityLevel(
       windData: windData,
       siteDirections: windDirections,
-      maxSpeed: 25.0,
-      maxGusts: 30.0,
+      maxSpeed: widget.maxWindSpeed,
+      maxGusts: widget.maxWindGusts,
     );
 
     // Get color with full opacity
@@ -2939,8 +2945,8 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
       level: flyabilityLevel,
       windData: windData,
       siteDirections: windDirections,
-      maxSpeed: 25.0,
-      maxGusts: 30.0,
+      maxSpeed: widget.maxWindSpeed,
+      maxGusts: widget.maxWindGusts,
     );
 
     return Tooltip(
