@@ -2079,8 +2079,8 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
       final flyabilityLevel = FlyabilityHelper.getFlyabilityLevel(
         windData: _windData!,
         siteDirections: tempSite.windDirections,
-        maxSpeed: 25.0,
-        maxGusts: 30.0,
+        maxSpeed: widget.maxWindSpeed,
+        maxGusts: widget.maxWindGusts,
       );
 
       // Convert FlyabilityLevel to FlyabilityStatus
@@ -2104,8 +2104,8 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
       site: tempSite,
       status: status,
       windData: _windData,
-      maxWindSpeed: 25.0, // Default max wind speed
-      maxWindGusts: 30.0, // Default max gusts
+      maxWindSpeed: widget.maxWindSpeed,
+      maxWindGusts: widget.maxWindGusts,
       forecastEnabled: true,
     );
   }
