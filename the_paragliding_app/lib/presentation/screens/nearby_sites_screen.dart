@@ -2727,10 +2727,13 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
       return const Center(child: Text('No forecast data available'));
     }
 
-    // Fixed day column with horizontally scrollable hours
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: _build7DayForecastTable(windDirections),
+    // Simple horizontal scroll with fixed-height table
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: _build7DayForecastTable(windDirections),
+      ),
     );
   }
 
@@ -2743,122 +2746,21 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
       ..sort()
       ..take(7);
 
-    final dividerColor = Theme.of(context).dividerColor;
-
-    // Build table with fixed day column and scrollable hours
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    // Build simple Table widget
+    return Table(
+      defaultColumnWidth: const FixedColumnWidth(_cellSize),
+      columnWidths: const {
+        0: FixedColumnWidth(_dayColumnWidth), // Day column wider
+      },
+      border: TableBorder.all(
+        color: Theme.of(context).dividerColor,
+        width: 1.0,
+      ),
       children: [
-        // Fixed day column
-        Container(
-          decoration: BoxDecoration(
-            border: Border(
-              left: BorderSide(color: dividerColor, width: 1.0),
-              top: BorderSide(color: dividerColor, width: 1.0),
-              right: BorderSide(color: dividerColor, width: 1.0),
-            ),
-          ),
-          child: Column(
-            children: [
-              // Day header
-              Container(
-                width: _dayColumnWidth,
-                height: _cellSize,
-                alignment: Alignment.center,
-                padding: const EdgeInsets.symmetric(horizontal: 2.0),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
-                  border: Border(bottom: BorderSide(color: dividerColor, width: 1.0)),
-                ),
-                child: const Text(
-                  'Day',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                ),
-              ),
-              // Day cells
-              ...displayDays.map((dayKey) {
-                final dayDate = _windForecast!.timestamps[dayHourIndices[dayKey]!.first];
-                final dayName = _formatDayName(dayDate);
-                return Container(
-                  width: _dayColumnWidth,
-                  height: _cellSize,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    border: Border(bottom: BorderSide(color: dividerColor, width: 1.0)),
-                  ),
-                  child: Text(
-                    dayName,
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
-                  ),
-                );
-              }),
-            ],
-          ),
-        ),
-        // Scrollable hours columns
-        Expanded(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Column(
-              children: [
-                // Hour headers
-                Row(
-                  children: List.generate(_hoursToShow, (hour) => Container(
-                    width: _cellSize,
-                    height: _cellSize,
-                    alignment: Alignment.center,
-                    padding: const EdgeInsets.symmetric(horizontal: 2.0),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
-                      border: Border(
-                        top: BorderSide(color: dividerColor, width: 1.0),
-                        right: BorderSide(color: dividerColor, width: 1.0),
-                        bottom: BorderSide(color: dividerColor, width: 1.0),
-                      ),
-                    ),
-                    child: Text(
-                      '${hour + _startHour}h',
-                      style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 10),
-                    ),
-                  )),
-                ),
-                  // Hour data cells
-                  ...displayDays.map((dayKey) {
-                    final indices = dayHourIndices[dayKey]!;
-                    return Row(
-                      children: List.generate(_hoursToShow, (hourOffset) {
-                        final targetHour = _startHour + hourOffset;
-                        final index = indices.firstWhere(
-                          (i) => _windForecast!.timestamps[i].hour == targetHour,
-                          orElse: () => -1,
-                        );
-
-                        return Container(
-                          width: _cellSize,
-                          height: _cellSize,
-                          decoration: BoxDecoration(
-                            border: Border(
-                              right: BorderSide(color: dividerColor, width: 1.0),
-                              bottom: BorderSide(color: dividerColor, width: 1.0),
-                            ),
-                          ),
-                          child: index == -1
-                              ? _buildEmptyCell()
-                              : _buildForecastCell(
-                                  speed: _windForecast!.speedsKmh[index],
-                                  direction: _windForecast!.directionsDegs[index],
-                                  gusts: _windForecast!.gustsKmh[index],
-                                  timestamp: _windForecast!.timestamps[index],
-                                  windDirections: windDirections,
-                                ),
-                        );
-                      }),
-                    );
-                  }),
-                ],
-            ),
-          ),
-        ),
+        // Header row
+        _buildHeaderRow(),
+        // Data rows
+        ...displayDays.map((dayKey) => _buildDataRow(dayKey, dayHourIndices[dayKey]!, windDirections)),
       ],
     );
   }
@@ -2879,6 +2781,73 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     }
 
     return dayHourIndices;
+  }
+
+  TableRow _buildHeaderRow() {
+    return TableRow(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
+      ),
+      children: [
+        _buildHeaderCell('Day', isFirst: true),
+        ...List.generate(_hoursToShow, (hour) =>
+          _buildHeaderCell('${hour + _startHour}h')),
+      ],
+    );
+  }
+
+  Widget _buildHeaderCell(String text, {bool isFirst = false}) {
+    return Container(
+      height: _cellSize,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 2.0),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontWeight: isFirst ? FontWeight.bold : FontWeight.w500,
+          fontSize: isFirst ? 12 : 10,
+        ),
+      ),
+    );
+  }
+
+  TableRow _buildDataRow(String dayKey, List<int> indices, List<String> windDirections) {
+    final dayDate = _windForecast!.timestamps[indices.first];
+    final dayName = _formatDayName(dayDate);
+
+    return TableRow(
+      children: [
+        // Day name cell
+        Container(
+          height: _cellSize,
+          alignment: Alignment.center,
+          child: Text(
+            dayName,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+          ),
+        ),
+        // Hour cells
+        ...List.generate(_hoursToShow, (hourOffset) {
+          final targetHour = _startHour + hourOffset;
+          final index = indices.firstWhere(
+            (i) => _windForecast!.timestamps[i].hour == targetHour,
+            orElse: () => -1,
+          );
+
+          if (index == -1) {
+            return _buildEmptyCell();
+          }
+
+          return _buildForecastCell(
+            speed: _windForecast!.speedsKmh[index],
+            direction: _windForecast!.directionsDegs[index],
+            gusts: _windForecast!.gustsKmh[index],
+            timestamp: _windForecast!.timestamps[index],
+            windDirections: windDirections,
+          );
+        }),
+      ],
+    );
   }
 
   Widget _buildEmptyCell() {
@@ -2914,39 +2883,51 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
     // Get color with full opacity
     final bgColor = FlyabilityHelper.getColorForLevel(flyabilityLevel);
 
-    return Container(
-      height: _cellSize,
-      color: bgColor,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // Wind arrow and speed with white color for contrast
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Using Transform.rotate for wind direction arrow
-              Transform.rotate(
-                angle: direction * (3.14159265359 / 180), // Convert degrees to radians
-                child: const Icon(
-                  Icons.arrow_upward,
-                  size: 12,
-                  color: Colors.white,
+    // Generate tooltip with detailed flyability explanation
+    final tooltipMessage = FlyabilityHelper.getTooltipForLevel(
+      level: flyabilityLevel,
+      windData: windData,
+      siteDirections: windDirections,
+      maxSpeed: 25.0,
+      maxGusts: 30.0,
+    );
+
+    return Tooltip(
+      message: tooltipMessage,
+      child: Container(
+        height: _cellSize,
+        color: bgColor,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // Wind arrow and speed with white color for contrast
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Using Transform.rotate for wind direction arrow
+                Transform.rotate(
+                  angle: direction * (3.14159265359 / 180), // Convert degrees to radians
+                  child: const Icon(
+                    Icons.arrow_upward,
+                    size: 12,
+                    color: Colors.white,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 1),
-              Text(
-                '${speed.round()}',
-                style: const TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.bold,
-                  height: 1.0,
-                  color: Colors.white,
+                const SizedBox(height: 1),
+                Text(
+                  '${speed.round()}',
+                  style: const TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    height: 1.0,
+                    color: Colors.white,
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
