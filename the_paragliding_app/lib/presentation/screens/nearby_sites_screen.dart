@@ -2164,7 +2164,7 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
       elevation: 16,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
-        constraints: const BoxConstraints(maxWidth: 400, maxHeight: 550),
+        constraints: const BoxConstraints(maxWidth: 500, maxHeight: 650),
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
@@ -2222,6 +2222,52 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                             fontWeight: FontWeight.bold,
                           ),
                         ),
+                      // Flight characteristics directly under title
+                      if (_detailedData != null) ...[
+                        () {
+                          final characteristics = <String>[];
+
+                          if (_detailedData?['paragliding']?.toString() == '1') {
+                            characteristics.add('Paragliding');
+                          }
+                          if (_detailedData?['hanggliding']?.toString() == '1') {
+                            characteristics.add('Hang Gliding');
+                          }
+                          if (_detailedData?['hike']?.toString() == '1') {
+                            characteristics.add('Hike');
+                          }
+                          if (_detailedData?['thermals']?.toString() == '1') {
+                            characteristics.add('Thermals');
+                          }
+                          if (_detailedData?['soaring']?.toString() == '1') {
+                            characteristics.add('Soaring');
+                          }
+                          if (_detailedData?['xc']?.toString() == '1') {
+                            characteristics.add('XC');
+                          }
+                          if (_detailedData?['flatland']?.toString() == '1') {
+                            characteristics.add('Flatland');
+                          }
+                          if (_detailedData?['winch']?.toString() == '1') {
+                            characteristics.add('Winch');
+                          }
+
+                          if (characteristics.isNotEmpty) {
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 4.0),
+                              child: Text(
+                                characteristics.join(', '),
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  fontSize: 11,
+                                  color: Colors.grey[400],
+                                  fontWeight: FontWeight.w300,
+                                ),
+                              ),
+                            );
+                          }
+                          return const SizedBox.shrink();
+                        }(),
+                      ],
                     ],
                   ),
                 ),
@@ -2410,44 +2456,6 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                 ],
               ),
               const SizedBox(height: 8),
-            ],
-
-            // Flight characteristics row - show if any flags are set
-            if (thermalFlag == '1' || soaringFlag == '1' || xcFlag == '1') ...[
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  if (thermalFlag == '1')
-                    Chip(
-                      avatar: const Icon(Icons.wb_sunny, size: 16, color: Colors.orange),
-                      label: const Text('Thermals', style: TextStyle(fontSize: 12)),
-                      backgroundColor: Colors.orange.withOpacity(0.1),
-                      side: BorderSide(color: Colors.orange.withOpacity(0.3)),
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  if (soaringFlag == '1')
-                    Chip(
-                      avatar: const Icon(Icons.waves, size: 16, color: Colors.blue),
-                      label: const Text('Soaring', style: TextStyle(fontSize: 12)),
-                      backgroundColor: Colors.blue.withOpacity(0.1),
-                      side: BorderSide(color: Colors.blue.withOpacity(0.3)),
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  if (xcFlag == '1')
-                    Chip(
-                      avatar: const Icon(Icons.flight_takeoff, size: 16, color: Colors.green),
-                      label: const Text('Cross Country', style: TextStyle(fontSize: 12)),
-                      backgroundColor: Colors.green.withOpacity(0.1),
-                      side: BorderSide(color: Colors.green.withOpacity(0.3)),
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                ],
-              ),
             ],
     ];
   }
@@ -2727,52 +2735,54 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
       return const Center(child: Text('No forecast data available'));
     }
 
-    // Column with forecast table and weather description
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Forecast table with horizontal scroll
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: _build7DayForecastTable(windDirections),
-          ),
-        ),
-        // Weather description info box
-        if (_detailedData?['weather'] != null && _detailedData!['weather']!.toString().isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-            child: Container(
-              padding: const EdgeInsets.all(12.0),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
-                borderRadius: BorderRadius.circular(8.0),
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
-                  width: 1.0,
-                ),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.info_outline,
-                    size: 18,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _detailedData!['weather']!.toString(),
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ),
-                ],
-              ),
+    // Column with forecast table and weather description - make scrollable to avoid overflow
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Forecast table with horizontal scroll
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: _build7DayForecastTable(windDirections),
             ),
           ),
-      ],
+          // Weather description info box
+          if (_detailedData?['weather'] != null && _detailedData!['weather']!.toString().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+              child: Container(
+                padding: const EdgeInsets.all(12.0),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(8.0),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                    width: 1.0,
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      size: 18,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _detailedData!['weather']!.toString(),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
