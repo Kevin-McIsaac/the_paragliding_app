@@ -163,13 +163,13 @@ class NearbySitesSearchManagerV2 {
       final results = await _searchSites(query);
       final limitedResults = results.take(_maxResults).toList();
 
-      // Auto-jump to single result and show it in dropdown
+      // Auto-jump to single result and close dropdown
       if (limitedResults.length == 1) {
         final site = limitedResults.first;
         _onAutoJump?.call(site);
 
-        // Keep search active and show the single result in dropdown
-        _updateState(_state.withResults(limitedResults));
+        // Reuse selectSearchResult to close dropdown (idiomatic)
+        selectSearchResult(site);
 
         LoggingService.action('NearbySitesV2', 'live_search_single_result_auto_jump', {
           'site_name': site.name,
