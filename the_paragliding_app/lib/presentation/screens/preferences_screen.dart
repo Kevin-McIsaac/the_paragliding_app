@@ -24,7 +24,11 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   double? _detectionClimbRateThreshold;
   double? _triangleClosingDistance;
   int? _triangleSamplingInterval;
-  
+
+  // Wind Threshold preferences (using RangeValues: start = caution, end = unsafe)
+  RangeValues? _windSpeedRange;
+  RangeValues? _windGustRange;
+
   bool _isLoading = true;
   bool _isSaving = false;
 
@@ -60,7 +64,13 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       final climbRateThreshold = await PreferencesHelper.getDetectionClimbRateThreshold();
       final triangleClosingDistance = await PreferencesHelper.getTriangleClosingDistance();
       final triangleSamplingInterval = await PreferencesHelper.getTriangleSamplingInterval();
-      
+
+      // Load Wind Threshold preferences and combine into RangeValues
+      final maxWindSpeed = await PreferencesHelper.getMaxWindSpeed();
+      final maxWindGusts = await PreferencesHelper.getMaxWindGusts();
+      final cautionWindSpeed = await PreferencesHelper.getCautionWindSpeed();
+      final cautionWindGusts = await PreferencesHelper.getCautionWindGusts();
+
       if (mounted) {
         setState(() {
           _cesiumSceneMode = sceneMode;
@@ -68,12 +78,28 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           _cesiumTerrainEnabled = terrainEnabled;
           _cesiumTrailDuration = trailDuration;
           _cesiumQuality = quality;
-          
+
           _detectionSpeedThreshold = speedThreshold;
           _detectionClimbRateThreshold = climbRateThreshold;
           _triangleClosingDistance = triangleClosingDistance;
           _triangleSamplingInterval = triangleSamplingInterval;
-          
+
+          // Combine caution and max values into RangeValues (start = caution, end = unsafe)
+          // Clamp values to valid ranges
+          final cautionSpeed = cautionWindSpeed.clamp(20.0, 50.0);
+          final maxSpeed = maxWindSpeed.clamp(20.0, 50.0);
+          _windSpeedRange = RangeValues(
+            cautionSpeed < maxSpeed ? cautionSpeed : maxSpeed - 1,
+            maxSpeed > cautionSpeed ? maxSpeed : cautionSpeed + 1,
+          );
+
+          final cautionGusts = cautionWindGusts.clamp(20.0, 50.0);
+          final maxGusts = maxWindGusts.clamp(20.0, 50.0);
+          _windGustRange = RangeValues(
+            cautionGusts < maxGusts ? cautionGusts : maxGusts - 1,
+            maxGusts > cautionGusts ? maxGusts : cautionGusts + 1,
+          );
+
           _isLoading = false;
         });
       }
@@ -200,7 +226,116 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     );
   }
 
+  Widget _buildSliderRow(
+    String title,
+    String subtitle,
+    double value,
+    double min,
+    double max,
+    Function(double) onChanged,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ListTile(
+          title: Text(title),
+          subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
+          trailing: Text(
+            '${value.toInt()} km/h',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          contentPadding: EdgeInsets.zero,
+        ),
+        Slider(
+          value: value,
+          min: min,
+          max: max,
+          label: '${value.toInt()} km/h',
+          onChanged: onChanged,
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '${min.toInt()} km/h',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.grey,
+                ),
+              ),
+              Text(
+                '${max.toInt()} km/h',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.grey,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 
+  Widget _buildRangeSliderRow(
+    String title,
+    String subtitle,
+    RangeValues values,
+    double min,
+    double max,
+    Function(RangeValues) onChanged,
+    Function(RangeValues)? onChangeEnd,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ListTile(
+          title: Text(title),
+          subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
+          trailing: Text(
+            '${values.start.toInt()}-${values.end.toInt()} km/h',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          contentPadding: EdgeInsets.zero,
+        ),
+        RangeSlider(
+          values: values,
+          min: min,
+          max: max,
+          labels: RangeLabels(
+            '${values.start.toInt()} km/h',
+            '${values.end.toInt()} km/h',
+          ),
+          onChanged: onChanged,
+          onChangeEnd: onChangeEnd,
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '${min.toInt()} km/h',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.grey,
+                ),
+              ),
+              Text(
+                '${max.toInt()} km/h',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.grey,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -321,7 +456,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   'Speed Threshold',
                   'Minimum 5-second average ground speed for takeoff/landing detection',
                   _detectionSpeedThreshold,
-                  PreferencesHelper.validSpeedThresholds.map((speed) => 
+                  PreferencesHelper.validSpeedThresholds.map((speed) =>
                     DropdownMenuItem(
                       value: speed,
                       child: Text('${speed.toStringAsFixed(0)} km/h'),
@@ -340,7 +475,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   'Climb Rate Threshold',
                   'Minimum absolute 5-second average climb rate for takeoff/landing detection',
                   _detectionClimbRateThreshold,
-                  PreferencesHelper.validClimbRateThresholds.map((rate) => 
+                  PreferencesHelper.validClimbRateThresholds.map((rate) =>
                     DropdownMenuItem(
                       value: rate,
                       child: Text('${rate.toStringAsFixed(1)} m/s'),
@@ -359,7 +494,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   'Triangle Closing Distance',
                   'Maximum distance of return to launch to consider a flight as closed triangle',
                   _triangleClosingDistance,
-                  PreferencesHelper.validTriangleClosingDistances.map((distance) => 
+                  PreferencesHelper.validTriangleClosingDistances.map((distance) =>
                     DropdownMenuItem(
                       value: distance,
                       child: Text('${distance.toStringAsFixed(0)} m'),
@@ -381,7 +516,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   '• 30s - High precision, good balance for most flights (recommended)\n'
                   '• 60s - Standard precision, recommended for long flights',
                   _triangleSamplingInterval,
-                  PreferencesHelper.validTriangleSamplingIntervals.map((interval) => 
+                  PreferencesHelper.validTriangleSamplingIntervals.map((interval) =>
                     DropdownMenuItem(
                       value: interval,
                       child: Text(_getTriangleSamplingDescription(interval)),
@@ -393,6 +528,64 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                         _triangleSamplingInterval = value;
                       });
                       _savePreference('triangle sampling interval', value, PreferencesHelper.setTriangleSamplingInterval);
+                    }
+                  },
+                ),
+              ]),
+
+              // Wind Threshold Settings
+              _buildSection('Wind Thresholds for Flyability', expansionKey: 'wind_thresholds', [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16.0),
+                  child: Text(
+                    'These settings determine what is considered safe flyable (launching) conditions which determines the colour of the site marker in the map',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ),
+                _buildRangeSliderRow(
+                  'Wind Speed',
+                  'Caution (left) to unsafe (right) thresholds (default: 20-25 km/h)',
+                  _windSpeedRange ?? const RangeValues(20.0, 25.0),
+                  20.0,
+                  50.0,
+                  // onChanged: Update UI immediately while dragging
+                  (values) {
+                    setState(() {
+                      _windSpeedRange = values;
+                    });
+                  },
+                  // onChangeEnd: Save to preferences only when user releases slider
+                  (values) async {
+                    await PreferencesHelper.setCautionWindSpeed(values.start);
+                    await PreferencesHelper.setMaxWindSpeed(values.end);
+                    LoggingService.info('PreferencesScreen: Saved wind speed | caution=${values.start.toInt()} unsafe=${values.end.toInt()} km/h');
+                    if (mounted) {
+                      UiUtils.showSuccessMessage(context, 'Saved wind speed thresholds');
+                    }
+                  },
+                ),
+                const SizedBox(height: 16),
+                _buildRangeSliderRow(
+                  'Wind Gusts',
+                  'Caution (left) to unsafe (right) thresholds (default: 25-35 km/h)',
+                  _windGustRange ?? const RangeValues(25.0, 35.0),
+                  20.0,
+                  50.0,
+                  // onChanged: Update UI immediately while dragging
+                  (values) {
+                    setState(() {
+                      _windGustRange = values;
+                    });
+                  },
+                  // onChangeEnd: Save to preferences only when user releases slider
+                  (values) async {
+                    await PreferencesHelper.setCautionWindGusts(values.start);
+                    await PreferencesHelper.setMaxWindGusts(values.end);
+                    LoggingService.info('PreferencesScreen: Saved wind gusts | caution=${values.start.toInt()} unsafe=${values.end.toInt()} km/h');
+                    if (mounted) {
+                      UiUtils.showSuccessMessage(context, 'Saved wind gust thresholds');
                     }
                   },
                 ),

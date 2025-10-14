@@ -320,6 +320,17 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
       return false;
     });
 
+    // Check if any sites are caution (orange)
+    final hasCautionSites = markers.any((marker) {
+      if (marker.key is ValueKey<ParaglidingSite>) {
+        final site = (marker.key as ValueKey<ParaglidingSite>).value;
+        final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
+        final status = widget.siteFlyabilityStatus[key];
+        return status == FlyabilityStatus.caution;
+      }
+      return false;
+    });
+
     // Check if any sites are not flyable (red)
     final hasNotFlyableSites = markers.any((marker) {
       if (marker.key is ValueKey<ParaglidingSite>) {
@@ -340,15 +351,17 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
       return false;
     });
 
-    // Priority: Green if any flyable > Red if any not flyable > Grey for all unknown/loading
+    // Priority: Green if any flyable > Orange if any caution > Red if any not flyable > Grey for all unknown/loading
     final clusterColor = hasFlyableSites
         ? SiteMarkerUtils.flyableSiteColor
-        : (hasNotFlyableSites ? SiteMarkerUtils.notFlyableSiteColor : SiteMarkerUtils.unknownFlyabilitySiteColor);
+        : (hasCautionSites
+            ? SiteMarkerUtils.strongWindSiteColor
+            : (hasNotFlyableSites ? SiteMarkerUtils.notFlyableSiteColor : SiteMarkerUtils.unknownFlyabilitySiteColor));
 
     // Use reduced opacity only for clusters with unknown/loading sites that DO have wind directions
     // Sites with no wind directions OR known status get solid opacity
     // When forecast is disabled, all clusters get solid opacity
-    final hasAnyKnownStatus = hasFlyableSites || hasNotFlyableSites;
+    final hasAnyKnownStatus = hasFlyableSites || hasCautionSites || hasNotFlyableSites;
     final alpha = (!widget.forecastEnabled || hasAnyKnownStatus || hasNoWindDirectionsSites) ? 0.9 : 0.5;
 
     return Container(
@@ -479,6 +492,13 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
         Icons.location_on,
         SiteMarkerUtils.flyableSiteColor,
         'Flyable',
+      ),
+      const SizedBox(height: 4),
+      SiteMarkerUtils.buildLegendItem(
+        context,
+        Icons.location_on,
+        SiteMarkerUtils.strongWindSiteColor,
+        'Strong',
       ),
       const SizedBox(height: 4),
       SiteMarkerUtils.buildLegendItem(

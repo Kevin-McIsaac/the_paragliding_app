@@ -3,6 +3,7 @@ import '../../data/models/paragliding_site.dart';
 import '../../data/models/flyability_status.dart';
 import '../../data/models/wind_data.dart';
 import '../../utils/site_marker_utils.dart';
+import '../../utils/flyability_helper.dart';
 
 /// Encapsulates all visual presentation state for a site marker
 ///
@@ -62,6 +63,9 @@ class SiteMarkerPresentation {
       case FlyabilityStatus.flyable:
         color = SiteMarkerUtils.flyableSiteColor;
         break;
+      case FlyabilityStatus.caution:
+        color = SiteMarkerUtils.strongWindSiteColor;
+        break;
       case FlyabilityStatus.notFlyable:
         color = SiteMarkerUtils.notFlyableSiteColor;
         break;
@@ -116,13 +120,24 @@ class SiteMarkerPresentation {
   }) {
     switch (status) {
       case FlyabilityStatus.flyable:
+      case FlyabilityStatus.caution:
       case FlyabilityStatus.notFlyable:
-        // Use WindData's built-in reason if available
+        // Use FlyabilityHelper for consistent tooltips with forecast table
         if (windData != null && site.windDirections.isNotEmpty) {
-          return windData.getFlyabilityReason(
-            site.windDirections,
-            maxWindSpeed,
-            maxWindGusts,
+          // Convert FlyabilityStatus to FlyabilityLevel
+          final flyabilityLevel = FlyabilityHelper.getFlyabilityLevel(
+            windData: windData,
+            siteDirections: site.windDirections,
+            maxSpeed: maxWindSpeed,
+            maxGusts: maxWindGusts,
+          );
+
+          return FlyabilityHelper.getTooltipForLevel(
+            level: flyabilityLevel,
+            windData: windData,
+            siteDirections: site.windDirections,
+            maxSpeed: maxWindSpeed,
+            maxGusts: maxWindGusts,
           );
         }
         return 'Flyability calculation error';
