@@ -2740,9 +2740,9 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Forecast table with horizontal scroll - constrain height for nested scrolling
-          SizedBox(
-            height: 350, // Fixed height to enable horizontal scrolling in nested ScrollView
+          // Forecast table with horizontal scroll - constrain max height for nested scrolling
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 350), // Max height, shrinks to fit content
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Padding(
