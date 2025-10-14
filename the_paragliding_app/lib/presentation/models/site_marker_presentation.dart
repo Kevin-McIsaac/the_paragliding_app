@@ -62,6 +62,9 @@ class SiteMarkerPresentation {
       case FlyabilityStatus.flyable:
         color = SiteMarkerUtils.flyableSiteColor;
         break;
+      case FlyabilityStatus.caution:
+        color = SiteMarkerUtils.strongWindSiteColor;
+        break;
       case FlyabilityStatus.notFlyable:
         color = SiteMarkerUtils.notFlyableSiteColor;
         break;
@@ -116,6 +119,7 @@ class SiteMarkerPresentation {
   }) {
     switch (status) {
       case FlyabilityStatus.flyable:
+      case FlyabilityStatus.caution:
       case FlyabilityStatus.notFlyable:
         // Use WindData's built-in reason if available
         if (windData != null && site.windDirections.isNotEmpty) {

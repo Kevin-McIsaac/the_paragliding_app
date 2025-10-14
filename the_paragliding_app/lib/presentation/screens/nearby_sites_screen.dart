@@ -692,6 +692,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
   void _updateFlyabilityStatus({bool forceRecalculation = false}) {
     int calculated = 0;
     int flyable = 0;
+    int caution = 0;
     int notFlyable = 0;
     int unknown = 0;
 
@@ -704,6 +705,8 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
         final status = _siteFlyabilityStatus[key];
         if (status == FlyabilityStatus.flyable) {
           flyable++;
+        } else if (status == FlyabilityStatus.caution) {
+          caution++;
         } else if (status == FlyabilityStatus.notFlyable) {
           notFlyable++;
         } else {
@@ -722,19 +725,32 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
         _siteFlyabilityStatus[key] = FlyabilityStatus.unknown;
         unknown++;
       } else {
-        final isFlyable = wind.isFlyable(
-          site.windDirections,
-          _maxWindSpeed,
-          _maxWindGusts,
+        // Use FlyabilityHelper for consistent 3-level logic
+        final flyabilityLevel = FlyabilityHelper.getFlyabilityLevel(
+          windData: wind,
+          siteDirections: site.windDirections,
+          maxSpeed: _maxWindSpeed,
+          maxGusts: _maxWindGusts,
         );
-        _siteFlyabilityStatus[key] = isFlyable
-            ? FlyabilityStatus.flyable
-            : FlyabilityStatus.notFlyable;
 
-        if (isFlyable) {
-          flyable++;
-        } else {
-          notFlyable++;
+        // Convert FlyabilityLevel to FlyabilityStatus
+        switch (flyabilityLevel) {
+          case FlyabilityLevel.safe:
+            _siteFlyabilityStatus[key] = FlyabilityStatus.flyable;
+            flyable++;
+            break;
+          case FlyabilityLevel.caution:
+            _siteFlyabilityStatus[key] = FlyabilityStatus.caution;
+            caution++;
+            break;
+          case FlyabilityLevel.unsafe:
+            _siteFlyabilityStatus[key] = FlyabilityStatus.notFlyable;
+            notFlyable++;
+            break;
+          case FlyabilityLevel.unknown:
+            _siteFlyabilityStatus[key] = FlyabilityStatus.unknown;
+            unknown++;
+            break;
         }
       }
     }
@@ -745,6 +761,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
         'total_sites': _displayedSites.length,
         'recalculated': calculated,
         'flyable': flyable,
+        'caution': caution,
         'not_flyable': notFlyable,
         'unknown': unknown,
       });
@@ -2050,20 +2067,36 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
       siteType: 'launch',
     );
 
-    // Calculate flyability status using the same logic as site markers
+    // Calculate flyability status using FlyabilityHelper for 3-level logic
     FlyabilityStatus? status;
     if (windDirections.isNotEmpty) {
-      final isFlyable = _windData!.isFlyable(
-        tempSite.windDirections,
-        25.0, // maxWindSpeed
-        30.0, // maxWindGusts
+      final flyabilityLevel = FlyabilityHelper.getFlyabilityLevel(
+        windData: _windData!,
+        siteDirections: tempSite.windDirections,
+        maxSpeed: 25.0,
+        maxGusts: 30.0,
       );
-      status = isFlyable ? FlyabilityStatus.flyable : FlyabilityStatus.notFlyable;
+
+      // Convert FlyabilityLevel to FlyabilityStatus
+      switch (flyabilityLevel) {
+        case FlyabilityLevel.safe:
+          status = FlyabilityStatus.flyable;
+          break;
+        case FlyabilityLevel.caution:
+          status = FlyabilityStatus.caution;
+          break;
+        case FlyabilityLevel.unsafe:
+          status = FlyabilityStatus.notFlyable;
+          break;
+        case FlyabilityLevel.unknown:
+          status = FlyabilityStatus.unknown;
+          break;
+      }
     }
 
     return SiteMarkerPresentation.forFlyability(
       site: tempSite,
-      status: status, // Now properly calculated!
+      status: status,
       windData: _windData,
       maxWindSpeed: 25.0, // Default max wind speed
       maxWindGusts: 30.0, // Default max gusts
