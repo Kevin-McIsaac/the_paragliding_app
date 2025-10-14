@@ -2259,7 +2259,6 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                                 characteristics.join(', '),
                                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                   fontSize: 11,
-                                  color: Colors.grey[400],
                                   fontWeight: FontWeight.w300,
                                 ),
                               ),
