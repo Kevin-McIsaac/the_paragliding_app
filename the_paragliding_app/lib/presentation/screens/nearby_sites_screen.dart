@@ -2257,8 +2257,8 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                           indicatorWeight: 1.0,
                           indicatorPadding: EdgeInsets.zero,
                         tabs: const [
-                          Tab(icon: Tooltip(message: 'Site Information', child: Icon(Icons.info_outline, size: 18))),
                           Tab(icon: Tooltip(message: 'Site Weather', child: Icon(Icons.air, size: 18))),
+                          Tab(icon: Tooltip(message: 'Site Information', child: Icon(Icons.info_outline, size: 18))),
                         ],
                         ),
                       ),
@@ -2266,8 +2266,8 @@ class _SiteDetailsDialogState extends State<_SiteDetailsDialog> with SingleTicke
                         child: TabBarView(
                           controller: _tabController,
                           children: [
-                            _buildTakeoffTab(),
                             _buildWeatherTab(windDirections),
+                            _buildTakeoffTab(),
                           ],
                         ),
                       ),
