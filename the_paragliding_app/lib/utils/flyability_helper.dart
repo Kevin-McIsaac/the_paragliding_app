@@ -25,9 +25,17 @@ class FlyabilityHelper {
 
   /// Determine flyability level based on wind conditions
   ///
+  /// Logic flow (clearest order):
+  /// 1. Check if site has wind directions (unknown if empty)
+  /// 2. Check direction match (unsafe if wrong direction)
+  /// 3. Check speed thresholds in order:
+  ///    - unsafe if speed/gusts > maxSpeed/maxGusts
+  ///    - caution if speed/gusts > cautionSpeed/cautionGusts
+  ///    - safe otherwise
+  ///
   /// Returns:
   /// - FlyabilityLevel.safe: Good conditions for flying
-  /// - FlyabilityLevel.caution: Flyable but strong (speed 20-25 or gusts 25-30)
+  /// - FlyabilityLevel.caution: Flyable but strong (above caution thresholds)
   /// - FlyabilityLevel.unsafe: Too strong or wrong direction
   /// - FlyabilityLevel.unknown: No wind directions defined
   static FlyabilityLevel getFlyabilityLevel({
@@ -35,28 +43,47 @@ class FlyabilityHelper {
     required List<String> siteDirections,
     double? maxSpeed,
     double? maxGusts,
+    double? cautionSpeed,
+    double? cautionGusts,
   }) {
     // Use provided limits or defaults
     final speedLimit = maxSpeed ?? maxWindSpeedKmh;
     final gustsLimit = maxGusts ?? maxGustsKmh;
+    final cautionSpeedLimit = cautionSpeed ?? cautionWindSpeedKmh;
+    final cautionGustsLimit = cautionGusts ?? cautionGustsKmh;
 
-    // No wind directions = unknown
+    // Step 1: No wind directions = unknown
     if (siteDirections.isEmpty) {
       return FlyabilityLevel.unknown;
     }
 
-    // Check if flyable based on direction and limits
-    final isFlyable = windData.isFlyable(siteDirections, speedLimit, gustsLimit);
+    // Step 2: Check direction match (only if wind speed > 1 km/h)
+    if (windData.speedKmh > 1.0) {
+      final directionMatches = windData.isDirectionFlyable(siteDirections);
+      if (!directionMatches) {
+        return FlyabilityLevel.unsafe;
+      }
+    }
 
-    if (!isFlyable) {
+    // Step 3: Check speed thresholds (direction is OK or wind is light)
+    // Check if above unsafe threshold
+    final speedUnsafe = windData.speedKmh > speedLimit;
+    final gustsUnsafe = windData.gustsKmh != null && windData.gustsKmh! > gustsLimit;
+
+    if (speedUnsafe || gustsUnsafe) {
       return FlyabilityLevel.unsafe;
     }
 
-    // Flyable, but check if in caution zone (strong but within limits)
-    final isStrong = windData.speedKmh > cautionWindSpeedKmh ||
-                     (windData.gustsKmh != null && windData.gustsKmh! > cautionGustsKmh);
+    // Check if above caution threshold
+    final speedCaution = windData.speedKmh > cautionSpeedLimit;
+    final gustsCaution = windData.gustsKmh != null && windData.gustsKmh! > cautionGustsLimit;
 
-    return isStrong ? FlyabilityLevel.caution : FlyabilityLevel.safe;
+    if (speedCaution || gustsCaution) {
+      return FlyabilityLevel.caution;
+    }
+
+    // Safe conditions
+    return FlyabilityLevel.safe;
   }
 
   /// Get color for a flyability level
@@ -83,9 +110,12 @@ class FlyabilityHelper {
     required List<String> siteDirections,
     double? maxSpeed,
     double? maxGusts,
+    double? cautionSpeed,
+    double? cautionGusts,
   }) {
     final speedLimit = maxSpeed ?? maxWindSpeedKmh;
     final gustsLimit = maxGusts ?? maxGustsKmh;
+    // Note: cautionSpeed and cautionGusts are not used in tooltip generation
 
     switch (level) {
       case FlyabilityLevel.unknown:

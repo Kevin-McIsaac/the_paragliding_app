@@ -24,7 +24,13 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   double? _detectionClimbRateThreshold;
   double? _triangleClosingDistance;
   int? _triangleSamplingInterval;
-  
+
+  // Wind Threshold preferences
+  double? _maxWindSpeed;
+  double? _maxWindGusts;
+  double? _cautionWindSpeed;
+  double? _cautionWindGusts;
+
   bool _isLoading = true;
   bool _isSaving = false;
 
@@ -60,7 +66,13 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       final climbRateThreshold = await PreferencesHelper.getDetectionClimbRateThreshold();
       final triangleClosingDistance = await PreferencesHelper.getTriangleClosingDistance();
       final triangleSamplingInterval = await PreferencesHelper.getTriangleSamplingInterval();
-      
+
+      // Load Wind Threshold preferences
+      final maxWindSpeed = await PreferencesHelper.getMaxWindSpeed();
+      final maxWindGusts = await PreferencesHelper.getMaxWindGusts();
+      final cautionWindSpeed = await PreferencesHelper.getCautionWindSpeed();
+      final cautionWindGusts = await PreferencesHelper.getCautionWindGusts();
+
       if (mounted) {
         setState(() {
           _cesiumSceneMode = sceneMode;
@@ -68,12 +80,17 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           _cesiumTerrainEnabled = terrainEnabled;
           _cesiumTrailDuration = trailDuration;
           _cesiumQuality = quality;
-          
+
           _detectionSpeedThreshold = speedThreshold;
           _detectionClimbRateThreshold = climbRateThreshold;
           _triangleClosingDistance = triangleClosingDistance;
           _triangleSamplingInterval = triangleSamplingInterval;
-          
+
+          _maxWindSpeed = maxWindSpeed;
+          _maxWindGusts = maxWindGusts;
+          _cautionWindSpeed = cautionWindSpeed;
+          _cautionWindGusts = cautionWindGusts;
+
           _isLoading = false;
         });
       }
@@ -321,7 +338,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   'Speed Threshold',
                   'Minimum 5-second average ground speed for takeoff/landing detection',
                   _detectionSpeedThreshold,
-                  PreferencesHelper.validSpeedThresholds.map((speed) => 
+                  PreferencesHelper.validSpeedThresholds.map((speed) =>
                     DropdownMenuItem(
                       value: speed,
                       child: Text('${speed.toStringAsFixed(0)} km/h'),
@@ -340,7 +357,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   'Climb Rate Threshold',
                   'Minimum absolute 5-second average climb rate for takeoff/landing detection',
                   _detectionClimbRateThreshold,
-                  PreferencesHelper.validClimbRateThresholds.map((rate) => 
+                  PreferencesHelper.validClimbRateThresholds.map((rate) =>
                     DropdownMenuItem(
                       value: rate,
                       child: Text('${rate.toStringAsFixed(1)} m/s'),
@@ -359,7 +376,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   'Triangle Closing Distance',
                   'Maximum distance of return to launch to consider a flight as closed triangle',
                   _triangleClosingDistance,
-                  PreferencesHelper.validTriangleClosingDistances.map((distance) => 
+                  PreferencesHelper.validTriangleClosingDistances.map((distance) =>
                     DropdownMenuItem(
                       value: distance,
                       child: Text('${distance.toStringAsFixed(0)} m'),
@@ -381,7 +398,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   '• 30s - High precision, good balance for most flights (recommended)\n'
                   '• 60s - Standard precision, recommended for long flights',
                   _triangleSamplingInterval,
-                  PreferencesHelper.validTriangleSamplingIntervals.map((interval) => 
+                  PreferencesHelper.validTriangleSamplingIntervals.map((interval) =>
                     DropdownMenuItem(
                       value: interval,
                       child: Text(_getTriangleSamplingDescription(interval)),
@@ -393,6 +410,102 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                         _triangleSamplingInterval = value;
                       });
                       _savePreference('triangle sampling interval', value, PreferencesHelper.setTriangleSamplingInterval);
+                    }
+                  },
+                ),
+              ]),
+
+              // Wind Threshold Settings
+              _buildSection('Wind Thresholds for Flyability', expansionKey: 'wind_thresholds', [
+                _buildDropdownRow<int>(
+                  'Maximum Wind Speed',
+                  'Wind speed above this is considered unsafe for flying\n\n'
+                  '• 20-25 km/h - Conservative, suitable for beginner pilots\n'
+                  '• 25-30 km/h - Moderate, for intermediate pilots (default: 25)\n'
+                  '• 30-35 km/h - Aggressive, experienced pilots only\n'
+                  '• 35-40 km/h - Very strong winds, expert pilots only',
+                  _maxWindSpeed?.toInt(),
+                  List.generate(9, (i) => 15 + i * 5).map((speed) =>
+                    DropdownMenuItem(
+                      value: speed,
+                      child: Text('$speed km/h'),
+                    )
+                  ).toList(),
+                  (value) {
+                    if (value != null) {
+                      setState(() {
+                        _maxWindSpeed = value.toDouble();
+                      });
+                      _savePreference('max wind speed', value.toDouble(), PreferencesHelper.setMaxWindSpeed);
+                    }
+                  },
+                ),
+                _buildDropdownRow<int>(
+                  'Maximum Wind Gusts',
+                  'Wind gusts above this are considered unsafe\n\n'
+                  '• 25-30 km/h - Conservative approach\n'
+                  '• 30-35 km/h - Moderate approach (default: 30)\n'
+                  '• 35-40 km/h - Aggressive approach\n'
+                  '• 40+ km/h - Very strong gusts, extreme caution',
+                  _maxWindGusts?.toInt(),
+                  List.generate(10, (i) => 20 + i * 5).map((gusts) =>
+                    DropdownMenuItem(
+                      value: gusts,
+                      child: Text('$gusts km/h'),
+                    )
+                  ).toList(),
+                  (value) {
+                    if (value != null) {
+                      setState(() {
+                        _maxWindGusts = value.toDouble();
+                      });
+                      _savePreference('max wind gusts', value.toDouble(), PreferencesHelper.setMaxWindGusts);
+                    }
+                  },
+                ),
+                _buildDropdownRow<int>(
+                  'Caution Wind Speed',
+                  'Wind speed above this triggers caution warning (strong but flyable)\n\n'
+                  '• 15-18 km/h - Conservative threshold\n'
+                  '• 18-22 km/h - Moderate threshold (default: 20)\n'
+                  '• 22-25 km/h - Higher threshold\n'
+                  'Must be less than Maximum Wind Speed',
+                  _cautionWindSpeed?.toInt(),
+                  List.generate(9, (i) => 10 + i * 2).map((speed) =>
+                    DropdownMenuItem(
+                      value: speed,
+                      child: Text('$speed km/h'),
+                    )
+                  ).toList(),
+                  (value) {
+                    if (value != null) {
+                      setState(() {
+                        _cautionWindSpeed = value.toDouble();
+                      });
+                      _savePreference('caution wind speed', value.toDouble(), PreferencesHelper.setCautionWindSpeed);
+                    }
+                  },
+                ),
+                _buildDropdownRow<int>(
+                  'Caution Wind Gusts',
+                  'Wind gusts above this trigger caution warning\n\n'
+                  '• 20-23 km/h - Conservative threshold\n'
+                  '• 23-28 km/h - Moderate threshold (default: 25)\n'
+                  '• 28-32 km/h - Higher threshold\n'
+                  'Must be less than Maximum Wind Gusts',
+                  _cautionWindGusts?.toInt(),
+                  List.generate(10, (i) => 15 + i * 2).map((gusts) =>
+                    DropdownMenuItem(
+                      value: gusts,
+                      child: Text('$gusts km/h'),
+                    )
+                  ).toList(),
+                  (value) {
+                    if (value != null) {
+                      setState(() {
+                        _cautionWindGusts = value.toDouble();
+                      });
+                      _savePreference('caution wind gusts', value.toDouble(), PreferencesHelper.setCautionWindGusts);
                     }
                   },
                 ),

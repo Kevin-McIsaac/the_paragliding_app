@@ -15,6 +15,20 @@ class WindData {
   /// Convert wind direction in degrees to compass direction
   String get compassDirection => _degreesToCompass(directionDegrees);
 
+  /// Check if wind direction matches site launchable directions
+  /// Returns true if direction is acceptable (including light wind < 1 km/h)
+  bool isDirectionFlyable(List<String> siteDirections) {
+    // No wind direction data means unknown
+    if (siteDirections.isEmpty) return false;
+
+    // Light wind (< 1 km/h) - any direction is acceptable
+    if (speedKmh < 1.0) return true;
+
+    // Check if wind direction matches any allowed site direction
+    // Allow ±22.5° tolerance (half of a compass point)
+    return siteDirections.any((dir) => _isDirectionMatch(compassDirection, dir));
+  }
+
   /// Check if wind conditions are flyable for a given site
   bool isFlyable(
     List<String> siteDirections,
@@ -28,12 +42,8 @@ class WindData {
     if (speedKmh > maxSpeed) return false;
     if (gustsKmh != null && gustsKmh! > maxGusts) return false;
 
-    // Light wind (< 1 km/h) - any direction is acceptable
-    if (speedKmh < 1.0) return true;
-
-    // Check if wind direction matches any allowed site direction
-    // Allow ±22.5° tolerance (half of a compass point)
-    return siteDirections.any((dir) => _isDirectionMatch(compassDirection, dir));
+    // Check direction
+    return isDirectionFlyable(siteDirections);
   }
 
   /// Get detailed reason for flyability status
