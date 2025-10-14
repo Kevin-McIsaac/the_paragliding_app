@@ -217,7 +217,40 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     );
   }
 
-
+  Widget _buildSliderRow(
+    String title,
+    String subtitle,
+    double value,
+    double min,
+    double max,
+    int divisions,
+    Function(double) onChanged,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ListTile(
+          title: Text(title),
+          subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
+          trailing: Text(
+            '${value.toInt()} km/h',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          contentPadding: EdgeInsets.zero,
+        ),
+        Slider(
+          value: value,
+          min: min,
+          max: max,
+          divisions: divisions,
+          label: '${value.toInt()} km/h',
+          onChanged: onChanged,
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -417,96 +450,63 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
 
               // Wind Threshold Settings
               _buildSection('Wind Thresholds for Flyability', expansionKey: 'wind_thresholds', [
-                _buildDropdownRow<int>(
+                _buildSliderRow(
                   'Maximum Wind Speed',
-                  'Wind speed above this is considered unsafe for flying\n\n'
-                  '• 20-25 km/h - Conservative, suitable for beginner pilots\n'
-                  '• 25-30 km/h - Moderate, for intermediate pilots (default: 25)\n'
-                  '• 30-35 km/h - Aggressive, experienced pilots only\n'
-                  '• 35-40 km/h - Very strong winds, expert pilots only',
-                  _maxWindSpeed?.toInt(),
-                  List.generate(9, (i) => 15 + i * 5).map((speed) =>
-                    DropdownMenuItem(
-                      value: speed,
-                      child: Text('$speed km/h'),
-                    )
-                  ).toList(),
+                  'Wind speed above this is unsafe for flying',
+                  _maxWindSpeed ?? 25.0,
+                  15.0,
+                  50.0,
+                  7,
                   (value) {
-                    if (value != null) {
-                      setState(() {
-                        _maxWindSpeed = value.toDouble();
-                      });
-                      _savePreference('max wind speed', value.toDouble(), PreferencesHelper.setMaxWindSpeed);
-                    }
+                    setState(() {
+                      _maxWindSpeed = value;
+                    });
+                    _savePreference('max wind speed', value, PreferencesHelper.setMaxWindSpeed);
                   },
                 ),
-                _buildDropdownRow<int>(
+                const SizedBox(height: 16),
+                _buildSliderRow(
                   'Maximum Wind Gusts',
-                  'Wind gusts above this are considered unsafe\n\n'
-                  '• 25-30 km/h - Conservative approach\n'
-                  '• 30-35 km/h - Moderate approach (default: 30)\n'
-                  '• 35-40 km/h - Aggressive approach\n'
-                  '• 40+ km/h - Very strong gusts, extreme caution',
-                  _maxWindGusts?.toInt(),
-                  List.generate(10, (i) => 20 + i * 5).map((gusts) =>
-                    DropdownMenuItem(
-                      value: gusts,
-                      child: Text('$gusts km/h'),
-                    )
-                  ).toList(),
+                  'Wind gusts above this are unsafe',
+                  _maxWindGusts ?? 30.0,
+                  20.0,
+                  60.0,
+                  8,
                   (value) {
-                    if (value != null) {
-                      setState(() {
-                        _maxWindGusts = value.toDouble();
-                      });
-                      _savePreference('max wind gusts', value.toDouble(), PreferencesHelper.setMaxWindGusts);
-                    }
+                    setState(() {
+                      _maxWindGusts = value;
+                    });
+                    _savePreference('max wind gusts', value, PreferencesHelper.setMaxWindGusts);
                   },
                 ),
-                _buildDropdownRow<int>(
+                const SizedBox(height: 16),
+                _buildSliderRow(
                   'Caution Wind Speed',
-                  'Wind speed above this triggers caution warning (strong but flyable)\n\n'
-                  '• 15-18 km/h - Conservative threshold\n'
-                  '• 18-22 km/h - Moderate threshold (default: 20)\n'
-                  '• 22-25 km/h - Higher threshold\n'
-                  'Must be less than Maximum Wind Speed',
-                  _cautionWindSpeed?.toInt(),
-                  List.generate(9, (i) => 10 + i * 2).map((speed) =>
-                    DropdownMenuItem(
-                      value: speed,
-                      child: Text('$speed km/h'),
-                    )
-                  ).toList(),
+                  'Wind speed above this triggers caution warning',
+                  _cautionWindSpeed ?? 20.0,
+                  10.0,
+                  28.0,
+                  9,
                   (value) {
-                    if (value != null) {
-                      setState(() {
-                        _cautionWindSpeed = value.toDouble();
-                      });
-                      _savePreference('caution wind speed', value.toDouble(), PreferencesHelper.setCautionWindSpeed);
-                    }
+                    setState(() {
+                      _cautionWindSpeed = value;
+                    });
+                    _savePreference('caution wind speed', value, PreferencesHelper.setCautionWindSpeed);
                   },
                 ),
-                _buildDropdownRow<int>(
+                const SizedBox(height: 16),
+                _buildSliderRow(
                   'Caution Wind Gusts',
-                  'Wind gusts above this trigger caution warning\n\n'
-                  '• 20-23 km/h - Conservative threshold\n'
-                  '• 23-28 km/h - Moderate threshold (default: 25)\n'
-                  '• 28-32 km/h - Higher threshold\n'
-                  'Must be less than Maximum Wind Gusts',
-                  _cautionWindGusts?.toInt(),
-                  List.generate(10, (i) => 15 + i * 2).map((gusts) =>
-                    DropdownMenuItem(
-                      value: gusts,
-                      child: Text('$gusts km/h'),
-                    )
-                  ).toList(),
+                  'Wind gusts above this trigger caution warning',
+                  _cautionWindGusts ?? 25.0,
+                  15.0,
+                  35.0,
+                  10,
                   (value) {
-                    if (value != null) {
-                      setState(() {
-                        _cautionWindGusts = value.toDouble();
-                      });
-                      _savePreference('caution wind gusts', value.toDouble(), PreferencesHelper.setCautionWindGusts);
-                    }
+                    setState(() {
+                      _cautionWindGusts = value;
+                    });
+                    _savePreference('caution wind gusts', value, PreferencesHelper.setCautionWindGusts);
                   },
                 ),
               ]),
