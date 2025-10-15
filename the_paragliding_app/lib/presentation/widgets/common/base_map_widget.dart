@@ -545,6 +545,11 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
             onMapReady: handleMapReady,
             onMapEvent: handleMapEvent,
             onTap: onMapTap,
+            // Lock map to north - disable all rotation (touch and cursor/keyboard)
+            interactionOptions: InteractionOptions(
+              flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+              cursorKeyboardRotationOptions: CursorKeyboardRotationOptions.disabled(),
+            ),
           ),
           children: [
             buildTileLayer(),
