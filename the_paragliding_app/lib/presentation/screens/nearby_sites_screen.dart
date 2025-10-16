@@ -192,43 +192,50 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
     }
   }
 
-  /// Handle site data changes (deletions, additions, edits) from child screens.
+  /// Unified handler for site data changes - consolidates duplicate handlers.
   ///
-  /// This method is called via onDataChanged callback when sites are modified
-  /// in screens like Data Management or Manage Sites. It clears the cache and
-  /// increments the version counter to trigger immediate map updates.
-  ///
-  /// Works the same way as airspace data changes - version counter triggers
-  /// natural widget updates without requiring explicit reload calls.
+  /// This replaces _handleSiteDataChanged() and _handleSitesVersionChanged() with
+  /// a single method that handles all site reload scenarios consistently.
   void _handleSiteDataChanged() {
     LoggingService.info('[SITE_DATA] Site data changed, clearing cache and incrementing version | old_version=$_sitesDataVersion');
 
     // Clear the cache to force fresh data load
     MapBoundsManager.instance.clearCache('nearby_sites');
-    LoggingService.info('[SITE_DATA] Cache cleared for nearby_sites');
 
     // Increment sites data version to trigger immediate map update
-    // The version counter change will cause widget rebuild and natural reload
     if (mounted) {
       setState(() {
-        _sitesDataVersion++; // Triggers immediate sites reload via widget system
-        LoggingService.info('[SITE_DATA] Version incremented | new_version=$_sitesDataVersion');
+        _sitesDataVersion++;
       });
     }
   }
 
-  /// Process loaded sites result - consolidates common logic for handling site data.
-  ///
-  /// This helper is called by all site loading paths to ensure consistent behavior:
-  /// - Updates site collections and flight status
-  /// - Cleans up stale wind/flyability data
-  /// - Refreshes displayed sites
-  /// - Optionally triggers wind data fetch
+  /// Handle sites version change by reloading sites immediately.
+  /// Called from NearbySitesMap when sitesDataVersion changes.
+  Future<void> _handleSitesVersionChanged() async {
+    if (_currentBounds == null) return;
+
+    // Load sites immediately without debouncing
+    await MapBoundsManager.instance.loadSitesForBoundsImmediate(
+      context: 'nearby_sites',
+      bounds: _currentBounds!,
+      zoomLevel: _mapController.camera.zoom,
+      onLoaded: (result) {
+        if (mounted) {
+          setState(() {
+            _processSitesLoaded(result, fetchWindData: true);
+          });
+        }
+      },
+    );
+  }
+
+  /// Process loaded sites - consolidates site handling logic.
   void _processSitesLoaded(dynamic result, {bool fetchWindData = false}) {
     _allSites = result.sites;
     _siteFlightStatus = {};
 
-    // Clean up stale flyability status and wind data for sites no longer visible
+    // Clean up stale data
     final currentSiteKeys = result.sites.map((site) => SiteUtils.createSiteKey(site.latitude, site.longitude)).toSet();
     _siteFlyabilityStatus.removeWhere((key, value) => !currentSiteKeys.contains(key));
     _siteWindData.removeWhere((key, value) => !currentSiteKeys.contains(key));
@@ -240,42 +247,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
 
     _updateDisplayedSites();
 
-    // Fetch wind data if requested and forecast is enabled
     if (fetchWindData && _forecastEnabled && result.sites.isNotEmpty) {
       _fetchWindDataForSites();
     }
-  }
-
-  /// Handle sites version change by loading sites immediately (bypasses bounds-changed check).
-  ///
-  /// This is called from NearbySitesMap when sitesDataVersion changes.
-  /// Uses loadSitesForBoundsImmediate() to bypass the bounds-changed-significantly check,
-  /// matching the behavior of the Map Filter Sites checkbox for immediate updates.
-  Future<void> _handleSitesVersionChanged() async {
-    LoggingService.info('[SITES_VERSION_HANDLER] Sites version changed, loading sites immediately');
-
-    if (_currentBounds == null) {
-      LoggingService.info('[SITES_VERSION_HANDLER] No current bounds, skipping load');
-      return;
-    }
-
-    // Clear the bounds cache to force a reload (sites data changed, must reload from DB)
-    MapBoundsManager.instance.clearCache('nearby_sites');
-
-    // Load sites immediately without debouncing or bounds check (like Map Filter)
-    await MapBoundsManager.instance.loadSitesForBoundsImmediate(
-      context: 'nearby_sites',
-      bounds: _currentBounds!,
-      zoomLevel: _mapController.camera.zoom,
-      onLoaded: (result) {
-        if (mounted) {
-          setState(() {
-            _processSitesLoaded(result, fetchWindData: true);
-            LoggingService.info('[SITES_VERSION_HANDLER] Loaded ${result.sites.length} sites | flown_sites=${result.sites.where((s) => s.hasFlights).length} | pge_sites=${result.sites.where((s) => !s.hasFlights).length}');
-          });
-        }
-      },
-    );
   }
 
   @override
