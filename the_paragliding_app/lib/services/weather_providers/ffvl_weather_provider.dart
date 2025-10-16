@@ -276,9 +276,17 @@ class FfvlWeatherProvider implements WeatherStationProvider {
       // Parse and combine data
       final parseStopwatch = Stopwatch()..start();
       final List<WeatherStation> stations = [];
+      int maintenanceCount = 0; // Track maintenance beacons
 
       for (final beaconData in beaconMap.values) {
         try {
+          // Check for maintenance before parsing
+          final inMaintenance = beaconData['en_maintenance'] == '1';
+          if (inMaintenance) {
+            maintenanceCount++;
+            continue;
+          }
+
           // Get fresh measurements if available
           Map<String, dynamic>? freshMeasurement;
           if (measurementsMap.isNotEmpty) {
@@ -314,6 +322,7 @@ class FfvlWeatherProvider implements WeatherStationProvider {
       LoggingService.structured('FFVL_BEACONS_SUCCESS', {
         'beacon_count': stations.length,
         'beacons_with_data': stations.where((s) => s.windData != null).length,
+        'maintenance_beacons_skipped': maintenanceCount,
         'network_ms': stopwatch.elapsedMilliseconds - parseStopwatch.elapsedMilliseconds,
         'parse_ms': parseStopwatch.elapsedMilliseconds,
         'total_ms': stopwatch.elapsedMilliseconds,

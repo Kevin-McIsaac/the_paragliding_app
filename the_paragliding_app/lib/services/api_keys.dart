@@ -13,24 +13,38 @@ import 'logging_service.dart';
 /// final apiKey = ApiKeys.ffvlApiKey;
 /// ```
 class ApiKeys {
+  // Flags to ensure API key source is logged only once
+  static bool _ffvlLogged = false;
+  static bool _googleMapsLogged = false;
+  static bool _cesiumLogged = false;
+
   /// FFVL (French Free Flight Federation) Weather API Key
   static String get ffvlApiKey {
     // Try dart-define first (production builds)
     const fromEnv = String.fromEnvironment('FFVL_API_KEY');
     if (fromEnv.isNotEmpty) {
-      LoggingService.info('Using FFVL API key from dart-define');
+      if (!_ffvlLogged) {
+        LoggingService.info('Using FFVL API key from dart-define');
+        _ffvlLogged = true;
+      }
       return fromEnv;
     }
 
     // Fall back to dotenv (development)
     final fromDotenv = dotenv.env['FFVL_API_KEY'] ?? '';
     if (fromDotenv.isNotEmpty) {
-      LoggingService.info('Using FFVL API key from .env file');
+      if (!_ffvlLogged) {
+        LoggingService.info('Using FFVL API key from .env file');
+        _ffvlLogged = true;
+      }
       return fromDotenv;
     }
 
     // No key found
-    LoggingService.warning('No FFVL API key found. Please set FFVL_API_KEY in .env file or via --dart-define');
+    if (!_ffvlLogged) {
+      LoggingService.warning('No FFVL API key found. Please set FFVL_API_KEY in .env file or via --dart-define');
+      _ffvlLogged = true;
+    }
     return '';
   }
 
@@ -39,14 +53,20 @@ class ApiKeys {
     // Try dart-define first (production builds)
     const fromEnv = String.fromEnvironment('GOOGLE_MAPS_API_KEY');
     if (fromEnv.isNotEmpty) {
-      LoggingService.info('Using Google Maps API key from dart-define');
+      if (!_googleMapsLogged) {
+        LoggingService.info('Using Google Maps API key from dart-define');
+        _googleMapsLogged = true;
+      }
       return fromEnv;
     }
 
     // Fall back to dotenv (development)
     final fromDotenv = dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
     if (fromDotenv.isNotEmpty) {
-      LoggingService.info('Using Google Maps API key from .env file');
+      if (!_googleMapsLogged) {
+        LoggingService.info('Using Google Maps API key from .env file');
+        _googleMapsLogged = true;
+      }
       return fromDotenv;
     }
 
@@ -74,14 +94,20 @@ class ApiKeys {
     // Try dart-define first (production builds)
     const fromEnv = String.fromEnvironment('CESIUM_ION_TOKEN');
     if (fromEnv.isNotEmpty) {
-      LoggingService.info('Using Cesium Ion token from dart-define');
+      if (!_cesiumLogged) {
+        LoggingService.info('Using Cesium Ion token from dart-define');
+        _cesiumLogged = true;
+      }
       return fromEnv;
     }
 
     // Fall back to dotenv (development)
     final fromDotenv = dotenv.env['CESIUM_ION_TOKEN'] ?? '';
     if (fromDotenv.isNotEmpty) {
-      LoggingService.info('Using Cesium Ion token from .env file');
+      if (!_cesiumLogged) {
+        LoggingService.info('Using Cesium Ion token from .env file');
+        _cesiumLogged = true;
+      }
       return fromDotenv;
     }
 
