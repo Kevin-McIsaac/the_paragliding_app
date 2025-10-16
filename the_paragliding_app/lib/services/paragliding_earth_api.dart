@@ -578,8 +578,6 @@ class ParaglidingEarthApi {
     }
   }
 
-  // Cache methods removed - relying on HTTP client caching
-
   /// Convert ISO country code to full country name
   String _countryCodeToName(String countryCode) {
     // Map of common ISO 3166-1 alpha-2 country codes to full names

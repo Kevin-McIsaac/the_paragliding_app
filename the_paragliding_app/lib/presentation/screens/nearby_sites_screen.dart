@@ -13,7 +13,7 @@ import '../../data/models/weather_station_source.dart';
 import '../../services/location_service.dart';
 import '../../services/logging_service.dart';
 import '../../services/nearby_sites_search_state.dart';
-import '../../services/nearby_sites_search_manager_v2.dart';
+import '../../services/nearby_sites_search_manager.dart';
 import '../../services/map_bounds_manager.dart';
 import '../../services/weather_service.dart';
 import '../../services/weather_station_service.dart';
@@ -93,7 +93,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
   // Location notification state
   bool _showLocationNotification = false;
   Timer? _locationNotificationTimer;
-  late final NearbySitesSearchManagerV2 _searchManager;
+  late final NearbySitesSearchManager _searchManager;
 
   // Search bar controller (persistent to fix backwards text issue)
   final TextEditingController _searchController = TextEditingController();
@@ -313,7 +313,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
   }
 
   void _initializeSearchManager() {
-    _searchManager = NearbySitesSearchManagerV2(
+    _searchManager = NearbySitesSearchManager(
       onStateChanged: (SearchState state) {
         setState(() {
           // Update displayed sites when search state changes

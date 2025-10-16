@@ -2,13 +2,11 @@ import 'dart:async';
 import '../data/models/paragliding_site.dart';
 import '../utils/map_constants.dart';
 import '../services/pge_sites_database_service.dart';
-// API import removed - using local database only
 import '../services/logging_service.dart';
 import 'nearby_sites_search_state.dart';
 
-/// Enhanced search manager that uses local PGE database first
-/// Falls back to API only when local database is unavailable
-class NearbySitesSearchManagerV2 {
+/// Search manager for nearby sites using local PGE database
+class NearbySitesSearchManager {
   final SearchStateCallback _onStateChanged;
   final AutoJumpCallback? _onAutoJump;
 
@@ -27,15 +25,11 @@ class NearbySitesSearchManagerV2 {
   /// Maximum results to show in dropdown
   static const int _maxResults = 15;
 
-  // Database availability check removed - always use local
-
-  NearbySitesSearchManagerV2({
+  NearbySitesSearchManager({
     required SearchStateCallback onStateChanged,
     AutoJumpCallback? onAutoJump,
   }) : _onStateChanged = onStateChanged,
        _onAutoJump = onAutoJump;
-
-  // Database availability check removed - always use local
 
   /// Get current search state
   SearchState get state => _state;
@@ -97,7 +91,7 @@ class NearbySitesSearchManagerV2 {
 
   /// Select a search result
   void selectSearchResult(ParaglidingSite site) {
-    LoggingService.action('NearbySitesV2', 'search_result_selected', {
+    LoggingService.action('NearbySitesSearch', 'search_result_selected', {
       'site_name': site.name,
       'country': site.country,
       'data_source': 'local_db',
@@ -131,7 +125,7 @@ class NearbySitesSearchManagerV2 {
         _onAutoJump?.call(site);
         exitSearchMode(preservePinnedSite: site, pinnedSiteIsFromAutoJump: false);
 
-        LoggingService.action('NearbySitesV2', 'enter_key_single_result', {
+        LoggingService.action('NearbySitesSearch', 'enter_key_single_result', {
           'site_name': site.name,
           'country': site.country,
           'data_source': 'local_db',
@@ -142,7 +136,7 @@ class NearbySitesSearchManagerV2 {
           isSearching: false,
         ));
 
-        LoggingService.action('NearbySitesV2', 'enter_key_search', {
+        LoggingService.action('NearbySitesSearch', 'enter_key_search', {
           'query': trimmedQuery,
           'results_count': limitedResults.length,
           'data_source': 'local_db',
@@ -171,7 +165,7 @@ class NearbySitesSearchManagerV2 {
         // Reuse selectSearchResult to close dropdown (idiomatic)
         selectSearchResult(site);
 
-        LoggingService.action('NearbySitesV2', 'live_search_single_result_auto_jump', {
+        LoggingService.action('NearbySitesSearch', 'live_search_single_result_auto_jump', {
           'site_name': site.name,
           'country': site.country,
           'data_source': 'local_db',
@@ -183,7 +177,7 @@ class NearbySitesSearchManagerV2 {
       // Show dropdown for multiple results
       _updateState(_state.withResults(limitedResults));
 
-      LoggingService.action('NearbySitesV2', 'search_performed', {
+      LoggingService.action('NearbySitesSearch', 'search_performed', {
         'query': query,
         'results_count': results.length,
         'limited_results': limitedResults.length,
@@ -199,13 +193,13 @@ class NearbySitesSearchManagerV2 {
   /// Search sites using local database only
   Future<List<ParaglidingSite>> _searchSites(String query) async {
     // Always use local database
-    LoggingService.info('NearbySitesSearchManagerV2: Searching local database for: $query');
+    LoggingService.info('NearbySitesSearchManager: Searching local database for: $query');
     try {
       return await PgeSitesDatabaseService.instance.searchSitesByName(
         query: query,
       );
     } catch (e) {
-      LoggingService.error('NearbySitesSearchManagerV2: Search failed', e);
+      LoggingService.error('NearbySitesSearchManager: Search failed', e);
       return [];
     }
   }
