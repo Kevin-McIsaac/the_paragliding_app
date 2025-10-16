@@ -13,7 +13,7 @@ import '../../data/models/weather_station_source.dart';
 import '../../services/location_service.dart';
 import '../../services/logging_service.dart';
 import '../../services/nearby_sites_search_state.dart';
-import '../../services/nearby_sites_search_manager_v2.dart';
+import '../../services/nearby_sites_search_manager.dart';
 import '../../services/map_bounds_manager.dart';
 import '../../services/weather_service.dart';
 import '../../services/weather_station_service.dart';
@@ -93,7 +93,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
   // Location notification state
   bool _showLocationNotification = false;
   Timer? _locationNotificationTimer;
-  late final NearbySitesSearchManagerV2 _searchManager;
+  late final NearbySitesSearchManager _searchManager;
 
   // Search bar controller (persistent to fix backwards text issue)
   final TextEditingController _searchController = TextEditingController();
@@ -245,28 +245,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
     }
   }
 
-  /// Save filter preferences to SharedPreferences
-  Future<void> _saveFilterPreferences({
-    required bool sitesEnabled,
-    required bool airspaceEnabled,
-    required bool forecastEnabled,
-    required bool weatherStationsEnabled,
-    required bool metarEnabled,
-    required bool nwsEnabled,
-    required bool pioupiouEnabled,
-    required bool ffvlEnabled,
-  }) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_sitesEnabledKey, sitesEnabled);
-    await prefs.setBool(_airspaceEnabledKey, airspaceEnabled);
-    await prefs.setBool(_forecastEnabledKey, forecastEnabled);
-    await prefs.setBool(_weatherStationsEnabledKey, weatherStationsEnabled);
-    await prefs.setBool('weather_provider_${WeatherStationSource.awcMetar.name}_enabled', metarEnabled);
-    await prefs.setBool('weather_provider_${WeatherStationSource.nws.name}_enabled', nwsEnabled);
-    await prefs.setBool('weather_provider_${WeatherStationSource.pioupiou.name}_enabled', pioupiouEnabled);
-    await prefs.setBool('weather_provider_${WeatherStationSource.ffvl.name}_enabled', ffvlEnabled);
-  }
-
   /// Handle sites version change by loading sites immediately (bypasses bounds-changed check).
   ///
   /// This is called from NearbySitesMap when sitesDataVersion changes.
@@ -313,7 +291,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
   }
 
   void _initializeSearchManager() {
-    _searchManager = NearbySitesSearchManagerV2(
+    _searchManager = NearbySitesSearchManager(
       onStateChanged: (SearchState state) {
         setState(() {
           // Update displayed sites when search state changes
@@ -698,7 +676,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
 
       // Deduplicate: Remove local favorites that have pge_site_id matching a PGE favorite
       // This ensures we don't show duplicate sites when one exists in both databases
-      final pgeFavoriteIds = pgeFavorites.map((s) => s.id).toSet();
       final deduplicatedLocalFavorites = localFavorites.where((localSite) {
         // Keep custom local sites (no pge_site_id) always
         // Only exclude if this local site's pge_site_id matches a PGE favorite

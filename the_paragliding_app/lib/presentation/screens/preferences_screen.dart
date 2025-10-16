@@ -226,59 +226,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     );
   }
 
-  Widget _buildSliderRow(
-    String title,
-    String subtitle,
-    double value,
-    double min,
-    double max,
-    Function(double) onChanged,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ListTile(
-          title: Text(title),
-          subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
-          trailing: Text(
-            '${value.toInt()} km/h',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          contentPadding: EdgeInsets.zero,
-        ),
-        Slider(
-          value: value,
-          min: min,
-          max: max,
-          label: '${value.toInt()} km/h',
-          onChanged: onChanged,
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                '${min.toInt()} km/h',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.grey,
-                ),
-              ),
-              Text(
-                '${max.toInt()} km/h',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.grey,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildRangeSliderRow(
     String title,
     String subtitle,

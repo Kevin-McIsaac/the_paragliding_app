@@ -23,9 +23,9 @@ class SiteMatchingService {
     try {
       // Load sites that have been used in actual flights
       final usedSites = await _databaseService.getSitesUsedInFlights();
-      
-      // Convert Site objects to ParaglidingSite objects
-      _sites = usedSites.map((site) => _convertSiteToParaglidingSite(site)).toList();
+
+      // Convert Site objects to ParaglidingSite objects using extension method
+      _sites = usedSites.map((site) => site.toParaglidingSite()).toList();
       _isInitialized = true;
       
       if (_sites!.isEmpty) {
@@ -336,32 +336,5 @@ class SiteMatchingService {
   /// Clear API cache (no-op since caching was removed)
   void clearApiCache() {
     // No-op: HTTP client caching handles this automatically
-  }
-
-  /// Convert a Site object (from database) to ParaglidingSite object (for compatibility)
-  ParaglidingSite _convertSiteToParaglidingSite(Site site) {
-    // Determine site type based on name patterns (fallback logic)
-    String siteType = 'launch'; // Default
-    final name = site.name.toLowerCase();
-    if (name.contains('landing') || 
-        name.contains('atterrissage') ||
-        name.contains('landeplatz') ||
-        name.contains('campo')) {
-      siteType = 'landing';
-    }
-
-    return ParaglidingSite(
-      name: site.name,
-      latitude: site.latitude,
-      longitude: site.longitude,
-      altitude: site.altitude?.toInt(), // Convert double? to int?
-      description: 'Flight log site', // Simple description for user sites
-      windDirections: [], // Not available in user sites
-      siteType: siteType,
-      rating: 4, // User sites get good rating since they're proven locations
-      country: null, // Not stored in user sites
-      region: null, // Not stored in user sites  
-      popularity: 75.0, // High popularity for user's personal sites
-    );
   }
 }
