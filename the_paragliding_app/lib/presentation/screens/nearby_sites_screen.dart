@@ -12,8 +12,6 @@ import '../../data/models/weather_station.dart';
 import '../../data/models/weather_station_source.dart';
 import '../../services/location_service.dart';
 import '../../services/logging_service.dart';
-import '../../services/nearby_sites_search_state.dart';
-import '../../services/nearby_sites_search_manager.dart';
 import '../../services/map_bounds_manager.dart';
 import '../../services/weather_service.dart';
 import '../../services/weather_station_service.dart';
@@ -87,18 +85,18 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
 
   // Bounds-based loading state using MapBoundsManager
   LatLngBounds? _currentBounds;
-  
-  // Search management - consolidated into SearchManager
 
   // Location notification state
   bool _showLocationNotification = false;
   Timer? _locationNotificationTimer;
-  late final NearbySitesSearchManager _searchManager;
 
-  // Search bar controller (persistent to fix backwards text issue)
+  // Simple inline search
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
-  bool _isUpdatingFromTextField = false;
+  String _searchQuery = '';
+  List<ParaglidingSite> _searchResults = [];
+  bool _isSearching = false;
+  Timer? _searchDebounce;
 
   // Filter state for sites and airspace (defaults, will be loaded from preferences)
   bool _sitesEnabled = true; // Controls site loading and display
@@ -140,15 +138,11 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
   @override
   void initState() {
     super.initState();
-    _initializeSearchManager();
     _loadPreferences();
     _loadFilterSettings();
     _loadWindPreferences();
     _updateActiveFiltersState(); // Initialize the cached active filters state
     _loadData();
-
-    // Listen to search state changes to update controller
-    _searchController.text = _searchManager.state.query;
   }
 
   /// Public method to refresh sites and airspace data.
@@ -283,34 +277,68 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
     _locationNotificationTimer?.cancel(); // Clean up location notification timer
     _windFetchDebounce?.cancel(); // Clean up wind fetch debounce timer
     _stationFetchDebounce?.cancel(); // Clean up station fetch debounce timer
-    _searchManager.dispose(); // Clean up search manager
+    _searchDebounce?.cancel(); // Clean up search debounce timer
     _searchController.dispose(); // Dispose search controller
     _searchFocusNode.dispose(); // Dispose search focus node
     _mapController.dispose(); // Dispose map controller
     super.dispose();
   }
 
-  void _initializeSearchManager() {
-    _searchManager = NearbySitesSearchManager(
-      onStateChanged: (SearchState state) {
-        setState(() {
-          // Update displayed sites when search state changes
-          _updateDisplayedSites();
+  /// Handle search query changes with debouncing
+  void _onSearchChanged(String query) {
+    _searchDebounce?.cancel();
 
-          // Only update search controller if the change came from outside the TextField
-          if (!_isUpdatingFromTextField && _searchController.text != state.query) {
-            _searchController.text = state.query;
-            // Move cursor to end
-            _searchController.selection = TextSelection.fromPosition(
-              TextPosition(offset: state.query.length),
-            );
+    setState(() {
+      _searchQuery = query.trim();
+    });
+
+    if (_searchQuery.isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _isSearching = false;
+      });
+      return;
+    }
+
+    if (_searchQuery.length < 2) {
+      return; // Don't search for very short queries
+    }
+
+    // Debounce the search
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () async {
+      setState(() => _isSearching = true);
+
+      try {
+        final results = await PgeSitesDatabaseService.instance.searchSitesByName(
+          query: _searchQuery,
+        );
+
+        if (mounted) {
+          setState(() {
+            _searchResults = results.take(15).toList();
+            _isSearching = false;
+          });
+
+          // Auto-jump to single result
+          if (_searchResults.length == 1) {
+            _jumpToLocation(_searchResults.first, keepSearchActive: false);
+            setState(() {
+              _searchController.clear();
+              _searchQuery = '';
+              _searchResults = [];
+            });
           }
-        });
-      },
-      onAutoJump: (ParaglidingSite site) {
-        _jumpToLocation(site, keepSearchActive: true);
-      },
-    );
+        }
+      } catch (e) {
+        LoggingService.error('Search failed', e);
+        if (mounted) {
+          setState(() {
+            _searchResults = [];
+            _isSearching = false;
+          });
+        }
+      }
+    });
   }
 
   Future<void> _loadPreferences() async {
@@ -1004,26 +1032,11 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
 
     final stopwatch = Stopwatch()..start();
 
-    // Sites are already ParaglidingSite objects - no conversion needed!
+    // Simple inline filtering: show search results if searching, otherwise show all sites
+    List<ParaglidingSite> filteredSites = _searchQuery.isNotEmpty && _searchResults.isNotEmpty
+        ? _searchResults
+        : _allSites;
 
-    // Use SearchManager's computed property for cleaner logic
-    List<ParaglidingSite> filteredSites = _searchManager.getDisplayedSites(_allSites);
-    
-    // Add pinned site if we have one and it's not already in the list
-    final pinnedSite = _searchManager.state.pinnedSite;
-    if (pinnedSite != null && _searchManager.state.query.isEmpty) {
-      final pinnedSiteKey = SiteUtils.createSiteKey(pinnedSite.latitude, pinnedSite.longitude);
-      final alreadyExists = filteredSites.any((site) => 
-        SiteUtils.createSiteKey(site.latitude, site.longitude) == pinnedSiteKey);
-      
-      if (!alreadyExists) {
-        filteredSites = List.from(filteredSites);
-        filteredSites.insert(0, pinnedSite); // Add at beginning for prominence
-      }
-    }
-    
-    // Sites are loaded via bounds-based filtering, no distance filtering needed
-    
     stopwatch.stop();
 
     if (mounted) {
@@ -1031,20 +1044,20 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
         _displayedSites = filteredSites;
       });
     }
-    
+
     // Count flown vs new sites for logging
     final flownSites = filteredSites.where((site) {
       final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
       return _siteFlightStatus[siteKey] ?? false;
     }).length;
     final newSites = filteredSites.length - flownSites;
-    
+
     LoggingService.structured('NEARBY_SITES_FILTERED', {
       'total_local_sites': flownSites,
       'total_api_sites': newSites,
       'displayed_local_sites': flownSites,
       'displayed_api_sites': newSites,
-      'search_query': _searchManager.state.query.isEmpty ? null : _searchManager.state.query,
+      'search_query': _searchQuery.isEmpty ? null : _searchQuery,
       'has_user_position': _userPosition != null,
       'filter_time_ms': stopwatch.elapsedMilliseconds,
     });
@@ -1567,25 +1580,19 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
           child: TextField(
             controller: _searchController,
             focusNode: _searchFocusNode,
-            onChanged: (value) {
-              _isUpdatingFromTextField = true;
-              _searchManager.onSearchQueryChanged(value);
-              _isUpdatingFromTextField = false;
-            },
+            onChanged: _onSearchChanged,
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white),
             decoration: InputDecoration(
               isDense: true,
               hintText: 'Search nearby sites...',
               hintStyle: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white.withValues(alpha: 0.7)),
               prefixIcon: const Icon(Icons.search, size: 16, color: Colors.white),
-              suffixIcon: _searchManager.state.query.isNotEmpty
+              suffixIcon: _searchQuery.isNotEmpty
                   ? IconButton(
                       icon: const Icon(Icons.clear, size: 16, color: Colors.white),
                       onPressed: () {
-                        _isUpdatingFromTextField = true;
                         _searchController.clear();
-                        _searchManager.onSearchQueryChanged('');
-                        _isUpdatingFromTextField = false;
+                        _onSearchChanged('');
                       },
                       padding: EdgeInsets.zero,
                     )
@@ -1850,7 +1857,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
             ),
 
           // Search dropdown overlay
-          if (_searchManager.shouldShowSearchDropdown())
+          if (_searchQuery.isNotEmpty && (_isSearching || _searchResults.isNotEmpty))
             Positioned(
               top: 0,
               left: 0,
@@ -1870,7 +1877,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
                       ),
                     ],
                   ),
-                  child: _searchManager.state.isSearching
+                  child: _isSearching
                     ? Padding(
                         padding: const EdgeInsets.all(16),
                         child: Row(
@@ -1895,9 +1902,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
                       )
                     : ListView.builder(
                         shrinkWrap: true,
-                        itemCount: _searchManager.state.results.length,
+                        itemCount: _searchResults.length,
                         itemBuilder: (context, index) {
-                          final site = _searchManager.state.results[index];
+                          final site = _searchResults[index];
                           return ListTile(
                             leading: CircleAvatar(
                               radius: 16,
@@ -1930,8 +1937,12 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
                               color: Theme.of(context).colorScheme.onSurfaceVariant,
                             ),
                             onTap: () {
-                              _searchManager.selectSearchResult(site);
-                              _jumpToLocation(site);
+                              _jumpToLocation(site, keepSearchActive: false);
+                              setState(() {
+                                _searchController.clear();
+                                _searchQuery = '';
+                                _searchResults = [];
+                              });
                             },
                           );
                         },
