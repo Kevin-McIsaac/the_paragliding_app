@@ -212,9 +212,9 @@ class ParaglidingEarthApi {
     if (sites.isEmpty) return null;
 
     // Filter by type if specified
-    final filteredSites = preferredType != null 
-        ? sites.where((site) => 
-            site.siteType == preferredType || 
+    final filteredSites = preferredType != null
+        ? sites.where((site) =>
+            site.siteType == preferredType ||
             site.siteType == 'both'
           ).toList()
         : sites;
@@ -224,7 +224,7 @@ class ParaglidingEarthApi {
     // Sites are already ordered by distance from the API
     final nearest = filteredSites.first;
     final distance = nearest.distanceTo(latitude, longitude);
-    
+
     // Double-check distance constraint (API sometimes returns sites slightly outside radius)
     if (distance <= maxDistanceKm * 1000) { // Convert km to meters for comparison
       return nearest;

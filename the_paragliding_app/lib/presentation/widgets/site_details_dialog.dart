@@ -13,9 +13,9 @@ import '../../services/paragliding_earth_api.dart';
 import '../../services/logging_service.dart';
 import '../../services/location_service.dart';
 import '../../services/weather_service.dart';
+import '../../services/database_service.dart';
+import '../../services/pge_sites_database_service.dart';
 import '../../utils/flyability_helper.dart';
-import '../../utils/site_utils.dart';
-import '../../utils/ui_utils.dart';
 import '../widgets/wind_rose_widget.dart';
 
 class SiteDetailsDialog extends StatefulWidget {
@@ -26,6 +26,7 @@ class SiteDetailsDialog extends StatefulWidget {
   final double maxWindSpeed;
   final double maxWindGusts;
   final Function(WindData)? onWindDataFetched;
+  final Function()? onFavoriteToggled;
 
   const SiteDetailsDialog({
     this.site,
@@ -35,6 +36,7 @@ class SiteDetailsDialog extends StatefulWidget {
     required this.maxWindSpeed,
     required this.maxWindGusts,
     this.onWindDataFetched,
+    this.onFavoriteToggled,
   });
 
   @override
@@ -52,6 +54,9 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
   WindForecast? _windForecast;
   bool _isLoadingForecast = false;
 
+  // Favorites state
+  bool _isFavorite = false;
+
   // Forecast table constants
   static const double _cellSize = 36.0;
   static const double _dayColumnWidth = 80.0;
@@ -67,6 +72,157 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
     _loadSiteDetails();
     _loadWindData();
     _loadWindForecast();
+    _loadFavoriteStatus();
+  }
+
+  /// Load favorite status for this site
+  Future<void> _loadFavoriteStatus() async {
+    // Determine which database and ID to use for favorites
+    // Rule: For sites with pge_site_id, always use PGE database as single source of truth
+    bool isFavorite = false;
+    String source = 'unknown';
+    int? effectiveId;
+
+    // Check ParaglidingSite first (this is what we usually have)
+    if (widget.paraglidingSite != null) {
+      // Check if this is linked to a PGE site
+      if (widget.paraglidingSite!.pgeSiteId != null) {
+        // Linked to PGE site - use PGE database (single source of truth)
+        effectiveId = widget.paraglidingSite!.pgeSiteId;
+        source = 'pge_via_paragliding_site';
+        isFavorite = await PgeSitesDatabaseService.instance.isSiteFavorite(effectiveId!);
+      } else if (widget.paraglidingSite!.isFromLocalDb) {
+        // Custom local site - use local database
+        effectiveId = widget.paraglidingSite!.id;
+        if (effectiveId != null) {
+          source = 'local';
+          isFavorite = await DatabaseService.instance.isSiteFavorite(effectiveId);
+        }
+      } else {
+        // Pure PGE site (not in local DB) - use PGE database
+        effectiveId = widget.paraglidingSite!.id;
+        if (effectiveId != null) {
+          source = 'pge';
+          isFavorite = await PgeSitesDatabaseService.instance.isSiteFavorite(effectiveId);
+        }
+      }
+    } else if (widget.site != null) {
+      // Fallback to Site object (rare case)
+      if (widget.site!.pgeSiteId != null) {
+        // Linked to PGE site - use PGE database (single source of truth)
+        effectiveId = widget.site!.pgeSiteId;
+        source = 'pge_via_site';
+        isFavorite = await PgeSitesDatabaseService.instance.isSiteFavorite(effectiveId!);
+      } else if (widget.site!.id != null) {
+        // Custom local site - use local database
+        effectiveId = widget.site!.id;
+        source = 'local_via_site';
+        isFavorite = await DatabaseService.instance.isSiteFavorite(effectiveId!);
+      }
+    }
+
+    final siteName = widget.paraglidingSite?.name ?? widget.site?.name ?? 'unknown';
+    LoggingService.structured('FAVORITES_LOAD', {
+      'source': source,
+      'effective_id': effectiveId,
+      'site_name': siteName,
+      'is_favorite': isFavorite,
+      'pge_site_present': widget.paraglidingSite != null,
+      'local_site_present': widget.site != null,
+      'paragliding_site_pge_site_id': widget.paraglidingSite?.pgeSiteId,
+      'local_pge_site_id': widget.site?.pgeSiteId,
+    });
+
+    if (mounted) {
+      setState(() {
+        _isFavorite = isFavorite;
+      });
+    }
+  }
+
+  /// Toggle favorite status for this site
+  Future<void> _toggleFavorite() async {
+    // Determine which database and ID to use for favorites toggle
+    // Rule: For sites with pge_site_id, always use PGE database as single source of truth
+    String? siteName;
+    String source = 'unknown';
+    int? effectiveId;
+
+    // Check ParaglidingSite first (this is what we usually have)
+    if (widget.paraglidingSite != null) {
+      siteName = widget.paraglidingSite!.name;
+      // Check if this is linked to a PGE site
+      if (widget.paraglidingSite!.pgeSiteId != null) {
+        // Linked to PGE site - use PGE database (single source of truth)
+        effectiveId = widget.paraglidingSite!.pgeSiteId;
+        source = 'pge_via_paragliding_site';
+        await PgeSitesDatabaseService.instance.toggleSiteFavorite(effectiveId!);
+      } else if (widget.paraglidingSite!.isFromLocalDb) {
+        // Custom local site - use local database
+        effectiveId = widget.paraglidingSite!.id;
+        if (effectiveId != null) {
+          source = 'local';
+          await DatabaseService.instance.toggleSiteFavorite(effectiveId);
+        }
+      } else {
+        // Pure PGE site (not in local DB) - use PGE database
+        effectiveId = widget.paraglidingSite!.id;
+        if (effectiveId != null) {
+          source = 'pge';
+          await PgeSitesDatabaseService.instance.toggleSiteFavorite(effectiveId);
+        }
+      }
+    } else if (widget.site != null) {
+      siteName = widget.site!.name;
+      // Fallback to Site object (rare case)
+      if (widget.site!.pgeSiteId != null) {
+        // Linked to PGE site - use PGE database (single source of truth)
+        effectiveId = widget.site!.pgeSiteId;
+        source = 'pge_via_site';
+        await PgeSitesDatabaseService.instance.toggleSiteFavorite(effectiveId!);
+      } else if (widget.site!.id != null) {
+        // Custom local site - use local database
+        effectiveId = widget.site!.id;
+        source = 'local_via_site';
+        await DatabaseService.instance.toggleSiteFavorite(effectiveId!);
+      }
+    }
+
+    if (effectiveId == null) {
+      return; // No valid site ID
+    }
+
+    LoggingService.structured('FAVORITES_TOGGLE', {
+      'source': source,
+      'effective_id': effectiveId,
+      'site_name': siteName,
+      'pge_site_present': widget.paraglidingSite != null,
+      'local_site_present': widget.site != null,
+      'paragliding_site_pge_site_id': widget.paraglidingSite?.pgeSiteId,
+      'local_pge_site_id': widget.site?.pgeSiteId,
+    });
+
+    // Reload favorite status to get updated value
+    await _loadFavoriteStatus();
+
+    // Notify parent screen that favorite was toggled
+    if (widget.onFavoriteToggled != null) {
+      widget.onFavoriteToggled!();
+    }
+
+    if (mounted && siteName != null) {
+      // Show snackbar confirmation
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _isFavorite
+                ? 'Added $siteName to favorites'
+                : 'Removed $siteName from favorites',
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   @override
@@ -309,14 +465,6 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
             ? widget.paraglidingSite!.windDirections
             : (_detailedData?['wind_directions'] as List<dynamic>?)?.cast<String>()) ?? [];
 
-    // Debug logging for Annecy - Planfait site and Mt Bakewell
-    if (name.contains('Annecy') || name.contains('Planfait') || name.contains('Bakewell')) {
-      LoggingService.debug('Site debug: name=$name');
-      LoggingService.debug('Site debug: widget.paraglidingSite?.id=${widget.paraglidingSite?.id}');
-      LoggingService.debug('Site debug: widget.paraglidingSite?.windDirections=${widget.paraglidingSite?.windDirections}');
-      LoggingService.debug('Site debug: _detailedData wind_directions=${_detailedData?['wind_directions']}');
-      LoggingService.debug('Site debug: final windDirections=$windDirections');
-    }
     final String? siteType = widget.paraglidingSite?.siteType ?? _detailedData?['site_type'];
     final int? flightCount = widget.site?.flightCount;
 
@@ -446,6 +594,15 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
                       ],
                     ],
                   ),
+                ),
+                // Favorite button with heart icon
+                IconButton(
+                  onPressed: _toggleFavorite,
+                  icon: Icon(
+                    _isFavorite ? Icons.favorite : Icons.favorite_border,
+                    color: _isFavorite ? Colors.red : null,
+                  ),
+                  tooltip: _isFavorite ? 'Remove from favorites' : 'Add to favorites',
                 ),
                 IconButton(
                   onPressed: () => Navigator.of(context).pop(),

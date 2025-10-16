@@ -33,6 +33,7 @@ class PgeSitesDatabaseService {
           latitude REAL NOT NULL,
           altitude INTEGER,
           country TEXT,
+          is_favorite INTEGER DEFAULT 0,
 
           -- Wind direction ratings (0=no good, 1=good, 2=excellent)
           wind_n INTEGER DEFAULT 0,
@@ -63,6 +64,12 @@ class PgeSitesDatabaseService {
       await db.execute('''
         CREATE INDEX IF NOT EXISTS idx_pge_sites_name
         ON $_pgeSitesTable(name)
+      ''');
+
+      // Create favorites index for fast favorite queries
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_pge_sites_favorite
+        ON $_pgeSitesTable(is_favorite)
       ''');
 
       // Create metadata table
@@ -622,6 +629,62 @@ class PgeSitesDatabaseService {
       LoggingService.info('[PGE_SITES_DB] Cleared all PGE sites data');
     } catch (error, stackTrace) {
       LoggingService.error('[PGE_SITES_DB] Failed to clear data', error, stackTrace);
+    }
+  }
+
+  /// Toggle favorite status for a PGE site
+  Future<void> toggleSiteFavorite(int siteId) async {
+    try {
+      final db = await DatabaseHelper.instance.database;
+      await db.execute(
+        'UPDATE $_pgeSitesTable SET is_favorite = CASE WHEN is_favorite = 1 THEN 0 ELSE 1 END WHERE id = ?',
+        [siteId]
+      );
+      LoggingService.action('Favorites', 'toggle_pge_site', {'site_id': siteId});
+    } catch (error, stackTrace) {
+      LoggingService.error('[PGE_SITES_DB] Failed to toggle favorite', error, stackTrace);
+      rethrow;
+    }
+  }
+
+  /// Check if a PGE site is favorited
+  Future<bool> isSiteFavorite(int siteId) async {
+    try {
+      final db = await DatabaseHelper.instance.database;
+      final result = await db.query(
+        _pgeSitesTable,
+        columns: ['is_favorite'],
+        where: 'id = ?',
+        whereArgs: [siteId]
+      );
+      return result.isNotEmpty && result.first['is_favorite'] == 1;
+    } catch (error, stackTrace) {
+      LoggingService.error('[PGE_SITES_DB] Failed to check favorite status', error, stackTrace);
+      return false;
+    }
+  }
+
+  /// Get all favorite PGE sites
+  Future<List<ParaglidingSite>> getFavoriteSites() async {
+    try {
+      final db = await DatabaseHelper.instance.database;
+      final results = await db.rawQuery('''
+        SELECT s.*, COALESCE(cc.name, s.country) as country_name
+        FROM $_pgeSitesTable s
+        LEFT JOIN $_countryCodesTable cc ON UPPER(s.country) = cc.code
+        WHERE s.is_favorite = 1
+      ''');
+
+      final sites = results.map((row) => _mapRowToParaglidingSite(row)).toList();
+
+      LoggingService.structured('PGE_SITES_FAVORITES_QUERY', {
+        'favorites_count': sites.length,
+      });
+
+      return sites;
+    } catch (error, stackTrace) {
+      LoggingService.error('[PGE_SITES_DB] Failed to get favorite sites', error, stackTrace);
+      return [];
     }
   }
 }

@@ -794,6 +794,7 @@ class DatabaseService {
         region: null,  // Not available in local PGE DB
         flightCount: row['flight_count'] as int? ?? 0,
         isFromLocalDb: true,
+        pgeSiteId: row['pge_site_id'] as int?,  // Foreign key to PGE sites
       ));
     }
 
@@ -1023,14 +1024,14 @@ class DatabaseService {
   /// Returns sites ordered by usage frequency (most used first)
   Future<List<Site>> getSitesUsedInFlights() async {
     Database db = await _databaseHelper.database;
-    
+
     // Query to get all launch sites used in flights, with usage count for ordering
     // Note: We only track launch sites now, not landing sites (which are stored as coordinates)
     List<Map<String, dynamic>> maps = await db.rawQuery('''
-      SELECT 
+      SELECT
         sites.*,
         (
-          SELECT COUNT(*) FROM flights 
+          SELECT COUNT(*) FROM flights
           WHERE flights.launch_site_id = sites.id
         ) as usage_count
       FROM sites
@@ -1039,7 +1040,7 @@ class DatabaseService {
       )
       ORDER BY usage_count DESC, sites.name ASC
     ''');
-    
+
     return List.generate(maps.length, (i) => Site.fromMap(maps[i]));
   }
 
@@ -1384,11 +1385,11 @@ class DatabaseService {
       where: 'manufacturer = ? AND name = ? AND size = ?',
       whereArgs: [manufacturer, model, size ?? ''],
     );
-    
+
     if (maps.isNotEmpty) {
       return Wing.fromMap(maps.first);
     }
-    
+
     // Create new wing
     final newWing = Wing(
       manufacturer: manufacturer,
@@ -1397,8 +1398,115 @@ class DatabaseService {
       color: color ?? '',
       active: active,
     );
-    
+
     final id = await insertWing(newWing);
     return newWing.copyWith(id: id);
+  }
+
+  // ========================================================================
+  // FAVORITES OPERATIONS
+  // ========================================================================
+
+  /// Toggle favorite status for a local site
+  Future<void> toggleSiteFavorite(int siteId) async {
+    try {
+      final db = await _databaseHelper.database;
+      await db.execute(
+        'UPDATE sites SET is_favorite = CASE WHEN is_favorite = 1 THEN 0 ELSE 1 END WHERE id = ?',
+        [siteId]
+      );
+      LoggingService.action('Favorites', 'toggle_local_site', {'site_id': siteId});
+    } catch (error, stackTrace) {
+      LoggingService.error('DatabaseService: Failed to toggle favorite', error, stackTrace);
+      rethrow;
+    }
+  }
+
+  /// Check if a local site is favorited
+  Future<bool> isSiteFavorite(int siteId) async {
+    try {
+      final db = await _databaseHelper.database;
+      final result = await db.query(
+        'sites',
+        columns: ['is_favorite'],
+        where: 'id = ?',
+        whereArgs: [siteId]
+      );
+      return result.isNotEmpty && result.first['is_favorite'] == 1;
+    } catch (error, stackTrace) {
+      LoggingService.error('DatabaseService: Failed to check favorite status', error, stackTrace);
+      return false;
+    }
+  }
+
+  /// Get all favorite local sites as ParaglidingSite objects
+  /// Only returns custom local sites (pge_site_id IS NULL)
+  /// Sites linked to PGE sites should use PGE favorites table instead
+  Future<List<ParaglidingSite>> getFavoriteSites() async {
+    try {
+      final db = await _databaseHelper.database;
+      final results = await db.rawQuery('''
+        SELECT
+          s.*,
+          COUNT(f.id) as flight_count,
+          pge.wind_n, pge.wind_ne, pge.wind_e, pge.wind_se,
+          pge.wind_s, pge.wind_sw, pge.wind_w, pge.wind_nw,
+          pge.altitude as pge_altitude,
+          pge.country as pge_country
+        FROM sites s
+        LEFT JOIN pge_sites pge ON s.pge_site_id = pge.id
+        LEFT JOIN flights f ON f.launch_site_id = s.id
+        WHERE s.is_favorite = 1 AND s.pge_site_id IS NULL
+        GROUP BY s.id
+      ''');
+
+      final sites = <ParaglidingSite>[];
+      for (final row in results) {
+        // Build wind directions from PGE data
+        final windDirections = <String>[];
+        final windMap = {
+          'N': row['wind_n'],
+          'NE': row['wind_ne'],
+          'E': row['wind_e'],
+          'SE': row['wind_se'],
+          'S': row['wind_s'],
+          'SW': row['wind_sw'],
+          'W': row['wind_w'],
+          'NW': row['wind_nw'],
+        };
+
+        windMap.forEach((direction, value) {
+          if (value != null && (value as int) >= 1) {
+            windDirections.add(direction);
+          }
+        });
+
+        sites.add(ParaglidingSite(
+          id: row['id'] as int?,
+          name: row['name'] as String,
+          latitude: (row['latitude'] as num).toDouble(),
+          longitude: (row['longitude'] as num).toDouble(),
+          altitude: (row['altitude'] as num?)?.toInt() ?? (row['pge_altitude'] as num?)?.toInt(),
+          country: (row['country'] ?? row['pge_country']) as String?,
+          siteType: 'launch',
+          windDirections: windDirections,
+          description: null,
+          rating: null,
+          region: null,
+          flightCount: row['flight_count'] as int? ?? 0,
+          isFromLocalDb: true,
+          pgeSiteId: row['pge_site_id'] as int?,  // Foreign key to PGE sites
+        ));
+      }
+
+      LoggingService.structured('LOCAL_SITES_FAVORITES_QUERY', {
+        'favorites_count': sites.length,
+      });
+
+      return sites;
+    } catch (error, stackTrace) {
+      LoggingService.error('DatabaseService: Failed to get favorite sites', error, stackTrace);
+      return [];
+    }
   }
 }

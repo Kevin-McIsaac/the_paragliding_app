@@ -17,6 +17,7 @@ class ParaglidingSite {
   final double? popularity; // Calculated popularity score
   final int flightCount; // Number of flights from local database
   final bool isFromLocalDb; // True if site exists in local database
+  final int? pgeSiteId; // Foreign key to PGE sites table (for local sites linked to PGE)
 
   const ParaglidingSite({
     this.id,
@@ -33,6 +34,7 @@ class ParaglidingSite {
     this.popularity,
     this.flightCount = 0,
     this.isFromLocalDb = false,
+    this.pgeSiteId,
   });
 
   // Computed properties
@@ -204,6 +206,7 @@ class ParaglidingSite {
     double? popularity,
     int? flightCount,
     bool? isFromLocalDb,
+    int? pgeSiteId,
   }) {
     return ParaglidingSite(
       id: id ?? this.id,
@@ -220,6 +223,7 @@ class ParaglidingSite {
       popularity: popularity ?? this.popularity,
       flightCount: flightCount ?? this.flightCount,
       isFromLocalDb: isFromLocalDb ?? this.isFromLocalDb,
+      pgeSiteId: pgeSiteId ?? this.pgeSiteId,
     );
   }
 }
