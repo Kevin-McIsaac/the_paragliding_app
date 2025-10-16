@@ -12,8 +12,6 @@ import '../../data/models/weather_station.dart';
 import '../../data/models/weather_station_source.dart';
 import '../../services/location_service.dart';
 import '../../services/logging_service.dart';
-import '../../services/nearby_sites_search_state.dart';
-import '../../services/nearby_sites_search_manager.dart';
 import '../../services/map_bounds_manager.dart';
 import '../../services/weather_service.dart';
 import '../../services/weather_station_service.dart';
@@ -33,6 +31,15 @@ import '../../services/openaip_service.dart';
 import '../../services/database_service.dart';
 import '../../services/pge_sites_database_service.dart';
 
+/// Loading states for different operations
+enum LoadingOperation {
+  idle,
+  initialLoad,
+  location,
+  wind,
+  weatherStations,
+  favorites,
+}
 
 class NearbySitesScreen extends StatefulWidget {
   /// Optional callback to reload data after database changes.
@@ -70,8 +77,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
   List<ParaglidingSite> _displayedSites = [];
   Map<String, bool> _siteFlightStatus = {}; // Key: "lat,lng", Value: hasFlights
   Position? _userPosition;
-  bool _isLoading = false;
-  bool _isLocationLoading = false;
+
+  // Consolidated loading state
+  final Set<LoadingOperation> _activeLoadingOperations = {};
   String? _errorMessage;
   LatLng? _mapCenterPosition;
   bool _mapReady = false; // Track if map is initialized
@@ -87,18 +95,18 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
 
   // Bounds-based loading state using MapBoundsManager
   LatLngBounds? _currentBounds;
-  
-  // Search management - consolidated into SearchManager
 
   // Location notification state
   bool _showLocationNotification = false;
   Timer? _locationNotificationTimer;
-  late final NearbySitesSearchManager _searchManager;
 
-  // Search bar controller (persistent to fix backwards text issue)
+  // Simple inline search
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
-  bool _isUpdatingFromTextField = false;
+  String _searchQuery = '';
+  List<ParaglidingSite> _searchResults = [];
+  bool _isSearching = false;
+  Timer? _searchDebounce;
 
   // Filter state for sites and airspace (defaults, will be loaded from preferences)
   bool _sitesEnabled = true; // Controls site loading and display
@@ -121,34 +129,27 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
   final Map<String, FlyabilityStatus> _siteFlyabilityStatus = {};
   double _maxWindSpeed = 25.0;
   double _maxWindGusts = 30.0;
-  bool _isWindLoading = false; // Track wind data fetch status
   final WeatherService _weatherService = WeatherService.instance;
   Timer? _windFetchDebounce;
 
   // Weather station state
   List<WeatherStation> _weatherStations = [];
   final Map<String, WindData> _stationWindData = {};
-  bool _isStationsLoading = false;
   final Map<WeatherStationSource, LoadingItemState> _providerStates = {};
   final WeatherStationService _weatherStationService = WeatherStationService.instance;
   Timer? _stationFetchDebounce;
 
   // Favorites state
   List<ParaglidingSite> _favoriteSites = [];
-  bool _isFavoritesLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _initializeSearchManager();
     _loadPreferences();
     _loadFilterSettings();
     _loadWindPreferences();
     _updateActiveFiltersState(); // Initialize the cached active filters state
     _loadData();
-
-    // Listen to search state changes to update controller
-    _searchController.text = _searchManager.state.query;
   }
 
   /// Public method to refresh sites and airspace data.
@@ -191,43 +192,50 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
     }
   }
 
-  /// Handle site data changes (deletions, additions, edits) from child screens.
+  /// Unified handler for site data changes - consolidates duplicate handlers.
   ///
-  /// This method is called via onDataChanged callback when sites are modified
-  /// in screens like Data Management or Manage Sites. It clears the cache and
-  /// increments the version counter to trigger immediate map updates.
-  ///
-  /// Works the same way as airspace data changes - version counter triggers
-  /// natural widget updates without requiring explicit reload calls.
+  /// This replaces _handleSiteDataChanged() and _handleSitesVersionChanged() with
+  /// a single method that handles all site reload scenarios consistently.
   void _handleSiteDataChanged() {
     LoggingService.info('[SITE_DATA] Site data changed, clearing cache and incrementing version | old_version=$_sitesDataVersion');
 
     // Clear the cache to force fresh data load
     MapBoundsManager.instance.clearCache('nearby_sites');
-    LoggingService.info('[SITE_DATA] Cache cleared for nearby_sites');
 
     // Increment sites data version to trigger immediate map update
-    // The version counter change will cause widget rebuild and natural reload
     if (mounted) {
       setState(() {
-        _sitesDataVersion++; // Triggers immediate sites reload via widget system
-        LoggingService.info('[SITE_DATA] Version incremented | new_version=$_sitesDataVersion');
+        _sitesDataVersion++;
       });
     }
   }
 
-  /// Process loaded sites result - consolidates common logic for handling site data.
-  ///
-  /// This helper is called by all site loading paths to ensure consistent behavior:
-  /// - Updates site collections and flight status
-  /// - Cleans up stale wind/flyability data
-  /// - Refreshes displayed sites
-  /// - Optionally triggers wind data fetch
+  /// Handle sites version change by reloading sites immediately.
+  /// Called from NearbySitesMap when sitesDataVersion changes.
+  Future<void> _handleSitesVersionChanged() async {
+    if (_currentBounds == null) return;
+
+    // Load sites immediately without debouncing
+    await MapBoundsManager.instance.loadSitesForBoundsImmediate(
+      context: 'nearby_sites',
+      bounds: _currentBounds!,
+      zoomLevel: _mapController.camera.zoom,
+      onLoaded: (result) {
+        if (mounted) {
+          setState(() {
+            _processSitesLoaded(result, fetchWindData: true);
+          });
+        }
+      },
+    );
+  }
+
+  /// Process loaded sites - consolidates site handling logic.
   void _processSitesLoaded(dynamic result, {bool fetchWindData = false}) {
     _allSites = result.sites;
     _siteFlightStatus = {};
 
-    // Clean up stale flyability status and wind data for sites no longer visible
+    // Clean up stale data
     final currentSiteKeys = result.sites.map((site) => SiteUtils.createSiteKey(site.latitude, site.longitude)).toSet();
     _siteFlyabilityStatus.removeWhere((key, value) => !currentSiteKeys.contains(key));
     _siteWindData.removeWhere((key, value) => !currentSiteKeys.contains(key));
@@ -239,42 +247,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
 
     _updateDisplayedSites();
 
-    // Fetch wind data if requested and forecast is enabled
     if (fetchWindData && _forecastEnabled && result.sites.isNotEmpty) {
       _fetchWindDataForSites();
     }
-  }
-
-  /// Handle sites version change by loading sites immediately (bypasses bounds-changed check).
-  ///
-  /// This is called from NearbySitesMap when sitesDataVersion changes.
-  /// Uses loadSitesForBoundsImmediate() to bypass the bounds-changed-significantly check,
-  /// matching the behavior of the Map Filter Sites checkbox for immediate updates.
-  Future<void> _handleSitesVersionChanged() async {
-    LoggingService.info('[SITES_VERSION_HANDLER] Sites version changed, loading sites immediately');
-
-    if (_currentBounds == null) {
-      LoggingService.info('[SITES_VERSION_HANDLER] No current bounds, skipping load');
-      return;
-    }
-
-    // Clear the bounds cache to force a reload (sites data changed, must reload from DB)
-    MapBoundsManager.instance.clearCache('nearby_sites');
-
-    // Load sites immediately without debouncing or bounds check (like Map Filter)
-    await MapBoundsManager.instance.loadSitesForBoundsImmediate(
-      context: 'nearby_sites',
-      bounds: _currentBounds!,
-      zoomLevel: _mapController.camera.zoom,
-      onLoaded: (result) {
-        if (mounted) {
-          setState(() {
-            _processSitesLoaded(result, fetchWindData: true);
-            LoggingService.info('[SITES_VERSION_HANDLER] Loaded ${result.sites.length} sites | flown_sites=${result.sites.where((s) => s.hasFlights).length} | pge_sites=${result.sites.where((s) => !s.hasFlights).length}');
-          });
-        }
-      },
-    );
   }
 
   @override
@@ -283,34 +258,68 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
     _locationNotificationTimer?.cancel(); // Clean up location notification timer
     _windFetchDebounce?.cancel(); // Clean up wind fetch debounce timer
     _stationFetchDebounce?.cancel(); // Clean up station fetch debounce timer
-    _searchManager.dispose(); // Clean up search manager
+    _searchDebounce?.cancel(); // Clean up search debounce timer
     _searchController.dispose(); // Dispose search controller
     _searchFocusNode.dispose(); // Dispose search focus node
     _mapController.dispose(); // Dispose map controller
     super.dispose();
   }
 
-  void _initializeSearchManager() {
-    _searchManager = NearbySitesSearchManager(
-      onStateChanged: (SearchState state) {
-        setState(() {
-          // Update displayed sites when search state changes
-          _updateDisplayedSites();
+  /// Handle search query changes with debouncing
+  void _onSearchChanged(String query) {
+    _searchDebounce?.cancel();
 
-          // Only update search controller if the change came from outside the TextField
-          if (!_isUpdatingFromTextField && _searchController.text != state.query) {
-            _searchController.text = state.query;
-            // Move cursor to end
-            _searchController.selection = TextSelection.fromPosition(
-              TextPosition(offset: state.query.length),
-            );
+    setState(() {
+      _searchQuery = query.trim();
+    });
+
+    if (_searchQuery.isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _isSearching = false;
+      });
+      return;
+    }
+
+    if (_searchQuery.length < 2) {
+      return; // Don't search for very short queries
+    }
+
+    // Debounce the search
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () async {
+      setState(() => _isSearching = true);
+
+      try {
+        final results = await PgeSitesDatabaseService.instance.searchSitesByName(
+          query: _searchQuery,
+        );
+
+        if (mounted) {
+          setState(() {
+            _searchResults = results.take(15).toList();
+            _isSearching = false;
+          });
+
+          // Auto-jump to single result
+          if (_searchResults.length == 1) {
+            _jumpToLocation(_searchResults.first, keepSearchActive: false);
+            setState(() {
+              _searchController.clear();
+              _searchQuery = '';
+              _searchResults = [];
+            });
           }
-        });
-      },
-      onAutoJump: (ParaglidingSite site) {
-        _jumpToLocation(site, keepSearchActive: true);
-      },
-    );
+        }
+      } catch (e) {
+        LoggingService.error('Search failed', e);
+        if (mounted) {
+          setState(() {
+            _searchResults = [];
+            _isSearching = false;
+          });
+        }
+      }
+    });
   }
 
   Future<void> _loadPreferences() async {
@@ -437,7 +446,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
       if (!mounted) return;
 
       setState(() {
-        _isWindLoading = true;
+        _activeLoadingOperations.add(LoadingOperation.wind);
         // Mark all sites as loading
         for (final site in _displayedSites) {
           final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
@@ -476,7 +485,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
 
         // Update wind data map and flyability status with setState for immediate UI update
         setState(() {
-          _isWindLoading = false;
+          _activeLoadingOperations.remove(LoadingOperation.wind);
           _siteWindData.addAll(windDataResults);
           // Force recalculation because we have fresh wind data
           _updateFlyabilityStatus(forceRecalculation: true);
@@ -492,7 +501,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
         LoggingService.error('Failed to fetch wind data', e, stackTrace);
         if (mounted) {
           setState(() {
-            _isWindLoading = false;
+            _activeLoadingOperations.remove(LoadingOperation.wind);
             // Mark failed sites as unknown
             for (final site in _displayedSites) {
               final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
@@ -539,7 +548,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
       if (!mounted) return;
 
       setState(() {
-        _isStationsLoading = true;
+        _activeLoadingOperations.add(LoadingOperation.weatherStations);
         _providerStates.clear();
       });
 
@@ -619,7 +628,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
           Future.delayed(const Duration(milliseconds: 1500), () {
             if (mounted) {
               setState(() {
-                _isStationsLoading = false;
+                _activeLoadingOperations.remove(LoadingOperation.weatherStations);
                 _providerStates.clear();
               });
             }
@@ -638,7 +647,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
 
         if (mounted) {
           setState(() {
-            _isStationsLoading = false;
+            _activeLoadingOperations.remove(LoadingOperation.weatherStations);
             // Keep existing stations visible on error instead of clearing
           });
         }
@@ -666,7 +675,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
   /// Deduplicates sites that exist in both databases (prefer PGE version)
   Future<void> _loadFavorites() async {
     setState(() {
-      _isFavoritesLoading = true;
+      _activeLoadingOperations.add(LoadingOperation.favorites);
     });
 
     try {
@@ -718,7 +727,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
       if (mounted) {
         setState(() {
           _favoriteSites = sites;
-          _isFavoritesLoading = false;
+          _activeLoadingOperations.remove(LoadingOperation.favorites);
         });
 
         LoggingService.structured('FAVORITES_LOADED', {
@@ -733,7 +742,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
       if (mounted) {
         setState(() {
           _favoriteSites = [];
-          _isFavoritesLoading = false;
+          _activeLoadingOperations.remove(LoadingOperation.favorites);
         });
       }
     }
@@ -866,32 +875,32 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
 
   Future<void> _loadData() async {
     setState(() {
-      _isLoading = true;
+      _activeLoadingOperations.add(LoadingOperation.initialLoad);
       _errorMessage = null;
     });
 
     try {
       final stopwatch = Stopwatch()..start();
-      
+
       // Start location request in background - don't wait for it
       _updateUserLocation();
-      
+
       // Set initial map center based on user's flight sites
       _mapCenterPosition = await _getInitialMapCenter();
-      
+
       // Sites will be loaded dynamically via bounds-based loading
       // Initialize empty structure
       _allSites = [];
       _displayedSites = [];
       _siteFlightStatus = {};
-      
+
       stopwatch.stop();
-      
+
       if (mounted) {
         setState(() {
-          _isLoading = false;
+          _activeLoadingOperations.remove(LoadingOperation.initialLoad);
         });
-        
+
         LoggingService.performance(
           'Load Nearby Sites Data',
           Duration(milliseconds: stopwatch.elapsedMilliseconds),
@@ -903,7 +912,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
       if (mounted) {
         setState(() {
           _errorMessage = 'Failed to load sites: $e';
-          _isLoading = false;
+          _activeLoadingOperations.remove(LoadingOperation.initialLoad);
         });
       }
     }
@@ -913,7 +922,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
     if (!mounted) return null;
 
     setState(() {
-      _isLocationLoading = true;
+      _activeLoadingOperations.add(LoadingOperation.location);
     });
 
     try {
@@ -921,7 +930,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
       if (mounted) {
         setState(() {
           _userPosition = position;
-          _isLocationLoading = false;
+          _activeLoadingOperations.remove(LoadingOperation.location);
         });
 
         // Hide location notification if location was successfully obtained
@@ -936,7 +945,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
       LoggingService.error('Failed to get user location', e, stackTrace);
       if (mounted) {
         setState(() {
-          _isLocationLoading = false;
+          _activeLoadingOperations.remove(LoadingOperation.location);
         });
         // Show auto-dismissing notification when location fails
         _showLocationNotificationBriefly();
@@ -1004,26 +1013,11 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
 
     final stopwatch = Stopwatch()..start();
 
-    // Sites are already ParaglidingSite objects - no conversion needed!
+    // Simple inline filtering: show search results if searching, otherwise show all sites
+    List<ParaglidingSite> filteredSites = _searchQuery.isNotEmpty && _searchResults.isNotEmpty
+        ? _searchResults
+        : _allSites;
 
-    // Use SearchManager's computed property for cleaner logic
-    List<ParaglidingSite> filteredSites = _searchManager.getDisplayedSites(_allSites);
-    
-    // Add pinned site if we have one and it's not already in the list
-    final pinnedSite = _searchManager.state.pinnedSite;
-    if (pinnedSite != null && _searchManager.state.query.isEmpty) {
-      final pinnedSiteKey = SiteUtils.createSiteKey(pinnedSite.latitude, pinnedSite.longitude);
-      final alreadyExists = filteredSites.any((site) => 
-        SiteUtils.createSiteKey(site.latitude, site.longitude) == pinnedSiteKey);
-      
-      if (!alreadyExists) {
-        filteredSites = List.from(filteredSites);
-        filteredSites.insert(0, pinnedSite); // Add at beginning for prominence
-      }
-    }
-    
-    // Sites are loaded via bounds-based filtering, no distance filtering needed
-    
     stopwatch.stop();
 
     if (mounted) {
@@ -1031,20 +1025,20 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
         _displayedSites = filteredSites;
       });
     }
-    
+
     // Count flown vs new sites for logging
     final flownSites = filteredSites.where((site) {
       final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
       return _siteFlightStatus[siteKey] ?? false;
     }).length;
     final newSites = filteredSites.length - flownSites;
-    
+
     LoggingService.structured('NEARBY_SITES_FILTERED', {
       'total_local_sites': flownSites,
       'total_api_sites': newSites,
       'displayed_local_sites': flownSites,
       'displayed_api_sites': newSites,
-      'search_query': _searchManager.state.query.isEmpty ? null : _searchManager.state.query,
+      'search_query': _searchQuery.isEmpty ? null : _searchQuery,
       'has_user_position': _userPosition != null,
       'filter_time_ms': stopwatch.elapsedMilliseconds,
     });
@@ -1194,7 +1188,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
           Future.delayed(const Duration(milliseconds: 50), () {
             if (!mounted) return;
             if (_displayedSites.isNotEmpty && (_hasMissingWindData() || _siteWindData.isEmpty)) {
-              if (!_isWindLoading) {
+              if (!_activeLoadingOperations.contains(LoadingOperation.wind)) {
                 _fetchWindDataForSites();
               } else {
                 LoggingService.debug('Skipping wind fetch (already loading)');
@@ -1224,7 +1218,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
           final missingWindData = _hasMissingWindData(includeUnknownStatus: true);
           LoggingService.info('Missing wind data check: $missingWindData');
           if (missingWindData) {
-            if (!_isWindLoading) {
+            if (!_activeLoadingOperations.contains(LoadingOperation.wind)) {
               LoggingService.info('Triggering wind fetch after bounds load completion');
               _fetchWindDataForSites();
             } else {
@@ -1567,25 +1561,19 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
           child: TextField(
             controller: _searchController,
             focusNode: _searchFocusNode,
-            onChanged: (value) {
-              _isUpdatingFromTextField = true;
-              _searchManager.onSearchQueryChanged(value);
-              _isUpdatingFromTextField = false;
-            },
+            onChanged: _onSearchChanged,
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white),
             decoration: InputDecoration(
               isDense: true,
               hintText: 'Search nearby sites...',
               hintStyle: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white.withValues(alpha: 0.7)),
               prefixIcon: const Icon(Icons.search, size: 16, color: Colors.white),
-              suffixIcon: _searchManager.state.query.isNotEmpty
+              suffixIcon: _searchQuery.isNotEmpty
                   ? IconButton(
                       icon: const Icon(Icons.clear, size: 16, color: Colors.white),
                       onPressed: () {
-                        _isUpdatingFromTextField = true;
                         _searchController.clear();
-                        _searchManager.onSearchQueryChanged('');
-                        _isUpdatingFromTextField = false;
+                        _onSearchChanged('');
                       },
                       padding: EdgeInsets.zero,
                     )
@@ -1600,10 +1588,10 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
           PopupMenuButton<ParaglidingSite>(
             icon: const Icon(Icons.favorite),
             tooltip: 'Favorites',
-            enabled: !_isFavoritesLoading,
+            enabled: !_activeLoadingOperations.contains(LoadingOperation.favorites),
             onOpened: _loadFavorites,
             itemBuilder: (context) {
-              if (_isFavoritesLoading) {
+              if (_activeLoadingOperations.contains(LoadingOperation.favorites)) {
                 return [
                   const PopupMenuItem(
                     enabled: false,
@@ -1664,7 +1652,8 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: (_isStationsLoading || _isWindLoading)
+            onPressed: (_activeLoadingOperations.contains(LoadingOperation.weatherStations) ||
+                        _activeLoadingOperations.contains(LoadingOperation.wind))
                 ? null
                 : _refreshAllWeatherData,
             tooltip: 'Refresh all',
@@ -1691,7 +1680,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
       body: Stack(
         children: [
           // Main content
-          _isLoading
+          _activeLoadingOperations.contains(LoadingOperation.initialLoad)
             ? const Center(child: CircularProgressIndicator())
             : _errorMessage != null
                 ? AppErrorState(
@@ -1726,7 +1715,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
                           weatherStationsEnabled: _weatherStationsEnabled,
                           onBoundsChanged: _onBoundsChanged,
                           showUserLocation: true,
-                          isLocationLoading: _isLocationLoading,
+                          isLocationLoading: _activeLoadingOperations.contains(LoadingOperation.location),
                           initialCenter: _mapCenterPosition,
                           initialZoom: _currentZoom,
                         ),
@@ -1781,7 +1770,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
                     ),
 
           // Combined loading overlay for sites, wind, and weather stations
-          if (MapBoundsManager.instance.isLoading('nearby_sites') || _isWindLoading || _isStationsLoading)
+          if (MapBoundsManager.instance.isLoading('nearby_sites') ||
+              _activeLoadingOperations.contains(LoadingOperation.wind) ||
+              _activeLoadingOperations.contains(LoadingOperation.weatherStations))
             MapLoadingOverlay.multiple(
               items: [
                 if (MapBoundsManager.instance.isLoading('nearby_sites'))
@@ -1790,7 +1781,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
                     icon: Icons.place,
                     iconColor: Colors.blue,
                   ),
-                if (_isWindLoading)
+                if (_activeLoadingOperations.contains(LoadingOperation.wind))
                   MapLoadingItem(
                     label: 'Wind forecast',
                     icon: Icons.air,
@@ -1798,7 +1789,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
                     count: _displayedSites.length,
                   ),
                 // Individual weather station providers with progress tracking
-                if (_isStationsLoading || _providerStates.isNotEmpty)
+                if (_activeLoadingOperations.contains(LoadingOperation.weatherStations) || _providerStates.isNotEmpty)
                   ...WeatherStationProviderRegistry.getAllSources()
                       .where((source) {
                         // Only show enabled providers in loading overlay
@@ -1850,7 +1841,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
             ),
 
           // Search dropdown overlay
-          if (_searchManager.shouldShowSearchDropdown())
+          if (_searchQuery.isNotEmpty && (_isSearching || _searchResults.isNotEmpty))
             Positioned(
               top: 0,
               left: 0,
@@ -1870,7 +1861,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
                       ),
                     ],
                   ),
-                  child: _searchManager.state.isSearching
+                  child: _isSearching
                     ? Padding(
                         padding: const EdgeInsets.all(16),
                         child: Row(
@@ -1895,9 +1886,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
                       )
                     : ListView.builder(
                         shrinkWrap: true,
-                        itemCount: _searchManager.state.results.length,
+                        itemCount: _searchResults.length,
                         itemBuilder: (context, index) {
-                          final site = _searchManager.state.results[index];
+                          final site = _searchResults[index];
                           return ListTile(
                             leading: CircleAvatar(
                               radius: 16,
@@ -1930,8 +1921,12 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
                               color: Theme.of(context).colorScheme.onSurfaceVariant,
                             ),
                             onTap: () {
-                              _searchManager.selectSearchResult(site);
-                              _jumpToLocation(site);
+                              _jumpToLocation(site, keepSearchActive: false);
+                              setState(() {
+                                _searchController.clear();
+                                _searchQuery = '';
+                                _searchResults = [];
+                              });
                             },
                           );
                         },
