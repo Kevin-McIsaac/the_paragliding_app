@@ -31,6 +31,15 @@ import '../../services/openaip_service.dart';
 import '../../services/database_service.dart';
 import '../../services/pge_sites_database_service.dart';
 
+/// Loading states for different operations
+enum LoadingOperation {
+  idle,
+  initialLoad,
+  location,
+  wind,
+  weatherStations,
+  favorites,
+}
 
 class NearbySitesScreen extends StatefulWidget {
   /// Optional callback to reload data after database changes.
@@ -68,8 +77,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
   List<ParaglidingSite> _displayedSites = [];
   Map<String, bool> _siteFlightStatus = {}; // Key: "lat,lng", Value: hasFlights
   Position? _userPosition;
-  bool _isLoading = false;
-  bool _isLocationLoading = false;
+
+  // Consolidated loading state
+  final Set<LoadingOperation> _activeLoadingOperations = {};
   String? _errorMessage;
   LatLng? _mapCenterPosition;
   bool _mapReady = false; // Track if map is initialized
@@ -119,21 +129,18 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
   final Map<String, FlyabilityStatus> _siteFlyabilityStatus = {};
   double _maxWindSpeed = 25.0;
   double _maxWindGusts = 30.0;
-  bool _isWindLoading = false; // Track wind data fetch status
   final WeatherService _weatherService = WeatherService.instance;
   Timer? _windFetchDebounce;
 
   // Weather station state
   List<WeatherStation> _weatherStations = [];
   final Map<String, WindData> _stationWindData = {};
-  bool _isStationsLoading = false;
   final Map<WeatherStationSource, LoadingItemState> _providerStates = {};
   final WeatherStationService _weatherStationService = WeatherStationService.instance;
   Timer? _stationFetchDebounce;
 
   // Favorites state
   List<ParaglidingSite> _favoriteSites = [];
-  bool _isFavoritesLoading = false;
 
   @override
   void initState() {
@@ -894,32 +901,32 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
 
   Future<void> _loadData() async {
     setState(() {
-      _isLoading = true;
+      _activeLoadingOperations.add(LoadingOperation.initialLoad);
       _errorMessage = null;
     });
 
     try {
       final stopwatch = Stopwatch()..start();
-      
+
       // Start location request in background - don't wait for it
       _updateUserLocation();
-      
+
       // Set initial map center based on user's flight sites
       _mapCenterPosition = await _getInitialMapCenter();
-      
+
       // Sites will be loaded dynamically via bounds-based loading
       // Initialize empty structure
       _allSites = [];
       _displayedSites = [];
       _siteFlightStatus = {};
-      
+
       stopwatch.stop();
-      
+
       if (mounted) {
         setState(() {
-          _isLoading = false;
+          _activeLoadingOperations.remove(LoadingOperation.initialLoad);
         });
-        
+
         LoggingService.performance(
           'Load Nearby Sites Data',
           Duration(milliseconds: stopwatch.elapsedMilliseconds),
@@ -931,7 +938,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
       if (mounted) {
         setState(() {
           _errorMessage = 'Failed to load sites: $e';
-          _isLoading = false;
+          _activeLoadingOperations.remove(LoadingOperation.initialLoad);
         });
       }
     }
@@ -941,7 +948,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
     if (!mounted) return null;
 
     setState(() {
-      _isLocationLoading = true;
+      _activeLoadingOperations.add(LoadingOperation.location);
     });
 
     try {
@@ -949,7 +956,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
       if (mounted) {
         setState(() {
           _userPosition = position;
-          _isLocationLoading = false;
+          _activeLoadingOperations.remove(LoadingOperation.location);
         });
 
         // Hide location notification if location was successfully obtained
@@ -964,7 +971,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
       LoggingService.error('Failed to get user location', e, stackTrace);
       if (mounted) {
         setState(() {
-          _isLocationLoading = false;
+          _activeLoadingOperations.remove(LoadingOperation.location);
         });
         // Show auto-dismissing notification when location fails
         _showLocationNotificationBriefly();
