@@ -1,3 +1,5 @@
+import 'paragliding_site.dart';
+
 class Site {
   final int? id;
   final String name;
@@ -86,4 +88,38 @@ class Site {
 
   @override
   int get hashCode => id.hashCode;
+}
+
+/// Extension to convert local Site model to ParaglidingSite model
+extension SiteToParaglidingSite on Site {
+  /// Convert local Site to ParaglidingSite for unified handling
+  ///
+  /// This is the single source of truth for Site → ParaglidingSite conversion.
+  /// The conversion infers site type from name patterns and assigns reasonable
+  /// defaults for fields not tracked in the local database.
+  ParaglidingSite toParaglidingSite() {
+    // Infer site type from name patterns
+    String siteType = 'launch'; // Default to launch
+    final nameLower = name.toLowerCase();
+    if (nameLower.contains('landing') ||
+        nameLower.contains('atterrissage') ||
+        nameLower.contains('landeplatz') ||
+        nameLower.contains('campo')) {
+      siteType = 'landing';
+    }
+
+    return ParaglidingSite(
+      name: name,
+      latitude: latitude,
+      longitude: longitude,
+      altitude: altitude?.toInt(),
+      description: 'Flight log site',
+      windDirections: [],
+      siteType: siteType,
+      rating: 4, // User sites get good rating (proven locations)
+      country: country,
+      region: null,
+      popularity: 75.0, // High popularity for user's personal sites
+    );
+  }
 }
