@@ -166,11 +166,9 @@ class MapBoundsManager {
       return;
     }
 
-    // Check if same bounds already loaded (deduplication)
-    if (_lastLoadedBoundsKeys[context] == boundsKey) {
-      LoggingService.debug('[$context] Same bounds already loaded, skipping duplicate request');
-      return;
-    }
+    // Note: Removed exact bounds key checking here - the threshold-based check
+    // in _onBoundsChanged() (boundsThreshold = 0.001 ≈ 100m) already prevents
+    // excessive reloads while allowing edge sites to load properly.
 
     // Set loading state
     _loadingStates[context] = true;

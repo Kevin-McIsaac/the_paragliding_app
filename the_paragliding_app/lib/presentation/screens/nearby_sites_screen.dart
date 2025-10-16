@@ -150,6 +150,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
     _loadWindPreferences();
     _updateActiveFiltersState(); // Initialize the cached active filters state
     _loadData();
+    _loadFavorites(); // Pre-load favorites so they're ready on first popup open
   }
 
   /// Public method to refresh sites and airspace data.
