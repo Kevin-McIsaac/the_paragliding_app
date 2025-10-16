@@ -221,55 +221,9 @@ class WeatherStationService {
           result.remove(duplicate);
           result.add(station);
           discarded.add(duplicate);
-
-          LoggingService.structured('WEATHER_STATION_DEDUPLICATION', {
-            'kept_station': {
-              'id': station.id,
-              'source': station.source.name,
-              'lat': station.latitude,
-              'lon': station.longitude,
-              'has_wind_data': station.windData != null,
-              'timestamp': station.windData?.timestamp.toIso8601String(),
-            },
-            'discarded_station': {
-              'id': duplicate.id,
-              'source': duplicate.source.name,
-              'lat': duplicate.latitude,
-              'lon': duplicate.longitude,
-              'has_wind_data': duplicate.windData != null,
-              'timestamp': duplicate.windData?.timestamp.toIso8601String(),
-            },
-            'distance_m': duplicateDistance!.toStringAsFixed(1),
-            'reason': station.windData != null && duplicate.windData == null
-                ? 'newer_has_data'
-                : 'newer_data',
-          });
         } else {
           // Keep existing, discard new
           discarded.add(station);
-
-          LoggingService.structured('WEATHER_STATION_DEDUPLICATION', {
-            'kept_station': {
-              'id': duplicate.id,
-              'source': duplicate.source.name,
-              'lat': duplicate.latitude,
-              'lon': duplicate.longitude,
-              'has_wind_data': duplicate.windData != null,
-              'timestamp': duplicate.windData?.timestamp.toIso8601String(),
-            },
-            'discarded_station': {
-              'id': station.id,
-              'source': station.source.name,
-              'lat': station.latitude,
-              'lon': station.longitude,
-              'has_wind_data': station.windData != null,
-              'timestamp': station.windData?.timestamp.toIso8601String(),
-            },
-            'distance_m': duplicateDistance!.toStringAsFixed(1),
-            'reason': duplicate.windData != null && station.windData == null
-                ? 'existing_has_data'
-                : 'existing_newer',
-          });
         }
       } else {
         // No duplicate found, add to result

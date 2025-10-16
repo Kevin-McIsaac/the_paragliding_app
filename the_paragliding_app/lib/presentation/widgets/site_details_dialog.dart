@@ -265,14 +265,6 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
           _detailedData = details;
           _isLoadingDetails = false;
         });
-        // Debug: Log all available fields
-        if (details != null) {
-          LoggingService.info('Site details fields: ${details.keys.toList()}');
-          LoggingService.info('Has landing_altitude: ${details.containsKey('landing_altitude')}');
-          LoggingService.info('Has landing_description: ${details.containsKey('landing_description')}');
-          LoggingService.info('Has lz_altitude: ${details.containsKey('lz_altitude')}');
-          LoggingService.info('Has lz_description: ${details.containsKey('lz_description')}');
-        }
       }
     } catch (e) {
       if (mounted) {

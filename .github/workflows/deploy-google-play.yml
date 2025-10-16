@@ -1,29 +1,30 @@
 name: Deploy to Google Play
 
-on:
-  push:
-    tags:
-      - 'v*' # Trigger on version tags like v1.0.0
-  workflow_dispatch: # Allow manual trigger
-    inputs:
-      track:
-        description: 'Deployment track'
-        required: true
-        default: 'internal'
-        type: choice
-        options:
-          - internal
-          - alpha
-          - beta
-          - production
-      status:
-        description: 'Release status'
-        required: true
-        default: 'draft'
-        type: choice
-        options:
-          - draft
-          - completed
+# DISABLED: Workflow disabled - uncomment 'on:' section below to re-enable
+# on:
+#   push:
+#     tags:
+#       - 'v*' # Trigger on version tags like v1.0.0
+#   workflow_dispatch: # Allow manual trigger
+#     inputs:
+#       track:
+#         description: 'Deployment track'
+#         required: true
+#         default: 'internal'
+#         type: choice
+#         options:
+#           - internal
+#           - alpha
+#           - beta
+#           - production
+#       status:
+#         description: 'Release status'
+#         required: true
+#         default: 'draft'
+#         type: choice
+#         options:
+#           - draft
+#           - completed
 
 env:
   FLUTTER_VERSION: "3.24.5"
