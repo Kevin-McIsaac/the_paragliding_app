@@ -766,14 +766,6 @@ class DatabaseService {
         'NW': row['wind_nw'],
       };
 
-      // Debug for Mt Bakewell
-      if ((row['name'] as String).contains('Bakewell')) {
-        LoggingService.debug('Mt Bakewell JOIN result:');
-        LoggingService.debug('  - Site ID: ${row['id']}');
-        LoggingService.debug('  - PGE Site ID: ${row['pge_site_id']}');
-        LoggingService.debug('  - Wind data: $windMap');
-      }
-
       windMap.forEach((direction, value) {
         if (value != null && (value as int) >= 1) {
           windDirections.add(direction);

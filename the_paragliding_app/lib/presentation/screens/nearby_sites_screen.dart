@@ -1126,10 +1126,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
   // Bounds-based loading methods (copied from EditSiteScreen)
   void _onBoundsChanged(LatLngBounds bounds) {
     final currentZoom = _mapController.camera.zoom;
-    final oldCenter = _mapCenterPosition;
     final newCenter = _mapController.camera.center;
-
-    LoggingService.debug('[BOUNDS] _onBoundsChanged called: zoom=$currentZoom, old center=$oldCenter, new center=$newCenter');
 
     // Always update center position for map refresh (captures pans AND zooms)
     _mapCenterPosition = newCenter;
@@ -1147,22 +1144,29 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
     final boundsChangedSignificantly = MapBoundsManager.instance.haveBoundsChangedSignificantly('nearby_sites', bounds, _currentBounds);
 
     if (!boundsChangedSignificantly) {
-      LoggingService.debug('Bounds have not changed significantly, skipping load');
+      // Silently skip - no logging needed for normal map panning/zooming
       return;
     }
 
     _currentBounds = bounds;
-    LoggingService.info('Bounds changed significantly at zoom=$currentZoom');
+
+    // Calculate zoom change for logging context
+    final oldZoom = _currentZoom;
+    final zoomDelta = (currentZoom - oldZoom).abs();
+    final reason = zoomDelta > 0.1 ? 'zoom_changed' : 'pan_completed';
+
+    LoggingService.structured('BOUNDS_CHANGED', {
+      'zoom': currentZoom.toStringAsFixed(2),
+      'zoom_delta': zoomDelta.toStringAsFixed(2),
+      'reason': reason,
+    });
 
     // Load sites if sites are enabled
     if (!_sitesEnabled) {
-      LoggingService.debug('Sites disabled, skipping site loading but will load weather stations');
       // Still fetch weather stations even if sites are disabled
       _fetchWeatherStations();
       return;
     }
-
-    LoggingService.info('Loading sites at zoom=$currentZoom');
 
     // Use MapBoundsManager for debounced loading with caching
     MapBoundsManager.instance.loadSitesForBoundsDebounced(

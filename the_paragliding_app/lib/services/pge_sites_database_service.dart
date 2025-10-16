@@ -365,18 +365,7 @@ class PgeSitesDatabaseService {
 
       final sites = results.map((row) => _mapRowToParaglidingSite(row)).toList();
 
-      LoggingService.performance(
-        'PGE Sites Bounds Query',
-        stopwatch.elapsed,
-        'Found ${sites.length} sites in bounds'
-      );
-
-      LoggingService.structured('PGE_SITES_BOUNDS_QUERY', {
-        'bounds': '$west,$south,$east,$north',
-        'sites_found': sites.length,
-        'query_duration_ms': stopwatch.elapsedMilliseconds,
-      });
-
+      // Single consolidated performance log
       PerformanceMonitor.endOperation('PgeSitesQuery_Bounds', metadata: {
         'sites_found': sites.length,
         'duration_ms': stopwatch.elapsedMilliseconds,
