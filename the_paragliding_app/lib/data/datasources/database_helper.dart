@@ -119,6 +119,7 @@ class DatabaseHelper {
         country TEXT,
         custom_name INTEGER DEFAULT 0,
         pge_site_id INTEGER,
+        is_favorite INTEGER DEFAULT 0,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     ''');
@@ -485,7 +486,7 @@ class DatabaseHelper {
       // Check sites table has all expected columns
       final siteColumns = await db.rawQuery("PRAGMA table_info(sites)");
       final expectedSiteColumns = {
-        'id', 'name', 'latitude', 'longitude', 'altitude', 'country', 'custom_name', 'pge_site_id', 'created_at'
+        'id', 'name', 'latitude', 'longitude', 'altitude', 'country', 'custom_name', 'pge_site_id', 'is_favorite', 'created_at'
       };
       
       final actualSiteColumns = siteColumns.map((col) => col['name'] as String).toSet();
