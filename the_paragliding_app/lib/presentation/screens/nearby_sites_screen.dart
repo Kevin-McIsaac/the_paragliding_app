@@ -472,7 +472,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
       if (!mounted) return;
 
       setState(() {
-        _isWindLoading = true;
+        _activeLoadingOperations.add(LoadingOperation.wind);
         // Mark all sites as loading
         for (final site in _displayedSites) {
           final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
@@ -511,7 +511,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
 
         // Update wind data map and flyability status with setState for immediate UI update
         setState(() {
-          _isWindLoading = false;
+          _activeLoadingOperations.remove(LoadingOperation.wind);
           _siteWindData.addAll(windDataResults);
           // Force recalculation because we have fresh wind data
           _updateFlyabilityStatus(forceRecalculation: true);
@@ -527,7 +527,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
         LoggingService.error('Failed to fetch wind data', e, stackTrace);
         if (mounted) {
           setState(() {
-            _isWindLoading = false;
+            _activeLoadingOperations.remove(LoadingOperation.wind);
             // Mark failed sites as unknown
             for (final site in _displayedSites) {
               final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
@@ -574,7 +574,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
       if (!mounted) return;
 
       setState(() {
-        _isStationsLoading = true;
+        _activeLoadingOperations.add(LoadingOperation.weatherStations);
         _providerStates.clear();
       });
 
@@ -654,7 +654,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
           Future.delayed(const Duration(milliseconds: 1500), () {
             if (mounted) {
               setState(() {
-                _isStationsLoading = false;
+                _activeLoadingOperations.remove(LoadingOperation.weatherStations);
                 _providerStates.clear();
               });
             }
@@ -673,7 +673,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
 
         if (mounted) {
           setState(() {
-            _isStationsLoading = false;
+            _activeLoadingOperations.remove(LoadingOperation.weatherStations);
             // Keep existing stations visible on error instead of clearing
           });
         }
@@ -701,7 +701,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
   /// Deduplicates sites that exist in both databases (prefer PGE version)
   Future<void> _loadFavorites() async {
     setState(() {
-      _isFavoritesLoading = true;
+      _activeLoadingOperations.add(LoadingOperation.favorites);
     });
 
     try {
@@ -753,7 +753,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
       if (mounted) {
         setState(() {
           _favoriteSites = sites;
-          _isFavoritesLoading = false;
+          _activeLoadingOperations.remove(LoadingOperation.favorites);
         });
 
         LoggingService.structured('FAVORITES_LOADED', {
@@ -768,7 +768,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
       if (mounted) {
         setState(() {
           _favoriteSites = [];
-          _isFavoritesLoading = false;
+          _activeLoadingOperations.remove(LoadingOperation.favorites);
         });
       }
     }
@@ -1214,7 +1214,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
           Future.delayed(const Duration(milliseconds: 50), () {
             if (!mounted) return;
             if (_displayedSites.isNotEmpty && (_hasMissingWindData() || _siteWindData.isEmpty)) {
-              if (!_isWindLoading) {
+              if (!_activeLoadingOperations.contains(LoadingOperation.wind)) {
                 _fetchWindDataForSites();
               } else {
                 LoggingService.debug('Skipping wind fetch (already loading)');
@@ -1244,7 +1244,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
           final missingWindData = _hasMissingWindData(includeUnknownStatus: true);
           LoggingService.info('Missing wind data check: $missingWindData');
           if (missingWindData) {
-            if (!_isWindLoading) {
+            if (!_activeLoadingOperations.contains(LoadingOperation.wind)) {
               LoggingService.info('Triggering wind fetch after bounds load completion');
               _fetchWindDataForSites();
             } else {
@@ -1614,10 +1614,10 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
           PopupMenuButton<ParaglidingSite>(
             icon: const Icon(Icons.favorite),
             tooltip: 'Favorites',
-            enabled: !_isFavoritesLoading,
+            enabled: !_activeLoadingOperations.contains(LoadingOperation.favorites),
             onOpened: _loadFavorites,
             itemBuilder: (context) {
-              if (_isFavoritesLoading) {
+              if (_activeLoadingOperations.contains(LoadingOperation.favorites)) {
                 return [
                   const PopupMenuItem(
                     enabled: false,
@@ -1678,7 +1678,8 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: (_isStationsLoading || _isWindLoading)
+            onPressed: (_activeLoadingOperations.contains(LoadingOperation.weatherStations) ||
+                        _activeLoadingOperations.contains(LoadingOperation.wind))
                 ? null
                 : _refreshAllWeatherData,
             tooltip: 'Refresh all',
@@ -1705,7 +1706,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
       body: Stack(
         children: [
           // Main content
-          _isLoading
+          _activeLoadingOperations.contains(LoadingOperation.initialLoad)
             ? const Center(child: CircularProgressIndicator())
             : _errorMessage != null
                 ? AppErrorState(
@@ -1740,7 +1741,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
                           weatherStationsEnabled: _weatherStationsEnabled,
                           onBoundsChanged: _onBoundsChanged,
                           showUserLocation: true,
-                          isLocationLoading: _isLocationLoading,
+                          isLocationLoading: _activeLoadingOperations.contains(LoadingOperation.location),
                           initialCenter: _mapCenterPosition,
                           initialZoom: _currentZoom,
                         ),
@@ -1795,7 +1796,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
                     ),
 
           // Combined loading overlay for sites, wind, and weather stations
-          if (MapBoundsManager.instance.isLoading('nearby_sites') || _isWindLoading || _isStationsLoading)
+          if (MapBoundsManager.instance.isLoading('nearby_sites') ||
+              _activeLoadingOperations.contains(LoadingOperation.wind) ||
+              _activeLoadingOperations.contains(LoadingOperation.weatherStations))
             MapLoadingOverlay.multiple(
               items: [
                 if (MapBoundsManager.instance.isLoading('nearby_sites'))
@@ -1804,7 +1807,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
                     icon: Icons.place,
                     iconColor: Colors.blue,
                   ),
-                if (_isWindLoading)
+                if (_activeLoadingOperations.contains(LoadingOperation.wind))
                   MapLoadingItem(
                     label: 'Wind forecast',
                     icon: Icons.air,
@@ -1812,7 +1815,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
                     count: _displayedSites.length,
                   ),
                 // Individual weather station providers with progress tracking
-                if (_isStationsLoading || _providerStates.isNotEmpty)
+                if (_activeLoadingOperations.contains(LoadingOperation.weatherStations) || _providerStates.isNotEmpty)
                   ...WeatherStationProviderRegistry.getAllSources()
                       .where((source) {
                         // Only show enabled providers in loading overlay
