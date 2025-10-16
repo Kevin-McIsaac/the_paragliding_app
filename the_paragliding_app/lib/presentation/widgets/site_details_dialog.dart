@@ -29,6 +29,7 @@ class SiteDetailsDialog extends StatefulWidget {
   final Function()? onFavoriteToggled;
 
   const SiteDetailsDialog({
+    super.key,
     this.site,
     this.paraglidingSite,
     this.userPosition,
@@ -1091,10 +1092,10 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
               child: Container(
                 padding: const EdgeInsets.all(12.0),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(8.0),
                   border: Border.all(
-                    color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                    color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
                     width: 1.0,
                   ),
                 ),
@@ -1171,7 +1172,7 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
   TableRow _buildHeaderRow() {
     return TableRow(
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
       ),
       children: [
         _buildHeaderCell('Day', isFirst: true),
@@ -1327,43 +1328,6 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
 
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return '${days[date.weekday - 1]} ${date.day}/${date.month}';
-  }
-
-  Widget _buildCompactFlightCharacteristics(String? thermalFlag, String? soaringFlag, String? xcFlag) {
-    final characteristics = <String>[];
-
-    if (thermalFlag == '1') characteristics.add('Thermals');
-    if (soaringFlag == '1') characteristics.add('Soaring');
-    if (xcFlag == '1') characteristics.add('Cross Country');
-
-    if (characteristics.isEmpty) return const SizedBox.shrink();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(
-              Icons.flight,
-              size: 16,
-              color: Colors.green,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              'Good for:',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          characteristics.join(' • '),
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-      ],
-    );
   }
 
   /// Launch navigation to coordinates
