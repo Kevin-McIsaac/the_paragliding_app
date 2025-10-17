@@ -73,7 +73,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
   late Map<String, bool> _icaoClasses;
   late double _maxAltitudeFt;
   late bool _clippingEnabled;
-  WeatherModel _selectedWeatherModel = WeatherModel.bestMatch; // Default
+  WeatherModel? _selectedWeatherModel; // Will be loaded in initState
 
   Timer? _debounceTimer;
 
@@ -945,6 +945,36 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
 
   /// Build weather model dropdown widget
   Widget _buildWeatherModelDropdown() {
+    // Show loading state if model not yet loaded
+    if (_selectedWeatherModel == null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Model',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+              color: Colors.white70,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: Colors.white54),
+            ),
+            child: const Text(
+              'Loading...',
+              style: TextStyle(color: Colors.white54, fontSize: 10),
+            ),
+          ),
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -966,7 +996,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
               border: Border.all(color: Colors.white54),
             ),
             child: DropdownButton<WeatherModel>(
-              value: _selectedWeatherModel,
+              value: _selectedWeatherModel!,
               underline: Container(),
               dropdownColor: const Color(0xFF2C2C2C),
               style: const TextStyle(color: Colors.white, fontSize: 10),

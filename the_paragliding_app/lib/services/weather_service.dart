@@ -24,6 +24,9 @@ class WeatherService {
   /// Cache for pending batch requests to prevent duplicate batch API calls
   final Map<String, Future<Map<String, WindData>>> _pendingBatchRequests = {};
 
+  /// Cache for current weather model to avoid repeated SharedPreferences reads
+  WeatherModel? _cachedModel;
+
   /// Maximum number of locations per batch request
   static const int maxBatchSize = 100;
 
@@ -34,7 +37,7 @@ class WeatherService {
     DateTime dateTime,
   ) async {
     // Generate cache key (location + model, no time component)
-    final cacheKey = await _getLocationKey(lat, lon);
+    final cacheKey = _getLocationKey(lat, lon);
 
     // Check forecast cache first
     if (_forecastCache.containsKey(cacheKey)) {
@@ -145,17 +148,20 @@ class WeatherService {
   /// Generate cache key based on location and model
   /// Round to approximately 1km grid (0.01 degrees ≈ 1km)
   /// Includes model to support separate caches per model
-  Future<String> _getLocationKey(double lat, double lon) async {
+  /// Now synchronous - uses cached model instead of reading from SharedPreferences
+  String _getLocationKey(double lat, double lon) {
     final gridLat = (lat * 100).round() / 100;
     final gridLon = (lon * 100).round() / 100;
-    final modelApiValue = await PreferencesHelper.getWeatherForecastModel();
+    final modelApiValue = _cachedModel?.apiValue ?? 'best_match';
     return '${gridLat.toStringAsFixed(2)}_${gridLon.toStringAsFixed(2)}_$modelApiValue';
   }
 
-  /// Get current weather model
+  /// Get current weather model (with caching to avoid repeated SharedPreferences reads)
   Future<WeatherModel> getCurrentModel() async {
+    if (_cachedModel != null) return _cachedModel!;
     final modelApiValue = await PreferencesHelper.getWeatherForecastModel();
-    return WeatherModel.fromApiValue(modelApiValue);
+    _cachedModel = WeatherModel.fromApiValue(modelApiValue);
+    return _cachedModel!;
   }
 
   /// Get wind data for multiple locations in a single batch API call
@@ -195,7 +201,7 @@ class WeatherService {
     final uncachedLocations = <LatLng>[];
 
     for (final location in locations) {
-      final cacheKey = await _getLocationKey(location.latitude, location.longitude);
+      final cacheKey = _getLocationKey(location.latitude, location.longitude);
 
       // Check if we have a fresh forecast for this location
       if (_forecastCache.containsKey(cacheKey)) {
@@ -312,7 +318,7 @@ class WeatherService {
           );
 
           // Cache the full forecast
-          final cacheKey = await _getLocationKey(location.latitude, location.longitude);
+          final cacheKey = _getLocationKey(location.latitude, location.longitude);
           _forecastCache[cacheKey] = forecast;
 
           // Get wind data at requested time for immediate results
@@ -342,19 +348,21 @@ class WeatherService {
   }
 
   /// Create a batch key for deduplication
+  /// Includes model to prevent collisions between different model requests
   String _createBatchKey(List<LatLng> locations, DateTime dateTime) {
     final hour = DateTime(dateTime.year, dateTime.month, dateTime.day, dateTime.hour);
     final locationKeys = locations
         .map((loc) => '${(loc.latitude * 100).round()}_${(loc.longitude * 100).round()}')
         .toList()
       ..sort();
-    return '${locationKeys.join('|')}_${hour.toIso8601String()}';
+    final modelApiValue = _cachedModel?.apiValue ?? 'best_match';
+    return '${locationKeys.join('|')}_${hour.toIso8601String()}_$modelApiValue';
   }
 
   /// Get a cached forecast for a specific location
   /// Returns null if no forecast is cached or if the forecast is stale
   Future<WindForecast?> getCachedForecast(double lat, double lon) async {
-    final cacheKey = await _getLocationKey(lat, lon);
+    final cacheKey = _getLocationKey(lat, lon);
     if (_forecastCache.containsKey(cacheKey)) {
       final forecast = _forecastCache[cacheKey]!;
       if (forecast.isFresh) {
@@ -368,10 +376,12 @@ class WeatherService {
   }
 
   /// Clear the forecast cache (useful for testing or memory management)
+  /// Also clears the model cache to force re-reading preferences
   void clearCache() {
     final clearedCount = _forecastCache.length;
     _forecastCache.clear();
-    LoggingService.info('Weather forecast cache cleared: $clearedCount forecasts removed');
+    _cachedModel = null;
+    LoggingService.info('Weather forecast cache cleared: $clearedCount forecasts removed, model cache reset');
   }
 
   /// Get cache statistics for debugging

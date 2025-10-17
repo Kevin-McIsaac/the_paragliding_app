@@ -1,4 +1,5 @@
 /// Weather forecast models available from Open-Meteo API
+/// Note: Ensemble models (like BOM) are not included as they don't provide standard aggregated fields
 enum WeatherModel {
   bestMatch('best_match', 'Best Match', 'Automatic model selection for optimal accuracy'),
   gfsSeamless('gfs_seamless', 'NOAA GFS (USA)', 'Global, best for North America, 13km resolution, extends to 16 days'),
@@ -6,8 +7,7 @@ enum WeatherModel {
   ecmwfIfs025('ecmwf_ifs025', 'ECMWF IFS', 'Widely regarded as most accurate globally for medium-range forecasts (~25km)'),
   meteofranceSeamless('meteofrance_seamless', 'Météo-France', 'Combines AROME (1.5km) and ARPEGE models, excellent for France/Western Europe'),
   jmaSeamless('jma_seamless', 'JMA (Japan)', 'Japan Meteorological Agency - Best for East Asia/Japan'),
-  gemSeamless('gem_seamless', 'GEM (Canada)', 'Canadian model - Best for Canada'),
-  bomAccessGlobalEnsemble('bom_access_global_ensemble', 'BOM (Australia)', 'Australian Bureau of Meteorology - Best for Australia/Southern Hemisphere');
+  gemSeamless('gem_seamless', 'GEM (Canada)', 'Canadian model - Best for Canada');
 
   /// API parameter value for Open-Meteo (e.g., "gfs_seamless")
   final String apiValue;
