@@ -1078,6 +1078,30 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
               ),
             ),
           ),
+          // Attribution for forecast data
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+            child: TextButton(
+              onPressed: () async {
+                await launchUrl(
+                  Uri.parse('https://open-meteo.com'),
+                  mode: LaunchMode.externalApplication,
+                );
+              },
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text(
+                'Forecast: Open-Meteo',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.white38,
+                ),
+              ),
+            ),
+          ),
           // Weather description info box
           if (_detailedData?['weather'] != null && _detailedData!['weather']!.toString().isNotEmpty)
             Padding(
