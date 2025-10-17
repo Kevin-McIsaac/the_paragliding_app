@@ -435,6 +435,10 @@ class PreferencesHelper {
     await prefs.setDouble(openAipOverlayOpacityKey, value);
   }
 
+  // Weather forecast model preferences
+  static const String weatherForecastModelKey = 'weather_forecast_model';
+  static const String defaultWeatherForecastModel = 'best_match';
+
   // PGE Sites preferences
   static const String pgeSitesDownloadedKey = 'pge_sites_downloaded';
   static const String pgeSitesDownloadDateKey = 'pge_sites_download_date';
@@ -463,5 +467,22 @@ class PreferencesHelper {
       return DateTime.tryParse(dateStr);
     }
     return null;
+  }
+
+  // Weather forecast model methods
+  /// Get the selected weather forecast model (default: best_match)
+  static Future<String> getWeatherForecastModel() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!prefs.containsKey(weatherForecastModelKey)) {
+      await prefs.setString(weatherForecastModelKey, defaultWeatherForecastModel);
+      return defaultWeatherForecastModel;
+    }
+    return prefs.getString(weatherForecastModelKey) ?? defaultWeatherForecastModel;
+  }
+
+  /// Set the selected weather forecast model
+  static Future<void> setWeatherForecastModel(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(weatherForecastModelKey, value);
   }
 }

@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import '../../services/logging_service.dart';
 import '../../data/models/airspace_enums.dart';
 import '../../data/models/weather_station_source.dart';
+import '../../data/models/weather_model.dart';
 import '../../services/weather_providers/weather_station_provider_registry.dart';
+import '../../services/weather_service.dart';
+import '../../utils/preferences_helper.dart';
 import 'package:multi_dropdown/multi_dropdown.dart';
 
 /// Filter dialog for controlling map layer visibility
@@ -70,6 +73,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
   late Map<String, bool> _icaoClasses;
   late double _maxAltitudeFt;
   late bool _clippingEnabled;
+  WeatherModel _selectedWeatherModel = WeatherModel.bestMatch; // Default
 
   Timer? _debounceTimer;
 
@@ -114,6 +118,9 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
     _maxAltitudeFt = widget.maxAltitudeFt;
     _clippingEnabled = widget.clippingEnabled;
 
+    // Load saved weather model preference
+    _loadWeatherModelPreference();
+
     // Initialize any missing types/classes with false
     for (final type in _typeDescriptions.keys) {
       _airspaceTypes[type] ??= false;
@@ -129,6 +136,14 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
     // Update controller selections after first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _updateControllerSelections();
+    });
+  }
+
+  /// Load the saved weather model preference
+  Future<void> _loadWeatherModelPreference() async {
+    final modelApiValue = await PreferencesHelper.getWeatherForecastModel();
+    setState(() {
+      _selectedWeatherModel = WeatherModel.fromApiValue(modelApiValue);
     });
   }
 
@@ -385,6 +400,18 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
               _forecastEnabled = value ?? true;
               _applyFiltersImmediately();
             }) : null,
+          ),
+        ),
+        // Weather model dropdown (indented below forecast, disabled when sites/forecast disabled)
+        const SizedBox(height: 4),
+        Padding(
+          padding: const EdgeInsets.only(left: 48),
+          child: IgnorePointer(
+            ignoring: !_sitesEnabled || !_forecastEnabled,
+            child: Opacity(
+              opacity: (_sitesEnabled && _forecastEnabled) ? 1.0 : 0.4,
+              child: _buildWeatherModelDropdown(),
+            ),
           ),
         ),
         const SizedBox(height: 8),
@@ -913,6 +940,72 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
         ),
       ],
       ),
+    );
+  }
+
+  /// Build weather model dropdown widget
+  Widget _buildWeatherModelDropdown() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Model',
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w500,
+            color: Colors.white70,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: Colors.white54),
+          ),
+          child: DropdownButton<WeatherModel>(
+            value: _selectedWeatherModel,
+            isExpanded: true,
+            underline: Container(),
+            dropdownColor: const Color(0xFF2C2C2C),
+            style: const TextStyle(color: Colors.white, fontSize: 10),
+            icon: const Icon(Icons.arrow_drop_down, color: Colors.white70, size: 16),
+            items: WeatherModel.values.map((model) {
+              return DropdownMenuItem<WeatherModel>(
+                value: model,
+                child: Text(
+                  model.dropdownText,
+                  style: const TextStyle(fontSize: 10),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              );
+            }).toList(),
+            onChanged: (WeatherModel? newModel) async {
+              if (newModel != null && newModel != _selectedWeatherModel) {
+                setState(() {
+                  _selectedWeatherModel = newModel;
+                });
+
+                // Save preference
+                await PreferencesHelper.setWeatherForecastModel(newModel.apiValue);
+
+                // Clear weather cache to force refresh with new model
+                WeatherService.instance.clearCache();
+
+                LoggingService.structured('WEATHER_MODEL_CHANGED', {
+                  'model': newModel.displayName,
+                  'api_value': newModel.apiValue,
+                });
+
+                // Immediately refresh forecasts
+                _applyFiltersImmediately();
+              }
+            },
+          ),
+        ),
+      ],
     );
   }
 

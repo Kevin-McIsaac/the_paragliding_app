@@ -4,7 +4,9 @@ import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import '../data/models/wind_data.dart';
 import '../data/models/wind_forecast.dart';
+import '../data/models/weather_model.dart';
 import '../utils/site_utils.dart';
+import '../utils/preferences_helper.dart';
 import 'logging_service.dart';
 
 /// Service for fetching weather data from Open-Meteo API
@@ -31,8 +33,8 @@ class WeatherService {
     double lon,
     DateTime dateTime,
   ) async {
-    // Generate cache key (location-only, no time component)
-    final cacheKey = _getLocationKey(lat, lon);
+    // Generate cache key (location + model, no time component)
+    final cacheKey = await _getLocationKey(lat, lon);
 
     // Check forecast cache first
     if (_forecastCache.containsKey(cacheKey)) {
@@ -75,17 +77,26 @@ class WeatherService {
     String cacheKey,
   ) async {
     try {
-      LoggingService.info('Fetching 7-day weather forecast for $lat, $lon');
+      // Get current model
+      final model = await getCurrentModel();
+      final modelParam = model.apiParameter;
 
-      // Build API URL
-      final url = Uri.parse(
-        'https://api.open-meteo.com/v1/forecast'
-        '?latitude=$lat&longitude=$lon'
-        '&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m'
-        '&wind_speed_unit=kmh'
-        '&forecast_days=7'
-        '&timezone=auto',
-      );
+      LoggingService.info('Fetching 7-day weather forecast for $lat, $lon using model: ${model.displayName}');
+
+      // Build API URL with optional models parameter
+      var urlString = 'https://api.open-meteo.com/v1/forecast'
+          '?latitude=$lat&longitude=$lon'
+          '&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m'
+          '&wind_speed_unit=kmh'
+          '&forecast_days=7'
+          '&timezone=auto';
+
+      // Add models parameter if not using best match
+      if (modelParam != null) {
+        urlString += '&models=$modelParam';
+      }
+
+      final url = Uri.parse(urlString);
 
       // Make API request
       final response = await http.get(url).timeout(
@@ -131,12 +142,20 @@ class WeatherService {
     return null;
   }
 
-  /// Generate cache key based on location only (no time component)
+  /// Generate cache key based on location and model
   /// Round to approximately 1km grid (0.01 degrees ≈ 1km)
-  String _getLocationKey(double lat, double lon) {
+  /// Includes model to support separate caches per model
+  Future<String> _getLocationKey(double lat, double lon) async {
     final gridLat = (lat * 100).round() / 100;
     final gridLon = (lon * 100).round() / 100;
-    return '${gridLat.toStringAsFixed(2)}_${gridLon.toStringAsFixed(2)}';
+    final modelApiValue = await PreferencesHelper.getWeatherForecastModel();
+    return '${gridLat.toStringAsFixed(2)}_${gridLon.toStringAsFixed(2)}_$modelApiValue';
+  }
+
+  /// Get current weather model
+  Future<WeatherModel> getCurrentModel() async {
+    final modelApiValue = await PreferencesHelper.getWeatherForecastModel();
+    return WeatherModel.fromApiValue(modelApiValue);
   }
 
   /// Get wind data for multiple locations in a single batch API call
@@ -176,7 +195,7 @@ class WeatherService {
     final uncachedLocations = <LatLng>[];
 
     for (final location in locations) {
-      final cacheKey = _getLocationKey(location.latitude, location.longitude);
+      final cacheKey = await _getLocationKey(location.latitude, location.longitude);
 
       // Check if we have a fresh forecast for this location
       if (_forecastCache.containsKey(cacheKey)) {
@@ -231,6 +250,10 @@ class WeatherService {
     try {
       final stopwatch = Stopwatch()..start();
 
+      // Get current model
+      final model = await getCurrentModel();
+      final modelParam = model.apiParameter;
+
       // Build comma-separated latitude and longitude strings
       final latitudes = locations.map((loc) => loc.latitude.toStringAsFixed(4)).join(',');
       final longitudes = locations.map((loc) => loc.longitude.toStringAsFixed(4)).join(',');
@@ -238,17 +261,23 @@ class WeatherService {
       LoggingService.structured('WEATHER_BATCH_REQUEST', {
         'location_count': locations.length,
         'time': dateTime.toIso8601String(),
+        'model': model.displayName,
       });
 
-      // Build API URL
-      final url = Uri.parse(
-        'https://api.open-meteo.com/v1/forecast'
-        '?latitude=$latitudes&longitude=$longitudes'
-        '&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m'
-        '&wind_speed_unit=kmh'
-        '&forecast_days=7'
-        '&timezone=auto',
-      );
+      // Build API URL with optional models parameter
+      var urlString = 'https://api.open-meteo.com/v1/forecast'
+          '?latitude=$latitudes&longitude=$longitudes'
+          '&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m'
+          '&wind_speed_unit=kmh'
+          '&forecast_days=7'
+          '&timezone=auto';
+
+      // Add models parameter if not using best match
+      if (modelParam != null) {
+        urlString += '&models=$modelParam';
+      }
+
+      final url = Uri.parse(urlString);
 
       // Make API request
       final response = await http.get(url).timeout(
@@ -283,7 +312,7 @@ class WeatherService {
           );
 
           // Cache the full forecast
-          final cacheKey = _getLocationKey(location.latitude, location.longitude);
+          final cacheKey = await _getLocationKey(location.latitude, location.longitude);
           _forecastCache[cacheKey] = forecast;
 
           // Get wind data at requested time for immediate results
@@ -324,8 +353,8 @@ class WeatherService {
 
   /// Get a cached forecast for a specific location
   /// Returns null if no forecast is cached or if the forecast is stale
-  WindForecast? getCachedForecast(double lat, double lon) {
-    final cacheKey = _getLocationKey(lat, lon);
+  Future<WindForecast?> getCachedForecast(double lat, double lon) async {
+    final cacheKey = await _getLocationKey(lat, lon);
     if (_forecastCache.containsKey(cacheKey)) {
       final forecast = _forecastCache[cacheKey]!;
       if (forecast.isFresh) {
