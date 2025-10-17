@@ -1071,9 +1071,34 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
             constraints: const BoxConstraints(maxHeight: 350), // Max height, shrinks to fit content
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
+              primary: false,  // Prevent conflict with outer vertical scroll
               child: Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: _build7DayForecastTable(windDirections),
+              ),
+            ),
+          ),
+          // Attribution for forecast data
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+            child: TextButton(
+              onPressed: () async {
+                await launchUrl(
+                  Uri.parse('https://open-meteo.com'),
+                  mode: LaunchMode.externalApplication,
+                );
+              },
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text(
+                'Forecast: Open-Meteo',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.white38,
+                ),
               ),
             ),
           ),

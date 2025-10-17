@@ -41,7 +41,7 @@ class WindRosePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2 - 20; // Leave margin for labels
+    final radius = size.width / 2 - (size.width * 0.12); // Proportional margin (12% of size)
 
     // Debug logging removed to reduce noise
 
@@ -78,8 +78,8 @@ class WindRosePainter extends CustomPainter {
   }
 
   void _drawWindSectors(Canvas canvas, Offset center, double radius) {
-    final gap = radius * 0.05; // Gap size proportional to radius (5%)
-    final centerDotRadius = radius * 0.15; // Center dot scales with radius (15%)
+    final gap = radius * 0.00; // Gap size proportional to radius (0%)
+    final centerDotRadius = radius * 0.45; // Center dot scales with radius (45%)
     final sectorOuterRadius = radius - gap; // Outer edge of wedges (gap from outer ring)
     final sectorInnerRadius = centerDotRadius + gap; // Inner edge of wedges (gap from center dot)
 
@@ -143,7 +143,7 @@ class WindRosePainter extends CustomPainter {
   }
 
   void _drawDirectionLabels(Canvas canvas, Offset center, double radius) {
-    final labelRadius = radius + 15;
+    final labelRadius = radius + (radius * 0.30); // Proportional label offset (30% of radius)
 
     // Only draw labels for cardinal directions (N, E, S, W) for cleaner display
     for (final direction in _labelDirections) {
@@ -183,7 +183,7 @@ class WindRosePainter extends CustomPainter {
   }
 
   void _drawCenterPoint(Canvas canvas, Offset center, double radius) {
-    final centerDotRadius = radius * 0.15; // Scale with radius (15%)
+    final centerDotRadius = radius * 0.45; // Scale with radius (45%)
 
     // Use provided color from parent (which uses SiteMarkerPresentation logic)
     // If no color provided, fall back to theme default
@@ -197,50 +197,50 @@ class WindRosePainter extends CustomPainter {
   }
 
   void _drawWindArrow(Canvas canvas, Offset center, double radius) {
-    final gap = radius * 0.03; // Proportional gap
-    final centerDotRadius = radius * 0.15; // Match other methods
-    final arrowStartRadius = radius - gap; // Start from outer edge
-    final arrowEndRadius = centerDotRadius; // End at center
+    final gap = radius * 0.00; // Proportional gap (0%)
+    final centerDotRadius = radius * 0.45; // Match other methods (45%)
+    final arrowStartRadius = centerDotRadius; // Start from center
+    final arrowEndRadius = radius - gap; // End at outer edge
 
     // Convert wind direction to radians
     // Wind direction from API is "FROM" direction (meteorologically correct)
     // Subtract 90° to align with coordinate system (North at top)
     final arrowAngle = _degreesToRadians(windDirection! - 90);
 
-    // Calculate arrow start (outer edge) and end points (center)
-    // Arrow points FROM the wind direction TOWARD center (inward)
+    // Calculate arrow start (center) and end points (outer edge)
+    // Standard meteorological wind direction: arrow points FROM center OUTWARD
     final startX = center.dx + arrowStartRadius * cos(arrowAngle);
     final startY = center.dy + arrowStartRadius * sin(arrowAngle);
     final endX = center.dx + arrowEndRadius * cos(arrowAngle);
     final endY = center.dy + arrowEndRadius * sin(arrowAngle);
 
     final arrowPaint = Paint()
-      ..color = theme.colorScheme.outline
+      ..color = Colors.white.withValues(alpha: 0.7)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = radius * 0.025  // Scale with radius (2.5% - more visible)
+      ..strokeWidth = radius * 0.08  // Scale with radius (8% - 2x thicker)
       ..strokeCap = StrokeCap.round;
 
-    // Draw arrow line from outer edge toward center
+    // Draw arrow line from center toward outer edge
     canvas.drawLine(
       Offset(startX, startY),
       Offset(endX, endY),
       arrowPaint,
     );
 
-    // Draw arrowhead pointing inward (toward center)
-    final arrowheadLength = radius * 0.12;  // Scale with radius (12%)
-    final arrowheadAngle = 25 * pi / 180; // Narrower angle
+    // Draw arrowhead pointing outward (standard meteorological convention)
+    final arrowheadLength = radius * 0.20;  // Scale with radius (20% - bigger)
+    final arrowheadAngle = 30 * pi / 180; // Wider angle for bigger arrowhead
 
-    // Arrowhead at the END point (center), pointing inward
-    // Reverse the angle calculation to point toward center
+    // Arrowhead at the END point (outer edge), pointing outward
+    // Reverse the angle calculation to point away from center
     final arrowheadLeft = Offset(
-      endX + arrowheadLength * cos(arrowAngle - arrowheadAngle),
-      endY + arrowheadLength * sin(arrowAngle - arrowheadAngle),
+      endX - arrowheadLength * cos(arrowAngle - arrowheadAngle),
+      endY - arrowheadLength * sin(arrowAngle - arrowheadAngle),
     );
 
     final arrowheadRight = Offset(
-      endX + arrowheadLength * cos(arrowAngle + arrowheadAngle),
-      endY + arrowheadLength * sin(arrowAngle + arrowheadAngle),
+      endX - arrowheadLength * cos(arrowAngle + arrowheadAngle),
+      endY - arrowheadLength * sin(arrowAngle + arrowheadAngle),
     );
 
     canvas.drawLine(Offset(endX, endY), arrowheadLeft, arrowPaint);
@@ -248,8 +248,8 @@ class WindRosePainter extends CustomPainter {
   }
 
   void _drawWindSpeedText(Canvas canvas, Offset center, double radius) {
-    // Use proportional center dot radius
-    final centerDotRadius = radius * 0.15;
+    // Use proportional center dot radius (45%)
+    final centerDotRadius = radius * 0.45;
     // Make font size relative to center dot
     final speedFontSize = centerDotRadius * 1.0; // Scale text with center dot
 
