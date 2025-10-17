@@ -1072,18 +1072,6 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Forecast table with horizontal scroll - constrain max height for nested scrolling
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 350), // Max height, shrinks to fit content
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              primary: false,  // Prevent conflict with outer vertical scroll
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: _build7DayForecastTable(windDirections),
-              ),
-            ),
-          ),
           // Attribution for forecast data with model name
           FutureBuilder<String>(
             future: _getAttributionText(),
@@ -1106,13 +1094,26 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
                   child: Text(
                     attributionText,
                     style: const TextStyle(
-                      fontSize: 10,
-                      color: Colors.white38,
+                      fontSize: 12,
+                      color: Colors.white60,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
               );
             },
+          ),
+          // Forecast table with horizontal scroll - constrain max height for nested scrolling
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 350), // Max height, shrinks to fit content
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              primary: false,  // Prevent conflict with outer vertical scroll
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: _build7DayForecastTable(windDirections),
+              ),
+            ),
           ),
           // Weather description info box
           if (_detailedData?['weather'] != null && _detailedData!['weather']!.toString().isNotEmpty)

@@ -957,28 +957,50 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
           ),
         ),
         const SizedBox(height: 2),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.3),
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(color: Colors.white54),
-          ),
-          child: DropdownButton<WeatherModel>(
-            value: _selectedWeatherModel,
-            isExpanded: true,
-            underline: Container(),
-            dropdownColor: const Color(0xFF2C2C2C),
-            style: const TextStyle(color: Colors.white, fontSize: 10),
-            icon: const Icon(Icons.arrow_drop_down, color: Colors.white70, size: 16),
+        IntrinsicWidth(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: Colors.white54),
+            ),
+            child: DropdownButton<WeatherModel>(
+              value: _selectedWeatherModel,
+              underline: Container(),
+              dropdownColor: const Color(0xFF2C2C2C),
+              style: const TextStyle(color: Colors.white, fontSize: 10),
+              icon: const Icon(Icons.arrow_drop_down, color: Colors.white70, size: 16),
+              isDense: true,
+            // Customize selected item display (collapsed state)
+            selectedItemBuilder: (BuildContext context) {
+              return WeatherModel.values.map((model) {
+                return Text(
+                  model.displayName,
+                  style: const TextStyle(fontSize: 10, color: Colors.white),
+                  overflow: TextOverflow.ellipsis,
+                );
+              }).toList();
+            },
+            // Dropdown menu items (expanded state)
             items: WeatherModel.values.map((model) {
               return DropdownMenuItem<WeatherModel>(
                 value: model,
-                child: Text(
-                  model.dropdownText,
-                  style: const TextStyle(fontSize: 10),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      model.displayName,
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+                    ),
+                    Text(
+                      model.description,
+                      style: const TextStyle(fontSize: 9, color: Colors.white54),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 2,
+                    ),
+                  ],
                 ),
               );
             }).toList(),
@@ -1003,6 +1025,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                 _applyFiltersImmediately();
               }
             },
+            ),
           ),
         ),
       ],
