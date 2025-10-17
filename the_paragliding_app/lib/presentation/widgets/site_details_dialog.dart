@@ -356,7 +356,7 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
       );
 
       // Access the cached forecast
-      final forecast = WeatherService.instance.getCachedForecast(latitude, longitude);
+      final forecast = await WeatherService.instance.getCachedForecast(latitude, longitude);
 
       if (mounted) {
         setState(() {
@@ -374,6 +374,12 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
         });
       }
     }
+  }
+
+  /// Get attribution text with current weather model
+  Future<String> _getAttributionText() async {
+    final model = await WeatherService.instance.getCurrentModel();
+    return model.attributionText;
   }
 
   /// Get wind rose center dot presentation (color and tooltip) based on flyability
@@ -1066,6 +1072,37 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Attribution for forecast data with model name
+          FutureBuilder<String>(
+            future: _getAttributionText(),
+            builder: (context, snapshot) {
+              final attributionText = snapshot.data ?? 'Forecast: Open-Meteo';
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                child: TextButton(
+                  onPressed: () async {
+                    await launchUrl(
+                      Uri.parse('https://open-meteo.com'),
+                      mode: LaunchMode.externalApplication,
+                    );
+                  },
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text(
+                    attributionText,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.white60,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
           // Forecast table with horizontal scroll - constrain max height for nested scrolling
           ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: 350), // Max height, shrinks to fit content
@@ -1075,30 +1112,6 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
               child: Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: _build7DayForecastTable(windDirections),
-              ),
-            ),
-          ),
-          // Attribution for forecast data
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-            child: TextButton(
-              onPressed: () async {
-                await launchUrl(
-                  Uri.parse('https://open-meteo.com'),
-                  mode: LaunchMode.externalApplication,
-                );
-              },
-              style: TextButton.styleFrom(
-                padding: EdgeInsets.zero,
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: const Text(
-                'Forecast: Open-Meteo',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.white38,
-                ),
               ),
             ),
           ),

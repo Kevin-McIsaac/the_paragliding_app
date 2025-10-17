@@ -44,17 +44,37 @@ class WindForecast {
     required Map<String, dynamic> hourlyData,
   }) {
     final times = List<String>.from(hourlyData['time']);
-    final windSpeeds = List<num>.from(hourlyData['wind_speed_10m']);
-    final windDirections = List<num>.from(hourlyData['wind_direction_10m']);
-    final windGusts = List<num>.from(hourlyData['wind_gusts_10m']);
+    final rawSpeeds = hourlyData['wind_speed_10m'] as List;
+    final rawDirections = hourlyData['wind_direction_10m'] as List;
+    final rawGusts = hourlyData['wind_gusts_10m'] as List;
+
+    // Build parallel arrays, filtering out entries where any value is null
+    final validTimestamps = <DateTime>[];
+    final validSpeeds = <double>[];
+    final validDirections = <double>[];
+    final validGusts = <double>[];
+
+    for (int i = 0; i < times.length; i++) {
+      final speed = rawSpeeds[i];
+      final direction = rawDirections[i];
+      final gust = rawGusts[i];
+
+      // Only include entries where all values are non-null
+      if (speed != null && direction != null && gust != null) {
+        validTimestamps.add(DateTime.parse(times[i]));
+        validSpeeds.add((speed as num).toDouble());
+        validDirections.add((direction as num).toDouble());
+        validGusts.add((gust as num).toDouble());
+      }
+    }
 
     return WindForecast(
       latitude: latitude,
       longitude: longitude,
-      speedsKmh: windSpeeds.map((s) => s.toDouble()).toList(),
-      directionsDegs: windDirections.map((d) => d.toDouble()).toList(),
-      gustsKmh: windGusts.map((g) => g.toDouble()).toList(),
-      timestamps: times.map((t) => DateTime.parse(t)).toList(),
+      speedsKmh: validSpeeds,
+      directionsDegs: validDirections,
+      gustsKmh: validGusts,
+      timestamps: validTimestamps,
       fetchedAt: DateTime.now(),
     );
   }

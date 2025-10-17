@@ -4,7 +4,9 @@ import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import '../data/models/wind_data.dart';
 import '../data/models/wind_forecast.dart';
+import '../data/models/weather_model.dart';
 import '../utils/site_utils.dart';
+import '../utils/preferences_helper.dart';
 import 'logging_service.dart';
 
 /// Service for fetching weather data from Open-Meteo API
@@ -22,6 +24,9 @@ class WeatherService {
   /// Cache for pending batch requests to prevent duplicate batch API calls
   final Map<String, Future<Map<String, WindData>>> _pendingBatchRequests = {};
 
+  /// Cache for current weather model to avoid repeated SharedPreferences reads
+  WeatherModel? _cachedModel;
+
   /// Maximum number of locations per batch request
   static const int maxBatchSize = 100;
 
@@ -31,7 +36,7 @@ class WeatherService {
     double lon,
     DateTime dateTime,
   ) async {
-    // Generate cache key (location-only, no time component)
+    // Generate cache key (location + model, no time component)
     final cacheKey = _getLocationKey(lat, lon);
 
     // Check forecast cache first
@@ -75,17 +80,26 @@ class WeatherService {
     String cacheKey,
   ) async {
     try {
-      LoggingService.info('Fetching 7-day weather forecast for $lat, $lon');
+      // Get current model
+      final model = await getCurrentModel();
+      final modelParam = model.apiParameter;
 
-      // Build API URL
-      final url = Uri.parse(
-        'https://api.open-meteo.com/v1/forecast'
-        '?latitude=$lat&longitude=$lon'
-        '&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m'
-        '&wind_speed_unit=kmh'
-        '&forecast_days=7'
-        '&timezone=auto',
-      );
+      LoggingService.info('Fetching 7-day weather forecast for $lat, $lon using model: ${model.displayName}');
+
+      // Build API URL with optional models parameter
+      var urlString = 'https://api.open-meteo.com/v1/forecast'
+          '?latitude=$lat&longitude=$lon'
+          '&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m'
+          '&wind_speed_unit=kmh'
+          '&forecast_days=7'
+          '&timezone=auto';
+
+      // Add models parameter if not using best match
+      if (modelParam != null) {
+        urlString += '&models=$modelParam';
+      }
+
+      final url = Uri.parse(urlString);
 
       // Make API request
       final response = await http.get(url).timeout(
@@ -131,12 +145,23 @@ class WeatherService {
     return null;
   }
 
-  /// Generate cache key based on location only (no time component)
+  /// Generate cache key based on location and model
   /// Round to approximately 1km grid (0.01 degrees ≈ 1km)
+  /// Includes model to support separate caches per model
+  /// Now synchronous - uses cached model instead of reading from SharedPreferences
   String _getLocationKey(double lat, double lon) {
     final gridLat = (lat * 100).round() / 100;
     final gridLon = (lon * 100).round() / 100;
-    return '${gridLat.toStringAsFixed(2)}_${gridLon.toStringAsFixed(2)}';
+    final modelApiValue = _cachedModel?.apiValue ?? 'best_match';
+    return '${gridLat.toStringAsFixed(2)}_${gridLon.toStringAsFixed(2)}_$modelApiValue';
+  }
+
+  /// Get current weather model (with caching to avoid repeated SharedPreferences reads)
+  Future<WeatherModel> getCurrentModel() async {
+    if (_cachedModel != null) return _cachedModel!;
+    final modelApiValue = await PreferencesHelper.getWeatherForecastModel();
+    _cachedModel = WeatherModel.fromApiValue(modelApiValue);
+    return _cachedModel!;
   }
 
   /// Get wind data for multiple locations in a single batch API call
@@ -231,6 +256,10 @@ class WeatherService {
     try {
       final stopwatch = Stopwatch()..start();
 
+      // Get current model
+      final model = await getCurrentModel();
+      final modelParam = model.apiParameter;
+
       // Build comma-separated latitude and longitude strings
       final latitudes = locations.map((loc) => loc.latitude.toStringAsFixed(4)).join(',');
       final longitudes = locations.map((loc) => loc.longitude.toStringAsFixed(4)).join(',');
@@ -238,17 +267,23 @@ class WeatherService {
       LoggingService.structured('WEATHER_BATCH_REQUEST', {
         'location_count': locations.length,
         'time': dateTime.toIso8601String(),
+        'model': model.displayName,
       });
 
-      // Build API URL
-      final url = Uri.parse(
-        'https://api.open-meteo.com/v1/forecast'
-        '?latitude=$latitudes&longitude=$longitudes'
-        '&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m'
-        '&wind_speed_unit=kmh'
-        '&forecast_days=7'
-        '&timezone=auto',
-      );
+      // Build API URL with optional models parameter
+      var urlString = 'https://api.open-meteo.com/v1/forecast'
+          '?latitude=$latitudes&longitude=$longitudes'
+          '&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m'
+          '&wind_speed_unit=kmh'
+          '&forecast_days=7'
+          '&timezone=auto';
+
+      // Add models parameter if not using best match
+      if (modelParam != null) {
+        urlString += '&models=$modelParam';
+      }
+
+      final url = Uri.parse(urlString);
 
       // Make API request
       final response = await http.get(url).timeout(
@@ -313,18 +348,20 @@ class WeatherService {
   }
 
   /// Create a batch key for deduplication
+  /// Includes model to prevent collisions between different model requests
   String _createBatchKey(List<LatLng> locations, DateTime dateTime) {
     final hour = DateTime(dateTime.year, dateTime.month, dateTime.day, dateTime.hour);
     final locationKeys = locations
         .map((loc) => '${(loc.latitude * 100).round()}_${(loc.longitude * 100).round()}')
         .toList()
       ..sort();
-    return '${locationKeys.join('|')}_${hour.toIso8601String()}';
+    final modelApiValue = _cachedModel?.apiValue ?? 'best_match';
+    return '${locationKeys.join('|')}_${hour.toIso8601String()}_$modelApiValue';
   }
 
   /// Get a cached forecast for a specific location
   /// Returns null if no forecast is cached or if the forecast is stale
-  WindForecast? getCachedForecast(double lat, double lon) {
+  Future<WindForecast?> getCachedForecast(double lat, double lon) async {
     final cacheKey = _getLocationKey(lat, lon);
     if (_forecastCache.containsKey(cacheKey)) {
       final forecast = _forecastCache[cacheKey]!;
@@ -339,10 +376,12 @@ class WeatherService {
   }
 
   /// Clear the forecast cache (useful for testing or memory management)
+  /// Also clears the model cache to force re-reading preferences
   void clearCache() {
     final clearedCount = _forecastCache.length;
     _forecastCache.clear();
-    LoggingService.info('Weather forecast cache cleared: $clearedCount forecasts removed');
+    _cachedModel = null;
+    LoggingService.info('Weather forecast cache cleared: $clearedCount forecasts removed, model cache reset');
   }
 
   /// Get cache statistics for debugging
