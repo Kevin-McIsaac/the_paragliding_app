@@ -1245,10 +1245,10 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
     final windKey = SiteUtils.createSiteKey(paraglidingSite.latitude, paraglidingSite.longitude);
     final windData = _siteWindData[windKey];
 
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      barrierColor: Colors.transparent,
-      barrierDismissible: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (context) => SiteDetailsDialog(
         site: null,
         paraglidingSite: paraglidingSite,

@@ -484,179 +484,211 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
       distanceText = LocationService.formatDistance(distance);
     }
 
-    return Dialog(
-      elevation: 16,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 500, maxHeight: 650),
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.3),
-              spreadRadius: 2,
-              blurRadius: 8,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header with wind rose, name, rating, and close button
-            Row(
-              children: [
-                // Wind rose widget (compact size for header)
-                if (windDirections.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 12.0),
-                    child: WindRoseWidget(
-                      launchableDirections: windDirections,
-                      size: 60.0,
-                      windSpeed: _windData?.speedKmh,
-                      windDirection: _windData?.directionDegrees,
-                      centerDotColor: _getCenterDotColor(windDirections),
-                      centerDotTooltip: _getCenterDotTooltip(windDirections),
-                    ),
-                  ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Make name clickable if PGE link is available
-                      if (_detailedData?['pge_link'] != null)
-                        InkWell(
-                          onTap: () => _launchUrl(_detailedData!['pge_link']),
-                          child: Text(
-                            name,
-                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: Theme.of(context).colorScheme.primary,
-                              decoration: TextDecoration.underline,
-                            ),
-                          ),
-                        )
-                      else
-                        Text(
-                          name,
-                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      // Flight characteristics directly under title
-                      if (_detailedData != null) ...[
-                        () {
-                          final characteristics = <String>[];
-
-                          if (_detailedData?['paragliding']?.toString() == '1') {
-                            characteristics.add('Paragliding');
-                          }
-                          if (_detailedData?['hanggliding']?.toString() == '1') {
-                            characteristics.add('Hang Gliding');
-                          }
-                          if (_detailedData?['hike']?.toString() == '1') {
-                            characteristics.add('Hike');
-                          }
-                          if (_detailedData?['thermals']?.toString() == '1') {
-                            characteristics.add('Thermals');
-                          }
-                          if (_detailedData?['soaring']?.toString() == '1') {
-                            characteristics.add('Soaring');
-                          }
-                          if (_detailedData?['xc']?.toString() == '1') {
-                            characteristics.add('XC');
-                          }
-                          if (_detailedData?['flatland']?.toString() == '1') {
-                            characteristics.add('Flatland');
-                          }
-                          if (_detailedData?['winch']?.toString() == '1') {
-                            characteristics.add('Winch');
-                          }
-
-                          if (characteristics.isNotEmpty) {
-                            return Padding(
-                              padding: const EdgeInsets.only(top: 4.0),
-                              child: Text(
-                                characteristics.join(', '),
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w300,
-                                ),
-                              ),
-                            );
-                          }
-                          return const SizedBox.shrink();
-                        }(),
-                      ],
-                    ],
-                  ),
-                ),
-                // Favorite button with heart icon
-                IconButton(
-                  onPressed: _toggleFavorite,
-                  icon: Icon(
-                    _isFavorite ? Icons.favorite : Icons.favorite_border,
-                    color: _isFavorite ? Colors.red : null,
-                  ),
-                  tooltip: _isFavorite ? 'Remove from favorites' : 'Add to favorites',
-                ),
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close),
-                  tooltip: 'Close',
+    return DraggableScrollableSheet(
+      initialChildSize: 0.6,
+      minChildSize: 0.3,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (context, scrollController) {
+        return Material(
+          color: Colors.transparent,
+          child: Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.3),
+                  spreadRadius: 2,
+                  blurRadius: 8,
+                  offset: const Offset(0, -4),
                 ),
               ],
             ),
-            
-            const SizedBox(height: 8),
-            
-            // Show detailed view if we have a tab controller and either ParaglidingSite or fetched API data
-            if (_tabController != null && (_detailedData != null || widget.paraglidingSite != null)) ...[
-              // Overview content (always visible)
-              ..._buildOverviewContent(name, latitude, longitude, altitude, country, region, rating, siteType, windDirections, flightCount, distanceText, thermalFlag, soaringFlag, xcFlag),
-              
-              const SizedBox(height: 8),
-              
-              // Tabs for detailed information
-              if (_tabController != null)
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Drag handle
+                Center(
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(vertical: 8),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+
+                // Content wrapper with padding
                 Expanded(
-                  child: Column(
+                  child: SingleChildScrollView(
+                    controller: scrollController,
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                    child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      SizedBox(
-                        height: 40,
-                        child: TabBar(
-                          controller: _tabController,
-                          isScrollable: false,
-                          tabAlignment: TabAlignment.fill,
-                          labelPadding: EdgeInsets.symmetric(horizontal: 8),
-                          indicatorWeight: 1.0,
-                          indicatorPadding: EdgeInsets.zero,
-                        tabs: const [
-                          Tab(icon: Tooltip(message: 'Site Weather', child: Icon(Icons.air, size: 18))),
-                          Tab(icon: Tooltip(message: 'Site Information', child: Icon(Icons.info_outline, size: 18))),
+                      // Header with wind rose, name, rating, and close button
+                      Row(
+                        children: [
+                          // Wind rose widget (compact size for header)
+                          if (windDirections.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 12.0),
+                              child: WindRoseWidget(
+                                launchableDirections: windDirections,
+                                size: 60.0,
+                                windSpeed: _windData?.speedKmh,
+                                windDirection: _windData?.directionDegrees,
+                                centerDotColor: _getCenterDotColor(windDirections),
+                                centerDotTooltip: _getCenterDotTooltip(windDirections),
+                              ),
+                            ),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Make name clickable if PGE link is available
+                                if (_detailedData?['pge_link'] != null)
+                                  InkWell(
+                                    onTap: () => _launchUrl(_detailedData!['pge_link']),
+                                    child: Text(
+                                      name,
+                                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        color: Theme.of(context).colorScheme.primary,
+                                        decoration: TextDecoration.underline,
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  Text(
+                                    name,
+                                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                // Flight characteristics directly under title
+                                if (_detailedData != null) ...[
+                                  () {
+                                    final characteristics = <String>[];
+
+                                    if (_detailedData?['paragliding']?.toString() == '1') {
+                                      characteristics.add('Paragliding');
+                                    }
+                                    if (_detailedData?['hanggliding']?.toString() == '1') {
+                                      characteristics.add('Hang Gliding');
+                                    }
+                                    if (_detailedData?['hike']?.toString() == '1') {
+                                      characteristics.add('Hike');
+                                    }
+                                    if (_detailedData?['thermals']?.toString() == '1') {
+                                      characteristics.add('Thermals');
+                                    }
+                                    if (_detailedData?['soaring']?.toString() == '1') {
+                                      characteristics.add('Soaring');
+                                    }
+                                    if (_detailedData?['xc']?.toString() == '1') {
+                                      characteristics.add('XC');
+                                    }
+                                    if (_detailedData?['flatland']?.toString() == '1') {
+                                      characteristics.add('Flatland');
+                                    }
+                                    if (_detailedData?['winch']?.toString() == '1') {
+                                      characteristics.add('Winch');
+                                    }
+
+                                    if (characteristics.isNotEmpty) {
+                                      return Padding(
+                                        padding: const EdgeInsets.only(top: 4.0),
+                                        child: Text(
+                                          characteristics.join(', '),
+                                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w300,
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                    return const SizedBox.shrink();
+                                  }(),
+                                ],
+                              ],
+                            ),
+                          ),
+                          // Favorite button with heart icon
+                          IconButton(
+                            onPressed: _toggleFavorite,
+                            icon: Icon(
+                              _isFavorite ? Icons.favorite : Icons.favorite_border,
+                              color: _isFavorite ? Colors.red : null,
+                            ),
+                            tooltip: _isFavorite ? 'Remove from favorites' : 'Add to favorites',
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            icon: const Icon(Icons.close),
+                            tooltip: 'Close',
+                          ),
                         ],
-                        ),
                       ),
-                      Expanded(
-                        child: TabBarView(
-                          controller: _tabController,
-                          children: [
-                            _buildWeatherTab(windDirections),
-                            _buildTakeoffTab(),
-                          ],
-                        ),
-                      ),
+
+                      const SizedBox(height: 8),
+
+                      // Show detailed view if we have a tab controller and either ParaglidingSite or fetched API data
+                      if (_tabController != null && (_detailedData != null || widget.paraglidingSite != null)) ...[
+                        // Overview content (always visible)
+                        ..._buildOverviewContent(name, latitude, longitude, altitude, country, region, rating, siteType, windDirections, flightCount, distanceText, thermalFlag, soaringFlag, xcFlag),
+
+                        const SizedBox(height: 8),
+
+                        // Tabs for detailed information
+                        if (_tabController != null)
+                          SizedBox(
+                            height: 450, // Fixed height for tab content
+                            child: Column(
+                              children: [
+                                SizedBox(
+                                  height: 40,
+                                  child: TabBar(
+                                    controller: _tabController,
+                                    isScrollable: false,
+                                    tabAlignment: TabAlignment.fill,
+                                    labelPadding: EdgeInsets.symmetric(horizontal: 8),
+                                    indicatorWeight: 1.0,
+                                    indicatorPadding: EdgeInsets.zero,
+                                  tabs: const [
+                                    Tab(icon: Tooltip(message: 'Site Weather', child: Icon(Icons.air, size: 18))),
+                                    Tab(icon: Tooltip(message: 'Site Information', child: Icon(Icons.info_outline, size: 18))),
+                                  ],
+                                  ),
+                                ),
+                                Expanded(
+                                  child: TabBarView(
+                                    controller: _tabController,
+                                    children: [
+                                      _buildWeatherTab(windDirections),
+                                      _buildTakeoffTab(),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ] else
+                        ..._buildSimpleContent(name, latitude, longitude, altitude, country, region, rating, siteType, windDirections, flightCount, distanceText, description),
                     ],
                   ),
                 ),
-            ] else
-              ..._buildSimpleContent(name, latitude, longitude, altitude, country, region, rating, siteType, windDirections, flightCount, distanceText, description),
-          ],
+              ),
+            ],
+          ),
         ),
-      ),
+        );
+      },
     );
   }
 
