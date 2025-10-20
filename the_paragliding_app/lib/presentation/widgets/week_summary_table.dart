@@ -3,10 +3,16 @@ import 'package:intl/intl.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/wind_data.dart';
 import '../../utils/flyability_helper.dart';
+import 'multi_site_flyability_table.dart';
 
 /// Week summary table showing flyability for multiple sites across 7 days
 /// Sites are rows, days are columns with color-coded daily summary
-class WeekSummaryTable extends StatelessWidget {
+///
+/// Interactive features:
+/// - Click date header: Shows flyability for all sites on that day
+/// - Click site name: Shows flyability for that site across all days
+/// - Click cell: Shows hourly flyability for that specific site and day
+class WeekSummaryTable extends StatefulWidget {
   final List<ParaglidingSite> sites;
   final Map<int, Map<String, List<WindData?>>> windDataByDay; // dayIndex -> siteKey -> hourly data
   final double maxWindSpeed;
@@ -27,6 +33,62 @@ class WeekSummaryTable extends StatelessWidget {
   });
 
   @override
+  State<WeekSummaryTable> createState() => _WeekSummaryTableState();
+}
+
+class _WeekSummaryTableState extends State<WeekSummaryTable> {
+  // Track what detail is currently shown
+  int? _selectedDayIndex;
+  ParaglidingSite? _selectedSite;
+  bool _showingCellDetail = false;
+
+  void _onDateHeaderTap(int dayIndex) {
+    setState(() {
+      if (_selectedDayIndex == dayIndex && !_showingCellDetail) {
+        // Clicking same date again - clear selection
+        _selectedDayIndex = null;
+        _selectedSite = null;
+      } else {
+        // Show all sites for this day
+        _selectedDayIndex = dayIndex;
+        _selectedSite = null;
+        _showingCellDetail = false;
+      }
+    });
+  }
+
+  void _onSiteNameTap(ParaglidingSite site) {
+    setState(() {
+      if (_selectedSite == site && !_showingCellDetail) {
+        // Clicking same site again - clear selection
+        _selectedSite = null;
+        _selectedDayIndex = null;
+      } else {
+        // Show all days for this site
+        _selectedSite = site;
+        _selectedDayIndex = null;
+        _showingCellDetail = false;
+      }
+    });
+  }
+
+  void _onCellTap(ParaglidingSite site, int dayIndex) {
+    setState(() {
+      if (_selectedSite == site && _selectedDayIndex == dayIndex && _showingCellDetail) {
+        // Clicking same cell again - clear selection
+        _selectedSite = null;
+        _selectedDayIndex = null;
+        _showingCellDetail = false;
+      } else {
+        // Show hourly details for this specific site and day
+        _selectedSite = site;
+        _selectedDayIndex = dayIndex;
+        _showingCellDetail = true;
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -35,9 +97,9 @@ class WeekSummaryTable extends StatelessWidget {
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Table(
-            defaultColumnWidth: const FixedColumnWidth(_cellSize),
+            defaultColumnWidth: FixedColumnWidth(WeekSummaryTable._cellSize),
             columnWidths: const {
-              0: FixedColumnWidth(_siteColumnWidth),
+              0: FixedColumnWidth(WeekSummaryTable._siteColumnWidth),
             },
             border: TableBorder.all(
               color: Theme.of(context).dividerColor,
@@ -45,7 +107,7 @@ class WeekSummaryTable extends StatelessWidget {
             ),
             children: [
               _buildHeaderRow(context),
-              ...sites.map((site) => _buildSiteRow(context, site)),
+              ...widget.sites.map((site) => _buildSiteRow(context, site)),
             ],
           ),
         ),
@@ -76,9 +138,124 @@ class WeekSummaryTable extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: Text(
-            'Tap any day column to see hourly details',
+            'Tap date, site, or cell to see hourly details',
             style: Theme.of(context).textTheme.bodySmall,
             textAlign: TextAlign.center,
+          ),
+        ),
+
+        // Detail table (shown below summary)
+        if (_selectedDayIndex != null || _selectedSite != null)
+          _buildDetailSection(context),
+      ],
+    );
+  }
+
+  Widget _buildDetailSection(BuildContext context) {
+    final date = _selectedDayIndex != null
+        ? DateTime.now().add(Duration(days: _selectedDayIndex!))
+        : null;
+
+    String title;
+    Map<String, List<WindData?>> windDataBySite;
+    List<ParaglidingSite> sitesToShow;
+
+    if (_showingCellDetail && _selectedSite != null && _selectedDayIndex != null) {
+      // Single site, single day - show hourly breakdown
+      title = '${_selectedSite!.name} - ${DateFormat('EEEE, MMMM d').format(date!)}';
+      windDataBySite = {
+        '${_selectedSite!.latitude.toStringAsFixed(4)}_${_selectedSite!.longitude.toStringAsFixed(4)}':
+            widget.windDataByDay[_selectedDayIndex]?[
+                    '${_selectedSite!.latitude.toStringAsFixed(4)}_${_selectedSite!.longitude.toStringAsFixed(4)}'] ??
+                []
+      };
+      sitesToShow = [_selectedSite!];
+    } else if (_selectedDayIndex != null) {
+      // All sites for selected day
+      title = DateFormat('EEEE, MMMM d').format(date!);
+      windDataBySite = widget.windDataByDay[_selectedDayIndex] ?? {};
+      sitesToShow = widget.sites;
+    } else if (_selectedSite != null) {
+      // All days for selected site - need to build map with multiple days
+      title = _selectedSite!.name;
+      final siteKey =
+          '${_selectedSite!.latitude.toStringAsFixed(4)}_${_selectedSite!.longitude.toStringAsFixed(4)}';
+
+      // For site view, we show each day as a separate "site" row
+      // This is a workaround - we'll need to create synthetic data
+      windDataBySite = {};
+      sitesToShow = [];
+
+      // Build a table where each row is a different day for this site
+      for (int dayIndex = 0; dayIndex < 7; dayIndex++) {
+        final dayData = widget.windDataByDay[dayIndex];
+        if (dayData != null && dayData.containsKey(siteKey)) {
+          // Create a synthetic "site" for this day
+          final dayDate = DateTime.now().add(Duration(days: dayIndex));
+          final daySite = ParaglidingSite(
+            id: null, // Synthetic site for display only
+            name: DateFormat('EEE d').format(dayDate),
+            latitude: _selectedSite!.latitude,
+            longitude: _selectedSite!.longitude,
+            windDirections: _selectedSite!.windDirections,
+            siteType: _selectedSite!.siteType,
+            country: _selectedSite!.country,
+            region: _selectedSite!.region,
+          );
+          sitesToShow.add(daySite);
+          final daySiteKey =
+              '${daySite.latitude.toStringAsFixed(4)}_${daySite.longitude.toStringAsFixed(4)}';
+          windDataBySite[daySiteKey] = dayData[siteKey]!;
+        }
+      }
+
+      if (sitesToShow.isEmpty) {
+        return const SizedBox.shrink();
+      }
+    } else {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Divider(height: 32, thickness: 2),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 20),
+                onPressed: () {
+                  setState(() {
+                    _selectedDayIndex = null;
+                    _selectedSite = null;
+                    _showingCellDetail = false;
+                  });
+                },
+                tooltip: 'Close detail view',
+              ),
+            ],
+          ),
+        ),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.all(16.0),
+          child: MultiSiteFlyabilityTable(
+            sites: sitesToShow,
+            windDataBySite: windDataBySite,
+            date: date ?? DateTime.now(),
+            maxWindSpeed: widget.maxWindSpeed,
+            maxWindGusts: widget.maxWindGusts,
           ),
         ),
       ],
@@ -94,7 +271,7 @@ class WeekSummaryTable extends StatelessWidget {
       ),
       children: [
         Container(
-          height: _headerHeight,
+          height: WeekSummaryTable._headerHeight,
           alignment: Alignment.center,
           padding: const EdgeInsets.symmetric(horizontal: 4.0),
           child: const Text(
@@ -107,19 +284,26 @@ class WeekSummaryTable extends StatelessWidget {
           final dayName = DateFormat('EEE').format(date);
           final dayNum = DateFormat('d').format(date);
 
+          final isSelected = _selectedDayIndex == dayIndex && !_showingCellDetail;
+
           return InkWell(
-            onTap: () => onDayTap?.call(dayIndex),
+            onTap: () => _onDateHeaderTap(dayIndex),
             child: Container(
-              height: _headerHeight,
+              height: WeekSummaryTable._headerHeight,
               alignment: Alignment.center,
               padding: const EdgeInsets.symmetric(horizontal: 2.0),
+              decoration: isSelected
+                  ? BoxDecoration(
+                      color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
+                    )
+                  : null,
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
                     dayName,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
+                    style: TextStyle(
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
                       fontSize: 11,
                     ),
                   ),
@@ -141,27 +325,39 @@ class WeekSummaryTable extends StatelessWidget {
 
   TableRow _buildSiteRow(BuildContext context, ParaglidingSite site) {
     final siteKey = '${site.latitude.toStringAsFixed(4)}_${site.longitude.toStringAsFixed(4)}';
+    final isSiteSelected = _selectedSite == site && !_showingCellDetail;
 
     return TableRow(
       children: [
-        // Site name cell
-        Container(
-          height: _cellSize,
-          alignment: Alignment.centerLeft,
-          padding: const EdgeInsets.symmetric(horizontal: 4.0),
-          child: Tooltip(
-            message: site.name,
-            child: Text(
-              site.name,
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
+        // Site name cell - clickable
+        InkWell(
+          onTap: () => _onSiteNameTap(site),
+          child: Container(
+            height: WeekSummaryTable._cellSize,
+            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.symmetric(horizontal: 4.0),
+            decoration: isSiteSelected
+                ? BoxDecoration(
+                    color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
+                  )
+                : null,
+            child: Tooltip(
+              message: site.name,
+              child: Text(
+                site.name,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: isSiteSelected ? FontWeight.bold : FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
             ),
           ),
         ),
         // Day cells
         ...List.generate(7, (dayIndex) {
-          final dayData = windDataByDay[dayIndex];
+          final dayData = widget.windDataByDay[dayIndex];
           if (dayData == null) return _buildEmptyCell();
 
           final siteWindData = dayData[siteKey];
@@ -180,7 +376,7 @@ class WeekSummaryTable extends StatelessWidget {
 
   Widget _buildEmptyCell() {
     return Container(
-      height: _cellSize,
+      height: WeekSummaryTable._cellSize,
       alignment: Alignment.center,
       child: const Text(
         '-',
@@ -213,19 +409,32 @@ class WeekSummaryTable extends StatelessWidget {
       dayIndex: dayIndex,
     );
 
+    final isCellSelected = _selectedSite == site && _selectedDayIndex == dayIndex && _showingCellDetail;
+
     return InkWell(
-      onTap: () => onDayTap?.call(dayIndex),
+      onTap: () => _onCellTap(site, dayIndex),
       child: Tooltip(
         message: tooltipMessage,
         child: Container(
-          height: _cellSize,
+          height: WeekSummaryTable._cellSize,
           alignment: Alignment.center,
+          decoration: isCellSelected
+              ? BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5),
+                )
+              : null,
           child: Container(
             width: 24,
             height: 24,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: bgColor,
+              border: isCellSelected
+                  ? Border.all(
+                      color: Theme.of(context).colorScheme.primary,
+                      width: 2,
+                    )
+                  : null,
             ),
           ),
         ),
@@ -244,8 +453,8 @@ class WeekSummaryTable extends StatelessWidget {
       return FlyabilityHelper.getFlyabilityLevel(
         windData: windData,
         siteDirections: site.windDirections,
-        maxSpeed: maxWindSpeed,
-        maxGusts: maxWindGusts,
+        maxSpeed: widget.maxWindSpeed,
+        maxGusts: widget.maxWindGusts,
       );
     }).toList();
 
