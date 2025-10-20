@@ -654,19 +654,6 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
     return '$formattedDate - ${site.name}\n$levelText (based on 10am-4pm conditions)\nTap to see hourly details';
   }
 
-  IconData _getIconForLevel(FlyabilityLevel level) {
-    switch (level) {
-      case FlyabilityLevel.safe:
-        return Icons.check_circle;
-      case FlyabilityLevel.caution:
-        return Icons.warning;
-      case FlyabilityLevel.unsafe:
-        return Icons.cancel;
-      case FlyabilityLevel.unknown:
-        return Icons.help_outline;
-    }
-  }
-
   Widget _buildLegendItem(Color color, String text) {
     return Row(
       mainAxisSize: MainAxisSize.min,
