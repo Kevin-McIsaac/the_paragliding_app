@@ -52,7 +52,7 @@ class MultiSiteFlyabilityScreen extends StatefulWidget {
   State<MultiSiteFlyabilityScreen> createState() => _MultiSiteFlyabilityScreenState();
 }
 
-class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> with SingleTickerProviderStateMixin {
+class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> {
   // Selection mode and filters
   SiteSelectionMode _selectionMode = SiteSelectionMode.nearHere;
   int _distanceKm = 50; // 10, 50, or 100
@@ -74,12 +74,10 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> w
   String? _errorMessage;
   double _maxWindSpeed = 25.0;
   double _maxWindGusts = 30.0;
-  late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 8, vsync: this);
     _loadPreferences();
     _loadData();
   }
@@ -89,7 +87,6 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> w
     _searchDebounce?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
-    _tabController.dispose();
     super.dispose();
   }
 
@@ -357,10 +354,6 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> w
     return weekData;
   }
 
-  void _navigateToDay(int dayIndex) {
-    _tabController.animateTo(dayIndex + 1); // +1 because tab 0 is "Week"
-  }
-
   void _onSelectionModeChanged(SiteSelectionMode? mode) {
     if (mode != null && mode != _selectionMode) {
       setState(() {
@@ -475,87 +468,72 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> w
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Mode selection (3 buttons)
+                // All filters on one line
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
-                  child: SegmentedButton<SiteSelectionMode>(
-                    segments: SiteSelectionMode.values.map((mode) {
-                      return ButtonSegment<SiteSelectionMode>(
-                        value: mode,
-                        label: Text(mode.displayName),
-                        icon: Icon(mode.icon),
-                      );
-                    }).toList(),
-                    selected: {_selectionMode},
-                    onSelectionChanged: (Set<SiteSelectionMode> newSelection) {
-                      _onSelectionModeChanged(newSelection.first);
-                    },
-                  ),
-                ),
-
-                // Distance and Limit filters (only for nearHere and nearSite)
-                if (_selectionMode != SiteSelectionMode.favorites) ...[
-                  const SizedBox(height: 12),
-                  Row(
+                  child: Row(
                     children: [
-                      // Distance dropdown
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Distance',
-                              style: Theme.of(context).textTheme.labelSmall,
-                            ),
-                            const SizedBox(height: 4),
-                            DropdownButtonFormField<int>(
-                              value: _distanceKm,
-                              decoration: const InputDecoration(
-                                isDense: true,
-                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                border: OutlineInputBorder(),
-                              ),
-                              items: const [
-                                DropdownMenuItem(value: 10, child: Text('10 km')),
-                                DropdownMenuItem(value: 50, child: Text('50 km')),
-                                DropdownMenuItem(value: 100, child: Text('100 km')),
-                              ],
-                              onChanged: _onDistanceChanged,
-                            ),
-                          ],
-                        ),
+                      // Mode selection (3 buttons)
+                      SegmentedButton<SiteSelectionMode>(
+                        segments: SiteSelectionMode.values.map((mode) {
+                          return ButtonSegment<SiteSelectionMode>(
+                            value: mode,
+                            label: Text(mode.displayName),
+                            icon: Icon(mode.icon),
+                          );
+                        }).toList(),
+                        selected: {_selectionMode},
+                        onSelectionChanged: (Set<SiteSelectionMode> newSelection) {
+                          _onSelectionModeChanged(newSelection.first);
+                        },
                       ),
-                      const SizedBox(width: 12),
-                      // Limit dropdown
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Limit',
-                              style: Theme.of(context).textTheme.labelSmall,
+
+                      // Distance and Limit filters (only for nearHere and nearSite)
+                      if (_selectionMode != SiteSelectionMode.favorites) ...[
+                        const SizedBox(width: 12),
+                        // Distance dropdown
+                        SizedBox(
+                          width: 110,
+                          child: DropdownButtonFormField<int>(
+                            value: _distanceKm,
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              labelText: 'Dist',
+                              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                              border: OutlineInputBorder(),
                             ),
-                            const SizedBox(height: 4),
-                            DropdownButtonFormField<int>(
-                              value: _siteLimit,
-                              decoration: const InputDecoration(
-                                isDense: true,
-                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                border: OutlineInputBorder(),
-                              ),
-                              items: const [
-                                DropdownMenuItem(value: 10, child: Text('10 sites')),
-                                DropdownMenuItem(value: 20, child: Text('20 sites')),
-                                DropdownMenuItem(value: 50, child: Text('50 sites')),
-                              ],
-                              onChanged: _onLimitChanged,
-                            ),
-                          ],
+                            items: const [
+                              DropdownMenuItem(value: 10, child: Text('10 km')),
+                              DropdownMenuItem(value: 50, child: Text('50 km')),
+                              DropdownMenuItem(value: 100, child: Text('100 km')),
+                            ],
+                            onChanged: _onDistanceChanged,
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        // Limit dropdown
+                        SizedBox(
+                          width: 100,
+                          child: DropdownButtonFormField<int>(
+                            value: _siteLimit,
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              labelText: 'Limit',
+                              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                              border: OutlineInputBorder(),
+                            ),
+                            items: const [
+                              DropdownMenuItem(value: 10, child: Text('10')),
+                              DropdownMenuItem(value: 20, child: Text('20')),
+                              DropdownMenuItem(value: 50, child: Text('50')),
+                            ],
+                            onChanged: _onLimitChanged,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
-                ],
+                ),
 
                 // Site search field (only for nearSite mode)
                 if (_selectionMode == SiteSelectionMode.nearSite) ...[
@@ -682,72 +660,14 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> w
                               ),
                             ),
                           )
-                        : Column(
-                            children: [
-                              // Tab Bar
-                              TabBar(
-                                controller: _tabController,
-                                isScrollable: true,
-                                tabs: [
-                                  const Tab(text: 'Week'),
-                                  ...List.generate(7, (index) {
-                                    final date = DateTime.now().add(Duration(days: index));
-                                    return Tab(
-                                      text: DateFormat('EEE d').format(date),
-                                    );
-                                  }),
-                                ],
-                              ),
-                              // Tab Views
-                              Expanded(
-                                child: TabBarView(
-                                  controller: _tabController,
-                                  children: [
-                                    // Week summary tab
-                                    SingleChildScrollView(
-                                      padding: const EdgeInsets.all(16.0),
-                                      child: WeekSummaryTable(
-                                        sites: _sites,
-                                        windDataByDay: _prepareWeekData(),
-                                        maxWindSpeed: _maxWindSpeed,
-                                        maxWindGusts: _maxWindGusts,
-                                        onDayTap: _navigateToDay,
-                                      ),
-                                    ),
-                                    // Daily detail tabs
-                                    ...List.generate(7, (dayIndex) {
-                                      final date = DateTime.now().add(Duration(days: dayIndex));
-
-                                      return SingleChildScrollView(
-                                        padding: const EdgeInsets.all(16.0),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Padding(
-                                              padding: const EdgeInsets.only(bottom: 16.0),
-                                              child: Text(
-                                                DateFormat('EEEE, MMMM d').format(date),
-                                                style: Theme.of(context).textTheme.titleLarge,
-                                              ),
-                                            ),
-                                            SingleChildScrollView(
-                                              scrollDirection: Axis.horizontal,
-                                              child: MultiSiteFlyabilityTable(
-                                                sites: _sites,
-                                                windDataBySite: _getWindDataForDay(dayIndex),
-                                                date: date,
-                                                maxWindSpeed: _maxWindSpeed,
-                                                maxWindGusts: _maxWindGusts,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    }),
-                                  ],
-                                ),
-                              ),
-                            ],
+                        : SingleChildScrollView(
+                            padding: const EdgeInsets.all(16.0),
+                            child: WeekSummaryTable(
+                              sites: _sites,
+                              windDataByDay: _prepareWeekData(),
+                              maxWindSpeed: _maxWindSpeed,
+                              maxWindGusts: _maxWindGusts,
+                            ),
                           ),
           ),
         ],

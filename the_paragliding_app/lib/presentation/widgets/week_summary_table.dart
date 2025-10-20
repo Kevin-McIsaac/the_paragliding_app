@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../data/models/paragliding_site.dart';
@@ -17,7 +18,6 @@ class WeekSummaryTable extends StatefulWidget {
   final Map<int, Map<String, List<WindData?>>> windDataByDay; // dayIndex -> siteKey -> hourly data
   final double maxWindSpeed;
   final double maxWindGusts;
-  final Function(int dayIndex)? onDayTap;
 
   static const double _cellSize = 48.0;
   static const double _siteColumnWidth = 120.0;
@@ -29,7 +29,6 @@ class WeekSummaryTable extends StatefulWidget {
     required this.windDataByDay,
     required this.maxWindSpeed,
     required this.maxWindGusts,
-    this.onDayTap,
   });
 
   @override
@@ -176,42 +175,8 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
       windDataBySite = widget.windDataByDay[_selectedDayIndex] ?? {};
       sitesToShow = widget.sites;
     } else if (_selectedSite != null) {
-      // All days for selected site - need to build map with multiple days
-      title = _selectedSite!.name;
-      final siteKey =
-          '${_selectedSite!.latitude.toStringAsFixed(4)}_${_selectedSite!.longitude.toStringAsFixed(4)}';
-
-      // For site view, we show each day as a separate "site" row
-      // This is a workaround - we'll need to create synthetic data
-      windDataBySite = {};
-      sitesToShow = [];
-
-      // Build a table where each row is a different day for this site
-      for (int dayIndex = 0; dayIndex < 7; dayIndex++) {
-        final dayData = widget.windDataByDay[dayIndex];
-        if (dayData != null && dayData.containsKey(siteKey)) {
-          // Create a synthetic "site" for this day
-          final dayDate = DateTime.now().add(Duration(days: dayIndex));
-          final daySite = ParaglidingSite(
-            id: null, // Synthetic site for display only
-            name: DateFormat('EEE d').format(dayDate),
-            latitude: _selectedSite!.latitude,
-            longitude: _selectedSite!.longitude,
-            windDirections: _selectedSite!.windDirections,
-            siteType: _selectedSite!.siteType,
-            country: _selectedSite!.country,
-            region: _selectedSite!.region,
-          );
-          sitesToShow.add(daySite);
-          final daySiteKey =
-              '${daySite.latitude.toStringAsFixed(4)}_${daySite.longitude.toStringAsFixed(4)}';
-          windDataBySite[daySiteKey] = dayData[siteKey]!;
-        }
-      }
-
-      if (sitesToShow.isEmpty) {
-        return const SizedBox.shrink();
-      }
+      // All days for selected site - build a simple date × hours table
+      return _buildSiteDetailTable(context);
     } else {
       return const SizedBox.shrink();
     }
@@ -259,6 +224,184 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildSiteDetailTable(BuildContext context) {
+    final siteKey = '${_selectedSite!.latitude.toStringAsFixed(4)}_${_selectedSite!.longitude.toStringAsFixed(4)}';
+    const int startHour = 7;
+    const int hoursToShow = 13; // 7am to 7pm
+    const double cellSize = 36.0;
+    const double dateColumnWidth = 80.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Divider(height: 32, thickness: 2),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  _selectedSite!.name,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 20),
+                onPressed: () {
+                  setState(() {
+                    _selectedSite = null;
+                    _selectedDayIndex = null;
+                    _showingCellDetail = false;
+                  });
+                },
+                tooltip: 'Close detail view',
+              ),
+            ],
+          ),
+        ),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.all(16.0),
+          child: Table(
+            defaultColumnWidth: const FixedColumnWidth(cellSize),
+            columnWidths: const {
+              0: FixedColumnWidth(dateColumnWidth),
+            },
+            border: TableBorder.all(
+              color: Theme.of(context).dividerColor,
+              width: 1.0,
+            ),
+            children: [
+              // Header row with hours
+              TableRow(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                ),
+                children: [
+                  Container(
+                    height: cellSize,
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.symmetric(horizontal: 2.0),
+                    child: const Text(
+                      'Date',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
+                  ),
+                  ...List.generate(hoursToShow, (hour) {
+                    return Container(
+                      height: cellSize,
+                      alignment: Alignment.center,
+                      padding: const EdgeInsets.symmetric(horizontal: 2.0),
+                      child: Text(
+                        '${hour + startHour}h',
+                        style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 10),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+              // Day rows
+              ...List.generate(7, (dayIndex) {
+                final dayData = widget.windDataByDay[dayIndex];
+                final siteWindData = dayData?[siteKey];
+                final date = DateTime.now().add(Duration(days: dayIndex));
+
+                return TableRow(
+                  children: [
+                    // Date cell
+                    Container(
+                      height: cellSize,
+                      alignment: Alignment.centerLeft,
+                      padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                      child: Text(
+                        DateFormat('EEE d').format(date),
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                    // Hour cells
+                    ...List.generate(hoursToShow, (hourIndex) {
+                      if (siteWindData == null || hourIndex >= siteWindData.length || siteWindData[hourIndex] == null) {
+                        return Container(
+                          height: cellSize,
+                          alignment: Alignment.center,
+                          child: const Text('-', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                        );
+                      }
+
+                      final windData = siteWindData[hourIndex]!;
+                      return _buildSiteDetailCell(context, windData);
+                    }),
+                  ],
+                );
+              }),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSiteDetailCell(BuildContext context, WindData windData) {
+    // Calculate flyability
+    final flyabilityLevel = FlyabilityHelper.getFlyabilityLevel(
+      windData: windData,
+      siteDirections: _selectedSite!.windDirections,
+      maxSpeed: widget.maxWindSpeed,
+      maxGusts: widget.maxWindGusts,
+    );
+
+    final bgColor = FlyabilityHelper.getColorForLevel(flyabilityLevel);
+
+    // Generate tooltip
+    final tooltipMessage = FlyabilityHelper.getTooltipForLevel(
+      level: flyabilityLevel,
+      windData: windData,
+      siteDirections: _selectedSite!.windDirections,
+      maxSpeed: widget.maxWindSpeed,
+      maxGusts: widget.maxWindGusts,
+    );
+
+    return Tooltip(
+      message: tooltipMessage,
+      child: Container(
+        height: 36.0,
+        color: bgColor,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Transform.rotate(
+                  angle: windData.directionDegrees * (pi / 180),
+                  child: const Icon(
+                    Icons.arrow_upward,
+                    size: 12,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  '${windData.speedKmh.round()}',
+                  style: const TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    height: 1.0,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 
