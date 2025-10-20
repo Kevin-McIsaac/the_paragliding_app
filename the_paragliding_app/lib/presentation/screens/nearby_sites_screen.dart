@@ -30,7 +30,6 @@ import '../widgets/common/app_menu_button.dart';
 import '../../services/openaip_service.dart';
 import '../../services/database_service.dart';
 import '../../services/pge_sites_database_service.dart';
-import 'multi_site_flyability_screen.dart';
 
 /// Loading states for different operations
 enum LoadingOperation {
@@ -1942,18 +1941,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
             ),
 
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => MultiSiteFlyabilityScreen(),
-            ),
-          );
-        },
-        icon: const Icon(Icons.calendar_view_week),
-        label: const Text('7-Day Forecast'),
-        tooltip: 'View 7-day flyability forecast',
       ),
     );
   }

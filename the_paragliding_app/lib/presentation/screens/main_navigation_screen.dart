@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 import 'flight_list_screen.dart';
 import 'nearby_sites_screen.dart';
 import 'statistics_screen.dart';
+import 'multi_site_flyability_screen.dart';
 import '../../services/logging_service.dart';
 
 /// Main navigation screen with bottom navigation bar.
 ///
-/// Manages three primary views:
+/// Manages four primary views:
 /// - Flight Log
 /// - Nearby Sites
+/// - Forecast
 /// - Statistics
 ///
 /// Uses IndexedStack to preserve state when switching tabs.
@@ -106,7 +108,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     });
 
     // Log navigation for debugging
-    final destinations = ['Log Book', 'Nearby Sites', 'Statistics'];
+    final destinations = ['Log Book', 'Sites', 'Forecast', 'Statistics'];
     LoggingService.action('Navigation', 'bottom_nav_tap', {
       'destination': destinations[index],
       'from_index': oldIndex,
@@ -130,6 +132,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             onDataChanged: _handleDataChanged,
             onRefreshAllTabs: refreshAllTabs,
           ),
+          const MultiSiteFlyabilityScreen(),
           StatisticsScreen(
             key: _statisticsKey,
             onDataChanged: _handleDataChanged,
@@ -152,6 +155,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             selectedIcon: Icon(Icons.location_on),
             label: 'Sites',
             tooltip: 'Find nearby flying sites',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.calendar_view_week_outlined),
+            selectedIcon: Icon(Icons.calendar_view_week),
+            label: 'Forecast',
+            tooltip: 'View 7-day flyability forecast',
           ),
           NavigationDestination(
             icon: Icon(Icons.bar_chart_outlined),
