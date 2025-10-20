@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
@@ -16,27 +17,30 @@ import '../widgets/week_summary_table.dart';
 
 enum SiteSelectionMode {
   favorites,
-  nearest3,
-  nearest5,
-  nearest7,
-  nearest10,
+  nearHere,
+  nearSite,
 }
 
 extension SiteSelectionModeExtension on SiteSelectionMode {
-  bool get isNearest => this != SiteSelectionMode.favorites;
-
-  int get nearestCount {
+  String get displayName {
     switch (this) {
-      case SiteSelectionMode.nearest3:
-        return 3;
-      case SiteSelectionMode.nearest5:
-        return 5;
-      case SiteSelectionMode.nearest7:
-        return 7;
-      case SiteSelectionMode.nearest10:
-        return 10;
-      default:
-        return 5;
+      case SiteSelectionMode.favorites:
+        return 'Favorites';
+      case SiteSelectionMode.nearHere:
+        return 'Near Here';
+      case SiteSelectionMode.nearSite:
+        return 'Near Site';
+    }
+  }
+
+  IconData get icon {
+    switch (this) {
+      case SiteSelectionMode.favorites:
+        return Icons.favorite;
+      case SiteSelectionMode.nearHere:
+        return Icons.my_location;
+      case SiteSelectionMode.nearSite:
+        return Icons.place;
     }
   }
 }
@@ -49,7 +53,21 @@ class MultiSiteFlyabilityScreen extends StatefulWidget {
 }
 
 class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> with SingleTickerProviderStateMixin {
-  SiteSelectionMode _selectionMode = SiteSelectionMode.nearest5;
+  // Selection mode and filters
+  SiteSelectionMode _selectionMode = SiteSelectionMode.nearHere;
+  int _distanceKm = 50; // 10, 50, or 100
+  int _siteLimit = 10; // 10, 20, or 50
+  ParaglidingSite? _selectedReferenceSite;
+
+  // Site search state
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  String _searchQuery = '';
+  List<ParaglidingSite> _searchResults = [];
+  bool _isSearching = false;
+  Timer? _searchDebounce;
+
+  // Data state
   List<ParaglidingSite> _sites = [];
   Map<String, WindForecast> _forecasts = {}; // Site key -> WindForecast
   bool _isLoading = false;
@@ -68,6 +86,9 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> w
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
     _tabController.dispose();
     super.dispose();
   }
@@ -78,7 +99,9 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> w
       _maxWindGusts = await PreferencesHelper.getMaxWindGusts();
 
       final prefs = await SharedPreferences.getInstance();
-      final modeString = prefs.getString('flyability_selection_mode') ?? 'nearest5';
+      final modeString = prefs.getString('flyability_selection_mode') ?? 'nearHere';
+      final distanceKm = prefs.getInt('flyability_distance_km') ?? 50;
+      final siteLimit = prefs.getInt('flyability_site_limit') ?? 10;
 
       // Map saved string to enum
       SiteSelectionMode mode;
@@ -86,29 +109,36 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> w
         case 'favorites':
           mode = SiteSelectionMode.favorites;
           break;
-        case 'nearest3':
-          mode = SiteSelectionMode.nearest3;
+        case 'nearHere':
+          mode = SiteSelectionMode.nearHere;
           break;
-        case 'nearest5':
-          mode = SiteSelectionMode.nearest5;
-          break;
-        case 'nearest7':
-          mode = SiteSelectionMode.nearest7;
-          break;
-        case 'nearest10':
-          mode = SiteSelectionMode.nearest10;
+        case 'nearSite':
+          mode = SiteSelectionMode.nearSite;
           break;
         default:
-          mode = SiteSelectionMode.nearest5;
+          mode = SiteSelectionMode.nearHere;
       }
 
       if (mounted) {
         setState(() {
           _selectionMode = mode;
+          _distanceKm = distanceKm;
+          _siteLimit = siteLimit;
         });
       }
     } catch (e) {
       LoggingService.error('Failed to load preferences', e);
+    }
+  }
+
+  Future<void> _savePreferences() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('flyability_selection_mode', _selectionMode.name);
+      await prefs.setInt('flyability_distance_km', _distanceKm);
+      await prefs.setInt('flyability_site_limit', _siteLimit);
+    } catch (e) {
+      LoggingService.error('Failed to save preferences', e);
     }
   }
 
@@ -125,9 +155,7 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> w
       if (sites.isEmpty) {
         setState(() {
           _isLoading = false;
-          _errorMessage = _selectionMode == SiteSelectionMode.favorites
-              ? 'No favorite sites found. Add some favorites first!'
-              : 'No nearby sites found';
+          _errorMessage = _getEmptyMessage();
         });
         return;
       }
@@ -145,8 +173,11 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> w
 
       LoggingService.structured('MULTI_SITE_FLYABILITY_LOADED', {
         'mode': _selectionMode.name,
+        'distance_km': _distanceKm,
+        'site_limit': _siteLimit,
         'sites_count': sites.length,
         'forecasts_count': forecasts.length,
+        'has_reference_site': _selectedReferenceSite != null,
       });
     } catch (e, stackTrace) {
       LoggingService.error('Failed to load flyability data', e, stackTrace);
@@ -159,6 +190,19 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> w
     }
   }
 
+  String _getEmptyMessage() {
+    switch (_selectionMode) {
+      case SiteSelectionMode.favorites:
+        return 'No favorite sites found. Add some favorites first!';
+      case SiteSelectionMode.nearHere:
+        return 'No sites found within ${_distanceKm}km';
+      case SiteSelectionMode.nearSite:
+        return _selectedReferenceSite == null
+            ? 'Please search and select a reference site'
+            : 'No sites found within ${_distanceKm}km of ${_selectedReferenceSite!.name}';
+    }
+  }
+
   Future<List<ParaglidingSite>> _loadSites() async {
     if (_selectionMode == SiteSelectionMode.favorites) {
       // Get favorites from both databases
@@ -166,43 +210,74 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> w
       final pgeFavorites = await PgeSitesDatabaseService.instance.getFavoriteSites();
 
       return [...pgeFavorites, ...localFavorites];
+    } else if (_selectionMode == SiteSelectionMode.nearHere) {
+      // Get sites near current location
+      return _loadSitesNearPosition(await _getCurrentPosition());
     } else {
-      // Get N nearest sites from current location
-      final position = await LocationService.instance.getCurrentPosition();
-
-      if (position == null) {
-        // Fallback to a default location or show error
-        throw Exception('Unable to get current location');
+      // Near Site mode
+      if (_selectedReferenceSite == null) {
+        return [];
       }
-
-      // Get sites from PGE database within a reasonable radius
-      final tolerance = 1.0; // ~111km radius
-      final sites = await PgeSitesDatabaseService.instance.getSitesInBounds(
-        north: position.latitude + tolerance,
-        south: position.latitude - tolerance,
-        east: position.longitude + tolerance,
-        west: position.longitude - tolerance,
+      // Get sites near the selected reference site
+      return _loadSitesNearPosition(
+        Position(
+          latitude: _selectedReferenceSite!.latitude,
+          longitude: _selectedReferenceSite!.longitude,
+          timestamp: DateTime.now(),
+          accuracy: 0,
+          altitude: 0,
+          heading: 0,
+          speed: 0,
+          speedAccuracy: 0,
+          altitudeAccuracy: 0,
+          headingAccuracy: 0,
+        ),
       );
-
-      // Sort by distance and take nearest N
-      sites.sort((a, b) {
-        final distA = Geolocator.distanceBetween(
-          position.latitude,
-          position.longitude,
-          a.latitude,
-          a.longitude,
-        );
-        final distB = Geolocator.distanceBetween(
-          position.latitude,
-          position.longitude,
-          b.latitude,
-          b.longitude,
-        );
-        return distA.compareTo(distB);
-      });
-
-      return sites.take(_selectionMode.nearestCount).toList();
     }
+  }
+
+  Future<Position> _getCurrentPosition() async {
+    final position = await LocationService.instance.getCurrentPosition();
+
+    if (position == null) {
+      throw Exception('Unable to get current location');
+    }
+
+    return position;
+  }
+
+  Future<List<ParaglidingSite>> _loadSitesNearPosition(Position position) async {
+    // Convert distance to degrees (approximate: 1 degree ≈ 111km)
+    final tolerance = _distanceKm / 111.0;
+
+    // Get sites from PGE database within radius
+    final sites = await PgeSitesDatabaseService.instance.getSitesInBounds(
+      north: position.latitude + tolerance,
+      south: position.latitude - tolerance,
+      east: position.longitude + tolerance,
+      west: position.longitude - tolerance,
+    );
+
+    // Filter by actual distance and sort
+    final sitesWithDistance = sites.map((site) {
+      final distance = Geolocator.distanceBetween(
+        position.latitude,
+        position.longitude,
+        site.latitude,
+        site.longitude,
+      );
+      return (site, distance);
+    }).where((tuple) => tuple.$2 <= _distanceKm * 1000) // Filter to exact distance
+        .toList();
+
+    // Sort by distance
+    sitesWithDistance.sort((a, b) => a.$2.compareTo(b.$2));
+
+    // Take only the requested limit
+    return sitesWithDistance
+        .take(_siteLimit)
+        .map((tuple) => tuple.$1)
+        .toList();
   }
 
   Future<Map<String, WindForecast>> _fetchWindForecasts(List<ParaglidingSite> sites) async {
@@ -286,18 +361,104 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> w
     _tabController.animateTo(dayIndex + 1); // +1 because tab 0 is "Week"
   }
 
-  void _onSelectionModeChanged(SiteSelectionMode? mode) async {
+  void _onSelectionModeChanged(SiteSelectionMode? mode) {
     if (mode != null && mode != _selectionMode) {
       setState(() {
         _selectionMode = mode;
+        // Clear reference site when switching away from "Near Site" mode
+        if (mode != SiteSelectionMode.nearSite) {
+          _selectedReferenceSite = null;
+        }
       });
 
-      // Save preference
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('flyability_selection_mode', mode.name);
-
+      _savePreferences();
       _loadData();
     }
+  }
+
+  void _onDistanceChanged(int? distance) {
+    if (distance != null && distance != _distanceKm) {
+      setState(() {
+        _distanceKm = distance;
+      });
+
+      _savePreferences();
+      _loadData();
+    }
+  }
+
+  void _onLimitChanged(int? limit) {
+    if (limit != null && limit != _siteLimit) {
+      setState(() {
+        _siteLimit = limit;
+      });
+
+      _savePreferences();
+      _loadData();
+    }
+  }
+
+  // Site search functionality
+  void _onSearchChanged(String query) {
+    _searchDebounce?.cancel();
+
+    setState(() {
+      _searchQuery = query.trim();
+    });
+
+    if (_searchQuery.isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _isSearching = false;
+      });
+      return;
+    }
+
+    if (_searchQuery.length < 2) {
+      return; // Don't search for very short queries
+    }
+
+    // Debounce the search
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () async {
+      setState(() => _isSearching = true);
+
+      try {
+        final results = await PgeSitesDatabaseService.instance.searchSitesByName(
+          query: _searchQuery,
+        );
+
+        if (mounted) {
+          setState(() {
+            _searchResults = results.take(15).toList();
+            _isSearching = false;
+          });
+        }
+      } catch (e) {
+        LoggingService.error('Site search failed', e);
+        if (mounted) {
+          setState(() {
+            _searchResults = [];
+            _isSearching = false;
+          });
+        }
+      }
+    });
+  }
+
+  void _onSiteSelected(ParaglidingSite site) {
+    LoggingService.action('MultiSiteFlyability', 'reference_site_selected', {
+      'site_name': site.name,
+      'country': site.country,
+    });
+
+    setState(() {
+      _selectedReferenceSite = site;
+      _searchController.clear();
+      _searchQuery = '';
+      _searchResults = [];
+    });
+
+    _loadData();
   }
 
   @override
@@ -308,40 +469,180 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> w
       ),
       body: Column(
         children: [
-          // Site selection toggle with integrated count selection
+          // Filter controls
           Padding(
             padding: const EdgeInsets.all(16.0),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SegmentedButton<SiteSelectionMode>(
-                segments: const [
-                  ButtonSegment<SiteSelectionMode>(
-                    value: SiteSelectionMode.favorites,
-                    label: Text('Favorites'),
-                    icon: Icon(Icons.favorite),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Mode selection (3 buttons)
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SegmentedButton<SiteSelectionMode>(
+                    segments: SiteSelectionMode.values.map((mode) {
+                      return ButtonSegment<SiteSelectionMode>(
+                        value: mode,
+                        label: Text(mode.displayName),
+                        icon: Icon(mode.icon),
+                      );
+                    }).toList(),
+                    selected: {_selectionMode},
+                    onSelectionChanged: (Set<SiteSelectionMode> newSelection) {
+                      _onSelectionModeChanged(newSelection.first);
+                    },
                   ),
-                  ButtonSegment<SiteSelectionMode>(
-                    value: SiteSelectionMode.nearest3,
-                    label: Text('Nearest: 3'),
-                  ),
-                  ButtonSegment<SiteSelectionMode>(
-                    value: SiteSelectionMode.nearest5,
-                    label: Text('Nearest: 5'),
-                  ),
-                  ButtonSegment<SiteSelectionMode>(
-                    value: SiteSelectionMode.nearest7,
-                    label: Text('Nearest: 7'),
-                  ),
-                  ButtonSegment<SiteSelectionMode>(
-                    value: SiteSelectionMode.nearest10,
-                    label: Text('Nearest: 10'),
+                ),
+
+                // Distance and Limit filters (only for nearHere and nearSite)
+                if (_selectionMode != SiteSelectionMode.favorites) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      // Distance dropdown
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Distance',
+                              style: Theme.of(context).textTheme.labelSmall,
+                            ),
+                            const SizedBox(height: 4),
+                            DropdownButtonFormField<int>(
+                              value: _distanceKm,
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                border: OutlineInputBorder(),
+                              ),
+                              items: const [
+                                DropdownMenuItem(value: 10, child: Text('10 km')),
+                                DropdownMenuItem(value: 50, child: Text('50 km')),
+                                DropdownMenuItem(value: 100, child: Text('100 km')),
+                              ],
+                              onChanged: _onDistanceChanged,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // Limit dropdown
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Limit',
+                              style: Theme.of(context).textTheme.labelSmall,
+                            ),
+                            const SizedBox(height: 4),
+                            DropdownButtonFormField<int>(
+                              value: _siteLimit,
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                border: OutlineInputBorder(),
+                              ),
+                              items: const [
+                                DropdownMenuItem(value: 10, child: Text('10 sites')),
+                                DropdownMenuItem(value: 20, child: Text('20 sites')),
+                                DropdownMenuItem(value: 50, child: Text('50 sites')),
+                              ],
+                              onChanged: _onLimitChanged,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ],
-                selected: {_selectionMode},
-                onSelectionChanged: (Set<SiteSelectionMode> newSelection) {
-                  _onSelectionModeChanged(newSelection.first);
-                },
-              ),
+
+                // Site search field (only for nearSite mode)
+                if (_selectionMode == SiteSelectionMode.nearSite) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _searchController,
+                    focusNode: _searchFocusNode,
+                    onChanged: _onSearchChanged,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      hintText: _selectedReferenceSite == null
+                          ? 'Search for a reference site...'
+                          : 'Reference: ${_selectedReferenceSite!.name}',
+                      prefixIcon: const Icon(Icons.search, size: 20),
+                      suffixIcon: _selectedReferenceSite != null
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, size: 20),
+                              onPressed: () {
+                                setState(() {
+                                  _selectedReferenceSite = null;
+                                  _searchController.clear();
+                                  _searchQuery = '';
+                                  _searchResults = [];
+                                });
+                                _loadData();
+                              },
+                            )
+                          : null,
+                      border: const OutlineInputBorder(),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    ),
+                  ),
+
+                  // Search results dropdown
+                  if (_searchQuery.isNotEmpty && (_isSearching || _searchResults.isNotEmpty))
+                    Container(
+                      margin: const EdgeInsets.only(top: 4),
+                      constraints: const BoxConstraints(maxHeight: 200),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surface,
+                        border: Border.all(color: Theme.of(context).dividerColor),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: _isSearching
+                          ? const Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Row(
+                                children: [
+                                  SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                  SizedBox(width: 12),
+                                  Text('Searching sites...'),
+                                ],
+                              ),
+                            )
+                          : ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: _searchResults.length,
+                              itemBuilder: (context, index) {
+                                final site = _searchResults[index];
+                                return ListTile(
+                                  dense: true,
+                                  leading: CircleAvatar(
+                                    radius: 14,
+                                    child: Text(
+                                      site.country?.toUpperCase().substring(0, 2) ?? '??',
+                                      style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                  title: Text(
+                                    site.name,
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                  subtitle: Text(
+                                    site.country ?? 'Unknown',
+                                    style: const TextStyle(fontSize: 11),
+                                  ),
+                                  onTap: () => _onSiteSelected(site),
+                                );
+                              },
+                            ),
+                    ),
+                ],
+              ],
             ),
           ),
 
@@ -371,7 +672,16 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> w
                         ),
                       )
                     : _sites.isEmpty
-                        ? const Center(child: Text('No sites to display'))
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Text(
+                                _getEmptyMessage(),
+                                style: const TextStyle(fontSize: 16),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          )
                         : Column(
                             children: [
                               // Tab Bar
