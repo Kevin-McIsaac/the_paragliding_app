@@ -154,4 +154,33 @@ class FlyabilityHelper {
         return 'Unknown';
     }
   }
+
+  /// Check if a list of flyability levels contains consecutive occurrences of a target level
+  ///
+  /// Used for daily summaries to check if there are 2+ consecutive good/caution hours.
+  /// Null entries in the list are skipped (treated as breaks in the sequence).
+  ///
+  /// Returns true if [consecutiveCount] or more consecutive occurrences of [targetLevel] are found.
+  static bool hasConsecutiveLevels({
+    required List<FlyabilityLevel?> levels,
+    required FlyabilityLevel targetLevel,
+    int consecutiveCount = 2,
+  }) {
+    if (levels.length < consecutiveCount) return false;
+
+    for (int i = 0; i <= levels.length - consecutiveCount; i++) {
+      // Check if we have consecutiveCount consecutive matches starting at index i
+      bool allMatch = true;
+      for (int j = 0; j < consecutiveCount; j++) {
+        if (levels[i + j] != targetLevel) {
+          allMatch = false;
+          break;
+        }
+      }
+
+      if (allMatch) return true;
+    }
+
+    return false;
+  }
 }

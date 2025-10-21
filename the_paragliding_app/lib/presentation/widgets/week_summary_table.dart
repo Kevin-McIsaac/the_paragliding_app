@@ -1,9 +1,10 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/wind_data.dart';
 import '../../utils/flyability_helper.dart';
+import '../../utils/flyability_constants.dart';
+import 'flyability_cell.dart';
 import 'multi_site_flyability_table.dart';
 
 /// Week summary table showing flyability for multiple sites across 7 days
@@ -18,10 +19,6 @@ class WeekSummaryTable extends StatefulWidget {
   final Map<int, Map<String, List<WindData?>>> windDataByDay; // dayIndex -> siteKey -> hourly data
   final double maxWindSpeed;
   final double maxWindGusts;
-
-  static const double _cellSize = 48.0;
-  static const double _siteColumnWidth = 120.0;
-  static const double _headerHeight = 36.0;
 
   const WeekSummaryTable({
     super.key,
@@ -96,9 +93,9 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Table(
-            defaultColumnWidth: FixedColumnWidth(WeekSummaryTable._cellSize),
+            defaultColumnWidth: const FixedColumnWidth(48.0), // Week summary uses larger cells
             columnWidths: const {
-              0: FixedColumnWidth(WeekSummaryTable._siteColumnWidth),
+              0: FixedColumnWidth(FlyabilityConstants.siteColumnWidth),
             },
             border: TableBorder.all(
               color: Theme.of(context).dividerColor,
@@ -218,7 +215,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
           child: MultiSiteFlyabilityTable(
             sites: sitesToShow,
             windDataBySite: windDataBySite,
-            date: date ?? DateTime.now(),
+            date: date,
             maxWindSpeed: widget.maxWindSpeed,
             maxWindGusts: widget.maxWindGusts,
           ),
@@ -228,10 +225,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
   }
 
   Widget _buildSiteDetailTable(BuildContext context) {
-    final siteKey = '${_selectedSite!.latitude.toStringAsFixed(4)}_${_selectedSite!.longitude.toStringAsFixed(4)}';
-    const int startHour = 7;
-    const int hoursToShow = 13; // 7am to 7pm
-    const double cellSize = 36.0;
+    final siteKey = generateSiteKey(_selectedSite!);
     const double dateColumnWidth = 80.0;
 
     return Column(
@@ -269,7 +263,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.all(16.0),
           child: Table(
-            defaultColumnWidth: const FixedColumnWidth(cellSize),
+            defaultColumnWidth: const FixedColumnWidth(FlyabilityConstants.cellSize),
             columnWidths: const {
               0: FixedColumnWidth(dateColumnWidth),
             },
@@ -285,7 +279,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
                 ),
                 children: [
                   Container(
-                    height: cellSize,
+                    height: FlyabilityConstants.cellSize,
                     alignment: Alignment.center,
                     padding: const EdgeInsets.symmetric(horizontal: 2.0),
                     child: const Text(
@@ -293,13 +287,13 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                     ),
                   ),
-                  ...List.generate(hoursToShow, (hour) {
+                  ...List.generate(FlyabilityConstants.hoursToShow, (hour) {
                     return Container(
-                      height: cellSize,
+                      height: FlyabilityConstants.cellSize,
                       alignment: Alignment.center,
                       padding: const EdgeInsets.symmetric(horizontal: 2.0),
                       child: Text(
-                        '${hour + startHour}h',
+                        '${hour + FlyabilityConstants.startHour}h',
                         style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 10),
                       ),
                     );
@@ -316,7 +310,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
                   children: [
                     // Date cell
                     Container(
-                      height: cellSize,
+                      height: FlyabilityConstants.cellSize,
                       alignment: Alignment.centerLeft,
                       padding: const EdgeInsets.symmetric(horizontal: 4.0),
                       child: Text(
@@ -325,17 +319,22 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
                       ),
                     ),
                     // Hour cells
-                    ...List.generate(hoursToShow, (hourIndex) {
+                    ...List.generate(FlyabilityConstants.hoursToShow, (hourIndex) {
                       if (siteWindData == null || hourIndex >= siteWindData.length || siteWindData[hourIndex] == null) {
                         return Container(
-                          height: cellSize,
+                          height: FlyabilityConstants.cellSize,
                           alignment: Alignment.center,
                           child: const Text('-', style: TextStyle(fontSize: 10, color: Colors.grey)),
                         );
                       }
 
                       final windData = siteWindData[hourIndex]!;
-                      return _buildSiteDetailCell(context, windData);
+                      return FlyabilityCellWidget(
+                        windData: windData,
+                        site: _selectedSite!,
+                        maxWindSpeed: widget.maxWindSpeed,
+                        maxWindGusts: widget.maxWindGusts,
+                      );
                     }),
                   ],
                 );
@@ -344,64 +343,6 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildSiteDetailCell(BuildContext context, WindData windData) {
-    // Calculate flyability
-    final flyabilityLevel = FlyabilityHelper.getFlyabilityLevel(
-      windData: windData,
-      siteDirections: _selectedSite!.windDirections,
-      maxSpeed: widget.maxWindSpeed,
-      maxGusts: widget.maxWindGusts,
-    );
-
-    final bgColor = FlyabilityHelper.getColorForLevel(flyabilityLevel);
-
-    // Generate tooltip
-    final tooltipMessage = FlyabilityHelper.getTooltipForLevel(
-      level: flyabilityLevel,
-      windData: windData,
-      siteDirections: _selectedSite!.windDirections,
-      maxSpeed: widget.maxWindSpeed,
-      maxGusts: widget.maxWindGusts,
-    );
-
-    return Tooltip(
-      message: tooltipMessage,
-      child: Container(
-        height: 36.0,
-        color: bgColor,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Transform.rotate(
-                  angle: windData.directionDegrees * (pi / 180),
-                  child: const Icon(
-                    Icons.arrow_upward,
-                    size: 12,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 1),
-                Text(
-                  '${windData.speedKmh.round()}',
-                  style: const TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold,
-                    height: 1.0,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -414,7 +355,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
       ),
       children: [
         Container(
-          height: WeekSummaryTable._headerHeight,
+          height: FlyabilityConstants.headerHeight,
           alignment: Alignment.center,
           padding: const EdgeInsets.symmetric(horizontal: 4.0),
           child: const Text(
@@ -432,7 +373,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
           return InkWell(
             onTap: () => _onDateHeaderTap(dayIndex),
             child: Container(
-              height: WeekSummaryTable._headerHeight,
+              height: FlyabilityConstants.headerHeight,
               alignment: Alignment.center,
               padding: const EdgeInsets.symmetric(horizontal: 2.0),
               decoration: isSelected
@@ -467,7 +408,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
   }
 
   TableRow _buildSiteRow(BuildContext context, ParaglidingSite site) {
-    final siteKey = '${site.latitude.toStringAsFixed(4)}_${site.longitude.toStringAsFixed(4)}';
+    final siteKey = generateSiteKey(site);
     final isSiteSelected = _selectedSite == site && !_showingCellDetail;
 
     return TableRow(
@@ -476,7 +417,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
         InkWell(
           onTap: () => _onSiteNameTap(site),
           child: Container(
-            height: WeekSummaryTable._cellSize,
+            height: 48.0, // Week summary uses larger cells
             alignment: Alignment.centerLeft,
             padding: const EdgeInsets.symmetric(horizontal: 4.0),
             decoration: isSiteSelected
@@ -519,7 +460,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
 
   Widget _buildEmptyCell() {
     return Container(
-      height: WeekSummaryTable._cellSize,
+      height: 48.0, // Week summary uses larger cells
       alignment: Alignment.center,
       child: const Text(
         '-',
@@ -559,7 +500,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
       child: Tooltip(
         message: tooltipMessage,
         child: Container(
-          height: WeekSummaryTable._cellSize,
+          height: 48.0, // Week summary uses larger cells
           alignment: Alignment.center,
           decoration: isCellSelected
               ? BoxDecoration(
@@ -602,15 +543,10 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
     }).toList();
 
     // Check for 2+ consecutive green hours
-    bool hasTwoConsecutiveGreen = false;
-    for (int i = 0; i < levels.length - 1; i++) {
-      if (levels[i] == FlyabilityLevel.safe && levels[i + 1] == FlyabilityLevel.safe) {
-        hasTwoConsecutiveGreen = true;
-        break;
-      }
-    }
-
-    if (hasTwoConsecutiveGreen) {
+    if (FlyabilityHelper.hasConsecutiveLevels(
+      levels: levels,
+      targetLevel: FlyabilityLevel.safe,
+    )) {
       return FlyabilityLevel.safe;
     }
 
@@ -620,15 +556,10 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
     }
 
     // Check for 2+ consecutive yellow hours
-    bool hasTwoConsecutiveYellow = false;
-    for (int i = 0; i < levels.length - 1; i++) {
-      if (levels[i] == FlyabilityLevel.caution && levels[i + 1] == FlyabilityLevel.caution) {
-        hasTwoConsecutiveYellow = true;
-        break;
-      }
-    }
-
-    if (hasTwoConsecutiveYellow) {
+    if (FlyabilityHelper.hasConsecutiveLevels(
+      levels: levels,
+      targetLevel: FlyabilityLevel.caution,
+    )) {
       return FlyabilityLevel.caution;
     }
 
