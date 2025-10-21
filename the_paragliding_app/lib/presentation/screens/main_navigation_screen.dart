@@ -108,7 +108,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     });
 
     // Log navigation for debugging
-    final destinations = ['Log Book', 'Sites', 'Forecast', 'Statistics'];
+    final destinations = ['Sites', 'Forecast', 'Log Book', 'Statistics'];
     LoggingService.action('Navigation', 'bottom_nav_tap', {
       'destination': destinations[index],
       'from_index': oldIndex,
@@ -122,17 +122,17 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       body: IndexedStack(
         index: _selectedIndex,
         children: [
-          FlightListScreen(
-            key: _flightListKey,
-            onDataChanged: _handleDataChanged,
-            onRefreshAllTabs: refreshAllTabs,
-          ),
           NearbySitesScreen(
             key: _nearbySitesKey,
             onDataChanged: _handleDataChanged,
             onRefreshAllTabs: refreshAllTabs,
           ),
           const MultiSiteFlyabilityScreen(),
+          FlightListScreen(
+            key: _flightListKey,
+            onDataChanged: _handleDataChanged,
+            onRefreshAllTabs: refreshAllTabs,
+          ),
           StatisticsScreen(
             key: _statisticsKey,
             onDataChanged: _handleDataChanged,
@@ -145,22 +145,22 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         onDestinationSelected: _onDestinationSelected,
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.flight),
-            selectedIcon: Icon(Icons.flight),
-            label: 'Log Book',
-            tooltip: 'View flight log book',
-          ),
-          NavigationDestination(
             icon: Icon(Icons.location_on_outlined),
             selectedIcon: Icon(Icons.location_on),
             label: 'Sites',
             tooltip: 'Find nearby flying sites',
           ),
           NavigationDestination(
-            icon: Icon(Icons.calendar_view_week_outlined),
-            selectedIcon: Icon(Icons.calendar_view_week),
+            icon: Icon(Icons.auto_awesome_outlined),
+            selectedIcon: Icon(Icons.auto_awesome),
             label: 'Forecast',
             tooltip: 'View 7-day flyability forecast',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.flight),
+            selectedIcon: Icon(Icons.flight),
+            label: 'Log Book',
+            tooltip: 'View flight log book',
           ),
           NavigationDestination(
             icon: Icon(Icons.bar_chart_outlined),
