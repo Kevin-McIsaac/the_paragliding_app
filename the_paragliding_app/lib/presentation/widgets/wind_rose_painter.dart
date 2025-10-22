@@ -207,40 +207,40 @@ class WindRosePainter extends CustomPainter {
     // Subtract 90° to align with coordinate system (North at top)
     final arrowAngle = _degreesToRadians(windDirection! - 90);
 
-    // Calculate arrow start (center) and end points (outer edge)
-    // Standard meteorological wind direction: arrow points FROM center OUTWARD
-    final startX = center.dx + arrowStartRadius * cos(arrowAngle);
-    final startY = center.dy + arrowStartRadius * sin(arrowAngle);
-    final endX = center.dx + arrowEndRadius * cos(arrowAngle);
-    final endY = center.dy + arrowEndRadius * sin(arrowAngle);
+    // Calculate arrow start (outer edge) and end points (center)
+    // Arrow points FROM edge INWARD to show where wind comes from
+    final startX = center.dx + arrowEndRadius * cos(arrowAngle);
+    final startY = center.dy + arrowEndRadius * sin(arrowAngle);
+    final endX = center.dx + arrowStartRadius * cos(arrowAngle);
+    final endY = center.dy + arrowStartRadius * sin(arrowAngle);
 
     final arrowPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.7)
+      ..color = Colors.blue
       ..style = PaintingStyle.stroke
       ..strokeWidth = radius * 0.08  // Scale with radius (8% - 2x thicker)
       ..strokeCap = StrokeCap.round;
 
-    // Draw arrow line from center toward outer edge
+    // Draw arrow line from outer edge toward center
     canvas.drawLine(
       Offset(startX, startY),
       Offset(endX, endY),
       arrowPaint,
     );
 
-    // Draw arrowhead pointing outward (standard meteorological convention)
+    // Draw arrowhead pointing inward (showing wind source direction)
     final arrowheadLength = radius * 0.20;  // Scale with radius (20% - bigger)
     final arrowheadAngle = 30 * pi / 180; // Wider angle for bigger arrowhead
 
-    // Arrowhead at the END point (outer edge), pointing outward
-    // Reverse the angle calculation to point away from center
+    // Arrowhead at the END point (center), pointing inward
+    // Add instead of subtract to reverse arrowhead direction
     final arrowheadLeft = Offset(
-      endX - arrowheadLength * cos(arrowAngle - arrowheadAngle),
-      endY - arrowheadLength * sin(arrowAngle - arrowheadAngle),
+      endX + arrowheadLength * cos(arrowAngle - arrowheadAngle),
+      endY + arrowheadLength * sin(arrowAngle - arrowheadAngle),
     );
 
     final arrowheadRight = Offset(
-      endX - arrowheadLength * cos(arrowAngle + arrowheadAngle),
-      endY - arrowheadLength * sin(arrowAngle + arrowheadAngle),
+      endX + arrowheadLength * cos(arrowAngle + arrowheadAngle),
+      endY + arrowheadLength * sin(arrowAngle + arrowheadAngle),
     );
 
     canvas.drawLine(Offset(endX, endY), arrowheadLeft, arrowPaint);

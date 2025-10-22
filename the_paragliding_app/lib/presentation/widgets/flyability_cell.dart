@@ -65,9 +65,10 @@ class FlyabilityCellWidget extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Using Transform.rotate for wind direction arrow
+                // Wind arrow points where wind is blowing TO (meteorological convention)
+                // Wind direction = FROM direction, so add 180° to point downwind
                 Transform.rotate(
-                  angle: windData.directionDegrees * (pi / 180), // Convert degrees to radians
+                  angle: (windData.directionDegrees + 180) * (pi / 180),
                   child: const Icon(
                     Icons.arrow_upward,
                     size: 12,

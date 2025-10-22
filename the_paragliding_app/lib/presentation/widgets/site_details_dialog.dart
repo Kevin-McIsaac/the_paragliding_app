@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:geolocator/geolocator.dart';
@@ -591,6 +592,7 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
                                     name,
                                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                                       fontWeight: FontWeight.bold,
+                                      color: Colors.blue,
                                     ),
                                   ),
                                 // Flight characteristics directly under title
@@ -1392,9 +1394,10 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
               mainAxisAlignment: MainAxisAlignment.center,
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Using Transform.rotate for wind direction arrow
+                // Wind arrow points where wind is blowing TO (meteorological convention)
+                // Wind direction = FROM direction, so add 180° to point downwind
                 Transform.rotate(
-                  angle: direction * (3.14159265359 / 180), // Convert degrees to radians
+                  angle: (direction + 180) * (pi / 180),
                   child: const Icon(
                     Icons.arrow_upward,
                     size: 12,
