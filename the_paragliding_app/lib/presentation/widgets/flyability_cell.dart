@@ -10,7 +10,7 @@ import '../../utils/flyability_constants.dart';
 /// Shows:
 /// - Color-coded background (green/yellow/red) based on flyability
 /// - Wind arrow showing direction
-/// - Wind speed in km/h
+/// - Wind speed and gusts in km/h (format: "speed-gusts")
 /// - Tooltip with detailed flyability information
 class FlyabilityCellWidget extends StatelessWidget {
   final WindData windData;
@@ -77,7 +77,9 @@ class FlyabilityCellWidget extends StatelessWidget {
                 ),
                 const SizedBox(height: 1),
                 Text(
-                  '${windData.speedKmh.round()}',
+                  windData.gustsKmh != null
+                      ? '${windData.speedKmh.round()}-${windData.gustsKmh!.round()}'
+                      : '${windData.speedKmh.round()}',
                   style: const TextStyle(
                     fontSize: 9,
                     fontWeight: FontWeight.bold,

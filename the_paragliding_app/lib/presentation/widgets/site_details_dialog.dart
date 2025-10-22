@@ -18,6 +18,7 @@ import '../../services/database_service.dart';
 import '../../services/pge_sites_database_service.dart';
 import '../../utils/flyability_helper.dart';
 import '../widgets/wind_rose_widget.dart';
+import '../widgets/flyability_cell.dart';
 
 class SiteDetailsDialog extends StatefulWidget {
   final Site? site;
@@ -1354,7 +1355,7 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
     required DateTime timestamp,
     required List<String> windDirections,
   }) {
-    // Calculate flyability using centralized helper
+    // Create WindData for the forecast cell
     final windData = WindData(
       speedKmh: speed,
       directionDegrees: direction,
@@ -1362,63 +1363,24 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
       timestamp: timestamp,
     );
 
-    final flyabilityLevel = FlyabilityHelper.getFlyabilityLevel(
-      windData: windData,
-      siteDirections: windDirections,
-      maxSpeed: widget.maxWindSpeed,
-      maxGusts: widget.maxWindGusts,
+    // Create a temporary ParaglidingSite with just the wind directions
+    // (FlyabilityCellWidget needs a ParaglidingSite for the wind directions)
+    final tempSite = ParaglidingSite(
+      id: 0,
+      name: '',
+      latitude: 0,
+      longitude: 0,
+      windDirections: windDirections,
+      siteType: 'launch', // Temporary value, not used for flyability calculation
     );
 
-    // Get color with full opacity
-    final bgColor = FlyabilityHelper.getColorForLevel(flyabilityLevel);
-
-    // Generate tooltip with detailed flyability explanation
-    final tooltipMessage = FlyabilityHelper.getTooltipForLevel(
-      level: flyabilityLevel,
+    // Use the shared FlyabilityCellWidget
+    return FlyabilityCellWidget(
       windData: windData,
-      siteDirections: windDirections,
-      maxSpeed: widget.maxWindSpeed,
-      maxGusts: widget.maxWindGusts,
-    );
-
-    return Tooltip(
-      message: tooltipMessage,
-      child: Container(
-        height: _cellSize,
-        color: bgColor,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            // Wind arrow and speed with white color for contrast
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Wind arrow points where wind is blowing TO (meteorological convention)
-                // Wind direction = FROM direction, so add 180° to point downwind
-                Transform.rotate(
-                  angle: (direction + 180) * (pi / 180),
-                  child: const Icon(
-                    Icons.arrow_upward,
-                    size: 12,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 1),
-                Text(
-                  '${speed.round()}',
-                  style: const TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold,
-                    height: 1.0,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
+      site: tempSite,
+      maxWindSpeed: widget.maxWindSpeed,
+      maxWindGusts: widget.maxWindGusts,
+      cellSize: _cellSize,
     );
   }
 
