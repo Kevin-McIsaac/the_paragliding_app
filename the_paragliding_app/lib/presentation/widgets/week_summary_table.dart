@@ -18,14 +18,14 @@ class WeekSummaryTable extends StatefulWidget {
   final List<ParaglidingSite> sites;
   final Map<int, Map<String, List<WindData?>>> windDataByDay; // dayIndex -> siteKey -> hourly data
   final double maxWindSpeed;
-  final double maxWindGusts;
+  final double cautionWindSpeed;
 
   const WeekSummaryTable({
     super.key,
     required this.sites,
     required this.windDataByDay,
     required this.maxWindSpeed,
-    required this.maxWindGusts,
+    required this.cautionWindSpeed,
   });
 
   @override
@@ -217,7 +217,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
             windDataBySite: windDataBySite,
             date: date,
             maxWindSpeed: widget.maxWindSpeed,
-            maxWindGusts: widget.maxWindGusts,
+            maxWindGusts: widget.cautionWindSpeed,
           ),
         ),
       ],
@@ -333,7 +333,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
                         windData: windData,
                         site: _selectedSite!,
                         maxWindSpeed: widget.maxWindSpeed,
-                        maxWindGusts: widget.maxWindGusts,
+                        maxWindGusts: widget.cautionWindSpeed,
                       );
                     }),
                   ],
@@ -538,7 +538,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
         windData: windData,
         siteDirections: site.windDirections,
         maxSpeed: widget.maxWindSpeed,
-        maxGusts: widget.maxWindGusts,
+        maxGusts: widget.cautionWindSpeed,
       );
     }).toList();
 

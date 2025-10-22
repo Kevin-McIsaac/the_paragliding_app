@@ -51,15 +51,11 @@ class PreferencesHelper {
 
   // Wind limits for flyability
   static const String maxWindSpeedKey = 'max_wind_speed';
-  static const String maxWindGustsKey = 'max_wind_gusts';
   static const String cautionWindSpeedKey = 'caution_wind_speed';
-  static const String cautionWindGustsKey = 'caution_wind_gusts';
 
-  // Default values for wind limits
+  // Default values for wind limits (speed only - gusts displayed but not evaluated)
   static const double defaultMaxWindSpeed = 25.0; // km/h
-  static const double defaultMaxWindGusts = 35.0; // km/h
   static const double defaultCautionWindSpeed = 20.0; // km/h
-  static const double defaultCautionWindGusts = 30.0; // km/h (caution range: 30-35)
 
   // Cesium 3D Map methods
   static Future<String?> getCesiumSceneMode() async {
@@ -305,22 +301,6 @@ class PreferencesHelper {
     await prefs.setDouble(maxWindSpeedKey, value);
   }
 
-  static Future<double> getMaxWindGusts() async {
-    final prefs = await SharedPreferences.getInstance();
-    // Check if the preference has been set before
-    if (!prefs.containsKey(maxWindGustsKey)) {
-      // First time - set default
-      await prefs.setDouble(maxWindGustsKey, defaultMaxWindGusts);
-      return defaultMaxWindGusts;
-    }
-    return prefs.getDouble(maxWindGustsKey) ?? defaultMaxWindGusts;
-  }
-
-  static Future<void> setMaxWindGusts(double value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(maxWindGustsKey, value);
-  }
-
   static Future<double> getCautionWindSpeed() async {
     final prefs = await SharedPreferences.getInstance();
     if (!prefs.containsKey(cautionWindSpeedKey)) {
@@ -333,20 +313,6 @@ class PreferencesHelper {
   static Future<void> setCautionWindSpeed(double value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(cautionWindSpeedKey, value);
-  }
-
-  static Future<double> getCautionWindGusts() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!prefs.containsKey(cautionWindGustsKey)) {
-      await prefs.setDouble(cautionWindGustsKey, defaultCautionWindGusts);
-      return defaultCautionWindGusts;
-    }
-    return prefs.getDouble(cautionWindGustsKey) ?? defaultCautionWindGusts;
-  }
-
-  static Future<void> setCautionWindGusts(double value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(cautionWindGustsKey, value);
   }
 
   // Card expansion state management is now handled by CardExpansionManager

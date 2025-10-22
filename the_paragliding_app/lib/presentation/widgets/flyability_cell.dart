@@ -16,7 +16,7 @@ class FlyabilityCellWidget extends StatelessWidget {
   final WindData windData;
   final ParaglidingSite site;
   final double maxWindSpeed;
-  final double maxWindGusts;
+  final double cautionWindSpeed;
   final double? cellSize;
 
   const FlyabilityCellWidget({
@@ -24,7 +24,7 @@ class FlyabilityCellWidget extends StatelessWidget {
     required this.windData,
     required this.site,
     required this.maxWindSpeed,
-    required this.maxWindGusts,
+    required this.cautionWindSpeed,
     this.cellSize,
   });
 
@@ -32,12 +32,12 @@ class FlyabilityCellWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final size = cellSize ?? FlyabilityConstants.cellSize;
 
-    // Calculate flyability using centralized helper
+    // Calculate flyability using centralized helper (uses speed only, not gusts)
     final flyabilityLevel = FlyabilityHelper.getFlyabilityLevel(
       windData: windData,
       siteDirections: site.windDirections,
       maxSpeed: maxWindSpeed,
-      maxGusts: maxWindGusts,
+      cautionSpeed: cautionWindSpeed,
     );
 
     // Get color with full opacity
@@ -49,7 +49,6 @@ class FlyabilityCellWidget extends StatelessWidget {
       windData: windData,
       siteDirections: site.windDirections,
       maxSpeed: maxWindSpeed,
-      maxGusts: maxWindGusts,
     );
 
     return Tooltip(

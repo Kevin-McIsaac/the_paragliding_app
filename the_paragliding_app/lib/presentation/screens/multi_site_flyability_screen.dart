@@ -72,7 +72,7 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> {
   bool _isLoading = false;
   String? _errorMessage;
   double _maxWindSpeed = 25.0;
-  double _maxWindGusts = 30.0;
+  double _cautionWindSpeed = 20.0;
 
   @override
   void initState() {
@@ -92,7 +92,7 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> {
   Future<void> _loadPreferences() async {
     try {
       _maxWindSpeed = await PreferencesHelper.getMaxWindSpeed();
-      _maxWindGusts = await PreferencesHelper.getMaxWindGusts();
+      _cautionWindSpeed = await PreferencesHelper.getCautionWindSpeed();
 
       final prefs = await SharedPreferences.getInstance();
       final modeString = prefs.getString('flyability_selection_mode') ?? 'nearHere';
@@ -675,7 +675,7 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> {
                               sites: _sites,
                               windDataByDay: _prepareWeekData(),
                               maxWindSpeed: _maxWindSpeed,
-                              maxWindGusts: _maxWindGusts,
+                              cautionWindSpeed: _cautionWindSpeed,
                             ),
                           ),
           ),
