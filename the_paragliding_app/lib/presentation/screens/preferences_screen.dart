@@ -27,7 +27,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
 
   // Wind Threshold preferences (using RangeValues: start = caution, end = unsafe)
   RangeValues? _windSpeedRange;
-  RangeValues? _windGustRange;
 
   bool _isLoading = true;
   bool _isSaving = false;
@@ -67,9 +66,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
 
       // Load Wind Threshold preferences and combine into RangeValues
       final maxWindSpeed = await PreferencesHelper.getMaxWindSpeed();
-      final maxWindGusts = await PreferencesHelper.getMaxWindGusts();
       final cautionWindSpeed = await PreferencesHelper.getCautionWindSpeed();
-      final cautionWindGusts = await PreferencesHelper.getCautionWindGusts();
 
       if (mounted) {
         setState(() {
@@ -93,12 +90,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
             maxSpeed > cautionSpeed ? maxSpeed : cautionSpeed + 1,
           );
 
-          final cautionGusts = cautionWindGusts.clamp(20.0, 50.0);
-          final maxGusts = maxWindGusts.clamp(20.0, 50.0);
-          _windGustRange = RangeValues(
-            cautionGusts < maxGusts ? cautionGusts : maxGusts - 1,
-            maxGusts > cautionGusts ? maxGusts : cautionGusts + 1,
-          );
 
           _isLoading = false;
         });
@@ -510,29 +501,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                     LoggingService.info('PreferencesScreen: Saved wind speed | caution=${values.start.toInt()} unsafe=${values.end.toInt()} km/h');
                     if (mounted) {
                       UiUtils.showSuccessMessage(context, 'Saved wind speed thresholds');
-                    }
-                  },
-                ),
-                const SizedBox(height: 16),
-                _buildRangeSliderRow(
-                  'Wind Gusts',
-                  'Caution (left) to unsafe (right) thresholds (default: 30-35 km/h)',
-                  _windGustRange ?? const RangeValues(30.0, 35.0),
-                  20.0,
-                  50.0,
-                  // onChanged: Update UI immediately while dragging
-                  (values) {
-                    setState(() {
-                      _windGustRange = values;
-                    });
-                  },
-                  // onChangeEnd: Save to preferences only when user releases slider
-                  (values) async {
-                    await PreferencesHelper.setCautionWindGusts(values.start);
-                    await PreferencesHelper.setMaxWindGusts(values.end);
-                    LoggingService.info('PreferencesScreen: Saved wind gusts | caution=${values.start.toInt()} unsafe=${values.end.toInt()} km/h');
-                    if (mounted) {
-                      UiUtils.showSuccessMessage(context, 'Saved wind gust thresholds');
                     }
                   },
                 ),

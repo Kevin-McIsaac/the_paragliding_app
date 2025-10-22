@@ -128,7 +128,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
   final Map<String, WindData> _siteWindData = {};
   final Map<String, FlyabilityStatus> _siteFlyabilityStatus = {};
   double _maxWindSpeed = 25.0;
-  double _maxWindGusts = 30.0;
+  double _cautionWindSpeed = 20.0;
   final WeatherService _weatherService = WeatherService.instance;
   Timer? _windFetchDebounce;
 
@@ -370,7 +370,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
   Future<void> _loadWindPreferences() async {
     try {
       _maxWindSpeed = await PreferencesHelper.getMaxWindSpeed();
-      _maxWindGusts = await PreferencesHelper.getMaxWindGusts();
+      _cautionWindSpeed = await PreferencesHelper.getCautionWindSpeed();
 
       // Wind bar state preferences could be loaded here if needed
     } catch (e) {
@@ -836,7 +836,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
           windData: wind,
           siteDirections: site.windDirections,
           maxSpeed: _maxWindSpeed,
-          maxGusts: _maxWindGusts,
+          cautionSpeed: _cautionWindSpeed,
         );
 
         // Convert FlyabilityLevel to FlyabilityStatus
@@ -1255,7 +1255,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
         userPosition: _userPosition,
         windData: windData,
         maxWindSpeed: _maxWindSpeed,
-        maxWindGusts: _maxWindGusts,
+        cautionWindSpeed: _cautionWindSpeed,
         onWindDataFetched: (fetchedWindData) {
           // Update parent's cache when dialog fetches wind data
           setState(() {
@@ -1712,7 +1712,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
                           siteWindData: _siteWindData,
                           siteFlyabilityStatus: _siteFlyabilityStatus,
                           maxWindSpeed: _maxWindSpeed,
-                          maxWindGusts: _maxWindGusts,
+                          cautionWindSpeed: _cautionWindSpeed,
                           selectedDateTime: _selectedDateTime,
                           forecastEnabled: _forecastEnabled,
                           weatherStations: _weatherStations,

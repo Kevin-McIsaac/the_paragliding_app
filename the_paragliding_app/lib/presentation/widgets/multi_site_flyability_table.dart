@@ -11,7 +11,7 @@ class MultiSiteFlyabilityTable extends StatelessWidget {
   final Map<String, List<WindData?>> windDataBySite; // Site key -> 13 hours of wind data
   final DateTime date;
   final double maxWindSpeed;
-  final double maxWindGusts;
+  final double cautionWindSpeed;
 
   const MultiSiteFlyabilityTable({
     super.key,
@@ -19,7 +19,7 @@ class MultiSiteFlyabilityTable extends StatelessWidget {
     required this.windDataBySite,
     required this.date,
     required this.maxWindSpeed,
-    required this.maxWindGusts,
+    required this.cautionWindSpeed,
   });
 
   @override
@@ -104,7 +104,7 @@ class MultiSiteFlyabilityTable extends StatelessWidget {
             windData: siteWindData[hourIndex]!,
             site: site,
             maxWindSpeed: maxWindSpeed,
-            maxWindGusts: maxWindGusts,
+            cautionWindSpeed: cautionWindSpeed,
           );
         }),
       ],

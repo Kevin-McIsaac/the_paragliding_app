@@ -32,7 +32,7 @@ class FlyabilityCellWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final size = cellSize ?? FlyabilityConstants.cellSize;
 
-    // Calculate flyability using centralized helper (uses speed only, not gusts)
+    // Calculate flyability using centralized helper
     final flyabilityLevel = FlyabilityHelper.getFlyabilityLevel(
       windData: windData,
       siteDirections: site.windDirections,

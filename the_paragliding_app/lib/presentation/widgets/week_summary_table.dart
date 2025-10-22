@@ -217,7 +217,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
             windDataBySite: windDataBySite,
             date: date,
             maxWindSpeed: widget.maxWindSpeed,
-            maxWindGusts: widget.cautionWindSpeed,
+            cautionWindSpeed: widget.cautionWindSpeed,
           ),
         ),
       ],
@@ -333,7 +333,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
                         windData: windData,
                         site: _selectedSite!,
                         maxWindSpeed: widget.maxWindSpeed,
-                        maxWindGusts: widget.cautionWindSpeed,
+                        cautionWindSpeed: widget.cautionWindSpeed,
                       );
                     }),
                   ],
@@ -538,7 +538,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
         windData: windData,
         siteDirections: site.windDirections,
         maxSpeed: widget.maxWindSpeed,
-        maxGusts: widget.cautionWindSpeed,
+        cautionSpeed: widget.cautionWindSpeed,
       );
     }).toList();
 

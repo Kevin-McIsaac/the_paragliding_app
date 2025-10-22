@@ -26,7 +26,7 @@ class SiteDetailsDialog extends StatefulWidget {
   final Position? userPosition;
   final WindData? windData;
   final double maxWindSpeed;
-  final double maxWindGusts;
+  final double cautionWindSpeed;
   final Function(WindData)? onWindDataFetched;
   final Function()? onFavoriteToggled;
 
@@ -37,7 +37,7 @@ class SiteDetailsDialog extends StatefulWidget {
     this.userPosition,
     this.windData,
     required this.maxWindSpeed,
-    required this.maxWindGusts,
+    required this.cautionWindSpeed,
     this.onWindDataFetched,
     this.onFavoriteToggled,
   });
@@ -430,7 +430,7 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
         windData: _windData!,
         siteDirections: tempSite.windDirections,
         maxSpeed: widget.maxWindSpeed,
-        maxGusts: widget.maxWindGusts,
+        cautionSpeed: widget.cautionWindSpeed,
       );
 
       // Convert FlyabilityLevel to FlyabilityStatus
@@ -455,7 +455,7 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
       status: status,
       windData: _windData,
       maxWindSpeed: widget.maxWindSpeed,
-      maxWindGusts: widget.maxWindGusts,
+      cautionWindSpeed: widget.cautionWindSpeed,
       forecastEnabled: true,
     );
   }
@@ -1379,7 +1379,7 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
       windData: windData,
       site: tempSite,
       maxWindSpeed: widget.maxWindSpeed,
-      maxWindGusts: widget.maxWindGusts,
+      cautionWindSpeed: widget.cautionWindSpeed,
       cellSize: _cellSize,
     );
   }

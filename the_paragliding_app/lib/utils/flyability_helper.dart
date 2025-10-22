@@ -11,8 +11,8 @@ enum FlyabilityLevel {
 
 /// Centralized flyability determination logic with consistent colors and tooltips
 ///
-/// Note: Flyability is determined by wind SPEED only (not gusts).
-/// User preferences control the caution and max speed thresholds.
+/// Flyability is determined by wind SPEED only (gusts are displayed but not used for colors)
+/// Thresholds are loaded from user preferences via PreferencesHelper
 class FlyabilityHelper {
   // Flyability colors (matching SiteMarkerUtils for consistency)
   static const Color safeColor = Colors.green;      // Safe to fly
@@ -30,7 +30,7 @@ class FlyabilityHelper {
   ///    - caution if speed > cautionSpeed
   ///    - safe otherwise
   ///
-  /// Note: Only wind SPEED is used for flyability. Gusts are displayed but not evaluated.
+  /// Note: Wind gusts are displayed for information but NOT used for flyability determination
   ///
   /// Returns:
   /// - FlyabilityLevel.safe: Good conditions for flying
