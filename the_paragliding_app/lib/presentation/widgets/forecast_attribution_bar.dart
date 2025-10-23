@@ -88,8 +88,43 @@ class ForecastAttributionBar extends StatelessWidget {
                 ),
                 const SizedBox(width: 4),
               ],
-              // Age text
-              if (ageText.isNotEmpty) ...[
+              // Combined refresh button with age text (idiomatic TextButton.icon pattern)
+              if (onRefresh != null && ageText.isNotEmpty)
+                TextButton.icon(
+                  onPressed: onRefresh,
+                  icon: Icon(
+                    Icons.refresh,
+                    size: 16,
+                    color: isStale ? Colors.orange : Colors.white60,
+                  ),
+                  label: Text(
+                    'Updated $ageText',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isStale
+                          ? Colors.orange.withValues(alpha: 0.8)
+                          : Colors.white.withValues(alpha: 0.5),
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                )
+              // Fallback: just refresh icon if no age text
+              else if (onRefresh != null)
+                IconButton(
+                  icon: const Icon(Icons.refresh, size: 16),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: onRefresh,
+                  tooltip: 'Refresh forecast',
+                  color: isStale ? Colors.orange : Colors.white60,
+                )
+              // Fallback: just age text if no refresh callback
+              else if (ageText.isNotEmpty)
                 Text(
                   'Updated $ageText',
                   style: TextStyle(
@@ -99,18 +134,6 @@ class ForecastAttributionBar extends StatelessWidget {
                         : Colors.white.withValues(alpha: 0.5),
                     fontStyle: FontStyle.italic,
                   ),
-                ),
-                const SizedBox(width: 4),
-              ],
-              // Refresh button LAST
-              if (onRefresh != null)
-                IconButton(
-                  icon: const Icon(Icons.refresh, size: 16),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  onPressed: onRefresh,
-                  tooltip: 'Refresh forecast',
-                  color: isStale ? Colors.orange : Colors.white60,
                 ),
             ],
           ),

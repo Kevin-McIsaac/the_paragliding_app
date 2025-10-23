@@ -535,12 +535,13 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> w
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 // All filters on one line
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      // Mode selection (3 buttons)
-                      SegmentedButton<SiteSelectionMode>(
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Mode selection (3 buttons)
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: SegmentedButton<SiteSelectionMode>(
                         segments: SiteSelectionMode.values.map((mode) {
                           return ButtonSegment<SiteSelectionMode>(
                             value: mode,
@@ -553,52 +554,56 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> w
                           _onSelectionModeChanged(newSelection.first);
                         },
                       ),
+                    ),
 
-                      // Distance and Limit filters (only for nearHere and nearSite)
-                      if (_selectionMode != SiteSelectionMode.favorites) ...[
-                        const SizedBox(width: 12),
-                        // Distance dropdown
-                        SizedBox(
-                          width: 110,
-                          child: DropdownButtonFormField<int>(
-                            value: _distanceKm,
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              labelText: 'Dist',
-                              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                              border: OutlineInputBorder(),
+                    // Distance and Limit filters (only for nearHere and nearSite) - separate line
+                    if (_selectionMode != SiteSelectionMode.favorites) ...[
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          // Distance dropdown
+                          SizedBox(
+                            width: 120,
+                            child: DropdownButtonFormField<int>(
+                              value: _distanceKm,
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                labelText: 'Dist',
+                                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                border: OutlineInputBorder(),
+                              ),
+                              items: const [
+                                DropdownMenuItem(value: 10, child: Text('10 km')),
+                                DropdownMenuItem(value: 50, child: Text('50 km')),
+                                DropdownMenuItem(value: 100, child: Text('100 km')),
+                              ],
+                              onChanged: _onDistanceChanged,
                             ),
-                            items: const [
-                              DropdownMenuItem(value: 10, child: Text('10 km')),
-                              DropdownMenuItem(value: 50, child: Text('50 km')),
-                              DropdownMenuItem(value: 100, child: Text('100 km')),
-                            ],
-                            onChanged: _onDistanceChanged,
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        // Limit dropdown
-                        SizedBox(
-                          width: 100,
-                          child: DropdownButtonFormField<int>(
-                            value: _siteLimit,
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              labelText: 'Limit',
-                              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                              border: OutlineInputBorder(),
+                          const SizedBox(width: 8),
+                          // Limit dropdown
+                          SizedBox(
+                            width: 100,
+                            child: DropdownButtonFormField<int>(
+                              value: _siteLimit,
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                labelText: 'Limit',
+                                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                border: OutlineInputBorder(),
+                              ),
+                              items: const [
+                                DropdownMenuItem(value: 10, child: Text('10')),
+                                DropdownMenuItem(value: 20, child: Text('20')),
+                                DropdownMenuItem(value: 50, child: Text('50')),
+                              ],
+                              onChanged: _onLimitChanged,
                             ),
-                            items: const [
-                              DropdownMenuItem(value: 10, child: Text('10')),
-                              DropdownMenuItem(value: 20, child: Text('20')),
-                              DropdownMenuItem(value: 50, child: Text('50')),
-                            ],
-                            onChanged: _onLimitChanged,
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ],
-                  ),
+                  ],
                 ),
 
                 // Site search field (only for nearSite mode)
