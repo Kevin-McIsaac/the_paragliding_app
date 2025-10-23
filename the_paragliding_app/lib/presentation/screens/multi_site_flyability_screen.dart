@@ -13,6 +13,7 @@ import '../../services/logging_service.dart';
 import '../../utils/preferences_helper.dart';
 import '../../utils/flyability_constants.dart';
 import '../widgets/week_summary_table.dart';
+import '../widgets/forecast_attribution_bar.dart';
 
 enum SiteSelectionMode {
   favorites,
@@ -51,7 +52,7 @@ class MultiSiteFlyabilityScreen extends StatefulWidget {
   State<MultiSiteFlyabilityScreen> createState() => _MultiSiteFlyabilityScreenState();
 }
 
-class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> {
+class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> with WidgetsBindingObserver {
   // Selection mode and filters
   SiteSelectionMode _selectionMode = SiteSelectionMode.nearHere;
   int _distanceKm = 50; // 10, 50, or 100
@@ -77,16 +78,31 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadPreferences();
     _loadData();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _searchDebounce?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      // Check if any cached forecasts are stale
+      final stats = WeatherService.instance.getCacheStats();
+      if (stats['stale_forecasts'] > 0) {
+        LoggingService.info('[LIFECYCLE] App resumed with ${stats['stale_forecasts']} stale forecasts, refreshing...');
+        _loadData(); // Reload data including forecasts
+      }
+    }
   }
 
   Future<void> _loadPreferences() async {
@@ -197,6 +213,47 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> {
             ? 'Please search and select a reference site'
             : 'No sites found within ${_distanceKm}km of ${_selectedReferenceSite!.name}';
     }
+  }
+
+  /// Format the age of the oldest forecast across all sites
+  String _formatOldestForecastAge() {
+    if (_forecasts.isEmpty) return '';
+
+    DateTime? oldestFetchTime;
+    for (final forecast in _forecasts.values) {
+      if (oldestFetchTime == null || forecast.fetchedAt.isBefore(oldestFetchTime)) {
+        oldestFetchTime = forecast.fetchedAt;
+      }
+    }
+
+    if (oldestFetchTime == null) return '';
+
+    final age = DateTime.now().difference(oldestFetchTime);
+
+    if (age.inMinutes < 1) {
+      return 'just now';
+    } else if (age.inMinutes < 60) {
+      final minutes = age.inMinutes;
+      return '$minutes minute${minutes == 1 ? '' : 's'} ago';
+    } else {
+      final hours = age.inHours;
+      final minutes = age.inMinutes % 60;
+      if (minutes == 0) {
+        return '$hours hour${hours == 1 ? '' : 's'} ago';
+      } else {
+        return '$hours hour${hours == 1 ? '' : 's'}, $minutes min ago';
+      }
+    }
+  }
+
+  /// Check if any forecast is stale (>2 hours old)
+  bool _hasStaleForecasts() {
+    for (final forecast in _forecasts.values) {
+      if (!forecast.isFresh) {
+        return true;
+      }
+    }
+    return false;
   }
 
   Future<List<ParaglidingSite>> _loadSites() async {
@@ -671,11 +728,22 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> {
                           )
                         : SingleChildScrollView(
                             padding: const EdgeInsets.all(16.0),
-                            child: WeekSummaryTable(
-                              sites: _sites,
-                              windDataByDay: _prepareWeekData(),
-                              maxWindSpeed: _maxWindSpeed,
-                              cautionWindSpeed: _cautionWindSpeed,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                ForecastAttributionBar(
+                                  customAgeText: _formatOldestForecastAge(),
+                                  isCustomStale: _hasStaleForecasts(),
+                                  onRefresh: _loadData,
+                                ),
+                                const SizedBox(height: 8),
+                                WeekSummaryTable(
+                                  sites: _sites,
+                                  windDataByDay: _prepareWeekData(),
+                                  maxWindSpeed: _maxWindSpeed,
+                                  cautionWindSpeed: _cautionWindSpeed,
+                                ),
+                              ],
                             ),
                           ),
           ),

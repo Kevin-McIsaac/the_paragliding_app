@@ -15,6 +15,8 @@ import 'flyability_cell.dart';
 /// Used by:
 /// - Site details dialog - when viewing a site's full forecast
 /// - Week summary table - when clicking a site name to see details
+///
+/// Note: Attribution bar should be added by parent widget using ForecastAttributionBar
 class SiteForecastTable extends StatelessWidget {
   final ParaglidingSite site;
   final Map<int, List<WindData?>> windDataByDay; // dayIndex (0-6) -> hourly data (7am-7pm)

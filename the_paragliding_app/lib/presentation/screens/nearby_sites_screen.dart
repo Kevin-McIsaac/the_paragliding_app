@@ -68,7 +68,7 @@ class NearbySitesScreen extends StatefulWidget {
 /// // ...
 /// await key.currentState?.refreshData();
 /// ```
-class NearbySitesScreenState extends State<NearbySitesScreen> {
+class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindingObserver {
   final LocationService _locationService = LocationService.instance;
   final MapController _mapController = MapController();
 
@@ -145,6 +145,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadPreferences();
     _loadFilterSettings();
     _loadWindPreferences();
@@ -255,6 +256,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     MapBoundsManager.instance.cancelDebounce('nearby_sites'); // Clean up any pending debounce
     _locationNotificationTimer?.cancel(); // Clean up location notification timer
     _windFetchDebounce?.cancel(); // Clean up wind fetch debounce timer
@@ -264,6 +266,19 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
     _searchFocusNode.dispose(); // Dispose search focus node
     _mapController.dispose(); // Dispose map controller
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      // Check if any cached forecasts are stale
+      final stats = WeatherService.instance.getCacheStats();
+      if (stats['stale_forecasts'] > 0) {
+        LoggingService.info('[LIFECYCLE] App resumed with ${stats['stale_forecasts']} stale forecasts, refreshing...');
+        _fetchWindDataForSites(); // Reload wind data for sites
+      }
+    }
   }
 
   /// Handle search query changes with debouncing

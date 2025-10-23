@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/wind_data.dart';
+import '../../data/models/wind_forecast.dart';
+import '../../services/weather_service.dart';
 import '../../utils/flyability_helper.dart';
 import '../../utils/flyability_constants.dart';
 import 'flyability_cell.dart';
@@ -37,6 +39,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
   // Track what detail is currently shown
   int? _selectedDayIndex;
   ParaglidingSite? _selectedSite;
+  WindForecast? _selectedSiteForecast; // Forecast for the selected site
   bool _showingCellDetail = false;
 
   void _onDateHeaderTap(int dayIndex) {
@@ -45,10 +48,12 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
         // Clicking same date again - clear selection
         _selectedDayIndex = null;
         _selectedSite = null;
+        _selectedSiteForecast = null;
       } else {
         // Show all sites for this day
         _selectedDayIndex = dayIndex;
         _selectedSite = null;
+        _selectedSiteForecast = null;
         _showingCellDetail = false;
       }
     });
@@ -59,6 +64,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
       if (_selectedSite == site && !_showingCellDetail) {
         // Clicking same site again - clear selection
         _selectedSite = null;
+        _selectedSiteForecast = null;
         _selectedDayIndex = null;
       } else {
         // Show all days for this site
@@ -67,6 +73,27 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
         _showingCellDetail = false;
       }
     });
+
+    // Fetch forecast for selected site
+    if (_selectedSite != null) {
+      _loadSiteForecast();
+    }
+  }
+
+  /// Load forecast for the currently selected site
+  Future<void> _loadSiteForecast() async {
+    if (_selectedSite == null) return;
+
+    final forecast = await WeatherService.instance.getCachedForecast(
+      _selectedSite!.latitude,
+      _selectedSite!.longitude,
+    );
+
+    if (mounted) {
+      setState(() {
+        _selectedSiteForecast = forecast;
+      });
+    }
   }
 
   void _onCellTap(ParaglidingSite site, int dayIndex) {
@@ -74,6 +101,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
       if (_selectedSite == site && _selectedDayIndex == dayIndex && _showingCellDetail) {
         // Clicking same cell again - clear selection
         _selectedSite = null;
+        _selectedSiteForecast = null;
         _selectedDayIndex = null;
         _showingCellDetail = false;
       } else {
@@ -202,6 +230,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
                   setState(() {
                     _selectedDayIndex = null;
                     _selectedSite = null;
+                    _selectedSiteForecast = null;
                     _showingCellDetail = false;
                   });
                 },
@@ -259,6 +288,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
                 onPressed: () {
                   setState(() {
                     _selectedSite = null;
+                    _selectedSiteForecast = null;
                     _selectedDayIndex = null;
                     _showingCellDetail = false;
                   });
@@ -268,14 +298,20 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
             ],
           ),
         ),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.all(16.0),
-          child: SiteForecastTable(
-            site: _selectedSite!,
-            windDataByDay: siteWindData,
-            maxWindSpeed: widget.maxWindSpeed,
-            cautionWindSpeed: widget.cautionWindSpeed,
+        RefreshIndicator(
+          onRefresh: _loadSiteForecast,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(), // Ensure pull-to-refresh works
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.all(16.0),
+            child: IntrinsicWidth(
+              child: SiteForecastTable(
+                site: _selectedSite!,
+                windDataByDay: siteWindData,
+                maxWindSpeed: widget.maxWindSpeed,
+                cautionWindSpeed: widget.cautionWindSpeed,
+              ),
+            ),
           ),
         ),
       ],

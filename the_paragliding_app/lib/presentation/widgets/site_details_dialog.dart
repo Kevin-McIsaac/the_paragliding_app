@@ -20,6 +20,7 @@ import '../../utils/flyability_helper.dart';
 import '../widgets/wind_rose_widget.dart';
 import '../widgets/flyability_cell.dart';
 import '../widgets/site_forecast_table.dart';
+import '../widgets/forecast_attribution_bar.dart';
 
 class SiteDetailsDialog extends StatefulWidget {
   final Site? site;
@@ -379,33 +380,6 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
     }
   }
 
-  /// Get attribution text with current weather model
-  Future<String> _getAttributionText() async {
-    final model = await WeatherService.instance.getCurrentModel();
-    return model.attributionText;
-  }
-
-  /// Format the age of the forecast data (e.g., "2 minutes ago", "3 hours ago")
-  String _formatForecastAge() {
-    if (_windForecast == null) return '';
-
-    final age = DateTime.now().difference(_windForecast!.fetchedAt);
-
-    if (age.inMinutes < 1) {
-      return 'just now';
-    } else if (age.inMinutes < 60) {
-      final minutes = age.inMinutes;
-      return '$minutes minute${minutes == 1 ? '' : 's'} ago';
-    } else {
-      final hours = age.inHours;
-      final minutes = age.inMinutes % 60;
-      if (minutes == 0) {
-        return '$hours hour${hours == 1 ? '' : 's'} ago';
-      } else {
-        return '$hours hour${hours == 1 ? '' : 's'}, $minutes min ago';
-      }
-    }
-  }
 
   /// Get wind rose center dot presentation (color and tooltip) based on flyability
   SiteMarkerPresentation? _getWindRosePresentation(List<String> windDirections) {
@@ -1126,70 +1100,40 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
     }
 
     // Column with forecast table and weather description - make scrollable to avoid overflow
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Attribution for forecast data with model name and age
-          FutureBuilder<String>(
-            future: _getAttributionText(),
-            builder: (context, snapshot) {
-              final attributionText = snapshot.data ?? 'Forecast: Open-Meteo';
-              final ageText = _formatForecastAge();
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    // Attribution text (clickable)
-                    TextButton(
-                      onPressed: () async {
-                        await launchUrl(
-                          Uri.parse('https://open-meteo.com'),
-                          mode: LaunchMode.externalApplication,
-                        );
-                      },
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: Text(
-                        attributionText,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.white60,
-                          fontWeight: FontWeight.w500,
+    return RefreshIndicator(
+      onRefresh: () async {
+        await _loadWindForecast();
+      },
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(), // Ensure pull-to-refresh works
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Forecast table with horizontal scroll - constrain max height for nested scrolling
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 390), // Increased to accommodate attribution
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                primary: false,  // Prevent conflict with outer vertical scroll
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: IntrinsicWidth(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        ForecastAttributionBar(
+                          forecast: _windForecast,
+                          onRefresh: () {
+                            _loadWindForecast();
+                          },
                         ),
-                      ),
+                        _build7DayForecastTable(windDirections),
+                      ],
                     ),
-                    // Age text (last updated)
-                    if (ageText.isNotEmpty)
-                      Text(
-                        'Updated $ageText',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.white.withValues(alpha: 0.5),
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
-                  ],
+                  ),
                 ),
-              );
-            },
-          ),
-          // Forecast table with horizontal scroll - constrain max height for nested scrolling
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 350), // Max height, shrinks to fit content
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              primary: false,  // Prevent conflict with outer vertical scroll
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: _build7DayForecastTable(windDirections),
               ),
             ),
-          ),
           // Weather description info box
           if (_detailedData?['weather'] != null && _detailedData!['weather']!.toString().isNotEmpty)
             Padding(
@@ -1224,6 +1168,7 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
               ),
             ),
         ],
+        ),
       ),
     );
   }
