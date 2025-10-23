@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 import 'flight_list_screen.dart';
 import 'nearby_sites_screen.dart';
 import 'statistics_screen.dart';
+import 'multi_site_flyability_screen.dart';
 import '../../services/logging_service.dart';
 
 /// Main navigation screen with bottom navigation bar.
 ///
-/// Manages three primary views:
+/// Manages four primary views:
 /// - Flight Log
 /// - Nearby Sites
+/// - Forecast
 /// - Statistics
 ///
 /// Uses IndexedStack to preserve state when switching tabs.
@@ -106,7 +108,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     });
 
     // Log navigation for debugging
-    final destinations = ['Log Book', 'Nearby Sites', 'Statistics'];
+    final destinations = ['Sites', 'Forecast', 'Log Book', 'Statistics'];
     LoggingService.action('Navigation', 'bottom_nav_tap', {
       'destination': destinations[index],
       'from_index': oldIndex,
@@ -120,13 +122,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       body: IndexedStack(
         index: _selectedIndex,
         children: [
-          FlightListScreen(
-            key: _flightListKey,
+          NearbySitesScreen(
+            key: _nearbySitesKey,
             onDataChanged: _handleDataChanged,
             onRefreshAllTabs: refreshAllTabs,
           ),
-          NearbySitesScreen(
-            key: _nearbySitesKey,
+          const MultiSiteFlyabilityScreen(),
+          FlightListScreen(
+            key: _flightListKey,
             onDataChanged: _handleDataChanged,
             onRefreshAllTabs: refreshAllTabs,
           ),
@@ -142,16 +145,22 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         onDestinationSelected: _onDestinationSelected,
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.flight),
-            selectedIcon: Icon(Icons.flight),
-            label: 'Log Book',
-            tooltip: 'View flight log book',
-          ),
-          NavigationDestination(
             icon: Icon(Icons.location_on_outlined),
             selectedIcon: Icon(Icons.location_on),
             label: 'Sites',
             tooltip: 'Find nearby flying sites',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.auto_awesome_outlined),
+            selectedIcon: Icon(Icons.auto_awesome),
+            label: 'Forecast',
+            tooltip: 'View 7-day flyability forecast',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.flight),
+            selectedIcon: Icon(Icons.flight),
+            label: 'Log Book',
+            tooltip: 'View flight log book',
           ),
           NavigationDestination(
             icon: Icon(Icons.bar_chart_outlined),

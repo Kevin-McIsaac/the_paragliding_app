@@ -235,9 +235,9 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
 
     final bounds = _mapController.camera.visibleBounds;
 
-    if (loadSitesOnBoundsChange) {
-      loadSitesForBounds(bounds);
-    }
+    // Don't load sites here - let MapEventMoveEnd handle it naturally
+    // after the map is fully laid out. This prevents loading with
+    // incomplete/incorrect bounds on initial render.
 
     if (enableAirspace) {
       loadAirspaceLayers(bounds);

@@ -51,7 +51,7 @@ class SiteMarkerPresentation {
     FlyabilityStatus? status,
     WindData? windData,
     required double maxWindSpeed,
-    required double maxWindGusts,
+    required double cautionWindSpeed,
     required bool forecastEnabled,
   }) {
     // Determine flyability status if not provided
@@ -100,7 +100,7 @@ class SiteMarkerPresentation {
       status: effectiveStatus,
       windData: windData,
       maxWindSpeed: maxWindSpeed,
-      maxWindGusts: maxWindGusts,
+      cautionWindSpeed: cautionWindSpeed,
     );
 
     return SiteMarkerPresentation(
@@ -116,7 +116,7 @@ class SiteMarkerPresentation {
     required FlyabilityStatus status,
     WindData? windData,
     required double maxWindSpeed,
-    required double maxWindGusts,
+    required double cautionWindSpeed,
   }) {
     switch (status) {
       case FlyabilityStatus.flyable:
@@ -129,7 +129,7 @@ class SiteMarkerPresentation {
             windData: windData,
             siteDirections: site.windDirections,
             maxSpeed: maxWindSpeed,
-            maxGusts: maxWindGusts,
+            cautionSpeed: cautionWindSpeed,
           );
 
           return FlyabilityHelper.getTooltipForLevel(
@@ -137,7 +137,6 @@ class SiteMarkerPresentation {
             windData: windData,
             siteDirections: site.windDirections,
             maxSpeed: maxWindSpeed,
-            maxGusts: maxWindGusts,
           );
         }
         return 'Flyability calculation error';

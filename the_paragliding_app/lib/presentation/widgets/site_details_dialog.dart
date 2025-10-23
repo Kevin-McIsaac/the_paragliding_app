@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:geolocator/geolocator.dart';
@@ -17,6 +18,9 @@ import '../../services/database_service.dart';
 import '../../services/pge_sites_database_service.dart';
 import '../../utils/flyability_helper.dart';
 import '../widgets/wind_rose_widget.dart';
+import '../widgets/flyability_cell.dart';
+import '../widgets/site_forecast_table.dart';
+import '../widgets/forecast_attribution_bar.dart';
 
 class SiteDetailsDialog extends StatefulWidget {
   final Site? site;
@@ -24,7 +28,7 @@ class SiteDetailsDialog extends StatefulWidget {
   final Position? userPosition;
   final WindData? windData;
   final double maxWindSpeed;
-  final double maxWindGusts;
+  final double cautionWindSpeed;
   final Function(WindData)? onWindDataFetched;
   final Function()? onFavoriteToggled;
 
@@ -35,7 +39,7 @@ class SiteDetailsDialog extends StatefulWidget {
     this.userPosition,
     this.windData,
     required this.maxWindSpeed,
-    required this.maxWindGusts,
+    required this.cautionWindSpeed,
     this.onWindDataFetched,
     this.onFavoriteToggled,
   });
@@ -376,33 +380,6 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
     }
   }
 
-  /// Get attribution text with current weather model
-  Future<String> _getAttributionText() async {
-    final model = await WeatherService.instance.getCurrentModel();
-    return model.attributionText;
-  }
-
-  /// Format the age of the forecast data (e.g., "2 minutes ago", "3 hours ago")
-  String _formatForecastAge() {
-    if (_windForecast == null) return '';
-
-    final age = DateTime.now().difference(_windForecast!.fetchedAt);
-
-    if (age.inMinutes < 1) {
-      return 'just now';
-    } else if (age.inMinutes < 60) {
-      final minutes = age.inMinutes;
-      return '$minutes minute${minutes == 1 ? '' : 's'} ago';
-    } else {
-      final hours = age.inHours;
-      final minutes = age.inMinutes % 60;
-      if (minutes == 0) {
-        return '$hours hour${hours == 1 ? '' : 's'} ago';
-      } else {
-        return '$hours hour${hours == 1 ? '' : 's'}, $minutes min ago';
-      }
-    }
-  }
 
   /// Get wind rose center dot presentation (color and tooltip) based on flyability
   SiteMarkerPresentation? _getWindRosePresentation(List<String> windDirections) {
@@ -428,7 +405,7 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
         windData: _windData!,
         siteDirections: tempSite.windDirections,
         maxSpeed: widget.maxWindSpeed,
-        maxGusts: widget.maxWindGusts,
+        cautionSpeed: widget.cautionWindSpeed,
       );
 
       // Convert FlyabilityLevel to FlyabilityStatus
@@ -453,7 +430,7 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
       status: status,
       windData: _windData,
       maxWindSpeed: widget.maxWindSpeed,
-      maxWindGusts: widget.maxWindGusts,
+      cautionWindSpeed: widget.cautionWindSpeed,
       forecastEnabled: true,
     );
   }
@@ -591,6 +568,7 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
                                     name,
                                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                                       fontWeight: FontWeight.bold,
+                                      color: Colors.blue,
                                     ),
                                   ),
                                 // Flight characteristics directly under title
@@ -1122,70 +1100,40 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
     }
 
     // Column with forecast table and weather description - make scrollable to avoid overflow
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Attribution for forecast data with model name and age
-          FutureBuilder<String>(
-            future: _getAttributionText(),
-            builder: (context, snapshot) {
-              final attributionText = snapshot.data ?? 'Forecast: Open-Meteo';
-              final ageText = _formatForecastAge();
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    // Attribution text (clickable)
-                    TextButton(
-                      onPressed: () async {
-                        await launchUrl(
-                          Uri.parse('https://open-meteo.com'),
-                          mode: LaunchMode.externalApplication,
-                        );
-                      },
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: Text(
-                        attributionText,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.white60,
-                          fontWeight: FontWeight.w500,
+    return RefreshIndicator(
+      onRefresh: () async {
+        await _loadWindForecast();
+      },
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(), // Ensure pull-to-refresh works
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Forecast table with horizontal scroll - constrain max height for nested scrolling
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 390), // Increased to accommodate attribution
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                primary: false,  // Prevent conflict with outer vertical scroll
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: IntrinsicWidth(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        ForecastAttributionBar(
+                          forecast: _windForecast,
+                          onRefresh: () {
+                            _loadWindForecast();
+                          },
                         ),
-                      ),
+                        _build7DayForecastTable(windDirections),
+                      ],
                     ),
-                    // Age text (last updated)
-                    if (ageText.isNotEmpty)
-                      Text(
-                        'Updated $ageText',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.white.withValues(alpha: 0.5),
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
-                  ],
+                  ),
                 ),
-              );
-            },
-          ),
-          // Forecast table with horizontal scroll - constrain max height for nested scrolling
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 350), // Max height, shrinks to fit content
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              primary: false,  // Prevent conflict with outer vertical scroll
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: _build7DayForecastTable(windDirections),
               ),
             ),
-          ),
           // Weather description info box
           if (_detailedData?['weather'] != null && _detailedData!['weather']!.toString().isNotEmpty)
             Padding(
@@ -1220,6 +1168,7 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
               ),
             ),
         ],
+        ),
       ),
     );
   }
@@ -1227,196 +1176,72 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
   Widget _build7DayForecastTable(List<String> windDirections) {
     if (_windForecast == null) return const SizedBox.shrink();
 
-    // Group forecast data by day
-    final dayHourIndices = _groupForecastByDay();
-    final displayDays = dayHourIndices.keys.toList()
-      ..sort()
-      ..take(7);
+    // Create a temporary ParaglidingSite with the wind directions for flyability calculation
+    final tempSite = ParaglidingSite(
+      id: 0,
+      name: '',
+      latitude: 0,
+      longitude: 0,
+      windDirections: windDirections,
+      siteType: 'launch',
+    );
 
-    // Build simple Table widget
-    return Table(
-      defaultColumnWidth: const FixedColumnWidth(_cellSize),
-      columnWidths: const {
-        0: FixedColumnWidth(_dayColumnWidth), // Day column wider
-      },
-      border: TableBorder.all(
-        color: Theme.of(context).dividerColor,
-        width: 1.0,
-      ),
-      children: [
-        // Header row
-        _buildHeaderRow(),
-        // Data rows
-        ...displayDays.map((dayKey) => _buildDataRow(dayKey, dayHourIndices[dayKey]!, windDirections)),
-      ],
+    // Prepare wind data in the format expected by SiteForecastTable
+    final windDataByDay = _prepareWindDataByDay();
+
+    return SiteForecastTable(
+      site: tempSite,
+      windDataByDay: windDataByDay,
+      maxWindSpeed: widget.maxWindSpeed,
+      cautionWindSpeed: widget.cautionWindSpeed,
+      dateColumnWidth: _dayColumnWidth,
     );
   }
 
-  Map<String, List<int>> _groupForecastByDay() {
-    final Map<String, List<int>> dayHourIndices = {};
+  /// Prepare wind data in the format expected by SiteForecastTable
+  /// Returns Map<int, List<WindData?>> where:
+  ///   - key is day index (0-6 for next 7 days)
+  ///   - value is list of hourly WindData (7am-7pm, 13 hours total)
+  Map<int, List<WindData?>> _prepareWindDataByDay() {
+    final Map<int, List<WindData?>> windDataByDay = {};
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
 
+    // Initialize 7 days with empty hourly data
+    for (int dayIndex = 0; dayIndex < 7; dayIndex++) {
+      windDataByDay[dayIndex] = List.filled(_hoursToShow, null);
+    }
+
+    // Fill in data from forecast
     for (int i = 0; i < _windForecast!.timestamps.length; i++) {
       final timestamp = _windForecast!.timestamps[i];
       final hour = timestamp.hour;
 
       // Only include hours between 7am and 7pm
       if (hour >= _startHour && hour <= _endHour) {
-        final dayKey = '${timestamp.year}-${timestamp.month.toString().padLeft(2, '0')}-${timestamp.day.toString().padLeft(2, '0')}';
-        dayHourIndices.putIfAbsent(dayKey, () => []);
-        dayHourIndices[dayKey]!.add(i);
+        // Calculate day index (0-6)
+        final forecastDate = DateTime(timestamp.year, timestamp.month, timestamp.day);
+        final dayIndex = forecastDate.difference(today).inDays;
+
+        // Only include if within next 7 days
+        if (dayIndex >= 0 && dayIndex < 7) {
+          // Calculate hour index (0-12 for 7am-7pm)
+          final hourIndex = hour - _startHour;
+
+          if (hourIndex >= 0 && hourIndex < _hoursToShow) {
+            // Create WindData for this hour
+            windDataByDay[dayIndex]![hourIndex] = WindData(
+              speedKmh: _windForecast!.speedsKmh[i],
+              directionDegrees: _windForecast!.directionsDegs[i],
+              gustsKmh: _windForecast!.gustsKmh[i],
+              timestamp: timestamp,
+            );
+          }
+        }
       }
     }
 
-    return dayHourIndices;
-  }
-
-  TableRow _buildHeaderRow() {
-    return TableRow(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-      ),
-      children: [
-        _buildHeaderCell('Day', isFirst: true),
-        ...List.generate(_hoursToShow, (hour) =>
-          _buildHeaderCell('${hour + _startHour}h')),
-      ],
-    );
-  }
-
-  Widget _buildHeaderCell(String text, {bool isFirst = false}) {
-    return Container(
-      height: _cellSize,
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 2.0),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontWeight: isFirst ? FontWeight.bold : FontWeight.w500,
-          fontSize: isFirst ? 12 : 10,
-        ),
-      ),
-    );
-  }
-
-  TableRow _buildDataRow(String dayKey, List<int> indices, List<String> windDirections) {
-    final dayDate = _windForecast!.timestamps[indices.first];
-    final dayName = _formatDayName(dayDate);
-
-    return TableRow(
-      children: [
-        // Day name cell
-        Container(
-          height: _cellSize,
-          alignment: Alignment.center,
-          child: Text(
-            dayName,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
-          ),
-        ),
-        // Hour cells
-        ...List.generate(_hoursToShow, (hourOffset) {
-          final targetHour = _startHour + hourOffset;
-          final index = indices.firstWhere(
-            (i) => _windForecast!.timestamps[i].hour == targetHour,
-            orElse: () => -1,
-          );
-
-          if (index == -1) {
-            return _buildEmptyCell();
-          }
-
-          return _buildForecastCell(
-            speed: _windForecast!.speedsKmh[index],
-            direction: _windForecast!.directionsDegs[index],
-            gusts: _windForecast!.gustsKmh[index],
-            timestamp: _windForecast!.timestamps[index],
-            windDirections: windDirections,
-          );
-        }),
-      ],
-    );
-  }
-
-  Widget _buildEmptyCell() {
-    return Container(
-      height: _cellSize,
-      alignment: Alignment.center,
-      child: const Text('-', style: TextStyle(fontSize: 10, color: Colors.grey)),
-    );
-  }
-
-  Widget _buildForecastCell({
-    required double speed,
-    required double direction,
-    required double? gusts,
-    required DateTime timestamp,
-    required List<String> windDirections,
-  }) {
-    // Calculate flyability using centralized helper
-    final windData = WindData(
-      speedKmh: speed,
-      directionDegrees: direction,
-      gustsKmh: gusts,
-      timestamp: timestamp,
-    );
-
-    final flyabilityLevel = FlyabilityHelper.getFlyabilityLevel(
-      windData: windData,
-      siteDirections: windDirections,
-      maxSpeed: widget.maxWindSpeed,
-      maxGusts: widget.maxWindGusts,
-    );
-
-    // Get color with full opacity
-    final bgColor = FlyabilityHelper.getColorForLevel(flyabilityLevel);
-
-    // Generate tooltip with detailed flyability explanation
-    final tooltipMessage = FlyabilityHelper.getTooltipForLevel(
-      level: flyabilityLevel,
-      windData: windData,
-      siteDirections: windDirections,
-      maxSpeed: widget.maxWindSpeed,
-      maxGusts: widget.maxWindGusts,
-    );
-
-    return Tooltip(
-      message: tooltipMessage,
-      child: Container(
-        height: _cellSize,
-        color: bgColor,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            // Wind arrow and speed with white color for contrast
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Using Transform.rotate for wind direction arrow
-                Transform.rotate(
-                  angle: direction * (3.14159265359 / 180), // Convert degrees to radians
-                  child: const Icon(
-                    Icons.arrow_upward,
-                    size: 12,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 1),
-                Text(
-                  '${speed.round()}',
-                  style: const TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold,
-                    height: 1.0,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
+    return windDataByDay;
   }
 
   String _formatDayName(DateTime date) {

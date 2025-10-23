@@ -10,7 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 class WeatherStationMarker extends StatelessWidget {
   final WeatherStation station;
   final double maxWindSpeed;
-  final double maxWindGusts;
+  final double cautionWindSpeed;
   final VoidCallback? onTap;
 
   static const double markerSize = 40.0;
@@ -19,7 +19,7 @@ class WeatherStationMarker extends StatelessWidget {
     super.key,
     required this.station,
     required this.maxWindSpeed,
-    required this.maxWindGusts,
+    required this.cautionWindSpeed,
     this.onTap,
   });
 
@@ -70,7 +70,7 @@ class WeatherStationMarker extends StatelessWidget {
       builder: (context) => _WeatherStationDialog(
         station: station,
         maxWindSpeed: maxWindSpeed,
-        maxWindGusts: maxWindGusts,
+        cautionWindSpeed: cautionWindSpeed,
       ),
     );
   }
@@ -190,12 +190,12 @@ class _WeatherStationPainter extends CustomPainter {
 class _WeatherStationDialog extends StatelessWidget {
   final WeatherStation station;
   final double maxWindSpeed;
-  final double maxWindGusts;
+  final double cautionWindSpeed;
 
   const _WeatherStationDialog({
     required this.station,
     required this.maxWindSpeed,
-    required this.maxWindGusts,
+    required this.cautionWindSpeed,
   });
 
   String _getTimeAgo(DateTime timestamp) {

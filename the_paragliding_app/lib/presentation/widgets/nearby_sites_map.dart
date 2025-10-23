@@ -35,7 +35,7 @@ class NearbySitesMap extends BaseMapWidget {
   final Map<String, WindData> siteWindData;
   final Map<String, FlyabilityStatus> siteFlyabilityStatus;
   final double maxWindSpeed;
-  final double maxWindGusts;
+  final double cautionWindSpeed;
   final DateTime selectedDateTime;
   final bool forecastEnabled;
   final List<WeatherStation> weatherStations;
@@ -60,7 +60,7 @@ class NearbySitesMap extends BaseMapWidget {
     this.siteWindData = const {},
     this.siteFlyabilityStatus = const {},
     this.maxWindSpeed = 25.0,
-    this.maxWindGusts = 30.0,
+    this.cautionWindSpeed = 20.0,
     required this.selectedDateTime,
     this.forecastEnabled = true,
     this.weatherStations = const [],
@@ -193,7 +193,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
         oldWidget.weatherStations != widget.weatherStations ||
         oldWidget.stationWindData != widget.stationWindData ||
         oldWidget.maxWindSpeed != widget.maxWindSpeed ||
-        oldWidget.maxWindGusts != widget.maxWindGusts) {
+        oldWidget.cautionWindSpeed != widget.cautionWindSpeed) {
       // Only log if cache had significant content
       if (_cachedWeatherStationMarkers != null && _cachedWeatherStationMarkers!.length > 10) {
         LoggingService.debug('Weather station markers cache cleared | cached_count=${_cachedWeatherStationMarkers!.length}');
@@ -249,7 +249,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
       status: status,
       windData: windData,
       maxWindSpeed: widget.maxWindSpeed,
-      maxWindGusts: widget.maxWindGusts,
+      cautionWindSpeed: widget.cautionWindSpeed,
       forecastEnabled: widget.forecastEnabled,
     );
 
@@ -459,7 +459,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
         child: WeatherStationMarker(
           station: stationWithWind,
           maxWindSpeed: widget.maxWindSpeed,
-          maxWindGusts: widget.maxWindGusts,
+          cautionWindSpeed: widget.cautionWindSpeed,
         ),
       );
     }).toList();

@@ -30,32 +30,31 @@ class WindData {
   }
 
   /// Check if wind conditions are flyable for a given site
+  /// Note: Only checks speed, not gusts (gusts are for display only)
   bool isFlyable(
     List<String> siteDirections,
     double maxSpeed,
-    double maxGusts,
   ) {
     // No wind direction data means we can't determine flyability
     if (siteDirections.isEmpty) return false;
 
-    // Check wind speed and gusts limits
+    // Check wind speed limit
     if (speedKmh > maxSpeed) return false;
-    if (gustsKmh != null && gustsKmh! > maxGusts) return false;
 
     // Check direction
     return isDirectionFlyable(siteDirections);
   }
 
   /// Get detailed reason for flyability status
-  String getFlyabilityReason(List<String> siteDirections, double maxSpeed, double maxGusts) {
+  /// Note: Only considers speed, not gusts (gusts are for display only)
+  String getFlyabilityReason(List<String> siteDirections, double maxSpeed) {
     if (siteDirections.isEmpty) return 'No wind directions defined for site';
 
     if (speedKmh > maxSpeed) {
-      return '${speedKmh.toStringAsFixed(1)} km/h from $compassDirection - too strong (max: ${maxSpeed.toInt()} km/h)';
-    }
-
-    if (gustsKmh != null && gustsKmh! > maxGusts) {
-      return 'Gusts ${gustsKmh!.toStringAsFixed(1)} km/h - too strong (max: ${maxGusts.toInt()} km/h)';
+      final gustsStr = gustsKmh != null
+          ? ' (gusts ${gustsKmh!.toStringAsFixed(1)} km/h)'
+          : '';
+      return '${speedKmh.toStringAsFixed(1)} km/h from $compassDirection$gustsStr - too strong (max: ${maxSpeed.toInt()} km/h)';
     }
 
     if (speedKmh < 1.0) {

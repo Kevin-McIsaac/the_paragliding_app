@@ -68,7 +68,7 @@ class NearbySitesScreen extends StatefulWidget {
 /// // ...
 /// await key.currentState?.refreshData();
 /// ```
-class NearbySitesScreenState extends State<NearbySitesScreen> {
+class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindingObserver {
   final LocationService _locationService = LocationService.instance;
   final MapController _mapController = MapController();
 
@@ -128,7 +128,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
   final Map<String, WindData> _siteWindData = {};
   final Map<String, FlyabilityStatus> _siteFlyabilityStatus = {};
   double _maxWindSpeed = 25.0;
-  double _maxWindGusts = 30.0;
+  double _cautionWindSpeed = 20.0;
   final WeatherService _weatherService = WeatherService.instance;
   Timer? _windFetchDebounce;
 
@@ -145,6 +145,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadPreferences();
     _loadFilterSettings();
     _loadWindPreferences();
@@ -255,6 +256,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     MapBoundsManager.instance.cancelDebounce('nearby_sites'); // Clean up any pending debounce
     _locationNotificationTimer?.cancel(); // Clean up location notification timer
     _windFetchDebounce?.cancel(); // Clean up wind fetch debounce timer
@@ -264,6 +266,19 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
     _searchFocusNode.dispose(); // Dispose search focus node
     _mapController.dispose(); // Dispose map controller
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      // Check if any cached forecasts are stale
+      final stats = WeatherService.instance.getCacheStats();
+      if (stats['stale_forecasts'] > 0) {
+        LoggingService.info('[LIFECYCLE] App resumed with ${stats['stale_forecasts']} stale forecasts, refreshing...');
+        _fetchWindDataForSites(); // Reload wind data for sites
+      }
+    }
   }
 
   /// Handle search query changes with debouncing
@@ -370,7 +385,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
   Future<void> _loadWindPreferences() async {
     try {
       _maxWindSpeed = await PreferencesHelper.getMaxWindSpeed();
-      _maxWindGusts = await PreferencesHelper.getMaxWindGusts();
+      _cautionWindSpeed = await PreferencesHelper.getCautionWindSpeed();
 
       // Wind bar state preferences could be loaded here if needed
     } catch (e) {
@@ -836,7 +851,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
           windData: wind,
           siteDirections: site.windDirections,
           maxSpeed: _maxWindSpeed,
-          maxGusts: _maxWindGusts,
+          cautionSpeed: _cautionWindSpeed,
         );
 
         // Convert FlyabilityLevel to FlyabilityStatus
@@ -1255,7 +1270,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
         userPosition: _userPosition,
         windData: windData,
         maxWindSpeed: _maxWindSpeed,
-        maxWindGusts: _maxWindGusts,
+        cautionWindSpeed: _cautionWindSpeed,
         onWindDataFetched: (fetchedWindData) {
           // Update parent's cache when dialog fetches wind data
           setState(() {
@@ -1712,7 +1727,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> {
                           siteWindData: _siteWindData,
                           siteFlyabilityStatus: _siteFlyabilityStatus,
                           maxWindSpeed: _maxWindSpeed,
-                          maxWindGusts: _maxWindGusts,
+                          cautionWindSpeed: _cautionWindSpeed,
                           selectedDateTime: _selectedDateTime,
                           forecastEnabled: _forecastEnabled,
                           weatherStations: _weatherStations,

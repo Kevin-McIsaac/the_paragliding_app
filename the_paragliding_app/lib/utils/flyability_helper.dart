@@ -10,13 +10,10 @@ enum FlyabilityLevel {
 }
 
 /// Centralized flyability determination logic with consistent colors and tooltips
+///
+/// Flyability is determined by wind SPEED only (gusts are displayed but not used for colors)
+/// Thresholds are loaded from user preferences via PreferencesHelper
 class FlyabilityHelper {
-  // Wind thresholds (km/h)
-  static const double cautionWindSpeedKmh = 20.0;  // Speed above this triggers caution
-  static const double maxWindSpeedKmh = 25.0;      // Speed above this is unsafe
-  static const double cautionGustsKmh = 25.0;      // Gusts above this trigger caution
-  static const double maxGustsKmh = 30.0;          // Gusts above this are unsafe
-
   // Flyability colors (matching SiteMarkerUtils for consistency)
   static const Color safeColor = Colors.green;      // Safe to fly
   static const Color cautionColor = Colors.orange;  // Caution - strong winds
@@ -29,29 +26,23 @@ class FlyabilityHelper {
   /// 1. Check if site has wind directions (unknown if empty)
   /// 2. Check direction match (unsafe if wrong direction)
   /// 3. Check speed thresholds in order:
-  ///    - unsafe if speed/gusts > maxSpeed/maxGusts
-  ///    - caution if speed/gusts > cautionSpeed/cautionGusts
+  ///    - unsafe if speed > maxSpeed
+  ///    - caution if speed > cautionSpeed
   ///    - safe otherwise
+  ///
+  /// Note: Wind gusts are displayed for information but NOT used for flyability determination
   ///
   /// Returns:
   /// - FlyabilityLevel.safe: Good conditions for flying
-  /// - FlyabilityLevel.caution: Flyable but strong (above caution thresholds)
+  /// - FlyabilityLevel.caution: Flyable but strong (above caution threshold)
   /// - FlyabilityLevel.unsafe: Too strong or wrong direction
   /// - FlyabilityLevel.unknown: No wind directions defined
   static FlyabilityLevel getFlyabilityLevel({
     required WindData windData,
     required List<String> siteDirections,
-    double? maxSpeed,
-    double? maxGusts,
-    double? cautionSpeed,
-    double? cautionGusts,
+    required double maxSpeed,
+    required double cautionSpeed,
   }) {
-    // Use provided limits or defaults
-    final speedLimit = maxSpeed ?? maxWindSpeedKmh;
-    final gustsLimit = maxGusts ?? maxGustsKmh;
-    final cautionSpeedLimit = cautionSpeed ?? cautionWindSpeedKmh;
-    final cautionGustsLimit = cautionGusts ?? cautionGustsKmh;
-
     // Step 1: No wind directions = unknown
     if (siteDirections.isEmpty) {
       return FlyabilityLevel.unknown;
@@ -67,18 +58,12 @@ class FlyabilityHelper {
 
     // Step 3: Check speed thresholds (direction is OK or wind is light)
     // Check if above unsafe threshold
-    final speedUnsafe = windData.speedKmh > speedLimit;
-    final gustsUnsafe = windData.gustsKmh != null && windData.gustsKmh! > gustsLimit;
-
-    if (speedUnsafe || gustsUnsafe) {
+    if (windData.speedKmh > maxSpeed) {
       return FlyabilityLevel.unsafe;
     }
 
     // Check if above caution threshold
-    final speedCaution = windData.speedKmh > cautionSpeedLimit;
-    final gustsCaution = windData.gustsKmh != null && windData.gustsKmh! > cautionGustsLimit;
-
-    if (speedCaution || gustsCaution) {
+    if (windData.speedKmh > cautionSpeed) {
       return FlyabilityLevel.caution;
     }
 
@@ -108,15 +93,8 @@ class FlyabilityHelper {
     required FlyabilityLevel level,
     required WindData windData,
     required List<String> siteDirections,
-    double? maxSpeed,
-    double? maxGusts,
-    double? cautionSpeed,
-    double? cautionGusts,
+    required double maxSpeed,
   }) {
-    final speedLimit = maxSpeed ?? maxWindSpeedKmh;
-    final gustsLimit = maxGusts ?? maxGustsKmh;
-    // Note: cautionSpeed and cautionGusts are not used in tooltip generation
-
     switch (level) {
       case FlyabilityLevel.unknown:
         return 'No wind directions defined for this site';
@@ -126,7 +104,10 @@ class FlyabilityHelper {
         if (windData.speedKmh < 1.0) {
           return 'Light wind (${windData.speedKmh.toStringAsFixed(1)} km/h) - any direction OK';
         }
-        return '${windData.speedKmh.toStringAsFixed(1)} km/h from ${windData.compassDirection} - good conditions';
+        final gustsStr = windData.gustsKmh != null
+            ? ' (gusts ${windData.gustsKmh!.toStringAsFixed(1)} km/h)'
+            : '';
+        return '${windData.speedKmh.toStringAsFixed(1)} km/h from ${windData.compassDirection}$gustsStr - good conditions';
 
       case FlyabilityLevel.caution:
         // Strong but flyable
@@ -137,7 +118,7 @@ class FlyabilityHelper {
 
       case FlyabilityLevel.unsafe:
         // Get detailed reason from WindData
-        return windData.getFlyabilityReason(siteDirections, speedLimit, gustsLimit);
+        return windData.getFlyabilityReason(siteDirections, maxSpeed);
     }
   }
 
@@ -153,5 +134,34 @@ class FlyabilityHelper {
       case FlyabilityLevel.unknown:
         return 'Unknown';
     }
+  }
+
+  /// Check if a list of flyability levels contains consecutive occurrences of a target level
+  ///
+  /// Used for daily summaries to check if there are 2+ consecutive good/caution hours.
+  /// Null entries in the list are skipped (treated as breaks in the sequence).
+  ///
+  /// Returns true if [consecutiveCount] or more consecutive occurrences of [targetLevel] are found.
+  static bool hasConsecutiveLevels({
+    required List<FlyabilityLevel?> levels,
+    required FlyabilityLevel targetLevel,
+    int consecutiveCount = 2,
+  }) {
+    if (levels.length < consecutiveCount) return false;
+
+    for (int i = 0; i <= levels.length - consecutiveCount; i++) {
+      // Check if we have consecutiveCount consecutive matches starting at index i
+      bool allMatch = true;
+      for (int j = 0; j < consecutiveCount; j++) {
+        if (levels[i + j] != targetLevel) {
+          allMatch = false;
+          break;
+        }
+      }
+
+      if (allMatch) return true;
+    }
+
+    return false;
   }
 }
