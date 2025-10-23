@@ -382,6 +382,28 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
     return model.attributionText;
   }
 
+  /// Format the age of the forecast data (e.g., "2 minutes ago", "3 hours ago")
+  String _formatForecastAge() {
+    if (_windForecast == null) return '';
+
+    final age = DateTime.now().difference(_windForecast!.fetchedAt);
+
+    if (age.inMinutes < 1) {
+      return 'just now';
+    } else if (age.inMinutes < 60) {
+      final minutes = age.inMinutes;
+      return '$minutes minute${minutes == 1 ? '' : 's'} ago';
+    } else {
+      final hours = age.inHours;
+      final minutes = age.inMinutes % 60;
+      if (minutes == 0) {
+        return '$hours hour${hours == 1 ? '' : 's'} ago';
+      } else {
+        return '$hours hour${hours == 1 ? '' : 's'}, $minutes min ago';
+      }
+    }
+  }
+
   /// Get wind rose center dot presentation (color and tooltip) based on flyability
   SiteMarkerPresentation? _getWindRosePresentation(List<String> windDirections) {
     // If no wind data available, return null (wind rose will use default styling)
@@ -1104,33 +1126,50 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Attribution for forecast data with model name
+          // Attribution for forecast data with model name and age
           FutureBuilder<String>(
             future: _getAttributionText(),
             builder: (context, snapshot) {
               final attributionText = snapshot.data ?? 'Forecast: Open-Meteo';
+              final ageText = _formatForecastAge();
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-                child: TextButton(
-                  onPressed: () async {
-                    await launchUrl(
-                      Uri.parse('https://open-meteo.com'),
-                      mode: LaunchMode.externalApplication,
-                    );
-                  },
-                  style: TextButton.styleFrom(
-                    padding: EdgeInsets.zero,
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: Text(
-                    attributionText,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.white60,
-                      fontWeight: FontWeight.w500,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // Attribution text (clickable)
+                    TextButton(
+                      onPressed: () async {
+                        await launchUrl(
+                          Uri.parse('https://open-meteo.com'),
+                          mode: LaunchMode.externalApplication,
+                        );
+                      },
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Text(
+                        attributionText,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.white60,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                     ),
-                  ),
+                    // Age text (last updated)
+                    if (ageText.isNotEmpty)
+                      Text(
+                        'Updated $ageText',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.white.withValues(alpha: 0.5),
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                  ],
                 ),
               );
             },
