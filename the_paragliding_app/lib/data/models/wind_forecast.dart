@@ -132,11 +132,12 @@ class WindForecast {
     );
   }
 
-  /// Check if this forecast is still fresh (less than 6 hours old)
-  /// Open-Meteo updates forecasts every 6 hours
+  /// Check if this forecast is still fresh (less than 1 hour old)
+  /// Open-Meteo models update from every hour (HRRR) to every 6 hours (GFS, ECMWF)
+  /// 1-hour cache ensures fresh data for safety-critical paragliding decisions
   bool get isFresh {
     final age = DateTime.now().difference(fetchedAt);
-    return age.inHours < 6;
+    return age.inHours < 1;
   }
 
   /// Get approximate memory size of this forecast in bytes
