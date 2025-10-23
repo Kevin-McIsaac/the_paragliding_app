@@ -19,6 +19,7 @@ import '../../services/pge_sites_database_service.dart';
 import '../../utils/flyability_helper.dart';
 import '../widgets/wind_rose_widget.dart';
 import '../widgets/flyability_cell.dart';
+import '../widgets/site_forecast_table.dart';
 
 class SiteDetailsDialog extends StatefulWidget {
   final Site? site;
@@ -1230,158 +1231,72 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
   Widget _build7DayForecastTable(List<String> windDirections) {
     if (_windForecast == null) return const SizedBox.shrink();
 
-    // Group forecast data by day
-    final dayHourIndices = _groupForecastByDay();
-    final displayDays = dayHourIndices.keys.toList()
-      ..sort()
-      ..take(7);
-
-    // Build simple Table widget
-    return Table(
-      defaultColumnWidth: const FixedColumnWidth(_cellSize),
-      columnWidths: const {
-        0: FixedColumnWidth(_dayColumnWidth), // Day column wider
-      },
-      border: TableBorder.all(
-        color: Theme.of(context).dividerColor,
-        width: 1.0,
-      ),
-      children: [
-        // Header row
-        _buildHeaderRow(),
-        // Data rows
-        ...displayDays.map((dayKey) => _buildDataRow(dayKey, dayHourIndices[dayKey]!, windDirections)),
-      ],
-    );
-  }
-
-  Map<String, List<int>> _groupForecastByDay() {
-    final Map<String, List<int>> dayHourIndices = {};
-
-    for (int i = 0; i < _windForecast!.timestamps.length; i++) {
-      final timestamp = _windForecast!.timestamps[i];
-      final hour = timestamp.hour;
-
-      // Only include hours between 7am and 7pm
-      if (hour >= _startHour && hour <= _endHour) {
-        final dayKey = '${timestamp.year}-${timestamp.month.toString().padLeft(2, '0')}-${timestamp.day.toString().padLeft(2, '0')}';
-        dayHourIndices.putIfAbsent(dayKey, () => []);
-        dayHourIndices[dayKey]!.add(i);
-      }
-    }
-
-    return dayHourIndices;
-  }
-
-  TableRow _buildHeaderRow() {
-    return TableRow(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-      ),
-      children: [
-        _buildHeaderCell('Day', isFirst: true),
-        ...List.generate(_hoursToShow, (hour) =>
-          _buildHeaderCell('${hour + _startHour}h')),
-      ],
-    );
-  }
-
-  Widget _buildHeaderCell(String text, {bool isFirst = false}) {
-    return Container(
-      height: _cellSize,
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 2.0),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontWeight: isFirst ? FontWeight.bold : FontWeight.w500,
-          fontSize: isFirst ? 12 : 10,
-        ),
-      ),
-    );
-  }
-
-  TableRow _buildDataRow(String dayKey, List<int> indices, List<String> windDirections) {
-    final dayDate = _windForecast!.timestamps[indices.first];
-    final dayName = _formatDayName(dayDate);
-
-    return TableRow(
-      children: [
-        // Day name cell
-        Container(
-          height: _cellSize,
-          alignment: Alignment.center,
-          child: Text(
-            dayName,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
-          ),
-        ),
-        // Hour cells
-        ...List.generate(_hoursToShow, (hourOffset) {
-          final targetHour = _startHour + hourOffset;
-          final index = indices.firstWhere(
-            (i) => _windForecast!.timestamps[i].hour == targetHour,
-            orElse: () => -1,
-          );
-
-          if (index == -1) {
-            return _buildEmptyCell();
-          }
-
-          return _buildForecastCell(
-            speed: _windForecast!.speedsKmh[index],
-            direction: _windForecast!.directionsDegs[index],
-            gusts: _windForecast!.gustsKmh[index],
-            timestamp: _windForecast!.timestamps[index],
-            windDirections: windDirections,
-          );
-        }),
-      ],
-    );
-  }
-
-  Widget _buildEmptyCell() {
-    return Container(
-      height: _cellSize,
-      alignment: Alignment.center,
-      child: const Text('-', style: TextStyle(fontSize: 10, color: Colors.grey)),
-    );
-  }
-
-  Widget _buildForecastCell({
-    required double speed,
-    required double direction,
-    required double? gusts,
-    required DateTime timestamp,
-    required List<String> windDirections,
-  }) {
-    // Create WindData for the forecast cell
-    final windData = WindData(
-      speedKmh: speed,
-      directionDegrees: direction,
-      gustsKmh: gusts,
-      timestamp: timestamp,
-    );
-
-    // Create a temporary ParaglidingSite with just the wind directions
-    // (FlyabilityCellWidget needs a ParaglidingSite for the wind directions)
+    // Create a temporary ParaglidingSite with the wind directions for flyability calculation
     final tempSite = ParaglidingSite(
       id: 0,
       name: '',
       latitude: 0,
       longitude: 0,
       windDirections: windDirections,
-      siteType: 'launch', // Temporary value, not used for flyability calculation
+      siteType: 'launch',
     );
 
-    // Use the shared FlyabilityCellWidget
-    return FlyabilityCellWidget(
-      windData: windData,
+    // Prepare wind data in the format expected by SiteForecastTable
+    final windDataByDay = _prepareWindDataByDay();
+
+    return SiteForecastTable(
       site: tempSite,
+      windDataByDay: windDataByDay,
       maxWindSpeed: widget.maxWindSpeed,
       cautionWindSpeed: widget.cautionWindSpeed,
-      cellSize: _cellSize,
+      dateColumnWidth: _dayColumnWidth,
     );
+  }
+
+  /// Prepare wind data in the format expected by SiteForecastTable
+  /// Returns Map<int, List<WindData?>> where:
+  ///   - key is day index (0-6 for next 7 days)
+  ///   - value is list of hourly WindData (7am-7pm, 13 hours total)
+  Map<int, List<WindData?>> _prepareWindDataByDay() {
+    final Map<int, List<WindData?>> windDataByDay = {};
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    // Initialize 7 days with empty hourly data
+    for (int dayIndex = 0; dayIndex < 7; dayIndex++) {
+      windDataByDay[dayIndex] = List.filled(_hoursToShow, null);
+    }
+
+    // Fill in data from forecast
+    for (int i = 0; i < _windForecast!.timestamps.length; i++) {
+      final timestamp = _windForecast!.timestamps[i];
+      final hour = timestamp.hour;
+
+      // Only include hours between 7am and 7pm
+      if (hour >= _startHour && hour <= _endHour) {
+        // Calculate day index (0-6)
+        final forecastDate = DateTime(timestamp.year, timestamp.month, timestamp.day);
+        final dayIndex = forecastDate.difference(today).inDays;
+
+        // Only include if within next 7 days
+        if (dayIndex >= 0 && dayIndex < 7) {
+          // Calculate hour index (0-12 for 7am-7pm)
+          final hourIndex = hour - _startHour;
+
+          if (hourIndex >= 0 && hourIndex < _hoursToShow) {
+            // Create WindData for this hour
+            windDataByDay[dayIndex]![hourIndex] = WindData(
+              speedKmh: _windForecast!.speedsKmh[i],
+              directionDegrees: _windForecast!.directionsDegs[i],
+              gustsKmh: _windForecast!.gustsKmh[i],
+              timestamp: timestamp,
+            );
+          }
+        }
+      }
+    }
+
+    return windDataByDay;
   }
 
   String _formatDayName(DateTime date) {

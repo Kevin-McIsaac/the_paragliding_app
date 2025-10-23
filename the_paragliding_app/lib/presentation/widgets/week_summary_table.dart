@@ -6,6 +6,7 @@ import '../../utils/flyability_helper.dart';
 import '../../utils/flyability_constants.dart';
 import 'flyability_cell.dart';
 import 'multi_site_flyability_table.dart';
+import 'site_forecast_table.dart';
 
 /// Week summary table showing flyability for multiple sites across 7 days
 /// Sites are rows, days are columns with color-coded daily summary
@@ -226,7 +227,15 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
 
   Widget _buildSiteDetailTable(BuildContext context) {
     final siteKey = generateSiteKey(_selectedSite!);
-    const double dateColumnWidth = 80.0;
+
+    // Extract wind data for this site from the map
+    final Map<int, List<WindData?>> siteWindData = {};
+    for (int dayIndex = 0; dayIndex < 7; dayIndex++) {
+      final dayData = widget.windDataByDay[dayIndex];
+      if (dayData != null && dayData.containsKey(siteKey)) {
+        siteWindData[dayIndex] = dayData[siteKey]!;
+      }
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -262,84 +271,11 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.all(16.0),
-          child: Table(
-            defaultColumnWidth: const FixedColumnWidth(FlyabilityConstants.cellSize),
-            columnWidths: const {
-              0: FixedColumnWidth(dateColumnWidth),
-            },
-            border: TableBorder.all(
-              color: Theme.of(context).dividerColor,
-              width: 1.0,
-            ),
-            children: [
-              // Header row with hours
-              TableRow(
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-                ),
-                children: [
-                  Container(
-                    height: FlyabilityConstants.cellSize,
-                    alignment: Alignment.center,
-                    padding: const EdgeInsets.symmetric(horizontal: 2.0),
-                    child: const Text(
-                      'Date',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                    ),
-                  ),
-                  ...List.generate(FlyabilityConstants.hoursToShow, (hour) {
-                    return Container(
-                      height: FlyabilityConstants.cellSize,
-                      alignment: Alignment.center,
-                      padding: const EdgeInsets.symmetric(horizontal: 2.0),
-                      child: Text(
-                        '${hour + FlyabilityConstants.startHour}h',
-                        style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 10),
-                      ),
-                    );
-                  }),
-                ],
-              ),
-              // Day rows
-              ...List.generate(7, (dayIndex) {
-                final dayData = widget.windDataByDay[dayIndex];
-                final siteWindData = dayData?[siteKey];
-                final date = DateTime.now().add(Duration(days: dayIndex));
-
-                return TableRow(
-                  children: [
-                    // Date cell
-                    Container(
-                      height: FlyabilityConstants.cellSize,
-                      alignment: Alignment.centerLeft,
-                      padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                      child: Text(
-                        DateFormat('EEE d').format(date),
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
-                      ),
-                    ),
-                    // Hour cells
-                    ...List.generate(FlyabilityConstants.hoursToShow, (hourIndex) {
-                      if (siteWindData == null || hourIndex >= siteWindData.length || siteWindData[hourIndex] == null) {
-                        return Container(
-                          height: FlyabilityConstants.cellSize,
-                          alignment: Alignment.center,
-                          child: const Text('-', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                        );
-                      }
-
-                      final windData = siteWindData[hourIndex]!;
-                      return FlyabilityCellWidget(
-                        windData: windData,
-                        site: _selectedSite!,
-                        maxWindSpeed: widget.maxWindSpeed,
-                        cautionWindSpeed: widget.cautionWindSpeed,
-                      );
-                    }),
-                  ],
-                );
-              }),
-            ],
+          child: SiteForecastTable(
+            site: _selectedSite!,
+            windDataByDay: siteWindData,
+            maxWindSpeed: widget.maxWindSpeed,
+            cautionWindSpeed: widget.cautionWindSpeed,
           ),
         ),
       ],
