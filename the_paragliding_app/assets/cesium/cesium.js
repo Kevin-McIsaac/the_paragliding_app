@@ -978,27 +978,66 @@ class CesiumFlightApp {
         // Premium providers (requires user's own Cesium Ion token)
         const premiumProviders = [
             new Cesium.ProviderViewModel({
+                name: 'Google Maps 2D Satellite with Labels',
+                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerialLabels.png'),
+                tooltip: 'Google Maps satellite imagery with labels - Premium (requires your Cesium Ion token)',
+                creationFunction: async () => {
+                    try {
+                        cesiumLog.info('Creating Google Maps provider from asset 3830183');
+                        const provider = await Cesium.IonImageryProvider.fromAssetId(3830183);
+                        cesiumLog.info('Google Maps provider created successfully');
+                        return provider;
+                    } catch (error) {
+                        cesiumLog.error(`Failed to create Google Maps provider: ${error.message}`);
+                        console.error('[Cesium] Google Maps creation error:', error);
+                        throw error;
+                    }
+                }
+            }),
+            new Cesium.ProviderViewModel({
                 name: 'Bing Maps Aerial with Labels',
                 iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerialLabels.png'),
                 tooltip: 'Bing Maps aerial imagery with labels - Premium (requires your Cesium Ion token)',
-                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3)
+                creationFunction: async () => {
+                    try {
+                        cesiumLog.info('Creating Bing Maps Aerial provider from asset 3');
+                        const provider = await Cesium.IonImageryProvider.fromAssetId(3);
+                        cesiumLog.info('Bing Maps Aerial provider created successfully');
+                        return provider;
+                    } catch (error) {
+                        cesiumLog.error(`Failed to create Bing Maps Aerial provider: ${error.message}`);
+                        console.error('[Cesium] Bing Maps Aerial creation error:', error);
+                        throw error;
+                    }
+                }
             }),
             new Cesium.ProviderViewModel({
                 name: 'Bing Maps Roads',
                 iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingRoads.png'),
                 tooltip: 'Bing Maps road map - Premium (requires your Cesium Ion token)',
-                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(4)
+                creationFunction: async () => {
+                    try {
+                        cesiumLog.info('Creating Bing Maps Roads provider from asset 4');
+                        const provider = await Cesium.IonImageryProvider.fromAssetId(4);
+                        cesiumLog.info('Bing Maps Roads provider created successfully');
+                        return provider;
+                    } catch (error) {
+                        cesiumLog.error(`Failed to create Bing Maps Roads provider: ${error.message}`);
+                        console.error('[Cesium] Bing Maps Roads creation error:', error);
+                        throw error;
+                    }
+                }
             })
         ];
-        
+
         // Check if user has provided their own token
         const hasUserToken = config?.hasUserToken === true;
-        
+
         let availableProviders;
         if (hasUserToken) {
             // User has their own token - show ONLY premium providers
             availableProviders = premiumProviders;
-            cesiumLog.info('Using user token - showing only premium Bing Maps providers');
+            cesiumLog.info('Using user token - showing premium providers (Google Maps 2D, Bing Maps)');
         } else {
             // Using app token - only free providers to prevent quota usage
             availableProviders = baseProviders;
