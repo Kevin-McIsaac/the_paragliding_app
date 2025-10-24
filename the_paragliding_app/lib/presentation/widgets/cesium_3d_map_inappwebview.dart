@@ -62,7 +62,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   
   // Saved preferences with defaults
   String _savedSceneMode = '3D';
-  String _savedBaseMap = 'Bing Maps Aerial';
+  String _savedBaseMap = 'Google Maps 2D Satellite with Labels';
   bool _savedTerrainEnabled = true;
   bool _savedNavigationHelpDialogOpen = false;
   bool _savedFlyThroughMode = false;
@@ -112,7 +112,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   Future<void> _loadPreferences() async {
     try {
       final sceneMode = await PreferencesHelper.getCesiumSceneMode() ?? '3D';
-      final baseMap = await PreferencesHelper.getCesiumBaseMap() ?? 'Bing Maps Aerial';
+      final baseMap = await PreferencesHelper.getCesiumBaseMap() ?? 'Google Maps 2D Satellite with Labels';
       final terrainEnabled = await PreferencesHelper.getCesiumTerrainEnabled() ?? true;
       final navigationHelpDialogOpen = await PreferencesHelper.getCesiumNavigationHelpDialog() ?? false;
       final flyThroughMode = await PreferencesHelper.getCesiumFlyThroughMode() ?? false;
@@ -518,9 +518,14 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
             final level = consoleMessage.messageLevel == ConsoleMessageLevel.ERROR ? 'ERROR' :
                          consoleMessage.messageLevel == ConsoleMessageLevel.WARNING ? 'WARNING' :
                          consoleMessage.messageLevel == ConsoleMessageLevel.LOG ? 'LOG' : 'DEBUG';
-            
+
             if (consoleMessage.messageLevel == ConsoleMessageLevel.ERROR) {
-              LoggingService.error('Cesium3D JS', msg);
+              // For errors, try to extract more details if it's an object
+              if (msg == '[object Object]' || msg.contains('[object Object]')) {
+                LoggingService.error('Cesium3D JS', 'JavaScript error occurred (check browser console for details). Message: $msg');
+              } else {
+                LoggingService.error('Cesium3D JS', msg);
+              }
             } else if (kDebugMode) {
               LoggingService.debug('Cesium3D JS [$level]: $msg');
             }

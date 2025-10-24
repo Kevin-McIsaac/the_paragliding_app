@@ -66,7 +66,7 @@ For production deployments, consider these secure alternatives:
 
 The current development token provides access to:
 - Cesium World Terrain
-- Bing Maps Aerial imagery
+- Google Maps satellite imagery (via user's own token)
 - Basic geocoding services
 
 For production use, obtain a dedicated token from:

@@ -39,7 +39,7 @@ class _CesiumSettingsDemoScreenState extends State<CesiumSettingsDemoScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'To unlock free access to premium Bing Maps you need to provide your own Cesium ION acess token.\n'
+              'To unlock free access to premium Google Maps you need to provide your own Cesium ION access token.\n'
               'Registering with Cesium is free, quick and easy',
               style: TextStyle(fontSize: 16),
             ),

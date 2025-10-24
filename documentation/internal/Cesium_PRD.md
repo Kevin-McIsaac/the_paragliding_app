@@ -188,10 +188,10 @@ Pilots review their recorded flights in an immersive 3D environment, analyzing f
 
 #### 3.6.1 Imagery Providers
 **Required Options:**
-1. Bing Maps Aerial with Labels (default)
-2. Bing Maps Aerial (no labels)
-3. Bing Maps Roads
-4. OpenStreetMap
+1. Google Maps 2D Satellite with Labels (default)
+2. Google Maps 2D Roadmap
+3. OpenStreetMap
+4. Sentinel-2
 
 **Implementation:**
 - Layer picker UI element
@@ -317,7 +317,7 @@ initializeCesium({
   lon: 6.0,
   altitude: 10000,
   trackPoints: [...],
-  savedBaseMap: "Bing Maps Aerial",
+  savedBaseMap: "Google Maps 2D Satellite with Labels",
   savedSceneMode: "3D"
 })
 

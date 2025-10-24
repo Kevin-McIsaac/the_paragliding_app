@@ -859,13 +859,31 @@ class CesiumFlightApp {
         }
         
         this.currentResolution = config.savedResolutionScale || defaultResolution;
-        
+
+        // Initialize terrain with error handling
+        let terrainProvider;
+        if (config.savedTerrainEnabled) {
+            try {
+                terrainProvider = Cesium.Terrain.fromWorldTerrain({
+                    requestWaterMask: false,
+                    requestVertexNormals: true
+                });
+                cesiumLog.info('[Cesium] Terrain provider initialized successfully');
+            } catch (error) {
+                cesiumLog.error('[Cesium] Failed to initialize terrain provider:', error);
+                console.error('[Cesium] Terrain initialization error details:', {
+                    message: error.message,
+                    stack: error.stack,
+                    name: error.name
+                });
+                console.warn('[Cesium] Continuing without terrain. Terrain requires Cesium Ion token with access to "Cesium World Terrain" (Asset ID 1)');
+                terrainProvider = undefined;
+            }
+        }
+
         // Create viewer with optimized settings
         this.viewer = new Cesium.Viewer("cesiumContainer", {
-            terrain: config.savedTerrainEnabled ? Cesium.Terrain.fromWorldTerrain({
-                requestWaterMask: false,
-                requestVertexNormals: true
-            }) : undefined,
+            terrain: terrainProvider,
             requestRenderMode: true,
             maximumRenderTimeChange: Infinity,
             resolutionScale: this.currentResolution,  // Apply adaptive resolution scaling
@@ -978,16 +996,16 @@ class CesiumFlightApp {
         // Premium providers (requires user's own Cesium Ion token)
         const premiumProviders = [
             new Cesium.ProviderViewModel({
-                name: 'Bing Maps Aerial with Labels',
+                name: 'Google Maps 2D Satellite with Labels',
                 iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerialLabels.png'),
-                tooltip: 'Bing Maps aerial imagery with labels - Premium (requires your Cesium Ion token)',
-                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3)
+                tooltip: 'Google Maps satellite imagery with labels - Premium (requires your Cesium Ion token)',
+                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3830183)
             }),
             new Cesium.ProviderViewModel({
-                name: 'Bing Maps Roads',
+                name: 'Google Maps 2D Roadmap',
                 iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingRoads.png'),
-                tooltip: 'Bing Maps road map - Premium (requires your Cesium Ion token)',
-                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(4)
+                tooltip: 'Google Maps road map - Premium (requires your Cesium Ion token)',
+                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3830184)
             })
         ];
         
@@ -998,7 +1016,7 @@ class CesiumFlightApp {
         if (hasUserToken) {
             // User has their own token - show ONLY premium providers
             availableProviders = premiumProviders;
-            cesiumLog.info('Using user token - showing only premium Bing Maps providers');
+            cesiumLog.info('Using user token - showing only premium Google Maps providers');
         } else {
             // Using app token - only free providers to prevent quota usage
             availableProviders = baseProviders;

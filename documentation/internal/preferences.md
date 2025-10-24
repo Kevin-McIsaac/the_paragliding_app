@@ -2,7 +2,7 @@
 # Cesium 3D Map Preferences
 
 - Scene Mode (cesium_scene_mode): 3D, 2D, or Columbus view - default: '3D'
-- Base Map (cesium_base_map): Selected imagery provider - default: 'Bing Maps Aerial'
+- Base Map (cesium_base_map): Selected imagery provider - default: 'Google Maps 2D Satellite with Labels'
 - Terrain Enabled (cesium_terrain_enabled): Whether terrain is shown - default: true
 - Navigation Help Dialog (cesium_navigation_help_dialog_open): Whether help dialog is open - default: false
 - Fly Through Mode (cesium_fly_through_mode): Whether fly-through animation is enabled - default: false

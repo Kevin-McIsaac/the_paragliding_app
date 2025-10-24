@@ -23,27 +23,27 @@ WHich provider shoudl we use for satelite maps
 
 Remember what was last used across session. 
 
-  | Parameter       | OpenStreetMap              | Sentinel-2              | Bing Maps Aerial   |
-  |-----------------|----------------------------|-------------------------|--------------------|
-  | Data Source     | OSM Community              | ESA Satellite           | Microsoft          |
-  | Type            | Street Map                 | Satellite               | Aerial + Labels    |
-  | Resolution      | 18 zoom levels             | 10m                     | Variable           |
-  | URL             | {s}.tile.openstreetmap.org | Cesium Ion Asset 3954   | Cesium Ion Asset 3 |
-  | Subdomains      | a, b, c                    | N/A                     | N/A                |
-  | Max Zoom        | 18                         | Ion default             | Ion default        |
-  | Cost            | Free                       | Free (Ion quota)        | Free (Ion quota)   |
-  | Color Tuning    | None                       | Saturation/Hue/Contrast | None               |
-  | Terrain Shadows | Enabled                    | Disabled                | Disabled           |
-  | Fallback        | Primary fallback           | Falls back to OSM       | Falls back to OSM  |
-  | Credit          | © OpenStreetMap            | Cesium Ion              | Cesium Ion         |
+  | Parameter       | OpenStreetMap              | Sentinel-2              | Google Maps 2D Satellite |
+  |-----------------|----------------------------|-------------------------|--------------------------|
+  | Data Source     | OSM Community              | ESA Satellite           | Google                   |
+  | Type            | Street Map                 | Satellite               | Satellite + Labels       |
+  | Resolution      | 18 zoom levels             | 10m                     | Variable                 |
+  | URL             | {s}.tile.openstreetmap.org | Cesium Ion Asset 3954   | Cesium Ion Asset 3830183 |
+  | Subdomains      | a, b, c                    | N/A                     | N/A                      |
+  | Max Zoom        | 18                         | Ion default             | Ion default              |
+  | Cost            | Free                       | Free (Ion quota)        | Free (user token)        |
+  | Color Tuning    | None                       | Saturation/Hue/Contrast | None                     |
+  | Terrain Shadows | Enabled                    | Disabled                | Disabled                 |
+  | Fallback        | Primary fallback           | Falls back to OSM       | Falls back to OSM        |
+  | Credit          | © OpenStreetMap            | Cesium Ion              | Cesium Ion               |
 
-  | Parameter  | OpenStreetMap | Sentinel-2 | Bing Maps Aerial |
-  |------------|---------------|------------|------------------|
-  | Brightness | 1.0 (default) | 0.95       | 1.0 (default)    |
-  | Contrast   | 1.0 (default) | 1.15       | 1.0 (default)    |
-  | Saturation | 1.0 (default) | 0.55       | 1.0 (default)    |
-  | Hue        | 0.0 (default) | -0.09      | 0.0 (default)    |
-  | Gamma      | 1.0 (default) | 1.25       | 1.0 (default)    |
+  | Parameter  | OpenStreetMap | Sentinel-2 | Google Maps 2D Satellite |
+  |------------|---------------|------------|--------------------------|
+  | Brightness | 1.0 (default) | 0.95       | 1.0 (default)            |
+  | Contrast   | 1.0 (default) | 1.15       | 1.0 (default)            |
+  | Saturation | 1.0 (default) | 0.55       | 1.0 (default)            |
+  | Hue        | 0.0 (default) | -0.09      | 0.0 (default)            |
+  | Gamma      | 1.0 (default) | 1.25       | 1.0 (default)            |
 
 Scene-level settings (all providers):
 
