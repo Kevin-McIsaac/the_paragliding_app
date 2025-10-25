@@ -35,7 +35,7 @@ class DataManagementScreen extends StatefulWidget {
   State<DataManagementScreen> createState() => _DataManagementScreenState();
 }
 
-class _DataManagementScreenState extends State<DataManagementScreen> {
+class _DataManagementScreenState extends State<DataManagementScreen> with SingleTickerProviderStateMixin {
   Map<String, dynamic>? _dbStats;
   Map<String, dynamic>? _backupStatus;
   IGCBackupStats? _igcStats;
@@ -47,10 +47,10 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
   Map<String, dynamic>? _pgeSitesStats;
   PgeSitesDownloadProgress? _pgeSitesProgress;
   StreamSubscription<PgeSitesDownloadProgress>? _downloadProgressSubscription;
-  
+
   // Card expansion state manager (persistent for this screen)
   late CardExpansionManager _expansionManager;
-  
+
   // Cesium token state
   String? _cesiumToken;
   bool _isCesiumTokenValidated = false;
@@ -58,6 +58,12 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
 
   // Airspace refresh key to force widget recreation
   int _airspaceRefreshKey = 0;
+
+  // Scroll controller and keys for Premium Maps highlighting
+  final ScrollController _scrollController = ScrollController();
+  final GlobalKey _premiumMapsKey = GlobalKey();
+  late AnimationController _highlightController;
+  late Animation<double> _highlightAnimation;
 
   // Helper method to format numbers with thousands separator
   String _formatNumber(int number) {
@@ -72,7 +78,16 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
     LoggingService.action('DataManagement', 'screen_opened', {
       'expand_premium_maps': widget.expandPremiumMaps,
     });
-    
+
+    // Initialize animation controller for highlighting
+    _highlightController = AnimationController(
+      duration: const Duration(milliseconds: 2000),
+      vsync: this,
+    );
+    _highlightAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _highlightController, curve: Curves.easeInOut),
+    );
+
     // Initialize expansion manager
     _expansionManager = CardExpansionManagers.createDataManagementManager();
 
@@ -82,6 +97,11 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
     // Set initial Premium Maps expansion state based on parameter
     if (widget.expandPremiumMaps) {
       _expansionManager.setState('premium_maps', true);
+
+      // Schedule scroll and highlight after build completes
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToPremiumMaps();
+      });
     }
 
     _loadDatabaseStats();
@@ -94,6 +114,8 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
   @override
   void dispose() {
     _downloadProgressSubscription?.cancel();
+    _scrollController.dispose();
+    _highlightController.dispose();
     // Save expansion states if the manager supports it
     super.dispose();
   }
@@ -103,6 +125,39 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
     setState(() {
       // Update UI with loaded expansion states
     });
+  }
+
+  void _scrollToPremiumMaps() {
+    try {
+      final context = _premiumMapsKey.currentContext;
+      if (context != null) {
+        // Use Scrollable.ensureVisible for smooth scrolling
+        Scrollable.ensureVisible(
+          context,
+          duration: const Duration(milliseconds: 600),
+          curve: Curves.easeInOut,
+          alignment: 0.2, // Position card 20% from top of screen
+        );
+
+        // Start highlight animation after a short delay
+        Future.delayed(const Duration(milliseconds: 800), () {
+          if (mounted) {
+            _highlightController.repeat(reverse: true);
+            // Stop highlighting after 3 cycles
+            Future.delayed(const Duration(milliseconds: 6000), () {
+              if (mounted) {
+                _highlightController.stop();
+                _highlightController.reset();
+              }
+            });
+          }
+        });
+
+        LoggingService.action('DataManagement', 'scroll_to_premium_maps');
+      }
+    } catch (e, stackTrace) {
+      LoggingService.error('Failed to scroll to Premium Maps card', e, stackTrace);
+    }
   }
 
   Future<void> _loadDatabaseStats() async {
@@ -1284,6 +1339,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
         body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
+              controller: _scrollController,
               padding: const EdgeInsets.only(top: 16, bottom: 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1595,21 +1651,42 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
 
                   const SizedBox(height: 24),
 
-                  // Free Premium Maps
-                  AppExpansionCard.dataManagement(
-                    icon: Icons.map,
-                    title: 'Free Premium Maps',
-                    subtitle: _cesiumToken != null
-                        ? (_isCesiumTokenValidated ? 'Active' : 'Not validated')
-                        : 'No token configured',
-                    expansionKey: 'premium_maps',
-                    expansionManager: _expansionManager,
-                    onExpansionChanged: (expanded) {
-                      setState(() {
-                        _expansionManager.setState('premium_maps', expanded);
-                      });
+                  // Free Premium Maps with visual highlighting
+                  AnimatedBuilder(
+                    key: _premiumMapsKey,
+                    animation: _highlightAnimation,
+                    builder: (context, child) {
+                      final highlightValue = _highlightAnimation.value;
+                      return Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: highlightValue > 0
+                              ? [
+                                  BoxShadow(
+                                    color: Colors.blue.withOpacity(0.3 * highlightValue),
+                                    blurRadius: 12 * highlightValue,
+                                    spreadRadius: 4 * highlightValue,
+                                  ),
+                                ]
+                              : null,
+                        ),
+                        child: child,
+                      );
                     },
-                    children: [
+                    child: AppExpansionCard.dataManagement(
+                      icon: Icons.map,
+                      title: 'Free Premium Maps',
+                      subtitle: _cesiumToken != null
+                          ? (_isCesiumTokenValidated ? 'Active' : 'Not validated')
+                          : 'No token configured',
+                      expansionKey: 'premium_maps',
+                      expansionManager: _expansionManager,
+                      onExpansionChanged: (expanded) {
+                        setState(() {
+                          _expansionManager.setState('premium_maps', expanded);
+                        });
+                      },
+                      children: [
                       const Text(
                         'To unlock free access to premium Bing Maps you need to provide your own Cesium ION access token. '
                         'Registering with Cesium is free, quick and easy.',
@@ -1760,6 +1837,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> {
                           ],
                         ),
                     ],
+                  ),
                   ),
 
                   const SizedBox(height: 24),

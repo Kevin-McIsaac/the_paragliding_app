@@ -501,10 +501,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
             if (msg.contains('Blocked script execution') &&
                 msg.contains('sandboxed') &&
                 msg.contains('allow-scripts')) {
-              // These are expected during WebView initialization and not critical
-              if (kDebugMode) {
-                LoggingService.debug('Cesium3D JS: Filtered sandboxing error (expected during init)');
-              }
+              // These are expected during WebView initialization - silently ignore
               return;
             }
 
@@ -748,6 +745,8 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
     if (_cesiumHtml != null) {
       // Replace placeholders with actual values
       return _cesiumHtml!
+        .replaceAll('{{CESIUM_JS_URL}}', CesiumConfig.cesiumCdnUrl)
+        .replaceAll('{{CESIUM_CSS_URL}}', CesiumConfig.cesiumCssCdnUrl)
         .replaceAll('{{LAT}}', lat.toString())
         .replaceAll('{{LON}}', lon.toString())
         .replaceAll('{{ALTITUDE}}', altitude.toString())
@@ -774,8 +773,8 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no">
     <meta name="color-scheme" content="dark light">
-    <script src="https://cesium.com/downloads/cesiumjs/releases/1.127/Build/Cesium/Cesium.js"></script>
-    <link href="https://cesium.com/downloads/cesiumjs/releases/1.127/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <script src="${CesiumConfig.cesiumCdnUrl}"></script>
+    <link href="${CesiumConfig.cesiumCssCdnUrl}" rel="stylesheet">
     <style>
         html, body, #cesiumContainer {
             width: 100%; 
@@ -943,7 +942,17 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                     roll: 0.0
                 }
             });
-            
+
+            // Hide loading overlay immediately when viewer is ready
+            // Don't wait for all tiles to load - show the globe as soon as it's interactive
+            setTimeout(() => {
+                const overlay = document.getElementById('loadingOverlay');
+                if (overlay) {
+                    overlay.style.display = 'none';
+                    cesiumLog.info('Loading overlay hidden - viewer is ready');
+                }
+            }, 100);  // Small delay to ensure viewer is fully rendered
+
             // Handle tile memory exceeded events
             viewer.scene.globe.tileLoadProgressEvent.addEventListener(function() {
                 // Monitor for memory issues
@@ -970,8 +979,15 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                     initialLoadComplete = true;
                     const loadTime = ((Date.now() - loadingStartTime) / 1000).toFixed(2);
                     cesiumLog.info('Initial tile load complete in ' + loadTime + 's');
-                    document.getElementById('loadingOverlay').style.display = 'none';
-                    
+
+                    // Overlay should already be hidden by immediate timeout above
+                    // This is just a fallback in case the timeout didn't fire
+                    const overlay = document.getElementById('loadingOverlay');
+                    if (overlay && overlay.style.display !== 'none') {
+                        overlay.style.display = 'none';
+                        cesiumLog.info('Loading overlay hidden (fallback) - all tiles loaded');
+                    }
+
                     // Remove the listener after initial load
                     viewer.scene.globe.tileLoadProgressEvent.removeEventListener(tileLoadHandler);
                 } else if (DEBUG_MODE && !initialLoadComplete) {
@@ -1320,7 +1336,8 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   }
   
   void _startMemoryMonitoring() {
-    _memoryMonitorTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+    // Reduced frequency: 5 minutes instead of 30 seconds to reduce log noise
+    _memoryMonitorTimer = Timer.periodic(const Duration(minutes: 5), (timer) {
       if (_isDisposed || webViewController == null) {
         timer.cancel();
         return;
@@ -1339,8 +1356,16 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   }
   
   Future<void> _handleLoadError(String url, String error) async {
+    // Skip retry for ORB/CORS errors - these are expected and handled
+    if (error.contains('ERR_BLOCKED_BY_ORB')) {
+      // This is a CORS/security error that happens with some resources
+      // The map still works, so we don't need to retry or show error
+      LoggingService.debug('Cesium3D: ORB error (expected for some resources): $url');
+      return;
+    }
+
     // Only retry for actual Cesium resources, not dev server
-    if (!error.contains('ERR_CONNECTION_REFUSED') || 
+    if (!error.contains('ERR_CONNECTION_REFUSED') ||
         !url.contains('localhost')) {
       
       if (_loadRetryCount < _maxRetries && !_isDisposed) {

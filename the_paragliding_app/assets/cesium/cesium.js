@@ -14,7 +14,13 @@ window.cesiumLog = {
     },
     info: (message) => console.log('[Cesium] ' + message),
     error: (message) => console.error('[Cesium Error] ' + message),
-    warn: (message) => console.warn('[Cesium Warning] ' + message)
+    warn: (message) => console.warn('[Cesium Warning] ' + message),
+    structured: (tag, data) => {
+        const dataStr = Object.entries(data)
+            .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+            .join(' | ');
+        console.log(`[Cesium] [${tag}] ${dataStr}`);
+    }
 };
 
 // ============================================================================
@@ -971,23 +977,107 @@ class CesiumFlightApp {
                 name: 'Sentinel-2',
                 iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/sentinel-2.png'),
                 tooltip: 'Sentinel-2 satellite imagery - 10m resolution',
-                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3954)
+                creationFunction: async () => {
+                    try {
+                        cesiumLog.info('[PROVIDER_INIT] Creating Sentinel-2 provider (asset: 3954)');
+                        const provider = await Cesium.IonImageryProvider.fromAssetId(3954);
+                        cesiumLog.info('[PROVIDER_SUCCESS] Sentinel-2 provider created successfully');
+                        return provider;
+                    } catch (error) {
+                        cesiumLog.error(`[PROVIDER_ERROR] Sentinel-2 failed: ${error.message}`);
+                        cesiumLog.structured('PROVIDER_ERROR', {
+                            provider: 'Sentinel-2',
+                            asset_id: 3954,
+                            error_type: error.name || 'Unknown',
+                            error_message: error.message,
+                            has_user_token: config?.hasUserToken || false,
+                            fallback: 'OpenStreetMap'
+                        });
+
+                        // Fallback to OpenStreetMap
+                        cesiumLog.info('[PROVIDER_FALLBACK] Falling back to OpenStreetMap');
+                        return new Cesium.OpenStreetMapImageryProvider({
+                            url: 'https://{s}.tile.openstreetmap.org/',
+                            subdomains: ['a', 'b', 'c'],
+                            maximumLevel: 18,
+                            credit: new Cesium.Credit('© OpenStreetMap contributors', false)
+                        });
+                    }
+                }
             })
         ];
         
         // Premium providers (requires user's own Cesium Ion token)
         const premiumProviders = [
             new Cesium.ProviderViewModel({
-                name: 'Bing Maps Aerial with Labels',
-                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerialLabels.png'),
-                tooltip: 'Bing Maps aerial imagery with labels - Premium (requires your Cesium Ion token)',
-                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3)
+                name: 'Google Maps 2D Satellite',
+                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/googleSatellite.png'),
+                tooltip: 'Google Maps 2D satellite imagery - Premium (requires your Cesium Ion token)',
+                creationFunction: async () => {
+                    try {
+                        cesiumLog.info('[PROVIDER_INIT] Creating Google Maps 2D Satellite provider (asset: 3830183)');
+                        const provider = await Cesium.IonImageryProvider.fromAssetId(3830183);
+                        cesiumLog.info('[PROVIDER_SUCCESS] Google Maps 2D Satellite provider created successfully');
+                        return provider;
+                    } catch (error) {
+                        cesiumLog.error(`[PROVIDER_ERROR] Google Maps 2D Satellite failed: ${error.message}`);
+                        cesiumLog.structured('PROVIDER_ERROR', {
+                            provider: 'Google Maps 2D Satellite',
+                            asset_id: 3830183,
+                            error_type: error.name || 'Unknown',
+                            error_message: error.message,
+                            has_user_token: config?.hasUserToken || false,
+                            fallback: 'Sentinel-2'
+                        });
+
+                        // Fallback to free Sentinel-2 satellite imagery
+                        cesiumLog.info('[PROVIDER_FALLBACK] Falling back to Sentinel-2 satellite imagery');
+                        try {
+                            return await Cesium.IonImageryProvider.fromAssetId(3954);
+                        } catch (fallbackError) {
+                            cesiumLog.error(`[PROVIDER_FALLBACK_ERROR] Sentinel-2 fallback failed: ${fallbackError.message}`);
+                            // Final fallback to OpenStreetMap
+                            return new Cesium.OpenStreetMapImageryProvider({
+                                url: 'https://{s}.tile.openstreetmap.org/',
+                                subdomains: ['a', 'b', 'c'],
+                                maximumLevel: 18,
+                                credit: new Cesium.Credit('© OpenStreetMap contributors', false)
+                            });
+                        }
+                    }
+                }
             }),
             new Cesium.ProviderViewModel({
-                name: 'Bing Maps Roads',
-                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingRoads.png'),
-                tooltip: 'Bing Maps road map - Premium (requires your Cesium Ion token)',
-                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(4)
+                name: 'Google Maps 2D Roadmap',
+                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/googleRoadmap.png'),
+                tooltip: 'Google Maps 2D road map - Premium (requires your Cesium Ion token)',
+                creationFunction: async () => {
+                    try {
+                        cesiumLog.info('[PROVIDER_INIT] Creating Google Maps 2D Roadmap provider (asset: 3830184)');
+                        const provider = await Cesium.IonImageryProvider.fromAssetId(3830184);
+                        cesiumLog.info('[PROVIDER_SUCCESS] Google Maps 2D Roadmap provider created successfully');
+                        return provider;
+                    } catch (error) {
+                        cesiumLog.error(`[PROVIDER_ERROR] Google Maps 2D Roadmap failed: ${error.message}`);
+                        cesiumLog.structured('PROVIDER_ERROR', {
+                            provider: 'Google Maps 2D Roadmap',
+                            asset_id: 3830184,
+                            error_type: error.name || 'Unknown',
+                            error_message: error.message,
+                            has_user_token: config?.hasUserToken || false,
+                            fallback: 'OpenStreetMap'
+                        });
+
+                        // Fallback to OpenStreetMap (similar road map style)
+                        cesiumLog.info('[PROVIDER_FALLBACK] Falling back to OpenStreetMap');
+                        return new Cesium.OpenStreetMapImageryProvider({
+                            url: 'https://{s}.tile.openstreetmap.org/',
+                            subdomains: ['a', 'b', 'c'],
+                            maximumLevel: 18,
+                            credit: new Cesium.Credit('© OpenStreetMap contributors', false)
+                        });
+                    }
+                }
             })
         ];
         
@@ -998,7 +1088,7 @@ class CesiumFlightApp {
         if (hasUserToken) {
             // User has their own token - show ONLY premium providers
             availableProviders = premiumProviders;
-            cesiumLog.info('Using user token - showing only premium Bing Maps providers');
+            cesiumLog.info('Using user token - showing premium providers');
         } else {
             // Using app token - only free providers to prevent quota usage
             availableProviders = baseProviders;

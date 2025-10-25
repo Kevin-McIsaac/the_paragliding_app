@@ -4,6 +4,17 @@ library;
 import '../services/api_keys.dart';
 
 class CesiumConfig {
+  /// Cesium library version - single source of truth
+  static const String cesiumVersion = '1.134';
+
+  /// CDN URL for the Cesium JavaScript library
+  static String get cesiumCdnUrl =>
+      'https://cesium.com/downloads/cesiumjs/releases/$cesiumVersion/Build/Cesium/Cesium.js';
+
+  /// CDN URL for the Cesium CSS
+  static String get cesiumCssCdnUrl =>
+      'https://cesium.com/downloads/cesiumjs/releases/$cesiumVersion/Build/Cesium/Widgets/widgets.css';
+
   /// Get the Cesium Ion access token
   /// First checks for user-configured token, then falls back to environment/default
   static String get ionAccessToken {
@@ -17,7 +28,7 @@ class CesiumConfig {
     // User can still provide their own token via the UI
     return '';
   }
-  
+
   // Memory management settings
   static const int tileCacheSize = 25;
   static const int maximumMemoryUsageMB = 128;
