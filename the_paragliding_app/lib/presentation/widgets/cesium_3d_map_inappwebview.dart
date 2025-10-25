@@ -748,6 +748,8 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
     if (_cesiumHtml != null) {
       // Replace placeholders with actual values
       return _cesiumHtml!
+        .replaceAll('{{CESIUM_JS_URL}}', CesiumConfig.cesiumCdnUrl)
+        .replaceAll('{{CESIUM_CSS_URL}}', CesiumConfig.cesiumCssCdnUrl)
         .replaceAll('{{LAT}}', lat.toString())
         .replaceAll('{{LON}}', lon.toString())
         .replaceAll('{{ALTITUDE}}', altitude.toString())
@@ -774,8 +776,8 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no">
     <meta name="color-scheme" content="dark light">
-    <script src="https://cesium.com/downloads/cesiumjs/releases/1.134/Build/Cesium/Cesium.js"></script>
-    <link href="https://cesium.com/downloads/cesiumjs/releases/1.134/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <script src="${CesiumConfig.cesiumCdnUrl}"></script>
+    <link href="${CesiumConfig.cesiumCssCdnUrl}" rel="stylesheet">
     <style>
         html, body, #cesiumContainer {
             width: 100%; 
@@ -1339,8 +1341,15 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   }
   
   Future<void> _handleLoadError(String url, String error) async {
+    // Skip retry for ORB/CORS errors - these are expected and handled
+    if (error.contains('ERR_BLOCKED_BY_ORB')) {
+      // This is a CORS/security error that happens with some resources
+      // The map still works, so we don't need to retry or show error
+      return;
+    }
+
     // Only retry for actual Cesium resources, not dev server
-    if (!error.contains('ERR_CONNECTION_REFUSED') || 
+    if (!error.contains('ERR_CONNECTION_REFUSED') ||
         !url.contains('localhost')) {
       
       if (_loadRetryCount < _maxRetries && !_isDisposed) {
