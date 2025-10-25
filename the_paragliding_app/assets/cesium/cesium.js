@@ -1153,7 +1153,7 @@ class CesiumFlightApp {
         
         // Determine if provider needs lighting based on provider name
         // Flat/cartographic imagery benefits from terrain shadows to show relief
-        const flatProviders = ['OpenStreetMap', 'Stamen Terrain'];
+        const flatProviders = ['OpenStreetMap', 'Stamen Terrain', 'Google Maps 2D Roadmap'];
         const needsLighting = flatProviders.includes(providerName);
         
         globe.enableLighting = needsLighting;
