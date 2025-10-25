@@ -981,12 +981,6 @@ class CesiumFlightApp {
                 name: 'Google Maps 2D Satellite',
                 iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/googleSatellite.png'),
                 tooltip: 'Google Maps 2D satellite imagery - Premium (requires your Cesium Ion token)',
-                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3830182)
-            }),
-            new Cesium.ProviderViewModel({
-                name: 'Google Maps 2D Satellite with Labels',
-                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/googleSatelliteLabels.png'),
-                tooltip: 'Google Maps 2D satellite imagery with labels - Premium (requires your Cesium Ion token)',
                 creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3830183)
             }),
             new Cesium.ProviderViewModel({
@@ -994,30 +988,6 @@ class CesiumFlightApp {
                 iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/googleRoadmap.png'),
                 tooltip: 'Google Maps 2D road map - Premium (requires your Cesium Ion token)',
                 creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3830184)
-            }),
-            new Cesium.ProviderViewModel({
-                name: 'Google Maps 2D Labels Only',
-                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/googleLabels.png'),
-                tooltip: 'Google Maps 2D labels only - Premium (requires your Cesium Ion token)',
-                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3830185)
-            }),
-            new Cesium.ProviderViewModel({
-                name: 'Google Maps 2D Contour',
-                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/googleContour.png'),
-                tooltip: 'Google Maps 2D contour map - Premium (requires your Cesium Ion token)',
-                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3830186)
-            }),
-            new Cesium.ProviderViewModel({
-                name: 'Bing Maps Aerial with Labels',
-                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingAerialLabels.png'),
-                tooltip: 'Bing Maps aerial imagery with labels - Premium (requires your Cesium Ion token)',
-                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(3)
-            }),
-            new Cesium.ProviderViewModel({
-                name: 'Bing Maps Roads',
-                iconUrl: Cesium.buildModuleUrl('Widgets/Images/ImageryProviders/bingRoads.png'),
-                tooltip: 'Bing Maps road map - Premium (requires your Cesium Ion token)',
-                creationFunction: () => Cesium.IonImageryProvider.fromAssetId(4)
             })
         ];
         
