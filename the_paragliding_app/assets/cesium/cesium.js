@@ -893,7 +893,17 @@ class CesiumFlightApp {
             shouldAnimate: false,
             creditContainer: document.getElementById('customCreditContainer')
         });
-        
+
+        // Hide loading overlay immediately - viewer object is created
+        // Don't wait for providers or tiles - show the globe ASAP
+        setTimeout(() => {
+            const overlay = document.getElementById('loadingOverlay');
+            if (overlay) {
+                overlay.style.display = 'none';
+                cesiumLog.info('Loading overlay hidden - viewer ready');
+            }
+        }, 100);
+
         this._configureScene();
         this._setupInitialView(config);
         
@@ -1820,13 +1830,23 @@ let cesiumApp = null;
 
 // Initialize function called from HTML
 function initializeCesium(config) {
+    // Failsafe: Hide loading overlay after max 3 seconds, no matter what
+    // This ensures users never wait more than 3 seconds even if providers are slow
+    setTimeout(() => {
+        const overlay = document.getElementById('loadingOverlay');
+        if (overlay && overlay.style.display !== 'none') {
+            overlay.style.display = 'none';
+            cesiumLog.info('[FAILSAFE] Loading overlay hidden after 3s timeout');
+        }
+    }, 3000);
+
     // Set Ion token
     Cesium.Ion.defaultAccessToken = config.token;
-    
+
     // Create and initialize app
     cesiumApp = new CesiumFlightApp();
     cesiumApp.initialize(config);
-    
+
     // Store globally for compatibility
     window.viewer = cesiumApp.viewer;
 }
