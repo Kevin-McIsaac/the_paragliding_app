@@ -107,14 +107,14 @@ class FlyabilityHelper {
         final gustsStr = windData.gustsKmh != null
             ? ' (gusts ${windData.gustsKmh!.toStringAsFixed(1)} km/h)'
             : '';
-        return '${windData.speedKmh.toStringAsFixed(1)} km/h from ${windData.compassDirection}$gustsStr - good conditions';
+        return '${windData.speedKmh.toStringAsFixed(1)} km/h from ${windData.compassDirectionWithAngle}$gustsStr - good conditions';
 
       case FlyabilityLevel.caution:
         // Strong but flyable
         final gustsStr = windData.gustsKmh != null
             ? ' (gusts ${windData.gustsKmh!.toStringAsFixed(1)} km/h)'
             : '';
-        return '${windData.speedKmh.toStringAsFixed(1)} km/h from ${windData.compassDirection}$gustsStr - strong winds, experienced pilots only';
+        return '${windData.speedKmh.toStringAsFixed(1)} km/h from ${windData.compassDirectionWithAngle}$gustsStr - strong winds, experienced pilots only';
 
       case FlyabilityLevel.unsafe:
         // Get detailed reason from WindData
