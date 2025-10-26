@@ -23,6 +23,11 @@ class _SplashScreenState extends State<SplashScreen> {
     // Use a microtask to ensure the splash screen renders at least once
     await Future.microtask(() {});
 
+    // Initialize app data (downloads PGE sites on first launch)
+    // This waits for initialization to complete, ensuring database is ready
+    // before showing the main screen with the sites map
+    await AppInitializationService.instance.initializeInBackground();
+
     if (mounted) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
@@ -31,10 +36,6 @@ class _SplashScreenState extends State<SplashScreen> {
       );
 
       LoggingService.info('App startup completed with bottom navigation');
-
-      // Start background initialization after navigation
-      // This includes downloading PGE sites on first launch
-      AppInitializationService.instance.initializeInBackground();
     }
   }
 

@@ -44,25 +44,20 @@ class AppInitializationService {
   /// Check if PGE sites need to be downloaded and do it in background
   Future<void> _checkAndDownloadPgeSites() async {
     try {
-      // Check if user has already manually downloaded PGE sites
-      final hasDownloadedBefore = await PreferencesHelper.hasPgeSitesBeenDownloaded();
-
       // Initialize PGE sites tables
       await PgeSitesDatabaseService.instance.initializeTables();
 
       // Check if data exists
       final hasData = await PgeSitesDatabaseService.instance.isDataAvailable();
 
-      if (!hasData && !hasDownloadedBefore) {
-        LoggingService.info('AppInitializationService: First launch detected, downloading PGE sites in background');
+      if (!hasData) {
+        LoggingService.info('AppInitializationService: Empty PGE database detected, auto-importing bundled data');
 
-        // Start download in background
-        // We don't await this - let it run async
-        _downloadPgeSitesAsync();
-      } else if (hasData) {
-        LoggingService.info('AppInitializationService: PGE sites already available');
+        // On first launch or if database is empty, automatically import bundled CSV data
+        // Wait for import to complete so database is ready before sync runs
+        await _downloadAndImportPgeSites();
       } else {
-        LoggingService.info('AppInitializationService: PGE sites not downloaded, user can download manually');
+        LoggingService.info('AppInitializationService: PGE sites already available');
       }
     } catch (e) {
       LoggingService.error('AppInitializationService: Error checking PGE sites', e);
@@ -70,31 +65,33 @@ class AppInitializationService {
     }
   }
 
-  /// Download PGE sites asynchronously without blocking
-  Future<void> _downloadPgeSitesAsync() async {
+  /// Download and import PGE sites from bundled CSV in background
+  Future<void> _downloadAndImportPgeSites() async {
     try {
-      LoggingService.info('AppInitializationService: Starting background PGE sites download');
+      LoggingService.info('AppInitializationService: Starting auto-import of bundled PGE sites data');
 
-      // Download the sites data
+      // Download (copy from assets) the bundled CSV data
       final downloadSuccess = await PgeSitesDownloadService.instance.downloadSitesData();
 
       if (downloadSuccess) {
-        // Import the downloaded data
+        LoggingService.info('AppInitializationService: Bundled CSV copied, starting database import');
+
+        // Import the data into database
         final importSuccess = await PgeSitesDatabaseService.instance.importSitesData();
 
         if (importSuccess) {
           // Mark as downloaded
           await PreferencesHelper.setPgeSitesDownloaded(true);
-          LoggingService.info('AppInitializationService: PGE sites downloaded and imported successfully in background');
+          LoggingService.info('AppInitializationService: Auto-import completed successfully - PGE sites database initialized');
         } else {
-          LoggingService.warning('AppInitializationService: PGE sites downloaded but import failed');
+          LoggingService.warning('AppInitializationService: CSV copied but database import failed');
         }
       } else {
-        LoggingService.warning('AppInitializationService: PGE sites download failed in background');
+        LoggingService.warning('AppInitializationService: Failed to copy bundled CSV data');
       }
     } catch (e) {
-      LoggingService.error('AppInitializationService: Error downloading PGE sites in background', e);
-      // Non-fatal - user can manually download later
+      LoggingService.error('AppInitializationService: Error during auto-import of PGE sites', e);
+      // Non-fatal - user can manually download later from Data Management screen
     }
   }
 
