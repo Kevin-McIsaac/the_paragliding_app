@@ -15,6 +15,10 @@ class WindData {
   /// Convert wind direction in degrees to compass direction
   String get compassDirection => _degreesToCompass(directionDegrees);
 
+  /// Get compass direction with angle, e.g., "S (180°)"
+  String get compassDirectionWithAngle =>
+      '$compassDirection (${directionDegrees.toStringAsFixed(0)}°)';
+
   /// Check if wind direction matches site launchable directions
   /// Returns true if direction is acceptable (including light wind < 1 km/h)
   bool isDirectionFlyable(List<String> siteDirections) {
@@ -54,7 +58,7 @@ class WindData {
       final gustsStr = gustsKmh != null
           ? ' (gusts ${gustsKmh!.toStringAsFixed(1)} km/h)'
           : '';
-      return '${speedKmh.toStringAsFixed(1)} km/h from $compassDirection$gustsStr - too strong (max: ${maxSpeed.toInt()} km/h)';
+      return '${speedKmh.toStringAsFixed(1)} km/h from $compassDirectionWithAngle$gustsStr - too strong (max: ${maxSpeed.toInt()} km/h)';
     }
 
     if (speedKmh < 1.0) {
@@ -63,9 +67,9 @@ class WindData {
 
     final directionMatches = siteDirections.any((dir) => _isDirectionMatch(compassDirection, dir));
     if (directionMatches) {
-      return '${speedKmh.toStringAsFixed(1)} km/h from $compassDirection - good direction';
+      return '${speedKmh.toStringAsFixed(1)} km/h from $compassDirectionWithAngle - good direction';
     } else {
-      return '${speedKmh.toStringAsFixed(1)} km/h from $compassDirection - wrong direction (needs: ${siteDirections.join(", ")})';
+      return '${speedKmh.toStringAsFixed(1)} km/h from $compassDirectionWithAngle - wrong direction (needs: ${siteDirections.join(", ")})';
     }
   }
 
