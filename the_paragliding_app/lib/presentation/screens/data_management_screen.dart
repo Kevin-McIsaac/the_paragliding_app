@@ -20,6 +20,7 @@ import '../../services/airspace_geojson_service.dart';
 import '../../services/airspace_country_service.dart';
 import '../../services/pge_sites_download_service.dart';
 import '../../services/pge_sites_database_service.dart';
+import '../../services/pge_incremental_sync_service.dart';
 
 class DataManagementScreen extends StatefulWidget {
   final bool expandPremiumMaps;
@@ -47,6 +48,11 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
   Map<String, dynamic>? _pgeSitesStats;
   PgeSitesDownloadProgress? _pgeSitesProgress;
   StreamSubscription<PgeSitesDownloadProgress>? _downloadProgressSubscription;
+
+  // PGE Sites sync state
+  bool _isSyncing = false;
+  String? _lastSyncTime;
+  SyncResult? _lastSyncResult;
 
   // Card expansion state manager (persistent for this screen)
   late CardExpansionManager _expansionManager;
@@ -308,9 +314,31 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
         'is_outdated': downloadStatus['is_outdated'],
       });
 
+      // Load last sync time
+      final lastSyncTimestamp = await PreferencesHelper.getString('pge_last_sync_time');
+      String lastSync = 'Never';
+      if (lastSyncTimestamp != null && lastSyncTimestamp.isNotEmpty) {
+        try {
+          final syncDate = DateTime.parse(lastSyncTimestamp);
+          final age = DateTime.now().difference(syncDate);
+          if (age.inDays > 0) {
+            lastSync = '${age.inDays} days ago';
+          } else if (age.inHours > 0) {
+            lastSync = '${age.inHours} hours ago';
+          } else if (age.inMinutes > 0) {
+            lastSync = '${age.inMinutes} minutes ago';
+          } else {
+            lastSync = 'Just now';
+          }
+        } catch (e) {
+          LoggingService.warning('[PGE_SYNC] Failed to parse last sync time: $e');
+        }
+      }
+
       if (mounted) {
         setState(() {
           _pgeSitesStats = combinedStats;
+          _lastSyncTime = lastSync;
         });
       }
     } catch (e, stackTrace) {
@@ -388,6 +416,79 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
       if (mounted) Navigator.of(context).pop(); // Close any open dialog
       LoggingService.error('DataManagementScreen: Failed to download PGE sites', e, stackTrace);
       _showErrorDialog('Error', 'Failed to download sites: $e');
+    }
+  }
+
+  Future<void> _syncPgeSites() async {
+    LoggingService.action('DataManagement', 'sync_pge_sites');
+
+    setState(() {
+      _isSyncing = true;
+    });
+
+    try {
+      // Perform incremental sync
+      final result = await PgeIncrementalSyncService.instance.syncModifiedSites();
+
+      // Save last sync time
+      final now = DateTime.now().toIso8601String();
+      await PreferencesHelper.setString('pge_last_sync_time', now);
+
+      if (mounted) {
+        setState(() {
+          _isSyncing = false;
+          _lastSyncResult = result;
+          _dataModified = result.totalProcessed > 0; // Mark as modified if sites were updated
+        });
+
+        if (result.success) {
+          // Show success message
+          final message = result.totalProcessed > 0
+              ? '${result.sitesAdded + result.sitesModified} sites updated (${result.sitesAdded} new, ${result.sitesModified} modified)'
+              : 'No updates found. Database is up to date.';
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(message),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+
+          // Refresh all tabs if sites were updated
+          if (result.totalProcessed > 0 && widget.onRefreshAllTabs != null) {
+            await widget.onRefreshAllTabs!();
+          }
+
+          // Reload statistics
+          await _loadPgeSitesStats();
+        } else {
+          // Show error message
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Sync failed: ${result.errorMessage}'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    } catch (e, stackTrace) {
+      LoggingService.error('DataManagementScreen: Failed to sync PGE sites', e, stackTrace);
+
+      if (mounted) {
+        setState(() {
+          _isSyncing = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Sync error: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
     }
   }
 
@@ -2051,6 +2152,10 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                               label: 'Source Size',
                               value: '${_pgeSitesStats!['source_file_size_mb'] ?? '0.0'}MB',
                             ),
+                            AppStatRow.dataManagement(
+                              label: 'Last Synced',
+                              value: _lastSyncTime ?? 'Never',
+                            ),
                             if (_pgeSitesProgress != null && _pgeSitesProgress!.status == PgeSitesDownloadStatus.downloading)
                               AppStatRow.dataManagement(
                                 label: 'Download Progress',
@@ -2084,22 +2189,44 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                         style: TextStyle(color: Colors.grey, fontSize: 12),
                       ),
                       const SizedBox(height: 16),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: _pgeSitesProgress?.status == PgeSitesDownloadStatus.downloading
-                              ? null
-                              : _downloadPgeSites,
-                          icon: const Icon(Icons.download),
-                          label: Text(
-                            (_pgeSitesStats?['sites_count'] ?? 0) > 0
-                              ? 'Re-download Sites'
-                              : 'Download Sites'
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: (_pgeSitesProgress?.status == PgeSitesDownloadStatus.downloading || _isSyncing)
+                                  ? null
+                                  : _syncPgeSites,
+                              icon: _isSyncing
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.sync),
+                              label: Text(_isSyncing ? 'Syncing...' : 'Sync Updates'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.green,
+                              ),
+                            ),
                           ),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.blue,
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: (_pgeSitesProgress?.status == PgeSitesDownloadStatus.downloading || _isSyncing)
+                                  ? null
+                                  : _downloadPgeSites,
+                              icon: const Icon(Icons.download),
+                              label: Text(
+                                (_pgeSitesStats?['sites_count'] ?? 0) > 0
+                                  ? 'Re-download All'
+                                  : 'Download Sites'
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.blue,
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ],
                   ),

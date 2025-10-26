@@ -43,7 +43,10 @@ class PgeSitesDatabaseService {
           wind_s INTEGER DEFAULT 0,
           wind_sw INTEGER DEFAULT 0,
           wind_w INTEGER DEFAULT 0,
-          wind_nw INTEGER DEFAULT 0
+          wind_nw INTEGER DEFAULT 0,
+
+          -- Last edit date from PGE (YYYY-MM-DD format, for incremental sync)
+          last_edit TEXT
         )
       ''');
 

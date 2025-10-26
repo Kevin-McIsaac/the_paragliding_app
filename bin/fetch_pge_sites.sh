@@ -9,10 +9,10 @@ mkdir -p assets/data
 # Get all sites from PGE API (no limit, no style parameter)
 curl -s "http://www.paraglidingearth.com/api/geojson/getBoundingBoxSites.php?north=90&south=-90&west=-180&east=180" -o /tmp/pge_sites_raw.json
 
-# Extract to CSV with fields matching PGE schema plus altitude and country
-echo "id,name,longitude,latitude,altitude,country,wind_n,wind_ne,wind_e,wind_se,wind_s,wind_sw,wind_w,wind_nw" > /tmp/pge_sites_full.csv
+# Extract to CSV with fields matching PGE schema plus altitude, country, and last_edit
+echo "id,name,longitude,latitude,altitude,country,wind_n,wind_ne,wind_e,wind_se,wind_s,wind_sw,wind_w,wind_nw,last_edit" > /tmp/pge_sites_full.csv
 
-# Parse JSON and extract required fields
+# Parse JSON and extract required fields including last_edit timestamp
 jq -r '.features[] |
   [
     .properties.pge_site_id,
@@ -28,7 +28,8 @@ jq -r '.features[] |
     ((.properties.S // "0") | if . == "" then 0 else tonumber end),
     ((.properties.SW // "0") | if . == "" then 0 else tonumber end),
     ((.properties.W // "0") | if . == "" then 0 else tonumber end),
-    ((.properties.NW // "0") | if . == "" then 0 else tonumber end)
+    ((.properties.NW // "0") | if . == "" then 0 else tonumber end),
+    (.properties.last_edit // "")  # last_edit as date string (YYYY-MM-DD)
   ] | @csv' /tmp/pge_sites_raw.json >> /tmp/pge_sites_full.csv
 
 # Verify counts match

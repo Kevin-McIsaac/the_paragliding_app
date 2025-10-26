@@ -241,7 +241,7 @@ class PgeSitesDownloadService {
       final decompressedBytes = gzip.decode(compressedBytes);
       final csvContent = utf8.decode(decompressedBytes);
 
-      // Parse CSV manually (format: id,name,lng,lat,altitude,country,N,NE,E,SE,S,SW,W,NW)
+      // Parse CSV manually (format: id,name,lng,lat,altitude,country,N,NE,E,SE,S,SW,W,NW,last_edit)
       final lines = csvContent.trim().split('\n');
       final sites = <Map<String, dynamic>>[];
 
@@ -254,7 +254,7 @@ class PgeSitesDownloadService {
           // Parse CSV line (handle quoted fields)
           final fields = _parseCsvLine(line);
 
-          if (fields.length >= 14) {
+          if (fields.length >= 15) {
             sites.add({
               'id': int.tryParse(fields[0]) ?? 0,
               'name': fields[1].replaceAll('"', ''),
@@ -270,6 +270,7 @@ class PgeSitesDownloadService {
               'wind_sw': int.tryParse(fields[11]) ?? 0,
               'wind_w': int.tryParse(fields[12]) ?? 0,
               'wind_nw': int.tryParse(fields[13]) ?? 0,
+              'last_edit': fields[14].replaceAll('"', ''),  // last_edit date (YYYY-MM-DD)
             });
           }
         } catch (e) {
