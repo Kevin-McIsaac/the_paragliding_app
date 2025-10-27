@@ -501,27 +501,6 @@ class BomWeatherProvider implements WeatherStationProvider {
       }
     }
 
-    // Fallback: if no overlap, find nearest state by center point
-    if (overlapping.isEmpty) {
-      final center = viewBounds.center;
-      _BomState? nearest;
-      double minDistance = double.infinity;
-
-      for (final state in _australianStates) {
-        final stateCenter = state.bounds.center;
-        final distance = const Distance().distance(center, stateCenter);
-
-        if (distance < minDistance) {
-          minDistance = distance;
-          nearest = state;
-        }
-      }
-
-      if (nearest != null) {
-        overlapping.add(nearest);
-      }
-    }
-
     return overlapping;
   }
 
