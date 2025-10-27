@@ -3,12 +3,14 @@ class WindData {
   final double speedKmh;
   final double directionDegrees;
   final double? gustsKmh;
+  final double precipitationMm;
   final DateTime timestamp;
 
   const WindData({
     required this.speedKmh,
     required this.directionDegrees,
     this.gustsKmh,
+    this.precipitationMm = 0.0,
     required this.timestamp,
   });
 
@@ -144,6 +146,7 @@ class WindData {
     final gustsStr = gustsKmh != null ? '${gustsKmh!.toStringAsFixed(1)} km/h' : 'N/A';
     return 'WindData(speed: ${speedKmh.toStringAsFixed(1)} km/h, '
            'direction: ${directionDegrees.toStringAsFixed(0)}° ($compassDirection), '
-           'gusts: $gustsStr)';
+           'gusts: $gustsStr, '
+           'rain: ${precipitationMm.toStringAsFixed(1)} mm)';
   }
 }

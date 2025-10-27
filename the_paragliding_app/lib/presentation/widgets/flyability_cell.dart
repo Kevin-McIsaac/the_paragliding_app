@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/wind_data.dart';
+import '../../data/models/wind_forecast.dart';
 import '../../utils/flyability_helper.dart';
 import '../../utils/flyability_constants.dart';
 
@@ -18,6 +19,7 @@ class FlyabilityCellWidget extends StatelessWidget {
   final double maxWindSpeed;
   final double cautionWindSpeed;
   final double? cellSize;
+  final WindForecast? forecast; // Optional forecast for daylight times
 
   const FlyabilityCellWidget({
     super.key,
@@ -26,11 +28,18 @@ class FlyabilityCellWidget extends StatelessWidget {
     required this.maxWindSpeed,
     required this.cautionWindSpeed,
     this.cellSize,
+    this.forecast,
   });
 
   @override
   Widget build(BuildContext context) {
     final size = cellSize ?? FlyabilityConstants.cellSize;
+
+    // Get daylight times for the wind data timestamp from the forecast
+    DaylightTimes? daylightTimes;
+    if (forecast != null) {
+      daylightTimes = forecast!.getDaylightForDate(windData.timestamp);
+    }
 
     // Calculate flyability using centralized helper
     final flyabilityLevel = FlyabilityHelper.getFlyabilityLevel(
@@ -38,6 +47,7 @@ class FlyabilityCellWidget extends StatelessWidget {
       siteDirections: site.windDirections,
       maxSpeed: maxWindSpeed,
       cautionSpeed: cautionWindSpeed,
+      daylightTimes: daylightTimes,
     );
 
     // Get color with full opacity
@@ -49,6 +59,7 @@ class FlyabilityCellWidget extends StatelessWidget {
       windData: windData,
       siteDirections: site.windDirections,
       maxSpeed: maxWindSpeed,
+      daylightTimes: daylightTimes,
     );
 
     return Tooltip(

@@ -401,11 +401,18 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
     // Calculate flyability status using FlyabilityHelper for 3-level logic
     FlyabilityStatus? status;
     if (windDirections.isNotEmpty) {
+      // Get daylight times for the wind data timestamp from the forecast
+      DaylightTimes? daylightTimes;
+      if (_windForecast != null) {
+        daylightTimes = _windForecast!.getDaylightForDate(_windData!.timestamp);
+      }
+
       final flyabilityLevel = FlyabilityHelper.getFlyabilityLevel(
         windData: _windData!,
         siteDirections: tempSite.windDirections,
         maxSpeed: widget.maxWindSpeed,
         cautionSpeed: widget.cautionWindSpeed,
+        daylightTimes: daylightTimes,
       );
 
       // Convert FlyabilityLevel to FlyabilityStatus

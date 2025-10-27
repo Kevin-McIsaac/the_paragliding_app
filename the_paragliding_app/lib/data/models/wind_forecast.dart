@@ -1,5 +1,19 @@
 import 'wind_data.dart';
 
+/// Daylight times for a specific date
+class DaylightTimes {
+  final DateTime sunrise;
+  final DateTime sunset;
+
+  const DaylightTimes({
+    required this.sunrise,
+    required this.sunset,
+  });
+
+  @override
+  String toString() => 'DaylightTimes(sunrise: $sunrise, sunset: $sunset)';
+}
+
 /// Wind forecast for a specific location containing 7 days of hourly data
 ///
 /// This class efficiently stores 168 hours (7 days) of wind data using
@@ -21,8 +35,15 @@ class WindForecast {
   /// Wind gusts in km/h for each hour
   final List<double> gustsKmh;
 
+  /// Precipitation in mm for each hour (168 entries for 7 days)
+  final List<double> precipitationMm;
+
   /// Timestamps for each forecast hour (already parsed DateTime objects)
   final List<DateTime> timestamps;
+
+  /// Sunrise and sunset times by date (7 days)
+  /// Map key is date string in YYYY-MM-DD format
+  final Map<String, DaylightTimes> daylightTimes;
 
   /// When this forecast was fetched
   final DateTime fetchedAt;
@@ -33,7 +54,9 @@ class WindForecast {
     required this.speedsKmh,
     required this.directionsDegs,
     required this.gustsKmh,
+    required this.precipitationMm,
     required this.timestamps,
+    required this.daylightTimes,
     required this.fetchedAt,
   });
 
@@ -42,29 +65,57 @@ class WindForecast {
     required double latitude,
     required double longitude,
     required Map<String, dynamic> hourlyData,
+    Map<String, dynamic>? dailyData,
   }) {
     final times = List<String>.from(hourlyData['time']);
     final rawSpeeds = hourlyData['wind_speed_10m'] as List;
     final rawDirections = hourlyData['wind_direction_10m'] as List;
     final rawGusts = hourlyData['wind_gusts_10m'] as List;
+    final rawPrecipitation = hourlyData['precipitation'] as List?;
 
     // Build parallel arrays, filtering out entries where any value is null
     final validTimestamps = <DateTime>[];
     final validSpeeds = <double>[];
     final validDirections = <double>[];
     final validGusts = <double>[];
+    final validPrecipitation = <double>[];
 
     for (int i = 0; i < times.length; i++) {
       final speed = rawSpeeds[i];
       final direction = rawDirections[i];
       final gust = rawGusts[i];
+      final precip = rawPrecipitation != null ? rawPrecipitation[i] : null;
 
       // Only include entries where all values are non-null
-      if (speed != null && direction != null && gust != null) {
+      if (speed != null && direction != null && gust != null && precip != null) {
         validTimestamps.add(DateTime.parse(times[i]));
         validSpeeds.add((speed as num).toDouble());
         validDirections.add((direction as num).toDouble());
         validGusts.add((gust as num).toDouble());
+        validPrecipitation.add((precip as num).toDouble());
+      }
+    }
+
+    // Parse daily sunrise/sunset data
+    final daylightMap = <String, DaylightTimes>{};
+    if (dailyData != null) {
+      final dailyTimes = dailyData['time'] as List?;
+      final sunrises = dailyData['sunrise'] as List?;
+      final sunsets = dailyData['sunset'] as List?;
+
+      if (dailyTimes != null && sunrises != null && sunsets != null) {
+        for (int i = 0; i < dailyTimes.length; i++) {
+          final dateStr = dailyTimes[i] as String;
+          final sunrise = sunrises[i];
+          final sunset = sunsets[i];
+
+          if (sunrise != null && sunset != null) {
+            daylightMap[dateStr] = DaylightTimes(
+              sunrise: DateTime.parse(sunrise as String),
+              sunset: DateTime.parse(sunset as String),
+            );
+          }
+        }
       }
     }
 
@@ -74,7 +125,9 @@ class WindForecast {
       speedsKmh: validSpeeds,
       directionsDegs: validDirections,
       gustsKmh: validGusts,
+      precipitationMm: validPrecipitation,
       timestamps: validTimestamps,
+      daylightTimes: daylightMap,
       fetchedAt: DateTime.now(),
     );
   }
@@ -128,8 +181,17 @@ class WindForecast {
       speedKmh: speedsKmh[index],
       directionDegrees: directionsDegs[index],
       gustsKmh: gustsKmh[index],
+      precipitationMm: precipitationMm[index],
       timestamp: timestamps[index],
     );
+  }
+
+  /// Get daylight times for a specific date
+  /// Returns null if no daylight data is available for that date
+  DaylightTimes? getDaylightForDate(DateTime date) {
+    // Format date as YYYY-MM-DD to match map keys
+    final dateStr = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    return daylightTimes[dateStr];
   }
 
   /// Check if this forecast is still fresh (less than 1 hour old)

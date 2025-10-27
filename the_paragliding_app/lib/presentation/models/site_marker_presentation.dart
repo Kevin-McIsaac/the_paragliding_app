@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/flyability_status.dart';
 import '../../data/models/wind_data.dart';
+import '../../data/models/wind_forecast.dart';
 import '../../utils/site_marker_utils.dart';
 import '../../utils/flyability_helper.dart';
 
@@ -53,6 +54,7 @@ class SiteMarkerPresentation {
     required double maxWindSpeed,
     required double cautionWindSpeed,
     required bool forecastEnabled,
+    WindForecast? forecast, // Optional forecast for daylight times
   }) {
     // Determine flyability status if not provided
     final effectiveStatus = status ?? FlyabilityStatus.unknown;
@@ -101,6 +103,7 @@ class SiteMarkerPresentation {
       windData: windData,
       maxWindSpeed: maxWindSpeed,
       cautionWindSpeed: cautionWindSpeed,
+      forecast: forecast,
     );
 
     return SiteMarkerPresentation(
@@ -117,6 +120,7 @@ class SiteMarkerPresentation {
     WindData? windData,
     required double maxWindSpeed,
     required double cautionWindSpeed,
+    WindForecast? forecast,
   }) {
     switch (status) {
       case FlyabilityStatus.flyable:
@@ -124,12 +128,19 @@ class SiteMarkerPresentation {
       case FlyabilityStatus.notFlyable:
         // Use FlyabilityHelper for consistent tooltips with forecast table
         if (windData != null && site.windDirections.isNotEmpty) {
+          // Get daylight times for the wind data timestamp from the forecast
+          DaylightTimes? daylightTimes;
+          if (forecast != null) {
+            daylightTimes = forecast.getDaylightForDate(windData.timestamp);
+          }
+
           // Convert FlyabilityStatus to FlyabilityLevel
           final flyabilityLevel = FlyabilityHelper.getFlyabilityLevel(
             windData: windData,
             siteDirections: site.windDirections,
             maxSpeed: maxWindSpeed,
             cautionSpeed: cautionWindSpeed,
+            daylightTimes: daylightTimes,
           );
 
           return FlyabilityHelper.getTooltipForLevel(
@@ -137,6 +148,7 @@ class SiteMarkerPresentation {
             windData: windData,
             siteDirections: site.windDirections,
             maxSpeed: maxWindSpeed,
+            daylightTimes: daylightTimes,
           );
         }
         return 'Flyability calculation error';

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../data/models/wind_data.dart';
+import '../data/models/wind_forecast.dart';
 
 /// Flyability levels for wind conditions
 enum FlyabilityLevel {
@@ -20,12 +21,14 @@ class FlyabilityHelper {
   static const Color unsafeColor = Colors.red;      // Unsafe conditions
   static const Color unknownColor = Colors.blue;    // Unknown/no data
 
-  /// Determine flyability level based on wind conditions
+  /// Determine flyability level based on weather conditions
   ///
-  /// Logic flow (clearest order):
-  /// 1. Check if site has wind directions (unknown if empty)
-  /// 2. Check direction match (unsafe if wrong direction)
-  /// 3. Check speed thresholds in order:
+  /// Logic flow (priority order - safety first):
+  /// 1. Check for rain (unsafe if precipitation > 0)
+  /// 2. Check daylight hours (unsafe if outside sunrise-sunset)
+  /// 3. Check if site has wind directions (unknown if empty)
+  /// 4. Check direction match (unsafe if wrong direction)
+  /// 5. Check speed thresholds in order:
   ///    - unsafe if speed > maxSpeed
   ///    - caution if speed > cautionSpeed
   ///    - safe otherwise
@@ -35,20 +38,34 @@ class FlyabilityHelper {
   /// Returns:
   /// - FlyabilityLevel.safe: Good conditions for flying
   /// - FlyabilityLevel.caution: Flyable but strong (above caution threshold)
-  /// - FlyabilityLevel.unsafe: Too strong or wrong direction
+  /// - FlyabilityLevel.unsafe: Rain, darkness, too strong, or wrong direction
   /// - FlyabilityLevel.unknown: No wind directions defined
   static FlyabilityLevel getFlyabilityLevel({
     required WindData windData,
     required List<String> siteDirections,
     required double maxSpeed,
     required double cautionSpeed,
+    DaylightTimes? daylightTimes,
   }) {
-    // Step 1: No wind directions = unknown
+    // PRIORITY 1: Check for rain (paragliders can't fly in rain)
+    if (windData.precipitationMm > 0) {
+      return FlyabilityLevel.unsafe;
+    }
+
+    // PRIORITY 2: Check daylight (paragliders can't fly in darkness)
+    if (daylightTimes != null) {
+      final timestamp = windData.timestamp;
+      if (timestamp.isBefore(daylightTimes.sunrise) || timestamp.isAfter(daylightTimes.sunset)) {
+        return FlyabilityLevel.unsafe;
+      }
+    }
+
+    // Step 3: No wind directions = unknown
     if (siteDirections.isEmpty) {
       return FlyabilityLevel.unknown;
     }
 
-    // Step 2: Check direction match (only if wind speed > 1 km/h)
+    // Step 4: Check direction match (only if wind speed > 1 km/h)
     if (windData.speedKmh > 1.0) {
       final directionMatches = windData.isDirectionFlyable(siteDirections);
       if (!directionMatches) {
@@ -56,7 +73,7 @@ class FlyabilityHelper {
       }
     }
 
-    // Step 3: Check speed thresholds (direction is OK or wind is light)
+    // Step 5: Check speed thresholds (direction is OK or wind is light)
     // Check if above unsafe threshold
     if (windData.speedKmh > maxSpeed) {
       return FlyabilityLevel.unsafe;
@@ -88,12 +105,13 @@ class FlyabilityHelper {
   /// Get tooltip explanation for flyability level
   ///
   /// Provides human-readable explanation of why the conditions are
-  /// safe/caution/unsafe, including specific wind values and direction info
+  /// safe/caution/unsafe, including rain, daylight, wind values and direction info
   static String getTooltipForLevel({
     required FlyabilityLevel level,
     required WindData windData,
     required List<String> siteDirections,
     required double maxSpeed,
+    DaylightTimes? daylightTimes,
   }) {
     switch (level) {
       case FlyabilityLevel.unknown:
@@ -117,7 +135,25 @@ class FlyabilityHelper {
         return '${windData.speedKmh.toStringAsFixed(1)} km/h from ${windData.compassDirectionWithAngle}$gustsStr - strong winds, experienced pilots only';
 
       case FlyabilityLevel.unsafe:
-        // Get detailed reason from WindData
+        // Check rain first (highest priority safety issue)
+        if (windData.precipitationMm > 0) {
+          return 'Unsafe - Rain (${windData.precipitationMm.toStringAsFixed(1)} mm/hr)';
+        }
+
+        // Check daylight
+        if (daylightTimes != null) {
+          final timestamp = windData.timestamp;
+          if (timestamp.isBefore(daylightTimes.sunrise)) {
+            final sunriseTime = '${daylightTimes.sunrise.hour.toString().padLeft(2, '0')}:${daylightTimes.sunrise.minute.toString().padLeft(2, '0')}';
+            return 'Unsafe - Before sunrise ($sunriseTime)';
+          }
+          if (timestamp.isAfter(daylightTimes.sunset)) {
+            final sunsetTime = '${daylightTimes.sunset.hour.toString().padLeft(2, '0')}:${daylightTimes.sunset.minute.toString().padLeft(2, '0')}';
+            return 'Unsafe - After sunset ($sunsetTime)';
+          }
+        }
+
+        // Get detailed wind-related reason from WindData
         return windData.getFlyabilityReason(siteDirections, maxSpeed);
     }
   }

@@ -506,6 +506,9 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
     final levels = peakHours.map((windData) {
       if (windData == null) return null;
 
+      // Note: daylight times not available here as we don't have forecast objects
+      // Only WindData is passed to this widget. This is acceptable as the week summary
+      // shows aggregate flyability and doesn't need precise daylight filtering.
       return FlyabilityHelper.getFlyabilityLevel(
         windData: windData,
         siteDirections: site.windDirections,
