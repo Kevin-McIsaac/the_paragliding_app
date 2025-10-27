@@ -19,4 +19,8 @@ enum WeatherStationSource {
   /// FFVL (French Free Flight Federation) from data.ffvl.fr
   /// Weather beacons primarily in France and Europe
   ffvl,
+
+  /// Bureau of Meteorology (BOM) from reg.bom.gov.au
+  /// Australian weather stations with real-time observations
+  bom,
 }

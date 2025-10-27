@@ -20,6 +20,7 @@ class MapFilterDialog extends StatefulWidget {
   final bool nwsEnabled;
   final bool pioupiouEnabled;
   final bool ffvlEnabled;
+  final bool bomEnabled;
   final Map<String, bool> airspaceTypes;
   final Map<String, bool> icaoClasses;
   final double maxAltitudeFt;
@@ -33,6 +34,7 @@ class MapFilterDialog extends StatefulWidget {
     bool nwsEnabled,
     bool pioupiouEnabled,
     bool ffvlEnabled,
+    bool bomEnabled,
     Map<String, bool> types,
     Map<String, bool> classes,
     double maxAltitudeFt,
@@ -49,6 +51,7 @@ class MapFilterDialog extends StatefulWidget {
     required this.nwsEnabled,
     required this.pioupiouEnabled,
     required this.ffvlEnabled,
+    required this.bomEnabled,
     required this.airspaceTypes,
     required this.icaoClasses,
     required this.maxAltitudeFt,
@@ -69,6 +72,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
   late bool _nwsEnabled;
   late bool _pioupiouEnabled;
   late bool _ffvlEnabled;
+  late bool _bomEnabled;
   late Map<String, bool> _airspaceTypes;
   late Map<String, bool> _icaoClasses;
   late double _maxAltitudeFt;
@@ -113,6 +117,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
     _nwsEnabled = widget.nwsEnabled;
     _pioupiouEnabled = widget.pioupiouEnabled;
     _ffvlEnabled = widget.ffvlEnabled;
+    _bomEnabled = widget.bomEnabled;
     _airspaceTypes = Map<String, bool>.from(widget.airspaceTypes);
     _icaoClasses = Map<String, bool>.from(widget.icaoClasses);
     _maxAltitudeFt = widget.maxAltitudeFt;
@@ -507,6 +512,17 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
                 subtitle: WeatherStationProviderRegistry.getProvider(WeatherStationSource.ffvl).description,
                 onChanged: _weatherStationsEnabled ? (value) => setState(() {
                   _ffvlEnabled = value ?? true;
+                  _applyFiltersImmediately();
+                }) : null,
+              ),
+              const SizedBox(height: 2),
+              // BOM provider (Australia)
+              _buildProviderCheckbox(
+                value: _bomEnabled,
+                label: 'Bureau of Meteorology (Australia)',
+                subtitle: WeatherStationProviderRegistry.getProvider(WeatherStationSource.bom).description,
+                onChanged: _weatherStationsEnabled ? (value) => setState(() {
+                  _bomEnabled = value ?? true;
                   _applyFiltersImmediately();
                 }) : null,
               ),
@@ -1098,7 +1114,7 @@ class _MapFilterDialogState extends State<MapFilterDialog> {
       'clipping_enabled': _clippingEnabled,
     });
 
-    widget.onApply(_sitesEnabled, _airspaceEnabled, _forecastEnabled, _weatherStationsEnabled, _metarEnabled, _nwsEnabled, _pioupiouEnabled, _ffvlEnabled, _airspaceTypes, _icaoClasses, _maxAltitudeFt, _clippingEnabled);
+    widget.onApply(_sitesEnabled, _airspaceEnabled, _forecastEnabled, _weatherStationsEnabled, _metarEnabled, _nwsEnabled, _pioupiouEnabled, _ffvlEnabled, _bomEnabled, _airspaceTypes, _icaoClasses, _maxAltitudeFt, _clippingEnabled);
   }
 
   /// Build a provider checkbox widget

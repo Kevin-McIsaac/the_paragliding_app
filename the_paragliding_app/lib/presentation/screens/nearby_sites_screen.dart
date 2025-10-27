@@ -117,6 +117,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
   bool _nwsEnabled = true; // NWS provider enabled (default: true, free/no API key)
   bool _pioupiouEnabled = true; // Pioupiou provider enabled (default: true, free/no API key)
   bool _ffvlEnabled = true; // FFVL provider enabled (default: true, has API key)
+  bool _bomEnabled = true; // BOM provider enabled (default: true, free/no API key)
   bool _hasActiveFilters = false; // Cached value to avoid FutureBuilder rebuilds
   double _maxAltitudeFt = 10000.0; // Default altitude filter
   bool _airspaceClippingEnabled = true; // Default clipping enabled
@@ -349,6 +350,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       final nwsEnabled = prefs.getBool('weather_provider_${WeatherStationSource.nws.name}_enabled') ?? true;
       final pioupiouEnabled = prefs.getBool('weather_provider_${WeatherStationSource.pioupiou.name}_enabled') ?? true;
       final ffvlEnabled = prefs.getBool('weather_provider_${WeatherStationSource.ffvl.name}_enabled') ?? true;
+      final bomEnabled = prefs.getBool('weather_provider_${WeatherStationSource.bom.name}_enabled') ?? true;
 
       if (mounted) {
         setState(() {
@@ -360,6 +362,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
           _nwsEnabled = nwsEnabled;
           _pioupiouEnabled = pioupiouEnabled;
           _ffvlEnabled = ffvlEnabled;
+          _bomEnabled = bomEnabled;
         });
       }
     } catch (e) {
@@ -1321,6 +1324,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
           nwsEnabled: _nwsEnabled,
           pioupiouEnabled: _pioupiouEnabled,
           ffvlEnabled: _ffvlEnabled,
+          bomEnabled: _bomEnabled,
           airspaceTypes: airspaceTypes,
           icaoClasses: icaoClasses,
           maxAltitudeFt: _maxAltitudeFt,
@@ -1352,7 +1356,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
   }
 
   /// Handle filter apply from dialog
-  void _handleFilterApply(bool sitesEnabled, bool airspaceEnabled, bool forecastEnabled, bool weatherStationsEnabled, bool metarEnabled, bool nwsEnabled, bool pioupiouEnabled, bool ffvlEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) async {
+  void _handleFilterApply(bool sitesEnabled, bool airspaceEnabled, bool forecastEnabled, bool weatherStationsEnabled, bool metarEnabled, bool nwsEnabled, bool pioupiouEnabled, bool ffvlEnabled, bool bomEnabled, Map<String, bool> types, Map<String, bool> classes, double maxAltitudeFt, bool clippingEnabled) async {
     try {
       // Update filter states
       final previousSitesEnabled = _sitesEnabled;
@@ -1363,6 +1367,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       final previousNwsEnabled = _nwsEnabled;
       final previousPioupiouEnabled = _pioupiouEnabled;
       final previousFfvlEnabled = _ffvlEnabled;
+      final previousBomEnabled = _bomEnabled;
 
       // Update non-airspace states immediately
       setState(() {
@@ -1374,6 +1379,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
         _nwsEnabled = nwsEnabled;
         _pioupiouEnabled = pioupiouEnabled;
         _ffvlEnabled = ffvlEnabled;
+        _bomEnabled = bomEnabled;
         _maxAltitudeFt = maxAltitudeFt;
       });
 
@@ -1387,6 +1393,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       await prefs.setBool('weather_provider_${WeatherStationSource.nws.name}_enabled', nwsEnabled);
       await prefs.setBool('weather_provider_${WeatherStationSource.pioupiou.name}_enabled', pioupiouEnabled);
       await prefs.setBool('weather_provider_${WeatherStationSource.ffvl.name}_enabled', ffvlEnabled);
+      await prefs.setBool('weather_provider_${WeatherStationSource.bom.name}_enabled', bomEnabled);
 
       // Handle sites visibility changes
       if (!sitesEnabled && previousSitesEnabled) {
@@ -1468,7 +1475,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
           _fetchWeatherStations();
         }
         LoggingService.action('MapFilter', 'weather_stations_enabled', {'will_fetch': currentZoom >= MapConstants.minForecastZoom});
-      } else if (weatherStationsEnabled && (metarEnabled != previousMetarEnabled || nwsEnabled != previousNwsEnabled || pioupiouEnabled != previousPioupiouEnabled || ffvlEnabled != previousFfvlEnabled)) {
+      } else if (weatherStationsEnabled && (metarEnabled != previousMetarEnabled || nwsEnabled != previousNwsEnabled || pioupiouEnabled != previousPioupiouEnabled || ffvlEnabled != previousFfvlEnabled || bomEnabled != previousBomEnabled)) {
         // Weather station providers changed - refresh stations
         final currentZoom = MapConstants.roundZoomForDisplay(_mapController.camera.zoom);
         if (currentZoom >= MapConstants.minForecastZoom) {
@@ -1481,10 +1488,12 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
           'nws_enabled': nwsEnabled,
           'pioupiou_enabled': pioupiouEnabled,
           'ffvl_enabled': ffvlEnabled,
+          'bom_enabled': bomEnabled,
           'metar_changed': metarEnabled != previousMetarEnabled,
           'nws_changed': nwsEnabled != previousNwsEnabled,
           'pioupiou_changed': pioupiouEnabled != previousPioupiouEnabled,
           'ffvl_changed': ffvlEnabled != previousFfvlEnabled,
+          'bom_changed': bomEnabled != previousBomEnabled,
         });
       }
 
@@ -1820,6 +1829,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
                         if (source == WeatherStationSource.nws) return _nwsEnabled;
                         if (source == WeatherStationSource.pioupiou) return _pioupiouEnabled;
                         if (source == WeatherStationSource.ffvl) return _ffvlEnabled;
+                        if (source == WeatherStationSource.bom) return _bomEnabled;
                         return false;
                       })
                       .map((source) {
@@ -1973,6 +1983,7 @@ class _DraggableFilterDialog extends StatefulWidget {
   final bool nwsEnabled;
   final bool pioupiouEnabled;
   final bool ffvlEnabled;
+  final bool bomEnabled;
   final Map<String, bool> airspaceTypes;
   final Map<String, bool> icaoClasses;
   final double maxAltitudeFt;
@@ -1986,6 +1997,7 @@ class _DraggableFilterDialog extends StatefulWidget {
     bool nwsEnabled,
     bool pioupiouEnabled,
     bool ffvlEnabled,
+    bool bomEnabled,
     Map<String, bool> types,
     Map<String, bool> classes,
     double maxAltitudeFt,
@@ -2001,6 +2013,7 @@ class _DraggableFilterDialog extends StatefulWidget {
     required this.nwsEnabled,
     required this.pioupiouEnabled,
     required this.ffvlEnabled,
+    required this.bomEnabled,
     required this.airspaceTypes,
     required this.icaoClasses,
     required this.maxAltitudeFt,
@@ -2046,6 +2059,7 @@ class _DraggableFilterDialogState extends State<_DraggableFilterDialog> {
                 nwsEnabled: widget.nwsEnabled,
                 pioupiouEnabled: widget.pioupiouEnabled,
                 ffvlEnabled: widget.ffvlEnabled,
+                bomEnabled: widget.bomEnabled,
                 airspaceTypes: widget.airspaceTypes,
                 icaoClasses: widget.icaoClasses,
                 maxAltitudeFt: widget.maxAltitudeFt,

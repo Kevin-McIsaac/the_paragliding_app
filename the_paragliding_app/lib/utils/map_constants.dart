@@ -45,6 +45,10 @@ class MapConstants {
   static const Duration ffvlBeaconListCacheTTL = Duration(hours: 24); // Beacons don't move
   static const Duration ffvlMeasurementsCacheTTL = Duration(minutes: 5); // FFVL updates every minute
 
+  // BOM-specific caching (state-based global cache strategy)
+  static const Duration bomStationListCacheTTL = Duration(hours: 24); // Station locations don't change
+  static const Duration bomObservationCacheTTL = Duration(minutes: 10); // BOM updates every 10 minutes
+
   // Map UI constants
   static const double mapPadding = 0.005;
 
