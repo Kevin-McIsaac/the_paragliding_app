@@ -90,7 +90,6 @@ class WeatherService {
       var urlString = 'https://api.open-meteo.com/v1/forecast'
           '?latitude=$lat&longitude=$lon'
           '&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation'
-          '&daily=sunrise,sunset'
           '&wind_speed_unit=kmh'
           '&forecast_days=7'
           '&timezone=auto';
@@ -116,14 +115,12 @@ class WeatherService {
 
         // Parse full 7-day hourly forecast
         final hourlyData = json['hourly'] as Map<String, dynamic>;
-        final dailyData = json['daily'] as Map<String, dynamic>?;
 
         // Create forecast from API response
         final forecast = WindForecast.fromOpenMeteo(
           latitude: lat,
           longitude: lon,
           hourlyData: hourlyData,
-          dailyData: dailyData,
         );
 
         // Cache the full forecast
@@ -277,7 +274,6 @@ class WeatherService {
       var urlString = 'https://api.open-meteo.com/v1/forecast'
           '?latitude=$latitudes&longitude=$longitudes'
           '&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation'
-          '&daily=sunrise,sunset'
           '&wind_speed_unit=kmh'
           '&forecast_days=7'
           '&timezone=auto';
@@ -313,14 +309,12 @@ class WeatherService {
 
           // Parse full 7-day hourly forecast
           final hourlyData = locationData['hourly'] as Map<String, dynamic>;
-          final dailyData = locationData['daily'] as Map<String, dynamic>?;
 
           // Create forecast from API response
           final forecast = WindForecast.fromOpenMeteo(
             latitude: location.latitude,
             longitude: location.longitude,
             hourlyData: hourlyData,
-            dailyData: dailyData,
           );
 
           // Cache the full forecast

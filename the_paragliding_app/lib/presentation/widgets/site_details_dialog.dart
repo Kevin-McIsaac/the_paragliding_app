@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:geolocator/geolocator.dart';
@@ -18,7 +17,6 @@ import '../../services/database_service.dart';
 import '../../services/pge_sites_database_service.dart';
 import '../../utils/flyability_helper.dart';
 import '../widgets/wind_rose_widget.dart';
-import '../widgets/flyability_cell.dart';
 import '../widgets/site_forecast_table.dart';
 import '../widgets/forecast_attribution_bar.dart';
 
@@ -401,18 +399,11 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
     // Calculate flyability status using FlyabilityHelper for 3-level logic
     FlyabilityStatus? status;
     if (windDirections.isNotEmpty) {
-      // Get daylight times for the wind data timestamp from the forecast
-      DaylightTimes? daylightTimes;
-      if (_windForecast != null) {
-        daylightTimes = _windForecast!.getDaylightForDate(_windData!.timestamp);
-      }
-
       final flyabilityLevel = FlyabilityHelper.getFlyabilityLevel(
         windData: _windData!,
         siteDirections: tempSite.windDirections,
         maxSpeed: widget.maxWindSpeed,
         cautionSpeed: widget.cautionWindSpeed,
-        daylightTimes: daylightTimes,
       );
 
       // Convert FlyabilityLevel to FlyabilityStatus

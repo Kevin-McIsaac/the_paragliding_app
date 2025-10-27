@@ -128,19 +128,12 @@ class SiteMarkerPresentation {
       case FlyabilityStatus.notFlyable:
         // Use FlyabilityHelper for consistent tooltips with forecast table
         if (windData != null && site.windDirections.isNotEmpty) {
-          // Get daylight times for the wind data timestamp from the forecast
-          DaylightTimes? daylightTimes;
-          if (forecast != null) {
-            daylightTimes = forecast.getDaylightForDate(windData.timestamp);
-          }
-
           // Convert FlyabilityStatus to FlyabilityLevel
           final flyabilityLevel = FlyabilityHelper.getFlyabilityLevel(
             windData: windData,
             siteDirections: site.windDirections,
             maxSpeed: maxWindSpeed,
             cautionSpeed: cautionWindSpeed,
-            daylightTimes: daylightTimes,
           );
 
           return FlyabilityHelper.getTooltipForLevel(
@@ -148,7 +141,6 @@ class SiteMarkerPresentation {
             windData: windData,
             siteDirections: site.windDirections,
             maxSpeed: maxWindSpeed,
-            daylightTimes: daylightTimes,
           );
         }
         return 'Flyability calculation error';

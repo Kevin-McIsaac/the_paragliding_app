@@ -35,19 +35,12 @@ class FlyabilityCellWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final size = cellSize ?? FlyabilityConstants.cellSize;
 
-    // Get daylight times for the wind data timestamp from the forecast
-    DaylightTimes? daylightTimes;
-    if (forecast != null) {
-      daylightTimes = forecast!.getDaylightForDate(windData.timestamp);
-    }
-
     // Calculate flyability using centralized helper
     final flyabilityLevel = FlyabilityHelper.getFlyabilityLevel(
       windData: windData,
       siteDirections: site.windDirections,
       maxSpeed: maxWindSpeed,
       cautionSpeed: cautionWindSpeed,
-      daylightTimes: daylightTimes,
     );
 
     // Get color with full opacity
@@ -59,7 +52,6 @@ class FlyabilityCellWidget extends StatelessWidget {
       windData: windData,
       siteDirections: site.windDirections,
       maxSpeed: maxWindSpeed,
-      daylightTimes: daylightTimes,
     );
 
     return Tooltip(
