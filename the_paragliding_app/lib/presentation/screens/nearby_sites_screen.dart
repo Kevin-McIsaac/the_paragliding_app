@@ -846,6 +846,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
         _siteFlyabilityStatus[key] = FlyabilityStatus.unknown;
         unknown++;
       } else {
+        // Note: daylight times not passed here to avoid async forecast fetching in sync method
+        // This is acceptable as map markers show basic flyability without daylight filtering
+        // Detailed daylight-aware flyability is shown in site details dialog and forecast tables
         // Use FlyabilityHelper for consistent 3-level logic
         final flyabilityLevel = FlyabilityHelper.getFlyabilityLevel(
           windData: wind,

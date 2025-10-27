@@ -89,7 +89,7 @@ class WeatherService {
       // Build API URL with optional models parameter
       var urlString = 'https://api.open-meteo.com/v1/forecast'
           '?latitude=$lat&longitude=$lon'
-          '&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m'
+          '&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation'
           '&wind_speed_unit=kmh'
           '&forecast_days=7'
           '&timezone=auto';
@@ -273,7 +273,7 @@ class WeatherService {
       // Build API URL with optional models parameter
       var urlString = 'https://api.open-meteo.com/v1/forecast'
           '?latitude=$latitudes&longitude=$longitudes'
-          '&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m'
+          '&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation'
           '&wind_speed_unit=kmh'
           '&forecast_days=7'
           '&timezone=auto';

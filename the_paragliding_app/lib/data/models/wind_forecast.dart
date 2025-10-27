@@ -21,6 +21,9 @@ class WindForecast {
   /// Wind gusts in km/h for each hour
   final List<double> gustsKmh;
 
+  /// Precipitation in mm for each hour (168 entries for 7 days)
+  final List<double> precipitationMm;
+
   /// Timestamps for each forecast hour (already parsed DateTime objects)
   final List<DateTime> timestamps;
 
@@ -33,6 +36,7 @@ class WindForecast {
     required this.speedsKmh,
     required this.directionsDegs,
     required this.gustsKmh,
+    required this.precipitationMm,
     required this.timestamps,
     required this.fetchedAt,
   });
@@ -47,24 +51,28 @@ class WindForecast {
     final rawSpeeds = hourlyData['wind_speed_10m'] as List;
     final rawDirections = hourlyData['wind_direction_10m'] as List;
     final rawGusts = hourlyData['wind_gusts_10m'] as List;
+    final rawPrecipitation = hourlyData['precipitation'] as List?;
 
     // Build parallel arrays, filtering out entries where any value is null
     final validTimestamps = <DateTime>[];
     final validSpeeds = <double>[];
     final validDirections = <double>[];
     final validGusts = <double>[];
+    final validPrecipitation = <double>[];
 
     for (int i = 0; i < times.length; i++) {
       final speed = rawSpeeds[i];
       final direction = rawDirections[i];
       final gust = rawGusts[i];
+      final precip = rawPrecipitation != null ? rawPrecipitation[i] : null;
 
-      // Only include entries where all values are non-null
+      // Only include entries where wind values are non-null (precipitation optional)
       if (speed != null && direction != null && gust != null) {
         validTimestamps.add(DateTime.parse(times[i]));
         validSpeeds.add((speed as num).toDouble());
         validDirections.add((direction as num).toDouble());
         validGusts.add((gust as num).toDouble());
+        validPrecipitation.add(precip != null ? (precip as num).toDouble() : 0.0);
       }
     }
 
@@ -74,6 +82,7 @@ class WindForecast {
       speedsKmh: validSpeeds,
       directionsDegs: validDirections,
       gustsKmh: validGusts,
+      precipitationMm: validPrecipitation,
       timestamps: validTimestamps,
       fetchedAt: DateTime.now(),
     );
@@ -128,6 +137,7 @@ class WindForecast {
       speedKmh: speedsKmh[index],
       directionDegrees: directionsDegs[index],
       gustsKmh: gustsKmh[index],
+      precipitationMm: precipitationMm[index],
       timestamp: timestamps[index],
     );
   }
