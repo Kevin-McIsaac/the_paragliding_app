@@ -249,6 +249,17 @@ class BomWeatherProvider implements WeatherStationProvider {
       if (response.statusCode == 200) {
         final networkTime = stopwatch.elapsedMilliseconds;
 
+        // Validate response size (documented max is 480 KB, allow up to 1 MB)
+        if (response.body.length > 1024 * 1024) {
+          LoggingService.structured('BOM_RESPONSE_TOO_LARGE', {
+            'state': state.code,
+            'size_bytes': response.body.length,
+            'size_kb': (response.body.length / 1024).round(),
+            'max_allowed_kb': 1024,
+          });
+          return [];
+        }
+
         // Parse XML
         final parseStopwatch = Stopwatch()..start();
         final stations = _parseStateXml(response.body, state);
@@ -287,10 +298,11 @@ class BomWeatherProvider implements WeatherStationProvider {
         LoggingService.structured('BOM_STATE_HTTP_ERROR', {
           'state': state.code,
           'status_code': response.statusCode,
-          'response_preview': response.body.substring(
-            0,
-            response.body.length > 500 ? 500 : response.body.length,
-          ),
+          'response_preview': response.body.isEmpty
+            ? '(empty response)'
+            : response.body.length > 500
+              ? response.body.substring(0, 500)
+              : response.body,
           'duration_ms': stopwatch.elapsedMilliseconds,
         });
         return [];
