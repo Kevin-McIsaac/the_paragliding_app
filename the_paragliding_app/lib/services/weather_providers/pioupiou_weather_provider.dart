@@ -77,7 +77,23 @@ class PioupiouWeatherProvider implements WeatherStationProvider {
 
       // Step 1: Check if station list cache is valid (<24hr)
       if (_globalCache != null && !_globalCache!.stationListExpired) {
-        // Step 2: Check if measurements are stale (>20min)
+        // Step 2: Check if ANY stations exist in current view
+        final hasStationsInView = _globalCache!.stations.any((s) =>
+          bounds.contains(LatLng(s.latitude, s.longitude))
+        );
+
+        if (!hasStationsInView) {
+          // No stations to display - skip measurement refresh API call
+          LoggingService.structured('PIOUPIOU_NO_STATIONS_IN_VIEW', {
+            'bounds': '${bounds.south},${bounds.west},${bounds.north},${bounds.east}',
+            'cached_bbox': '${_globalCache!.bounds.south},${_globalCache!.bounds.west},'
+                          '${_globalCache!.bounds.north},${_globalCache!.bounds.east}',
+            'total_cached_stations': _globalCache!.stations.length,
+          });
+          return []; // Skip API call - no stations to show
+        }
+
+        // Step 3: We have stations - check if measurements are stale (>20min)
         if (_globalCache!.measurementsExpired) {
           LoggingService.info('Pioupiou measurements expired, refreshing');
           await _refreshMeasurements();
@@ -93,7 +109,7 @@ class PioupiouWeatherProvider implements WeatherStationProvider {
           });
         }
 
-        // Step 3: Filter to bbox and return
+        // Step 4: Filter to bbox and return
         return _filterStationsToBounds(_globalCache!.stations, bounds);
       }
 

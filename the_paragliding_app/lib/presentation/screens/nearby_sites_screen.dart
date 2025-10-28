@@ -589,12 +589,15 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
             required stations,
           }) async {
             if (mounted) {
-              // Update loading state
-              setState(() {
-                _providerStates[source] = success
-                    ? LoadingItemState.completed
-                    : LoadingItemState.error;
-              });
+              // Only update loading state if provider returned data or had an error
+              // Skip providers that returned 0 stations (bbox/no stations optimization)
+              if (!success || stationCount > 0) {
+                setState(() {
+                  _providerStates[source] = success
+                      ? LoadingItemState.completed
+                      : LoadingItemState.error;
+                });
+              }
 
               // Cumulative update: Replace all stations with deduplicated cumulative list
               // This creates progressive appearance as cumulative list grows with each provider
