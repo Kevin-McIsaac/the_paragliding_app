@@ -66,7 +66,24 @@ class WeatherStationService {
         final provider = entry.value;
 
         try {
-          final stations = await provider.fetchStations(bounds);
+          // Pass callback to provider so it can notify when API call starts
+          final stations = await provider.fetchStations(
+            bounds,
+            onApiCallStart: onProgress != null
+                ? () {
+                    // Notify UI that this provider is making an API call
+                    // Pass empty station list since we're just starting
+                    final deduplicatedSoFar = _deduplicateStations(allStations);
+                    onProgress.call(
+                      source: provider.source,
+                      displayName: provider.displayName,
+                      success: true,
+                      stationCount: 0, // API call starting, no results yet
+                      stations: deduplicatedSoFar,
+                    );
+                  }
+                : null,
+          );
           LoggingService.info('${provider.displayName}: fetched ${stations.length} stations');
 
           // Store result
@@ -104,6 +121,22 @@ class WeatherStationService {
       });
 
       final results = await Future.wait(futures);
+
+      // Log summary of which providers returned data vs were skipped
+      final providerSummary = <String, dynamic>{};
+      for (var i = 0; i < enabledProviders.length; i++) {
+        final provider = enabledProviders[i];
+        final count = results[i].length;
+        providerSummary[provider.source.name] = {
+          'station_count': count,
+          'status': count > 0 ? 'data_returned' : 'skipped_or_empty',
+        };
+      }
+
+      LoggingService.structured('WEATHER_PROVIDERS_SUMMARY', {
+        'total_providers': enabledProviders.length,
+        'providers': providerSummary,
+      });
 
       // Final combined results (for return value compatibility)
       allStations.clear();

@@ -4,6 +4,7 @@ import 'aviation_weather_center_provider.dart';
 import 'nws_weather_provider.dart';
 import 'pioupiou_weather_provider.dart';
 import 'ffvl_weather_provider.dart';
+import 'bom_weather_provider.dart';
 
 /// Centralized registry mapping sources to provider implementations
 ///
@@ -16,6 +17,7 @@ class WeatherStationProviderRegistry {
     WeatherStationSource.nws: NwsWeatherProvider.instance,
     WeatherStationSource.pioupiou: PioupiouWeatherProvider.instance,
     WeatherStationSource.ffvl: FfvlWeatherProvider.instance,
+    WeatherStationSource.bom: BomWeatherProvider.instance,
   };
 
   /// Get provider for a specific source

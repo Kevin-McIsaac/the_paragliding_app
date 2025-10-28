@@ -61,13 +61,45 @@ class PioupiouWeatherProvider implements WeatherStationProvider {
   }
 
   @override
-  Future<List<WeatherStation>> fetchStations(LatLngBounds bounds) async {
+  Future<List<WeatherStation>> fetchStations(
+    LatLngBounds bounds, {
+    Function()? onApiCallStart,
+  }) async {
     try {
+      // Early exit: Check if cached bbox overlaps with requested bounds
+      if (_globalCache != null && !_globalCache!.stationListExpired) {
+        if (!_boundsOverlap(bounds, _globalCache!.bounds)) {
+          LoggingService.structured('PIOUPIOU_BBOX_NO_OVERLAP', {
+            'requested': '${bounds.south},${bounds.west},${bounds.north},${bounds.east}',
+            'cached': '${_globalCache!.bounds.south},${_globalCache!.bounds.west},'
+                      '${_globalCache!.bounds.north},${_globalCache!.bounds.east}',
+          });
+          return []; // Skip this provider - no overlap with view
+        }
+      }
+
       // Step 1: Check if station list cache is valid (<24hr)
       if (_globalCache != null && !_globalCache!.stationListExpired) {
-        // Step 2: Check if measurements are stale (>20min)
+        // Step 2: Check if ANY stations exist in current view
+        final hasStationsInView = _globalCache!.stations.any((s) =>
+          bounds.contains(LatLng(s.latitude, s.longitude))
+        );
+
+        if (!hasStationsInView) {
+          // No stations to display - skip measurement refresh API call
+          LoggingService.structured('PIOUPIOU_NO_STATIONS_IN_VIEW', {
+            'bounds': '${bounds.south},${bounds.west},${bounds.north},${bounds.east}',
+            'cached_bbox': '${_globalCache!.bounds.south},${_globalCache!.bounds.west},'
+                          '${_globalCache!.bounds.north},${_globalCache!.bounds.east}',
+            'total_cached_stations': _globalCache!.stations.length,
+          });
+          return []; // Skip API call - no stations to show
+        }
+
+        // Step 3: We have stations - check if measurements are stale (>20min)
         if (_globalCache!.measurementsExpired) {
           LoggingService.info('Pioupiou measurements expired, refreshing');
+          onApiCallStart?.call(); // Notify UI that API call is starting
           await _refreshMeasurements();
         } else {
           LoggingService.structured('PIOUPIOU_CACHE_HIT', {
@@ -81,7 +113,7 @@ class PioupiouWeatherProvider implements WeatherStationProvider {
           });
         }
 
-        // Step 3: Filter to bbox and return
+        // Step 4: Filter to bbox and return
         return _filterStationsToBounds(_globalCache!.stations, bounds);
       }
 
@@ -93,6 +125,7 @@ class PioupiouWeatherProvider implements WeatherStationProvider {
       }
 
       // Fetch all stations
+      onApiCallStart?.call(); // Notify UI that API call is starting
       _pendingGlobalRequest = _fetchAllStations();
       try {
         await _pendingGlobalRequest;
@@ -230,13 +263,24 @@ class PioupiouWeatherProvider implements WeatherStationProvider {
           '${stations.length} stations parsed',
         );
 
-        // Cache the results with current timestamps
+        // Calculate bounding box from fetched stations
+        final cachedBounds = _calculateBoundsFromStations(stations);
+
+        // Cache the results with current timestamps and calculated bbox
         final now = DateTime.now();
         _globalCache = _GlobalCacheEntry(
           stations: stations,
           stationListTimestamp: now,
           measurementsTimestamp: now,
+          bounds: cachedBounds,
         );
+
+        LoggingService.structured('PIOUPIOU_BBOX_CALCULATED', {
+          'station_count': stations.length,
+          'bounds': '${cachedBounds.south},${cachedBounds.west},${cachedBounds.north},${cachedBounds.east}',
+          'bounds_width_degrees': (cachedBounds.east - cachedBounds.west).toStringAsFixed(2),
+          'bounds_height_degrees': (cachedBounds.north - cachedBounds.south).toStringAsFixed(2),
+        });
 
         LoggingService.structured('PIOUPIOU_STATIONS_SUCCESS', {
           'station_count': stations.length,
@@ -277,11 +321,15 @@ class PioupiouWeatherProvider implements WeatherStationProvider {
     try {
       final stations = await _fetchAllStations();
       if (stations.isNotEmpty && _globalCache != null) {
+        // Recalculate bbox from refreshed stations
+        final refreshedBounds = _calculateBoundsFromStations(stations);
+
         // Update only measurements timestamp, keep original station list timestamp
         _globalCache = _GlobalCacheEntry(
           stations: stations,
           stationListTimestamp: _globalCache!.stationListTimestamp,
           measurementsTimestamp: DateTime.now(),
+          bounds: refreshedBounds,
         );
 
         LoggingService.structured('PIOUPIOU_MEASUREMENTS_REFRESHED', {
@@ -372,6 +420,37 @@ class PioupiouWeatherProvider implements WeatherStationProvider {
 
     return filtered;
   }
+
+  /// Calculate bounding box from list of weather stations
+  LatLngBounds _calculateBoundsFromStations(List<WeatherStation> stations) {
+    if (stations.isEmpty) {
+      // Return minimal bounds if no stations (shouldn't happen)
+      return LatLngBounds(LatLng(0, 0), LatLng(0, 0));
+    }
+
+    double minLat = stations.first.latitude;
+    double maxLat = stations.first.latitude;
+    double minLon = stations.first.longitude;
+    double maxLon = stations.first.longitude;
+
+    for (final station in stations) {
+      if (station.latitude < minLat) minLat = station.latitude;
+      if (station.latitude > maxLat) maxLat = station.latitude;
+      if (station.longitude < minLon) minLon = station.longitude;
+      if (station.longitude > maxLon) maxLon = station.longitude;
+    }
+
+    return LatLngBounds(
+      LatLng(minLat, minLon), // Southwest corner
+      LatLng(maxLat, maxLon), // Northeast corner
+    );
+  }
+
+  /// Check if two bounding boxes overlap
+  bool _boundsOverlap(LatLngBounds a, LatLngBounds b) {
+    return !(a.east < b.west || a.west > b.east ||
+             a.north < b.south || a.south > b.north);
+  }
 }
 
 /// Global cache entry with dual timestamp tracking
@@ -380,11 +459,13 @@ class _GlobalCacheEntry {
   final List<WeatherStation> stations;
   final DateTime stationListTimestamp;
   final DateTime measurementsTimestamp;
+  final LatLngBounds bounds; // Calculated bbox from station locations
 
   _GlobalCacheEntry({
     required this.stations,
     required this.stationListTimestamp,
     required this.measurementsTimestamp,
+    required this.bounds,
   });
 
   bool get stationListExpired {
