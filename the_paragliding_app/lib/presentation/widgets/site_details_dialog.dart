@@ -238,19 +238,22 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
     // Load detailed data from API for both local sites and API sites
     double latitude;
     double longitude;
-    
+    int? pgeSiteId;
+
     if (widget.paraglidingSite != null) {
-      // API site - use its coordinates
+      // API site - use its coordinates and ID
       latitude = widget.paraglidingSite!.latitude;
       longitude = widget.paraglidingSite!.longitude;
+      pgeSiteId = widget.paraglidingSite!.id;
     } else if (widget.site != null) {
-      // Local site - use its coordinates to fetch API data
+      // Local site - use its coordinates and possibly linked PGE site ID
       latitude = widget.site!.latitude;
       longitude = widget.site!.longitude;
+      pgeSiteId = widget.site!.pgeSiteId;
     } else {
       return; // No site data available
     }
-    
+
     setState(() {
       _isLoadingDetails = true;
       _loadingError = null;
@@ -260,17 +263,32 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
       final details = await ParaglidingEarthApi.instance.getSiteDetails(
         latitude,
         longitude,
+        siteId: pgeSiteId,
       );
-      
+
       if (mounted) {
         setState(() {
-          _detailedData = details;
+          _detailedData = details ?? {};
+
+          // Generate PGE link from site ID if available
+          // This ensures the link is always available even if API call fails or doesn't include it
+          if (pgeSiteId != null) {
+            _detailedData!['pge_link'] = 'https://www.paraglidingearth.com/?site=$pgeSiteId';
+          }
+
           _isLoadingDetails = false;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
+          // Even if API fails, create empty map and add PGE link if we have site ID
+          _detailedData = {};
+
+          if (pgeSiteId != null) {
+            _detailedData!['pge_link'] = 'https://www.paraglidingearth.com/?site=$pgeSiteId';
+          }
+
           _isLoadingDetails = false;
           _loadingError = 'Failed to load detailed information';
         });
