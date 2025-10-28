@@ -52,7 +52,10 @@ class AviationWeatherCenterProvider implements WeatherStationProvider {
   }
 
   @override
-  Future<List<WeatherStation>> fetchStations(LatLngBounds bounds) async {
+  Future<List<WeatherStation>> fetchStations(
+    LatLngBounds bounds, {
+    Function()? onApiCallStart,
+  }) async {
     // Generate cache key from bounds
     final cacheKey = _getBoundsCacheKey(bounds);
 
@@ -86,6 +89,7 @@ class AviationWeatherCenterProvider implements WeatherStationProvider {
     }
 
     // Create new request
+    onApiCallStart?.call(); // Notify UI that API call is starting
     final future = _fetchStationsInBounds(bounds, cacheKey);
     _pendingStationRequests[cacheKey] = future;
 

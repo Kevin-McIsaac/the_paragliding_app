@@ -31,7 +31,13 @@ abstract class WeatherStationProvider {
   /// Fetch weather stations within a bounding box
   /// Returns list of stations with coordinates and metadata
   /// May or may not include wind data depending on provider API
-  Future<List<WeatherStation>> fetchStations(LatLngBounds bounds);
+  ///
+  /// [onApiCallStart] - Optional callback that provider calls BEFORE making API requests
+  /// Allows UI to show loading indicator only for providers making network calls
+  Future<List<WeatherStation>> fetchStations(
+    LatLngBounds bounds, {
+    Function()? onApiCallStart,
+  });
 
   /// Fetch current weather data for a list of stations
   /// Returns map of station ID -> WindData

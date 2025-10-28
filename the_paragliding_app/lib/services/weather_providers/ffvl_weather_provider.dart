@@ -61,7 +61,10 @@ class FfvlWeatherProvider implements WeatherStationProvider {
   }
 
   @override
-  Future<List<WeatherStation>> fetchStations(LatLngBounds bounds) async {
+  Future<List<WeatherStation>> fetchStations(
+    LatLngBounds bounds, {
+    Function()? onApiCallStart,
+  }) async {
     try {
       // Early exit: Check if cached bbox overlaps with requested bounds
       if (_globalCache != null && !_globalCache!.beaconListExpired) {
@@ -96,6 +99,7 @@ class FfvlWeatherProvider implements WeatherStationProvider {
         // Step 3: We have stations - check if measurements are stale (>5min)
         if (_globalCache!.measurementsExpired) {
           LoggingService.info('FFVL measurements expired, refreshing');
+          onApiCallStart?.call(); // Notify UI that API call is starting
           await _refreshMeasurements();
         } else {
           LoggingService.structured('FFVL_CACHE_HIT', {
@@ -128,6 +132,7 @@ class FfvlWeatherProvider implements WeatherStationProvider {
       }
 
       // Fetch all beacons
+      onApiCallStart?.call(); // Notify UI that API call is starting
       _pendingGlobalRequest = _fetchAllBeacons();
       try {
         await _pendingGlobalRequest;

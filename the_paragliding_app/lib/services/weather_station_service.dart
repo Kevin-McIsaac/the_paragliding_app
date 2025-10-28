@@ -66,7 +66,24 @@ class WeatherStationService {
         final provider = entry.value;
 
         try {
-          final stations = await provider.fetchStations(bounds);
+          // Pass callback to provider so it can notify when API call starts
+          final stations = await provider.fetchStations(
+            bounds,
+            onApiCallStart: onProgress != null
+                ? () {
+                    // Notify UI that this provider is making an API call
+                    // Pass empty station list since we're just starting
+                    final deduplicatedSoFar = _deduplicateStations(allStations);
+                    onProgress.call(
+                      source: provider.source,
+                      displayName: provider.displayName,
+                      success: true,
+                      stationCount: 0, // API call starting, no results yet
+                      stations: deduplicatedSoFar,
+                    );
+                  }
+                : null,
+          );
           LoggingService.info('${provider.displayName}: fetched ${stations.length} stations');
 
           // Store result

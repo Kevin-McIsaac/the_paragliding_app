@@ -61,7 +61,10 @@ class PioupiouWeatherProvider implements WeatherStationProvider {
   }
 
   @override
-  Future<List<WeatherStation>> fetchStations(LatLngBounds bounds) async {
+  Future<List<WeatherStation>> fetchStations(
+    LatLngBounds bounds, {
+    Function()? onApiCallStart,
+  }) async {
     try {
       // Early exit: Check if cached bbox overlaps with requested bounds
       if (_globalCache != null && !_globalCache!.stationListExpired) {
@@ -96,6 +99,7 @@ class PioupiouWeatherProvider implements WeatherStationProvider {
         // Step 3: We have stations - check if measurements are stale (>20min)
         if (_globalCache!.measurementsExpired) {
           LoggingService.info('Pioupiou measurements expired, refreshing');
+          onApiCallStart?.call(); // Notify UI that API call is starting
           await _refreshMeasurements();
         } else {
           LoggingService.structured('PIOUPIOU_CACHE_HIT', {
@@ -121,6 +125,7 @@ class PioupiouWeatherProvider implements WeatherStationProvider {
       }
 
       // Fetch all stations
+      onApiCallStart?.call(); // Notify UI that API call is starting
       _pendingGlobalRequest = _fetchAllStations();
       try {
         await _pendingGlobalRequest;

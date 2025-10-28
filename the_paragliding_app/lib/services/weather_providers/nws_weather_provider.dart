@@ -95,7 +95,10 @@ class NwsWeatherProvider implements WeatherStationProvider {
   }
 
   @override
-  Future<List<WeatherStation>> fetchStations(LatLngBounds bounds) async {
+  Future<List<WeatherStation>> fetchStations(
+    LatLngBounds bounds, {
+    Function()? onApiCallStart,
+  }) async {
     // Early return if outside NWS coverage area
     if (!_isBoundsInCoverageArea(bounds)) {
       LoggingService.structured('NWS_OUTSIDE_COVERAGE', {
@@ -143,6 +146,7 @@ class NwsWeatherProvider implements WeatherStationProvider {
     }
 
     // Step 4: Fetch from API
+    onApiCallStart?.call(); // Notify UI that API call is starting
     final future = _fetchStationsFromGrid(bounds, cacheKey);
     _pendingStationRequests[cacheKey] = future;
 

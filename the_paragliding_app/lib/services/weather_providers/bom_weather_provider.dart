@@ -60,7 +60,10 @@ class BomWeatherProvider implements WeatherStationProvider {
   }
 
   @override
-  Future<List<WeatherStation>> fetchStations(LatLngBounds bounds) async {
+  Future<List<WeatherStation>> fetchStations(
+    LatLngBounds bounds, {
+    Function()? onApiCallStart,
+  }) async {
     try {
       // Step 1: Determine which state(s) overlap with view bounds
       final overlappingStates = _determineOverlappingStates(bounds);
@@ -77,7 +80,22 @@ class BomWeatherProvider implements WeatherStationProvider {
         'bounds': _boundsToString(bounds),
       });
 
-      // Step 2: Fetch each overlapping state (in parallel if multiple)
+      // Step 2: Check if any state will need an API call
+      bool willMakeApiCall = false;
+      for (final state in overlappingStates) {
+        final cached = _stateCache[state.code];
+        if (cached == null || cached.stationListExpired || cached.observationsExpired) {
+          willMakeApiCall = true;
+          break;
+        }
+      }
+
+      // Notify UI if we're about to make API calls
+      if (willMakeApiCall) {
+        onApiCallStart?.call();
+      }
+
+      // Step 3: Fetch each overlapping state (in parallel if multiple)
       final futures = overlappingStates.map((state) => _fetchStateStations(state, bounds));
       final results = await Future.wait(futures);
 
