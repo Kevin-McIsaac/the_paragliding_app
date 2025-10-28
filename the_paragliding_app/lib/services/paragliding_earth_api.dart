@@ -468,7 +468,7 @@ class ParaglidingEarthApi {
 
   /// Get detailed information for a specific site
   /// Returns detailed site data for display in dialog
-  Future<Map<String, dynamic>?> getSiteDetails(double latitude, double longitude) async {
+  Future<Map<String, dynamic>?> getSiteDetails(double latitude, double longitude, {int? siteId}) async {
     
     // Check cache first
     final cacheKey = '${latitude.toStringAsFixed(4)},${longitude.toStringAsFixed(4)}';
@@ -487,27 +487,54 @@ class ParaglidingEarthApi {
     }
     
     try {
-      // Use the XML API endpoint for detailed site data
-      final url = Uri.parse('https://www.paragliding.earth/api/getAroundLatLngSites.php').replace(
+      // Use the bounding box API which works reliably for all sites
+      // Create a tiny bounding box (±0.00001 degrees ≈ 1 meter) around the site
+      final epsilon = 0.00001; // ~1 meter box
+      final url = Uri.parse('https://www.paraglidingearth.com/api/getBoundingBoxSites.php').replace(
         queryParameters: {
-          'lat': latitude.toString(),
-          'lng': longitude.toString(),
-          'distance': '0.01', // Very small radius to get just this site
-          'limit': '1',
+          'north': (latitude + epsilon).toString(),
+          'south': (latitude - epsilon).toString(),
+          'east': (longitude + epsilon).toString(),
+          'west': (longitude - epsilon).toString(),
           'style': 'detailled', // Get detailed data
         },
       );
 
-      LoggingService.info('ParaglidingEarthApi: Fetching detailed data for site at $latitude, $longitude');
+      LoggingService.info('ParaglidingEarthApi: Fetching detailed data for site at $latitude, $longitude (siteId: $siteId)');
+      LoggingService.info('ParaglidingEarthApi: Request URL: $url');
 
       final response = await httpClient.get(url).timeout(_timeout);
       _requestCount++;
-      
+
       if (response.statusCode == 200) {
         // Parse XML response
         final document = XmlDocument.parse(response.body);
-        final takeoffElement = document.findAllElements('takeoff').firstOrNull;
-        
+        final takeoffElements = document.findAllElements('takeoff').toList();
+
+        LoggingService.info('ParaglidingEarthApi: Found ${takeoffElements.length} site(s) in bounding box');
+
+        // If we have a site ID, try to find the matching site
+        XmlElement? takeoffElement;
+        if (siteId != null && takeoffElements.length > 1) {
+          // Multiple sites found - look for the one with matching ID
+          for (final element in takeoffElements) {
+            final idElement = element.findElements('id').firstOrNull;
+            if (idElement != null && idElement.innerText.trim() == siteId.toString()) {
+              takeoffElement = element;
+              LoggingService.info('ParaglidingEarthApi: Matched site by ID: $siteId');
+              break;
+            }
+          }
+        }
+
+        // If no ID match or only one result, use the first one
+        if (takeoffElement == null && takeoffElements.isNotEmpty) {
+          takeoffElement = takeoffElements.first;
+          if (takeoffElements.length > 1) {
+            LoggingService.warning('ParaglidingEarthApi: Multiple sites found but using first one (no ID match)');
+          }
+        }
+
         if (takeoffElement != null) {
           final Map<String, dynamic> properties = {};
           
