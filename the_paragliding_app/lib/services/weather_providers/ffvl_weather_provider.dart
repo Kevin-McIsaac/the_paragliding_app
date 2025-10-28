@@ -63,6 +63,18 @@ class FfvlWeatherProvider implements WeatherStationProvider {
   @override
   Future<List<WeatherStation>> fetchStations(LatLngBounds bounds) async {
     try {
+      // Early exit: Check if cached bbox overlaps with requested bounds
+      if (_globalCache != null && !_globalCache!.beaconListExpired) {
+        if (!_boundsOverlap(bounds, _globalCache!.bounds)) {
+          LoggingService.structured('FFVL_BBOX_NO_OVERLAP', {
+            'requested': '${bounds.south},${bounds.west},${bounds.north},${bounds.east}',
+            'cached': '${_globalCache!.bounds.south},${_globalCache!.bounds.west},'
+                      '${_globalCache!.bounds.north},${_globalCache!.bounds.east}',
+          });
+          return []; // Skip this provider - no overlap with view
+        }
+      }
+
       // Step 1: Check if beacon list cache is valid (<24hr)
       if (_globalCache != null && !_globalCache!.beaconListExpired) {
         // Step 2: Check if measurements are stale (>5min)
@@ -311,13 +323,24 @@ class FfvlWeatherProvider implements WeatherStationProvider {
         '${stations.length} beacons parsed',
       );
 
-      // Cache the results with current timestamps
+      // Calculate bounding box from fetched stations
+      final cachedBounds = _calculateBoundsFromStations(stations);
+
+      // Cache the results with current timestamps and calculated bbox
       final now = DateTime.now();
       _globalCache = _GlobalCacheEntry(
         stations: stations,
         beaconListTimestamp: now,
         measurementsTimestamp: now,
+        bounds: cachedBounds,
       );
+
+      LoggingService.structured('FFVL_BBOX_CALCULATED', {
+        'station_count': stations.length,
+        'bounds': '${cachedBounds.south},${cachedBounds.west},${cachedBounds.north},${cachedBounds.east}',
+        'bounds_width_degrees': (cachedBounds.east - cachedBounds.west).toStringAsFixed(2),
+        'bounds_height_degrees': (cachedBounds.north - cachedBounds.south).toStringAsFixed(2),
+      });
 
       LoggingService.structured('FFVL_BEACONS_SUCCESS', {
         'beacon_count': stations.length,
@@ -347,11 +370,15 @@ class FfvlWeatherProvider implements WeatherStationProvider {
       // also contains embedded measurements that we can use as fallback
       final beacons = await _fetchAllBeacons();
       if (beacons.isNotEmpty && _globalCache != null) {
+        // Recalculate bbox from refreshed stations
+        final refreshedBounds = _calculateBoundsFromStations(beacons);
+
         // Update only measurements timestamp, keep original beacon list timestamp
         _globalCache = _GlobalCacheEntry(
           stations: beacons,
           beaconListTimestamp: _globalCache!.beaconListTimestamp,
           measurementsTimestamp: DateTime.now(),
+          bounds: refreshedBounds,
         );
 
         LoggingService.structured('FFVL_MEASUREMENTS_REFRESHED', {
@@ -659,6 +686,37 @@ class FfvlWeatherProvider implements WeatherStationProvider {
 
     return filtered;
   }
+
+  /// Calculate bounding box from list of weather stations
+  LatLngBounds _calculateBoundsFromStations(List<WeatherStation> stations) {
+    if (stations.isEmpty) {
+      // Return minimal bounds if no stations (shouldn't happen)
+      return LatLngBounds(LatLng(0, 0), LatLng(0, 0));
+    }
+
+    double minLat = stations.first.latitude;
+    double maxLat = stations.first.latitude;
+    double minLon = stations.first.longitude;
+    double maxLon = stations.first.longitude;
+
+    for (final station in stations) {
+      if (station.latitude < minLat) minLat = station.latitude;
+      if (station.latitude > maxLat) maxLat = station.latitude;
+      if (station.longitude < minLon) minLon = station.longitude;
+      if (station.longitude > maxLon) maxLon = station.longitude;
+    }
+
+    return LatLngBounds(
+      LatLng(minLat, minLon), // Southwest corner
+      LatLng(maxLat, maxLon), // Northeast corner
+    );
+  }
+
+  /// Check if two bounding boxes overlap
+  bool _boundsOverlap(LatLngBounds a, LatLngBounds b) {
+    return !(a.east < b.west || a.west > b.east ||
+             a.north < b.south || a.south > b.north);
+  }
 }
 
 /// Global cache entry with dual timestamp tracking
@@ -667,11 +725,13 @@ class _GlobalCacheEntry {
   final List<WeatherStation> stations;
   final DateTime beaconListTimestamp;
   final DateTime measurementsTimestamp;
+  final LatLngBounds bounds; // Calculated bbox from station locations
 
   _GlobalCacheEntry({
     required this.stations,
     required this.beaconListTimestamp,
     required this.measurementsTimestamp,
+    required this.bounds,
   });
 
   bool get beaconListExpired {

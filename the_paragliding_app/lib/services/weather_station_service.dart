@@ -105,6 +105,22 @@ class WeatherStationService {
 
       final results = await Future.wait(futures);
 
+      // Log summary of which providers returned data vs were skipped
+      final providerSummary = <String, dynamic>{};
+      for (var i = 0; i < enabledProviders.length; i++) {
+        final provider = enabledProviders[i];
+        final count = results[i].length;
+        providerSummary[provider.source.name] = {
+          'station_count': count,
+          'status': count > 0 ? 'data_returned' : 'skipped_or_empty',
+        };
+      }
+
+      LoggingService.structured('WEATHER_PROVIDERS_SUMMARY', {
+        'total_providers': enabledProviders.length,
+        'providers': providerSummary,
+      });
+
       // Final combined results (for return value compatibility)
       allStations.clear();
       allStations.addAll(results.expand((list) => list));
