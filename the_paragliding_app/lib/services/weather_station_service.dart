@@ -59,6 +59,7 @@ class WeatherStationService {
       // Accumulator for progressive results
       final List<WeatherStation> allStations = [];
       final List<List<WeatherStation>> providerResults = List.filled(enabledProviders.length, []);
+      final Set<WeatherStationSource> providersWithApiCalls = {}; // Track which providers made API calls
 
       // Fetch from all enabled providers with progressive updates
       final futures = enabledProviders.asMap().entries.map((entry) async {
@@ -66,13 +67,13 @@ class WeatherStationService {
         final provider = entry.value;
 
         try {
-          // Pass callback to provider so it can notify when API call starts
+          // Pass callback directly to provider - let provider decide when to call it
           final stations = await provider.fetchStations(
             bounds,
             onApiCallStart: onProgress != null
                 ? () {
-                    // Notify UI that this provider is making an API call
-                    // Pass empty station list since we're just starting
+                    // Provider is notifying that it's making an API call
+                    providersWithApiCalls.add(provider.source); // Track that this provider made an API call
                     final deduplicatedSoFar = _deduplicateStations(allStations);
                     onProgress.call(
                       source: provider.source,
@@ -93,28 +94,39 @@ class WeatherStationService {
           allStations.addAll(stations);
           final deduplicatedSoFar = _deduplicateStations(allStations);
 
-          // Report cumulative stations (deduplicated) - UI will replace all stations with this list
-          onProgress?.call(
-            source: provider.source,
-            displayName: provider.displayName,
-            success: true,
-            stationCount: stations.length,
-            stations: deduplicatedSoFar,  // Cumulative deduplicated list, not incremental
-          );
+          // Only report progress if:
+          // 1. Provider returned stations (stationCount > 0), OR
+          // 2. Provider made an API call (is in providersWithApiCalls set)
+          // This ensures providers that skip API calls don't appear in overlay
+          // But providers that made API calls get completion even with 0 results
+          if (stations.isNotEmpty || providersWithApiCalls.contains(provider.source)) {
+            // Report cumulative stations (deduplicated) - UI will replace all stations with this list
+            onProgress?.call(
+              source: provider.source,
+              displayName: provider.displayName,
+              success: true,
+              stationCount: stations.length,
+              stations: deduplicatedSoFar,  // Cumulative deduplicated list, not incremental
+            );
+          }
 
           return stations;
         } catch (e, stackTrace) {
           LoggingService.error('${provider.displayName}: fetch failed', e, stackTrace);
 
-          // Report error with current stations (no new ones from this provider)
-          final deduplicatedSoFar = _deduplicateStations(allStations);
-          onProgress?.call(
-            source: provider.source,
-            displayName: provider.displayName,
-            success: false,
-            stationCount: 0,
-            stations: deduplicatedSoFar,
-          );
+          // Only report error if provider made an API call
+          // This prevents providers that error before API calls from showing in overlay
+          if (providersWithApiCalls.contains(provider.source)) {
+            // Report error with current stations (no new ones from this provider)
+            final deduplicatedSoFar = _deduplicateStations(allStations);
+            onProgress?.call(
+              source: provider.source,
+              displayName: provider.displayName,
+              success: false,
+              stationCount: 0,
+              stations: deduplicatedSoFar,
+            );
+          }
 
           return <WeatherStation>[];
         }

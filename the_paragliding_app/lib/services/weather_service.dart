@@ -166,10 +166,12 @@ class WeatherService {
 
   /// Get wind data for multiple locations in a single batch API call
   /// Returns a map of "lat_lon" -> WindData for successfully fetched locations
+  /// Optional onApiCallStart callback is invoked when API call is actually made (not cached)
   Future<Map<String, WindData>> getWindDataBatch(
     List<LatLng> locations,
-    DateTime dateTime,
-  ) async {
+    DateTime dateTime, {
+    Function()? onApiCallStart,
+  }) async {
     if (locations.isEmpty) return {};
 
     // Limit batch size
@@ -181,7 +183,7 @@ class WeatherService {
       for (int i = 0; i < locations.length; i += maxBatchSize) {
         final end = (i + maxBatchSize < locations.length) ? i + maxBatchSize : locations.length;
         final chunk = locations.sublist(i, end);
-        final chunkResults = await getWindDataBatch(chunk, dateTime);
+        final chunkResults = await getWindDataBatch(chunk, dateTime, onApiCallStart: onApiCallStart);
         results.addAll(chunkResults);
       }
       return results;
@@ -232,6 +234,9 @@ class WeatherService {
       });
       return results;
     }
+
+    // Notify that we're about to make an API call
+    onApiCallStart?.call();
 
     // Fetch uncached locations
     final future = _fetchWindForecastBatch(uncachedLocations, dateTime);

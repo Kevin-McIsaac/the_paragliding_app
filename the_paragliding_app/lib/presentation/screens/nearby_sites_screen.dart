@@ -137,8 +137,13 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
   List<WeatherStation> _weatherStations = [];
   final Map<String, WindData> _stationWindData = {};
   final Map<WeatherStationSource, LoadingItemState> _providerStates = {};
+  final Set<WeatherStationSource> _providersActuallyLoading = {}; // Track providers making API calls
   final WeatherStationService _weatherStationService = WeatherStationService.instance;
   Timer? _stationFetchDebounce;
+
+  // Wind forecast state
+  bool _forecastActuallyCallingApi = false; // Track if forecast API is being called
+  bool _forecastHasError = false; // Track if forecast API call failed
 
   // Favorites state
   List<ParaglidingSite> _favoriteSites = [];
@@ -465,7 +470,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       if (!mounted) return;
 
       setState(() {
-        _activeLoadingOperations.add(LoadingOperation.wind);
+        // Don't add LoadingOperation.wind yet - wait until we know if API will be called
         // Mark all sites as loading
         for (final site in _displayedSites) {
           final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
@@ -494,11 +499,25 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
           'zoom_level': currentZoom.toStringAsFixed(2),
         });
 
-        // Fetch wind data in batch
+        // Track if forecast was successfully fetched
+        bool forecastSuccessful = false;
+
+        // Fetch wind data in batch with callback for API call tracking
         final windDataResults = await _weatherService.getWindDataBatch(
           locationsToFetch,
           _selectedDateTime,
+          onApiCallStart: () {
+            // Callback when forecast API is actually being called (not cached)
+            LoggingService.info('Wind forecast API call started (cache miss)');
+            setState(() {
+              _activeLoadingOperations.add(LoadingOperation.wind);
+              _forecastActuallyCallingApi = true;
+              _forecastHasError = false; // Reset error state when starting new call
+            });
+          },
         );
+
+        forecastSuccessful = windDataResults.isNotEmpty;
 
         if (!mounted) return;
 
@@ -508,6 +527,12 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
           _siteWindData.addAll(windDataResults);
           // Force recalculation because we have fresh wind data
           _updateFlyabilityStatus(forceRecalculation: true);
+
+          // If forecast API was called, immediately remove from overlay (success)
+          if (_forecastActuallyCallingApi) {
+            _forecastActuallyCallingApi = false;
+            _forecastHasError = false;
+          }
         });
 
         LoggingService.structured('WIND_DATA_FETCHED', {
@@ -521,6 +546,8 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
         if (mounted) {
           setState(() {
             _activeLoadingOperations.remove(LoadingOperation.wind);
+            // Keep _forecastActuallyCallingApi = true for persistent red cross on error
+            _forecastHasError = true; // Mark as error for red cross display
             // Mark failed sites as unknown
             for (final site in _displayedSites) {
               final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
@@ -569,6 +596,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       setState(() {
         _activeLoadingOperations.add(LoadingOperation.weatherStations);
         _providerStates.clear();
+        _providersActuallyLoading.clear();  // Clear previous providers
       });
 
       try {
@@ -589,14 +617,46 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
             required stations,
           }) async {
             if (mounted) {
-              // Only update loading state if provider returned data or had an error
-              // Skip providers that returned 0 stations (bbox/no stations optimization)
-              if (!success || stationCount > 0) {
-                setState(() {
-                  _providerStates[source] = success
-                      ? LoadingItemState.completed
-                      : LoadingItemState.error;
+              // Check if this provider is already in the loading set
+              final isAlreadyLoading = _providersActuallyLoading.contains(source);
+
+              // If not already loading and this is the initial call (stationCount=0, success=true)
+              if (!isAlreadyLoading && success && stationCount == 0) {
+                // Provider is starting an API call
+                LoggingService.structured('PROVIDER_API_START', {
+                  'provider': displayName,
+                  'source': source.name,
                 });
+                setState(() {
+                  _providersActuallyLoading.add(source);
+                  _providerStates[source] = LoadingItemState.loading;
+                });
+              }
+              // If already loading, this must be the completion (even with 0 stations)
+              else if (isAlreadyLoading) {
+                LoggingService.structured('PROVIDER_API_COMPLETE', {
+                  'provider': displayName,
+                  'success': success,
+                  'station_count': stationCount,
+                });
+                setState(() {
+                  if (success) {
+                    // Success: immediately remove from overlay
+                    _providersActuallyLoading.remove(source);
+                    _providerStates.remove(source);
+                  } else {
+                    // Error: keep in overlay with red cross
+                    _providerStates[source] = LoadingItemState.error;
+                  }
+                });
+              }
+              // Handle non-loading providers that return data immediately (cache hit)
+              else if (!isAlreadyLoading && stationCount > 0) {
+                LoggingService.structured('PROVIDER_CACHE_HIT', {
+                  'provider': displayName,
+                  'station_count': stationCount,
+                });
+                // Don't show in overlay - this was a cache hit
               }
 
               // Cumulative update: Replace all stations with deduplicated cumulative list
@@ -646,14 +706,11 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
             'zoom_level': currentZoom.toStringAsFixed(2),
           });
 
-          // Keep overlay visible briefly to show completion checkmarks
-          Future.delayed(const Duration(milliseconds: 1500), () {
-            if (mounted) {
-              setState(() {
-                _activeLoadingOperations.remove(LoadingOperation.weatherStations);
-                _providerStates.clear();
-              });
-            }
+          // Remove the loading operation immediately after all providers complete
+          setState(() {
+            _activeLoadingOperations.remove(LoadingOperation.weatherStations);
+            // Don't clear _providerStates or _providersActuallyLoading here
+            // They are managed individually with timers for green ticks
           });
         }
       } catch (e, stackTrace) {
@@ -671,6 +728,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
           setState(() {
             _activeLoadingOperations.remove(LoadingOperation.weatherStations);
             // Keep existing stations visible on error instead of clearing
+            // Providers with errors will keep their red cross state
           });
         }
       }
@@ -1805,9 +1863,10 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
                     ),
 
           // Combined loading overlay for sites, wind, and weather stations
+          // Only show if there are actually things loading
           if (MapBoundsManager.instance.isLoading('nearby_sites') ||
-              _activeLoadingOperations.contains(LoadingOperation.wind) ||
-              _activeLoadingOperations.contains(LoadingOperation.weatherStations))
+              _forecastActuallyCallingApi ||
+              _providersActuallyLoading.isNotEmpty)
             MapLoadingOverlay.multiple(
               items: [
                 if (MapBoundsManager.instance.isLoading('nearby_sites'))
@@ -1816,36 +1875,31 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
                     icon: Icons.place,
                     iconColor: Colors.blue,
                   ),
-                if (_activeLoadingOperations.contains(LoadingOperation.wind))
+                // Only show wind forecast when it's actually calling API (not cached)
+                if (_forecastActuallyCallingApi)
                   MapLoadingItem(
                     label: 'Wind forecast',
                     icon: Icons.air,
                     iconColor: Colors.lightBlue,
                     count: _displayedSites.length,
+                    state: _activeLoadingOperations.contains(LoadingOperation.wind)
+                        ? LoadingItemState.loading
+                        : _forecastHasError
+                            ? LoadingItemState.error  // Show red cross on error
+                            : LoadingItemState.completed,  // Show green tick on success
                   ),
-                // Individual weather station providers with progress tracking
-                if (_activeLoadingOperations.contains(LoadingOperation.weatherStations) || _providerStates.isNotEmpty)
-                  ...WeatherStationProviderRegistry.getAllSources()
-                      .where((source) {
-                        // Only show enabled providers in loading overlay
-                        if (source == WeatherStationSource.awcMetar) return _metarEnabled;
-                        if (source == WeatherStationSource.nws) return _nwsEnabled;
-                        if (source == WeatherStationSource.pioupiou) return _pioupiouEnabled;
-                        if (source == WeatherStationSource.ffvl) return _ffvlEnabled;
-                        if (source == WeatherStationSource.bom) return _bomEnabled;
-                        return false;
-                      })
-                      .map((source) {
-                    final provider = WeatherStationProviderRegistry.getProvider(source);
-                    final state = _providerStates[source] ?? LoadingItemState.loading;
+                // Only show weather station providers that are actually making API calls
+                ..._providersActuallyLoading.map((source) {
+                  final provider = WeatherStationProviderRegistry.getProvider(source);
+                  final state = _providerStates[source] ?? LoadingItemState.loading;
 
-                    return MapLoadingItem(
-                      label: provider.displayName,
-                      icon: Icons.cloud,
-                      iconColor: Colors.orange,
-                      state: state,
-                    );
-                  }),
+                  return MapLoadingItem(
+                    label: provider.displayName,
+                    icon: Icons.cloud,
+                    iconColor: Colors.orange,
+                    state: state,
+                  );
+                }),
               ],
             ),
 
