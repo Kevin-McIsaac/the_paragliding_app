@@ -488,8 +488,9 @@ class ParaglidingEarthApi {
     
     try {
       // Use the bounding box API which works reliably for all sites
-      // Create a tiny bounding box (±0.00001 degrees ≈ 1 meter) around the site
-      final epsilon = 0.00001; // ~1 meter box
+      // Create a small bounding box (±0.001 degrees ≈ 100 meters) around the site
+      // Larger epsilon prevents precision issues with coordinate storage
+      final epsilon = 0.001; // ~100 meter box
       final url = Uri.parse('https://www.paraglidingearth.com/api/getBoundingBoxSites.php').replace(
         queryParameters: {
           'north': (latitude + epsilon).toString(),
