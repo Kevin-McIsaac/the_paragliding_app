@@ -131,6 +131,7 @@ class WindData {
       speedKmh: (json['wind_speed_10m'] ?? 0.0).toDouble(),
       directionDegrees: (json['wind_direction_10m'] ?? 0.0).toDouble(),
       gustsKmh: json['wind_gusts_10m']?.toDouble(),
+      precipitationMm: (json['precipitation'] ?? 0.0).toDouble(),
       timestamp: timestamp,
     );
   }
