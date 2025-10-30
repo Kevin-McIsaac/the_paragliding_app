@@ -146,15 +146,23 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
             children: [
               _buildLegendItem(
                 FlyabilityHelper.getColorForLevel(FlyabilityLevel.safe),
-                'Flyable (2+ consecutive green hours)',
+                'Flyable',
+                '2+ consecutive green hours',
               ),
               _buildLegendItem(
                 FlyabilityHelper.getColorForLevel(FlyabilityLevel.caution),
                 'Caution',
+                '2+ consecutive orange or green+orange pair',
               ),
               _buildLegendItem(
                 FlyabilityHelper.getColorForLevel(FlyabilityLevel.unsafe),
                 'Not Flyable',
+                'unsafe conditions',
+              ),
+              _buildLegendItem(
+                FlyabilityHelper.getColorForLevel(FlyabilityLevel.unknown),
+                'Unknown',
+                'scattered/insufficient data',
               ),
             ],
           ),
@@ -525,21 +533,39 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
       return FlyabilityLevel.safe;
     }
 
+    // Check for 2+ consecutive yellow hours OR green+orange pair
+    // This checks for flyable windows BEFORE penalizing for scattered red hours
+    if (FlyabilityHelper.hasConsecutiveLevels(
+      levels: levels,
+      targetLevel: FlyabilityLevel.caution,
+    ) || _hasGreenOrangePair(levels)) {
+      return FlyabilityLevel.caution;
+    }
+
     // Check for any red (unsafe) hours
     if (levels.contains(FlyabilityLevel.unsafe)) {
       return FlyabilityLevel.unsafe;
     }
 
-    // Check for 2+ consecutive yellow hours
-    if (FlyabilityHelper.hasConsecutiveLevels(
-      levels: levels,
-      targetLevel: FlyabilityLevel.caution,
-    )) {
-      return FlyabilityLevel.caution;
-    }
+    // Default to unknown if no clear pattern (scattered/insufficient data)
+    return FlyabilityLevel.unknown;
+  }
 
-    // Default to unsafe if no clear pattern
-    return FlyabilityLevel.unsafe;
+  /// Check if there's a consecutive pair of green and orange hours (in any order)
+  bool _hasGreenOrangePair(List<FlyabilityLevel?> levels) {
+    for (int i = 0; i < levels.length - 1; i++) {
+      final current = levels[i];
+      final next = levels[i + 1];
+
+      if (current == null || next == null) continue;
+
+      // Check for green+orange or orange+green pair
+      if ((current == FlyabilityLevel.safe && next == FlyabilityLevel.caution) ||
+          (current == FlyabilityLevel.caution && next == FlyabilityLevel.safe)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   String _generateTooltip({
@@ -560,24 +586,27 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
     return '$formattedDate - ${site.name}\n$levelText (based on 10am-4pm conditions)\nTap to see hourly details';
   }
 
-  Widget _buildLegendItem(Color color, String text) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 16,
-          height: 16,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
+  Widget _buildLegendItem(Color color, String label, String tooltip) {
+    return Tooltip(
+      message: tooltip,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 16,
+            height: 16,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
           ),
-        ),
-        const SizedBox(width: 4),
-        Text(
-          text,
-          style: const TextStyle(fontSize: 11),
-        ),
-      ],
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 11),
+          ),
+        ],
+      ),
     );
   }
 }
