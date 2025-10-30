@@ -1132,9 +1132,10 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
                 scrollDirection: Axis.horizontal,
                 primary: false,  // Prevent conflict with outer vertical scroll
                 child: Padding(
-                  padding: const EdgeInsets.all(8.0),
+                  padding: const EdgeInsets.only(left: 8.0, right: 8.0, top: 8.0),
                   child: IntrinsicWidth(
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         ForecastAttributionBar(
@@ -1150,10 +1151,11 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
                 ),
               ),
             ),
+            const SizedBox(height: 8.0),
           // Weather description info box
           if (_detailedData?['weather'] != null && _detailedData!['weather']!.toString().isNotEmpty)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
               child: Container(
                 padding: const EdgeInsets.all(12.0),
                 decoration: BoxDecoration(
