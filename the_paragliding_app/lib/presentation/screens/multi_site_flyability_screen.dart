@@ -673,7 +673,9 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> w
                                   leading: CircleAvatar(
                                     radius: 14,
                                     child: Text(
-                                      site.country?.toUpperCase().substring(0, 2) ?? '??',
+                                      (site.country != null && site.country!.length >= 2)
+                                          ? site.country!.toUpperCase().substring(0, 2)
+                                          : '??',
                                       style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold),
                                     ),
                                   ),
