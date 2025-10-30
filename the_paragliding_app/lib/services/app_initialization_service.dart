@@ -96,7 +96,7 @@ class AppInitializationService {
   }
 
   /// Check if PGE sites need incremental sync and perform it in background
-  /// Runs daily auto-sync if last sync was more than 24 hours ago
+  /// Syncs on every app load to ensure data is up to date
   Future<void> _checkAndSyncPgeSites() async {
     try {
       // Check if data exists first
@@ -107,35 +107,11 @@ class AppInitializationService {
         return;
       }
 
-      // Check last sync time
-      final lastSyncTimestamp = await PreferencesHelper.getString('pge_last_sync_time');
+      // Always sync on app load to ensure data is up to date
+      LoggingService.info('AppInitializationService: Performing PGE database sync on app load');
 
-      bool shouldSync = false;
-      if (lastSyncTimestamp == null || lastSyncTimestamp.isEmpty) {
-        // Never synced before
-        shouldSync = true;
-        LoggingService.info('AppInitializationService: No previous sync, performing first sync');
-      } else {
-        try {
-          final lastSync = DateTime.parse(lastSyncTimestamp);
-          final age = DateTime.now().difference(lastSync);
-
-          if (age.inHours >= 24) {
-            shouldSync = true;
-            LoggingService.info('AppInitializationService: Last sync was ${age.inHours} hours ago, performing sync');
-          } else {
-            LoggingService.info('AppInitializationService: Last sync was ${age.inHours} hours ago, skipping sync');
-          }
-        } catch (e) {
-          LoggingService.warning('AppInitializationService: Failed to parse last sync time, performing sync');
-          shouldSync = true;
-        }
-      }
-
-      if (shouldSync) {
-        // Perform sync in background without blocking
-        _syncPgeSitesAsync();
-      }
+      // Perform sync in background without blocking
+      _syncPgeSitesAsync();
     } catch (e) {
       LoggingService.error('AppInitializationService: Error checking sync status', e);
       // Non-fatal - sync can be triggered manually
