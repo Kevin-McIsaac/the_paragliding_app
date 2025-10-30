@@ -138,6 +138,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
   final Map<String, WindData> _stationWindData = {};
   final Map<WeatherStationSource, LoadingItemState> _providerStates = {};
   final Set<WeatherStationSource> _providersActuallyLoading = {}; // Track providers making API calls
+  final Map<WeatherStationSource, Timer> _providerDismissTimers = {}; // Auto-dismiss timers for provider states
   final WeatherStationService _weatherStationService = WeatherStationService.instance;
   Timer? _stationFetchDebounce;
 
@@ -267,6 +268,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
     _locationNotificationTimer?.cancel(); // Clean up location notification timer
     _windFetchDebounce?.cancel(); // Clean up wind fetch debounce timer
     _stationFetchDebounce?.cancel(); // Clean up station fetch debounce timer
+    for (var timer in _providerDismissTimers.values) {
+      timer.cancel(); // Clean up all provider dismiss timers
+    }
     _searchDebounce?.cancel(); // Clean up search debounce timer
     _searchController.dispose(); // Dispose search controller
     _searchFocusNode.dispose(); // Dispose search focus node
@@ -640,14 +644,24 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
                   'station_count': stationCount,
                 });
                 setState(() {
-                  if (success) {
-                    // Success: immediately remove from overlay
-                    _providersActuallyLoading.remove(source);
-                    _providerStates.remove(source);
-                  } else {
-                    // Error: keep in overlay with red cross
-                    _providerStates[source] = LoadingItemState.error;
-                  }
+                  // Set completion state (green check or red error icon)
+                  _providerStates[source] = success
+                      ? LoadingItemState.completed
+                      : LoadingItemState.error;
+
+                  // Cancel any existing dismiss timer for this provider
+                  _providerDismissTimers[source]?.cancel();
+
+                  // Auto-dismiss after 2 seconds (both success and error)
+                  _providerDismissTimers[source] = Timer(const Duration(seconds: 2), () {
+                    if (mounted) {
+                      setState(() {
+                        _providersActuallyLoading.remove(source);
+                        _providerStates.remove(source);
+                        _providerDismissTimers.remove(source);
+                      });
+                    }
+                  });
                 });
               }
               // Handle non-loading providers that return data immediately (cache hit)
