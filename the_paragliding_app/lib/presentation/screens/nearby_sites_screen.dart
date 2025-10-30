@@ -1984,7 +1984,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
                               radius: 16,
                               backgroundColor: Theme.of(context).colorScheme.primaryContainer,
                               child: Text(
-                                site.country?.toUpperCase().substring(0, 2) ?? '??',
+                                (site.country != null && site.country!.length >= 2)
+                                    ? site.country!.toUpperCase().substring(0, 2)
+                                    : '??',
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.bold,
