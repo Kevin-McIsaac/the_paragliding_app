@@ -150,7 +150,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
               ),
               _buildLegendItem(
                 FlyabilityHelper.getColorForLevel(FlyabilityLevel.caution),
-                'Caution',
+                'Caution (2+ consecutive orange or green+orange pair)',
               ),
               _buildLegendItem(
                 FlyabilityHelper.getColorForLevel(FlyabilityLevel.unsafe),
@@ -530,16 +530,33 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
       return FlyabilityLevel.unsafe;
     }
 
-    // Check for 2+ consecutive yellow hours
+    // Check for 2+ consecutive yellow hours OR green+orange pair
     if (FlyabilityHelper.hasConsecutiveLevels(
       levels: levels,
       targetLevel: FlyabilityLevel.caution,
-    )) {
+    ) || _hasGreenOrangePair(levels)) {
       return FlyabilityLevel.caution;
     }
 
     // Default to unsafe if no clear pattern
     return FlyabilityLevel.unsafe;
+  }
+
+  /// Check if there's a consecutive pair of green and orange hours (in any order)
+  bool _hasGreenOrangePair(List<FlyabilityLevel?> levels) {
+    for (int i = 0; i < levels.length - 1; i++) {
+      final current = levels[i];
+      final next = levels[i + 1];
+
+      if (current == null || next == null) continue;
+
+      // Check for green+orange or orange+green pair
+      if ((current == FlyabilityLevel.safe && next == FlyabilityLevel.caution) ||
+          (current == FlyabilityLevel.caution && next == FlyabilityLevel.safe)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   String _generateTooltip({
