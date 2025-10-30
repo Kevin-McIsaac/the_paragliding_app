@@ -27,6 +27,9 @@ import '../widgets/site_details_dialog.dart';
 import '../widgets/common/app_error_state.dart';
 import '../widgets/common/map_loading_overlay.dart';
 import '../widgets/common/app_menu_button.dart';
+import '../widgets/common/map_settings_menu.dart';
+import '../widgets/common/base_map_widget.dart';
+import '../../utils/map_provider.dart';
 import '../../services/openaip_service.dart';
 import '../../services/database_service.dart';
 import '../../services/pge_sites_database_service.dart';
@@ -71,6 +74,7 @@ class NearbySitesScreen extends StatefulWidget {
 class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindingObserver {
   final LocationService _locationService = LocationService.instance;
   final MapController _mapController = MapController();
+  final GlobalKey<State<NearbySitesMap>> _mapKey = GlobalKey();
 
   // Sites state - using ParaglidingSite directly (no more UnifiedSite)
   List<ParaglidingSite> _allSites = [];
@@ -1730,21 +1734,16 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
             },
             onSelected: _onFavoriteSelected,
           ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: (_activeLoadingOperations.contains(LoadingOperation.weatherStations) ||
-                        _activeLoadingOperations.contains(LoadingOperation.wind))
-                ? null
-                : _refreshAllWeatherData,
-            tooltip: 'Refresh all',
-          ),
-          IconButton(
-            icon: Icon(
-              Icons.filter_list,
-              color: _hasActiveFilters ? Colors.orange : null,
-            ),
-            onPressed: _showMapFilterDialog,
-            tooltip: 'Map Filters',
+          MapSettingsMenu(
+            selectedMapProvider: (_mapKey.currentState as BaseMapState?)?.selectedMapProvider ?? MapProvider.openStreetMap,
+            onMapProviderSelected: (provider) {
+              (_mapKey.currentState as BaseMapState?)?.selectMapProvider(provider);
+            },
+            onRefreshAll: _refreshAllWeatherData,
+            onMapFilters: _showMapFilterDialog,
+            refreshDisabled: _activeLoadingOperations.contains(LoadingOperation.weatherStations) ||
+                             _activeLoadingOperations.contains(LoadingOperation.wind),
+            hasActiveFilters: _hasActiveFilters,
           ),
           AppMenuButton(
             onDataChanged: _handleSiteDataChanged, // Call local handler which clears cache and reloads
@@ -1766,6 +1765,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
                       children: [
                         // Map - using new BaseMapWidget-based implementation
                         NearbySitesMap(
+                          key: _mapKey,
                           mapController: _mapController,
                           airspaceDataVersion: _airspaceDataVersion,
                           sitesDataVersion: _sitesDataVersion,
@@ -1793,6 +1793,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
                           isLocationLoading: _activeLoadingOperations.contains(LoadingOperation.location),
                           initialCenter: _mapCenterPosition,
                           initialZoom: _currentZoom,
+                          showMapProviderButton: false,
                         ),
 
                         // Auto-dismissing location notification
