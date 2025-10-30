@@ -1250,6 +1250,7 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
               speedKmh: _windForecast!.speedsKmh[i],
               directionDegrees: _windForecast!.directionsDegs[i],
               gustsKmh: _windForecast!.gustsKmh[i],
+              precipitationMm: _windForecast!.precipitationMm[i],
               timestamp: timestamp,
             );
           }
