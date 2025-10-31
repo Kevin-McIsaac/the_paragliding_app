@@ -79,9 +79,6 @@ class NearbySitesMap extends BaseMapWidget {
 }
 
 class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
-  // Cache for weather station markers to prevent unnecessary rebuilds
-  List<Marker>? _cachedWeatherStationMarkers;
-
   @override
   String get mapProviderKey => 'nearby_sites_map_provider';
 
@@ -186,19 +183,6 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
           widget.onSitesDataVersionChanged!();
         }
       });
-    }
-
-    // Clear weather station marker cache when any weather station parameter changes
-    if (oldWidget.weatherStationsEnabled != widget.weatherStationsEnabled ||
-        oldWidget.weatherStations != widget.weatherStations ||
-        oldWidget.stationWindData != widget.stationWindData ||
-        oldWidget.maxWindSpeed != widget.maxWindSpeed ||
-        oldWidget.cautionWindSpeed != widget.cautionWindSpeed) {
-      // Only log if cache had significant content
-      if (_cachedWeatherStationMarkers != null && _cachedWeatherStationMarkers!.length > 10) {
-        LoggingService.debug('Weather station markers cache cleared | cached_count=${_cachedWeatherStationMarkers!.length}');
-      }
-      _cachedWeatherStationMarkers = null;
     }
 
     // Re-center on user location if it changes significantly
@@ -439,13 +423,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
 
   /// Build weather station markers
   List<Marker> _buildWeatherStationMarkers() {
-    // Return cached markers if available (no weather data changes)
-    if (_cachedWeatherStationMarkers != null) {
-      return _cachedWeatherStationMarkers!;
-    }
-
-    // Build new markers and cache them
-    final markers = widget.weatherStations.map((station) {
+    return widget.weatherStations.map((station) {
       // Get wind data for this station using the unique key (source:id)
       final windData = widget.stationWindData[station.key];
 
@@ -463,11 +441,6 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
         ),
       );
     }).toList();
-
-    _cachedWeatherStationMarkers = markers;
-    LoggingService.debug('Built and cached ${markers.length} weather station markers');
-
-    return markers;
   }
 
   @override
