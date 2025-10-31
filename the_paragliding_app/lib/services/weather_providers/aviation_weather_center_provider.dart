@@ -339,17 +339,24 @@ class AviationWeatherCenterProvider implements WeatherStationProvider {
 
   /// Generate cache key from bounding box
   String _getBoundsCacheKey(LatLngBounds bounds) {
-    // Round to 0.1 degrees for reasonable cache granularity
-    final west = (bounds.west * 10).round() / 10;
-    final south = (bounds.south * 10).round() / 10;
-    final east = (bounds.east * 10).round() / 10;
-    final north = (bounds.north * 10).round() / 10;
+    // Round to 0.5 degrees (~50km) for coarse cache granularity
+    // Reduces unnecessary API calls for small map pans
+    final west = (bounds.west * 2).round() / 2;
+    final south = (bounds.south * 2).round() / 2;
+    final east = (bounds.east * 2).round() / 2;
+    final north = (bounds.north * 2).round() / 2;
 
     return '$west,$south,$east,$north';
   }
 
-  /// Find a cached entry whose bounds contain the requested bounds
+  /// Find a cached entry whose bounds contain or significantly overlap the requested bounds
+  /// Returns cached data if either:
+  /// 1. Cached bbox completely contains requested bbox, OR
+  /// 2. Cached bbox overlaps >70% of requested bbox area
   _StationCacheEntry? _findContainingCache(LatLngBounds requestedBounds) {
+    _StationCacheEntry? bestMatch;
+    double bestOverlap = 0.0;
+
     for (final entry in _stationCache.entries) {
       if (entry.value.isExpired) continue;
 
@@ -361,18 +368,66 @@ class AviationWeatherCenterProvider implements WeatherStationProvider {
         final cachedSouth = double.parse(parts[1]);
         final cachedEast = double.parse(parts[2]);
         final cachedNorth = double.parse(parts[3]);
+        final cachedBounds = LatLngBounds(
+          LatLng(cachedSouth, cachedWest),
+          LatLng(cachedNorth, cachedEast),
+        );
 
+        // Check for complete containment (100% coverage)
         if (cachedWest <= requestedBounds.west &&
             cachedSouth <= requestedBounds.south &&
             cachedEast >= requestedBounds.east &&
             cachedNorth >= requestedBounds.north) {
-          return entry.value;
+          return entry.value; // Perfect match, return immediately
+        }
+
+        // Check for significant overlap (>70% coverage)
+        if (_boundsOverlap(requestedBounds, cachedBounds)) {
+          final overlapPct = _calculateOverlapPercentage(requestedBounds, cachedBounds);
+          if (overlapPct > 0.70 && overlapPct > bestOverlap) {
+            bestMatch = entry.value;
+            bestOverlap = overlapPct;
+          }
         }
       } catch (e) {
         continue;
       }
     }
-    return null;
+
+    if (bestMatch != null && bestOverlap > 0.70) {
+      LoggingService.structured('AWC_METAR_CACHE_OVERLAP', {
+        'overlap_percentage': (bestOverlap * 100).toStringAsFixed(1),
+        'threshold': '70%',
+      });
+    }
+
+    return bestMatch;
+  }
+
+  /// Check if two bounding boxes overlap at all
+  bool _boundsOverlap(LatLngBounds a, LatLngBounds b) {
+    return !(a.east < b.west || a.west > b.east ||
+             a.north < b.south || a.south > b.north);
+  }
+
+  /// Calculate what percentage of requested bbox area is covered by cached bbox
+  double _calculateOverlapPercentage(LatLngBounds requested, LatLngBounds cached) {
+    // Calculate intersection bounds
+    final overlapWest = requested.west > cached.west ? requested.west : cached.west;
+    final overlapEast = requested.east < cached.east ? requested.east : cached.east;
+    final overlapSouth = requested.south > cached.south ? requested.south : cached.south;
+    final overlapNorth = requested.north < cached.north ? requested.north : cached.north;
+
+    // No overlap
+    if (overlapWest >= overlapEast || overlapSouth >= overlapNorth) {
+      return 0.0;
+    }
+
+    // Calculate areas (simple degree-based calculation, good enough for caching decision)
+    final requestedArea = (requested.east - requested.west) * (requested.north - requested.south);
+    final overlapArea = (overlapEast - overlapWest) * (overlapNorth - overlapSouth);
+
+    return overlapArea / requestedArea;
   }
 }
 

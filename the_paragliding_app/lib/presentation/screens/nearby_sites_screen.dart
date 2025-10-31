@@ -566,7 +566,8 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
     LoggingService.info('Station fetch triggered at zoom $currentZoom, starting debounce timer');
 
     // Debounce station fetches to avoid rapid API calls on map movement
-    _stationFetchDebounce = Timer(const Duration(milliseconds: 300), () async {
+    // 600ms allows typical API requests (400-500ms) to complete before new request
+    _stationFetchDebounce = Timer(const Duration(milliseconds: 600), () async {
       if (!mounted) return;
 
       setState(() {
@@ -1259,17 +1260,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
     }
 
     _currentBounds = bounds;
-
-    // Calculate zoom change for logging context
-    final oldZoom = _currentZoom;
-    final zoomDelta = (currentZoom - oldZoom).abs();
-    final reason = zoomDelta > 0.1 ? 'zoom_changed' : 'pan_completed';
-
-    LoggingService.structured('BOUNDS_CHANGED', {
-      'zoom': currentZoom.toStringAsFixed(2),
-      'zoom_delta': zoomDelta.toStringAsFixed(2),
-      'reason': reason,
-    });
 
     // Load sites if sites are enabled
     if (!_sitesEnabled) {
