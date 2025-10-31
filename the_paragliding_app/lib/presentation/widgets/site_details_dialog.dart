@@ -243,7 +243,8 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
       // API site - use its coordinates and ID
       latitude = widget.paraglidingSite!.latitude;
       longitude = widget.paraglidingSite!.longitude;
-      pgeSiteId = widget.paraglidingSite!.id;
+      // For PGE sites: use pgeSiteId if available (linked local sites), otherwise use id (pure PGE sites)
+      pgeSiteId = widget.paraglidingSite!.pgeSiteId ?? widget.paraglidingSite!.id;
     } else if (widget.site != null) {
       // Local site - use its coordinates and possibly linked PGE site ID
       latitude = widget.site!.latitude;
