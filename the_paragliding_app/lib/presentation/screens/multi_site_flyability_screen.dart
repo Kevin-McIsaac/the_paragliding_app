@@ -79,8 +79,13 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> w
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _loadPreferences();
-    _loadData();
+    _initializeData();
+  }
+
+  /// Initialize data by loading preferences first, then loading data with correct mode
+  Future<void> _initializeData() async {
+    await _loadPreferences();  // Load saved preference first
+    await _loadData();         // Then load data with correct selection mode
   }
 
   @override
