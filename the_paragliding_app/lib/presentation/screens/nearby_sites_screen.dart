@@ -555,12 +555,8 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
     // Only fetch weather stations if zoom level is high enough (≥10)
     final currentZoom = MapConstants.roundZoomForDisplay(_mapController.camera.zoom);
     if (currentZoom < MapConstants.minForecastZoom) {
-      LoggingService.info('Skipping station fetch: zoom level $currentZoom < ${MapConstants.minForecastZoom}');
-      setState(() {
-        _weatherStations = [];
-        _stationWindData.clear();
-      });
-      return;
+      LoggingService.info('Skipping station fetch: zoom level $currentZoom < ${MapConstants.minForecastZoom} (keeping cached stations)');
+      return;  // Skip fetch but preserve existing cached stations
     }
 
     LoggingService.info('Station fetch triggered at zoom $currentZoom, starting debounce timer');

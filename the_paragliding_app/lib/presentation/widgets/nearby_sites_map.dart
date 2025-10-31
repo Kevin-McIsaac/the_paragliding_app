@@ -403,19 +403,11 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     // Weather station markers (only if enabled and zoom ≥ 10)
     // Check if map controller is initialized before accessing camera
     if (widget.weatherStationsEnabled && widget.weatherStations.isNotEmpty) {
-      try {
-        final zoom = MapConstants.roundZoomForDisplay(mapController.camera.zoom);
-        if (zoom >= MapConstants.minForecastZoom) {
-          layers.add(
-            MarkerLayer(
-              markers: _buildWeatherStationMarkers(),
-            ),
-          );
-        }
-      } catch (e) {
-        // Map controller not yet initialized, skip weather stations for this frame
-        LoggingService.debug('Map controller not yet initialized, skipping weather stations');
-      }
+      layers.add(
+        MarkerLayer(
+          markers: _buildWeatherStationMarkers(),
+        ),
+      );
     }
 
     return layers;
