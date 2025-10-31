@@ -125,7 +125,11 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
   final OpenAipService _openAipService = OpenAipService.instance;
 
   // Wind forecast state
-  DateTime _selectedDateTime = DateTime.now();
+  // Round to nearest hour to prevent constant rebuilds while keeping automatic updates
+  DateTime get _selectedDateTime {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day, now.hour);
+  }
   final Map<String, WindData> _siteWindData = {};
   final Map<String, FlyabilityStatus> _siteFlyabilityStatus = {};
   double _maxWindSpeed = 25.0;
@@ -402,37 +406,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       // Wind bar state preferences could be loaded here if needed
     } catch (e) {
       LoggingService.error('Failed to load wind preferences', e);
-    }
-  }
-
-  Future<void> _showDateTimePicker() async {
-    // Show date picker (max 7 days future)
-    final date = await showDatePicker(
-      context: context,
-      initialDate: _selectedDateTime,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 7)),
-    );
-
-    if (date != null && mounted) {
-      // Show time picker
-      final time = await showTimePicker(
-        context: context,
-        initialTime: TimeOfDay.fromDateTime(_selectedDateTime),
-      );
-
-      if (time != null && mounted) {
-        setState(() {
-          _selectedDateTime = DateTime(
-            date.year,
-            date.month,
-            date.day,
-            time.hour,
-            time.minute,
-          );
-        });
-        _fetchWindDataForSites();
-      }
     }
   }
 
@@ -1764,11 +1737,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
                 ? null
                 : _refreshAllWeatherData,
             tooltip: 'Refresh all',
-          ),
-          IconButton(
-            icon: const Icon(Icons.access_time),
-            onPressed: _showDateTimePicker,
-            tooltip: 'Wind Forecast Time',
           ),
           IconButton(
             icon: Icon(
