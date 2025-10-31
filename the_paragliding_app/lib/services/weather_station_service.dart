@@ -240,7 +240,6 @@ class WeatherStationService {
     for (final station in stations) {
       // Check if this station is a duplicate of any in result
       WeatherStation? duplicate;
-      double? duplicateDistance;
 
       for (final existing in result) {
         final distance = _calculateDistance(
@@ -252,7 +251,6 @@ class WeatherStationService {
 
         if (distance <= _deduplicationDistanceMeters) {
           duplicate = existing;
-          duplicateDistance = distance;
           break;
         }
       }

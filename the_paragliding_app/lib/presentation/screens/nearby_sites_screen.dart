@@ -476,9 +476,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
           'zoom_level': currentZoom.toStringAsFixed(2),
         });
 
-        // Track if forecast was successfully fetched
-        bool forecastSuccessful = false;
-
         // Fetch wind data in batch with callback for API call tracking
         final windDataResults = await _weatherService.getWindDataBatch(
           locationsToFetch,
@@ -493,8 +490,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
             });
           },
         );
-
-        forecastSuccessful = windDataResults.isNotEmpty;
 
         if (!mounted) return;
 
@@ -752,23 +747,14 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
 
       // Deduplicate: Remove local favorites that have pge_site_id matching a PGE favorite
       // This ensures we don't show duplicate sites when one exists in both databases
-      final deduplicatedLocalFavorites = localFavorites.where((localSite) {
-        // Keep custom local sites (no pge_site_id) always
-        // Only exclude if this local site's pge_site_id matches a PGE favorite
-        // NOTE: We can't directly access pge_site_id from ParaglidingSite, but we can
-        // infer from the Site object if we had it. For now, we'll keep all local favorites
-        // since they represent flown sites and should appear in the list.
-        // TODO: May need to refine this logic based on actual usage patterns
-        return true; // Keep all for now - will be addressed in database query optimization
-      }).toList();
-
-      // Combine PGE favorites with deduplicated local favorites
-      final sites = <ParaglidingSite>[...pgeFavorites, ...deduplicatedLocalFavorites];
+      // Combine PGE favorites with local favorites
+      // Note: No deduplication needed since we can't directly access pge_site_id from ParaglidingSite.
+      // Local favorites represent flown sites and should always appear in the list.
+      final sites = <ParaglidingSite>[...pgeFavorites, ...localFavorites];
 
       LoggingService.action('NearbySites', 'favorites_menu_opened', {
         'local_favorites': localFavorites.length,
         'pge_favorites': pgeFavorites.length,
-        'deduplicated_local': deduplicatedLocalFavorites.length,
         'total_favorites': sites.length,
       });
 
