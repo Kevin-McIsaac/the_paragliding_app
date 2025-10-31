@@ -125,7 +125,11 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
   final OpenAipService _openAipService = OpenAipService.instance;
 
   // Wind forecast state
-  DateTime get _selectedDateTime => DateTime.now();
+  // Round to nearest hour to prevent constant rebuilds while keeping automatic updates
+  DateTime get _selectedDateTime {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day, now.hour);
+  }
   final Map<String, WindData> _siteWindData = {};
   final Map<String, FlyabilityStatus> _siteFlyabilityStatus = {};
   double _maxWindSpeed = 25.0;
