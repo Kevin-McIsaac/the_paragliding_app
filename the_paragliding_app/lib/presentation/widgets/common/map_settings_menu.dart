@@ -21,6 +21,9 @@ class MapSettingsMenu extends StatelessWidget {
   /// Callback when "Map Filters" is selected
   final VoidCallback onMapFilters;
 
+  /// Callback when "Get Current Location" is selected
+  final VoidCallback? onLocationRequest;
+
   /// Whether the refresh action should be disabled (e.g., during loading)
   final bool refreshDisabled;
 
@@ -33,6 +36,7 @@ class MapSettingsMenu extends StatelessWidget {
     required this.onMapProviderSelected,
     required this.onRefreshAll,
     required this.onMapFilters,
+    this.onLocationRequest,
     this.refreshDisabled = false,
     this.hasActiveFilters = false,
   });
@@ -52,10 +56,7 @@ class MapSettingsMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<String>(
-      icon: Icon(
-        Icons.tune,
-        color: hasActiveFilters ? Colors.orange : null,
-      ),
+      icon: const Icon(Icons.tune),
       tooltip: 'Map Settings',
       onSelected: (value) {
         if (value == 'refresh') {
@@ -149,32 +150,13 @@ class MapSettingsMenu extends StatelessWidget {
           ),
         ),
         // Map Filters
-        PopupMenuItem<String>(
+        const PopupMenuItem<String>(
           value: 'filters',
           child: Row(
             children: [
-              Icon(
-                Icons.filter_list,
-                color: hasActiveFilters ? Colors.orange : null,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Map Filters',
-                style: TextStyle(
-                  color: hasActiveFilters ? Colors.orange : null,
-                ),
-              ),
-              if (hasActiveFilters) ...[
-                const SizedBox(width: 8),
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: const BoxDecoration(
-                    color: Colors.orange,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ],
+              Icon(Icons.filter_list),
+              SizedBox(width: 8),
+              Text('Map Filters'),
             ],
           ),
         ),

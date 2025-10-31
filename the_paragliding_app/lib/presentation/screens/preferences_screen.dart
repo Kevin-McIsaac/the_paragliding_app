@@ -499,9 +499,9 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                     await PreferencesHelper.setCautionWindSpeed(values.start);
                     await PreferencesHelper.setMaxWindSpeed(values.end);
                     LoggingService.info('PreferencesScreen: Saved wind speed | caution=${values.start.toInt()} unsafe=${values.end.toInt()} km/h');
-                    if (mounted) {
-                      UiUtils.showSuccessMessage(context, 'Saved wind speed thresholds');
-                    }
+                    if (!mounted) return;
+                    // ignore: use_build_context_synchronously
+                    UiUtils.showSuccessMessage(context, 'Saved wind speed thresholds');
                   },
                 ),
               ]),

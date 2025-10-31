@@ -33,7 +33,7 @@ abstract class BaseMapWidget extends StatefulWidget {
     this.initialZoom = 13.0,
     this.minZoom = 1.0,
     this.mapController,
-    this.showMapProviderButton = true,
+    this.showMapProviderButton = false,
   });
 }
 
@@ -117,7 +117,6 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
   void onAirspaceLoaded(List<Widget> layers) {}
 
   MapController get mapController => _mapController;
-  MapProvider get selectedMapProvider => _selectedMapProvider;
   List<ParaglidingSite> get sites => _sites;
   bool get isLegendExpanded => _isLegendExpanded;
   bool get isLoadingSites => _isLoadingSites;

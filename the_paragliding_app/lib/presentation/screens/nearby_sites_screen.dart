@@ -480,9 +480,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
           'zoom_level': currentZoom.toStringAsFixed(2),
         });
 
-        // Track if forecast was successfully fetched
-        bool forecastSuccessful = false;
-
         // Fetch wind data in batch with callback for API call tracking
         final windDataResults = await _weatherService.getWindDataBatch(
           locationsToFetch,
@@ -497,8 +494,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
             });
           },
         );
-
-        forecastSuccessful = windDataResults.isNotEmpty;
 
         if (!mounted) return;
 
@@ -1793,7 +1788,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
                           isLocationLoading: _activeLoadingOperations.contains(LoadingOperation.location),
                           initialCenter: _mapCenterPosition,
                           initialZoom: _currentZoom,
-                          showMapProviderButton: false,
                         ),
 
                         // Auto-dismissing location notification
