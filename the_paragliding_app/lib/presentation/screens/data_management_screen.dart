@@ -52,7 +52,6 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
   // PGE Sites sync state
   bool _isSyncing = false;
   String? _lastSyncTime;
-  SyncResult? _lastSyncResult;
 
   // Card expansion state manager (persistent for this screen)
   late CardExpansionManager _expansionManager;
@@ -437,7 +436,6 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
       if (mounted) {
         setState(() {
           _isSyncing = false;
-          _lastSyncResult = result;
           _dataModified = result.totalProcessed > 0; // Mark as modified if sites were updated
         });
 
@@ -1764,7 +1762,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                           boxShadow: highlightValue > 0
                               ? [
                                   BoxShadow(
-                                    color: Colors.blue.withOpacity(0.3 * highlightValue),
+                                    color: Colors.blue.withValues(alpha: 0.3 * highlightValue),
                                     blurRadius: 12 * highlightValue,
                                     spreadRadius: 4 * highlightValue,
                                   ),

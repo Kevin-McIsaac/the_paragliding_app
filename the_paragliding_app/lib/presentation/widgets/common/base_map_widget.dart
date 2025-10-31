@@ -24,6 +24,7 @@ abstract class BaseMapWidget extends StatefulWidget {
   final double initialZoom;
   final double minZoom;
   final MapController? mapController;
+  final bool showMapProviderButton;
 
   const BaseMapWidget({
     super.key,
@@ -32,6 +33,7 @@ abstract class BaseMapWidget extends StatefulWidget {
     this.initialZoom = 13.0,
     this.minZoom = 1.0,
     this.mapController,
+    this.showMapProviderButton = false,
   });
 }
 
@@ -41,6 +43,9 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
 
   // Map provider state
   MapProvider _selectedMapProvider = MapProvider.openStreetMap;
+
+  // Getter for current map provider (for external access via GlobalKey)
+  MapProvider get selectedMapProvider => _selectedMapProvider;
 
   // Legend state
   bool _isLegendExpanded = false;
@@ -112,7 +117,6 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
   void onAirspaceLoaded(List<Widget> layers) {}
 
   MapController get mapController => _mapController;
-  MapProvider get selectedMapProvider => _selectedMapProvider;
   List<ParaglidingSite> get sites => _sites;
   bool get isLegendExpanded => _isLegendExpanded;
   bool get isLoadingSites => _isLoadingSites;
@@ -516,6 +520,11 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
   Widget buildMapControls() {
     final additionalControls = buildAdditionalControls();
 
+    // If map provider button is hidden and no additional controls, don't show anything
+    if (!widget.showMapProviderButton && additionalControls.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
     return Positioned(
       top: 8,
       right: 8,
@@ -523,8 +532,10 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
         mainAxisSize: MainAxisSize.min,
         children: [
           ...additionalControls,
-          if (additionalControls.isNotEmpty) const SizedBox(width: 8),
-          buildMapProviderButton(),
+          if (additionalControls.isNotEmpty && widget.showMapProviderButton)
+            const SizedBox(width: 8),
+          if (widget.showMapProviderButton)
+            buildMapProviderButton(),
         ],
       ),
     );

@@ -565,7 +565,7 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> w
                           SizedBox(
                             width: 120,
                             child: DropdownButtonFormField<int>(
-                              value: _distanceKm,
+                              initialValue: _distanceKm,
                               decoration: const InputDecoration(
                                 isDense: true,
                                 labelText: 'Dist',
@@ -585,7 +585,7 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> w
                           SizedBox(
                             width: 100,
                             child: DropdownButtonFormField<int>(
-                              value: _siteLimit,
+                              initialValue: _siteLimit,
                               decoration: const InputDecoration(
                                 isDense: true,
                                 labelText: 'Limit',

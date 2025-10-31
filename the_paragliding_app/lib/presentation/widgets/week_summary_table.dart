@@ -2,11 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/wind_data.dart';
-import '../../data/models/wind_forecast.dart';
 import '../../services/weather_service.dart';
 import '../../utils/flyability_helper.dart';
 import '../../utils/flyability_constants.dart';
-import 'flyability_cell.dart';
 import 'multi_site_flyability_table.dart';
 import 'site_forecast_table.dart';
 
@@ -39,7 +37,6 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
   // Track what detail is currently shown
   int? _selectedDayIndex;
   ParaglidingSite? _selectedSite;
-  WindForecast? _selectedSiteForecast; // Forecast for the selected site
   bool _showingCellDetail = false;
 
   void _onDateHeaderTap(int dayIndex) {
@@ -48,12 +45,10 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
         // Clicking same date again - clear selection
         _selectedDayIndex = null;
         _selectedSite = null;
-        _selectedSiteForecast = null;
       } else {
         // Show all sites for this day
         _selectedDayIndex = dayIndex;
         _selectedSite = null;
-        _selectedSiteForecast = null;
         _showingCellDetail = false;
       }
     });
@@ -64,7 +59,6 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
       if (_selectedSite == site && !_showingCellDetail) {
         // Clicking same site again - clear selection
         _selectedSite = null;
-        _selectedSiteForecast = null;
         _selectedDayIndex = null;
       } else {
         // Show all days for this site
@@ -84,16 +78,11 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
   Future<void> _loadSiteForecast() async {
     if (_selectedSite == null) return;
 
-    final forecast = await WeatherService.instance.getCachedForecast(
+    // Pre-fetch and cache forecast for the selected site
+    await WeatherService.instance.getCachedForecast(
       _selectedSite!.latitude,
       _selectedSite!.longitude,
     );
-
-    if (mounted) {
-      setState(() {
-        _selectedSiteForecast = forecast;
-      });
-    }
   }
 
   void _onCellTap(ParaglidingSite site, int dayIndex) {
@@ -101,7 +90,6 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
       if (_selectedSite == site && _selectedDayIndex == dayIndex && _showingCellDetail) {
         // Clicking same cell again - clear selection
         _selectedSite = null;
-        _selectedSiteForecast = null;
         _selectedDayIndex = null;
         _showingCellDetail = false;
       } else {
@@ -238,7 +226,6 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
                   setState(() {
                     _selectedDayIndex = null;
                     _selectedSite = null;
-                    _selectedSiteForecast = null;
                     _showingCellDetail = false;
                   });
                 },
@@ -296,7 +283,6 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
                 onPressed: () {
                   setState(() {
                     _selectedSite = null;
-                    _selectedSiteForecast = null;
                     _selectedDayIndex = null;
                     _showingCellDetail = false;
                   });

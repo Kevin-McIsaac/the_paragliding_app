@@ -61,7 +61,6 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
   bool _isFavorite = false;
 
   // Forecast table constants
-  static const double _cellSize = 36.0;
   static const double _dayColumnWidth = 80.0;
   static const int _startHour = 7;
   static const int _endHour = 19;
@@ -1217,7 +1216,7 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
   }
 
   /// Prepare wind data in the format expected by SiteForecastTable
-  /// Returns Map<int, List<WindData?>> where:
+  /// Returns `Map<int, List<WindData?>>` where:
   ///   - key is day index (0-6 for next 7 days)
   ///   - value is list of hourly WindData (7am-7pm, 13 hours total)
   Map<int, List<WindData?>> _prepareWindDataByDay() {
@@ -1261,18 +1260,6 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
     }
 
     return windDataByDay;
-  }
-
-  String _formatDayName(DateTime date) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final checkDate = DateTime(date.year, date.month, date.day);
-
-    if (checkDate == today) return 'Today';
-    if (checkDate == today.add(const Duration(days: 1))) return 'Tomorrow';
-
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    return '${days[date.weekday - 1]} ${date.day}/${date.month}';
   }
 
   /// Launch navigation to coordinates

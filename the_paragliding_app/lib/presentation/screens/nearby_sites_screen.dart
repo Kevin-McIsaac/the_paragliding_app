@@ -27,6 +27,9 @@ import '../widgets/site_details_dialog.dart';
 import '../widgets/common/app_error_state.dart';
 import '../widgets/common/map_loading_overlay.dart';
 import '../widgets/common/app_menu_button.dart';
+import '../widgets/common/map_settings_menu.dart';
+import '../widgets/common/base_map_widget.dart';
+import '../../utils/map_provider.dart';
 import '../../services/openaip_service.dart';
 import '../../services/database_service.dart';
 import '../../services/pge_sites_database_service.dart';
@@ -71,6 +74,7 @@ class NearbySitesScreen extends StatefulWidget {
 class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindingObserver {
   final LocationService _locationService = LocationService.instance;
   final MapController _mapController = MapController();
+  final GlobalKey<State<NearbySitesMap>> _mapKey = GlobalKey();
 
   // Sites state - using ParaglidingSite directly (no more UnifiedSite)
   List<ParaglidingSite> _allSites = [];
@@ -476,9 +480,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
           'zoom_level': currentZoom.toStringAsFixed(2),
         });
 
-        // Track if forecast was successfully fetched
-        bool forecastSuccessful = false;
-
         // Fetch wind data in batch with callback for API call tracking
         final windDataResults = await _weatherService.getWindDataBatch(
           locationsToFetch,
@@ -493,8 +494,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
             });
           },
         );
-
-        forecastSuccessful = windDataResults.isNotEmpty;
 
         if (!mounted) return;
 
@@ -838,7 +837,16 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
 
   /// Check if any displayed site is missing wind data
   bool _hasMissingWindData({bool includeUnknownStatus = false}) {
-    return _displayedSites.any((site) {
+    // Track statistics for summary logging
+    int flyable = 0;
+    int caution = 0;
+    int notFlyable = 0;
+    int loading = 0;
+    int unknown = 0;
+    int missing = 0;
+    int total = _displayedSites.length;
+
+    final hasMissing = _displayedSites.any((site) {
       final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
       if (includeUnknownStatus) {
         // Missing if: no wind data OR status is unknown/loading OR no status at all
@@ -848,11 +856,43 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
                status == FlyabilityStatus.unknown ||
                status == FlyabilityStatus.loading ||
                !_siteFlyabilityStatus.containsKey(key);
-        LoggingService.debug('Site ${site.name}: hasWindData=$hasWindData, status=$status, isMissing=$isMissing');
+
+        // Collect statistics
+        if (isMissing) {
+          missing++;
+        } else {
+          switch (status) {
+            case FlyabilityStatus.flyable:
+              flyable++;
+              break;
+            case FlyabilityStatus.caution:
+              caution++;
+              break;
+            case FlyabilityStatus.notFlyable:
+              notFlyable++;
+              break;
+            case FlyabilityStatus.loading:
+              loading++;
+              break;
+            case FlyabilityStatus.unknown:
+              unknown++;
+              break;
+            default:
+              break;
+          }
+        }
+
         return isMissing;
       }
       return !_siteWindData.containsKey(key) && !_siteFlyabilityStatus.containsKey(key);
     });
+
+    // Log consolidated summary
+    if (includeUnknownStatus && total > 0) {
+      LoggingService.info('Wind check complete: $total sites | flyable=$flyable, caution=$caution, notFlyable=$notFlyable, loading=$loading, unknown=$unknown, missing=$missing');
+    }
+
+    return hasMissing;
   }
 
   /// Calculate flyability status for all displayed sites
@@ -1286,11 +1326,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
         }
         // Capture zoom AFTER delay, when cluster zoom animation is complete
         final currentZoom = MapConstants.roundZoomForDisplay(_mapController.camera.zoom);
-        LoggingService.info('Wind check: sites=${_displayedSites.length}, zoom=$currentZoom');
 
         if (_displayedSites.isNotEmpty && currentZoom >= MapConstants.minForecastZoom) {
           final missingWindData = _hasMissingWindData(includeUnknownStatus: true);
-          LoggingService.info('Missing wind data check: $missingWindData');
           if (missingWindData) {
             if (!_activeLoadingOperations.contains(LoadingOperation.wind)) {
               LoggingService.info('Triggering wind fetch after bounds load completion');
@@ -1730,21 +1768,16 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
             },
             onSelected: _onFavoriteSelected,
           ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: (_activeLoadingOperations.contains(LoadingOperation.weatherStations) ||
-                        _activeLoadingOperations.contains(LoadingOperation.wind))
-                ? null
-                : _refreshAllWeatherData,
-            tooltip: 'Refresh all',
-          ),
-          IconButton(
-            icon: Icon(
-              Icons.filter_list,
-              color: _hasActiveFilters ? Colors.orange : null,
-            ),
-            onPressed: _showMapFilterDialog,
-            tooltip: 'Map Filters',
+          MapSettingsMenu(
+            selectedMapProvider: (_mapKey.currentState as BaseMapState?)?.selectedMapProvider ?? MapProvider.openStreetMap,
+            onMapProviderSelected: (provider) {
+              (_mapKey.currentState as BaseMapState?)?.selectMapProvider(provider);
+            },
+            onRefreshAll: _refreshAllWeatherData,
+            onMapFilters: _showMapFilterDialog,
+            refreshDisabled: _activeLoadingOperations.contains(LoadingOperation.weatherStations) ||
+                             _activeLoadingOperations.contains(LoadingOperation.wind),
+            hasActiveFilters: _hasActiveFilters,
           ),
           AppMenuButton(
             onDataChanged: _handleSiteDataChanged, // Call local handler which clears cache and reloads
@@ -1766,6 +1799,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
                       children: [
                         // Map - using new BaseMapWidget-based implementation
                         NearbySitesMap(
+                          key: _mapKey,
                           mapController: _mapController,
                           airspaceDataVersion: _airspaceDataVersion,
                           sitesDataVersion: _sitesDataVersion,
