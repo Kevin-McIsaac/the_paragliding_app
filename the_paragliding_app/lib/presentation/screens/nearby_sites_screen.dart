@@ -1762,6 +1762,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
             selectedMapProvider: (_mapKey.currentState as BaseMapState?)?.selectedMapProvider ?? MapProvider.openStreetMap,
             onMapProviderSelected: (provider) {
               (_mapKey.currentState as BaseMapState?)?.selectMapProvider(provider);
+              setState(() {}); // Force rebuild to update checkbox
             },
             onRefreshAll: _refreshAllWeatherData,
             onMapFilters: _showMapFilterDialog,
