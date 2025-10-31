@@ -837,7 +837,16 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
 
   /// Check if any displayed site is missing wind data
   bool _hasMissingWindData({bool includeUnknownStatus = false}) {
-    return _displayedSites.any((site) {
+    // Track statistics for summary logging
+    int flyable = 0;
+    int caution = 0;
+    int notFlyable = 0;
+    int loading = 0;
+    int unknown = 0;
+    int missing = 0;
+    int total = _displayedSites.length;
+
+    final hasMissing = _displayedSites.any((site) {
       final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
       if (includeUnknownStatus) {
         // Missing if: no wind data OR status is unknown/loading OR no status at all
@@ -847,11 +856,43 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
                status == FlyabilityStatus.unknown ||
                status == FlyabilityStatus.loading ||
                !_siteFlyabilityStatus.containsKey(key);
-        LoggingService.debug('Site ${site.name}: hasWindData=$hasWindData, status=$status, isMissing=$isMissing');
+
+        // Collect statistics
+        if (isMissing) {
+          missing++;
+        } else {
+          switch (status) {
+            case FlyabilityStatus.flyable:
+              flyable++;
+              break;
+            case FlyabilityStatus.caution:
+              caution++;
+              break;
+            case FlyabilityStatus.notFlyable:
+              notFlyable++;
+              break;
+            case FlyabilityStatus.loading:
+              loading++;
+              break;
+            case FlyabilityStatus.unknown:
+              unknown++;
+              break;
+            default:
+              break;
+          }
+        }
+
         return isMissing;
       }
       return !_siteWindData.containsKey(key) && !_siteFlyabilityStatus.containsKey(key);
     });
+
+    // Log consolidated summary
+    if (includeUnknownStatus && total > 0) {
+      LoggingService.info('Wind check complete: $total sites | flyable=$flyable, caution=$caution, notFlyable=$notFlyable, loading=$loading, unknown=$unknown, missing=$missing');
+    }
+
+    return hasMissing;
   }
 
   /// Calculate flyability status for all displayed sites
@@ -1285,11 +1326,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
         }
         // Capture zoom AFTER delay, when cluster zoom animation is complete
         final currentZoom = MapConstants.roundZoomForDisplay(_mapController.camera.zoom);
-        LoggingService.info('Wind check: sites=${_displayedSites.length}, zoom=$currentZoom');
 
         if (_displayedSites.isNotEmpty && currentZoom >= MapConstants.minForecastZoom) {
           final missingWindData = _hasMissingWindData(includeUnknownStatus: true);
-          LoggingService.info('Missing wind data check: $missingWindData');
           if (missingWindData) {
             if (!_activeLoadingOperations.contains(LoadingOperation.wind)) {
               LoggingService.info('Triggering wind fetch after bounds load completion');
