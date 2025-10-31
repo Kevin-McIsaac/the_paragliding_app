@@ -4,6 +4,7 @@ import 'nearby_sites_screen.dart';
 import 'statistics_screen.dart';
 import 'multi_site_flyability_screen.dart';
 import '../../services/logging_service.dart';
+import '../../utils/preferences_helper.dart';
 
 /// Main navigation screen with bottom navigation bar.
 ///
@@ -33,7 +34,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   @override
   void initState() {
     super.initState();
+    _loadLastNavigationIndex();
     LoggingService.info('MainNavigationScreen: Initialized with bottom navigation');
+  }
+
+  /// Load the last selected navigation tab index from preferences
+  Future<void> _loadLastNavigationIndex() async {
+    final savedIndex = await PreferencesHelper.getLastNavigationIndex();
+    setState(() {
+      _selectedIndex = savedIndex;
+    });
   }
 
   /// Refresh flight list data (e.g., after adding a new flight).
@@ -106,6 +116,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     setState(() {
       _selectedIndex = index;
     });
+
+    // Save the selected index to preferences
+    PreferencesHelper.setLastNavigationIndex(index);
 
     // Log navigation for debugging
     final destinations = ['Sites', 'Forecast', 'Log Book', 'Statistics'];
