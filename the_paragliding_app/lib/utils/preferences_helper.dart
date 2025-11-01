@@ -55,6 +55,10 @@ class PreferencesHelper {
   static const String cautionWindSpeedKey = 'caution_wind_speed';
   static const String cautionWindGustsKey = 'caution_wind_gusts';
 
+  // Navigation preferences
+  static const String lastNavigationIndexKey = 'last_navigation_index';
+  static const int defaultNavigationIndex = 0; // Sites tab
+
   // Default values for wind limits
   static const double defaultMaxWindSpeed = 25.0; // km/h
   static const double defaultMaxWindGusts = 35.0; // km/h
@@ -484,5 +488,17 @@ class PreferencesHelper {
   static Future<void> setWeatherForecastModel(String value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(weatherForecastModelKey, value);
+  }
+
+  /// Get the last selected navigation tab index
+  static Future<int> getLastNavigationIndex() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(lastNavigationIndexKey) ?? defaultNavigationIndex;
+  }
+
+  /// Set the last selected navigation tab index
+  static Future<void> setLastNavigationIndex(int value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(lastNavigationIndexKey, value);
   }
 }
