@@ -40,10 +40,22 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   /// Load the last selected navigation tab index from preferences
   Future<void> _loadLastNavigationIndex() async {
-    final savedIndex = await PreferencesHelper.getLastNavigationIndex();
-    setState(() {
-      _selectedIndex = savedIndex;
-    });
+    try {
+      final savedIndex = await PreferencesHelper.getLastNavigationIndex();
+      // Validate index is within bounds (0-3 for 4 navigation tabs)
+      if (mounted && savedIndex >= 0 && savedIndex < 4) {
+        setState(() {
+          _selectedIndex = savedIndex;
+        });
+      }
+    } catch (error, stackTrace) {
+      LoggingService.error(
+        'Failed to load last navigation index, using default',
+        error,
+        stackTrace,
+      );
+      // Keep default index (0) - Sites tab
+    }
   }
 
   /// Refresh flight list data (e.g., after adding a new flight).
