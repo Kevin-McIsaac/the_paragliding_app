@@ -46,6 +46,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
   // Multi-model comparison data
   Map<WeatherModel, List<WindData?>>? _multiModelData;
   bool _loadingMultiModel = false;
+  bool _showingAllModels = false;
   WeatherModel? _selectedModel;
 
   void _onDateHeaderTap(int dayIndex) {
@@ -102,6 +103,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
         _selectedDayIndex = null;
         _showingCellDetail = false;
         _multiModelData = null;
+        _showingAllModels = false;
       });
     } else {
       // Show hourly details for this specific site and day
@@ -110,21 +112,17 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
         _selectedDayIndex = dayIndex;
         _showingCellDetail = true;
         _multiModelData = null; // Clear previous data
+        _showingAllModels = false; // Reset to single model view
       });
 
-      // Fetch forecasts for all models
-      _loadMultiModelForecasts();
+      // Load only the currently selected model (instant, uses cache)
+      _loadCurrentModelForecast();
     }
   }
 
-  /// Load forecasts for all weather models for the selected site and day
-  /// Uses new single API call approach - attempts comma-separated models, falls back to individual calls
-  Future<void> _loadMultiModelForecasts() async {
+  /// Load forecast for only the currently selected model (instant, from cache)
+  Future<void> _loadCurrentModelForecast() async {
     if (_selectedSite == null || _selectedDayIndex == null) return;
-
-    setState(() {
-      _loadingMultiModel = true;
-    });
 
     try {
       // Load selected model from preferences
@@ -132,9 +130,60 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
       _selectedModel = WeatherModel.fromApiValue(modelApiValue);
 
       final date = DateTime.now().add(Duration(days: _selectedDayIndex!));
+
+      // Get cached forecast for current model only
+      final forecast = await WeatherService.instance.getCachedForecast(
+        _selectedSite!.latitude,
+        _selectedSite!.longitude,
+      );
+
+      if (forecast != null) {
+        // Extract hourly data for 7am-7pm for the selected day
+        final hourlyData = <WindData?>[];
+        for (int hour = FlyabilityConstants.startHour;
+             hour <= FlyabilityConstants.startHour + FlyabilityConstants.hoursToShow - 1;
+             hour++) {
+          final dateTime = DateTime(date.year, date.month, date.day, hour);
+          final windData = forecast.getAtTime(dateTime);
+          hourlyData.add(windData);
+        }
+
+        if (mounted) {
+          setState(() {
+            _multiModelData = {_selectedModel!: hourlyData};
+          });
+
+          LoggingService.structured('CURRENT_MODEL_FORECAST_LOADED', {
+            'site': _selectedSite!.name,
+            'day_index': _selectedDayIndex,
+            'model': _selectedModel!.displayName,
+            'from_cache': true,
+          });
+        }
+      }
+    } catch (e, stackTrace) {
+      LoggingService.error('Failed to load current model forecast', e, stackTrace);
+    }
+  }
+
+  /// Load remaining weather models (triggered by "More forecasts..." button)
+  Future<void> _loadRemainingModels() async {
+    if (_selectedSite == null || _selectedDayIndex == null) return;
+
+    setState(() {
+      _loadingMultiModel = true;
+    });
+
+    try {
+      final date = DateTime.now().add(Duration(days: _selectedDayIndex!));
       final modelDataMap = <WeatherModel, List<WindData?>>{};
 
-      // Fetch forecasts for ALL models (tries single API call, falls back to individual calls)
+      // Preserve current model data
+      if (_multiModelData != null) {
+        modelDataMap.addAll(_multiModelData!);
+      }
+
+      // Fetch forecasts for ALL models (includes cache check, so current model won't be re-fetched)
       final stopwatch = Stopwatch()..start();
       final forecasts = await WeatherService.instance.getAllModelForecasts(
         _selectedSite!.latitude,
@@ -163,9 +212,10 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
         setState(() {
           _multiModelData = modelDataMap;
           _loadingMultiModel = false;
+          _showingAllModels = true;
         });
 
-        LoggingService.structured('MULTI_MODEL_FORECAST_LOADED', {
+        LoggingService.structured('ALL_MODELS_FORECAST_LOADED', {
           'site': _selectedSite!.name,
           'day_index': _selectedDayIndex,
           'models_loaded': modelDataMap.length,
@@ -173,7 +223,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
         });
       }
     } catch (e, stackTrace) {
-      LoggingService.error('Failed to load multi-model forecasts', e, stackTrace);
+      LoggingService.error('Failed to load remaining model forecasts', e, stackTrace);
       if (mounted) {
         setState(() {
           _loadingMultiModel = false;
@@ -348,7 +398,9 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Comparing all weather models',
+                      _showingAllModels
+                          ? 'Comparing all weather models'
+                          : 'Using ${_selectedModel?.displayName ?? "current"} model',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: Theme.of(context).colorScheme.primary,
                           ),
@@ -379,23 +431,40 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
                 children: [
                   CircularProgressIndicator(),
                   SizedBox(height: 16),
-                  Text('Loading forecasts from all models...'),
+                  Text('Loading additional forecasts...'),
                 ],
               ),
             ),
           )
         else if (_multiModelData != null && _multiModelData!.isNotEmpty)
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.all(16.0),
-            child: MultiModelForecastTable(
-              site: _selectedSite!,
-              date: date,
-              windDataByModel: _multiModelData!,
-              maxWindSpeed: widget.maxWindSpeed,
-              cautionWindSpeed: widget.cautionWindSpeed,
-              selectedModel: _selectedModel,
-            ),
+          Column(
+            children: [
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.all(16.0),
+                child: MultiModelForecastTable(
+                  site: _selectedSite!,
+                  date: date,
+                  windDataByModel: _multiModelData!,
+                  maxWindSpeed: widget.maxWindSpeed,
+                  cautionWindSpeed: widget.cautionWindSpeed,
+                  selectedModel: _selectedModel,
+                ),
+              ),
+              // Show "More forecasts..." button when only showing current model
+              if (!_showingAllModels && _multiModelData!.length == 1)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  child: OutlinedButton.icon(
+                    onPressed: _loadRemainingModels,
+                    icon: const Icon(Icons.add_chart, size: 20),
+                    label: const Text('More forecasts...'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    ),
+                  ),
+                ),
+            ],
           )
         else
           Padding(
@@ -405,10 +474,10 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
                 children: [
                   const Icon(Icons.error_outline, size: 48, color: Colors.orange),
                   const SizedBox(height: 16),
-                  const Text('Failed to load model forecasts'),
+                  const Text('Failed to load forecast'),
                   const SizedBox(height: 8),
                   ElevatedButton(
-                    onPressed: _loadMultiModelForecasts,
+                    onPressed: _loadCurrentModelForecast,
                     child: const Text('Retry'),
                   ),
                 ],
