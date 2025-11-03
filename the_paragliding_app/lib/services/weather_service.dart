@@ -117,6 +117,169 @@ class WeatherService {
     }
   }
 
+  /// Fetch forecasts for ALL weather models in a single API call (experimental)
+  /// Attempts to use comma-separated models parameter to get all models at once
+  /// Falls back to individual calls if the API doesn't support multi-model requests
+  Future<Map<WeatherModel, WindForecast>> getAllModelForecasts(
+    double lat,
+    double lon,
+  ) async {
+    final results = <WeatherModel, WindForecast>{};
+
+    // Check cache first for each model
+    final gridLat = (lat * 100).round() / 100;
+    final gridLon = (lon * 100).round() / 100;
+    final uncachedModels = <WeatherModel>[];
+
+    for (final model in WeatherModel.values) {
+      final cacheKey = '${gridLat.toStringAsFixed(2)}_${gridLon.toStringAsFixed(2)}_${model.apiValue}';
+
+      if (_forecastCache.containsKey(cacheKey)) {
+        final forecast = _forecastCache[cacheKey]!;
+        if (forecast.isFresh) {
+          results[model] = forecast;
+          continue;
+        } else {
+          _forecastCache.remove(cacheKey);
+        }
+      }
+
+      uncachedModels.add(model);
+    }
+
+    // If all cached, return immediately
+    if (uncachedModels.isEmpty) {
+      LoggingService.info('All ${WeatherModel.values.length} models cached for $gridLat, $gridLon');
+      return results;
+    }
+
+    // Try fetching all uncached models in one API call
+    try {
+      final fetchedForecasts = await _fetchAllModelsInOneCall(lat, lon, uncachedModels);
+      results.addAll(fetchedForecasts);
+
+      LoggingService.structured('ALL_MODELS_SINGLE_CALL_SUCCESS', {
+        'lat': lat,
+        'lon': lon,
+        'cached_count': WeatherModel.values.length - uncachedModels.length,
+        'fetched_count': fetchedForecasts.length,
+        'total_models': WeatherModel.values.length,
+      });
+
+      return results;
+    } catch (e) {
+      LoggingService.error('Single-call multi-model fetch failed, falling back to individual calls', e);
+
+      // Fallback: fetch each model individually
+      for (final model in uncachedModels) {
+        try {
+          final forecast = await getWindForecastForModel(lat, lon, model);
+          if (forecast != null) {
+            results[model] = forecast;
+          }
+        } catch (error) {
+          LoggingService.error('Failed to fetch ${model.displayName}', error);
+        }
+      }
+
+      return results;
+    }
+  }
+
+  /// Attempt to fetch multiple models in a single API call using comma-separated models parameter
+  Future<Map<WeatherModel, WindForecast>> _fetchAllModelsInOneCall(
+    double lat,
+    double lon,
+    List<WeatherModel> models,
+  ) async {
+    final results = <WeatherModel, WindForecast>{};
+
+    // Build comma-separated models string (excluding best_match since it doesn't need models param)
+    final modelsWithParams = models.where((m) => m.apiParameter != null).toList();
+    final modelParams = modelsWithParams.map((m) => m.apiParameter!).join(',');
+
+    if (modelParams.isEmpty) {
+      // Only best_match requested, handle separately
+      for (final model in models) {
+        if (model == WeatherModel.bestMatch) {
+          final forecast = await getWindForecastForModel(lat, lon, model);
+          if (forecast != null) {
+            results[model] = forecast;
+          }
+        }
+      }
+      return results;
+    }
+
+    LoggingService.info('Attempting single API call for ${modelsWithParams.length} models: $modelParams');
+
+    // Build API URL with comma-separated models
+    final urlString = 'https://api.open-meteo.com/v1/forecast'
+        '?latitude=$lat&longitude=$lon'
+        '&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation'
+        '&wind_speed_unit=kmh'
+        '&forecast_days=7'
+        '&timezone=auto'
+        '&models=$modelParams';
+
+    final url = Uri.parse(urlString);
+
+    final response = await http.get(url).timeout(
+      const Duration(seconds: 15),
+      onTimeout: () {
+        throw TimeoutException('Multi-model API request timed out');
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('API error: ${response.statusCode} - ${response.body}');
+    }
+
+    final jsonBody = jsonDecode(response.body);
+
+    // Check if response is an array (multiple models) or single object
+    if (jsonBody is List) {
+      // Multiple models returned as array
+      LoggingService.info('Multi-model response: array with ${jsonBody.length} items');
+
+      for (int i = 0; i < jsonBody.length && i < modelsWithParams.length; i++) {
+        final modelData = jsonBody[i] as Map<String, dynamic>;
+        final hourlyData = modelData['hourly'] as Map<String, dynamic>;
+
+        final forecast = WindForecast.fromOpenMeteo(
+          latitude: lat,
+          longitude: lon,
+          hourlyData: hourlyData,
+        );
+
+        // Map array index to model (assumes same order as request)
+        final model = modelsWithParams[i];
+        results[model] = forecast;
+
+        // Cache it
+        final gridLat = (lat * 100).round() / 100;
+        final gridLon = (lon * 100).round() / 100;
+        final cacheKey = '${gridLat.toStringAsFixed(2)}_${gridLon.toStringAsFixed(2)}_${model.apiValue}';
+        _forecastCache[cacheKey] = forecast;
+      }
+
+      // Handle best_match separately if it was requested
+      for (final model in models) {
+        if (model == WeatherModel.bestMatch) {
+          final forecast = await getWindForecastForModel(lat, lon, model);
+          if (forecast != null) {
+            results[model] = forecast;
+          }
+        }
+      }
+    } else {
+      // Single model returned - comma-separated not supported
+      throw Exception('API returned single object instead of array - comma-separated models not supported');
+    }
+
+    return results;
+  }
+
   /// Fetch 7-day wind forecast from Open-Meteo API
   Future<WindForecast?> _fetchWindForecast(
     double lat,

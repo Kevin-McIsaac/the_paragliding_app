@@ -118,6 +118,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
   }
 
   /// Load forecasts for all weather models for the selected site and day
+  /// Uses new single API call approach - attempts comma-separated models, falls back to individual calls
   Future<void> _loadMultiModelForecasts() async {
     if (_selectedSite == null || _selectedDayIndex == null) return;
 
@@ -133,40 +134,29 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
       final date = DateTime.now().add(Duration(days: _selectedDayIndex!));
       final modelDataMap = <WeatherModel, List<WindData?>>{};
 
-      // Fetch forecasts for all models in parallel
-      final futures = WeatherModel.values.map((model) async {
-        try {
-          final forecast = await WeatherService.instance.getWindForecastForModel(
-            _selectedSite!.latitude,
-            _selectedSite!.longitude,
-            model,
-          );
+      // Fetch forecasts for ALL models (tries single API call, falls back to individual calls)
+      final stopwatch = Stopwatch()..start();
+      final forecasts = await WeatherService.instance.getAllModelForecasts(
+        _selectedSite!.latitude,
+        _selectedSite!.longitude,
+      );
+      stopwatch.stop();
 
-          if (forecast != null) {
-            // Extract hourly data for 7am-7pm for the selected day
-            final hourlyData = <WindData?>[];
-            for (int hour = FlyabilityConstants.startHour;
-                 hour <= FlyabilityConstants.startHour + FlyabilityConstants.hoursToShow - 1;
-                 hour++) {
-              final dateTime = DateTime(date.year, date.month, date.day, hour);
-              final windData = forecast.getAtTime(dateTime);
-              hourlyData.add(windData);
-            }
-            return MapEntry(model, hourlyData);
-          }
-        } catch (e) {
-          LoggingService.error('Failed to fetch forecast for ${model.displayName}', e);
+      // Extract hourly data for 7am-7pm for the selected day from each model's forecast
+      for (final entry in forecasts.entries) {
+        final model = entry.key;
+        final forecast = entry.value;
+
+        final hourlyData = <WindData?>[];
+        for (int hour = FlyabilityConstants.startHour;
+             hour <= FlyabilityConstants.startHour + FlyabilityConstants.hoursToShow - 1;
+             hour++) {
+          final dateTime = DateTime(date.year, date.month, date.day, hour);
+          final windData = forecast.getAtTime(dateTime);
+          hourlyData.add(windData);
         }
-        return null;
-      });
 
-      final results = await Future.wait(futures);
-
-      // Build model data map from non-null results
-      for (final result in results) {
-        if (result != null) {
-          modelDataMap[result.key] = result.value;
-        }
+        modelDataMap[model] = hourlyData;
       }
 
       if (mounted) {
@@ -179,6 +169,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
           'site': _selectedSite!.name,
           'day_index': _selectedDayIndex,
           'models_loaded': modelDataMap.length,
+          'duration_ms': stopwatch.elapsedMilliseconds,
         });
       }
     } catch (e, stackTrace) {
