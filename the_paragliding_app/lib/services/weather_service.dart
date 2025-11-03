@@ -73,6 +73,50 @@ class WeatherService {
     }
   }
 
+  /// Get wind forecast for a specific location and specific model
+  /// This allows fetching forecasts from different models for comparison
+  Future<WindForecast?> getWindForecastForModel(
+    double lat,
+    double lon,
+    WeatherModel model,
+  ) async {
+    // Generate cache key with specific model
+    final gridLat = (lat * 100).round() / 100;
+    final gridLon = (lon * 100).round() / 100;
+    final cacheKey = '${gridLat.toStringAsFixed(2)}_${gridLon.toStringAsFixed(2)}_${model.apiValue}';
+
+    // Check forecast cache first
+    if (_forecastCache.containsKey(cacheKey)) {
+      final forecast = _forecastCache[cacheKey]!;
+
+      // Check if forecast is still fresh
+      if (forecast.isFresh) {
+        LoggingService.info('Weather forecast cache hit for $cacheKey (model: ${model.displayName})');
+        return forecast;
+      } else {
+        // Forecast is stale, remove it
+        LoggingService.info('Removing stale forecast for $cacheKey');
+        _forecastCache.remove(cacheKey);
+      }
+    }
+
+    // Check if request is already pending
+    if (_pendingRequests.containsKey(cacheKey)) {
+      LoggingService.info('Waiting for pending weather request: $cacheKey');
+      return await _pendingRequests[cacheKey];
+    }
+
+    // Create new request with specific model
+    final future = _fetchWindForecastForModel(lat, lon, cacheKey, model);
+    _pendingRequests[cacheKey] = future;
+
+    try {
+      return await future;
+    } finally {
+      _pendingRequests.remove(cacheKey);
+    }
+  }
+
   /// Fetch 7-day wind forecast from Open-Meteo API
   Future<WindForecast?> _fetchWindForecast(
     double lat,
@@ -140,6 +184,78 @@ class WeatherService {
       }
     } catch (e, stackTrace) {
       LoggingService.error('Failed to fetch weather forecast', e, stackTrace);
+    }
+
+    return null;
+  }
+
+  /// Fetch 7-day wind forecast from Open-Meteo API for a specific model
+  Future<WindForecast?> _fetchWindForecastForModel(
+    double lat,
+    double lon,
+    String cacheKey,
+    WeatherModel model,
+  ) async {
+    try {
+      final modelParam = model.apiParameter;
+
+      LoggingService.info('Fetching 7-day weather forecast for $lat, $lon using model: ${model.displayName}');
+
+      // Build API URL with optional models parameter
+      var urlString = 'https://api.open-meteo.com/v1/forecast'
+          '?latitude=$lat&longitude=$lon'
+          '&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation'
+          '&wind_speed_unit=kmh'
+          '&forecast_days=7'
+          '&timezone=auto';
+
+      // Add models parameter if not using best match
+      if (modelParam != null) {
+        urlString += '&models=$modelParam';
+      }
+
+      final url = Uri.parse(urlString);
+
+      // Make API request
+      final response = await http.get(url).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          LoggingService.error('Weather API timeout for $lat, $lon (model: ${model.displayName})');
+          throw TimeoutException('Weather API request timed out');
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body);
+
+        // Parse full 7-day hourly forecast
+        final hourlyData = json['hourly'] as Map<String, dynamic>;
+
+        // Create forecast from API response
+        final forecast = WindForecast.fromOpenMeteo(
+          latitude: lat,
+          longitude: lon,
+          hourlyData: hourlyData,
+        );
+
+        // Cache the full forecast
+        _forecastCache[cacheKey] = forecast;
+
+        LoggingService.structured('WEATHER_FORECAST_FETCHED', {
+          'lat': lat,
+          'lon': lon,
+          'model': model.displayName,
+          'hours_count': forecast.timestamps.length,
+          'time_range': forecast.timeRange,
+          'memory_bytes': forecast.approximateMemorySize,
+        });
+
+        return forecast;
+      } else {
+        LoggingService.error('Weather API error for ${model.displayName}: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e, stackTrace) {
+      LoggingService.error('Failed to fetch weather forecast for ${model.displayName}', e, stackTrace);
     }
 
     return null;
