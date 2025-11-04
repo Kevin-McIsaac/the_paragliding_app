@@ -642,6 +642,114 @@ class WeatherService {
     return null;
   }
 
+  /// Check if an exception is retryable (transient network/server errors)
+  bool _isRetryableError(dynamic error) {
+    if (error is TimeoutException) return true;
+    if (error is http.ClientException) return true;
+    if (error is Exception) {
+      final msg = error.toString().toLowerCase();
+      return msg.contains('socket') ||
+             msg.contains('connection') ||
+             msg.contains('network');
+    }
+    return false;
+  }
+
+  /// Check if HTTP status code indicates a retryable error
+  bool _isRetryableStatusCode(int statusCode) {
+    return statusCode == 429 ||  // Rate limited - wait and retry
+           statusCode == 503 ||  // Service unavailable - temporary
+           statusCode == 504 ||  // Gateway timeout
+           (statusCode >= 500 && statusCode < 600);  // Server errors
+  }
+
+  /// Retry an operation with exponential backoff for transient errors
+  Future<T> _retryWithBackoff<T>(
+    Future<T> Function() operation, {
+    int maxRetries = 3,
+    Duration initialDelay = const Duration(seconds: 1),
+  }) async {
+    int attempt = 0;
+    Duration delay = initialDelay;
+
+    while (true) {
+      try {
+        return await operation();
+      } catch (error) {
+        attempt++;
+
+        // Check if we should retry
+        final shouldRetry = attempt < maxRetries && _isRetryableError(error);
+
+        if (!shouldRetry) {
+          LoggingService.error(
+            'Request failed after $attempt ${attempt == 1 ? "attempt" : "attempts"}',
+            error,
+            null,
+          );
+          rethrow;
+        }
+
+        // Log retry attempt
+        LoggingService.structured('HTTP_RETRY', {
+          'attempt': attempt,
+          'max_retries': maxRetries,
+          'delay_seconds': delay.inSeconds,
+          'error_type': error.runtimeType.toString(),
+        });
+
+        // Wait with exponential backoff
+        await Future.delayed(delay);
+        delay *= 2;  // Double the delay for next attempt
+      }
+    }
+  }
+
+  /// Handle HTTP response errors with descriptive messages
+  void _handleHttpError(int statusCode, String responseBody, String context) {
+    String errorMessage;
+
+    switch (statusCode) {
+      case 400:
+        errorMessage = 'Invalid request parameters';
+        break;
+      case 401:
+        errorMessage = 'API authentication failed';
+        break;
+      case 403:
+        errorMessage = 'API access forbidden';
+        break;
+      case 404:
+        errorMessage = 'API endpoint not found';
+        break;
+      case 429:
+        errorMessage = 'API rate limit exceeded - please wait before retrying';
+        break;
+      case 500:
+        errorMessage = 'API server error';
+        break;
+      case 503:
+        errorMessage = 'API service temporarily unavailable';
+        break;
+      case 504:
+        errorMessage = 'API gateway timeout';
+        break;
+      default:
+        errorMessage = 'HTTP error $statusCode';
+    }
+
+    LoggingService.structured('HTTP_ERROR', {
+      'context': context,
+      'status_code': statusCode,
+      'error_message': errorMessage,
+      'response_preview': responseBody.length > 200
+          ? '${responseBody.substring(0, 200)}...'
+          : responseBody,
+    });
+
+    throw Exception('$context: $errorMessage (HTTP $statusCode)');
+  }
+
   /// Clear the forecast cache (useful for testing or memory management)
   /// Also clears the model cache to force re-reading preferences
   void clearCache() {

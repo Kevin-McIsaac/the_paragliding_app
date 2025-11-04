@@ -124,17 +124,21 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
   Future<void> _loadCurrentModelForecast() async {
     if (_selectedSite == null || _selectedDayIndex == null) return;
 
+    // Capture current selection to validate later (prevent race conditions)
+    final requestSite = _selectedSite;
+    final requestDayIndex = _selectedDayIndex;
+
     try {
       // Load selected model from preferences
       final modelApiValue = await PreferencesHelper.getWeatherForecastModel();
       _selectedModel = WeatherModel.fromApiValue(modelApiValue);
 
-      final date = DateTime.now().add(Duration(days: _selectedDayIndex!));
+      final date = DateTime.now().add(Duration(days: requestDayIndex!));
 
       // Get cached forecast for current model only
       final forecast = await WeatherService.instance.getCachedForecast(
-        _selectedSite!.latitude,
-        _selectedSite!.longitude,
+        requestSite!.latitude,
+        requestSite.longitude,
       );
 
       if (forecast != null) {
@@ -151,18 +155,21 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
         // Only show model if it has at least one valid data point
         final hasValidData = hourlyData.any((windData) => windData != null);
 
-        if (mounted) {
+        // Validate selection hasn't changed before updating state
+        if (mounted && _selectedSite == requestSite && _selectedDayIndex == requestDayIndex) {
           setState(() {
             _multiModelData = hasValidData ? {_selectedModel!: hourlyData} : null;
           });
 
           LoggingService.structured('CURRENT_MODEL_FORECAST_LOADED', {
-            'site': _selectedSite!.name,
-            'day_index': _selectedDayIndex,
+            'site': requestSite.name,
+            'day_index': requestDayIndex,
             'model': _selectedModel!.displayName,
             'from_cache': true,
             'has_valid_data': hasValidData,
           });
+        } else {
+          LoggingService.debug('Discarding stale forecast data for ${requestSite.name} day $requestDayIndex');
         }
       }
     } catch (e, stackTrace) {
@@ -174,12 +181,16 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
   Future<void> _loadRemainingModels() async {
     if (_selectedSite == null || _selectedDayIndex == null) return;
 
+    // Capture current selection to validate later (prevent race conditions)
+    final requestSite = _selectedSite;
+    final requestDayIndex = _selectedDayIndex;
+
     setState(() {
       _loadingMultiModel = true;
     });
 
     try {
-      final date = DateTime.now().add(Duration(days: _selectedDayIndex!));
+      final date = DateTime.now().add(Duration(days: requestDayIndex!));
       final modelDataMap = <WeatherModel, List<WindData?>>{};
 
       // Preserve current model data
@@ -190,8 +201,8 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
       // Fetch forecasts for ALL models (includes cache check, so current model won't be re-fetched)
       final stopwatch = Stopwatch()..start();
       final forecasts = await WeatherService.instance.getAllModelForecasts(
-        _selectedSite!.latitude,
-        _selectedSite!.longitude,
+        requestSite!.latitude,
+        requestSite.longitude,
       );
       stopwatch.stop();
 
@@ -219,7 +230,8 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
       );
       final modelsAfterFilter = modelDataMap.length;
 
-      if (mounted) {
+      // Validate selection hasn't changed before updating state
+      if (mounted && _selectedSite == requestSite && _selectedDayIndex == requestDayIndex) {
         setState(() {
           _multiModelData = modelDataMap;
           _loadingMultiModel = false;
@@ -227,12 +239,20 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
         });
 
         LoggingService.structured('ALL_MODELS_FORECAST_LOADED', {
-          'site': _selectedSite!.name,
-          'day_index': _selectedDayIndex,
+          'site': requestSite.name,
+          'day_index': requestDayIndex,
           'models_loaded': modelDataMap.length,
           'models_filtered': modelsBeforeFilter - modelsAfterFilter,
           'duration_ms': stopwatch.elapsedMilliseconds,
         });
+      } else {
+        // Selection changed, just reset loading state
+        if (mounted) {
+          setState(() {
+            _loadingMultiModel = false;
+          });
+        }
+        LoggingService.debug('Discarding stale model forecasts for ${requestSite.name} day $requestDayIndex');
       }
     } catch (e, stackTrace) {
       LoggingService.error('Failed to load remaining model forecasts', e, stackTrace);
