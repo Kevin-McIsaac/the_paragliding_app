@@ -17,9 +17,20 @@ Import your first flight and understand the main screen in under 5 minutes.
    2. Apply the name of the launch site if the take off is withing 500m of a known site.
 6. Review the import results and tap **Done** to complete the import and return to your flight list
 
-### Understanding the Home Screen
+### Understanding the App Navigation
 
-The main screen shows all your flights with:
+The app has four main sections accessible via the **bottom navigation bar**:
+
+1. **Flight Log** - Your complete flight history and logbook
+2. **Nearby Sites** - Interactive map showing flying sites, airspace, and weather
+3. **Forecast** - Multi-site weather forecast comparison
+4. **Statistics** - Flight summaries by year, wing, and site
+
+The app remembers which tab you last viewed and returns to it when you reopen the app.
+
+### Understanding the Flight Log Screen
+
+The Flight Log screen shows all your flights with:
 
 - **Menu button** (⋮) in top-right provides access to all the app features
 - **Total flights** and **flight hours** displayed at the top of the list. You can use the **Select Flights** menu item to limit this to a subset of flights.
@@ -31,12 +42,13 @@ The main screen shows all your flights with:
 
 The **menu button (⋮)** in the top-right corner provides access to:
 
-- **Statistics** - View flight summaries and totals by year, wing or site.
-- **Manage Sites** - Edit launch locations.
-- **Manage Wings** - Track your equipment.
-- **Import IGC** - Import flight files.
+- **Statistics** - View flight summaries and totals by year, wing or site
+- **Manage Sites** - Edit launch locations
+- **Manage Wings** - Track your equipment
+- **Import IGC** - Import flight files
 - **Select Flights** - Bulk operations like delete
-- **Database Settings** - Data dackup and maintenance. Be careful!
+- **Preferences** - Configure app settings for 3D visualization, detection thresholds, and wind limits
+- **Database Settings** - Data backup and maintenance. Be careful!
 - **About** - App information
 
 ---
@@ -157,7 +169,205 @@ If you start the GPS after takeoff you flight will have the wrong launch site
 
 ---
 
-## Analysis Tools
+## Nearby Sites and Weather
+
+### Explore Flying Sites on the Map
+
+#### What You'll Learn
+
+Use the interactive map to discover flying sites, check airspace restrictions, view weather forecasts, and find nearby weather stations.
+
+#### Opening Nearby Sites
+
+1. Tap the **Nearby Sites** tab in the bottom navigation bar
+2. The map loads showing your current location (if location permission granted)
+3. Flying sites appear as markers on the map
+4. Pan and zoom to explore different regions
+
+#### Understanding Site Markers
+
+Site markers use different colours and icons:
+
+- **Blue markers with star** - Sites you've flown from (in your logbook)
+- **Orange markers** - Sites from ParaglidingEarth database you haven't flown yet
+- **Wind icons on markers** - Current/forecast wind direction and speed when forecasts are enabled
+
+**Tap any site marker** to open a detailed popup with:
+- Site name, country, altitude, and coordinates
+- Distance and bearing from your location
+- Link to ParaglidingEarth page
+- Current weather forecast with flyability assessment
+- Week summary forecast table
+
+#### Managing Favorite Sites
+
+Mark sites you fly regularly as favorites for quick access:
+
+1. Tap a site marker to open its details
+2. Tap the **star icon** in the top-right to add to favorites
+3. The star turns solid when the site is a favorite
+4. Access your favorites in the **Forecast** tab
+
+**Benefits:**
+- Quick access to weather for your regular sites
+- Filter forecast view to show only favorites
+- Favorites persist across app restarts
+
+### View Weather and Airspace
+
+#### Enabling Map Overlays
+
+The map supports multiple overlay types. Tap the **filter icon** (funnel) in the top-right to toggle:
+
+**Sites Overlay** (on by default)
+- Shows flying site markers from your logbook and ParaglidingEarth
+- Blue markers = sites you've flown, orange = new sites
+
+**Airspace Overlay**
+- Displays controlled airspace polygons from OpenAIP
+- Different colours for airspace types: controlled zones (red), restricted areas (orange), danger zones, etc.
+- Helps plan flights to avoid restricted airspace
+- Tap airspace polygons to see details (name, type, altitude limits)
+
+**Forecast Overlay**
+- Adds wind direction/speed icons to site markers
+- Shows flyability status with colour coding:
+  - **Green** = Good conditions for flying
+  - **Orange** = Caution - marginal conditions
+  - **Red** = Unsafe - do not fly
+- Updates automatically based on current time
+
+**Weather Stations Overlay**
+- Shows nearby weather stations with real-time observations
+- Different icons for station types: BOM, METAR, PGE stations
+- Tap stations to see current wind, temperature, and conditions
+- Useful for checking actual conditions vs forecasts
+
+#### Changing Map Providers
+
+1. Tap the **map settings icon** (three layers) in the top-right
+2. Select from available map providers:
+   - **OpenStreetMap** - Free topographic maps
+   - **Google Satellite** - Aerial imagery
+   - **Google Hybrid** - Satellite with labels
+   - Other providers as configured
+3. The map reloads with your selected provider
+4. Your choice is saved for future sessions
+
+#### Understanding Flyability Status
+
+The app calculates flyability based on wind conditions:
+
+**Green (Good):**
+- Wind speed below caution threshold (default: 20 km/h)
+- Safe flying conditions expected
+
+**Orange (Caution):**
+- Wind speed between caution and maximum thresholds (default: 20-25 km/h)
+- Marginal conditions - exercise caution and assess local conditions
+- May be suitable for experienced pilots or specific sites
+
+**Red (Unsafe):**
+- Wind speed above maximum threshold (default: 25 km/h)
+- OR precipitation present (rain/snow)
+- Do not fly
+
+⚠️ **Important:** Flyability thresholds can be customized in **Preferences** → **Wind Thresholds**. Always use your judgment and check local conditions before flying.
+
+---
+
+## Weather Forecasts
+
+### Compare Multi-Site Forecasts
+
+#### What You'll Learn
+
+View week-long weather forecasts for multiple flying sites simultaneously to plan your flying week.
+
+#### Opening the Forecast Screen
+
+1. Tap the **Forecast** tab in the bottom navigation bar
+2. The screen shows a week summary table with multiple sites
+3. Each row represents one flying site
+4. Each column represents one day of the week
+
+#### Understanding the Forecast Table
+
+The week summary table uses colour coding for flyability:
+
+**Table Layout:**
+- **Rows** - Flying sites (up to 50 sites)
+- **Columns** - Days of the week with dates
+- **Cells** - Coloured boxes indicating flyability for that site/day
+  - **Green** = Good flying conditions
+  - **Orange** = Caution - marginal conditions
+  - **Red** = Unsafe - strong winds or precipitation
+  - **Grey** = No forecast data available
+
+**Tap any cell** to see detailed hourly forecast for that site and day.
+
+#### Selecting Sites for Forecast
+
+The app offers three modes for site selection (use the tabs at the top):
+
+**Favorites Mode:**
+1. Shows only sites you've marked as favorites
+2. Quick access to your regular flying sites
+3. Empty if you haven't favorited any sites yet
+4. Add favorites by tapping stars on site markers in the Nearby Sites screen
+
+**Near Here Mode:**
+1. Shows sites near your current GPS location
+2. Requires location permission
+3. Adjust distance filter: 10km, 50km, or 100km radius
+4. Adjust site limit: 10, 20, or 50 sites
+5. Sorted by distance from your location
+
+**Near Site Mode:**
+1. Shows sites near a selected reference site
+2. Tap the search box and type a site name
+3. Select the reference site from search results
+4. Adjust distance and site limit filters
+5. Useful for planning trips to flying regions
+
+#### Adjusting Forecast Filters
+
+**Distance Filter:**
+1. Tap the distance dropdown (10 km / 50 km / 100 km)
+2. Select your desired radius
+3. The forecast table refreshes with sites within that distance
+
+**Site Limit Filter:**
+1. Tap the site count dropdown (10 sites / 20 sites / 50 sites)
+2. Select how many sites to display
+3. More sites = more scrolling, but better overview of region
+
+**Settings are saved** and persist across app restarts.
+
+#### Understanding Multi-Model Forecasts
+
+The app can fetch forecasts from multiple weather models:
+
+- **Open-Meteo** - Primary free forecast provider
+- **Additional models** - May be available depending on configuration
+
+When multiple models are available:
+- The app displays the model being used
+- Tap the forecast attribution bar at bottom to see details
+- Different models may show different predictions - use your judgment
+
+#### Refreshing Forecast Data
+
+Forecasts are automatically loaded when you open the screen.
+
+To manually refresh:
+1. Pull down on the forecast table (pull-to-refresh gesture)
+2. The app fetches the latest forecast data
+3. Loading indicators show which data sources are being queried
+
+⚠️ **Note:** Forecast data requires internet connection. The app caches forecasts briefly to minimize API calls.
+
+---
 
 ### View Flight Statistics
 
@@ -252,6 +462,97 @@ Use the interactive 3D viewer to analyse flight performance and relive your flyi
 
 ⚠️ **Important:** Changes affect all flights associated with this location.
 
+### Configure App Preferences
+
+#### What You'll Learn
+
+Customize app behavior for 3D visualization, flight detection, and weather thresholds.
+
+#### Opening Preferences
+
+1. Tap **menu (⋮)** → **Preferences**
+2. The preferences screen shows three expandable sections
+3. Tap any section header to expand or collapse it
+
+#### 3D Visualization Settings
+
+Configure how flight replays appear in 3D view:
+
+**Scene Mode:**
+- **3D** (default) - Full 3D globe with perspective
+- **Columbus** - 2.5D view (flat map with 3D terrain)
+- **2D** - Flat map view (fastest performance)
+
+**Base Map:**
+- **Satellite** (default) - Aerial imagery
+- **OpenStreetMap** - Street map with terrain
+- **Hybrid** - Satellite with labels
+
+**Terrain:**
+- **Enabled** (default) - Show 3D terrain elevation
+- **Disabled** - Flat surface (faster on older devices)
+
+**Trail Duration:**
+- **60 seconds** (default) - How long the flight trail stays visible behind the glider
+- Options: 30s, 60s, 120s, 300s
+
+**Quality:**
+- **1.0** (default) - Full resolution
+- **0.5 to 2.0** - Adjust for performance vs quality trade-off
+- Lower values = better performance, higher = sharper visuals
+
+#### Takeoff/Landing Detection Settings
+
+Fine-tune how the app detects the start and end of flights:
+
+⚠️ **Advanced users only** - These settings affect how IGC files are processed during import.
+
+**Speed Threshold:**
+- Default: **10 km/h**
+- Minimum ground speed to consider as "flying"
+- Lower values = more sensitive detection
+
+**Climb Rate Threshold:**
+- Default: **0.5 m/s**
+- Minimum climb rate to distinguish takeoff from ground activity
+- Used in combination with speed
+
+**Triangle Closing Distance:**
+- Default: **100 metres**
+- Maximum distance from launch to landing to consider as a "local flight"
+- Affects distance calculations
+
+**Triangle Sampling Interval:**
+- Default: **30 seconds**
+- How often to sample points when detecting triangle tasks
+- Lower values = more precise but slower processing
+
+#### Wind Threshold Settings
+
+Set your personal limits for flyability assessment:
+
+**Wind Speed Thresholds (km/h):**
+- Use the **dual slider** to set two thresholds:
+  - **Left handle (Caution)** - Default: 20 km/h
+    - Below this = Green (good conditions)
+  - **Right handle (Unsafe)** - Default: 25 km/h
+    - Above this = Red (do not fly)
+  - **Between handles** = Orange (caution - marginal)
+
+**Adjusting Thresholds:**
+1. Drag the left slider to set caution threshold
+2. Drag the right slider to set unsafe threshold
+3. The values update immediately
+4. Changes affect all weather displays and forecasts
+
+⚠️ **Important:** These are personal limits. Consider your experience level, wing type, site characteristics, and local conditions. Conservative thresholds (lower values) are safer, especially for newer pilots.
+
+**Saving Changes:**
+- All preference changes save automatically
+- You'll see a confirmation message when saved
+- Changes take effect immediately across the app
+
+---
 
 ## Understanding Storage
 
@@ -292,6 +593,71 @@ Use the interactive 3D viewer to analyse flight performance and relive your flyi
 - Click on the site and select the correct launch site
 - Create a new site if no existing site is appropriate
 
+### Weather and Forecast Issues
+
+**Problem: No weather forecast showing**
+
+- Check internet connection - forecasts require online access
+- Verify location permission is granted (for Near Here mode)
+- Try toggling the forecast overlay off and on
+- Pull down to refresh forecast data
+
+**Problem: Forecast shows all grey/no data**
+
+- The site may be outside coverage area of weather providers
+- Check if site coordinates are valid
+- Try a different site or different forecast provider
+
+**Problem: Flyability colors don't match my expectations**
+
+- Review your wind thresholds in **Preferences** → **Wind Thresholds**
+- Default thresholds: Caution = 20 km/h, Unsafe = 25 km/h
+- Adjust thresholds based on your experience and equipment
+- Remember: Flyability is a guide only, always assess local conditions
+
+**Problem: Favorites not showing in Forecast tab**
+
+- Ensure you've marked sites as favorites (star icon on site details)
+- Pull down to refresh the forecast screen
+- Check that Favorites mode is selected (top tabs)
+
+### Map and Airspace Issues
+
+**Problem: Map not loading or showing blank tiles**
+
+- Check internet connection
+- Try changing map provider (**Map Settings** → select different provider)
+- Clear map cache in **Database Settings** if tiles are corrupted
+- Zoom to a different location and zoom back
+
+**Problem: Airspace overlay not showing**
+
+- Ensure airspace overlay is enabled (**Filter icon** → check Airspace)
+- Zoom in closer - airspace only loads within view bounds
+- Check internet connection - airspace data downloads on demand
+- Some regions may have no airspace data in OpenAIP database
+
+**Problem: Weather stations not appearing**
+
+- Enable weather stations overlay (**Filter icon** → check Weather Stations)
+- Weather stations only load for visible map area
+- Not all regions have weather station coverage
+- Check internet connection for station data
+
+**Problem: Site markers showing wrong wind data**
+
+- Ensure forecast overlay is enabled
+- Forecasts update based on current time
+- Pull down to refresh weather data
+- Wind data requires internet connection
+
+**Problem: Map performance is slow**
+
+- Switch to OpenStreetMap provider (uses less data)
+- Disable airspace overlay if not needed
+- Disable weather stations overlay
+- Zoom out less - detailed views require less data
+
 ---
 
 ## Quick Reference
@@ -302,21 +668,29 @@ Use the interactive 3D viewer to analyse flight performance and relive your flyi
 
 ### Automatic Features Summary
 
-✓ Timezone detection from GPS coordinates  
-✓ Launch site naming from ParaglidingEarth database  
-✓ Duplicate flight prevention using multiple criteria  
-✓ Comprehensive flight statistics calculation  
-✓ Wing and site name standardisation  
-✓ Interactive map caching (12-month duration)  
+✓ Timezone detection from GPS coordinates
+✓ Launch site naming from ParaglidingEarth database
+✓ Duplicate flight prevention using multiple criteria
+✓ Comprehensive flight statistics calculation
+✓ Wing and site name standardisation
+✓ Interactive map caching (12-month duration)
+✓ Weather forecast integration with flyability assessment
+✓ Airspace overlay from OpenAIP database
+✓ Multi-site weather comparison
+✓ ParaglidingEarth database sync on app load  
 
 ### Navigation
 
-- **Main Menu**: Tap menu button (⋮) in top-right
+- **Bottom Navigation Bar**: Four main tabs (Flight Log, Nearby Sites, Forecast, Statistics)
+- **Main Menu**: Tap menu button (⋮) in top-right of Flight Log screen
 - **Flight Details**: Tap any flight in the main list
+- **Site Details**: Tap site markers on map or site names in lists
 - **Edit Mode**: Look for underlined, clickable text
 - **Selection Mode**: Long press items to enter bulk selection
 - **Back Navigation**: Use device back button or arrow in top-left
-- **Manual Entry**: Tap floating (+) button on home screen
+- **Manual Entry**: Tap floating (+) button on Flight Log screen
+- **Map Filters**: Tap filter icon (funnel) on Nearby Sites screen
+- **Map Settings**: Tap map settings icon (layers) on Nearby Sites screen
 
 ### Data Locations and Limits
 
@@ -327,15 +701,25 @@ Use the interactive 3D viewer to analyse flight performance and relive your flyi
 
 ### Glossary
 
+- **Airspace**: Controlled regions of airspace with restrictions (from OpenAIP database)
+- **Favorites**: Sites you've marked for quick access in weather forecasts
+- **Flyability**: Colour-coded assessment of flying conditions (green/orange/red)
 - **IGC**: Standard flight recorder file format containing GPS track data
-- **Wing**: Your paraglider, hang glider, microlight, or other aircraft
-- **Site**: Launch location with GPS coordinates and descriptive name
+- **Multi-Model Forecast**: Weather predictions from multiple forecast providers
+- **OpenAIP**: Open aviation database providing airspace and airport data
 - **PGE**: ParaglidingEarth - community database of flying sites worldwide
-- **Vario**: Variometer or flight computer device that records IGC files
-- **Track**: GPS flight path showing position over time
+- **Site**: Launch location with GPS coordinates and descriptive name
 - **Straight Distance**: Direct line distance from launch to landing
+- **Track**: GPS flight path showing position over time
 - **Track Distance**: Total distance flown following the actual flight path
+- **Vario**: Variometer or flight computer device that records IGC files
+- **Weather Station**: Ground station providing real-time weather observations
+- **Week Summary**: Seven-day forecast table showing flyability for multiple sites
+- **Wind Threshold**: Personal limits for caution (orange) and unsafe (red) conditions
+- **Wing**: Your paraglider, hang glider, microlight, or other aircraft
 
 ---
 
-This  manual covers all aspects of using The Paragliding App effectively, from basic flight import through advanced data analysis and maintenance. The app is designed to minimise manual work while providing powerful tools for serious flight analysis and record-keeping.
+## Summary
+
+This manual covers all aspects of using The Paragliding App effectively, from basic flight import through weather forecasting, airspace awareness, and advanced data analysis. The app combines comprehensive logbook functionality with real-time weather data and interactive maps to help you plan flights, maintain records, and fly safely. All features are designed to minimise manual work while providing powerful tools for pilots at every experience level.
