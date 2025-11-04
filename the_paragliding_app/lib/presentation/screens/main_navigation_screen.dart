@@ -30,6 +30,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   final GlobalKey<FlightListScreenState> _flightListKey = GlobalKey();
   final GlobalKey<StatisticsScreenState> _statisticsKey = GlobalKey();
   final GlobalKey<NearbySitesScreenState> _nearbySitesKey = GlobalKey();
+  final GlobalKey<MultiSiteFlyabilityScreenState> _forecastKey = GlobalKey();
 
   @override
   void initState() {
@@ -132,6 +133,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     // Save the selected index to preferences
     PreferencesHelper.setLastNavigationIndex(index);
 
+    // Refresh Forecast tab data when switching to it (index 1)
+    if (index == 1 && oldIndex != 1) {
+      _forecastKey.currentState?.refreshData();
+    }
+
     // Log navigation for debugging
     final destinations = ['Sites', 'Forecast', 'Log Book', 'Statistics'];
     LoggingService.action('Navigation', 'bottom_nav_tap', {
@@ -152,7 +158,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             onDataChanged: _handleDataChanged,
             onRefreshAllTabs: refreshAllTabs,
           ),
-          const MultiSiteFlyabilityScreen(),
+          MultiSiteFlyabilityScreen(key: _forecastKey),
           FlightListScreen(
             key: _flightListKey,
             onDataChanged: _handleDataChanged,

@@ -49,10 +49,10 @@ class MultiSiteFlyabilityScreen extends StatefulWidget {
   const MultiSiteFlyabilityScreen({super.key});
 
   @override
-  State<MultiSiteFlyabilityScreen> createState() => _MultiSiteFlyabilityScreenState();
+  State<MultiSiteFlyabilityScreen> createState() => MultiSiteFlyabilityScreenState();
 }
 
-class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> with WidgetsBindingObserver {
+class MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> with WidgetsBindingObserver {
   // Selection mode and filters
   SiteSelectionMode _selectionMode = SiteSelectionMode.nearHere;
   int _distanceKm = 50; // 10, 50, or 100
@@ -107,6 +107,16 @@ class _MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> w
         LoggingService.info('[LIFECYCLE] App resumed with ${stats['stale_forecasts']} stale forecasts, refreshing...');
         _loadData(); // Reload data including forecasts
       }
+    }
+  }
+
+  /// Public method to refresh data when tab becomes visible
+  /// Called by MainNavigationScreen when switching to Forecast tab
+  Future<void> refreshData() async {
+    // Reload favorites if we're in favorites mode
+    if (_selectionMode == SiteSelectionMode.favorites) {
+      LoggingService.info('[TAB_SWITCH] Forecast tab became visible in Favorites mode, reloading favorites...');
+      await _loadData();
     }
   }
 
