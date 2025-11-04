@@ -2,11 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/wind_data.dart';
+import '../../data/models/weather_model.dart';
 import '../../services/weather_service.dart';
+import '../../services/logging_service.dart';
+import '../../utils/preferences_helper.dart';
 import '../../utils/flyability_helper.dart';
 import '../../utils/flyability_constants.dart';
 import 'multi_site_flyability_table.dart';
 import 'site_forecast_table.dart';
+import 'multi_model_forecast_table.dart';
 
 /// Week summary table showing flyability for multiple sites across 7 days
 /// Sites are rows, days are columns with color-coded daily summary
@@ -38,6 +42,12 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
   int? _selectedDayIndex;
   ParaglidingSite? _selectedSite;
   bool _showingCellDetail = false;
+
+  // Multi-model comparison data
+  Map<WeatherModel, List<WindData?>>? _multiModelData;
+  bool _loadingMultiModel = false;
+  bool _showingAllModels = false;
+  WeatherModel? _selectedModel;
 
   void _onDateHeaderTap(int dayIndex) {
     setState(() {
@@ -86,19 +96,172 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
   }
 
   void _onCellTap(ParaglidingSite site, int dayIndex) {
-    setState(() {
-      if (_selectedSite == site && _selectedDayIndex == dayIndex && _showingCellDetail) {
-        // Clicking same cell again - clear selection
+    if (_selectedSite == site && _selectedDayIndex == dayIndex && _showingCellDetail) {
+      // Clicking same cell again - clear selection
+      setState(() {
         _selectedSite = null;
         _selectedDayIndex = null;
         _showingCellDetail = false;
-      } else {
-        // Show hourly details for this specific site and day
+        _multiModelData = null;
+        _showingAllModels = false;
+      });
+    } else {
+      // Show hourly details for this specific site and day
+      setState(() {
         _selectedSite = site;
         _selectedDayIndex = dayIndex;
         _showingCellDetail = true;
+        _multiModelData = null; // Clear previous data
+        _showingAllModels = false; // Reset to single model view
+      });
+
+      // Load only the currently selected model (instant, uses cache)
+      _loadCurrentModelForecast();
+    }
+  }
+
+  /// Load forecast for only the currently selected model (instant, from cache)
+  Future<void> _loadCurrentModelForecast() async {
+    if (_selectedSite == null || _selectedDayIndex == null) return;
+
+    // Capture current selection to validate later (prevent race conditions)
+    final requestSite = _selectedSite;
+    final requestDayIndex = _selectedDayIndex;
+
+    try {
+      // Load selected model from preferences
+      final modelApiValue = await PreferencesHelper.getWeatherForecastModel();
+      _selectedModel = WeatherModel.fromApiValue(modelApiValue);
+
+      final date = DateTime.now().add(Duration(days: requestDayIndex!));
+
+      // Get cached forecast for current model only
+      final forecast = await WeatherService.instance.getCachedForecast(
+        requestSite!.latitude,
+        requestSite.longitude,
+      );
+
+      if (forecast != null) {
+        // Extract hourly data for 7am-7pm for the selected day
+        final hourlyData = <WindData?>[];
+        for (int hour = FlyabilityConstants.startHour;
+             hour <= FlyabilityConstants.startHour + FlyabilityConstants.hoursToShow - 1;
+             hour++) {
+          final dateTime = DateTime(date.year, date.month, date.day, hour);
+          final windData = forecast.getAtTime(dateTime);
+          hourlyData.add(windData);
+        }
+
+        // Only show model if it has at least one valid data point
+        final hasValidData = hourlyData.any((windData) => windData != null);
+
+        // Validate selection hasn't changed before updating state
+        if (mounted && _selectedSite == requestSite && _selectedDayIndex == requestDayIndex) {
+          setState(() {
+            _multiModelData = hasValidData ? {_selectedModel!: hourlyData} : null;
+          });
+
+          LoggingService.structured('CURRENT_MODEL_FORECAST_LOADED', {
+            'site': requestSite.name,
+            'day_index': requestDayIndex,
+            'model': _selectedModel!.displayName,
+            'from_cache': true,
+            'has_valid_data': hasValidData,
+          });
+        } else {
+          LoggingService.debug('Discarding stale forecast data for ${requestSite.name} day $requestDayIndex');
+        }
       }
+    } catch (e, stackTrace) {
+      LoggingService.error('Failed to load current model forecast', e, stackTrace);
+    }
+  }
+
+  /// Load remaining weather models (triggered by "More forecasts..." button)
+  Future<void> _loadRemainingModels() async {
+    if (_selectedSite == null || _selectedDayIndex == null) return;
+
+    // Capture current selection to validate later (prevent race conditions)
+    final requestSite = _selectedSite;
+    final requestDayIndex = _selectedDayIndex;
+
+    setState(() {
+      _loadingMultiModel = true;
     });
+
+    try {
+      final date = DateTime.now().add(Duration(days: requestDayIndex!));
+      final modelDataMap = <WeatherModel, List<WindData?>>{};
+
+      // Preserve current model data
+      if (_multiModelData != null) {
+        modelDataMap.addAll(_multiModelData!);
+      }
+
+      // Fetch forecasts for ALL models (includes cache check, so current model won't be re-fetched)
+      final stopwatch = Stopwatch()..start();
+      final forecasts = await WeatherService.instance.getAllModelForecasts(
+        requestSite!.latitude,
+        requestSite.longitude,
+      );
+      stopwatch.stop();
+
+      // Extract hourly data for 7am-7pm for the selected day from each model's forecast
+      for (final entry in forecasts.entries) {
+        final model = entry.key;
+        final forecast = entry.value;
+
+        final hourlyData = <WindData?>[];
+        for (int hour = FlyabilityConstants.startHour;
+             hour <= FlyabilityConstants.startHour + FlyabilityConstants.hoursToShow - 1;
+             hour++) {
+          final dateTime = DateTime(date.year, date.month, date.day, hour);
+          final windData = forecast.getAtTime(dateTime);
+          hourlyData.add(windData);
+        }
+
+        modelDataMap[model] = hourlyData;
+      }
+
+      // Filter out models with no valid data (all null entries)
+      final modelsBeforeFilter = modelDataMap.length;
+      modelDataMap.removeWhere((model, hourlyData) =>
+        hourlyData.every((windData) => windData == null)
+      );
+      final modelsAfterFilter = modelDataMap.length;
+
+      // Validate selection hasn't changed before updating state
+      if (mounted && _selectedSite == requestSite && _selectedDayIndex == requestDayIndex) {
+        setState(() {
+          _multiModelData = modelDataMap;
+          _loadingMultiModel = false;
+          _showingAllModels = true;
+        });
+
+        LoggingService.structured('ALL_MODELS_FORECAST_LOADED', {
+          'site': requestSite.name,
+          'day_index': requestDayIndex,
+          'models_loaded': modelDataMap.length,
+          'models_filtered': modelsBeforeFilter - modelsAfterFilter,
+          'duration_ms': stopwatch.elapsedMilliseconds,
+        });
+      } else {
+        // Selection changed, just reset loading state
+        if (mounted) {
+          setState(() {
+            _loadingMultiModel = false;
+          });
+        }
+        LoggingService.debug('Discarding stale model forecasts for ${requestSite.name} day $requestDayIndex');
+      }
+    } catch (e, stackTrace) {
+      LoggingService.error('Failed to load remaining model forecasts', e, stackTrace);
+      if (mounted) {
+        setState(() {
+          _loadingMultiModel = false;
+        });
+      }
+    }
   }
 
   @override
@@ -182,15 +345,8 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
     List<ParaglidingSite> sitesToShow;
 
     if (_showingCellDetail && _selectedSite != null && _selectedDayIndex != null) {
-      // Single site, single day - show hourly breakdown
-      title = '${_selectedSite!.name} - ${DateFormat('EEEE, MMMM d').format(date!)}';
-      windDataBySite = {
-        '${_selectedSite!.latitude.toStringAsFixed(4)}_${_selectedSite!.longitude.toStringAsFixed(4)}':
-            widget.windDataByDay[_selectedDayIndex]?[
-                    '${_selectedSite!.latitude.toStringAsFixed(4)}_${_selectedSite!.longitude.toStringAsFixed(4)}'] ??
-                []
-      };
-      sitesToShow = [_selectedSite!];
+      // Single site, single day - show multi-model comparison
+      return _buildMultiModelDetailSection(context);
     } else if (_selectedDayIndex != null) {
       // All sites for selected day
       title = DateFormat('EEEE, MMMM d').format(date!);
@@ -245,6 +401,127 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
             cautionWindSpeed: widget.cautionWindSpeed,
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildMultiModelDetailSection(BuildContext context) {
+    final date = DateTime.now().add(Duration(days: _selectedDayIndex!));
+    final title = '${_selectedSite!.name} - ${DateFormat('EEEE, MMMM d').format(date)}';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Divider(height: 32, thickness: 2),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _showingAllModels
+                          ? 'Comparing all weather models'
+                          : 'Using ${_selectedModel?.displayName ?? "current"} model',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 20),
+                onPressed: () {
+                  setState(() {
+                    _selectedDayIndex = null;
+                    _selectedSite = null;
+                    _showingCellDetail = false;
+                    _multiModelData = null;
+                  });
+                },
+                tooltip: 'Close detail view',
+              ),
+            ],
+          ),
+        ),
+        if (_multiModelData != null && _multiModelData!.isNotEmpty)
+          Column(
+            children: [
+              // Always show table when data exists
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.all(16.0),
+                child: MultiModelForecastTable(
+                  site: _selectedSite!,
+                  date: date,
+                  windDataByModel: _multiModelData!,
+                  maxWindSpeed: widget.maxWindSpeed,
+                  cautionWindSpeed: widget.cautionWindSpeed,
+                  selectedModel: _selectedModel,
+                ),
+              ),
+              // Show loading indicator BELOW table when loading additional models
+              if (_loadingMultiModel)
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      SizedBox(width: 12),
+                      Text('Loading additional forecasts...',
+                        style: TextStyle(fontSize: 14, color: Colors.grey)),
+                    ],
+                  ),
+                )
+              // Show "More forecasts..." button when not loading and only showing current model
+              else if (!_showingAllModels && _multiModelData!.length == 1)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  child: OutlinedButton.icon(
+                    onPressed: _loadRemainingModels,
+                    icon: const Icon(Icons.add_chart, size: 20),
+                    label: const Text('More forecasts...'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    ),
+                  ),
+                ),
+            ],
+          )
+        else
+          Padding(
+            padding: const EdgeInsets.all(32.0),
+            child: Center(
+              child: Column(
+                children: [
+                  const Icon(Icons.error_outline, size: 48, color: Colors.orange),
+                  const SizedBox(height: 16),
+                  const Text('Failed to load forecast'),
+                  const SizedBox(height: 8),
+                  ElevatedButton(
+                    onPressed: _loadCurrentModelForecast,
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          ),
       ],
     );
   }

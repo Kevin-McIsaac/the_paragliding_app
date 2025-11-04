@@ -47,11 +47,53 @@ class WindForecast {
     required double longitude,
     required Map<String, dynamic> hourlyData,
   }) {
+    // Validate required fields exist and are correct type
+    if (!hourlyData.containsKey('time') || hourlyData['time'] == null) {
+      throw FormatException('Open-Meteo API response missing required "time" field');
+    }
+    if (!hourlyData.containsKey('wind_speed_10m') || hourlyData['wind_speed_10m'] == null) {
+      throw FormatException('Open-Meteo API response missing required "wind_speed_10m" field');
+    }
+    if (!hourlyData.containsKey('wind_direction_10m') || hourlyData['wind_direction_10m'] == null) {
+      throw FormatException('Open-Meteo API response missing required "wind_direction_10m" field');
+    }
+    if (!hourlyData.containsKey('wind_gusts_10m') || hourlyData['wind_gusts_10m'] == null) {
+      throw FormatException('Open-Meteo API response missing required "wind_gusts_10m" field');
+    }
+
+    // Validate field types
+    if (hourlyData['time'] is! List) {
+      throw FormatException('Expected "time" to be List, got ${hourlyData['time'].runtimeType}');
+    }
+    if (hourlyData['wind_speed_10m'] is! List) {
+      throw FormatException('Expected "wind_speed_10m" to be List, got ${hourlyData['wind_speed_10m'].runtimeType}');
+    }
+    if (hourlyData['wind_direction_10m'] is! List) {
+      throw FormatException('Expected "wind_direction_10m" to be List, got ${hourlyData['wind_direction_10m'].runtimeType}');
+    }
+    if (hourlyData['wind_gusts_10m'] is! List) {
+      throw FormatException('Expected "wind_gusts_10m" to be List, got ${hourlyData['wind_gusts_10m'].runtimeType}');
+    }
+
     final times = List<String>.from(hourlyData['time']);
     final rawSpeeds = hourlyData['wind_speed_10m'] as List;
     final rawDirections = hourlyData['wind_direction_10m'] as List;
     final rawGusts = hourlyData['wind_gusts_10m'] as List;
     final rawPrecipitation = hourlyData['precipitation'] as List?;
+
+    // Validate array lengths are consistent
+    if (rawSpeeds.length != times.length) {
+      throw FormatException('Array length mismatch: wind_speed_10m(${rawSpeeds.length}) != time(${times.length})');
+    }
+    if (rawDirections.length != times.length) {
+      throw FormatException('Array length mismatch: wind_direction_10m(${rawDirections.length}) != time(${times.length})');
+    }
+    if (rawGusts.length != times.length) {
+      throw FormatException('Array length mismatch: wind_gusts_10m(${rawGusts.length}) != time(${times.length})');
+    }
+    if (rawPrecipitation != null && rawPrecipitation.length != times.length) {
+      throw FormatException('Array length mismatch: precipitation(${rawPrecipitation.length}) != time(${times.length})');
+    }
 
     // Build parallel arrays, filtering out entries where any value is null
     final validTimestamps = <DateTime>[];
