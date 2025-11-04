@@ -148,9 +148,12 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
           hourlyData.add(windData);
         }
 
+        // Only show model if it has at least one valid data point
+        final hasValidData = hourlyData.any((windData) => windData != null);
+
         if (mounted) {
           setState(() {
-            _multiModelData = {_selectedModel!: hourlyData};
+            _multiModelData = hasValidData ? {_selectedModel!: hourlyData} : null;
           });
 
           LoggingService.structured('CURRENT_MODEL_FORECAST_LOADED', {
@@ -158,6 +161,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
             'day_index': _selectedDayIndex,
             'model': _selectedModel!.displayName,
             'from_cache': true,
+            'has_valid_data': hasValidData,
           });
         }
       }
@@ -208,6 +212,13 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
         modelDataMap[model] = hourlyData;
       }
 
+      // Filter out models with no valid data (all null entries)
+      final modelsBeforeFilter = modelDataMap.length;
+      modelDataMap.removeWhere((model, hourlyData) =>
+        hourlyData.every((windData) => windData == null)
+      );
+      final modelsAfterFilter = modelDataMap.length;
+
       if (mounted) {
         setState(() {
           _multiModelData = modelDataMap;
@@ -219,6 +230,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
           'site': _selectedSite!.name,
           'day_index': _selectedDayIndex,
           'models_loaded': modelDataMap.length,
+          'models_filtered': modelsBeforeFilter - modelsAfterFilter,
           'duration_ms': stopwatch.elapsedMilliseconds,
         });
       }
@@ -423,22 +435,10 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
             ],
           ),
         ),
-        if (_loadingMultiModel)
-          const Padding(
-            padding: EdgeInsets.all(32.0),
-            child: Center(
-              child: Column(
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Loading additional forecasts...'),
-                ],
-              ),
-            ),
-          )
-        else if (_multiModelData != null && _multiModelData!.isNotEmpty)
+        if (_multiModelData != null && _multiModelData!.isNotEmpty)
           Column(
             children: [
+              // Always show table when data exists
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.all(16.0),
@@ -451,8 +451,26 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
                   selectedModel: _selectedModel,
                 ),
               ),
-              // Show "More forecasts..." button when only showing current model
-              if (!_showingAllModels && _multiModelData!.length == 1)
+              // Show loading indicator BELOW table when loading additional models
+              if (_loadingMultiModel)
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      SizedBox(width: 12),
+                      Text('Loading additional forecasts...',
+                        style: TextStyle(fontSize: 14, color: Colors.grey)),
+                    ],
+                  ),
+                )
+              // Show "More forecasts..." button when not loading and only showing current model
+              else if (!_showingAllModels && _multiModelData!.length == 1)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                   child: OutlinedButton.icon(
