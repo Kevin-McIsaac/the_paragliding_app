@@ -5,6 +5,7 @@ import '../../data/models/wind_data.dart';
 import '../../data/models/weather_model.dart';
 import '../../utils/flyability_constants.dart';
 import 'flyability_cell.dart';
+import 'fixed_column_table.dart';
 
 /// Widget for displaying hourly flyability forecast from multiple weather models
 ///
@@ -44,19 +45,34 @@ class MultiModelForecastTable extends StatelessWidget {
       return a.displayName.compareTo(b.displayName);
     });
 
-    return Table(
-      defaultColumnWidth: const FixedColumnWidth(FlyabilityConstants.cellSize),
-      columnWidths: {
-        0: FixedColumnWidth(modelColumnWidth!),
-      },
-      border: TableBorder.all(
-        color: Theme.of(context).dividerColor,
-        width: 1.0,
+    final tableBorder = TableBorder.all(
+      color: Theme.of(context).dividerColor,
+      width: 1.0,
+    );
+
+    return FixedColumnTable(
+      firstColumnWidth: modelColumnWidth!,
+      fullTable: Table(
+        defaultColumnWidth: const FixedColumnWidth(FlyabilityConstants.cellSize),
+        columnWidths: {
+          0: FixedColumnWidth(modelColumnWidth!),
+        },
+        border: tableBorder,
+        children: [
+          _buildHeaderRow(context),
+          ...models.map((model) => _buildModelRow(context, model)),
+        ],
       ),
-      children: [
-        _buildHeaderRow(context),
-        ...models.map((model) => _buildModelRow(context, model)),
-      ],
+      firstColumnTable: Table(
+        columnWidths: {
+          0: FixedColumnWidth(modelColumnWidth!),
+        },
+        border: tableBorder,
+        children: [
+          _buildHeaderRowFirstColumnOnly(context),
+          ...models.map((model) => _buildModelRowFirstColumnOnly(context, model)),
+        ],
+      ),
     );
   }
 
@@ -177,5 +193,70 @@ class MultiModelForecastTable extends StatelessWidget {
 
     // Format as "Mon 23" or "Tue 24"
     return DateFormat('EEE d').format(date);
+  }
+
+  /// Build header row with only the first column (for fixed column overlay)
+  TableRow _buildHeaderRowFirstColumnOnly(BuildContext context) {
+    return TableRow(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+      ),
+      children: [
+        _buildHeaderCell(context, _formatDate(date), isFirst: true),
+      ],
+    );
+  }
+
+  /// Build model row with only the first column (for fixed column overlay)
+  TableRow _buildModelRowFirstColumnOnly(BuildContext context, WeatherModel model) {
+    final isSelected = model == selectedModel;
+    return TableRow(
+      decoration: isSelected
+          ? BoxDecoration(
+              color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.1),
+            )
+          : null,
+      children: [
+        Container(
+          height: FlyabilityConstants.cellSize,
+          alignment: Alignment.centerLeft,
+          padding: const EdgeInsets.symmetric(horizontal: 4.0),
+          decoration: isSelected
+              ? BoxDecoration(
+                  border: Border(
+                    left: BorderSide(
+                      color: Theme.of(context).colorScheme.primary,
+                      width: 3,
+                    ),
+                  ),
+                )
+              : null,
+          child: Tooltip(
+            message: model.description,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    model.displayName,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                      color: isSelected ? Theme.of(context).colorScheme.primary : null,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (isSelected)
+                  Icon(
+                    Icons.check_circle,
+                    size: 14,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }

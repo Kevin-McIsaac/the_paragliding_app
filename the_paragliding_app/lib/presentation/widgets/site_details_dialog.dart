@@ -1125,29 +1125,24 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Forecast table with horizontal scroll - constrain max height for nested scrolling
+            // Forecast table - constrain max height for nested scrolling
+            // FixedColumnTable handles horizontal scrolling internally
             ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 390), // Increased to accommodate attribution
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                primary: false,  // Prevent conflict with outer vertical scroll
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 8.0, right: 8.0, top: 8.0),
-                  child: IntrinsicWidth(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        ForecastAttributionBar(
-                          forecast: _windForecast,
-                          onRefresh: () {
-                            _loadWindForecast();
-                          },
-                        ),
-                        _build7DayForecastTable(windDirections),
-                      ],
+              child: Padding(
+                padding: const EdgeInsets.only(left: 8.0, right: 8.0, top: 8.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ForecastAttributionBar(
+                      forecast: _windForecast,
+                      onRefresh: () {
+                        _loadWindForecast();
+                      },
                     ),
-                  ),
+                    _build7DayForecastTable(windDirections),
+                  ],
                 ),
               ),
             ),

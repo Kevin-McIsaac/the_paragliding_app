@@ -11,6 +11,7 @@ import '../../utils/flyability_constants.dart';
 import 'multi_site_flyability_table.dart';
 import 'site_forecast_table.dart';
 import 'multi_model_forecast_table.dart';
+import 'fixed_column_table.dart';
 
 /// Week summary table showing flyability for multiple sites across 7 days
 /// Sites are rows, days are columns with color-coded daily summary
@@ -266,24 +267,36 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
 
   @override
   Widget build(BuildContext context) {
+    final tableBorder = TableBorder.all(
+      color: Theme.of(context).dividerColor,
+      width: 1.0,
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Table
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Table(
+        // Table with fixed first column
+        FixedColumnTable(
+          firstColumnWidth: FlyabilityConstants.siteColumnWidth,
+          fullTable: Table(
             defaultColumnWidth: const FixedColumnWidth(48.0), // Week summary uses larger cells
             columnWidths: const {
               0: FixedColumnWidth(FlyabilityConstants.siteColumnWidth),
             },
-            border: TableBorder.all(
-              color: Theme.of(context).dividerColor,
-              width: 1.0,
-            ),
+            border: tableBorder,
             children: [
               _buildHeaderRow(context),
               ...widget.sites.map((site) => _buildSiteRow(context, site)),
+            ],
+          ),
+          firstColumnTable: Table(
+            columnWidths: const {
+              0: FixedColumnWidth(FlyabilityConstants.siteColumnWidth),
+            },
+            border: tableBorder,
+            children: [
+              _buildHeaderRowFirstColumnOnly(context),
+              ...widget.sites.map((site) => _buildSiteRowFirstColumnOnly(context, site)),
             ],
           ),
         ),
@@ -459,8 +472,8 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
           Column(
             children: [
               // Always show table when data exists
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
+              // FixedColumnTable handles horizontal scrolling internally
+              Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: MultiModelForecastTable(
                   site: _selectedSite!,
@@ -697,6 +710,61 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
             hourlyData: siteWindData,
           );
         }),
+      ],
+    );
+  }
+
+  /// Build header row with only the first column (for fixed column overlay)
+  TableRow _buildHeaderRowFirstColumnOnly(BuildContext context) {
+    return TableRow(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+      ),
+      children: [
+        Container(
+          height: FlyabilityConstants.headerHeight,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 4.0),
+          child: const Text(
+            'Site',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Build site row with only the first column (for fixed column overlay)
+  TableRow _buildSiteRowFirstColumnOnly(BuildContext context, ParaglidingSite site) {
+    final isSiteSelected = _selectedSite == site && !_showingCellDetail;
+
+    return TableRow(
+      children: [
+        InkWell(
+          onTap: () => _onSiteNameTap(site),
+          child: Container(
+            height: 48.0, // Week summary uses larger cells
+            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.symmetric(horizontal: 4.0),
+            decoration: isSiteSelected
+                ? BoxDecoration(
+                    color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
+                  )
+                : null,
+            child: Tooltip(
+              message: site.name,
+              child: Text(
+                site.name,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: isSiteSelected ? FontWeight.bold : FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
