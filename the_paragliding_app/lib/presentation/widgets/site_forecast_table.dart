@@ -4,6 +4,7 @@ import '../../data/models/paragliding_site.dart';
 import '../../data/models/wind_data.dart';
 import '../../utils/flyability_constants.dart';
 import 'flyability_cell.dart';
+import 'fixed_column_table.dart';
 
 /// Shared widget for displaying a single site's 7-day flyability forecast
 ///
@@ -35,19 +36,34 @@ class SiteForecastTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Table(
-      defaultColumnWidth: const FixedColumnWidth(FlyabilityConstants.cellSize),
-      columnWidths: {
-        0: FixedColumnWidth(dateColumnWidth!),
-      },
-      border: TableBorder.all(
-        color: Theme.of(context).dividerColor,
-        width: 1.0,
+    final tableBorder = TableBorder.all(
+      color: Theme.of(context).dividerColor,
+      width: 1.0,
+    );
+
+    return FixedColumnTable(
+      firstColumnWidth: dateColumnWidth!,
+      fullTable: Table(
+        defaultColumnWidth: const FixedColumnWidth(FlyabilityConstants.cellSize),
+        columnWidths: {
+          0: FixedColumnWidth(dateColumnWidth!),
+        },
+        border: tableBorder,
+        children: [
+          _buildHeaderRow(context),
+          ...List.generate(7, (dayIndex) => _buildDataRow(context, dayIndex)),
+        ],
       ),
-      children: [
-        _buildHeaderRow(context),
-        ...List.generate(7, (dayIndex) => _buildDataRow(context, dayIndex)),
-      ],
+      firstColumnTable: Table(
+        columnWidths: {
+          0: FixedColumnWidth(dateColumnWidth!),
+        },
+        border: tableBorder,
+        children: [
+          _buildHeaderRowFirstColumnOnly(context),
+          ...List.generate(7, (dayIndex) => _buildDataRowFirstColumnOnly(context, dayIndex)),
+        ],
+      ),
     );
   }
 
@@ -111,6 +127,37 @@ class SiteForecastTable extends StatelessWidget {
             cautionWindSpeed: cautionWindSpeed,
           );
         }),
+      ],
+    );
+  }
+
+  /// Build header row with only the first column (for fixed column overlay)
+  TableRow _buildHeaderRowFirstColumnOnly(BuildContext context) {
+    return TableRow(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+      ),
+      children: [
+        _buildHeaderCell('Date', isFirst: true),
+      ],
+    );
+  }
+
+  /// Build data row with only the first column (for fixed column overlay)
+  TableRow _buildDataRowFirstColumnOnly(BuildContext context, int dayIndex) {
+    final date = DateTime.now().add(Duration(days: dayIndex));
+
+    return TableRow(
+      children: [
+        Container(
+          height: FlyabilityConstants.cellSize,
+          alignment: Alignment.centerLeft,
+          padding: const EdgeInsets.symmetric(horizontal: 4.0),
+          child: Text(
+            _formatDate(date),
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+          ),
+        ),
       ],
     );
   }

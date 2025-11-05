@@ -3,6 +3,7 @@ import '../../data/models/paragliding_site.dart';
 import '../../data/models/wind_data.dart';
 import '../../utils/flyability_constants.dart';
 import 'flyability_cell.dart';
+import 'fixed_column_table.dart';
 
 /// Table widget displaying flyability for multiple sites across hours
 /// Sites are shown as rows, hours (7am-7pm) as columns
@@ -24,20 +25,32 @@ class MultiSiteFlyabilityTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Table(
+    final tableBorder = TableBorder.all(
+      color: Theme.of(context).dividerColor,
+      width: 1.0,
+    );
+
+    return FixedColumnTable(
+      firstColumnWidth: FlyabilityConstants.siteColumnWidth,
+      fullTable: Table(
         defaultColumnWidth: const FixedColumnWidth(FlyabilityConstants.cellSize),
         columnWidths: const {
           0: FixedColumnWidth(FlyabilityConstants.siteColumnWidth), // Site name column wider
         },
-        border: TableBorder.all(
-          color: Theme.of(context).dividerColor,
-          width: 1.0,
-        ),
+        border: tableBorder,
         children: [
           _buildHeaderRow(context),
           ...sites.map((site) => _buildSiteRow(context, site)),
+        ],
+      ),
+      firstColumnTable: Table(
+        columnWidths: const {
+          0: FixedColumnWidth(FlyabilityConstants.siteColumnWidth),
+        },
+        border: tableBorder,
+        children: [
+          _buildHeaderRowFirstColumnOnly(context),
+          ...sites.map((site) => _buildSiteRowFirstColumnOnly(context, site)),
         ],
       ),
     );
@@ -107,6 +120,40 @@ class MultiSiteFlyabilityTable extends StatelessWidget {
             cautionWindSpeed: cautionWindSpeed,
           );
         }),
+      ],
+    );
+  }
+
+  /// Build header row with only the first column (for fixed column overlay)
+  TableRow _buildHeaderRowFirstColumnOnly(BuildContext context) {
+    return TableRow(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+      ),
+      children: [
+        _buildHeaderCell(context, 'Site', isFirst: true),
+      ],
+    );
+  }
+
+  /// Build site row with only the first column (for fixed column overlay)
+  TableRow _buildSiteRowFirstColumnOnly(BuildContext context, ParaglidingSite site) {
+    return TableRow(
+      children: [
+        Container(
+          height: FlyabilityConstants.cellSize,
+          alignment: Alignment.centerLeft,
+          padding: const EdgeInsets.symmetric(horizontal: 4.0),
+          child: Tooltip(
+            message: site.name,
+            child: Text(
+              site.name,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
+          ),
+        ),
       ],
     );
   }
