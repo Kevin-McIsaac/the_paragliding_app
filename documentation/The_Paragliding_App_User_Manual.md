@@ -33,27 +33,102 @@ The app remembers which tab you last viewed and returns to it when you reopen th
 The Flight Log screen shows all your flights with:
 
 - **Menu button** (⋮) in top-right provides access to all the app features
-- **Total flights** and **flight hours** displayed at the top of the list. You can use the **Select Flights** menu item to limit this to a subset of flights.
+- **Total flights** and **flight hours** displayed at the top of the list
+- **Date range filtering** - Filter flights by time period (see below)
+- **Search bar** - Filter flights by launch site name in real-time
 - **Sortable table** with columns: Launch Site, Launch Date & Time, Duration, Track Dist (km), Straight Dist (km), Max Alt (m)
+  - **Tap any column header** to sort by that column (ascending/descending toggle)
 - **Tap any flight** to see the flight statistics, watch a 3D replay or correct flight details
 - **Add flight button** (+) floating button for manual flight entry
+
+#### Filter Flights by Date Range
+
+Use the date range filter at the top to view specific time periods:
+
+1. Tap the **date range dropdown** (defaults to "All Time")
+2. Select from preset ranges:
+   - **All Time** - Shows every flight in your logbook
+   - **This Year** - Current calendar year only
+   - **Last 12 Months** - Rolling 12-month period
+   - **Last 6 Months** - Rolling 6-month period
+   - **Last 3 Months** - Rolling 3-month period
+   - **Last 30 Days** - Last month of flights
+   - **Custom Range** - Pick specific start and end dates
+3. The flight list and statistics update immediately
+
+**Uses:**
+- Check currency requirements (e.g., flights in last 90 days)
+- Review seasonal flying patterns
+- Generate period-specific statistics
+- Prepare logbook summaries for specific timeframes
+
+#### Search and Sort Flights
+
+**To search by launch site:**
+1. Type in the **search bar** at the top
+2. Results filter in real-time as you type
+3. Clear the search to see all flights again
+
+**To sort the table:**
+1. Tap any **column header** (Date, Site, Duration, Distance, etc.)
+2. First tap sorts ascending, second tap sorts descending
+3. A sort indicator appears on the active column
+4. Sorting persists until you change it
 
 ### Main Menu Structure
 
 The **menu button (⋮)** in the top-right corner provides access to:
 
-- **Statistics** - View flight summaries and totals by year, wing or site
-- **Manage Sites** - Edit launch locations
-- **Manage Wings** - Track your equipment
-- **Import IGC** - Import flight files
-- **Select Flights** - Bulk operations like delete
+- **Import IGC** - Import flight files from your vario or cloud storage
+- **Add Flight** - Manually log a flight without IGC file
+- **Manage Sites** - View, edit, and organize launch/landing locations
+- **Manage Wings** - Track and manage your equipment inventory
+- ────────── (divider)
+- **Data Management** - Database backup, IGC files, PGE sync, airspace data, and premium maps
 - **Preferences** - Configure app settings for 3D visualization, detection thresholds, and wind limits
-- **Database Settings** - Data backup and maintenance. Be careful!
-- **About** - App information
+- **About** - App version, build information, credits, and support
 
 ---
 
 ## Daily Use
+
+### Manually Log a Flight
+
+If you don't have an IGC file (e.g., forgot your vario, battery died, or recreational flight), you can manually enter flight details.
+
+#### Steps
+
+1. Tap the **floating (+) button** at the bottom-right of the Flight Log screen
+2. Or tap **menu (⋮)** → **Add Flight**
+3. Fill in the flight details form:
+   - **Date** (required) - Tap to open date picker
+   - **Launch Time** (required) - Enter time in HH:MM format
+   - **Landing Time** (optional) - Auto-calculates duration
+   - **Launch Site** (required) - Select from dropdown or create new
+   - **Landing Site** (optional) - Select if different from launch
+   - **Wing** (required) - Select equipment used
+   - **Duration** - Auto-calculated from times, or enter manually
+   - **Max Altitude** (optional) - Highest point in meters
+   - **Distance** (optional) - Flight distance in km
+   - **Notes** (optional) - Flight description, conditions, etc.
+4. Tap **Save** to add the flight to your logbook
+
+#### When to Use Manual Entry
+
+✓ Vario battery died mid-flight
+✓ Forgot GPS device
+✓ Recreational flight without tracking
+✓ Training flight from known site
+✓ Quick logbook entry for insurance/currency records
+
+#### Tips
+
+- **Duration auto-calculates** when you enter both launch and landing times
+- **Create sites on-the-fly**: If the launch site isn't in the dropdown, you can add it during flight entry
+- **Edit later**: You can always edit manually-entered flights to add missing details
+- **No track data**: Manual flights won't have GPS tracks, so 3D replay won't be available
+
+---
 
 ### Import Flights from Your Vario
 
@@ -136,6 +211,59 @@ If you start the GPS after takeoff you flight will have the wrong launch site
 
 **Result:** The flight is reassigned to the selected site.
 
+### Edit Flight Details
+
+If you need to correct flight information (wrong date, site, wing, etc.), you can edit any flight.
+
+#### Steps
+
+1. Tap the **flight** in your Flight Log to open Flight Details
+2. Tap the **Edit** button (usually in top-right or as a menu option)
+3. The Edit Flight screen opens with a form showing current flight data
+4. Modify any field:
+   - **Date** - Tap to open date picker
+   - **Launch Time** - Enter or adjust launch time
+   - **Landing Time** - Enter or adjust landing time (duration auto-updates)
+   - **Launch Site** - Select different site from dropdown
+   - **Landing Site** - Select different landing site
+   - **Wing** - Change equipment used
+   - **Duration** - Manually adjust if time calculation is incorrect
+   - **Max Altitude** - Correct altitude value
+   - **Distance** - Adjust distance if needed
+   - **Notes** - Add or modify flight notes
+5. Tap **Save** to apply changes
+6. Tap **Cancel** to discard changes
+
+#### Common Edits
+
+**Wrong launch site:**
+- Often happens when GPS started after takeoff
+- Change to correct site from dropdown
+- Or create new site if not in list
+
+**Incorrect time/date:**
+- Timezone detection occasionally fails
+- Manually adjust to local time at launch location
+- Duration recalculates automatically
+
+**Wrong wing:**
+- Easy to forget to change in vario
+- Select correct wing from dropdown
+- Helps keep accurate wing statistics
+
+**Missing notes:**
+- Add weather conditions
+- Document lessons learned
+- Record memorable moments
+
+#### What You Can't Edit
+
+- **GPS track data** - The actual flight path from IGC file is immutable
+- To change track data, you must re-import the IGC file (use "Replace" in duplicate dialog)
+- 3D visualization always uses original IGC track points
+
+---
+
 ### Track Your Equipment
 
 #### Edit Wing Names
@@ -217,31 +345,49 @@ Mark sites you fly regularly as favorites for quick access:
 
 #### Enabling Map Overlays
 
-The map supports multiple overlay types. Tap the **filter icon** (funnel) in the top-right to toggle:
+The map supports multiple overlay types. Tap the **filter icon** (funnel) in the top-right to open the filter dialog with checkboxes:
 
-**Sites Overlay** (on by default)
+**Filter Behavior:**
+- ✓ **Checkboxes apply immediately** - No need to tap "Apply" or "OK"
+- Each overlay can be toggled independently
+- Your filter selections are saved and persist across app sessions
+- Close the filter dialog by tapping outside it or using the back button
+
+**Sites Overlay** (checkbox, on by default)
 - Shows flying site markers from your logbook and ParaglidingEarth
-- Blue markers = sites you've flown, orange = new sites
+- Blue markers with star = sites you've flown (Flown Sites)
+- Orange markers = sites from ParaglidingEarth you haven't flown yet (New Sites)
+- Uncheck to hide all site markers
 
-**Airspace Overlay**
+**Airspace Overlay** (checkbox, off by default)
 - Displays controlled airspace polygons from OpenAIP
 - Different colours for airspace types: controlled zones (red), restricted areas (orange), danger zones, etc.
 - Helps plan flights to avoid restricted airspace
 - Tap airspace polygons to see details (name, type, altitude limits)
+- Check to enable airspace visualization
 
-**Forecast Overlay**
+**Forecast Overlay** (checkbox, off by default)
 - Adds wind direction/speed icons to site markers
 - Shows flyability status with colour coding:
   - **Green** = Good conditions for flying
   - **Orange** = Caution - marginal conditions
   - **Red** = Unsafe - do not fly
 - Updates automatically based on current time
+- Requires internet connection for weather data
+- Check to enable wind/flyability indicators
 
-**Weather Stations Overlay**
+**Weather Stations Overlay** (checkbox, off by default)
 - Shows nearby weather stations with real-time observations
-- Different icons for station types: BOM, METAR, PGE stations
+- Different icons for station types: BOM (Bureau of Meteorology), METAR (aviation stations), PGE stations
 - Tap stations to see current wind, temperature, and conditions
 - Useful for checking actual conditions vs forecasts
+- Check to enable weather station markers
+
+**Tips:**
+- Enable only the overlays you need to reduce map clutter
+- Airspace overlay is essential for flight planning in controlled airspace regions
+- Forecast overlay helps with quick site selection based on conditions
+- Weather stations provide ground truth vs model forecasts
 
 #### Changing Map Providers
 
@@ -378,12 +524,15 @@ Access comprehensive statistics about your flying including yearly totals, wing 
 #### Steps
 
 1. Tap **menu (⋮)** → **Statistics**
-2. Review the three main sections:
+2. Or tap the **Statistics tab** in the bottom navigation bar
+3. Select a **date range filter** at the top (same options as Flight Log):
+   - All Time / This Year / Last 12 Months / Last 6 Months / Last 3 Months / Last 30 Days / Custom Range
+4. Review the three main sections:
    - **Flights by Year**: Annual flight counts and total hours
    - **Flights by Wing**: Usage statistics for each piece of equipment
    - **Flights by Site**: Launch locations grouped by country
-3. Tap any **site name** (underlined) to edit location details
-4. View totals at the bottom of each section
+5. Tap any **site name** (underlined) to edit location details
+6. View totals at the bottom of each section
 
 #### Understanding the Statistics
 
@@ -391,6 +540,76 @@ Access comprehensive statistics about your flying including yearly totals, wing 
 - **Sites are grouped by country** with flight counts
 - **Yearly statistics** help track progress and currency requirements
 - **Total rows** provide overall summaries
+- **Date filtering** allows you to analyze specific time periods (e.g., "How much did I fly this year?" or "Which wing did I use most in the last 6 months?")
+
+### View Flight Details
+
+#### What You'll Learn
+
+Access comprehensive information about a specific flight including statistics, track visualization, and notes.
+
+#### Opening Flight Details
+
+1. Tap any **flight row** in the Flight Log screen
+2. The Flight Detail screen opens showing multiple information sections
+3. Scroll to explore different sections (each can be expanded/collapsed)
+
+#### Flight Information Sections
+
+**Basic Flight Info** (always visible at top):
+- Date and time (local timezone)
+- Launch and landing sites with coordinates
+- Wing/equipment used
+- Duration (hours:minutes)
+- Track distance vs straight-line distance
+- Maximum altitude and altitude gain
+
+**Flight Statistics** (expandable card):
+- Climb rate statistics (current/average/maximum)
+- Speed statistics (ground speed metrics)
+- Time in climb vs glide
+- Flight efficiency calculations
+- Detailed performance metrics
+
+**2D Map View** (expandable card):
+- Top-down map showing flight path
+- Launch marker (green) and landing marker (red)
+- Track line visualization
+- Zoom and pan to explore track details
+- Change map provider (OpenStreetMap, Satellite, etc.)
+
+**3D Track Visualization** (expandable card):
+- Interactive 3D viewer with terrain (see "Replay Flights in 3D" below for details)
+- Play/pause replay controls
+- Speed and time controls
+- Color-coded altitude/climb rate display
+
+**Notes Section** (expandable card):
+- View existing flight notes
+- **Inline editing**: Tap the **edit icon** to enter edit mode
+- Type or modify notes directly
+- Tap **Save** to store changes or **Cancel** to discard
+- IGC file source path (for imported flights)
+
+#### Available Actions
+
+From the flight detail screen, you can:
+
+- **Edit flight details**: Change date, time, site, wing, or other metadata
+- **View full-screen 3D**: Expand the 3D track for immersive replay
+- **Share flight**: Export or share flight data
+- **Delete flight**: Remove from logbook (with confirmation)
+- **Add/edit notes**: Document conditions, lessons learned, or memorable moments
+
+#### Card Expansion States
+
+Each section (Statistics, 2D Map, 3D Track, Notes) can be:
+- **Expanded**: Shows full content
+- **Collapsed**: Shows only section title
+- Tap the section header to toggle
+- Your expansion preferences are saved across app sessions
+
+---
 
 ### Replay Flights in 3D
 
@@ -400,10 +619,11 @@ Use the interactive 3D viewer to analyse flight performance and relive your flyi
 
 #### Opening 3D View
 
-1. Tap any **flight** from your main flight list
-2. Scroll down to the **Flight Track** section in flight details
-3. The interactive 3D map loads automatically showing terrain and flight track
-4. The track appears as a coloured line showing altitude and climb rate
+1. Tap any **flight** from your main flight list to open Flight Details
+2. Scroll down to the **3D Track** section
+3. Tap the section header to expand (if collapsed)
+4. The interactive 3D map loads automatically showing terrain and flight track
+5. Or tap **View Full Screen** to open in immersive mode
 
 #### 3D Navigation
 
@@ -419,21 +639,23 @@ Use the interactive 3D viewer to analyse flight performance and relive your flyi
 - **Progress slider**: Jump to any point in the flight
 - **Follow mode**: Tap **camera icon** to have the view follow the pilot automatically
 - **Full screen**: Tap **expand icon** for immersive viewing
+- **Current stats display**: Shows altitude, speed, and climb rate at current replay position
 
 #### Map and Scene Options
 
 **Change Map Provider:**
 
 - Tap the **map provider dropdown** in the top-right
-- Choose from the avaialble maps. 
-
+- Choose from available maps (OpenStreetMap, Satellite, Terrain, etc.)
+- Premium maps available with Cesium ION token (see Data Management)
 
 **Understanding Track Colours:**
 
-- Track colour represents altitude or climb rate
-- Green = climing, i.e., climb rate > 0
-- Blue = glide, ie.., climb rate between 0 and -1.5ms
-- Red = sink, i.e., climb rate < -1.5ms
+- Track colour represents climb rate performance
+- **Green** = Climbing (climb rate > 0 m/s)
+- **Blue** = Gliding (climb rate between 0 and -1.5 m/s)
+- **Red** = Sinking (climb rate < -1.5 m/s)
+- Colour gradient shows thermal activity and flight efficiency
 
 ---
 
@@ -444,23 +666,58 @@ Use the interactive 3D viewer to analyse flight performance and relive your flyi
 #### View All Sites
 
 1. Tap **menu (⋮)** → **Manage Sites**
-2. Use the **search bar** to find specific sites: "Search sites by name or country..."
-3. Change sorting with the **dropdown menu**:
-   - **Group by Country** (default) - shows country headers
-   - **Sort by Name** - alphabetical order
-   - **Sort by Date Added** - newest first
-4. Each site shows coordinates, altitude, country, and **flight count badge**
+2. The screen shows **site statistics** at the top:
+   - Total sites count
+   - Sites with flights vs without flights
+   - Total flights from all sites
+3. Use the **search bar** to find specific sites: "Search sites by name or country..."
+4. Change sorting with the **sorting dropdown menu**:
+   - **Group by Country** - Shows country section headers with sites grouped underneath
+   - **Sort by Name** - Alphabetical order (A-Z)
+   - **Sort by Date Added** - Newest sites first
+5. Each site row displays:
+   - Site name
+   - Coordinates (latitude, longitude)
+   - Altitude in meters
+   - Country
+   - **Flight count badge** - Number of flights from this site
+   - Favorite star indicator (if marked as favorite)
+
+#### Country Grouping View
+
+When using **Group by Country** sorting:
+- Sites are organized under country section headers
+- Country headers are collapsible/expandable
+- Tap a country header to collapse or expand all sites in that country
+- Total flight count shown per country
+- Helps organize large site databases by region
 
 #### Edit Site Details
 
 1. Find the site in **Manage Sites** list
 2. Tap the **popup menu (⋮)** next to the site
 3. Select **Edit** from the menu
-4. Modify any field: **Site Name**, **Latitude**, **Longitude**, **Altitude (metres)**, **Country**
-5. Use the **interactive map** to visually confirm or adjust coordinates
-6. Tap **Save** to apply changes
+4. The **Edit Site** screen opens with an interactive map showing:
+   - Current site location with draggable marker
+   - Launch radius circle (visualizes 500m detection radius)
+   - Map controls (zoom in/out)
+5. **Adjust location precisely**:
+   - Drag the marker to the exact launch point
+   - Or tap anywhere on the map to place the marker
+   - Coordinates update automatically
+6. Modify site fields:
+   - **Site Name** (required)
+   - **Country** (required)
+   - **Altitude (metres)** - Launch elevation
+   - **Notes** - Access info, directions, or special considerations
+   - Coordinates auto-update from map marker position
+7. **Change map provider** if needed (satellite view helps identify exact launch)
+8. Tap **Save** to apply changes
 
-⚠️ **Important:** Changes affect all flights associated with this location.
+⚠️ **Important:**
+- Changes affect all flights associated with this location
+- The 500m radius circle shows the area where flights will auto-match to this site
+- Use satellite imagery to precisely position the marker at the actual launch point
 
 ### Configure App Preferences
 
@@ -554,12 +811,279 @@ Set your personal limits for flyability assessment:
 
 ---
 
-## Understanding Storage
+## Data Management & Advanced Features
 
-- **Local Database**: All flight data stored on your device only
-- **Map Cache**: Stores map tiles for offline viewing (rebuilds automatically)
+### Understanding Data Storage
 
-⚠️ **Critical Warning:** Never tap **Delete Database** unless you want to permanently lose all flight data. This action cannot be undone.
+The app stores multiple types of data on your device:
+
+- **Local Database**: All flight records, sites, wings, and statistics
+- **IGC Files**: Original GPS track files from imports
+- **Map Cache**: Temporary map tiles for faster loading
+- **PGE Sites Database**: Paragliding Earth site database (synced periodically)
+- **Airspace Data**: OpenAIP airspace polygons (downloaded on demand)
+- **Preferences**: Your app settings and customizations
+
+All data is stored locally on your device. The app does not sync to cloud storage automatically.
+
+---
+
+### Manage Database and Backups
+
+#### What You'll Learn
+
+Backup your flight data, manage database integrity, and understand storage usage.
+
+#### Access Data Management
+
+1. Tap **menu (⋮)** → **Data Management**
+2. The screen shows multiple expandable sections for different data types
+
+#### Database Management Section
+
+**Database Statistics:**
+- Total flights count
+- Total sites count
+- Total wings count
+- Database file size
+- Last backup date (if available)
+
+**Available Operations:**
+
+**Export Database:**
+1. Tap **Export Database** button
+2. Choose export location (Downloads, cloud storage, etc.)
+3. A complete SQLite database file is saved
+4. File includes all flights, sites, wings, and preferences
+5. Use for backups or transferring to another device
+
+**Database Integrity Check:**
+1. Tap **Check Database Integrity**
+2. App verifies database structure and data consistency
+3. Reports any corruption or issues found
+4. Recommended before major operations or if experiencing errors
+
+**Reset Database** (⚠️ Destructive):
+1. Tap **Reset Database**
+2. Confirmation dialog appears with **severe warning**
+3. Type confirmation phrase if required
+4. All flight data, sites, and wings are permanently deleted
+5. ⚠️ **This cannot be undone** - only use if starting fresh or restoring from backup
+
+---
+
+### Manage IGC Files
+
+#### What You'll Learn
+
+Understand IGC file storage and clean up orphaned files to free device space.
+
+#### IGC File Management Section
+
+**IGC Backup Statistics:**
+- Total IGC files stored
+- Total storage used by IGC files
+- Oldest and newest file dates
+- Orphaned files count (files without matching flight records)
+
+**Available Operations:**
+
+**Clean Up Orphaned IGC Files:**
+1. Tap **Clean Up Orphaned Files**
+2. App scans for IGC files that don't match any flight record
+3. Review list of files to be removed
+4. Confirm cleanup
+5. Storage is freed and cleanup history is recorded
+
+**Why orphaned files exist:**
+- Flights were deleted but IGC files remained
+- Import failures left partial data
+- Manual database operations
+
+**Benefits of cleanup:**
+- Frees device storage
+- Keeps file system organized
+- Improves backup/restore performance
+
+---
+
+### Configure Premium Maps (Cesium ION Token)
+
+#### What You'll Learn
+
+Enable premium map providers including Bing Maps satellite imagery for 3D flight visualization.
+
+#### Why Use Premium Maps
+
+**Free Maps (Default):**
+- OpenStreetMap terrain
+- Basic satellite imagery
+- Limited 3D terrain quality
+
+**Premium Maps (with Cesium ION token):**
+- High-resolution Bing Maps satellite imagery
+- Enhanced 3D terrain data
+- Better performance and caching
+- Professional visualization quality
+
+#### Getting a Cesium ION Token
+
+1. Visit [Cesium ION](https://cesium.com/ion/) (free account available)
+2. Create a free account
+3. Navigate to **Access Tokens** in your account dashboard
+4. Create a new token or use the default token
+5. Copy the token string (starts with "eyJ...")
+
+#### Configure Token in App
+
+1. Tap **menu (⋮)** → **Data Management**
+2. Scroll to **Premium Maps** section
+3. Tap **Configure Cesium Token**
+4. Paste your token in the input field
+5. Tap **Validate Token**
+6. If valid, a success message appears and premium maps are enabled
+7. Tap **Save**
+
+#### Using Premium Maps
+
+Once configured:
+- 3D flight tracks automatically use enhanced terrain
+- Map provider dropdown shows additional options (Bing Aerial, Bing Road, etc.)
+- Better zoom levels and detail available
+- Terrain quality improves significantly
+
+**Free Tier Limits:**
+- Cesium offers a generous free tier for personal use
+- Sufficient for typical paragliding app usage
+- Monitor your usage in Cesium ION dashboard if concerned
+
+---
+
+### Sync Paragliding Earth Sites Database
+
+#### What You'll Learn
+
+Download and update the global database of flying sites from ParaglidingEarth.
+
+#### PGE Sites Database Section
+
+**Database Information:**
+- Last sync date and time
+- Total sites in database
+- Last update check
+- Sync status (up to date / update available)
+
+**Available Operations:**
+
+**Sync Now:**
+1. Tap **Sync PGE Sites Database**
+2. App connects to ParaglidingEarth API
+3. Downloads latest site data (name, coordinates, country, altitude)
+4. Incremental sync - only downloads new or changed sites
+5. Progress indicator shows download status
+6. Sync completes and shows updated site count
+
+**Force Full Re-sync:**
+1. Tap **Force Full Re-sync**
+2. Deletes local PGE cache
+3. Downloads complete fresh database
+4. Use if experiencing sync issues or missing sites
+5. Takes longer than incremental sync
+
+**When to Sync:**
+- First app launch (automatic)
+- Every 7-30 days (recommended)
+- Before traveling to new flying regions
+- If you notice missing sites on the map
+- After ParaglidingEarth announces major updates
+
+**Benefits:**
+- Automatic site naming during IGC import
+- Discover new flying sites in Nearby Sites map
+- Access to global site database (50,000+ sites)
+- Community-maintained site information
+
+---
+
+### Manage Airspace Data
+
+#### What You'll Learn
+
+Download and configure airspace overlays for flight planning and safety.
+
+#### Airspace Data Section
+
+**Available Operations:**
+
+**Select Airspace Regions:**
+1. Tap **Manage Airspace Data**
+2. Choose countries or regions to download:
+   - Select by country (e.g., Australia, USA, Europe)
+   - Choose airspace types (CTR, TMA, CTA, Restricted, Danger, etc.)
+3. Tap **Download Selected**
+4. Airspace polygons download and cache locally
+5. Data becomes available in map overlay immediately
+
+**Airspace Type Filters:**
+- **CTR** (Control Zone) - Airport controlled airspace
+- **TMA** (Terminal Maneuvering Area) - Approach/departure zones
+- **CTA** (Control Area) - En-route controlled airspace
+- **Restricted** - Military or special use airspace
+- **Danger** - Hazardous areas (firing ranges, etc.)
+- **Prohibited** - Absolutely no-fly zones
+
+**Refresh Airspace Data:**
+1. Tap **Refresh Airspace**
+2. Re-downloads selected regions with latest data
+3. Use when airspace changes are announced (NOTAMs, etc.)
+
+**Clear Airspace Cache:**
+1. Tap **Clear Airspace Cache**
+2. Frees storage by removing downloaded airspace data
+3. Re-download when needed
+
+**Data Source:**
+- All airspace from OpenAIP (Open Aviation Data)
+- Community-maintained and regularly updated
+- Free and open data
+
+---
+
+### Understanding Storage and Backups
+
+#### Storage Breakdown
+
+**What uses storage:**
+- Database: 1-50 MB (depending on flight count)
+- IGC files: 100 KB - 1 MB per flight
+- Map cache: Up to 500 MB (auto-managed)
+- PGE sites database: 10-20 MB
+- Airspace data: 5-50 MB per country
+
+**Total for 1000 flights:** Approximately 200-500 MB
+
+#### Backup Best Practices
+
+**Regular Backups:**
+- Export database monthly or after every 10-20 flights
+- Store backups in cloud storage (Google Drive, Dropbox, etc.)
+- Keep backups before major app updates
+- Test restore process occasionally
+
+**What to backup:**
+- ✓ Database export (includes all flights, sites, wings)
+- ✓ IGC files folder (original track data)
+- ✗ Map cache (regenerates automatically)
+- ✗ PGE database (re-syncs from API)
+
+**Restore Process:**
+1. Install app on new device
+2. Import database export
+3. Re-import IGC files if needed
+4. Sync PGE sites database
+5. Reconfigure preferences
+
+⚠️ **Critical Warning:** The **Reset Database** operation permanently deletes ALL flight data. This action cannot be undone. Always export a backup before using this function.
 
 ---
 
@@ -678,6 +1202,29 @@ Set your personal limits for flyability assessment:
 ✓ Airspace overlay from OpenAIP database
 ✓ Multi-site weather comparison
 ✓ ParaglidingEarth database sync on app load  
+
+### App Information and Credits
+
+To view app version, build information, and credits:
+
+1. Tap **menu (⋮)** → **About**
+2. The About screen shows:
+   - App name and version number
+   - Build information (Git commit, branch, build date)
+   - Feature highlights with icons
+   - Credits and acknowledgments
+   - External links:
+     - GitHub repository (tap to open in browser)
+     - Project documentation
+     - License information
+   - Contact and support information
+
+**Uses:**
+- Check your app version when reporting issues
+- View build information for troubleshooting
+- Access project documentation
+- See app credits and contributors
+- Find support and feedback channels
 
 ### Navigation
 
