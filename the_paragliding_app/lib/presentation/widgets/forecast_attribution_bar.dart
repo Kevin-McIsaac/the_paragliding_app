@@ -55,25 +55,28 @@ class ForecastAttributionBar extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.start,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Attribution text (clickable)
-              TextButton(
-                onPressed: () async {
-                  await launchUrl(
-                    Uri.parse('https://open-meteo.com'),
-                    mode: LaunchMode.externalApplication,
-                  );
-                },
-                style: TextButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                child: Text(
-                  attributionText,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Colors.white60,
-                    fontWeight: FontWeight.w500,
+              // Attribution text (clickable) - wrapped in Flexible to prevent overflow
+              Flexible(
+                child: TextButton(
+                  onPressed: () async {
+                    await launchUrl(
+                      Uri.parse('https://open-meteo.com'),
+                      mode: LaunchMode.externalApplication,
+                    );
+                  },
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text(
+                    attributionText,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.white60,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ),
