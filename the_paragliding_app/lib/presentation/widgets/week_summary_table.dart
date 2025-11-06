@@ -50,6 +50,54 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
   bool _showingAllModels = false;
   WeatherModel? _selectedModel;
 
+  // Model selection for comparison (excludes best_match)
+  Set<WeatherModel> _selectedComparisonModels = {};
+  bool _loadingPreferences = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPreferences();
+  }
+
+  /// Load user's model selection preferences
+  Future<void> _loadPreferences() async {
+    final models = await PreferencesHelper.getComparisonModels();
+    if (mounted) {
+      setState(() {
+        _selectedComparisonModels = models;
+        _loadingPreferences = false;
+      });
+    }
+  }
+
+  /// Toggle model selection for comparison
+  Future<void> _toggleModelSelection(WeatherModel model) async {
+    final newSelection = Set<WeatherModel>.from(_selectedComparisonModels);
+
+    if (newSelection.contains(model)) {
+      // Prevent deselecting last model
+      if (newSelection.length == 1) {
+        return;
+      }
+      newSelection.remove(model);
+    } else {
+      newSelection.add(model);
+    }
+
+    setState(() {
+      _selectedComparisonModels = newSelection;
+    });
+
+    // Save to preferences
+    await PreferencesHelper.setComparisonModels(newSelection);
+
+    // If already showing multi-model data, reload to reflect changes
+    if (_showingAllModels && _selectedSite != null && _selectedDayIndex != null) {
+      await _loadRemainingModels();
+    }
+  }
+
   void _onDateHeaderTap(int dayIndex) {
     setState(() {
       if (_selectedDayIndex == dayIndex && !_showingCellDetail) {
@@ -199,7 +247,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
         modelDataMap.addAll(_multiModelData!);
       }
 
-      // Fetch forecasts for ALL models (includes cache check, so current model won't be re-fetched)
+      // Fetch forecasts only for selected models (includes cache check)
       final stopwatch = Stopwatch()..start();
       final forecasts = await WeatherService.instance.getAllModelForecasts(
         requestSite!.latitude,
@@ -207,8 +255,13 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
       );
       stopwatch.stop();
 
-      // Extract hourly data for 7am-7pm for the selected day from each model's forecast
-      for (final entry in forecasts.entries) {
+      // Filter to only include selected comparison models
+      final selectedForecasts = Map<WeatherModel, dynamic>.fromEntries(
+        forecasts.entries.where((entry) => _selectedComparisonModels.contains(entry.key))
+      );
+
+      // Extract hourly data for 7am-7pm for the selected day from each selected model's forecast
+      for (final entry in selectedForecasts.entries) {
         final model = entry.key;
         final forecast = entry.value;
 
@@ -471,6 +524,51 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
         if (_multiModelData != null && _multiModelData!.isNotEmpty)
           Column(
             children: [
+              // Model selection FilterChips (only show when showing all models)
+              if (_showingAllModels && !_loadingPreferences)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Compare Models',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white70,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: WeatherModel.values
+                              .where((model) => model != WeatherModel.bestMatch) // Exclude best_match
+                              .map((model) {
+                            final isSelected = _selectedComparisonModels.contains(model);
+                            final isLastSelected = isSelected && _selectedComparisonModels.length == 1;
+
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 8.0),
+                              child: FilterChip(
+                                label: Text(model.displayName),
+                                selected: isSelected,
+                                onSelected: isLastSelected
+                                    ? null // Disable if last selected
+                                    : (_) => _toggleModelSelection(model),
+                                showCheckmark: true,
+                                tooltip: isLastSelected
+                                    ? 'At least one model must be selected'
+                                    : model.description,
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               // Always show table when data exists
               // FixedColumnTable handles horizontal scrolling internally
               Padding(
