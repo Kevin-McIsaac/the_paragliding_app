@@ -94,7 +94,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
 
     // If already showing multi-model data, reload to reflect changes
     if (_showingAllModels && _selectedSite != null && _selectedDayIndex != null) {
-      await _loadRemainingModels();
+      await _loadAllSelectedModels();
     }
   }
 
@@ -161,73 +161,15 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
         _selectedDayIndex = dayIndex;
         _showingCellDetail = true;
         _multiModelData = null; // Clear previous data
-        _showingAllModels = false; // Reset to single model view
       });
 
-      // Load only the currently selected model (instant, uses cache)
-      _loadCurrentModelForecast();
+      // Load all selected models immediately (no "More forecasts..." button needed)
+      _loadAllSelectedModels();
     }
   }
 
-  /// Load forecast for only the currently selected model (instant, from cache)
-  Future<void> _loadCurrentModelForecast() async {
-    if (_selectedSite == null || _selectedDayIndex == null) return;
-
-    // Capture current selection to validate later (prevent race conditions)
-    final requestSite = _selectedSite;
-    final requestDayIndex = _selectedDayIndex;
-
-    try {
-      // Load selected model from preferences
-      final modelApiValue = await PreferencesHelper.getWeatherForecastModel();
-      _selectedModel = WeatherModel.fromApiValue(modelApiValue);
-
-      final date = DateTime.now().add(Duration(days: requestDayIndex!));
-
-      // Get cached forecast for current model only
-      final forecast = await WeatherService.instance.getCachedForecast(
-        requestSite!.latitude,
-        requestSite.longitude,
-      );
-
-      if (forecast != null) {
-        // Extract hourly data for 7am-7pm for the selected day
-        final hourlyData = <WindData?>[];
-        for (int hour = FlyabilityConstants.startHour;
-             hour <= FlyabilityConstants.startHour + FlyabilityConstants.hoursToShow - 1;
-             hour++) {
-          final dateTime = DateTime(date.year, date.month, date.day, hour);
-          final windData = forecast.getAtTime(dateTime);
-          hourlyData.add(windData);
-        }
-
-        // Only show model if it has at least one valid data point
-        final hasValidData = hourlyData.any((windData) => windData != null);
-
-        // Validate selection hasn't changed before updating state
-        if (mounted && _selectedSite == requestSite && _selectedDayIndex == requestDayIndex) {
-          setState(() {
-            _multiModelData = hasValidData ? {_selectedModel!: hourlyData} : null;
-          });
-
-          LoggingService.structured('CURRENT_MODEL_FORECAST_LOADED', {
-            'site': requestSite.name,
-            'day_index': requestDayIndex,
-            'model': _selectedModel!.displayName,
-            'from_cache': true,
-            'has_valid_data': hasValidData,
-          });
-        } else {
-          LoggingService.debug('Discarding stale forecast data for ${requestSite.name} day $requestDayIndex');
-        }
-      }
-    } catch (e, stackTrace) {
-      LoggingService.error('Failed to load current model forecast', e, stackTrace);
-    }
-  }
-
-  /// Load remaining weather models (triggered by "More forecasts..." button)
-  Future<void> _loadRemainingModels() async {
+  /// Load all selected weather models (triggered automatically on cell tap)
+  Future<void> _loadAllSelectedModels() async {
     if (_selectedSite == null || _selectedDayIndex == null) return;
 
     // Capture current selection to validate later (prevent race conditions)
@@ -236,18 +178,14 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
 
     setState(() {
       _loadingMultiModel = true;
+      _showingAllModels = true; // Show toggle buttons immediately
     });
 
     try {
       final date = DateTime.now().add(Duration(days: requestDayIndex!));
       final modelDataMap = <WeatherModel, List<WindData?>>{};
 
-      // Preserve current model data
-      if (_multiModelData != null) {
-        modelDataMap.addAll(_multiModelData!);
-      }
-
-      // Fetch forecasts only for selected models (includes cache check)
+      // Fetch forecasts for all models (includes cache check)
       final stopwatch = Stopwatch()..start();
       final forecasts = await WeatherService.instance.getAllModelForecasts(
         requestSite!.latitude,
@@ -292,9 +230,10 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
           _showingAllModels = true;
         });
 
-        LoggingService.structured('ALL_MODELS_FORECAST_LOADED', {
+        LoggingService.structured('SELECTED_MODELS_FORECAST_LOADED', {
           'site': requestSite.name,
           'day_index': requestDayIndex,
+          'models_selected': _selectedComparisonModels.length,
           'models_loaded': modelDataMap.length,
           'models_filtered': modelsBeforeFilter - modelsAfterFilter,
           'duration_ms': stopwatch.elapsedMilliseconds,
@@ -524,22 +463,22 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
         if (_multiModelData != null && _multiModelData!.isNotEmpty)
           Column(
             children: [
-              // Model selection FilterChips (only show when showing all models)
+              // Model selection toggle buttons (compact, always shown with multi-model view)
               if (_showingAllModels && !_loadingPreferences)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
+                  padding: const EdgeInsets.fromLTRB(16.0, 12.0, 16.0, 8.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
                         'Compare Models',
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 11,
                           fontWeight: FontWeight.w500,
-                          color: Colors.white70,
+                          color: Colors.white60,
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
                         child: Row(
@@ -550,17 +489,55 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
                             final isLastSelected = isSelected && _selectedComparisonModels.length == 1;
 
                             return Padding(
-                              padding: const EdgeInsets.only(right: 8.0),
-                              child: FilterChip(
-                                label: Text(model.displayName),
-                                selected: isSelected,
-                                onSelected: isLastSelected
-                                    ? null // Disable if last selected
-                                    : (_) => _toggleModelSelection(model),
-                                showCheckmark: true,
-                                tooltip: isLastSelected
+                              padding: const EdgeInsets.only(right: 6.0),
+                              child: Tooltip(
+                                message: isLastSelected
                                     ? 'At least one model must be selected'
-                                    : model.description,
+                                    : '${model.displayName}\n${model.description}',
+                                child: InkWell(
+                                  onTap: isLastSelected ? null : () => _toggleModelSelection(model),
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: Container(
+                                    height: 28,
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: isSelected
+                                          ? Theme.of(context).colorScheme.primaryContainer
+                                          : Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(
+                                        color: isSelected
+                                            ? Theme.of(context).colorScheme.primary
+                                            : Colors.transparent,
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (isSelected)
+                                          Padding(
+                                            padding: const EdgeInsets.only(right: 4.0),
+                                            child: Icon(
+                                              Icons.check,
+                                              size: 14,
+                                              color: Theme.of(context).colorScheme.onPrimaryContainer,
+                                            ),
+                                          ),
+                                        Text(
+                                          model.abbrev,
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                                            color: isSelected
+                                                ? Theme.of(context).colorScheme.onPrimaryContainer
+                                                : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
                               ),
                             );
                           }).toList(),
@@ -582,35 +559,22 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
                   selectedModel: _selectedModel,
                 ),
               ),
-              // Show loading indicator BELOW table when loading additional models
+              // Show loading indicator BELOW table when loading models
               if (_loadingMultiModel)
                 const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
+                  padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       SizedBox(
-                        width: 20,
-                        height: 20,
+                        width: 18,
+                        height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       ),
-                      SizedBox(width: 12),
-                      Text('Loading additional forecasts...',
-                        style: TextStyle(fontSize: 14, color: Colors.grey)),
+                      SizedBox(width: 10),
+                      Text('Loading forecasts...',
+                        style: TextStyle(fontSize: 13, color: Colors.grey)),
                     ],
-                  ),
-                )
-              // Show "More forecasts..." button when not loading and only showing current model
-              else if (!_showingAllModels && _multiModelData!.length == 1)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                  child: OutlinedButton.icon(
-                    onPressed: _loadRemainingModels,
-                    icon: const Icon(Icons.add_chart, size: 20),
-                    label: const Text('More forecasts...'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    ),
                   ),
                 ),
             ],
@@ -626,7 +590,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
                   const Text('Failed to load forecast'),
                   const SizedBox(height: 8),
                   ElevatedButton(
-                    onPressed: _loadCurrentModelForecast,
+                    onPressed: _loadAllSelectedModels,
                     child: const Text('Retry'),
                   ),
                 ],
