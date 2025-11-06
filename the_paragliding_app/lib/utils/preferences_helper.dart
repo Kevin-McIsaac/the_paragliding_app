@@ -447,8 +447,9 @@ class PreferencesHelper {
   // Multi-model forecast comparison preferences
   static const String forecastComparisonModelsKey = 'forecast_comparison_models';
 
-  /// Default models for forecast comparison (all models except best_match)
+  /// Default models for forecast comparison (all available models)
   static const List<String> defaultComparisonModels = [
+    'best_match',
     'gfs_seamless',
     'icon_seamless',
     'ecmwf_ifs025',

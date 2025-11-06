@@ -498,9 +498,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
                       SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
                         child: Row(
-                          children: WeatherModel.values
-                              .where((model) => model != WeatherModel.bestMatch) // Exclude best_match
-                              .map((model) {
+                          children: WeatherModel.values.map((model) {
                             final isSelected = _selectedComparisonModels.contains(model);
                             final isLastSelected = isSelected && _selectedComparisonModels.length == 1;
 
