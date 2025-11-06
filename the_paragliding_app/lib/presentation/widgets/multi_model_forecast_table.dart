@@ -32,7 +32,7 @@ class MultiModelForecastTable extends StatelessWidget {
     required this.maxWindSpeed,
     required this.cautionWindSpeed,
     this.selectedModel,
-    this.modelColumnWidth = 140.0,
+    this.modelColumnWidth = 90.0,
   });
 
   @override
@@ -133,12 +133,12 @@ class MultiModelForecastTable extends StatelessWidget {
                 )
               : null,
           child: Tooltip(
-            message: model.description,
+            message: '${model.displayName}\n${model.description}',
             child: Row(
               children: [
                 Expanded(
                   child: Text(
-                    model.displayName,
+                    model.abbrev,
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
@@ -232,12 +232,12 @@ class MultiModelForecastTable extends StatelessWidget {
                 )
               : null,
           child: Tooltip(
-            message: model.description,
+            message: '${model.displayName}\n${model.description}',
             child: Row(
               children: [
                 Expanded(
                   child: Text(
-                    model.displayName,
+                    model.abbrev,
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
