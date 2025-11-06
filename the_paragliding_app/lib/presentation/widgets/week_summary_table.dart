@@ -419,7 +419,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
       children: [
         const Divider(height: 32, thickness: 2),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -478,11 +478,12 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
         // Show data with toggle buttons when available
         else if (_multiModelData != null && _multiModelData!.isNotEmpty)
           Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Model selection toggle buttons (compact, always shown with multi-model view)
               if (_showingAllModels && !_loadingPreferences)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16.0, 12.0, 16.0, 8.0),
+                  padding: const EdgeInsets.fromLTRB(0, 12.0, 16.0, 8.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -564,7 +565,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
               // FixedColumnTable handles horizontal scrolling internally
               // Left-justify to align with header above
               Padding(
-                padding: const EdgeInsets.only(left: 16.0, top: 8.0, bottom: 16.0),
+                padding: const EdgeInsets.only(top: 8.0, bottom: 16.0),
                 child: MultiModelForecastTable(
                   site: _selectedSite!,
                   date: date,
