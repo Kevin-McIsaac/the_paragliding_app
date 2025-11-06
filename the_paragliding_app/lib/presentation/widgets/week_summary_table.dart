@@ -460,7 +460,23 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
             ],
           ),
         ),
-        if (_multiModelData != null && _multiModelData!.isNotEmpty)
+        // Show loading spinner during initial load (before data arrives)
+        if (_loadingMultiModel && _multiModelData == null)
+          const Padding(
+            padding: EdgeInsets.all(32.0),
+            child: Center(
+              child: Column(
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Loading forecasts...',
+                    style: TextStyle(fontSize: 14, color: Colors.grey)),
+                ],
+              ),
+            ),
+          )
+        // Show data with toggle buttons when available
+        else if (_multiModelData != null && _multiModelData!.isNotEmpty)
           Column(
             children: [
               // Model selection toggle buttons (compact, always shown with multi-model view)
@@ -559,8 +575,8 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
                   selectedModel: _selectedModel,
                 ),
               ),
-              // Show loading indicator BELOW table when loading models
-              if (_loadingMultiModel)
+              // Show loading indicator BELOW table when reloading (data already exists)
+              if (_loadingMultiModel && _multiModelData != null)
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
                   child: Row(
@@ -572,7 +588,7 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       ),
                       SizedBox(width: 10),
-                      Text('Loading forecasts...',
+                      Text('Updating...',
                         style: TextStyle(fontSize: 13, color: Colors.grey)),
                     ],
                   ),
