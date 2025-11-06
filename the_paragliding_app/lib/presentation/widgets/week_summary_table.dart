@@ -562,8 +562,9 @@ class _WeekSummaryTableState extends State<WeekSummaryTable> {
                 ),
               // Always show table when data exists
               // FixedColumnTable handles horizontal scrolling internally
+              // Left-justify to align with header above
               Padding(
-                padding: const EdgeInsets.all(16.0),
+                padding: const EdgeInsets.only(left: 16.0, top: 8.0, bottom: 16.0),
                 child: MultiModelForecastTable(
                   site: _selectedSite!,
                   date: date,
