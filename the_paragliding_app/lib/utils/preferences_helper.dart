@@ -1,4 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import '../data/models/weather_model.dart';
 
 /// Helper class for managing app preferences using SharedPreferences
 /// Uses the stable legacy API for reliable persistence
@@ -443,6 +444,20 @@ class PreferencesHelper {
   static const String weatherForecastModelKey = 'weather_forecast_model';
   static const String defaultWeatherForecastModel = 'best_match';
 
+  // Multi-model forecast comparison preferences
+  static const String forecastComparisonModelsKey = 'forecast_comparison_models';
+
+  /// Default models for forecast comparison (all available models)
+  static const List<String> defaultComparisonModels = [
+    'best_match',
+    'gfs_seamless',
+    'icon_seamless',
+    'ecmwf_ifs025',
+    'meteofrance_seamless',
+    'jma_seamless',
+    'gem_seamless',
+  ];
+
   // PGE Sites preferences
   static const String pgeSitesDownloadedKey = 'pge_sites_downloaded';
   static const String pgeSitesDownloadDateKey = 'pge_sites_download_date';
@@ -488,6 +503,31 @@ class PreferencesHelper {
   static Future<void> setWeatherForecastModel(String value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(weatherForecastModelKey, value);
+  }
+
+  /// Get the models selected for forecast comparison (default: all models except best_match)
+  static Future<Set<WeatherModel>> getComparisonModels() async {
+    final prefs = await SharedPreferences.getInstance();
+    final List<String>? stored = prefs.getStringList(forecastComparisonModelsKey);
+
+    if (stored == null || stored.isEmpty) {
+      // First time or empty - set defaults
+      await setComparisonModels(defaultComparisonModels.map((api) => WeatherModel.fromApiValue(api)).toSet());
+      return defaultComparisonModels.map((api) => WeatherModel.fromApiValue(api)).toSet();
+    }
+
+    return stored.map((api) => WeatherModel.fromApiValue(api)).toSet();
+  }
+
+  /// Set the models for forecast comparison
+  /// Minimum 1 model must be selected
+  static Future<void> setComparisonModels(Set<WeatherModel> models) async {
+    if (models.isEmpty) {
+      throw ArgumentError('At least one model must be selected for comparison');
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final apiValues = models.map((m) => m.apiValue).toList();
+    await prefs.setStringList(forecastComparisonModelsKey, apiValues);
   }
 
   /// Get the last selected navigation tab index
