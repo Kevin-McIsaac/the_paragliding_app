@@ -5,6 +5,7 @@ import '../../screens/wing_management_screen.dart';
 import '../../screens/manage_sites_screen.dart';
 import '../../screens/data_management_screen.dart';
 import '../../screens/preferences_screen.dart';
+import '../../screens/user_manual_screen.dart';
 import '../../screens/about_screen.dart';
 
 /// Shared menu button used across main navigation screens (Log Book, Sites, Statistics).
@@ -16,6 +17,7 @@ import '../../screens/about_screen.dart';
 /// - Manage Wings
 /// - Data Management
 /// - Preferences
+/// - User Manual
 /// - About
 class AppMenuButton extends StatelessWidget {
   /// Optional callback to reload data after Import IGC or Add Flight actions.
@@ -112,16 +114,22 @@ class AppMenuButton extends StatelessWidget {
               onDataChanged!();
             }
           }
-        } else if (value == 'about') {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => const AboutScreen(),
-            ),
-          );
         } else if (value == 'preferences') {
           Navigator.of(context).push(
             MaterialPageRoute(
               builder: (context) => const PreferencesScreen(),
+            ),
+          );
+        } else if (value == 'user_manual') {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => const UserManualScreen(),
+            ),
+          );
+        } else if (value == 'about') {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => const AboutScreen(),
             ),
           );
         }
@@ -185,6 +193,16 @@ class AppMenuButton extends StatelessWidget {
               Icon(Icons.settings),
               SizedBox(width: 8),
               Text('Preferences'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'user_manual',
+          child: Row(
+            children: [
+              Icon(Icons.help_outline),
+              SizedBox(width: 8),
+              Text('User Manual'),
             ],
           ),
         ),
