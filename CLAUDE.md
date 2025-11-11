@@ -96,7 +96,7 @@ The Paragliding App is a free, Android-first, cross-platform application for log
 
 **Scale**: Simple app with <10 screens, <5000 flights, <100 sites, <10 wings
 
-**Documentation**: [Architecture](documentation/TECHNICAL_DESIGN.md) | [Requirements](documentation/FUNCTIONAL_SPECIFICATION.md)
+**Documentation**: [Architecture](docs/TECHNICAL_DESIGN.md) | [Requirements](docs/FUNCTIONAL_SPECIFICATION.md)
 
 ## Claude Code Integration
 
