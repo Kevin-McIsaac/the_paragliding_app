@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
-import '../../services/logging_service.dart';
 import '../../utils/build_info.dart';
+import '../widgets/common/app_attribution_link.dart';
 
 class AboutScreen extends StatefulWidget {
   const AboutScreen({super.key});
@@ -30,15 +29,6 @@ class _AboutScreenState extends State<AboutScreen> {
       _gitCommit = commit;
       _gitBranch = branch;
     });
-  }
-
-  Future<void> _launchUrl(String url) async {
-    final uri = Uri.parse(url);
-    try {
-      await launchUrl(uri, mode: LaunchMode.platformDefault);
-    } catch (e) {
-      LoggingService.error('AboutScreen: Could not launch URL', e);
-    }
   }
 
   @override
@@ -145,25 +135,10 @@ class _AboutScreenState extends State<AboutScreen> {
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 12),
-                    InkWell(
-                      onTap: () => _launchUrl('mailto:kevin.mcisaac+the.paragliding.app@gmail.com'),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.email,
-                            size: 20,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'kevin.mcisaac+the.paragliding.app@gmail.com',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.primary,
-                              decoration: TextDecoration.underline,
-                            ),
-                          ),
-                        ],
-                      ),
+                    AppAttributionLink.standard(
+                      url: 'mailto:kevin.mcisaac+the.paragliding.app@gmail.com',
+                      icon: Icons.email,
+                      text: 'kevin.mcisaac+the.paragliding.app@gmail.com',
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -208,46 +183,16 @@ class _AboutScreenState extends State<AboutScreen> {
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 12),
-                    InkWell(
-                      onTap: () => _launchUrl('https://www.openstreetmap.org/copyright'),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.public,
-                            size: 20,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            '© OpenStreetMap contributors',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.primary,
-                              decoration: TextDecoration.underline,
-                            ),
-                          ),
-                        ],
-                      ),
+                    AppAttributionLink.standard(
+                      url: 'https://www.openstreetmap.org/copyright',
+                      icon: Icons.public,
+                      text: '© OpenStreetMap contributors',
                     ),
                     const SizedBox(height: 8),
-                    InkWell(
-                      onTap: () => _launchUrl('https://www.openstreetmap.org/fixthemap'),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.edit,
-                            size: 20,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Report map data issues',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.primary,
-                              decoration: TextDecoration.underline,
-                            ),
-                          ),
-                        ],
-                      ),
+                    AppAttributionLink.standard(
+                      url: 'https://www.openstreetmap.org/fixthemap',
+                      icon: Icons.edit,
+                      text: 'Report map data issues',
                     ),
                     const SizedBox(height: 16),
                     Text(
@@ -301,25 +246,10 @@ class _AboutScreenState extends State<AboutScreen> {
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 12),
-                    InkWell(
-                      onTap: () => _launchUrl('https://paraglidingearth.com'),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.web,
-                            size: 20,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'ParaglidingEarth.com',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.primary,
-                              decoration: TextDecoration.underline,
-                            ),
-                          ),
-                        ],
-                      ),
+                    AppAttributionLink.standard(
+                      url: 'https://paraglidingearth.com',
+                      icon: Icons.web,
+                      text: 'ParaglidingEarth.com',
                     ),
                   ],
                 ),
@@ -363,60 +293,55 @@ class _AboutScreenState extends State<AboutScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    InkWell(
-                      onTap: () => _launchUrl('https://open-meteo.com'),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.wb_sunny,
-                            size: 20,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Open-Meteo - Free weather API',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.primary,
-                              decoration: TextDecoration.underline,
-                            ),
-                          ),
-                        ],
-                      ),
+                    AppAttributionLink.standard(
+                      url: 'https://open-meteo.com',
+                      icon: Icons.wb_sunny,
+                      text: 'Open-Meteo - Free weather API',
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Weather Station Data (METAR):',
+                      'Real-Time Weather Station Data:',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         fontWeight: FontWeight.w500,
                       ),
                     ),
                     const SizedBox(height: 8),
-                    InkWell(
-                      onTap: () => _launchUrl('https://aviationweather.gov'),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.airplanemode_active,
-                            size: 20,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Weather Data Sources',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.primary,
-                              decoration: TextDecoration.underline,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
                     Text(
-                      'Real-time weather observations from multiple providers.',
+                      'Observations from multiple global providers:',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Colors.grey[600],
                       ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Aviation Weather Center
+                    AppAttributionLink.compact(
+                      url: 'https://aviationweather.gov',
+                      icon: Icons.airplanemode_active,
+                      text: 'Aviation Weather Center (METAR)',
+                    ),
+                    // National Weather Service
+                    AppAttributionLink.compact(
+                      url: 'https://www.weather.gov',
+                      icon: Icons.cloud_queue,
+                      text: 'National Weather Service (US)',
+                    ),
+                    // OpenWindMap
+                    AppAttributionLink.compact(
+                      url: 'https://www.openwindmap.org',
+                      icon: Icons.air,
+                      text: 'OpenWindMap Contributors',
+                    ),
+                    // FFVL
+                    AppAttributionLink.compact(
+                      url: 'https://federation.ffvl.fr',
+                      icon: Icons.flight,
+                      text: 'FFVL (French Free Flight Federation)',
+                    ),
+                    // Bureau of Meteorology
+                    AppAttributionLink.compact(
+                      url: 'https://www.bom.gov.au',
+                      icon: Icons.wb_sunny,
+                      text: 'Australian Bureau of Meteorology',
                     ),
                   ],
                 ),
