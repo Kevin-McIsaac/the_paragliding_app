@@ -447,15 +447,12 @@ class PreferencesHelper {
   // Multi-model forecast comparison preferences
   static const String forecastComparisonModelsKey = 'forecast_comparison_models';
 
-  /// Default models for forecast comparison (all available models)
+  /// Default models for forecast comparison (Auto, GFS, ICON, ECMWF)
   static const List<String> defaultComparisonModels = [
-    'best_match',
-    'gfs_seamless',
-    'icon_seamless',
-    'ecmwf_ifs025',
-    'meteofrance_seamless',
-    'jma_seamless',
-    'gem_seamless',
+    'best_match',      // Auto - Automatic model selection
+    'gfs_seamless',    // GFS - NOAA Global Forecast System
+    'icon_seamless',   // ICON - DWD (best for Europe)
+    'ecmwf_ifs025',    // ECMWF - Most accurate globally
   ];
 
   // PGE Sites preferences
