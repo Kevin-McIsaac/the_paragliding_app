@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import '../../services/logging_service.dart';
 
 /// User Manual screen that displays the formatted user guide using Markdown.
 ///
-/// Loads the user manual from assets and renders it with flutter_markdown.
+/// Loads the user manual from assets and renders it with flutter_markdown_plus.
 /// Supports scrolling, text selection, and follows Material Design 3 theming.
 class UserManualScreen extends StatefulWidget {
   const UserManualScreen({super.key});
