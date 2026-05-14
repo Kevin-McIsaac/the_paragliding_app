@@ -6,5 +6,9 @@
     ],
     "deny": [],
     "ask": []
+  },
+  "statusLine": {
+    "type": "command",
+    "command": ".claude/statusline.sh"
   }
 }
