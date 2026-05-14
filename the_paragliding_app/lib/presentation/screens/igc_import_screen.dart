@@ -115,10 +115,10 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
           withReadStream: false,
           initialDirectory: _lastFolder,
         ).timeout(
-          const Duration(seconds: 90),
+          const Duration(minutes: 10),
           onTimeout: () {
             setState(() {
-              _errorMessage = 'File selection timed out after 90 seconds. This can happen with large folders. Try selecting fewer files or a different folder.';
+              _errorMessage = 'File selection timed out after 10 minutes. This can happen with very large cloud folders. Try selecting fewer files or copying them to local storage first.';
             });
             return null;
           },
@@ -132,10 +132,10 @@ class _IgcImportScreenState extends State<IgcImportScreen> {
           withReadStream: false,
           initialDirectory: _lastFolder,
         ).timeout(
-          const Duration(seconds: 90),
+          const Duration(minutes: 10),
           onTimeout: () {
             setState(() {
-              _errorMessage = 'File selection timed out after 90 seconds. This can happen with large folders. Try selecting fewer files or a different folder.';
+              _errorMessage = 'File selection timed out after 10 minutes. This can happen with very large cloud folders. Try selecting fewer files or copying them to local storage first.';
             });
             return null;
           },
