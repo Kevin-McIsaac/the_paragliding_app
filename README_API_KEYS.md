@@ -13,9 +13,9 @@ The app uses a hybrid approach for API key management:
 
 ### 1. FFVL API Key (Required)
 
-- **Purpose**: Access French paragliding weather beacons
-- **Get it from**: <https://balisemeteo.com/api/>
-- **Note**: Appears to be public
+- **Purpose**: Access French paragliding weather beacons (`data.ffvl.fr` API)
+- **Get it from**: <https://data.ffvl.fr/> (request via the FFVL data administration)
+- **Note**: Free for non-commercial use; the FFVL emails the key (look for a message like "voici votre clé API FFVL : ...")
 
 ### 2. Google Maps API Key (Optional)
 
@@ -131,7 +131,7 @@ static String get ffvlApiKey {
 ### App says "No FFVL API key found"
 
 - Check that `.env` file exists in `the_paragliding_app/` directory
-- Verify the key is set: `FFVL_API_KEY=12fbb9720455a2abb825c29233ac8bd0`
+- Verify the key is set in `.env` (e.g. `FFVL_API_KEY=xxxxxxxx...`) — do not commit the actual value
 - Run `flutter clean` and `flutter pub get`
 
 ### Build fails in GitHub Actions
@@ -161,3 +161,34 @@ The app logs API key configuration status on startup:
 ```
 
 This helps debug which keys are loaded and from what source.
+
+## Key Recovery
+
+If `.env` is lost, use the table below to retrieve or reissue each key. All keys are believed to be registered under **`kevin.mcisaac@gmail.com`** — verify before re-requesting, and search Gmail for the confirmation message first (cheapest recovery path).
+
+| Key | Provider portal | How to retrieve / reissue | Format hint |
+|---|---|---|---|
+| `FFVL_API_KEY` | <https://data.ffvl.fr/> | Email FFVL data administration to request a new key. They reply with "voici votre clé API FFVL : ..." | 32-char lowercase hex |
+| `OPENAIP_API_KEY` | <https://www.openaip.net/> | Log in → user profile → API keys → regenerate or copy existing | 32-char lowercase hex |
+| `CESIUM_ION_TOKEN` | <https://ion.cesium.com/tokens> | Log in → Access Tokens → create a new token or copy the default | JWT, starts with `eyJ...` |
+| `GOOGLE_MAPS_API_KEY` | <https://console.cloud.google.com/apis/credentials> | Currently **not consumed** by the app (uses OpenStreetMap). Only needed if the app is migrated to Google Maps tiles. | `AIza...` 39-char string |
+
+### Where keys live
+
+| Location | Purpose | Tracked in git? |
+|---|---|---|
+| `the_paragliding_app/.env` | Local development (loaded by `flutter_dotenv`) | No — gitignored |
+| GitHub repo → Settings → Secrets and variables → Actions | CI / release builds (injected via `--dart-define`) | N/A — server-side, write-only |
+| `lib/services/api_keys.dart` | Code that reads dart-define first, then `.env` | Yes (code only, no values) |
+
+### Recovery checklist
+
+1. Recreate `the_paragliding_app/.env` from `the_paragliding_app/.env.example` and paste each key.
+2. `cd the_paragliding_app && flutter pub get && flutter run` — check the startup log for `[API_KEYS_STATUS] {...}` to confirm each key shows `configured: true`.
+3. If you **reissued** any key (not just retrieved an existing one), also update the matching GitHub Actions secret so CI builds keep working. Old secret values cannot be read back, so just `gh secret set NAME` to overwrite.
+
+### Rotation notes
+
+- **FFVL / OpenAIP / Cesium**: cheap to rotate — request/regenerate, update `.env` and the CI secret, done. No app-side config beyond the env var.
+- **Google Maps** (if ever adopted): rotate via Google Cloud Console; restrict the key to the app's package name (`com.theparaglidingapp`) and Android signing fingerprint to limit blast radius if leaked.
+- Treat the `.env` file as a credential — never commit, never paste into chat or screenshots.
