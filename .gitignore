@@ -12,3 +12,10 @@ Ideas.md
 *.swp
 *.swo
 opti_plan.md
+
+# Android upload keystore — never commit
+upload-keystore*.jks
+upload-cert*.pem
+
+# Claude Code transient scheduler lock
+.claude/scheduled_tasks.lock
