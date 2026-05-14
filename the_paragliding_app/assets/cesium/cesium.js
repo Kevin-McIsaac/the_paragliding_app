@@ -444,7 +444,6 @@ class FlightDataSource extends Cesium.CustomDataSource {
                 })
             ]),
             position: positionProperty,
-            orientation: new Cesium.VelocityOrientationProperty(positionProperty),
             point: {
                 pixelSize: 16,
                 color: Cesium.Color.YELLOW,
@@ -454,7 +453,7 @@ class FlightDataSource extends Cesium.CustomDataSource {
                 disableDepthTestDistance: Number.POSITIVE_INFINITY,
                 scaleByDistance: new Cesium.NearFarScalar(1000, 1.5, 100000, 0.5)
             },
-            viewFrom: new Cesium.Cartesian3(0.0, -1000.0, 500.0)
+            viewFrom: new Cesium.Cartesian3(0.0, -200.0, 80.0)
         });
     }
     
