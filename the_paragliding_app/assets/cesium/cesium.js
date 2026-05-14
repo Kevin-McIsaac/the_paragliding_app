@@ -432,8 +432,8 @@ class FlightDataSource extends Cesium.CustomDataSource {
         
         // Store position property for reuse
         this.positionProperty = positionProperty;
-        
-        // Create pilot entity
+
+        // Create pilot entity (raw position so the dot lines up with the visible track)
         this.pilotEntity = this.entities.add({
             id: 'pilot',
             name: 'Pilot',
@@ -452,8 +452,7 @@ class FlightDataSource extends Cesium.CustomDataSource {
                 heightReference: Cesium.HeightReference.NONE,
                 disableDepthTestDistance: Number.POSITIVE_INFINITY,
                 scaleByDistance: new Cesium.NearFarScalar(1000, 1.5, 100000, 0.5)
-            },
-            viewFrom: new Cesium.Cartesian3(0.0, -200.0, 80.0)
+            }
         });
     }
     
@@ -1574,10 +1573,9 @@ class CesiumFlightApp {
             window.flutter_inappwebview.callHandler('onSceneModeChanged', modeString);
         }
         
-        // Always disable follow mode on scene change (Cesium loses tracked entity anyway)
+        // Always disable follow mode on scene change (camera state doesn't survive transitions cleanly)
         if (this.cameraFollowing) {
-            this.viewer.trackedEntity = undefined;
-            this.cameraFollowing = false;
+            this._disableChaseCam();
             const button = document.getElementById('followButton');
             if (button) button.style.backgroundColor = 'rgba(42, 42, 42, 0.8)';
         }
@@ -1624,25 +1622,186 @@ class CesiumFlightApp {
     
     toggleCameraFollow() {
         if (!this.viewer || !this.flightDataSource) return;
-        
+
         // Don't allow follow mode in 2D
         if (this.viewer.scene.mode === Cesium.SceneMode.SCENE2D) {
             console.log('Follow mode not available in 2D view');
             return;
         }
-        
-        const pilot = this.flightDataSource.pilotEntity;
+
         const button = document.getElementById('followButton');
-        
-        if (this.viewer.trackedEntity === pilot) {
-            this.viewer.trackedEntity = undefined;
-            this.cameraFollowing = false;
+
+        if (this.cameraFollowing) {
+            this._disableChaseCam();
             if (button) button.style.backgroundColor = 'rgba(42, 42, 42, 0.8)';
         } else {
-            this.viewer.trackedEntity = pilot;
-            this.cameraFollowing = true;
+            this._enableChaseCam();
             if (button) button.style.backgroundColor = 'rgba(76, 175, 80, 0.8)';
         }
+    }
+
+    _enableChaseCam() {
+        const pilot = this.flightDataSource.pilotEntity;
+        if (!pilot) return;
+
+        // Chase parameters (units = metres / clock-seconds)
+        const LAG_SECONDS = 60;         // time constant for AZIMUTH only (angle around pilot).
+                                        // Distance and height respond instantly — so zoom and
+                                        // pilot altitude changes are not lagged.
+        const DIST_BACK = 500;          // base horizontal metres behind pilot (× zoom)
+        const DIST_UP = 200;            // base metres above pilot (× zoom)
+        const DIR_SAMPLE_SECONDS = 30;  // half-window for direction sampling (60s total)
+        const ZOOM_MIN = 0.1, ZOOM_MAX = 20;
+
+        const viewer = this.viewer;
+        const self = this;
+        const scratchFuture = new Cesium.JulianDate();
+        const scratchPast = new Cesium.JulianDate();
+        const scratchDir = new Cesium.Cartesian3();
+        const scratchEnu = new Cesium.Matrix4();
+        const scratchEnuInv = new Cesium.Matrix4();
+        const scratchDirLocal = new Cesium.Cartesian3();
+        const scratchOffsetLocal = new Cesium.Cartesian3();
+        const scratchCamWorld = new Cesium.Cartesian3();
+
+        self._chaseAzimuth = null;     // smoothed angle around pilot, radians (0 = camera south of pilot looking north)
+        self._chaseLastTime = null;
+        self._chaseZoomFactor = 1.0;
+
+        // Input handler — Cesium's default zoom would still fire but our per-tick setView
+        // overrides it; we capture the gesture ourselves and apply it as a zoom multiplier.
+        const inputHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+        self._chaseInputHandler = inputHandler;
+
+        // Also attach raw touch listeners on the canvas as a fallback to compute pinch
+        const canvas = viewer.scene.canvas;
+        let _pinchPrevDist = null;
+        const _touchDist = (touches) => {
+            if (touches.length < 2) return null;
+            const dx = touches[0].clientX - touches[1].clientX;
+            const dy = touches[0].clientY - touches[1].clientY;
+            return Math.hypot(dx, dy);
+        };
+        const _onTouchStart = (e) => {
+            _pinchPrevDist = _touchDist(e.touches);
+        };
+        const _onTouchMove = (e) => {
+            const d = _touchDist(e.touches);
+            if (d != null && _pinchPrevDist != null && _pinchPrevDist > 0) {
+                self._chaseZoomFactor = clampZoom(self._chaseZoomFactor * (_pinchPrevDist / d));
+            }
+            _pinchPrevDist = d;
+        };
+        const _onTouchEnd = () => { _pinchPrevDist = null; };
+        canvas.addEventListener('touchstart', _onTouchStart, { passive: true });
+        canvas.addEventListener('touchmove', _onTouchMove, { passive: true });
+        canvas.addEventListener('touchend', _onTouchEnd, { passive: true });
+        canvas.addEventListener('touchcancel', _onTouchEnd, { passive: true });
+        self._chaseTouchCleanup = () => {
+            canvas.removeEventListener('touchstart', _onTouchStart);
+            canvas.removeEventListener('touchmove', _onTouchMove);
+            canvas.removeEventListener('touchend', _onTouchEnd);
+            canvas.removeEventListener('touchcancel', _onTouchEnd);
+        };
+        const clampZoom = (z) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+        // Mouse wheel (desktop)
+        inputHandler.setInputAction((delta) => {
+            self._chaseZoomFactor = clampZoom(self._chaseZoomFactor * Math.exp(-delta * 0.001));
+        }, Cesium.ScreenSpaceEventType.WHEEL);
+        // (Pinch is handled by the native touchmove listener below to avoid double-counting
+        // — Cesium's PINCH_MOVE and our raw touchmove both fire for the same gesture.)
+
+        self._chaseTickRemove = viewer.clock.onTick.addEventListener((clock) => {
+            const t = clock.currentTime;
+            const pilotPos = pilot.position.getValue(t);
+            if (!pilotPos) return;
+
+            // Flight direction sampled over a wide window (averages GPS noise + thermal circling)
+            Cesium.JulianDate.addSeconds(t, DIR_SAMPLE_SECONDS, scratchFuture);
+            Cesium.JulianDate.addSeconds(t, -DIR_SAMPLE_SECONDS, scratchPast);
+            const pFuture = pilot.position.getValue(scratchFuture);
+            const pPast = pilot.position.getValue(scratchPast);
+
+            // Build pilot-local ENU once (used for both target azimuth calc and final camera position)
+            Cesium.Transforms.eastNorthUpToFixedFrame(pilotPos, undefined, scratchEnu);
+            Cesium.Matrix4.inverseTransformation(scratchEnu, scratchEnuInv);
+
+            // Compute target azimuth (compass angle of flight direction in ENU at pilot)
+            // azimuth: 0 = north, π/2 = east, etc. Camera sits OPPOSITE the flight direction
+            // (= flight_azimuth + π) so it's behind the pilot.
+            let targetAzimuth = self._chaseAzimuth;
+            if (pFuture && pPast) {
+                Cesium.Cartesian3.subtract(pFuture, pPast, scratchDir);
+                if (Cesium.Cartesian3.magnitude(scratchDir) > 1e-3) {
+                    Cesium.Matrix4.multiplyByPointAsVector(scratchEnuInv, scratchDir, scratchDirLocal);
+                    // ENU axes: x=east, y=north → flight azimuth = atan2(east, north)
+                    const flightAzimuth = Math.atan2(scratchDirLocal.x, scratchDirLocal.y);
+                    targetAzimuth = flightAzimuth + Math.PI; // camera on opposite side
+                }
+            }
+            if (targetAzimuth == null) targetAzimuth = 0;
+
+            // Lerp the smoothed azimuth toward target (handle wraparound)
+            if (self._chaseAzimuth == null) {
+                self._chaseAzimuth = targetAzimuth;
+                self._chaseLastTime = Cesium.JulianDate.clone(t);
+            } else {
+                const dt = Cesium.JulianDate.secondsDifference(t, self._chaseLastTime);
+                if (dt > 0) {
+                    const factor = 1 - Math.exp(-dt / LAG_SECONDS);
+                    let dh = targetAzimuth - self._chaseAzimuth;
+                    while (dh > Math.PI) dh -= 2 * Math.PI;
+                    while (dh < -Math.PI) dh += 2 * Math.PI;
+                    self._chaseAzimuth += dh * factor;
+                } else if (dt < 0) {
+                    self._chaseAzimuth = targetAzimuth;
+                }
+                Cesium.JulianDate.clone(t, self._chaseLastTime);
+            }
+
+            // Compute camera position in pilot-local ENU:
+            //   x (east)  = sin(azimuth) × DIST_BACK × zoom
+            //   y (north) = cos(azimuth) × DIST_BACK × zoom
+            //   z (up)    = DIST_UP × zoom    ← INSTANT (no lag, tracks pilot altitude exactly)
+            const dist = DIST_BACK * self._chaseZoomFactor;
+            const height = DIST_UP * self._chaseZoomFactor;
+            scratchOffsetLocal.x = Math.sin(self._chaseAzimuth) * dist;
+            scratchOffsetLocal.y = Math.cos(self._chaseAzimuth) * dist;
+            scratchOffsetLocal.z = height;
+            // Convert to world: world_camera = pilotEnu × offset_local (as point)
+            Cesium.Matrix4.multiplyByPoint(scratchEnu, scratchOffsetLocal, scratchCamWorld);
+
+            // Camera looks at pilot. Compute heading (camera azimuth + π so we look toward pilot)
+            // and pitch (downward angle = atan(height / dist)).
+            const lookHeading = self._chaseAzimuth + Math.PI;
+            const lookPitch = -Math.atan2(height, dist);
+
+            viewer.scene.camera.setView({
+                destination: scratchCamWorld,
+                orientation: { heading: lookHeading, pitch: lookPitch, roll: 0 }
+            });
+        });
+
+        this.cameraFollowing = true;
+    }
+
+    _disableChaseCam() {
+        if (this._chaseTickRemove) {
+            this._chaseTickRemove();
+            this._chaseTickRemove = null;
+        }
+        if (this._chaseInputHandler) {
+            this._chaseInputHandler.destroy();
+            this._chaseInputHandler = null;
+        }
+        if (this._chaseTouchCleanup) {
+            this._chaseTouchCleanup();
+            this._chaseTouchCleanup = null;
+        }
+        this._chaseAzimuth = null;
+        this._chaseLastTime = null;
+        this._chaseZoomFactor = 1.0;
+        this.cameraFollowing = false;
     }
     
     _clearAll() {
