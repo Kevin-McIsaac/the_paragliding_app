@@ -1759,12 +1759,14 @@ class CesiumFlightApp {
             const focalPos = smoothedPos.getValue(t);
             if (!focalPos) return;
 
-            // Flight direction sampled over a wide window of RAW positions
-            // (averages GPS noise + thermal circling); independent of focal smoothing.
+            // Flight direction sampled from SMOOTHED positions over a 60s window.
+            // Each endpoint is itself a ±30s average, so the delta vector reflects
+            // pure drift of the thermal centre — circle motion is already cancelled
+            // out → camera azimuth stays still while pilot circles.
             Cesium.JulianDate.addSeconds(t, DIR_SAMPLE_SECONDS, scratchFuture);
             Cesium.JulianDate.addSeconds(t, -DIR_SAMPLE_SECONDS, scratchPast);
-            const pFuture = pilot.position.getValue(scratchFuture);
-            const pPast = pilot.position.getValue(scratchPast);
+            const pFuture = smoothedPos.getValue(scratchFuture);
+            const pPast = smoothedPos.getValue(scratchPast);
 
             // Build focal-local ENU once (used for both target azimuth calc and final camera position)
             Cesium.Transforms.eastNorthUpToFixedFrame(focalPos, undefined, scratchEnu);
