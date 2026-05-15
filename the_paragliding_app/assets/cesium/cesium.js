@@ -1689,6 +1689,8 @@ class CesiumFlightApp {
         const DIST_BACK = 600;          // base horizontal metres behind smoothed focal (× zoom)
         const DIST_UP = 200;            // base metres above smoothed focal (× zoom)
         const DIR_SAMPLE_SECONDS = 30;  // half-window for direction sampling (60s total)
+        const STATIONARY_SPEED_MPS = 1.94;  // 7 km/h: below this, hold the last azimuth
+                                            // (pilot is essentially circling, no useful direction).
         const ZOOM_MIN = 0.1, ZOOM_MAX = 20;
         // The chase camera centres on a 60s-smoothed point (smoothedPos), not the raw
         // pilot. During thermalling the smoothed point barely moves, so the camera
@@ -1775,10 +1777,15 @@ class CesiumFlightApp {
             // Compute target azimuth (compass angle of flight direction in ENU at pilot)
             // azimuth: 0 = north, π/2 = east, etc. Camera sits OPPOSITE the flight direction
             // (= flight_azimuth + π) so it's behind the pilot.
+            // If the pilot's smoothed ground speed is below STATIONARY_SPEED_MPS we treat
+            // them as essentially circling and HOLD the last azimuth — no update at all,
+            // so the camera stays put through the thermal in light/no-wind conditions.
             let targetAzimuth = self._chaseAzimuth;
             if (pFuture && pPast) {
                 Cesium.Cartesian3.subtract(pFuture, pPast, scratchDir);
-                if (Cesium.Cartesian3.magnitude(scratchDir) > 1e-3) {
+                const winSec = DIR_SAMPLE_SECONDS * 2;
+                const groundSpeed = Cesium.Cartesian3.magnitude(scratchDir) / winSec;
+                if (groundSpeed >= STATIONARY_SPEED_MPS) {
                     Cesium.Matrix4.multiplyByPointAsVector(scratchEnuInv, scratchDir, scratchDirLocal);
                     // ENU axes: x=east, y=north → flight azimuth = atan2(east, north)
                     const flightAzimuth = Math.atan2(scratchDirLocal.x, scratchDirLocal.y);
