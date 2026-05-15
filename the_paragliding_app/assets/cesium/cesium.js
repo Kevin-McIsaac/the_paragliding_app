@@ -433,15 +433,22 @@ class FlightDataSource extends Cesium.CustomDataSource {
         // Store position property for reuse
         this.positionProperty = positionProperty;
 
-        const availability = new Cesium.TimeIntervalCollection([
-            new Cesium.TimeInterval({ start: this.startTime, stop: this.stopTime })
-        ]);
+        // Pre-compute a smoothed (60s window) position. Used by the chase cam as
+        // the camera FOCAL POINT — so the camera stays still while the pilot
+        // circles in a thermal (the smoothed centre barely moves), and the visible
+        // raw-position dot drifts naturally around the screen centre.
+        this.smoothedPositionProperty = this._buildSmoothedPositionProperty(30);
 
-        // 1) Visible pilot dot — sits exactly on the raw GPS track.
+        // Create pilot entity (raw position so the dot lines up with the visible track)
         this.pilotEntity = this.entities.add({
             id: 'pilot',
             name: 'Pilot',
-            availability: availability,
+            availability: new Cesium.TimeIntervalCollection([
+                new Cesium.TimeInterval({
+                    start: this.startTime,
+                    stop: this.stopTime
+                })
+            ]),
             position: positionProperty,
             point: {
                 pixelSize: 16,
@@ -453,43 +460,19 @@ class FlightDataSource extends Cesium.CustomDataSource {
                 scaleByDistance: new Cesium.NearFarScalar(1000, 1.5, 100000, 0.5)
             }
         });
-
-        // 2) Invisible chase target — smoothed position used purely as the
-        //    `viewer.trackedEntity` source. Cesium's VELOCITY-frame tracker derives
-        //    a smooth chase frame from the smooth position derivative.
-        //    Camera centres on this point (slightly off the visible dot during turns,
-        //    by the smoothing distance) and sits 1 km behind in flight direction, 200 m up.
-        const smoothedPositionProperty = this._buildSmoothedPositionProperty();
-        const GHOST_BACK = 1000;  // metres behind in flight direction
-        const GHOST_UP = 200;     // metres above
-        this.chaseTargetEntity = this.entities.add({
-            id: 'chase-target',
-            name: 'Chase target (invisible)',
-            availability: availability,
-            position: smoothedPositionProperty,
-            viewFrom: new Cesium.Cartesian3(-GHOST_BACK, 0, GHOST_UP),
-            trackingReferenceFrame: Cesium.TrackingReferenceFrame.VELOCITY,
-            // Effectively-invisible point so Cesium treats this as a real, trackable entity.
-            // Using show:true with a 1px transparent dot — show:false may make the chase
-            // tracker skip this entity's position updates each frame.
-            point: { pixelSize: 1, color: Cesium.Color.TRANSPARENT }
-        });
     }
 
     /**
-     * Pre-compute a SampledPositionProperty whose samples are the raw IGC positions
-     * averaged over a 60s window (±30s). Smoothing serves the chase camera only —
-     * the visible pilot dot uses the raw positionProperty. The 60s window is wide
-     * enough to remove GPS jitter and average a thermal circle (~20s) into its net
-     * drift direction, so Cesium's VELOCITY-frame tracker sees a smooth velocity.
+     * Build a SampledPositionProperty whose samples are this.positions averaged
+     * over a window of ±halfWindowSeconds. Used to give the chase camera a
+     * stable focal point that doesn't whirl around when the pilot thermals.
      */
-    _buildSmoothedPositionProperty() {
-        const HALF_WINDOW_SECONDS = 30;
-        const smoothedPositions = new Array(this.positions.length);
+    _buildSmoothedPositionProperty(halfWindowSeconds) {
+        const smoothed = new Array(this.positions.length);
         let lo = 0, hi = 0;
         for (let i = 0; i < this.positions.length; i++) {
-            while (lo < i && Cesium.JulianDate.secondsDifference(this.times[i], this.times[lo]) > HALF_WINDOW_SECONDS) lo++;
-            while (hi < this.positions.length - 1 && Cesium.JulianDate.secondsDifference(this.times[hi + 1], this.times[i]) <= HALF_WINDOW_SECONDS) hi++;
+            while (lo < i && Cesium.JulianDate.secondsDifference(this.times[i], this.times[lo]) > halfWindowSeconds) lo++;
+            while (hi < this.positions.length - 1 && Cesium.JulianDate.secondsDifference(this.times[hi + 1], this.times[i]) <= halfWindowSeconds) hi++;
             let sx = 0, sy = 0, sz = 0;
             for (let j = lo; j <= hi; j++) {
                 sx += this.positions[j].x;
@@ -497,7 +480,7 @@ class FlightDataSource extends Cesium.CustomDataSource {
                 sz += this.positions[j].z;
             }
             const n = hi - lo + 1;
-            smoothedPositions[i] = new Cesium.Cartesian3(sx / n, sy / n, sz / n);
+            smoothed[i] = new Cesium.Cartesian3(sx / n, sy / n, sz / n);
         }
         const prop = new Cesium.SampledPositionProperty();
         prop.setInterpolationOptions({
@@ -506,7 +489,7 @@ class FlightDataSource extends Cesium.CustomDataSource {
         });
         prop.forwardExtrapolationType = Cesium.ExtrapolationType.HOLD;
         prop.backwardExtrapolationType = Cesium.ExtrapolationType.HOLD;
-        prop.addSamples(this.times, smoothedPositions);
+        prop.addSamples(this.times, smoothed);
         return prop;
     }
     
@@ -1695,63 +1678,173 @@ class CesiumFlightApp {
     }
 
     _enableChaseCam() {
-        const target = this.flightDataSource.chaseTargetEntity;
         const pilot = this.flightDataSource.pilotEntity;
-        if (!target || !pilot) {
-            console.log('[CHASE] missing entities; target=' + !!target + ' pilot=' + !!pilot);
-            return;
-        }
-        const viewer = this.viewer;
-        const t = viewer.clock.currentTime;
-        const targetPos = target.position && target.position.getValue(t);
-        console.log('[CHASE_PRE] sceneMode=' + viewer.scene.mode +
-            ' targetPosDefined=' + !!targetPos +
-            ' targetHasViewFrom=' + !!target.viewFrom +
-            ' targetTrackingFrame=' + target.trackingReferenceFrame +
-            ' VELOCITY=' + Cesium.TrackingReferenceFrame.VELOCITY);
+        const smoothedPos = this.flightDataSource.smoothedPositionProperty;
+        if (!pilot || !smoothedPos) return;
 
-        viewer.trackedEntity = target;
-        console.log('[CHASE_SET] trackedEntity.id=' + (viewer.trackedEntity && viewer.trackedEntity.id));
-        // Per-second tick: confirm both target position AND camera position are updating
-        let lastLog = Date.now();
-        if (this._chaseTickListener) this._chaseTickListener();
-        this._chaseTickListener = viewer.clock.onTick.addEventListener((clock) => {
-            const now = Date.now();
-            if (now - lastLog < 1000) return;
-            lastLog = now;
-            const tt = clock.currentTime;
-            const tp = target.position && target.position.getValue(tt);
-            const cp = viewer.scene.camera.positionWC;
-            console.log('[CHASE_TICK] clk=' + Cesium.JulianDate.toIso8601(tt).slice(11,19) +
-                ' mult=' + clock.multiplier +
-                ' tracked=' + (viewer.trackedEntity && viewer.trackedEntity.id) +
-                ' targetPos=' + (tp ? Math.round(tp.x)+','+Math.round(tp.y)+','+Math.round(tp.z) : 'null') +
-                ' camPos=' + Math.round(cp.x)+','+Math.round(cp.y)+','+Math.round(cp.z));
+        // Chase parameters (units = metres / clock-seconds)
+        const LAG_SECONDS = 60;         // time constant for AZIMUTH only (angle around pilot).
+                                        // Distance and height respond instantly — so zoom and
+                                        // pilot altitude changes are not lagged.
+        const DIST_BACK = 600;          // base horizontal metres behind smoothed focal (× zoom)
+        const DIST_UP = 200;            // base metres above smoothed focal (× zoom)
+        const DIR_SAMPLE_SECONDS = 30;  // half-window for direction sampling (60s total)
+        const ZOOM_MIN = 0.1, ZOOM_MAX = 20;
+        // The chase camera centres on a 60s-smoothed point (smoothedPos), not the raw
+        // pilot. During thermalling the smoothed point barely moves, so the camera
+        // stays roughly still while the pilot dot circles within view. During glides
+        // the smoothed point lags by ~speed × half_window (~300 m at 10 m/s).
+
+        const viewer = this.viewer;
+        const self = this;
+        const scratchFuture = new Cesium.JulianDate();
+        const scratchPast = new Cesium.JulianDate();
+        const scratchDir = new Cesium.Cartesian3();
+        const scratchEnu = new Cesium.Matrix4();
+        const scratchEnuInv = new Cesium.Matrix4();
+        const scratchDirLocal = new Cesium.Cartesian3();
+        const scratchOffsetLocal = new Cesium.Cartesian3();
+        const scratchCamWorld = new Cesium.Cartesian3();
+
+        self._chaseAzimuth = null;     // smoothed angle around pilot, radians (0 = camera south of pilot looking north)
+        self._chaseLastTime = null;
+        self._chaseZoomFactor = 1.0;
+
+        // Input handler — Cesium's default zoom would still fire but our per-tick setView
+        // overrides it; we capture the gesture ourselves and apply it as a zoom multiplier.
+        const inputHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+        self._chaseInputHandler = inputHandler;
+
+        // Also attach raw touch listeners on the canvas as a fallback to compute pinch
+        const canvas = viewer.scene.canvas;
+        let _pinchPrevDist = null;
+        const _touchDist = (touches) => {
+            if (touches.length < 2) return null;
+            const dx = touches[0].clientX - touches[1].clientX;
+            const dy = touches[0].clientY - touches[1].clientY;
+            return Math.hypot(dx, dy);
+        };
+        const _onTouchStart = (e) => {
+            _pinchPrevDist = _touchDist(e.touches);
+        };
+        const _onTouchMove = (e) => {
+            const d = _touchDist(e.touches);
+            if (d != null && _pinchPrevDist != null && _pinchPrevDist > 0) {
+                self._chaseZoomFactor = clampZoom(self._chaseZoomFactor * (_pinchPrevDist / d));
+            }
+            _pinchPrevDist = d;
+        };
+        const _onTouchEnd = () => { _pinchPrevDist = null; };
+        canvas.addEventListener('touchstart', _onTouchStart, { passive: true });
+        canvas.addEventListener('touchmove', _onTouchMove, { passive: true });
+        canvas.addEventListener('touchend', _onTouchEnd, { passive: true });
+        canvas.addEventListener('touchcancel', _onTouchEnd, { passive: true });
+        self._chaseTouchCleanup = () => {
+            canvas.removeEventListener('touchstart', _onTouchStart);
+            canvas.removeEventListener('touchmove', _onTouchMove);
+            canvas.removeEventListener('touchend', _onTouchEnd);
+            canvas.removeEventListener('touchcancel', _onTouchEnd);
+        };
+        const clampZoom = (z) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+        // Mouse wheel (desktop)
+        inputHandler.setInputAction((delta) => {
+            self._chaseZoomFactor = clampZoom(self._chaseZoomFactor * Math.exp(-delta * 0.001));
+        }, Cesium.ScreenSpaceEventType.WHEEL);
+        // (Pinch is handled by the native touchmove listener below to avoid double-counting
+        // — Cesium's PINCH_MOVE and our raw touchmove both fire for the same gesture.)
+
+        self._chaseTickRemove = viewer.clock.onTick.addEventListener((clock) => {
+            const t = clock.currentTime;
+            // Camera FOCAL POINT = smoothed pilot position (stable in thermals).
+            const focalPos = smoothedPos.getValue(t);
+            if (!focalPos) return;
+
+            // Flight direction sampled over a wide window of RAW positions
+            // (averages GPS noise + thermal circling); independent of focal smoothing.
+            Cesium.JulianDate.addSeconds(t, DIR_SAMPLE_SECONDS, scratchFuture);
+            Cesium.JulianDate.addSeconds(t, -DIR_SAMPLE_SECONDS, scratchPast);
+            const pFuture = pilot.position.getValue(scratchFuture);
+            const pPast = pilot.position.getValue(scratchPast);
+
+            // Build focal-local ENU once (used for both target azimuth calc and final camera position)
+            Cesium.Transforms.eastNorthUpToFixedFrame(focalPos, undefined, scratchEnu);
+            Cesium.Matrix4.inverseTransformation(scratchEnu, scratchEnuInv);
+
+            // Compute target azimuth (compass angle of flight direction in ENU at pilot)
+            // azimuth: 0 = north, π/2 = east, etc. Camera sits OPPOSITE the flight direction
+            // (= flight_azimuth + π) so it's behind the pilot.
+            let targetAzimuth = self._chaseAzimuth;
+            if (pFuture && pPast) {
+                Cesium.Cartesian3.subtract(pFuture, pPast, scratchDir);
+                if (Cesium.Cartesian3.magnitude(scratchDir) > 1e-3) {
+                    Cesium.Matrix4.multiplyByPointAsVector(scratchEnuInv, scratchDir, scratchDirLocal);
+                    // ENU axes: x=east, y=north → flight azimuth = atan2(east, north)
+                    const flightAzimuth = Math.atan2(scratchDirLocal.x, scratchDirLocal.y);
+                    targetAzimuth = flightAzimuth + Math.PI; // camera on opposite side
+                }
+            }
+            if (targetAzimuth == null) targetAzimuth = 0;
+
+            // Lerp the smoothed azimuth toward target (handle wraparound)
+            if (self._chaseAzimuth == null) {
+                self._chaseAzimuth = targetAzimuth;
+                self._chaseLastTime = Cesium.JulianDate.clone(t);
+            } else {
+                const dt = Cesium.JulianDate.secondsDifference(t, self._chaseLastTime);
+                if (dt > 0) {
+                    const factor = 1 - Math.exp(-dt / LAG_SECONDS);
+                    let dh = targetAzimuth - self._chaseAzimuth;
+                    while (dh > Math.PI) dh -= 2 * Math.PI;
+                    while (dh < -Math.PI) dh += 2 * Math.PI;
+                    self._chaseAzimuth += dh * factor;
+                } else if (dt < 0) {
+                    self._chaseAzimuth = targetAzimuth;
+                }
+                Cesium.JulianDate.clone(t, self._chaseLastTime);
+            }
+
+            // Compute camera position in pilot-local ENU:
+            //   x (east)  = sin(azimuth) × DIST_BACK × zoom
+            //   y (north) = cos(azimuth) × DIST_BACK × zoom
+            //   z (up)    = DIST_UP × zoom    ← INSTANT (no lag, tracks pilot altitude exactly)
+            const dist = DIST_BACK * self._chaseZoomFactor;
+            const height = DIST_UP * self._chaseZoomFactor;
+            scratchOffsetLocal.x = Math.sin(self._chaseAzimuth) * dist;
+            scratchOffsetLocal.y = Math.cos(self._chaseAzimuth) * dist;
+            scratchOffsetLocal.z = height;
+            // Convert to world: world_camera = pilotEnu × offset_local (as point)
+            Cesium.Matrix4.multiplyByPoint(scratchEnu, scratchOffsetLocal, scratchCamWorld);
+
+            // Camera looks at pilot. Compute heading (camera azimuth + π so we look toward pilot)
+            // and pitch (downward angle = atan(height / dist)).
+            const lookHeading = self._chaseAzimuth + Math.PI;
+            const lookPitch = -Math.atan2(height, dist);
+
+            viewer.scene.camera.setView({
+                destination: scratchCamWorld,
+                orientation: { heading: lookHeading, pitch: lookPitch, roll: 0 }
+            });
         });
-        setTimeout(() => {
-            const te = viewer.trackedEntity;
-            const camPos = viewer.scene.camera.positionWC;
-            console.log('[CHASE_POST_500ms] trackedEntity.id=' + (te && te.id) +
-                ' camPos=' + JSON.stringify({x: Math.round(camPos.x), y: Math.round(camPos.y), z: Math.round(camPos.z)}));
-        }, 500);
-        setTimeout(() => {
-            const te = viewer.trackedEntity;
-            const camPos = viewer.scene.camera.positionWC;
-            console.log('[CHASE_POST_3s] trackedEntity.id=' + (te && te.id) +
-                ' camPos=' + JSON.stringify({x: Math.round(camPos.x), y: Math.round(camPos.y), z: Math.round(camPos.z)}));
-        }, 3000);
 
         this.cameraFollowing = true;
     }
 
     _disableChaseCam() {
-        if (this._chaseTickListener) {
-            this._chaseTickListener();
-            this._chaseTickListener = null;
+        if (this._chaseTickRemove) {
+            this._chaseTickRemove();
+            this._chaseTickRemove = null;
         }
-        if (this.viewer) {
-            this.viewer.trackedEntity = undefined;
+        if (this._chaseInputHandler) {
+            this._chaseInputHandler.destroy();
+            this._chaseInputHandler = null;
         }
+        if (this._chaseTouchCleanup) {
+            this._chaseTouchCleanup();
+            this._chaseTouchCleanup = null;
+        }
+        this._chaseAzimuth = null;
+        this._chaseLastTime = null;
+        this._chaseZoomFactor = 1.0;
         this.cameraFollowing = false;
     }
     
