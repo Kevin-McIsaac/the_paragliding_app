@@ -433,6 +433,12 @@ class FlightDataSource extends Cesium.CustomDataSource {
         // Store position property for reuse
         this.positionProperty = positionProperty;
 
+        // Pre-compute a smoothed (60s window) position. Used by the chase cam as
+        // the camera FOCAL POINT — so the camera stays still while the pilot
+        // circles in a thermal (the smoothed centre barely moves), and the visible
+        // raw-position dot drifts naturally around the screen centre.
+        this.smoothedPositionProperty = this._buildSmoothedPositionProperty(30);
+
         // Create pilot entity (raw position so the dot lines up with the visible track)
         this.pilotEntity = this.entities.add({
             id: 'pilot',
@@ -454,6 +460,37 @@ class FlightDataSource extends Cesium.CustomDataSource {
                 scaleByDistance: new Cesium.NearFarScalar(1000, 1.5, 100000, 0.5)
             }
         });
+    }
+
+    /**
+     * Build a SampledPositionProperty whose samples are this.positions averaged
+     * over a window of ±halfWindowSeconds. Used to give the chase camera a
+     * stable focal point that doesn't whirl around when the pilot thermals.
+     */
+    _buildSmoothedPositionProperty(halfWindowSeconds) {
+        const smoothed = new Array(this.positions.length);
+        let lo = 0, hi = 0;
+        for (let i = 0; i < this.positions.length; i++) {
+            while (lo < i && Cesium.JulianDate.secondsDifference(this.times[i], this.times[lo]) > halfWindowSeconds) lo++;
+            while (hi < this.positions.length - 1 && Cesium.JulianDate.secondsDifference(this.times[hi + 1], this.times[i]) <= halfWindowSeconds) hi++;
+            let sx = 0, sy = 0, sz = 0;
+            for (let j = lo; j <= hi; j++) {
+                sx += this.positions[j].x;
+                sy += this.positions[j].y;
+                sz += this.positions[j].z;
+            }
+            const n = hi - lo + 1;
+            smoothed[i] = new Cesium.Cartesian3(sx / n, sy / n, sz / n);
+        }
+        const prop = new Cesium.SampledPositionProperty();
+        prop.setInterpolationOptions({
+            interpolationDegree: 1,
+            interpolationAlgorithm: Cesium.LinearApproximation
+        });
+        prop.forwardExtrapolationType = Cesium.ExtrapolationType.HOLD;
+        prop.backwardExtrapolationType = Cesium.ExtrapolationType.HOLD;
+        prop.addSamples(this.times, smoothed);
+        return prop;
     }
     
     _createCurtainWall() {
@@ -1642,16 +1679,23 @@ class CesiumFlightApp {
 
     _enableChaseCam() {
         const pilot = this.flightDataSource.pilotEntity;
-        if (!pilot) return;
+        const smoothedPos = this.flightDataSource.smoothedPositionProperty;
+        if (!pilot || !smoothedPos) return;
 
         // Chase parameters (units = metres / clock-seconds)
         const LAG_SECONDS = 60;         // time constant for AZIMUTH only (angle around pilot).
                                         // Distance and height respond instantly — so zoom and
                                         // pilot altitude changes are not lagged.
-        const DIST_BACK = 500;          // base horizontal metres behind pilot (× zoom)
-        const DIST_UP = 200;            // base metres above pilot (× zoom)
+        const DIST_BACK = 600;          // base horizontal metres behind smoothed focal (× zoom)
+        const DIST_UP = 200;            // base metres above smoothed focal (× zoom)
         const DIR_SAMPLE_SECONDS = 30;  // half-window for direction sampling (60s total)
+        const STATIONARY_SPEED_MPS = 1.94;  // 7 km/h: below this, hold the last azimuth
+                                            // (pilot is essentially circling, no useful direction).
         const ZOOM_MIN = 0.1, ZOOM_MAX = 20;
+        // The chase camera centres on a 60s-smoothed point (smoothedPos), not the raw
+        // pilot. During thermalling the smoothed point barely moves, so the camera
+        // stays roughly still while the pilot dot circles within view. During glides
+        // the smoothed point lags by ~speed × half_window (~300 m at 10 m/s).
 
         const viewer = this.viewer;
         const self = this;
@@ -1667,15 +1711,27 @@ class CesiumFlightApp {
         self._chaseAzimuth = null;     // smoothed angle around pilot, radians (0 = camera south of pilot looking north)
         self._chaseLastTime = null;
         self._chaseZoomFactor = 1.0;
+        self._chaseUserAzimuthOffset = 0;  // radians, accumulated from horizontal drag
+        self._chaseUserHeightOffset = 0;   // metres, added to DIST_UP × zoom (vertical drag)
 
         // Input handler — Cesium's default zoom would still fire but our per-tick setView
         // overrides it; we capture the gesture ourselves and apply it as a zoom multiplier.
         const inputHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
         self._chaseInputHandler = inputHandler;
 
-        // Also attach raw touch listeners on the canvas as a fallback to compute pinch
+        // Native touch listeners on the canvas:
+        //  - 2-finger pinch → zoom (scale DIST_BACK / DIST_UP)
+        //  - 1-finger horizontal drag → orbit camera around pilot (azimuth offset)
+        //  - 1-finger vertical drag → raise/lower camera (height offset)
+        // Drag offsets persist across pilot motion — set "side-on view" once and the
+        // chase keeps that side-on relationship as the pilot flies.
         const canvas = viewer.scene.canvas;
+        const AZIMUTH_RAD_PER_PX = (2 * Math.PI) / 720;  // 720 px drag = full rotation
+        const HEIGHT_M_PER_PX = 1.0;                      // 1 px = 1 m camera-height change
+        const HEIGHT_MIN_M = 30;                          // never below 30 m above pilot
+        const HEIGHT_MAX_M = 50000;                       // sanity cap
         let _pinchPrevDist = null;
+        let _dragPrev = null;
         const _touchDist = (touches) => {
             if (touches.length < 2) return null;
             const dx = touches[0].clientX - touches[1].clientX;
@@ -1684,15 +1740,30 @@ class CesiumFlightApp {
         };
         const _onTouchStart = (e) => {
             _pinchPrevDist = _touchDist(e.touches);
+            _dragPrev = e.touches.length === 1
+                ? { x: e.touches[0].clientX, y: e.touches[0].clientY }
+                : null;
         };
         const _onTouchMove = (e) => {
-            const d = _touchDist(e.touches);
-            if (d != null && _pinchPrevDist != null && _pinchPrevDist > 0) {
-                self._chaseZoomFactor = clampZoom(self._chaseZoomFactor * (_pinchPrevDist / d));
+            if (e.touches.length >= 2) {
+                // Pinch — zoom
+                const d = _touchDist(e.touches);
+                if (d != null && _pinchPrevDist != null && _pinchPrevDist > 0) {
+                    self._chaseZoomFactor = clampZoom(self._chaseZoomFactor * (_pinchPrevDist / d));
+                }
+                _pinchPrevDist = d;
+                _dragPrev = null;
+            } else if (e.touches.length === 1 && _dragPrev) {
+                // Single-finger drag — orbit + tilt
+                const dx = e.touches[0].clientX - _dragPrev.x;
+                const dy = e.touches[0].clientY - _dragPrev.y;
+                self._chaseUserAzimuthOffset += dx * AZIMUTH_RAD_PER_PX;
+                // Drag down (positive dy) → camera rises (more god view). Cesium-default convention.
+                self._chaseUserHeightOffset += dy * HEIGHT_M_PER_PX;
+                _dragPrev = { x: e.touches[0].clientX, y: e.touches[0].clientY };
             }
-            _pinchPrevDist = d;
         };
-        const _onTouchEnd = () => { _pinchPrevDist = null; };
+        const _onTouchEnd = () => { _pinchPrevDist = null; _dragPrev = null; };
         canvas.addEventListener('touchstart', _onTouchStart, { passive: true });
         canvas.addEventListener('touchmove', _onTouchMove, { passive: true });
         canvas.addEventListener('touchend', _onTouchEnd, { passive: true });
@@ -1713,26 +1784,35 @@ class CesiumFlightApp {
 
         self._chaseTickRemove = viewer.clock.onTick.addEventListener((clock) => {
             const t = clock.currentTime;
-            const pilotPos = pilot.position.getValue(t);
-            if (!pilotPos) return;
+            // Camera FOCAL POINT = smoothed pilot position (stable in thermals).
+            const focalPos = smoothedPos.getValue(t);
+            if (!focalPos) return;
 
-            // Flight direction sampled over a wide window (averages GPS noise + thermal circling)
+            // Flight direction sampled from SMOOTHED positions over a 60s window.
+            // Each endpoint is itself a ±30s average, so the delta vector reflects
+            // pure drift of the thermal centre — circle motion is already cancelled
+            // out → camera azimuth stays still while pilot circles.
             Cesium.JulianDate.addSeconds(t, DIR_SAMPLE_SECONDS, scratchFuture);
             Cesium.JulianDate.addSeconds(t, -DIR_SAMPLE_SECONDS, scratchPast);
-            const pFuture = pilot.position.getValue(scratchFuture);
-            const pPast = pilot.position.getValue(scratchPast);
+            const pFuture = smoothedPos.getValue(scratchFuture);
+            const pPast = smoothedPos.getValue(scratchPast);
 
-            // Build pilot-local ENU once (used for both target azimuth calc and final camera position)
-            Cesium.Transforms.eastNorthUpToFixedFrame(pilotPos, undefined, scratchEnu);
+            // Build focal-local ENU once (used for both target azimuth calc and final camera position)
+            Cesium.Transforms.eastNorthUpToFixedFrame(focalPos, undefined, scratchEnu);
             Cesium.Matrix4.inverseTransformation(scratchEnu, scratchEnuInv);
 
             // Compute target azimuth (compass angle of flight direction in ENU at pilot)
             // azimuth: 0 = north, π/2 = east, etc. Camera sits OPPOSITE the flight direction
             // (= flight_azimuth + π) so it's behind the pilot.
+            // If the pilot's smoothed ground speed is below STATIONARY_SPEED_MPS we treat
+            // them as essentially circling and HOLD the last azimuth — no update at all,
+            // so the camera stays put through the thermal in light/no-wind conditions.
             let targetAzimuth = self._chaseAzimuth;
             if (pFuture && pPast) {
                 Cesium.Cartesian3.subtract(pFuture, pPast, scratchDir);
-                if (Cesium.Cartesian3.magnitude(scratchDir) > 1e-3) {
+                const winSec = DIR_SAMPLE_SECONDS * 2;
+                const groundSpeed = Cesium.Cartesian3.magnitude(scratchDir) / winSec;
+                if (groundSpeed >= STATIONARY_SPEED_MPS) {
                     Cesium.Matrix4.multiplyByPointAsVector(scratchEnuInv, scratchDir, scratchDirLocal);
                     // ENU axes: x=east, y=north → flight azimuth = atan2(east, north)
                     const flightAzimuth = Math.atan2(scratchDirLocal.x, scratchDirLocal.y);
@@ -1759,21 +1839,22 @@ class CesiumFlightApp {
                 Cesium.JulianDate.clone(t, self._chaseLastTime);
             }
 
-            // Compute camera position in pilot-local ENU:
-            //   x (east)  = sin(azimuth) × DIST_BACK × zoom
-            //   y (north) = cos(azimuth) × DIST_BACK × zoom
-            //   z (up)    = DIST_UP × zoom    ← INSTANT (no lag, tracks pilot altitude exactly)
+            // Compute camera position in pilot-local ENU. User drag offsets are layered
+            // on top of the smoothed azimuth + base height so they persist across pilot
+            // motion (drag once to set "side-on view", chase keeps that relationship).
+            const finalAzimuth = self._chaseAzimuth + self._chaseUserAzimuthOffset;
             const dist = DIST_BACK * self._chaseZoomFactor;
-            const height = DIST_UP * self._chaseZoomFactor;
-            scratchOffsetLocal.x = Math.sin(self._chaseAzimuth) * dist;
-            scratchOffsetLocal.y = Math.cos(self._chaseAzimuth) * dist;
+            const rawHeight = DIST_UP * self._chaseZoomFactor + self._chaseUserHeightOffset;
+            const height = Math.max(HEIGHT_MIN_M, Math.min(HEIGHT_MAX_M, rawHeight));
+            scratchOffsetLocal.x = Math.sin(finalAzimuth) * dist;
+            scratchOffsetLocal.y = Math.cos(finalAzimuth) * dist;
             scratchOffsetLocal.z = height;
             // Convert to world: world_camera = pilotEnu × offset_local (as point)
             Cesium.Matrix4.multiplyByPoint(scratchEnu, scratchOffsetLocal, scratchCamWorld);
 
             // Camera looks at pilot. Compute heading (camera azimuth + π so we look toward pilot)
             // and pitch (downward angle = atan(height / dist)).
-            const lookHeading = self._chaseAzimuth + Math.PI;
+            const lookHeading = finalAzimuth + Math.PI;
             const lookPitch = -Math.atan2(height, dist);
 
             viewer.scene.camera.setView({
@@ -1801,6 +1882,8 @@ class CesiumFlightApp {
         this._chaseAzimuth = null;
         this._chaseLastTime = null;
         this._chaseZoomFactor = 1.0;
+        this._chaseUserAzimuthOffset = 0;
+        this._chaseUserHeightOffset = 0;
         this.cameraFollowing = false;
     }
     
