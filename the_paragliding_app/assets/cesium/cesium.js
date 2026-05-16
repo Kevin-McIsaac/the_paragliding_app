@@ -858,6 +858,12 @@ class CesiumFlightApp {
     }
     
     initialize(config) {
+        // Seed chase-cam preferences from saved values (cross-launch persistence).
+        // _enableChaseCam will see this as already-set and skip the default.
+        if (config && typeof config.savedChaseZoomFactor === 'number') {
+            this._chaseZoomFactor = config.savedChaseZoomFactor;
+        }
+
         PerformanceReporter.measureTime('initialization', () => {
             this._createViewer(config);
             
@@ -1677,17 +1683,41 @@ class CesiumFlightApp {
         }
     }
 
+    _persistChaseZoom() {
+        // Debounce: pinch/wheel fires many times per gesture; only save once gesture
+        // settles for ~500 ms.
+        if (this._chaseZoomSaveTimer) clearTimeout(this._chaseZoomSaveTimer);
+        const self = this;
+        this._chaseZoomSaveTimer = setTimeout(() => {
+            self._chaseZoomSaveTimer = null;
+            if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+                window.flutter_inappwebview.callHandler('saveChaseZoomFactor', self._chaseZoomFactor || 1.0);
+            }
+        }, 500);
+    }
+
     _enableChaseCam() {
         const pilot = this.flightDataSource.pilotEntity;
         const smoothedPos = this.flightDataSource.smoothedPositionProperty;
         if (!pilot || !smoothedPos) return;
 
         // Chase parameters (units = metres / clock-seconds)
-        const LAG_SECONDS = 60;         // time constant for AZIMUTH only (angle around pilot).
+        const LAG_SECONDS = 20;         // time constant for AZIMUTH only (angle around pilot).
                                         // Distance and height respond instantly — so zoom and
                                         // pilot altitude changes are not lagged.
+                                        // Direction sampling (60s window) and focal smoothing
+                                        // (60s) already absorb thermal jitter, so this lerp can
+                                        // be tight enough that long glides catch up quickly.
+        const MAX_AZIMUTH_RATE_RAD_PER_WALL_SEC = Math.PI / 4;
+                                        // 45°/wall-sec cap on camera rotation rate. Without this,
+                                        // (a) the first tick after the engage-flyTo sees a large
+                                        // accumulated dt and snaps, and (b) at 60×+ playback the
+                                        // smoothed target azimuth itself shifts ~30°/wall-frame
+                                        // through turns and the lerp can't keep it slow enough.
         const DIST_BACK = 600;          // base horizontal metres behind smoothed focal (× zoom)
         const DIST_UP = 200;            // base metres above smoothed focal (× zoom)
+        const LOOKAHEAD_FRAC = 0.3;     // shift focal forward by this × DIST_BACK × zoom so pilot
+                                        // sits in the lower third of the view, terrain ahead visible.
         const DIR_SAMPLE_SECONDS = 30;  // half-window for direction sampling (60s total)
         const STATIONARY_SPEED_MPS = 1.94;  // 7 km/h: below this, hold the last azimuth
                                             // (pilot is essentially circling, no useful direction).
@@ -1707,10 +1737,16 @@ class CesiumFlightApp {
         const scratchDirLocal = new Cesium.Cartesian3();
         const scratchOffsetLocal = new Cesium.Cartesian3();
         const scratchCamWorld = new Cesium.Cartesian3();
+        const scratchLookaheadOffset = new Cesium.Cartesian3();
+        const scratchCarto = new Cesium.Cartographic();
+        const TERRAIN_CLEARANCE_M = 30; // never let camera sink within 30 m of terrain
 
-        self._chaseAzimuth = null;     // smoothed angle around pilot, radians (0 = camera south of pilot looking north)
+        self._chaseAzimuth = null;     // smoothed angle around pilot, radians, normalized to [-π, π)
         self._chaseLastTime = null;
-        self._chaseZoomFactor = 1.0;
+        // Zoom persists across enable/disable cycles within a session — pinch once and
+        // re-engaging chase keeps your preferred framing. User drag offsets DON'T persist
+        // (they feel transient — "I tilted to look at this thermal once").
+        if (self._chaseZoomFactor == null) self._chaseZoomFactor = 1.0;
         self._chaseUserAzimuthOffset = 0;  // radians, accumulated from horizontal drag
         self._chaseUserHeightOffset = 0;   // metres, added to DIST_UP × zoom (vertical drag)
 
@@ -1750,6 +1786,7 @@ class CesiumFlightApp {
                 const d = _touchDist(e.touches);
                 if (d != null && _pinchPrevDist != null && _pinchPrevDist > 0) {
                     self._chaseZoomFactor = clampZoom(self._chaseZoomFactor * (_pinchPrevDist / d));
+                    self._persistChaseZoom();
                 }
                 _pinchPrevDist = d;
                 _dragPrev = null;
@@ -1778,15 +1815,27 @@ class CesiumFlightApp {
         // Mouse wheel (desktop)
         inputHandler.setInputAction((delta) => {
             self._chaseZoomFactor = clampZoom(self._chaseZoomFactor * Math.exp(-delta * 0.001));
+            self._persistChaseZoom();
         }, Cesium.ScreenSpaceEventType.WHEEL);
         // (Pinch is handled by the native touchmove listener below to avoid double-counting
         // — Cesium's PINCH_MOVE and our raw touchmove both fire for the same gesture.)
 
-        self._chaseTickRemove = viewer.clock.onTick.addEventListener((clock) => {
-            const t = clock.currentTime;
+        // Normalize an azimuth to [-π, π) so the stored field stays bounded over long
+        // sessions. Cesium's setView normalizes internally so this is for sanity only.
+        const normalizeAzimuth = (a) => {
+            const TWO_PI = 2 * Math.PI;
+            return ((a + Math.PI) % TWO_PI + TWO_PI) % TWO_PI - Math.PI;
+        };
+
+        // Compute the chase-cam view (destination + orientation) for time t.
+        // Returns null if smoothed focal not yet available. Mutates scratch buffers
+        // and the lerp state (_chaseAzimuth, _chaseLastTime); safe to call once per tick.
+        self._computeChaseCamera = function(t) {
             // Camera FOCAL POINT = smoothed pilot position (stable in thermals).
+            // We mutate this below to apply the look-ahead shift; getValue returns a fresh
+            // Cartesian3 so in-place mutation is safe.
             const focalPos = smoothedPos.getValue(t);
-            if (!focalPos) return;
+            if (!focalPos) return null;
 
             // Flight direction sampled from SMOOTHED positions over a 60s window.
             // Each endpoint is itself a ±30s average, so the delta vector reflects
@@ -1797,46 +1846,95 @@ class CesiumFlightApp {
             const pFuture = smoothedPos.getValue(scratchFuture);
             const pPast = smoothedPos.getValue(scratchPast);
 
-            // Build focal-local ENU once (used for both target azimuth calc and final camera position)
+            // Compute scratchDir + speed-gate. Below STATIONARY_SPEED_MPS the chase
+            // azimuth is held (no target update), so the lookahead direction — which is
+            // derived from _chaseAzimuth — stays still through thermals automatically.
+            let movingFastEnough = false;
+            if (pFuture && pPast) {
+                Cesium.Cartesian3.subtract(pFuture, pPast, scratchDir);
+                const winSec = DIR_SAMPLE_SECONDS * 2;
+                const groundSpeed = Cesium.Cartesian3.magnitude(scratchDir) / winSec;
+                if (groundSpeed >= STATIONARY_SPEED_MPS) {
+                    movingFastEnough = true;
+                }
+            }
+
+            // Build focal-local ENU at the (still-unshifted) focal — used for azimuth
+            // calculation; the lookahead block below rebuilds ENU at the shifted focal
+            // for camera positioning.
             Cesium.Transforms.eastNorthUpToFixedFrame(focalPos, undefined, scratchEnu);
             Cesium.Matrix4.inverseTransformation(scratchEnu, scratchEnuInv);
 
             // Compute target azimuth (compass angle of flight direction in ENU at pilot)
             // azimuth: 0 = north, π/2 = east, etc. Camera sits OPPOSITE the flight direction
             // (= flight_azimuth + π) so it's behind the pilot.
-            // If the pilot's smoothed ground speed is below STATIONARY_SPEED_MPS we treat
-            // them as essentially circling and HOLD the last azimuth — no update at all,
-            // so the camera stays put through the thermal in light/no-wind conditions.
             let targetAzimuth = self._chaseAzimuth;
-            if (pFuture && pPast) {
-                Cesium.Cartesian3.subtract(pFuture, pPast, scratchDir);
-                const winSec = DIR_SAMPLE_SECONDS * 2;
-                const groundSpeed = Cesium.Cartesian3.magnitude(scratchDir) / winSec;
-                if (groundSpeed >= STATIONARY_SPEED_MPS) {
-                    Cesium.Matrix4.multiplyByPointAsVector(scratchEnuInv, scratchDir, scratchDirLocal);
-                    // ENU axes: x=east, y=north → flight azimuth = atan2(east, north)
-                    const flightAzimuth = Math.atan2(scratchDirLocal.x, scratchDirLocal.y);
-                    targetAzimuth = flightAzimuth + Math.PI; // camera on opposite side
-                }
+            if (movingFastEnough) {
+                Cesium.Matrix4.multiplyByPointAsVector(scratchEnuInv, scratchDir, scratchDirLocal);
+                // ENU axes: x=east, y=north → flight azimuth = atan2(east, north)
+                const flightAzimuth = Math.atan2(scratchDirLocal.x, scratchDirLocal.y);
+                targetAzimuth = flightAzimuth + Math.PI; // camera on opposite side
             }
             if (targetAzimuth == null) targetAzimuth = 0;
 
-            // Lerp the smoothed azimuth toward target (handle wraparound)
+            // Lerp the smoothed azimuth toward target (handle wraparound), then cap the
+            // per-tick change by a wall-time angular rate so the camera can never spin
+            // faster than MAX_AZIMUTH_RATE_RAD_PER_WALL_SEC regardless of playback speed
+            // or accumulated dt.
             if (self._chaseAzimuth == null) {
-                self._chaseAzimuth = targetAzimuth;
+                self._chaseAzimuth = normalizeAzimuth(targetAzimuth);
                 self._chaseLastTime = Cesium.JulianDate.clone(t);
+                self._chaseLastWallMs = Date.now();
+                console.log('[CHASE] init azimuth=' + (self._chaseAzimuth * 180 / Math.PI).toFixed(1) + '°');
             } else {
                 const dt = Cesium.JulianDate.secondsDifference(t, self._chaseLastTime);
-                if (dt > 0) {
+                // Treat any big jump (forward scrub, pause-resume, or loop-around with
+                // dt<0) as a discontinuity: skip the lerp this tick but keep azimuth.
+                // The rate cap will then absorb the catch-up smoothly on subsequent ticks.
+                // (Focal position will jump regardless — that's where the pilot is now.)
+                const DISCONTINUITY_S = 5;
+                if (Math.abs(dt) > DISCONTINUITY_S) {
+                    console.log('[CHASE] discontinuity dt=' + dt.toFixed(2) + 's — keep az='
+                        + (self._chaseAzimuth * 180 / Math.PI).toFixed(1) + '° target='
+                        + (targetAzimuth * 180 / Math.PI).toFixed(1) + '°');
+                    self._chaseLastWallMs = Date.now();
+                } else if (dt > 0) {
                     const factor = 1 - Math.exp(-dt / LAG_SECONDS);
                     let dh = targetAzimuth - self._chaseAzimuth;
                     while (dh > Math.PI) dh -= 2 * Math.PI;
                     while (dh < -Math.PI) dh += 2 * Math.PI;
-                    self._chaseAzimuth += dh * factor;
-                } else if (dt < 0) {
-                    self._chaseAzimuth = targetAzimuth;
+                    const wanted = dh * factor;
+
+                    const nowMs = Date.now();
+                    const dtWall = self._chaseLastWallMs ? (nowMs - self._chaseLastWallMs) / 1000 : 0;
+                    self._chaseLastWallMs = nowMs;
+                    const maxStep = MAX_AZIMUTH_RATE_RAD_PER_WALL_SEC * dtWall;
+                    const applied = dtWall > 0
+                        ? Math.sign(wanted) * Math.min(Math.abs(wanted), maxStep)
+                        : wanted;
+                    self._chaseAzimuth = normalizeAzimuth(self._chaseAzimuth + applied);
                 }
+                // Small backward dt (within DISCONTINUITY_S, e.g. tiny clock rewinds) is
+                // also benign — we don't apply the lerp, just keep azimuth as-is.
                 Cesium.JulianDate.clone(t, self._chaseLastTime);
+            }
+
+            // LOOK-AHEAD: shift focal forward in pilot-local ENU. The forward direction
+            // is derived from _chaseAzimuth (which is itself rate-capped and lerped) —
+            // NOT from the raw pFuture/pPast delta, which can change by 30°+ between
+            // ticks at high playback and would teleport the focal laterally. Flight
+            // azimuth = chase azimuth + π (camera is opposite the flight direction).
+            if (self._chaseAzimuth != null) {
+                const flightAz = self._chaseAzimuth + Math.PI;
+                const lookahead = LOOKAHEAD_FRAC * DIST_BACK * self._chaseZoomFactor;
+                scratchLookaheadOffset.x = Math.sin(flightAz) * lookahead;
+                scratchLookaheadOffset.y = Math.cos(flightAz) * lookahead;
+                scratchLookaheadOffset.z = 0;
+                // Local-ENU offset → world delta; add to focal in place.
+                Cesium.Matrix4.multiplyByPointAsVector(scratchEnu, scratchLookaheadOffset, scratchLookaheadOffset);
+                Cesium.Cartesian3.add(focalPos, scratchLookaheadOffset, focalPos);
+                // Rebuild ENU at shifted focal so the camera position uses the new frame.
+                Cesium.Transforms.eastNorthUpToFixedFrame(focalPos, undefined, scratchEnu);
             }
 
             // Compute camera position in pilot-local ENU. User drag offsets are layered
@@ -1852,21 +1950,82 @@ class CesiumFlightApp {
             // Convert to world: world_camera = pilotEnu × offset_local (as point)
             Cesium.Matrix4.multiplyByPoint(scratchEnu, scratchOffsetLocal, scratchCamWorld);
 
+            // TERRAIN-CLIP AVOIDANCE: in alpine terrain the chase position can end up
+            // inside the mountain behind the pilot. Sample the loaded terrain height
+            // under the camera and lift the camera if it would clip. globe.getHeight is
+            // a synchronous lookup against currently-loaded tiles (returns undefined if
+            // the tile isn't loaded — fall through, no adjustment).
+            Cesium.Cartographic.fromCartesian(scratchCamWorld, undefined, scratchCarto);
+            if (viewer.scene.globe) {
+                const terrainHeight = viewer.scene.globe.getHeight(scratchCarto);
+                if (terrainHeight !== undefined) {
+                    const minHeight = terrainHeight + TERRAIN_CLEARANCE_M;
+                    if (scratchCarto.height < minHeight) {
+                        scratchCarto.height = minHeight;
+                        Cesium.Cartesian3.fromRadians(
+                            scratchCarto.longitude,
+                            scratchCarto.latitude,
+                            scratchCarto.height,
+                            undefined,
+                            scratchCamWorld
+                        );
+                    }
+                }
+            }
+
             // Camera looks at pilot. Compute heading (camera azimuth + π so we look toward pilot)
             // and pitch (downward angle = atan(height / dist)).
             const lookHeading = finalAzimuth + Math.PI;
             const lookPitch = -Math.atan2(height, dist);
 
-            viewer.scene.camera.setView({
+            return {
                 destination: scratchCamWorld,
                 orientation: { heading: lookHeading, pitch: lookPitch, roll: 0 }
-            });
-        });
+            };
+        };
 
+        // Set cameraFollowing immediately so the UI reflects engaged state during the flyTo.
         this.cameraFollowing = true;
+        console.log('[CHASE] enable zoom=' + self._chaseZoomFactor.toFixed(2)
+            + ' lag=' + LAG_SECONDS + 's mult=' + viewer.clock.multiplier);
+
+        const attachListener = () => {
+            // Guard: user may have toggled chase off during the flyTo animation.
+            if (!self.cameraFollowing) return;
+            self._chaseTickRemove = viewer.clock.onTick.addEventListener((clock) => {
+                const view = self._computeChaseCamera(clock.currentTime);
+                if (view) viewer.scene.camera.setView(view);
+            });
+        };
+
+        // Compute initial target and glide into chase position over ~1s. Pilot moves ~10 m/s
+        // so the focal drifts ~10 m during the fly — small relative to DIST_BACK = 600 m,
+        // no need to predict the future pilot position. Falls back to immediate attach if
+        // the smoothed focal isn't available yet (very early in playback).
+        const initialView = self._computeChaseCamera(viewer.clock.currentTime);
+        if (initialView) {
+            viewer.scene.camera.flyTo({
+                destination: Cesium.Cartesian3.clone(initialView.destination),
+                orientation: {
+                    heading: initialView.orientation.heading,
+                    pitch: initialView.orientation.pitch,
+                    roll: initialView.orientation.roll
+                },
+                duration: 1.0,
+                complete: attachListener
+            });
+        } else {
+            attachListener();
+        }
     }
 
     _disableChaseCam() {
+        console.log('[CHASE] disable');
+        // Cancel any in-progress chase-engage flyTo so the camera stops mid-glide
+        // instead of continuing to its target after the user toggled chase off.
+        if (this.viewer && this.viewer.scene && this.viewer.scene.camera) {
+            this.viewer.scene.camera.cancelFlight();
+        }
         if (this._chaseTickRemove) {
             this._chaseTickRemove();
             this._chaseTickRemove = null;
@@ -1879,9 +2038,11 @@ class CesiumFlightApp {
             this._chaseTouchCleanup();
             this._chaseTouchCleanup = null;
         }
+        this._computeChaseCamera = null;
         this._chaseAzimuth = null;
         this._chaseLastTime = null;
-        this._chaseZoomFactor = 1.0;
+        this._chaseLastWallMs = null;
+        // Don't reset _chaseZoomFactor — it persists across enable/disable cycles.
         this._chaseUserAzimuthOffset = 0;
         this._chaseUserHeightOffset = 0;
         this.cameraFollowing = false;

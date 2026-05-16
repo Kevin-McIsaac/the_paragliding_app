@@ -68,6 +68,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   bool _savedFlyThroughMode = false;
   int _savedTrailDuration = PreferencesHelper.defaultCesiumTrailDuration;
   double? _savedQuality;
+  double? _savedChaseZoomFactor;
   
   // User token for premium maps
   String? _userToken;
@@ -118,7 +119,8 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
       final flyThroughMode = await PreferencesHelper.getCesiumFlyThroughMode() ?? false;
       final trailDuration = await PreferencesHelper.getCesiumTrailDuration() ?? PreferencesHelper.defaultCesiumTrailDuration;
       final quality = await PreferencesHelper.getCesiumQuality() ?? 1.0;
-      
+      final chaseZoomFactor = await PreferencesHelper.getCesiumChaseZoomFactor();
+
       // Load user token and validation status
       final userToken = await PreferencesHelper.getCesiumUserToken();
       final tokenValidated = await PreferencesHelper.getCesiumTokenValidated() ?? false;
@@ -135,6 +137,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
           _savedFlyThroughMode = flyThroughMode;
           _savedTrailDuration = trailDuration;
           _savedQuality = quality;
+          _savedChaseZoomFactor = chaseZoomFactor;
           _userToken = userToken;
           _hasValidUserToken = hasValidToken;
         });
@@ -386,9 +389,20 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
                   if (args.isNotEmpty) {
                     final resolutionScale = (args[0] as num).toDouble();
                     LoggingService.info('Cesium3D: Quality changed to ${resolutionScale}x resolution');
-                    
+
                     // Save the preference
                     await PreferencesHelper.setCesiumQuality(resolutionScale);
+                  }
+                },
+              );
+
+              // Add handler for chase-cam zoom factor (debounced from JS side).
+              controller.addJavaScriptHandler(
+                handlerName: 'saveChaseZoomFactor',
+                callback: (args) async {
+                  if (args.isNotEmpty) {
+                    final zoomFactor = (args[0] as num).toDouble();
+                    await PreferencesHelper.setCesiumChaseZoomFactor(zoomFactor);
                   }
                 },
               );
@@ -761,6 +775,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
             savedFlyThroughMode: $_savedFlyThroughMode,
             savedTrailDuration: $_savedTrailDuration,
             savedResolutionScale: ${_savedQuality ?? 'null'},
+            savedChaseZoomFactor: ${_savedChaseZoomFactor ?? 'null'},
             hasUserToken: $_hasValidUserToken,
             lat:''');
     }

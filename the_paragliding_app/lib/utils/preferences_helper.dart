@@ -12,6 +12,7 @@ class PreferencesHelper {
   static const String cesiumFlyThroughModeKey = 'cesium_fly_through_mode';
   static const String cesiumTrailDurationKey = 'cesium_trail_duration';
   static const String cesiumQualityKey = 'cesium_quality';
+  static const String cesiumChaseZoomFactorKey = 'cesium_chase_zoom_factor';
   
   // Default values
   static const int defaultCesiumTrailDuration = 180; // 3 minutes in seconds
@@ -172,7 +173,17 @@ class PreferencesHelper {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(cesiumQualityKey, value);
   }
-  
+
+  static Future<double?> getCesiumChaseZoomFactor() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getDouble(cesiumChaseZoomFactorKey);
+  }
+
+  static Future<void> setCesiumChaseZoomFactor(double value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(cesiumChaseZoomFactorKey, value);
+  }
+
   // Cesium Ion Token methods
   static Future<String?> getCesiumUserToken() async {
     final prefs = await SharedPreferences.getInstance();
