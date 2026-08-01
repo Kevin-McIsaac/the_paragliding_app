@@ -12,6 +12,10 @@ import '../services/logging_service.dart';
 class DevSeed {
   static const _seedDir = String.fromEnvironment('SEED_IGC_DIR');
 
+  /// Whether seeding is switched on for this build - lets the caller show a
+  /// status before the first import starts
+  static bool get isConfigured => !kReleaseMode && _seedDir.isNotEmpty;
+
   /// [onProgress] is called with (completed, total) before each import so the
   /// caller can show progress - seeding a real log takes several seconds.
   static Future<void> maybeSeed({

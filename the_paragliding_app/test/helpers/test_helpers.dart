@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:the_paragliding_app/data/models/flight.dart';
@@ -7,13 +9,44 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 /// Test helper utilities for widget testing
 class TestHelpers {
-  
-  /// Initialize database factory for testing
-  static void initializeDatabaseForTesting() {
+
+  /// Temporary databases directory owned by this test process.
+  static Directory? _databasesDir;
+
+  /// Initialize the sqflite factory for testing.
+  ///
+  /// Each test file runs in its own process, and each process gets its own
+  /// temporary databases directory. Without this, every test would share
+  /// `.dart_tool/sqflite_common_ffi/databases/FlightLog.db` (the ffi default,
+  /// relative to the working directory), which is both the file the desktop
+  /// dev app uses and a source of cross-file flakiness when `flutter test`
+  /// runs test files concurrently.
+  ///
+  /// Called automatically for every test file by `test/flutter_test_config.dart`;
+  /// safe to call again from a test's `setUpAll`.
+  static Future<void> initializeDatabaseForTesting() async {
+    if (_databasesDir != null) return; // Already initialized in this process.
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
+    final dir = _databasesDir =
+        Directory.systemTemp.createTempSync('paragliding_app_test_db_');
+    await databaseFactory.setDatabasesPath(dir.path);
   }
-  
+
+  /// Delete this process's temporary databases directory (best effort).
+  static Future<void> cleanupDatabaseForTesting() async {
+    final dir = _databasesDir;
+    _databasesDir = null;
+    if (dir == null) return;
+    try {
+      if (dir.existsSync()) {
+        dir.deleteSync(recursive: true);
+      }
+    } catch (_) {
+      // Best effort - a leftover temp directory must never fail a test run.
+    }
+  }
+
   /// Create a test app wrapper
   static Widget createTestApp({
     required Widget child,

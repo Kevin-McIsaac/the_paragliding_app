@@ -7,7 +7,7 @@ void main() {
     late SiteMatchingService siteMatchingService;
 
     setUpAll(() async {
-      TestHelpers.initializeDatabaseForTesting();
+      await TestHelpers.initializeDatabaseForTesting();
       siteMatchingService = SiteMatchingService.instance;
       await siteMatchingService.initialize();
     });

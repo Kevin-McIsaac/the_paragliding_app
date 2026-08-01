@@ -9,6 +9,7 @@ import 'utils/file_sharing_handler.dart';
 import 'utils/performance_monitor.dart';
 import 'data/datasources/database_helper.dart';
 import 'utils/dev_seed.dart';
+import 'services/logging_service.dart';
 import 'services/api_keys.dart';
 import 'services/app_initialization_service.dart';
 import 'services/performance_metrics_service.dart';
@@ -132,14 +133,28 @@ class _AppInitializerState extends State<AppInitializer> {
 
   Future<void> _initialize() async {
     try {
+      // Creating the schema on a fresh database takes several seconds, so the
+      // status goes up before it rather than after
+      if (DevSeed.isConfigured) {
+        _status.value = 'Preparing dev database';
+      }
+
+      final startupTimer = Stopwatch()..start();
+
       // Initialize database
       final db = DatabaseHelper.instance;
       // Pre-warm database connection
       await db.database;
+      LoggingService.performance(
+          'Startup: database', startupTimer.elapsed, 'connection ready');
+
+      final tablesTimer = Stopwatch()..start();
 
       // Cheap DDL - keeps site lookups during seeding from hitting a missing
       // pge_sites table (the data import itself stays deferred)
       await AppInitializationService.instance.ensureTables();
+      LoggingService.performance(
+          'Startup: tables', tablesTimer.elapsed, 'PGE tables ready');
 
       // Seed dev fixtures when SEED_IGC_DIR is defined (no-op in release
       // builds). Runs here rather than in main() so the loading screen is
