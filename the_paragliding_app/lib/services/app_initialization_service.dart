@@ -11,6 +11,15 @@ class AppInitializationService {
   static final AppInitializationService instance = AppInitializationService._();
   AppInitializationService._();
 
+  /// Whether the incremental PGE sync may run.
+  ///
+  /// The sync is a live HTTP call to paraglidingearth.com, and it is reached
+  /// transitively from `SiteMatchingService.initialize()`/`reload()` - so any
+  /// test touching site matching fired a real background request, including the
+  /// ones documented as staying offline. Tests turn this off in
+  /// `flutter_test_config.dart`; production never changes it.
+  static bool backgroundSyncEnabled = true;
+
   bool _isInitialized = false;
   Future<void>? _initialization;
   Future<void>? _tableCreation;
@@ -18,8 +27,23 @@ class AppInitializationService {
   /// Create the PGE tables if they are missing - cheap DDL, safe to await at
   /// startup. Keeps queries from failing with "no such table: pge_sites"
   /// before the (deferred) data import has run.
+  ///
+  /// Failures clear the memo, the same way [_initialize] does. Caching a
+  /// rejected future here would make main.dart's "Retry" button dead: it calls
+  /// straight back into this method and would keep getting the original
+  /// failure, leaving a force-quit as the only way out.
   Future<void> ensureTables() {
-    return _tableCreation ??= PgeSitesDatabaseService.instance.initializeTables();
+    return _tableCreation ??= _createTables();
+  }
+
+  Future<void> _createTables() async {
+    try {
+      await PgeSitesDatabaseService.instance.initializeTables();
+    } catch (e) {
+      _tableCreation = null; // Allow a retry on the next request
+      LoggingService.error('AppInitializationService: Table creation failed', e);
+      rethrow;
+    }
   }
 
   /// Download and import the PGE sites database, then sync.
@@ -109,6 +133,11 @@ class AppInitializationService {
   /// Check if PGE sites need incremental sync and perform it in background
   /// Syncs on every app load to ensure data is up to date
   Future<void> _checkAndSyncPgeSites() async {
+    if (!backgroundSyncEnabled) {
+      LoggingService.info('AppInitializationService: Background sync disabled, skipping');
+      return;
+    }
+
     try {
       // Check if data exists first
       final hasData = await PgeSitesDatabaseService.instance.isDataAvailable();

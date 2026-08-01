@@ -72,7 +72,15 @@ class SiteMatchingService {
   /// client into offline mode and every remaining flight became "Unknown"
   /// despite the site sitting in the local database all along.
   ///
-  /// Returns null if no site found within maxDistance (meters)
+  /// [maxDistance] (meters) bounds the flight-log tier and the network API tier.
+  /// The PGE tier deliberately does not honour it and always searches
+  /// [localSiteSearchRadius]: a PGE pin sits at the site's reference point,
+  /// which can be well over a kilometre from where a flight actually left the
+  /// hill, so a tight radius there would miss the very site the caller wants and
+  /// fall through to the network. A caller needing a tight PGE radius wants a
+  /// different query, not a smaller [maxDistance].
+  ///
+  /// Returns null if no site is found.
   Future<ParaglidingSite?> findNearestSite(
     double latitude,
     double longitude, {
@@ -92,7 +100,8 @@ class SiteMatchingService {
       return localSite;
     }
 
-    // Then the bundled PGE database - offline, and covers ~11k sites
+    // Then the bundled PGE database - offline, and covers ~11k sites.
+    // localSiteSearchRadius rather than maxDistance on purpose; see the doc above.
     final pgeSite = await PgeSitesDatabaseService.instance.findNearestSite(
       latitude: latitude,
       longitude: longitude,
