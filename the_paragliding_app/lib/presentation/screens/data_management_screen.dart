@@ -832,6 +832,74 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
     }
   }
 
+  /// Re-run site matching for flights stuck on an "Unknown" site.
+  ///
+  /// Imports that ran while the site API was unreachable recorded "Unknown"
+  /// even where the bundled site database had the launch - this repairs those
+  /// without re-importing.
+  Future<void> _rematchUnknownSites() async {
+    final confirmed = await _showConfirmationDialog(
+      'Re-match Unknown Sites',
+      'This looks up every flight currently on an "Unknown" site and moves it '
+      'to the real site where one can be found nearby.\n\n'
+      'Your flights and IGC files are not modified - only which site they are '
+      'linked to.\n\n'
+      'Continue?',
+      confirmButtonText: 'Re-match',
+    );
+
+    if (!confirmed) {
+      LoggingService.action('DataManagement', 'rematch_sites_cancelled');
+      return;
+    }
+
+    LoggingService.action('DataManagement', 'rematch_sites_confirmed');
+    final stopwatch = Stopwatch()..start();
+
+    _showProgressDialog('Re-matching sites...', '', 0, 0);
+
+    try {
+      final result = await DatabaseResetHelper.rematchUnknownSites(
+        onProgress: (current, total) {
+          if (mounted) {
+            Navigator.of(context).pop();
+            _showProgressDialog('Re-matching sites...', '', current, total);
+          }
+        },
+      );
+
+      if (mounted) Navigator.of(context).pop();
+
+      LoggingService.performance(
+          'Re-match unknown sites', stopwatch.elapsed, 'site re-match completed');
+
+      if (result['success']) {
+        setState(() {
+          _dataModified = true;
+        });
+
+        final matches = result['matches'] as List<String>? ?? [];
+        String message = result['message'];
+        if (matches.isNotEmpty) {
+          final shown = matches.take(10).join('\n');
+          final more = matches.length > 10
+              ? '\n... and ${matches.length - 10} more'
+              : '';
+          message += '\n\n$shown$more';
+        }
+
+        _showSuccessDialog('Re-match Complete', message);
+        await _loadDatabaseStats();
+      } else {
+        _showErrorDialog('Re-match Failed', result['message']);
+      }
+    } catch (e, stackTrace) {
+      if (mounted) Navigator.of(context).pop();
+      LoggingService.error('DataManagementScreen: Failed to re-match sites', e, stackTrace);
+      _showErrorDialog('Error', 'Failed to re-match sites: $e');
+    }
+  }
+
   Future<void> _recreateDatabaseFromIGC() async {
     // Show confirmation dialog
     final confirmed = await _showConfirmationDialog(
@@ -1681,6 +1749,21 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                                   onPressed: _recreateDatabaseFromIGC,
                                   icon: const Icon(Icons.restore),
                                   label: const Text('Recreate from IGC Files'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.blue,
+                                  ),
+                                ),
+                              ),
+
+                              const SizedBox(height: 8),
+
+                              // Re-match unknown sites button
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: _rematchUnknownSites,
+                                  icon: const Icon(Icons.place),
+                                  label: const Text('Re-match Unknown Sites'),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: Colors.blue,
                                   ),

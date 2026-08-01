@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart';
 import '../data/models/paragliding_site.dart';
@@ -53,8 +54,17 @@ class ParaglidingEarthApi {
   // Offline status tracking
   static bool _isOfflineMode = false;
   static DateTime? _lastSuccessfulRequest;
+  static DateTime? _offlineModeEnteredAt;
   static int _consecutiveFailures = 0;
   static const int _maxConsecutiveFailures = 3;
+
+  /// How long offline mode blocks requests before one is allowed through.
+  ///
+  /// Without this the breaker never reopens: it only clears on a successful
+  /// request, and no request is attempted while it is closed. A short network
+  /// outage partway through a bulk import used to leave every remaining flight
+  /// unmatched for the rest of the session.
+  static const Duration _offlineModeCooldown = Duration(minutes: 2);
 
   // Simple cache management methods
   void _cleanupCache() {
@@ -112,8 +122,8 @@ class ParaglidingEarthApi {
     bool detailed = false, // Default to basic data for faster loading
   }) async {
     
-    // Check if we're in offline mode
-    if (_isOfflineMode) {
+    // Check if we're in offline mode (lets one request through after cooldown)
+    if (_shouldSkipRequest()) {
       LoggingService.warning('ParaglidingEarthApi: No data available in offline mode');
       return [];
     }
@@ -686,21 +696,58 @@ class ParaglidingEarthApi {
     _lastSuccessfulRequest = DateTime.now();
     if (_isOfflineMode) {
       _isOfflineMode = false;
+      _offlineModeEnteredAt = null;
       LoggingService.info('ParaglidingEarthApi: Back online after successful request');
     }
   }
-  
+
   /// Mark failed API request and check if we should enter offline mode
   static void _markRequestFailure() {
     _consecutiveFailures++;
     if (_consecutiveFailures >= _maxConsecutiveFailures && !_isOfflineMode) {
       _isOfflineMode = true;
+      _offlineModeEnteredAt = DateTime.now();
       LoggingService.warning('ParaglidingEarthApi: Entering offline mode after $_consecutiveFailures consecutive failures');
     }
   }
-  
+
+  /// Whether requests should currently be short-circuited.
+  ///
+  /// Once the cooldown has elapsed one request is let through; it either
+  /// succeeds (clearing offline mode) or fails (restarting the cooldown).
+  static bool _shouldSkipRequest() {
+    if (!_isOfflineMode) return false;
+
+    final enteredAt = _offlineModeEnteredAt;
+    if (enteredAt != null &&
+        DateTime.now().difference(enteredAt) >= _offlineModeCooldown) {
+      LoggingService.info(
+          'ParaglidingEarthApi: Offline cooldown elapsed - retrying');
+      _offlineModeEnteredAt = DateTime.now(); // Restart the window
+      _consecutiveFailures = 0;
+      return false;
+    }
+
+    return true;
+  }
+
   /// Check if API is currently in offline mode
   static bool get isOfflineMode => _isOfflineMode;
+
+  /// Drive the breaker directly - the HTTP client is not injectable, so this is
+  /// how the cooldown behaviour is covered without a network call.
+  @visibleForTesting
+  static void debugSetOfflineMode({required bool offline, DateTime? enteredAt}) {
+    _isOfflineMode = offline;
+    _offlineModeEnteredAt = offline ? (enteredAt ?? DateTime.now()) : null;
+    _consecutiveFailures = offline ? _maxConsecutiveFailures : 0;
+  }
+
+  @visibleForTesting
+  static Duration get offlineModeCooldown => _offlineModeCooldown;
+
+  @visibleForTesting
+  static bool debugShouldSkipRequest() => _shouldSkipRequest();
   
   /// Get offline status information
   static Map<String, dynamic> getOfflineStatus() {
