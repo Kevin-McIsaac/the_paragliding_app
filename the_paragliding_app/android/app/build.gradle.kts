@@ -97,6 +97,12 @@ android {
 
     buildTypes {
         debug {
+            // Install alongside the production app instead of replacing it. Debug builds are
+            // signed with the debug keystore, so without this they collide with a Play Store
+            // install (INSTALL_FAILED_UPDATE_INCOMPATIBLE) and Flutter uninstalls it -- taking
+            // the flight database with it.
+            applicationIdSuffix = ".debug"
+
             // Speed up debug builds
             isMinifyEnabled = false
             isShrinkResources = false
