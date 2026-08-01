@@ -33,6 +33,7 @@ import '../../utils/map_provider.dart';
 import '../../services/openaip_service.dart';
 import '../../services/database_service.dart';
 import '../../services/pge_sites_database_service.dart';
+import '../../services/app_initialization_service.dart';
 
 /// Loading states for different operations
 enum LoadingOperation {
@@ -988,6 +989,10 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
 
     try {
       final stopwatch = Stopwatch()..start();
+
+      // This screen is the first consumer of the PGE sites database, so the
+      // download/import is triggered here rather than at app startup
+      await AppInitializationService.instance.initializeInBackground();
 
       // Start location request in background - don't wait for it
       _updateUserLocation();

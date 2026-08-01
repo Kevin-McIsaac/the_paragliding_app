@@ -11,18 +11,30 @@ class AppInitializationService {
   static final AppInitializationService instance = AppInitializationService._();
   AppInitializationService._();
 
-  bool _isInitializing = false;
   bool _isInitialized = false;
+  Future<void>? _initialization;
+  Future<void>? _tableCreation;
 
-  /// Check and perform necessary initialization tasks
-  /// This runs in background and doesn't block the app
-  Future<void> initializeInBackground() async {
-    if (_isInitializing || _isInitialized) {
-      return; // Already initializing or done
+  /// Create the PGE tables if they are missing - cheap DDL, safe to await at
+  /// startup. Keeps queries from failing with "no such table: pge_sites"
+  /// before the (deferred) data import has run.
+  Future<void> ensureTables() {
+    return _tableCreation ??= PgeSitesDatabaseService.instance.initializeTables();
+  }
+
+  /// Download and import the PGE sites database, then sync.
+  ///
+  /// Deferred until something actually needs the data (the Sites map) - the
+  /// import is ~11k rows and used to block app startup. Concurrent callers
+  /// share one run and await the same future.
+  Future<void> initializeInBackground() {
+    if (_isInitialized) {
+      return Future.value();
     }
+    return _initialization ??= _initialize();
+  }
 
-    _isInitializing = true;
-
+  Future<void> _initialize() async {
     try {
       LoggingService.info('AppInitializationService: Starting background initialization');
 
@@ -36,16 +48,15 @@ class AppInitializationService {
       LoggingService.info('AppInitializationService: Background initialization complete');
     } catch (e) {
       LoggingService.error('AppInitializationService: Background initialization failed', e);
-    } finally {
-      _isInitializing = false;
+      _initialization = null; // Allow a retry on the next request
     }
   }
 
   /// Check if PGE sites need to be downloaded and do it in background
   Future<void> _checkAndDownloadPgeSites() async {
     try {
-      // Initialize PGE sites tables
-      await PgeSitesDatabaseService.instance.initializeTables();
+      // Tables may already exist from ensureTables() at startup
+      await ensureTables();
 
       // Check if data exists
       final hasData = await PgeSitesDatabaseService.instance.isDataAvailable();
@@ -153,5 +164,5 @@ class AppInitializationService {
 
   /// Get initialization status
   bool get isInitialized => _isInitialized;
-  bool get isInitializing => _isInitializing;
+  bool get isInitializing => _initialization != null && !_isInitialized;
 }

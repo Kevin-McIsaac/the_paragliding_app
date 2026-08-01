@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'package:async/async.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -11,6 +12,10 @@ import '../../config/cesium_config.dart';
 import '../screens/data_management_screen.dart';
 
 class Cesium3DMapInAppWebView extends StatefulWidget {
+  /// flutter_inappwebview only ships Android and iOS implementations, so the
+  /// 3D map cannot render on desktop (used for the Linux dev loop).
+  static bool get isSupportedPlatform => Platform.isAndroid || Platform.isIOS;
+
   final double? initialLat;
   final double? initialLon;
   final double? initialAltitude;
@@ -77,6 +82,13 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   @override
   void initState() {
     super.initState();
+
+    // Nothing to set up when the WebView plugin is unavailable (desktop)
+    if (!Cesium3DMapInAppWebView.isSupportedPlatform) {
+      LoggingService.info('Cesium3D: 3D map unavailable on ${Platform.operatingSystem}');
+      return;
+    }
+
     // Add lifecycle observer for proper resource management
     WidgetsBinding.instance.addObserver(this);
     
@@ -152,7 +164,45 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
-    
+
+    // Desktop has no WebView implementation - show a placeholder instead of
+    // crashing with MissingPluginException
+    if (!Cesium3DMapInAppWebView.isSupportedPlatform) {
+      return Center(
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.threed_rotation,
+                size: 64,
+                color: Colors.grey.shade600,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '3D Map Not Available',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey.shade800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'The 3D map requires Android or iOS.\nUse the 2D map on desktop.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     // Show offline message if no internet
     if (!_hasInternet) {
       return Center(

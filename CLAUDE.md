@@ -5,10 +5,37 @@
 - **NEVER use `print()` statements** - Use `LoggingService` instead
 - **ALL flight data** must go through `FlightTrackLoader.loadFlightTrack()`
 - **All track data is zero-based and trimmed** when received from FlightTrackLoader
-- **ALWAYS Use free maps in development, test on emulator by default**
+- **ALWAYS Use free maps in development. Test on Linux desktop by default; emulator/device only for 3D**
 - **ALWAYS Run `flutter analyze` and fix errors after complex, multi-file changes**
 
 ## 🚀 Essential Commands
+
+### Linux Desktop Loop (default - no emulator needed)
+
+```bash
+# WORKING DIRECTORY: /home/kmcisaac/Projects/the_paragliding_app (repo root)
+bin/dev_run.sh                # Run on Linux desktop, seeded from dev_data/igc
+bin/dev_run.sh --reset        # Wipe dev database + documents first, then re-seed
+bin/dev_run.sh --profile      # Profile build - real timings, no hot reload
+bin/dev_run.sh -d chrome      # Same, on another device
+
+bin/dev_reload.sh             # Hot reload  (SIGUSR1 via dev_data/flutter.pid)
+bin/dev_reload.sh R           # Hot restart (SIGUSR2) - needed for main()/initState changes
+```
+
+Hot reload also works with the standard `r` / `R` keys if you started it in a
+terminal; `bin/dev_reload.sh` is for when the app was started in the background.
+
+- **Test data**: drop ~10 real `.igc` files into `dev_data/igc/` (gitignored - real coordinates).
+  They import on first launch only; `--reset` starts over. Seeding is driven by
+  `--dart-define=SEED_IGC_DIR=...` and handled by `lib/utils/dev_seed.dart` (never runs in release).
+- **App state** (database + IGC copies) lives in `dev_data/app_documents/`, redirected
+  there via `XDG_DOCUMENTS_DIR`. It persists across runs — the seeder only imports when
+  the flights table is empty, so relaunching keeps your data. Use `--reset` to start clean.
+- **Limitation**: `flutter_inappwebview` has no Linux implementation, so the 3D map screens
+  show a "3D Map Not Available" placeholder. Use an Android device/emulator for 3D work.
+
+### Android Loop (emulator/device - required for 3D)
 
 ```bash
 # WORKING DIRECTORY: /home/kmcisaac/Projects/the_paragliding_app/the_paragliding_app
@@ -20,6 +47,9 @@ flutter_controller_enhanced logs 50    # Recent logs (prefer over bash output)
 flutter_controller_enhanced screenshot # Take screenshot (alias: ss)
 flutter_controller_enhanced q          # Quit app
 ```
+
+Defaults to `emulator-5554`; pass `-d <device>` for anything else. Its `screenshot`
+command shells out to adb, so it only works on Android targets.
 
 ### Test & Quality Commands
 

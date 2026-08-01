@@ -7,7 +7,8 @@ on:
   workflow_dispatch: # Allow manual trigger
 
 env:
-  FLUTTER_VERSION: "3.24.5"
+  # Must ship Dart >= 3.8.1 to satisfy the pubspec SDK constraint
+  FLUTTER_VERSION: "3.41.6"
 
 jobs:
   build-android:
@@ -23,6 +24,13 @@ jobs:
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
+
+      - name: Create .env
+        # .env is gitignored but declared as an asset in pubspec.yaml, so the
+        # bundle cannot build without it. Real keys come from --dart-define below.
+        run: |
+          cd the_paragliding_app
+          cp .env.example .env
 
       - name: Get dependencies
         run: |
@@ -63,6 +71,13 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
 
+      - name: Create .env
+        # .env is gitignored but declared as an asset in pubspec.yaml, so the
+        # bundle cannot build without it. Real keys come from --dart-define below.
+        run: |
+          cd the_paragliding_app
+          cp .env.example .env
+
       - name: Get dependencies
         run: |
           cd the_paragliding_app
@@ -101,6 +116,13 @@ jobs:
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
+
+      - name: Create .env
+        # .env is gitignored but declared as an asset in pubspec.yaml, so the
+        # bundle cannot build without it. Real keys come from --dart-define below.
+        run: |
+          cd the_paragliding_app
+          cp .env.example .env
 
       - name: Get dependencies
         run: |

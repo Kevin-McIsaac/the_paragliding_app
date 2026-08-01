@@ -19,7 +19,9 @@ class LoggingService {
 
   // Claude-optimized logger with enhanced readability and navigation
   static final Logger _logger = Logger(
-    level: kDebugMode ? Level.debug : Level.warning,
+    // Profile builds are used for performance measurement, so they need the
+    // same [P]/[D] output as debug - only release stays quiet
+    level: kReleaseMode ? Level.warning : Level.debug,
     printer: ClaudeLogPrinter(), // Always use Claude-optimized format
   );
 
@@ -260,7 +262,7 @@ class LoggingService {
   /// Log structured data with key-value pairs for better Claude parsing
   static void structured(String category, Map<String, dynamic> data) {
     // Skip expensive operations in production for non-critical logs
-    if (!kDebugMode && _isNonCriticalStructuredLog(category)) {
+    if (kReleaseMode && _isNonCriticalStructuredLog(category)) {
       return;
     }
 
@@ -273,7 +275,7 @@ class LoggingService {
   /// Lazy evaluation version of structured logging - only builds data if logging enabled
   static void structuredLazy(String category, Map<String, dynamic> Function() dataBuilder) {
     // Skip expensive operations in production for non-critical logs
-    if (!kDebugMode && _isNonCriticalStructuredLog(category)) {
+    if (kReleaseMode && _isNonCriticalStructuredLog(category)) {
       return;
     }
 

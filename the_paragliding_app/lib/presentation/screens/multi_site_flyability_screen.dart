@@ -305,13 +305,11 @@ class MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> wi
   }
 
   Future<Position> _getCurrentPosition() async {
-    final position = await LocationService.instance.getCurrentPosition();
-
-    if (position == null) {
-      throw Exception('Unable to get current location');
-    }
-
-    return position;
+    // Same fallback hierarchy the Sites screen uses (cached -> persistent ->
+    // first flown site -> Perth). getCurrentPosition() returns null wherever
+    // there is no GPS, which used to only work because the Sites screen had
+    // already warmed the cache during startup.
+    return LocationService.instance.getLastKnownOrDefault();
   }
 
   Future<List<ParaglidingSite>> _loadSitesNearPosition(Position position) async {
