@@ -52,7 +52,9 @@ fun getKeystoreProperties(): Properties? {
 android {
     namespace = "com.theparaglidingapp"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = "27.0.12077973"
+    // Highest version required by any plugin (integration_test). NDK releases are
+    // backward compatible, so this satisfies the plugins that ask for less.
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
