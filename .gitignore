@@ -20,5 +20,8 @@ upload-cert*.pem
 # Claude Code transient scheduler lock
 .claude/scheduled_tasks.lock
 
+# Claude Code worktrees - disposable per-task checkouts
+.claude/worktrees/
+
 # Local dev fixtures (real IGC tracks) and desktop app state - never commit
 dev_data/

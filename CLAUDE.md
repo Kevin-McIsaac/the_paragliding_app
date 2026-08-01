@@ -561,6 +561,15 @@ All API calls generate structured logs:
 
 ## 🚀 Development Workflow (Claude-Optimized)
 
+### Worktrees
+
+Do feature and bugfix work in a git worktree, one per task, branched from `origin/main`.
+They live in `.claude/worktrees/` (gitignored) and are removed once the work merges.
+
+A fresh worktree has no `.dart_tool/`, no `build/`, and no `dev_data/` — run
+`flutter pub get` in `the_paragliding_app/` after creating one, and copy or re-seed
+`dev_data/igc` if the task needs the app to actually run.
+
 ### Standard Development Process
 
 1. **Start**: `flutter_controller_enhanced run` from correct directory
