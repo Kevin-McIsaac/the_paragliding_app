@@ -751,6 +751,11 @@ class ParaglidingEarthApi {
   }
 
   /// Let one request through and restart the cooldown window.
+  ///
+  /// The window restarts now, when the request is released - not when its result
+  /// comes back. A slow retry that then fails therefore leaves less than a full
+  /// cooldown before the next attempt. Harmless at this scale, but it matters if
+  /// the duration is ever tuned precisely.
   static void _reopenBreaker() {
     LoggingService.info(
         'ParaglidingEarthApi: Offline cooldown elapsed - retrying');

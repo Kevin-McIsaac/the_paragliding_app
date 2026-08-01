@@ -12,10 +12,15 @@ class IgcParser {
   /// IGC_MALFORMED_RECORDS summary rather than once per bad record. Reset at
   /// the start of every parse.
   ///
-  /// Per-instance, not per-parse: safe because every caller creates an
-  /// `IgcParser` and parses one file to completion before the next. Sharing an
-  /// instance across concurrent parses would cross the wires - give each parse
-  /// its own instance rather than reaching for a lock.
+  /// Per-instance, not per-parse - and instances *are* shared and long-lived
+  /// (`FlightTrackLoader._parser` is static, `IgcImportService.parser` is a
+  /// field). What makes it safe is that [_parseLines] is synchronous: with no
+  /// `await` inside, a parse runs to completion without yielding, so no second
+  /// parse can interleave.
+  ///
+  /// Adding an `await` to [_parseLines] - chunked reading of a large file, say -
+  /// would break that silently, crossing malformed-record diagnostics between
+  /// concurrent parses. Give each parse its own [IgcParser] if that happens.
   Object? _firstBRecordError;
   /// Parse IGC file from file path
   Future<IgcFile> parseFile(String filePath) async {
