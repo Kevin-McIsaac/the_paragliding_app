@@ -58,6 +58,12 @@ class SiteMatchingService {
   /// two 180-flight logs at this radius changed none of them.
   static const double localSiteSearchRadius = 2000;
 
+  /// How close two same-named sites must be for [cacheSite] to treat them as the
+  /// same entry rather than neighbours. Deliberately tiny: callers pass the
+  /// canonical database row, so the coordinates are identical every time and this
+  /// is an exact-match check, not a proximity one.
+  static const double _exactMatchToleranceMeters = 1.0;
+
   /// Find the nearest paragliding launch site to given coordinates
   ///
   /// Sources in order: the user's flight log, the bundled PGE site database,
@@ -356,7 +362,8 @@ class SiteMatchingService {
     final candidate = site.toParaglidingSite();
     final alreadyCached = _sites!.any((cached) =>
         cached.name == candidate.name &&
-        cached.distanceTo(candidate.latitude, candidate.longitude) < 1.0);
+        cached.distanceTo(candidate.latitude, candidate.longitude) <
+            _exactMatchToleranceMeters);
 
     if (!alreadyCached) {
       _sites!.add(candidate);
