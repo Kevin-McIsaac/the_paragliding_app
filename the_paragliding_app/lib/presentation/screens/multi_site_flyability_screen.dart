@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/wind_data.dart';
 import '../../data/models/wind_forecast.dart';
+import '../../services/app_initialization_service.dart';
 import '../../services/database_service.dart';
 import '../../services/pge_sites_database_service.dart';
 import '../../services/location_service.dart';
@@ -176,6 +177,11 @@ class MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> wi
     });
 
     try {
+      // This screen reads the PGE sites database directly, so it must trigger the
+      // deferred import itself - the Sites tab is not guaranteed to have run when
+      // the app restores straight into Forecast. Idempotent; shares one in-flight run.
+      await AppInitializationService.instance.initializeInBackground();
+
       // Load sites based on selection mode
       final sites = await _loadSites();
 
