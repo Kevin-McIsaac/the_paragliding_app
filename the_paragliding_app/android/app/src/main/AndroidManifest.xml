@@ -9,7 +9,7 @@
     <!-- No storage permissions needed - file_picker uses Storage Access Framework (SAF) -->
 
     <application
-        android:label="The Paragliding App"
+        android:label="@string/app_name"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon"
         android:largeHeap="true"

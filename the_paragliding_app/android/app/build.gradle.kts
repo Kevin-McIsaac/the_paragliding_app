@@ -90,6 +90,10 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         
+        // Launcher name. Defined here rather than only in debug so the profile
+        // build type inherits it - the manifest references @string/app_name.
+        resValue("string", "app_name", "The Paragliding App")
+
         // Pass git commit hash and branch to Flutter
         buildConfigField("String", "GIT_COMMIT", "\"${getGitCommitHash()}\"")
         buildConfigField("String", "GIT_BRANCH", "\"${getGitBranchName()}\"")
@@ -102,6 +106,10 @@ android {
             // install (INSTALL_FAILED_UPDATE_INCOMPATIBLE) and Flutter uninstalls it -- taking
             // the flight database with it.
             applicationIdSuffix = ".debug"
+
+            // Both installs otherwise show the same launcher name, making them
+            // indistinguishable in the app list and in Settings > Apps.
+            resValue("string", "app_name", "Paragliding App (debug)")
 
             // Speed up debug builds
             isMinifyEnabled = false

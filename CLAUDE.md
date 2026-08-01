@@ -37,19 +37,45 @@ terminal; `bin/dev_reload.sh` is for when the app was started in the background.
 
 ### Android Loop (emulator/device - required for 3D)
 
+The script lives at `bin/flutter_controller_enhanced` and is **not on `PATH`** - invoke it
+by path. It takes the Flutter project directory from the shell's cwd, so it must be run
+from `the_paragliding_app/` or it fails with `No pubspec.yaml file found`.
+
 ```bash
 # WORKING DIRECTORY: /home/kmcisaac/Projects/the_paragliding_app/the_paragliding_app
-flutter_controller_enhanced run        # Start app with logging. ALWAYS run in background
-flutter_controller_enhanced r          # Hot reload with readiness check (most used)
-flutter_controller_enhanced R          # Hot restart with readiness check (for state issues)
-flutter_controller_enhanced status     # Check app status with enhanced health info
-flutter_controller_enhanced logs 50    # Recent logs (prefer over bash output)
-flutter_controller_enhanced screenshot # Take screenshot (alias: ss)
-flutter_controller_enhanced q          # Quit app
+../bin/flutter_controller_enhanced run # Start app with logging. ALWAYS run in background
+../bin/flutter_controller_enhanced r    # Hot reload with readiness check (most used)
+../bin/flutter_controller_enhanced R    # Hot restart with readiness check (for state issues)
+../bin/flutter_controller_enhanced status     # Check app status with enhanced health info
+../bin/flutter_controller_enhanced logs 50    # Recent logs (prefer over bash output)
+../bin/flutter_controller_enhanced screenshot # Take screenshot (alias: ss)
+../bin/flutter_controller_enhanced q    # Quit app
 ```
 
 Defaults to `emulator-5554`; pass `-d <device>` for anything else. Its `screenshot`
 command shells out to adb, so it only works on Android targets.
+
+Debug builds install as `com.theparaglidingapp.debug` with the launcher name
+"Paragliding App (debug)", so they sit alongside a Play Store install instead of
+replacing it. Without that suffix the debug keystore clashes with the release
+signature (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`) and Flutter silently uninstalls the
+production app, taking its flight database with it.
+
+#### Wireless debugging (physical device)
+
+```bash
+# On the phone: Settings > System > Developer options > Wireless debugging
+adb pair <ip>:<pairing-port> <6-digit-code>   # "Pair device with pairing code" dialog
+adb connect <ip>:<connect-port>               # DIFFERENT port, on the main screen
+adb devices -l                                # confirm, then use -d <id>
+```
+
+The pairing port and the connect port are different - mixing them up is the usual
+failure. Pairing is permanent; re-run only `adb connect` in later sessions. A stale
+pairing dialog leaves its port listening but dead, which surfaces as
+`error: protocol fault (couldn't read status message)` - reopen the dialog for a fresh
+port and code. `adb mdns services` returns nothing from a Crostini container (multicast
+does not cross the NAT), so always use an explicit `IP:port`.
 
 ### Test & Quality Commands
 
@@ -398,7 +424,10 @@ setState(() {}); // In build() method - causes infinite rebuilds
 
 ### Schema Change Process
 
-1. Clear app data: Settings → Apps → The Paragliding App → Storage → Clear Data
+1. Clear app data: Settings → Apps → **Paragliding App (debug)** → Storage → Clear Data.
+   Pick the "(debug)" entry - a production install may sit next to it under
+   "The Paragliding App", and clearing that one destroys real flight data.
+   On Linux desktop use `bin/dev_run.sh --reset` instead.
 2. Hot restart app to recreate database
 3. Re-import test data
 
