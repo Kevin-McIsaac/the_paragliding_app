@@ -12,10 +12,12 @@ import 'helpers/test_helpers.dart';
 /// `.dart_tool/sqflite_common_ffi/databases/FlightLog.db`, and test files that
 /// `flutter test` runs concurrently cannot see each other's data.
 Future<void> testExecutable(FutureOr<void> Function() testMain) async {
-  // SiteMatchingService.initialize()/reload() reaches the incremental PGE sync,
-  // which is a live HTTP call. No test should depend on - or be slowed and
-  // destabilised by - a background network request it never asked for.
-  AppInitializationService.backgroundSyncEnabled = false;
+  // SiteMatchingService.initialize()/reload() reaches deferred background
+  // initialization: a rootBundle asset import that cannot work without a Flutter
+  // binding, and a live HTTP sync. Neither can succeed here, and the failing
+  // import took long enough to time out unrelated test files. Tests that need
+  // PGE rows seed them directly.
+  AppInitializationService.backgroundInitEnabled = false;
 
   await TestHelpers.initializeDatabaseForTesting();
   tearDownAll(TestHelpers.cleanupDatabaseForTesting);

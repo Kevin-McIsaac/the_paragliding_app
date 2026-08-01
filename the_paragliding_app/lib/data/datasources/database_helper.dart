@@ -542,7 +542,12 @@ class DatabaseHelper {
   }
 
   Future<void> close() async {
-    final db = await database;
-    db.close();
+    final db = _database;
+    if (db == null) return;
+    // Clear the field before awaiting: the getter must not hand out a handle
+    // that is mid-close, and leaving it set meant every later call returned a
+    // closed database ("Bad state: This database has already been closed").
+    _database = null;
+    await db.close();
   }
 }

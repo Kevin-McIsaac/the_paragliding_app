@@ -81,11 +81,18 @@ does not cross the NAT), so always use an explicit `IP:port`.
 
 ```bash
 flutter analyze                       # Check for errors (run after complex, mult-file change)
-flutter test                          # Run all tests
+flutter test --concurrency=1          # Run all tests (see note below - plain `flutter test` is flaky)
 flutter test test/specific_test.dart  # Run specific test
+flutter test --tags network --run-skipped  # Live-API tests, skipped by default
 flutter_controller_enhanced cleanup   # Clean up processes if stuck
 flutter_controller_enhanced health    # Check process/pipe/readiness status
 ```
+
+**Always pass `--concurrency=1`.** The database-heavy test files each open sqlite, seed
+249 country codes and build indexes; run in parallel they contend enough to blow the 30s
+default timeout and fail together in about a third of runs, always with
+`TimeoutException` rather than a real assertion. This cannot be set in `dart_test.yaml` -
+`flutter test` always passes its own `-j` and overrides the file. CI does it in `ci.yml`.
 
 ## 📁 Key Files (Most Accessed)
 
@@ -139,6 +146,8 @@ lib/
 | Track data empty | Direct IGC parsing | Use `FlightTrackLoader.loadFlightTrack()` |
 | State not updating | Widget not rebuilding | Check `setState()` calls |
 | Database locked | Concurrent operations | Use `DatabaseService` methods |
+| Tests fail with `TimeoutException` | Parallel test files contend | Run `flutter test --concurrency=1` |
+| Test hits the network | Live-API test not tagged | Tag it `network`; it is skipped by default |
 | Hot reload fails | State corruption | Use `R` (hot restart) instead of `r` |
 | App won't start | Process still running | Run `flutter_controller_enhanced cleanup` |
 | Commands unresponsive | Pipe/readiness issues | Run `flutter_controller_enhanced health` |

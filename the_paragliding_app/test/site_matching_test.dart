@@ -1,3 +1,16 @@
+/// Integration tests against the live ParaglidingEarth API.
+///
+/// Tagged `network` and skipped by default (see `dart_test.yaml`): these call a
+/// third-party service and assert exact site names, so they are slow and fail
+/// for reasons that have nothing to do with this repo. Worse, while one of them
+/// stalls it holds a concurrency slot for the better part of a minute, which
+/// pushed unrelated test files past the 30s default timeout and made the whole
+/// suite intermittently red.
+///
+/// Run them deliberately:  flutter test --tags network --run-skipped
+@Tags(['network'])
+library;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:the_paragliding_app/services/site_matching_service.dart';
 import 'helpers/test_helpers.dart';

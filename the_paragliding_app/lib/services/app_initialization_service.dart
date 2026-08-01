@@ -11,14 +11,21 @@ class AppInitializationService {
   static final AppInitializationService instance = AppInitializationService._();
   AppInitializationService._();
 
-  /// Whether the incremental PGE sync may run.
+  /// Whether deferred background initialization may run.
   ///
-  /// The sync is a live HTTP call to paraglidingearth.com, and it is reached
-  /// transitively from `SiteMatchingService.initialize()`/`reload()` - so any
-  /// test touching site matching fired a real background request, including the
-  /// ones documented as staying offline. Tests turn this off in
-  /// `flutter_test_config.dart`; production never changes it.
-  static bool backgroundSyncEnabled = true;
+  /// Reached transitively from `SiteMatchingService.initialize()`/`reload()`, so
+  /// any test touching site matching triggered all of it. Neither half belongs
+  /// in a test run:
+  ///
+  /// - the bundled-CSV import loads an asset through `rootBundle`, which cannot
+  ///   work without a Flutter binding - it fails with "Binding has not yet been
+  ///   initialized" after burning about a minute, long enough to push unrelated
+  ///   test files past the 30s default timeout
+  /// - the incremental sync is a live HTTP call to paraglidingearth.com
+  ///
+  /// Tests turn this off in `flutter_test_config.dart` and seed `pge_sites`
+  /// directly where they need it. Production never changes it.
+  static bool backgroundInitEnabled = true;
 
   bool _isInitialized = false;
   Future<void>? _initialization;
@@ -52,6 +59,9 @@ class AppInitializationService {
   /// import is ~11k rows and used to block app startup. Concurrent callers
   /// share one run and await the same future.
   Future<void> initializeInBackground() {
+    if (!backgroundInitEnabled) {
+      return Future.value();
+    }
     if (_isInitialized) {
       return Future.value();
     }
@@ -133,11 +143,6 @@ class AppInitializationService {
   /// Check if PGE sites need incremental sync and perform it in background
   /// Syncs on every app load to ensure data is up to date
   Future<void> _checkAndSyncPgeSites() async {
-    if (!backgroundSyncEnabled) {
-      LoggingService.info('AppInitializationService: Background sync disabled, skipping');
-      return;
-    }
-
     try {
       // Check if data exists first
       final hasData = await PgeSitesDatabaseService.instance.isDataAvailable();

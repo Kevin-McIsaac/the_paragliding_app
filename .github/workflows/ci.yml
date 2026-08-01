@@ -42,7 +42,12 @@ jobs:
         run: flutter analyze
 
       - name: Test
-        run: flutter test
+        # --concurrency=1: the database-heavy test files contend when run in
+        # parallel and blow the 30s default timeout, failing together in about a
+        # third of runs. Serialised they are stable, and the suite is no slower
+        # overall. This cannot live in dart_test.yaml - flutter test always passes
+        # its own -j and overrides the file.
+        run: flutter test --concurrency=1
 
       - name: Test date ranges in a DST timezone
         # Runners are UTC, which has no DST - date arithmetic that loses a day
@@ -53,4 +58,4 @@ jobs:
         # exposure to that without adding DST coverage.
         env:
           TZ: America/New_York
-        run: flutter test test/date_range_test.dart
+        run: flutter test --concurrency=1 test/date_range_test.dart
