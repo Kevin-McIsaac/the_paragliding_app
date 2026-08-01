@@ -29,11 +29,13 @@ DateTimeRange? dateRangeForPreset(String preset, {DateTime? now}) {
   }
 }
 
-/// Subtract whole days and snap back to midnight.
+/// Subtract whole calendar days.
 ///
-/// Duration arithmetic on local time shifts by an hour across a DST boundary,
-/// which would otherwise push the range start onto the previous day.
+/// Calendar arithmetic rather than Duration arithmetic: a Duration is a fixed
+/// number of hours, so crossing a spring-forward boundary backwards lands on
+/// 23:00 of the *previous* day - snapping that to midnight keeps the wrong day.
+/// DateTime normalises out-of-range day values, so the offset never enters the
+/// calculation at all.
 DateTime _daysBefore(DateTime day, int days) {
-  final shifted = day.subtract(Duration(days: days));
-  return DateTime(shifted.year, shifted.month, shifted.day);
+  return DateTime(day.year, day.month, day.day - days);
 }

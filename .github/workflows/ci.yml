@@ -43,3 +43,14 @@ jobs:
 
       - name: Test
         run: flutter test
+
+      - name: Test date ranges in a DST timezone
+        # Runners are UTC, which has no DST - date arithmetic that loses a day
+        # across a spring-forward boundary passes here and breaks for real users.
+        # Scoped to the date-range tests on purpose: the full suite is currently
+        # flaky under concurrent load (unrelated to timezones - different tests
+        # fail on each run), so running all of it twice would just double CI's
+        # exposure to that without adding DST coverage.
+        env:
+          TZ: America/New_York
+        run: flutter test test/date_range_test.dart
