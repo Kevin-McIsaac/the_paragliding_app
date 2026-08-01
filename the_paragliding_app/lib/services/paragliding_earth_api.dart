@@ -252,6 +252,11 @@ class ParaglidingEarthApi {
     int limit = 50,
     bool detailed = true,
   }) async {
+    if (_shouldSkipRequest()) {
+      LoggingService.warning('ParaglidingEarthApi: Skipping bounds query in offline mode');
+      return [];
+    }
+
     final stopwatch = Stopwatch()..start();
     final timingBreakdown = <String, int>{};
 
@@ -489,6 +494,12 @@ class ParaglidingEarthApi {
         _siteDetailsCacheExpiry[cacheKey]!.isAfter(now)) {
       LoggingService.info('ParaglidingEarthApi: Using cached site details');
       return _siteDetailsCache[cacheKey];
+    }
+
+    // Checked after the cache so an offline breaker still serves what we have
+    if (_shouldSkipRequest()) {
+      LoggingService.warning('ParaglidingEarthApi: Skipping site details in offline mode');
+      return null;
     }
     
     // Clean up expired cache entries occasionally
@@ -785,6 +796,12 @@ class ParaglidingEarthApi {
         _searchResultsCacheExpiry[cacheKey]!.isAfter(now)) {
       LoggingService.info('ParaglidingEarthApi: Using cached search results for: $query');
       return _searchResultsCache[cacheKey]!;
+    }
+
+    // Checked after the cache so an offline breaker still serves what we have
+    if (_shouldSkipRequest()) {
+      LoggingService.warning('ParaglidingEarthApi: Skipping name search in offline mode');
+      return [];
     }
     
     // Clean up expired cache entries occasionally

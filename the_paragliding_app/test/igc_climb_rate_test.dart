@@ -72,6 +72,19 @@ void main() {
           lessThanOrEqualTo(maxRates['maxSink']!));
     });
 
+    test('keeps a sustained sink close to its instantaneous peak', () {
+      final igcFile = buildTestFlight();
+
+      final maxRates = igcFile.calculateClimbRates();
+      final maxRates15Sec = igcFile.calculate15SecondMaxClimbRates();
+
+      // The 12 m/s sink runs for 10s - longer than half the 15s window - so
+      // averaging must not flatten it the way it flattens the short climbs.
+      expect(maxRates['maxSink'], closeTo(12.0, 0.1));
+      expect(maxRates15Sec['maxSink15Sec'], closeTo(12.0, 1.0),
+          reason: 'a sustained sink is the case averaging must preserve');
+    });
+
     test('smooths short climb bursts', () {
       final igcFile = buildTestFlight();
 

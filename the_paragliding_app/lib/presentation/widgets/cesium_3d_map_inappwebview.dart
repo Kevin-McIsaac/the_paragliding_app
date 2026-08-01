@@ -14,7 +14,10 @@ import '../screens/data_management_screen.dart';
 class Cesium3DMapInAppWebView extends StatefulWidget {
   /// flutter_inappwebview only ships Android and iOS implementations, so the
   /// 3D map cannot render on desktop (used for the Linux dev loop).
-  static bool get isSupportedPlatform => Platform.isAndroid || Platform.isIOS;
+  // kIsWeb first: Platform throws on web rather than reporting a platform, so
+  // touching it at all would crash instead of falling back to the placeholder.
+  static bool get isSupportedPlatform =>
+      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
   final double? initialLat;
   final double? initialLon;

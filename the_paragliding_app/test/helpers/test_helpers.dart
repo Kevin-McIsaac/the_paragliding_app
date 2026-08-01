@@ -6,6 +6,7 @@ import 'package:the_paragliding_app/data/models/flight.dart';
 import 'package:the_paragliding_app/data/models/site.dart';
 import 'package:the_paragliding_app/data/models/wing.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:the_paragliding_app/services/logging_service.dart';
 
 /// Test helper utilities for widget testing
 class TestHelpers {
@@ -42,8 +43,12 @@ class TestHelpers {
       if (dir.existsSync()) {
         dir.deleteSync(recursive: true);
       }
-    } catch (_) {
-      // Best effort - a leftover temp directory must never fail a test run.
+    } catch (e) {
+      // Best effort - a leftover temp directory must never fail a test run,
+      // but it should not vanish silently either: repeated runs leaking temp
+      // databases is exactly the kind of thing nobody notices without a signal.
+      LoggingService.warning(
+          'test_helpers: failed to delete temp database dir ${dir.path}: $e');
     }
   }
 
