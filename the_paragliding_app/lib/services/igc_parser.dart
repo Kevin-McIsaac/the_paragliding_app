@@ -7,6 +7,11 @@ import 'logging_service.dart';
 class IgcParser {
   // LRU cache for timezone detection with size limit to prevent memory leaks
   static final _TimezoneCache _timezoneCache = _TimezoneCache();
+
+  /// First exception thrown while parsing a B record, reported once in the
+  /// IGC_MALFORMED_RECORDS summary rather than once per bad record. Reset at
+  /// the start of every parse.
+  Object? _firstBRecordError;
   /// Parse IGC file from file path
   Future<IgcFile> parseFile(String filePath) async {
     final file = File(filePath);
@@ -37,6 +42,7 @@ class IgcParser {
     DateTime? previousTimestamp;
     int bRecordCount = 0;
     int malformedBRecordCount = 0;
+    _firstBRecordError = null;
 
     for (final line in lines) {
       if (line.isEmpty) continue;
@@ -130,6 +136,8 @@ class IgcParser {
         'b_records': bRecordCount,
         'malformed': malformedBRecordCount,
         'kept': trackPoints.length,
+        if (_firstBRecordError != null)
+          'first_error': _firstBRecordError.toString(),
       });
 
       // A few bad records happen; a file that is mostly bad is not a flight.
@@ -403,7 +411,10 @@ class IgcParser {
         isValid: isValid,
       );
     } catch (e) {
-      LoggingService.error('IgcParser: Error parsing B record', e);
+      // Counted by the caller and summarised once in IGC_MALFORMED_RECORDS.
+      // Logging here instead produced one line per bad record, which is the
+      // spam a corrupt file used to bury the real diagnosis under.
+      _firstBRecordError ??= e;
       return null;
     }
   }
