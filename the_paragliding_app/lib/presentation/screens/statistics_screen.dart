@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../utils/date_time_utils.dart';
+import '../../utils/date_range_utils.dart';
 import '../../services/database_service.dart';
 import '../../services/logging_service.dart';
 import '../widgets/common/app_error_state.dart';
@@ -214,45 +215,8 @@ class StatisticsScreenState extends State<StatisticsScreen> {
     });
   }
 
-  DateTimeRange? _getDateRangeForPreset(String preset) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    
-    switch (preset) {
-      case 'all':
-        return null;
-      case 'this_year':
-        return DateTimeRange(
-          start: DateTime(now.year, 1, 1),
-          end: today,
-        );
-      case '12_months':
-        // Use Duration-based calculation for 12 months (approx 365 days)
-        return DateTimeRange(
-          start: today.subtract(const Duration(days: 365)),
-          end: today,
-        );
-      case '6_months':
-        // Use Duration-based calculation for 6 months (approx 183 days)  
-        return DateTimeRange(
-          start: today.subtract(const Duration(days: 183)),
-          end: today,
-        );
-      case '3_months':
-        // Use Duration-based calculation for 3 months (approx 91 days)
-        return DateTimeRange(
-          start: today.subtract(const Duration(days: 91)),
-          end: today,
-        );
-      case '30_days':
-        return DateTimeRange(
-          start: today.subtract(const Duration(days: 30)),
-          end: today,
-        );
-      default:
-        return null;
-    }
-  }
+  DateTimeRange? _getDateRangeForPreset(String preset) =>
+      dateRangeForPreset(preset);
 
   String _getPresetLabel(String preset) {
     switch (preset) {

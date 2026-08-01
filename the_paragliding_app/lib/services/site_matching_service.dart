@@ -3,6 +3,8 @@ import '../data/models/site.dart';
 import 'database_service.dart';
 import '../services/logging_service.dart';
 import 'paragliding_earth_api.dart';
+import 'pge_sites_database_service.dart';
+import 'app_initialization_service.dart';
 
 class SiteMatchingService {
   static SiteMatchingService? _instance;
@@ -21,6 +23,12 @@ class SiteMatchingService {
     if (_isInitialized) return;
 
     try {
+      // The PGE site database is imported lazily (the Sites screen normally
+      // triggers it), but matching needs it - an import on a fresh install
+      // would otherwise fall back to the network for every flight. Idempotent
+      // and offline: the data comes from a bundled CSV.
+      await AppInitializationService.instance.initializeInBackground();
+
       // Load sites that have been used in actual flights
       final usedSites = await _databaseService.getSitesUsedInFlights();
 
@@ -41,11 +49,40 @@ class SiteMatchingService {
     }
   }
 
+  /// Distance for local PGE database lookups.
+  ///
+  /// Wider than the API radius because PGE pins sit at the site's reference
+  /// point, which can be a long way from where a given flight actually left the
+  /// hill - real launches in the flight log range up to ~1.8km from the pin.
+  /// Nearest-wins keeps this safe: re-matching every correctly-named flight in
+  /// two 180-flight logs at this radius changed none of them.
+  static const double localSiteSearchRadius = 2000;
+
+  /// How close two same-named sites must be for [cacheSite] to treat them as the
+  /// same entry rather than neighbours. Deliberately tiny: callers pass the
+  /// canonical database row, so the coordinates are identical every time and this
+  /// is an exact-match check, not a proximity one.
+  static const double _exactMatchToleranceMeters = 1.0;
+
   /// Find the nearest paragliding launch site to given coordinates
-  /// Uses hybrid approach: flight log first for speed, API for enhanced data
-  /// Returns null if no site found within maxDistance (meters)
+  ///
+  /// Sources in order: the user's flight log, the bundled PGE site database,
+  /// then the network API. The local database is tried before the network so a
+  /// bulk import resolves offline - previously a run of API failures put the
+  /// client into offline mode and every remaining flight became "Unknown"
+  /// despite the site sitting in the local database all along.
+  ///
+  /// [maxDistance] (meters) bounds the flight-log tier and the network API tier.
+  /// The PGE tier deliberately does not honour it and always searches
+  /// [localSiteSearchRadius]: a PGE pin sits at the site's reference point,
+  /// which can be well over a kilometre from where a flight actually left the
+  /// hill, so a tight radius there would miss the very site the caller wants and
+  /// fall through to the network. A caller needing a tight PGE radius wants a
+  /// different query, not a smaller [maxDistance].
+  ///
+  /// Returns null if no site is found.
   Future<ParaglidingSite?> findNearestSite(
-    double latitude, 
+    double latitude,
     double longitude, {
     double maxDistance = 500, // 500m default - typical launch site search radius
     String? preferredType, // 'launch' or null for any
@@ -61,6 +98,20 @@ class SiteMatchingService {
         LoggingService.info('SiteMatchingService: Found site in flight log: "${localSite.name}" with country: ${localSite.country}');
       }
       return localSite;
+    }
+
+    // Then the bundled PGE database - offline, and covers ~11k sites.
+    // localSiteSearchRadius rather than maxDistance on purpose; see the doc above.
+    final pgeSite = await PgeSitesDatabaseService.instance.findNearestSite(
+      latitude: latitude,
+      longitude: longitude,
+      maxDistanceKm: localSiteSearchRadius / 1000.0,
+    );
+
+    if (pgeSite != null) {
+      LoggingService.info(
+          'SiteMatchingService: Found site in local PGE database: "${pgeSite.name}"');
+      return pgeSite;
     }
 
     // No local site found, try API for new sites
@@ -83,8 +134,19 @@ class SiteMatchingService {
       }
     }
 
-    // No site found in either local database or API
-    LoggingService.info('SiteMatchingService: No site found within ${maxDistance}m of ${latitude.toStringAsFixed(4)}, ${longitude.toStringAsFixed(4)}');
+    // Nothing anywhere. Record *why* - an unreachable API is not the same as
+    // "there is no site here", and the difference decides whether re-matching
+    // this flight later is worth it.
+    LoggingService.structured('SITE_MATCH_UNRESOLVED', {
+      'reason': !_useApi
+          ? 'api_disabled'
+          : ParaglidingEarthApi.isOfflineMode
+              ? 'api_offline'
+              : 'no_site_found',
+      'latitude': latitude.toStringAsFixed(4),
+      'longitude': longitude.toStringAsFixed(4),
+      'local_radius_m': localSiteSearchRadius,
+    });
     return null;
   }
 
@@ -297,6 +359,25 @@ class SiteMatchingService {
 
   /// Get the number of loaded sites
   int get siteCount => _sites?.length ?? 0;
+
+  /// Add a newly created site to the in-memory list.
+  ///
+  /// Bulk imports create sites as they go, but [reload] only sees sites that
+  /// are already referenced by a saved flight - so without this, every flight
+  /// in a batch re-queries the API for a site the previous flight just created.
+  void cacheSite(Site site) {
+    if (!_isInitialized || _sites == null) return;
+
+    final candidate = site.toParaglidingSite();
+    final alreadyCached = _sites!.any((cached) =>
+        cached.name == candidate.name &&
+        cached.distanceTo(candidate.latitude, candidate.longitude) <
+            _exactMatchToleranceMeters);
+
+    if (!alreadyCached) {
+      _sites!.add(candidate);
+    }
+  }
 
   /// Reload sites from flight log (useful when new flights are added)
   Future<void> reload() async {

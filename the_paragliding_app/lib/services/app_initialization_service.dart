@@ -11,18 +11,64 @@ class AppInitializationService {
   static final AppInitializationService instance = AppInitializationService._();
   AppInitializationService._();
 
-  bool _isInitializing = false;
+  /// Whether deferred background initialization may run.
+  ///
+  /// Reached transitively from `SiteMatchingService.initialize()`/`reload()`, so
+  /// any test touching site matching triggered all of it. Neither half belongs
+  /// in a test run:
+  ///
+  /// - the bundled-CSV import loads an asset through `rootBundle`, which cannot
+  ///   work without a Flutter binding - it fails with "Binding has not yet been
+  ///   initialized" after burning about a minute, long enough to push unrelated
+  ///   test files past the 30s default timeout
+  /// - the incremental sync is a live HTTP call to paraglidingearth.com
+  ///
+  /// Tests turn this off in `flutter_test_config.dart` and seed `pge_sites`
+  /// directly where they need it. Production never changes it.
+  static bool backgroundInitEnabled = true;
+
   bool _isInitialized = false;
+  Future<void>? _initialization;
+  Future<void>? _tableCreation;
 
-  /// Check and perform necessary initialization tasks
-  /// This runs in background and doesn't block the app
-  Future<void> initializeInBackground() async {
-    if (_isInitializing || _isInitialized) {
-      return; // Already initializing or done
+  /// Create the PGE tables if they are missing - cheap DDL, safe to await at
+  /// startup. Keeps queries from failing with "no such table: pge_sites"
+  /// before the (deferred) data import has run.
+  ///
+  /// Failures clear the memo, the same way [_initialize] does. Caching a
+  /// rejected future here would make main.dart's "Retry" button dead: it calls
+  /// straight back into this method and would keep getting the original
+  /// failure, leaving a force-quit as the only way out.
+  Future<void> ensureTables() {
+    return _tableCreation ??= _createTables();
+  }
+
+  Future<void> _createTables() async {
+    try {
+      await PgeSitesDatabaseService.instance.initializeTables();
+    } catch (e) {
+      _tableCreation = null; // Allow a retry on the next request
+      LoggingService.error('AppInitializationService: Table creation failed', e);
+      rethrow;
     }
+  }
 
-    _isInitializing = true;
+  /// Download and import the PGE sites database, then sync.
+  ///
+  /// Deferred until something actually needs the data (the Sites map) - the
+  /// import is ~11k rows and used to block app startup. Concurrent callers
+  /// share one run and await the same future.
+  Future<void> initializeInBackground() {
+    if (!backgroundInitEnabled) {
+      return Future.value();
+    }
+    if (_isInitialized) {
+      return Future.value();
+    }
+    return _initialization ??= _initialize();
+  }
 
+  Future<void> _initialize() async {
     try {
       LoggingService.info('AppInitializationService: Starting background initialization');
 
@@ -36,16 +82,15 @@ class AppInitializationService {
       LoggingService.info('AppInitializationService: Background initialization complete');
     } catch (e) {
       LoggingService.error('AppInitializationService: Background initialization failed', e);
-    } finally {
-      _isInitializing = false;
+      _initialization = null; // Allow a retry on the next request
     }
   }
 
   /// Check if PGE sites need to be downloaded and do it in background
   Future<void> _checkAndDownloadPgeSites() async {
     try {
-      // Initialize PGE sites tables
-      await PgeSitesDatabaseService.instance.initializeTables();
+      // Tables may already exist from ensureTables() at startup
+      await ensureTables();
 
       // Check if data exists
       final hasData = await PgeSitesDatabaseService.instance.isDataAvailable();
@@ -153,5 +198,5 @@ class AppInitializationService {
 
   /// Get initialization status
   bool get isInitialized => _isInitialized;
-  bool get isInitializing => _isInitializing;
+  bool get isInitializing => _initialization != null && !_isInitialized;
 }

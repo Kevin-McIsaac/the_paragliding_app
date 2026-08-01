@@ -1,0 +1,15 @@
+# Test tags.
+#
+# `network` marks tests that call a live third-party service. They are skipped by
+# default so a normal `flutter test` stays deterministic and offline - a stalled
+# network test holds a concurrency slot long enough to push unrelated files past
+# the 30s default timeout.
+#
+# Run them deliberately:  flutter test --tags network --run-skipped
+#
+# NOTE: `concurrency:` does not belong here - `flutter test` always passes its own
+# `-j` and overrides whatever this file says. Serialisation is set on the command
+# line instead; see .github/workflows/ci.yml.
+tags:
+  network:
+    skip: "Hits the live ParaglidingEarth API; run with --tags network --run-skipped"

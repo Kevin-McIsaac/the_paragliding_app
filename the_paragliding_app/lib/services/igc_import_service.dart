@@ -291,6 +291,10 @@ class IgcImportService {
         pgeSiteId: matchedSite?.id, // Link to PGE site if matched
       );
       
+      // Keep the matcher's cache current so the next flight from this launch
+      // resolves locally instead of calling the API again
+      siteMatchingService.cacheSite(launchSite);
+
       // Debug output to see what was actually stored
       LoggingService.debug('IgcImportService: Site DB id=${launchSite.id} name="${launchSite.name}" country="${launchSite.country ?? 'Unknown'}"');
     }

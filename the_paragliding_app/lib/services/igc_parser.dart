@@ -7,6 +7,21 @@ import 'logging_service.dart';
 class IgcParser {
   // LRU cache for timezone detection with size limit to prevent memory leaks
   static final _TimezoneCache _timezoneCache = _TimezoneCache();
+
+  /// First exception thrown while parsing a B record, reported once in the
+  /// IGC_MALFORMED_RECORDS summary rather than once per bad record. Reset at
+  /// the start of every parse.
+  ///
+  /// Per-instance, not per-parse - and instances *are* shared and long-lived
+  /// (`FlightTrackLoader._parser` is static, `IgcImportService.parser` is a
+  /// field). What makes it safe is that [_parseLines] is synchronous: with no
+  /// `await` inside, a parse runs to completion without yielding, so no second
+  /// parse can interleave.
+  ///
+  /// Adding an `await` to [_parseLines] - chunked reading of a large file, say -
+  /// would break that silently, crossing malformed-record diagnostics between
+  /// concurrent parses. Give each parse its own [IgcParser] if that happens.
+  Object? _firstBRecordError;
   /// Parse IGC file from file path
   Future<IgcFile> parseFile(String filePath) async {
     final file = File(filePath);
@@ -35,6 +50,9 @@ class IgcParser {
     // Track current date for midnight crossing detection
     DateTime? currentDate;
     DateTime? previousTimestamp;
+    int bRecordCount = 0;
+    int malformedBRecordCount = 0;
+    _firstBRecordError = null;
 
     for (final line in lines) {
       if (line.isEmpty) continue;
@@ -78,7 +96,11 @@ class IgcParser {
         case 'B':
           // B record (track point) - parse as UTC initially, will convert later
           // Pass current date which may have been incremented for midnight crossing
+          bRecordCount++;
           final point = _parseBRecord(line, currentDate ?? flightDate ?? DateTime.now(), null);
+          if (point == null) {
+            malformedBRecordCount++;
+          }
           if (point != null) {
             // Check for midnight crossing
             if (previousTimestamp != null) {
@@ -116,6 +138,26 @@ class IgcParser {
         default:
           // Other record types - store in headers for reference
           headers[recordType] = line;
+      }
+    }
+
+    if (malformedBRecordCount > 0) {
+      LoggingService.structured('IGC_MALFORMED_RECORDS', {
+        'b_records': bRecordCount,
+        'malformed': malformedBRecordCount,
+        'kept': trackPoints.length,
+        if (_firstBRecordError != null)
+          'first_error': _firstBRecordError.toString(),
+      });
+
+      // A few bad records happen; a file that is mostly bad is not a flight.
+      // Rejecting here keeps corrupt logs out of the log book instead of
+      // importing them as tracks spanning weeks.
+      if (malformedBRecordCount * 2 > bRecordCount) {
+        throw FormatException(
+          'IGC file appears corrupt: $malformedBRecordCount of $bRecordCount '
+          'B-records have invalid times or coordinates',
+        );
       }
     }
 
@@ -318,7 +360,14 @@ class IgcParser {
       final hours = int.parse(line.substring(1, 3));
       final minutes = int.parse(line.substring(3, 5));
       final seconds = int.parse(line.substring(5, 7));
-      
+
+      // Corrupt loggers emit impossible times (hour 80, hour 99). DateTime
+      // silently rolls those forward into following days, turning one flight
+      // into a track spanning weeks, so reject them here.
+      if (hours > 23 || minutes > 59 || seconds > 59) {
+        return null;
+      }
+
       // Latitude (DDMMmmmN/S)
       final latDegrees = int.parse(line.substring(7, 9));
       final latMinutes = int.parse(line.substring(9, 11));
@@ -336,7 +385,11 @@ class IgcParser {
       
       double longitude = lonDegrees + (lonMinutes + lonDecimals / 1000.0) / 60.0;
       if (lonDirection == 'W') longitude = -longitude;
-      
+
+      if (latitude.abs() > 90 || longitude.abs() > 180) {
+        return null;
+      }
+
       // Valid flag
       final isValid = line[24] == 'A';
       
@@ -368,7 +421,10 @@ class IgcParser {
         isValid: isValid,
       );
     } catch (e) {
-      LoggingService.error('IgcParser: Error parsing B record', e);
+      // Counted by the caller and summarised once in IGC_MALFORMED_RECORDS.
+      // Logging here instead produced one line per bad record, which is the
+      // spam a corrupt file used to bury the real diagnosis under.
+      _firstBRecordError ??= e;
       return null;
     }
   }

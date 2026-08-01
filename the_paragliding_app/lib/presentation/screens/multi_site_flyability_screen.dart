@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/wind_data.dart';
 import '../../data/models/wind_forecast.dart';
+import '../../services/app_initialization_service.dart';
 import '../../services/database_service.dart';
 import '../../services/pge_sites_database_service.dart';
 import '../../services/location_service.dart';
@@ -176,6 +177,11 @@ class MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> wi
     });
 
     try {
+      // This screen reads the PGE sites database directly, so it must trigger the
+      // deferred import itself - the Sites tab is not guaranteed to have run when
+      // the app restores straight into Forecast. Idempotent; shares one in-flight run.
+      await AppInitializationService.instance.initializeInBackground();
+
       // Load sites based on selection mode
       final sites = await _loadSites();
 
@@ -305,13 +311,11 @@ class MultiSiteFlyabilityScreenState extends State<MultiSiteFlyabilityScreen> wi
   }
 
   Future<Position> _getCurrentPosition() async {
-    final position = await LocationService.instance.getCurrentPosition();
-
-    if (position == null) {
-      throw Exception('Unable to get current location');
-    }
-
-    return position;
+    // Same fallback hierarchy the Sites screen uses (cached -> persistent ->
+    // first flown site -> Perth). getCurrentPosition() returns null wherever
+    // there is no GPS, which used to only work because the Sites screen had
+    // already warmed the cache during startup.
+    return LocationService.instance.getLastKnownOrDefault();
   }
 
   Future<List<ParaglidingSite>> _loadSitesNearPosition(Position position) async {

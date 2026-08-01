@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart';
 import '../data/models/paragliding_site.dart';
@@ -53,8 +54,17 @@ class ParaglidingEarthApi {
   // Offline status tracking
   static bool _isOfflineMode = false;
   static DateTime? _lastSuccessfulRequest;
+  static DateTime? _offlineModeEnteredAt;
   static int _consecutiveFailures = 0;
   static const int _maxConsecutiveFailures = 3;
+
+  /// How long offline mode blocks requests before one is allowed through.
+  ///
+  /// Without this the breaker never reopens: it only clears on a successful
+  /// request, and no request is attempted while it is closed. A short network
+  /// outage partway through a bulk import used to leave every remaining flight
+  /// unmatched for the rest of the session.
+  static const Duration _offlineModeCooldown = Duration(minutes: 2);
 
   // Simple cache management methods
   void _cleanupCache() {
@@ -112,8 +122,8 @@ class ParaglidingEarthApi {
     bool detailed = false, // Default to basic data for faster loading
   }) async {
     
-    // Check if we're in offline mode
-    if (_isOfflineMode) {
+    // Check if we're in offline mode (lets one request through after cooldown)
+    if (_shouldSkipRequest()) {
       LoggingService.warning('ParaglidingEarthApi: No data available in offline mode');
       return [];
     }
@@ -242,6 +252,11 @@ class ParaglidingEarthApi {
     int limit = 50,
     bool detailed = true,
   }) async {
+    if (_shouldSkipRequest()) {
+      LoggingService.warning('ParaglidingEarthApi: Skipping bounds query in offline mode');
+      return [];
+    }
+
     final stopwatch = Stopwatch()..start();
     final timingBreakdown = <String, int>{};
 
@@ -480,6 +495,12 @@ class ParaglidingEarthApi {
       LoggingService.info('ParaglidingEarthApi: Using cached site details');
       return _siteDetailsCache[cacheKey];
     }
+
+    // Checked after the cache so an offline breaker still serves what we have
+    if (_shouldSkipRequest()) {
+      LoggingService.warning('ParaglidingEarthApi: Skipping site details in offline mode');
+      return null;
+    }
     
     // Clean up expired cache entries occasionally
     if (_siteDetailsCache.length > 10) {
@@ -686,21 +707,79 @@ class ParaglidingEarthApi {
     _lastSuccessfulRequest = DateTime.now();
     if (_isOfflineMode) {
       _isOfflineMode = false;
+      _offlineModeEnteredAt = null;
       LoggingService.info('ParaglidingEarthApi: Back online after successful request');
     }
   }
-  
+
   /// Mark failed API request and check if we should enter offline mode
   static void _markRequestFailure() {
     _consecutiveFailures++;
     if (_consecutiveFailures >= _maxConsecutiveFailures && !_isOfflineMode) {
       _isOfflineMode = true;
+      _offlineModeEnteredAt = DateTime.now();
       LoggingService.warning('ParaglidingEarthApi: Entering offline mode after $_consecutiveFailures consecutive failures');
     }
   }
-  
+
+  /// Whether requests should currently be short-circuited.
+  ///
+  /// Once the cooldown has elapsed one request is let through; it either
+  /// succeeds (clearing offline mode) or fails (restarting the cooldown).
+  /// Whether the breaker should block this request.
+  ///
+  /// Not a pure predicate: when the cooldown has elapsed it reopens the breaker,
+  /// so exactly one request per cooldown window gets through. That is the point
+  /// - it is what stops a down API being hammered while still letting the client
+  /// discover that it has recovered.
+  ///
+  /// Only one caller can slip through per window even with several requests in
+  /// flight: this is synchronous with no `await` inside, so it runs to
+  /// completion against Dart's event loop and the second caller always sees the
+  /// restarted window.
+  static bool _shouldSkipRequest() {
+    if (!_isOfflineMode) return false;
+
+    final enteredAt = _offlineModeEnteredAt;
+    if (enteredAt != null &&
+        DateTime.now().difference(enteredAt) >= _offlineModeCooldown) {
+      _reopenBreaker();
+      return false;
+    }
+
+    return true;
+  }
+
+  /// Let one request through and restart the cooldown window.
+  ///
+  /// The window restarts now, when the request is released - not when its result
+  /// comes back. A slow retry that then fails therefore leaves less than a full
+  /// cooldown before the next attempt. Harmless at this scale, but it matters if
+  /// the duration is ever tuned precisely.
+  static void _reopenBreaker() {
+    LoggingService.info(
+        'ParaglidingEarthApi: Offline cooldown elapsed - retrying');
+    _offlineModeEnteredAt = DateTime.now();
+    _consecutiveFailures = 0;
+  }
+
   /// Check if API is currently in offline mode
   static bool get isOfflineMode => _isOfflineMode;
+
+  /// Drive the breaker directly - the HTTP client is not injectable, so this is
+  /// how the cooldown behaviour is covered without a network call.
+  @visibleForTesting
+  static void debugSetOfflineMode({required bool offline, DateTime? enteredAt}) {
+    _isOfflineMode = offline;
+    _offlineModeEnteredAt = offline ? (enteredAt ?? DateTime.now()) : null;
+    _consecutiveFailures = offline ? _maxConsecutiveFailures : 0;
+  }
+
+  @visibleForTesting
+  static Duration get offlineModeCooldown => _offlineModeCooldown;
+
+  @visibleForTesting
+  static bool debugShouldSkipRequest() => _shouldSkipRequest();
   
   /// Get offline status information
   static Map<String, dynamic> getOfflineStatus() {
@@ -738,6 +817,12 @@ class ParaglidingEarthApi {
         _searchResultsCacheExpiry[cacheKey]!.isAfter(now)) {
       LoggingService.info('ParaglidingEarthApi: Using cached search results for: $query');
       return _searchResultsCache[cacheKey]!;
+    }
+
+    // Checked after the cache so an offline breaker still serves what we have
+    if (_shouldSkipRequest()) {
+      LoggingService.warning('ParaglidingEarthApi: Skipping name search in offline mode');
+      return [];
     }
     
     // Clean up expired cache entries occasionally

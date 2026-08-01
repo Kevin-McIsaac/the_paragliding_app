@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:path_provider/path_provider.dart';
 import 'dart:io' show Platform;
 import 'dart:async';
 import 'presentation/screens/splash_screen.dart';
@@ -7,7 +8,10 @@ import 'presentation/screens/igc_import_screen.dart';
 import 'utils/file_sharing_handler.dart';
 import 'utils/performance_monitor.dart';
 import 'data/datasources/database_helper.dart';
+import 'utils/dev_seed.dart';
+import 'services/logging_service.dart';
 import 'services/api_keys.dart';
+import 'services/app_initialization_service.dart';
 import 'services/performance_metrics_service.dart';
 
 void main() async {
@@ -18,6 +22,12 @@ void main() async {
   if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
+
+    // Keep the database with the rest of the app's data. sqflite_common_ffi
+    // otherwise defaults to .dart_tool/, which `flutter clean` removes and
+    // `flutter test` writes to - both of which wipe the desktop flight log.
+    final documents = await getApplicationDocumentsDirectory();
+    await databaseFactory.setDatabasesPath(documents.path);
   }
 
   // Initialize API keys from environment variables
@@ -53,6 +63,10 @@ class AppInitializer extends StatefulWidget {
 class _AppInitializerState extends State<AppInitializer> {
   bool _isInitialized = false;
   String? _error;
+  /// Progress message under the loading spinner. A notifier rather than
+  /// setState so updates rebuild the text alone - rebuilding MaterialApp
+  /// recomputes four ColorScheme.fromSeed palettes and visibly flashes.
+  final ValueNotifier<String?> _status = ValueNotifier(null);
   StreamSubscription? _intentDataStreamSubscription;
   List<String>? _sharedFiles;
 
@@ -113,15 +127,42 @@ class _AppInitializerState extends State<AppInitializer> {
   @override
   void dispose() {
     _intentDataStreamSubscription?.cancel();
+    _status.dispose();
     super.dispose();
   }
 
   Future<void> _initialize() async {
     try {
+      // Creating the schema on a fresh database takes several seconds, so the
+      // status goes up before it rather than after
+      if (DevSeed.isConfigured) {
+        _status.value = 'Preparing dev database';
+      }
+
+      final startupTimer = Stopwatch()..start();
+
       // Initialize database
       final db = DatabaseHelper.instance;
       // Pre-warm database connection
       await db.database;
+      LoggingService.performance(
+          'Startup: database', startupTimer.elapsed, 'connection ready');
+
+      final tablesTimer = Stopwatch()..start();
+
+      // Cheap DDL - keeps site lookups during seeding from hitting a missing
+      // pge_sites table (the data import itself stays deferred)
+      await AppInitializationService.instance.ensureTables();
+      LoggingService.performance(
+          'Startup: tables', tablesTimer.elapsed, 'PGE tables ready');
+
+      // Seed dev fixtures when SEED_IGC_DIR is defined (no-op in release
+      // builds). Runs here rather than in main() so the loading screen is
+      // already on screen while flights import.
+      await DevSeed.maybeSeed(onProgress: (done, total) {
+        _status.value = 'Importing flight ${done + 1} of $total';
+      });
+
       if (mounted) {
         setState(() {
           _isInitialized = true;
@@ -244,7 +285,21 @@ class _AppInitializerState extends State<AppInitializer> {
                     ),
                   ],
                 )
-              : const CircularProgressIndicator(),
+              : Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const CircularProgressIndicator(),
+                    ValueListenableBuilder<String?>(
+                      valueListenable: _status,
+                      builder: (context, status, _) => status == null
+                          ? const SizedBox.shrink()
+                          : Padding(
+                              padding: const EdgeInsets.only(top: 16),
+                              child: Text(status),
+                            ),
+                    ),
+                  ],
+                ),
         ),
       ),
     );

@@ -14,16 +14,25 @@ import '../../utils/preferences_helper.dart';
 /// - Forecast
 /// - Statistics
 ///
-/// Uses IndexedStack to preserve state when switching tabs.
+/// Uses IndexedStack to preserve state when switching tabs. Tabs are built the
+/// first time they are shown - each one loads data in initState, so building
+/// them all up front would run four screens' worth of work at launch.
 class MainNavigationScreen extends StatefulWidget {
-  const MainNavigationScreen({super.key});
+  /// Tab to open on launch. Resolved by the splash screen so this screen never
+  /// builds a default tab and then throws it away.
+  final int initialIndex;
+
+  const MainNavigationScreen({super.key, this.initialIndex = 0});
 
   @override
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
 }
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  int _selectedIndex = 0;
+  late int _selectedIndex = widget.initialIndex;
+
+  /// Tabs that have been shown at least once - IndexedStack keeps them alive
+  late final Set<int> _builtTabs = {widget.initialIndex};
 
   // Type-safe GlobalKeys using the public state classes
   // This allows calling public methods like refreshData() without dynamic cast
@@ -35,28 +44,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   @override
   void initState() {
     super.initState();
-    _loadLastNavigationIndex();
     LoggingService.info('MainNavigationScreen: Initialized with bottom navigation');
-  }
-
-  /// Load the last selected navigation tab index from preferences
-  Future<void> _loadLastNavigationIndex() async {
-    try {
-      final savedIndex = await PreferencesHelper.getLastNavigationIndex();
-      // Validate index is within bounds (0-3 for 4 navigation tabs)
-      if (mounted && savedIndex >= 0 && savedIndex < 4) {
-        setState(() {
-          _selectedIndex = savedIndex;
-        });
-      }
-    } catch (error, stackTrace) {
-      LoggingService.error(
-        'Failed to load last navigation index, using default',
-        error,
-        stackTrace,
-      );
-      // Keep default index (0) - Sites tab
-    }
   }
 
   /// Refresh flight list data (e.g., after adding a new flight).
@@ -128,6 +116,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
     setState(() {
       _selectedIndex = index;
+      _builtTabs.add(index);
     });
 
     // Save the selected index to preferences
@@ -147,32 +136,40 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     });
   }
 
+  /// Build a tab only once it has been shown - unvisited tabs stay empty so
+  /// their initState (and its database/network work) never runs
+  Widget _buildTab(int index, Widget Function() builder) {
+    return _builtTabs.contains(index) ? builder() : const SizedBox.shrink();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final selectedIndex = _selectedIndex;
+
     return Scaffold(
       body: IndexedStack(
-        index: _selectedIndex,
+        index: selectedIndex,
         children: [
-          NearbySitesScreen(
+          _buildTab(0, () => NearbySitesScreen(
             key: _nearbySitesKey,
             onDataChanged: _handleDataChanged,
             onRefreshAllTabs: refreshAllTabs,
-          ),
-          MultiSiteFlyabilityScreen(key: _forecastKey),
-          FlightListScreen(
+          )),
+          _buildTab(1, () => MultiSiteFlyabilityScreen(key: _forecastKey)),
+          _buildTab(2, () => FlightListScreen(
             key: _flightListKey,
             onDataChanged: _handleDataChanged,
             onRefreshAllTabs: refreshAllTabs,
-          ),
-          StatisticsScreen(
+          )),
+          _buildTab(3, () => StatisticsScreen(
             key: _statisticsKey,
             onDataChanged: _handleDataChanged,
             onRefreshAllTabs: refreshAllTabs,
-          ),
+          )),
         ],
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
+        selectedIndex: selectedIndex,
         onDestinationSelected: _onDestinationSelected,
         destinations: const [
           NavigationDestination(

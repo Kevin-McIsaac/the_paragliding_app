@@ -2,15 +2,180 @@ import 'dart:io';
 import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
 import '../data/datasources/database_helper.dart';
+import '../data/models/site.dart';
 import '../services/logging_service.dart';
 import '../services/igc_import_service.dart';
 import '../services/pge_sites_database_service.dart';
 import '../services/pge_sites_download_service.dart';
+import '../services/database_service.dart';
+import '../services/site_matching_service.dart';
 
 /// Helper class for resetting/clearing database data
 /// Can be called from within the Flutter app
 class DatabaseResetHelper {
   static final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
+
+  /// Re-run site matching for flights left on an "Unknown" site.
+  ///
+  /// Imports that ran while the ParaglidingEarth API was unreachable recorded
+  /// "Unknown N" permanently, even where the bundled PGE database had the site
+  /// all along. This repairs those rows without re-importing: each flight's
+  /// launch coordinates are matched again (local database first), the flight is
+  /// moved to the real site, and the emptied Unknown site is removed.
+  /// Rows this repair is meant to fix, not match against. Mirrors the
+  /// `name LIKE 'Unknown%'` selection below - SQLite's LIKE is case-insensitive
+  /// for ASCII, so this is too.
+  static bool _isPlaceholderSiteName(String name) =>
+      name.toLowerCase().startsWith('unknown');
+
+  static Future<Map<String, dynamic>> rematchUnknownSites({
+    Function(int current, int total)? onProgress,
+  }) async {
+    try {
+      final databaseService = DatabaseService.instance;
+
+      // Whole-table read rather than a targeted query: the log book holds well
+      // under a hundred sites, and this keeps every access typed and inside
+      // DatabaseService. `knownSites` is kept in step with the mutations below
+      // so the identity lookup never matches a row this run already deleted.
+      final knownSites = await databaseService.getAllSites();
+      final unknownSites =
+          knownSites.where((site) => _isPlaceholderSiteName(site.name)).toList();
+
+      if (unknownSites.isEmpty) {
+        return {
+          'success': true,
+          'message': 'No unknown sites to re-match',
+          'sites_checked': 0,
+          'sites_matched': 0,
+          'flights_moved': 0,
+        };
+      }
+
+      LoggingService.info(
+          'DatabaseResetHelper: Re-matching ${unknownSites.length} unknown sites');
+
+      int matched = 0;
+      int flightsMoved = 0;
+      final matchedNames = <String>[];
+
+      for (int i = 0; i < unknownSites.length; i++) {
+        onProgress?.call(i + 1, unknownSites.length);
+
+        final site = unknownSites[i];
+        final siteId = site.id!;
+        final latitude = site.latitude;
+        final longitude = site.longitude;
+
+        // Null Island - a flight whose launch fix was never valid. No radius
+        // will help, so leave it alone rather than matching it to whatever
+        // happens to be nearest.
+        if (latitude == 0 && longitude == 0) {
+          LoggingService.debug(
+              'DatabaseResetHelper: Skipping site $siteId at 0,0 (invalid launch fix)');
+          continue;
+        }
+
+        final match = await SiteMatchingService.instance.findNearestSite(
+          latitude,
+          longitude,
+          maxDistance: SiteMatchingService.localSiteSearchRadius,
+          preferredType: 'launch',
+        );
+
+        if (match == null) continue;
+
+        // A placeholder is not an identity to match against. findNearestSite
+        // consults the flight-log cache first, and that cache holds every
+        // Unknown site that has a flight attached - so without this a row
+        // matches itself (a no-op that still reports success and writes a
+        // flight-log id into pge_site_id), or, when the cache is stale, matches
+        // a *different* Unknown site and merges two real launches together.
+        if (_isPlaceholderSiteName(match.name)) {
+          LoggingService.debug(
+              'DatabaseResetHelper: Skipping site $siteId - nearest match '
+              '"${match.name}" is itself a placeholder');
+          continue;
+        }
+
+        // Deliberately not findOrCreateSite: it matches on coordinates with a
+        // ~1.1km tolerance, so it would find this very Unknown row and report
+        // success while changing nothing. Match on identity (name / PGE id).
+        Site? existing;
+        for (final candidate in knownSites) {
+          if (candidate.id == siteId) continue;
+          final sameName = candidate.name == match.name;
+          final samePgeId = candidate.pgeSiteId != null &&
+              match.id != null &&
+              candidate.pgeSiteId == match.id;
+          if (sameName || samePgeId) {
+            existing = candidate;
+            break;
+          }
+        }
+
+        if (existing != null) {
+          // The real site is already in the log book - move the flights there
+          flightsMoved += await databaseService.reassignFlights(siteId, existing.id!);
+          await databaseService.deleteSite(siteId);
+          knownSites.removeWhere((s) => s.id == siteId);
+        } else {
+          // Nothing to merge with, so give this row the real identity and keep
+          // its flights attached
+          final renamed = site.copyWith(
+            name: match.name,
+            latitude: match.latitude,
+            longitude: match.longitude,
+            // ParaglidingSite carries altitude as an int; Site stores a double.
+            // The previous raw update wrote the int straight into a REAL column.
+            altitude: match.altitude?.toDouble(),
+            country: match.country,
+            pgeSiteId: match.id,
+          );
+          await databaseService.updateSite(renamed);
+          final index = knownSites.indexWhere((s) => s.id == siteId);
+          if (index != -1) knownSites[index] = renamed;
+          flightsMoved += await databaseService.getFlightCountForSite(siteId);
+        }
+
+        matched++;
+        matchedNames.add('${site.name} -> ${match.name}');
+      }
+
+      // Rows were renamed or removed underneath the matcher's cache; leaving it
+      // stale would let a later run match against sites that no longer exist.
+      if (matched > 0) {
+        await SiteMatchingService.instance.reload();
+      }
+
+      LoggingService.structured('SITE_REMATCH', {
+        'sites_checked': unknownSites.length,
+        'sites_matched': matched,
+        'flights_moved': flightsMoved,
+      });
+
+      return {
+        'success': true,
+        'message': matched == 0
+            ? 'Checked ${unknownSites.length} unknown sites - no matches found'
+            : 'Matched $matched of ${unknownSites.length} unknown sites, '
+                'moving $flightsMoved flights',
+        'sites_checked': unknownSites.length,
+        'sites_matched': matched,
+        'flights_moved': flightsMoved,
+        'matches': matchedNames,
+      };
+    } catch (e, stackTrace) {
+      LoggingService.error('DatabaseResetHelper: Error re-matching sites', e, stackTrace);
+      return {
+        'success': false,
+        'message': 'Error re-matching sites: $e',
+        'sites_checked': 0,
+        'sites_matched': 0,
+        'flights_moved': 0,
+      };
+    }
+  }
 
   /// Reset the entire database - removes all data and recreates tables
   static Future<Map<String, dynamic>> resetDatabase() async {

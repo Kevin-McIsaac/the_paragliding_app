@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+env:
+  FLUTTER_VERSION: "3.41.6"
+
+jobs:
+  analyze-and-test:
+    name: Analyze and test
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: the_paragliding_app
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Create .env
+        # .env is declared as an asset in pubspec.yaml, so it must exist for the
+        # bundle to build. Analyze and test never call the APIs, so placeholder
+        # values from .env.example are enough - no secrets needed.
+        run: cp .env.example .env
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        # --concurrency=1: the database-heavy test files contend when run in
+        # parallel and blow the 30s default timeout, failing together in about a
+        # third of runs. Serialised they are stable, and the suite is no slower
+        # overall. This cannot live in dart_test.yaml - flutter test always passes
+        # its own -j and overrides the file.
+        run: flutter test --concurrency=1
+
+      - name: Test date ranges in a DST timezone
+        # Runners are UTC, which has no DST - date arithmetic that loses a day
+        # across a spring-forward boundary passes here and breaks for real users.
+        # Scoped to the date-range tests on purpose: the full suite is currently
+        # flaky under concurrent load (unrelated to timezones - different tests
+        # fail on each run), so running all of it twice would just double CI's
+        # exposure to that without adding DST coverage.
+        env:
+          TZ: America/New_York
+        run: flutter test --concurrency=1 test/date_range_test.dart

@@ -24,7 +24,8 @@ import '../../services/logging_service.dart';
 /// See: android/app/src/main/res/xml/backup_rules.xml for full backup configuration
 class DatabaseHelper {
   static const _databaseName = "FlightLog.db";
-  static const _databaseVersion = 2; // v2: Added pge_site_id foreign key for deduplication
+  /// Current schema version - tests assert against this rather than a literal
+  static const databaseVersion = 2; // v2: Added pge_site_id foreign key for deduplication
 
   // Singleton pattern
   DatabaseHelper._privateConstructor();
@@ -46,7 +47,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       path,
-      version: _databaseVersion,
+      version: databaseVersion,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -527,8 +528,8 @@ class DatabaseHelper {
       
       // Check database version
       final version = await db.getVersion();
-      if (version != _databaseVersion) {
-        LoggingService.error('DatabaseHelper: Database version mismatch. Expected: $_databaseVersion, Actual: $version');
+      if (version != databaseVersion) {
+        LoggingService.error('DatabaseHelper: Database version mismatch. Expected: $databaseVersion, Actual: $version');
         return false;
       }
       
@@ -541,7 +542,12 @@ class DatabaseHelper {
   }
 
   Future<void> close() async {
-    final db = await database;
-    db.close();
+    final db = _database;
+    if (db == null) return;
+    // Clear the field before awaiting: the getter must not hand out a handle
+    // that is mid-close, and leaving it set meant every later call returned a
+    // closed database ("Bad state: This database has already been closed").
+    _database = null;
+    await db.close();
   }
 }

@@ -5,31 +5,94 @@
 - **NEVER use `print()` statements** - Use `LoggingService` instead
 - **ALL flight data** must go through `FlightTrackLoader.loadFlightTrack()`
 - **All track data is zero-based and trimmed** when received from FlightTrackLoader
-- **ALWAYS Use free maps in development, test on emulator by default**
+- **ALWAYS Use free maps in development. Test on Linux desktop by default; emulator/device only for 3D**
 - **ALWAYS Run `flutter analyze` and fix errors after complex, multi-file changes**
 
 ## 🚀 Essential Commands
 
+### Linux Desktop Loop (default - no emulator needed)
+
+```bash
+# WORKING DIRECTORY: /home/kmcisaac/Projects/the_paragliding_app (repo root)
+bin/dev_run.sh                # Run on Linux desktop, seeded from dev_data/igc
+bin/dev_run.sh --reset        # Wipe dev database + documents first, then re-seed
+bin/dev_run.sh --profile      # Profile build - real timings, no hot reload
+bin/dev_run.sh -d chrome      # Same, on another device
+
+bin/dev_reload.sh             # Hot reload  (SIGUSR1 via dev_data/flutter.pid)
+bin/dev_reload.sh R           # Hot restart (SIGUSR2) - needed for main()/initState changes
+```
+
+Hot reload also works with the standard `r` / `R` keys if you started it in a
+terminal; `bin/dev_reload.sh` is for when the app was started in the background.
+
+- **Test data**: drop ~10 real `.igc` files into `dev_data/igc/` (gitignored - real coordinates).
+  They import on first launch only; `--reset` starts over. Seeding is driven by
+  `--dart-define=SEED_IGC_DIR=...` and handled by `lib/utils/dev_seed.dart` (never runs in release).
+- **App state** (database + IGC copies) lives in `dev_data/app_documents/`, redirected
+  there via `XDG_DOCUMENTS_DIR`. It persists across runs — the seeder only imports when
+  the flights table is empty, so relaunching keeps your data. Use `--reset` to start clean.
+- **Limitation**: `flutter_inappwebview` has no Linux implementation, so the 3D map screens
+  show a "3D Map Not Available" placeholder. Use an Android device/emulator for 3D work.
+
+### Android Loop (emulator/device - required for 3D)
+
+The script lives at `bin/flutter_controller_enhanced` and is **not on `PATH`** - invoke it
+by path. It takes the Flutter project directory from the shell's cwd, so it must be run
+from `the_paragliding_app/` or it fails with `No pubspec.yaml file found`.
+
 ```bash
 # WORKING DIRECTORY: /home/kmcisaac/Projects/the_paragliding_app/the_paragliding_app
-flutter_controller_enhanced run        # Start app with logging. ALWAYS run in background
-flutter_controller_enhanced r          # Hot reload with readiness check (most used)
-flutter_controller_enhanced R          # Hot restart with readiness check (for state issues)
-flutter_controller_enhanced status     # Check app status with enhanced health info
-flutter_controller_enhanced logs 50    # Recent logs (prefer over bash output)
-flutter_controller_enhanced screenshot # Take screenshot (alias: ss)
-flutter_controller_enhanced q          # Quit app
+../bin/flutter_controller_enhanced run # Start app with logging. ALWAYS run in background
+../bin/flutter_controller_enhanced r    # Hot reload with readiness check (most used)
+../bin/flutter_controller_enhanced R    # Hot restart with readiness check (for state issues)
+../bin/flutter_controller_enhanced status     # Check app status with enhanced health info
+../bin/flutter_controller_enhanced logs 50    # Recent logs (prefer over bash output)
+../bin/flutter_controller_enhanced screenshot # Take screenshot (alias: ss)
+../bin/flutter_controller_enhanced q    # Quit app
 ```
+
+Defaults to `emulator-5554`; pass `-d <device>` for anything else. Its `screenshot`
+command shells out to adb, so it only works on Android targets.
+
+Debug builds install as `com.theparaglidingapp.debug` with the launcher name
+"Paragliding App (debug)", so they sit alongside a Play Store install instead of
+replacing it. Without that suffix the debug keystore clashes with the release
+signature (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`) and Flutter silently uninstalls the
+production app, taking its flight database with it.
+
+#### Wireless debugging (physical device)
+
+```bash
+# On the phone: Settings > System > Developer options > Wireless debugging
+adb pair <ip>:<pairing-port> <6-digit-code>   # "Pair device with pairing code" dialog
+adb connect <ip>:<connect-port>               # DIFFERENT port, on the main screen
+adb devices -l                                # confirm, then use -d <id>
+```
+
+The pairing port and the connect port are different - mixing them up is the usual
+failure. Pairing is permanent; re-run only `adb connect` in later sessions. A stale
+pairing dialog leaves its port listening but dead, which surfaces as
+`error: protocol fault (couldn't read status message)` - reopen the dialog for a fresh
+port and code. `adb mdns services` returns nothing from a Crostini container (multicast
+does not cross the NAT), so always use an explicit `IP:port`.
 
 ### Test & Quality Commands
 
 ```bash
 flutter analyze                       # Check for errors (run after complex, mult-file change)
-flutter test                          # Run all tests
+flutter test --concurrency=1          # Run all tests (see note below - plain `flutter test` is flaky)
 flutter test test/specific_test.dart  # Run specific test
+flutter test --tags network --run-skipped  # Live-API tests, skipped by default
 flutter_controller_enhanced cleanup   # Clean up processes if stuck
 flutter_controller_enhanced health    # Check process/pipe/readiness status
 ```
+
+**Always pass `--concurrency=1`.** The database-heavy test files each open sqlite, seed
+249 country codes and build indexes; run in parallel they contend enough to blow the 30s
+default timeout and fail together in about a third of runs, always with
+`TimeoutException` rather than a real assertion. This cannot be set in `dart_test.yaml` -
+`flutter test` always passes its own `-j` and overrides the file. CI does it in `ci.yml`.
 
 ## 📁 Key Files (Most Accessed)
 
@@ -83,6 +146,8 @@ lib/
 | Track data empty | Direct IGC parsing | Use `FlightTrackLoader.loadFlightTrack()` |
 | State not updating | Widget not rebuilding | Check `setState()` calls |
 | Database locked | Concurrent operations | Use `DatabaseService` methods |
+| Tests fail with `TimeoutException` | Parallel test files contend | Run `flutter test --concurrency=1` |
+| Test hits the network | Live-API test not tagged | Tag it `network`; it is skipped by default |
 | Hot reload fails | State corruption | Use `R` (hot restart) instead of `r` |
 | App won't start | Process still running | Run `flutter_controller_enhanced cleanup` |
 | Commands unresponsive | Pipe/readiness issues | Run `flutter_controller_enhanced health` |
@@ -368,7 +433,10 @@ setState(() {}); // In build() method - causes infinite rebuilds
 
 ### Schema Change Process
 
-1. Clear app data: Settings → Apps → The Paragliding App → Storage → Clear Data
+1. Clear app data: Settings → Apps → **Paragliding App (debug)** → Storage → Clear Data.
+   Pick the "(debug)" entry - a production install may sit next to it under
+   "The Paragliding App", and clearing that one destroys real flight data.
+   On Linux desktop use `bin/dev_run.sh --reset` instead.
 2. Hot restart app to recreate database
 3. Re-import test data
 

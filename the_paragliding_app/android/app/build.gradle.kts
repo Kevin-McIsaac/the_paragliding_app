@@ -52,7 +52,9 @@ fun getKeystoreProperties(): Properties? {
 android {
     namespace = "com.theparaglidingapp"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = "27.0.12077973"
+    // Highest version required by any plugin (integration_test). NDK releases are
+    // backward compatible, so this satisfies the plugins that ask for less.
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -90,6 +92,10 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         
+        // Launcher name. Defined here rather than only in debug so the profile
+        // build type inherits it - the manifest references @string/app_name.
+        resValue("string", "app_name", "The Paragliding App")
+
         // Pass git commit hash and branch to Flutter
         buildConfigField("String", "GIT_COMMIT", "\"${getGitCommitHash()}\"")
         buildConfigField("String", "GIT_BRANCH", "\"${getGitBranchName()}\"")
@@ -97,6 +103,16 @@ android {
 
     buildTypes {
         debug {
+            // Install alongside the production app instead of replacing it. Debug builds are
+            // signed with the debug keystore, so without this they collide with a Play Store
+            // install (INSTALL_FAILED_UPDATE_INCOMPATIBLE) and Flutter uninstalls it -- taking
+            // the flight database with it.
+            applicationIdSuffix = ".debug"
+
+            // Both installs otherwise show the same launcher name, making them
+            // indistinguishable in the app list and in Settings > Apps.
+            resValue("string", "app_name", "Paragliding App (debug)")
+
             // Speed up debug builds
             isMinifyEnabled = false
             isShrinkResources = false

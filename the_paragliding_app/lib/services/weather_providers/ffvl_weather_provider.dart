@@ -253,7 +253,9 @@ class FfvlWeatherProvider implements WeatherStationProvider {
       // Create a map for quick lookup
       final Map<String, Map<String, dynamic>> beaconMap = {};
       for (final beacon in beaconList) {
-        final id = beacon['idBalise'] as String?;
+        // The API is inconsistent about whether ids are strings or numbers,
+        // so normalise rather than cast
+        final id = beacon['idBalise']?.toString();
         if (id != null) {
           beaconMap[id] = beacon as Map<String, dynamic>;
         }
@@ -290,7 +292,7 @@ class FfvlWeatherProvider implements WeatherStationProvider {
           for (final measurement in measurementsList) {
             if (measurement is Map<String, dynamic>) {
               // Note: measurements API uses 'idbalise' (lowercase), not 'idBalise'
-              final id = measurement['idbalise'] as String?;
+              final id = measurement['idbalise']?.toString();
               if (id != null) {
                 measurementsMap[id] = measurement;
               }
@@ -323,8 +325,8 @@ class FfvlWeatherProvider implements WeatherStationProvider {
           // Get fresh measurements if available
           Map<String, dynamic>? freshMeasurement;
           if (measurementsMap.isNotEmpty) {
-            final beaconId = beaconData['idBalise'] as String;
-            freshMeasurement = measurementsMap[beaconId];
+            final beaconId = beaconData['idBalise']?.toString();
+            freshMeasurement = beaconId == null ? null : measurementsMap[beaconId];
           }
 
           final station = _parseFfvlBeacon(beaconData, freshMeasurement);
@@ -418,7 +420,7 @@ class FfvlWeatherProvider implements WeatherStationProvider {
     Map<String, dynamic>? measurements,
   ) {
     try {
-      final id = beaconData['idBalise'] as String?;
+      final id = beaconData['idBalise']?.toString();
       final name = beaconData['nom'] as String?;
       final latitude = _parseDouble(beaconData['latitude']);
       final longitude = _parseDouble(beaconData['longitude']);
