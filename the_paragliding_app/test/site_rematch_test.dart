@@ -26,12 +26,18 @@ Future<void> seedPgeSite(String name) async {
   });
 }
 
-Future<int> insertUnknownSiteWithFlight() async {
+Future<int> insertUnknownSiteWithFlight({
+  String name = 'Unknown 1',
+  double? latitude,
+  double? longitude,
+}) async {
+  final lat = latitude ?? launchLat;
+  final lon = longitude ?? launchLon;
   final db = await DatabaseHelper.instance.database;
   final siteId = await db.insert('sites', {
-    'name': 'Unknown 1',
-    'latitude': launchLat,
-    'longitude': launchLon,
+    'name': name,
+    'latitude': lat,
+    'longitude': lon,
   });
   await db.insert('flights', {
     'date': '2026-01-01',
@@ -39,8 +45,8 @@ Future<int> insertUnknownSiteWithFlight() async {
     'landing_time': '11:00',
     'duration': 60,
     'launch_site_id': siteId,
-    'launch_latitude': launchLat,
-    'launch_longitude': launchLon,
+    'launch_latitude': lat,
+    'launch_longitude': lon,
   });
   return siteId;
 }
@@ -162,6 +168,53 @@ void main() {
       expect(result['sites_matched'], 0);
       expect(await db.query('sites', where: 'id = ?', whereArgs: [siteId]),
           hasLength(1));
+    });
+
+    // The tests above populate the matching cache in setUp, *before* inserting
+    // their Unknown rows, so the cache never contains a placeholder. The real
+    // app runs a long-lived singleton that has every existing Unknown site
+    // cached, which is the state these two reproduce.
+
+    test('does not match an Unknown site against itself', () async {
+      final siteId = await insertUnknownSiteWithFlight();
+      // Cache loaded AFTER the row exists - as in the running app
+      await SiteMatchingService.instance.reload();
+
+      final result = await DatabaseResetHelper.rematchUnknownSites();
+
+      expect(result['sites_matched'], 0,
+          reason: 'a placeholder is not a real identity to match against');
+
+      final db = await DatabaseHelper.instance.database;
+      final site = (await db.query('sites', where: 'id = ?', whereArgs: [siteId])).single;
+      expect(site['name'], 'Unknown 1');
+      expect(site['pge_site_id'], isNull,
+          reason: 'a flight-log row id must never be written as a PGE site id');
+    });
+
+    test('does not merge one Unknown site into another', () async {
+      // Unknown 2 is cached; Unknown 1 is created afterwards, so the cache is
+      // stale in exactly the way a mid-session import leaves it.
+      final farId = await insertUnknownSiteWithFlight(
+        name: 'Unknown 2',
+        latitude: launchLat + 0.009, // ~1km away, inside the 2km search radius
+      );
+      await SiteMatchingService.instance.reload();
+      final nearId = await insertUnknownSiteWithFlight();
+
+      await DatabaseResetHelper.rematchUnknownSites();
+
+      final db = await DatabaseHelper.instance.database;
+      expect(await db.query('sites', where: 'id = ?', whereArgs: [nearId]),
+          hasLength(1),
+          reason: 'two distinct launches must not be commingled');
+      expect(await db.query('sites', where: 'id = ?', whereArgs: [farId]),
+          hasLength(1));
+
+      final near = await db.query('flights', where: 'launch_site_id = ?', whereArgs: [nearId]);
+      final far = await db.query('flights', where: 'launch_site_id = ?', whereArgs: [farId]);
+      expect(near, hasLength(1), reason: 'each site keeps its own flight');
+      expect(far, hasLength(1));
     });
 
     test('reports nothing to do on a clean log', () async {
