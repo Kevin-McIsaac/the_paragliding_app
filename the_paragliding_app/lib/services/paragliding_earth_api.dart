@@ -726,20 +726,36 @@ class ParaglidingEarthApi {
   ///
   /// Once the cooldown has elapsed one request is let through; it either
   /// succeeds (clearing offline mode) or fails (restarting the cooldown).
+  /// Whether the breaker should block this request.
+  ///
+  /// Not a pure predicate: when the cooldown has elapsed it reopens the breaker,
+  /// so exactly one request per cooldown window gets through. That is the point
+  /// - it is what stops a down API being hammered while still letting the client
+  /// discover that it has recovered.
+  ///
+  /// Only one caller can slip through per window even with several requests in
+  /// flight: this is synchronous with no `await` inside, so it runs to
+  /// completion against Dart's event loop and the second caller always sees the
+  /// restarted window.
   static bool _shouldSkipRequest() {
     if (!_isOfflineMode) return false;
 
     final enteredAt = _offlineModeEnteredAt;
     if (enteredAt != null &&
         DateTime.now().difference(enteredAt) >= _offlineModeCooldown) {
-      LoggingService.info(
-          'ParaglidingEarthApi: Offline cooldown elapsed - retrying');
-      _offlineModeEnteredAt = DateTime.now(); // Restart the window
-      _consecutiveFailures = 0;
+      _reopenBreaker();
       return false;
     }
 
     return true;
+  }
+
+  /// Let one request through and restart the cooldown window.
+  static void _reopenBreaker() {
+    LoggingService.info(
+        'ParaglidingEarthApi: Offline cooldown elapsed - retrying');
+    _offlineModeEnteredAt = DateTime.now();
+    _consecutiveFailures = 0;
   }
 
   /// Check if API is currently in offline mode

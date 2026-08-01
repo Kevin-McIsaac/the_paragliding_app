@@ -11,6 +11,11 @@ class IgcParser {
   /// First exception thrown while parsing a B record, reported once in the
   /// IGC_MALFORMED_RECORDS summary rather than once per bad record. Reset at
   /// the start of every parse.
+  ///
+  /// Per-instance, not per-parse: safe because every caller creates an
+  /// `IgcParser` and parses one file to completion before the next. Sharing an
+  /// instance across concurrent parses would cross the wires - give each parse
+  /// its own instance rather than reaching for a lock.
   Object? _firstBRecordError;
   /// Parse IGC file from file path
   Future<IgcFile> parseFile(String filePath) async {
