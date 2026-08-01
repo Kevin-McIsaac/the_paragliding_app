@@ -298,6 +298,24 @@ class SiteMatchingService {
   /// Get the number of loaded sites
   int get siteCount => _sites?.length ?? 0;
 
+  /// Add a newly created site to the in-memory list.
+  ///
+  /// Bulk imports create sites as they go, but [reload] only sees sites that
+  /// are already referenced by a saved flight - so without this, every flight
+  /// in a batch re-queries the API for a site the previous flight just created.
+  void cacheSite(Site site) {
+    if (!_isInitialized || _sites == null) return;
+
+    final candidate = site.toParaglidingSite();
+    final alreadyCached = _sites!.any((cached) =>
+        cached.name == candidate.name &&
+        cached.distanceTo(candidate.latitude, candidate.longitude) < 1.0);
+
+    if (!alreadyCached) {
+      _sites!.add(candidate);
+    }
+  }
+
   /// Reload sites from flight log (useful when new flights are added)
   Future<void> reload() async {
     _isInitialized = false;
