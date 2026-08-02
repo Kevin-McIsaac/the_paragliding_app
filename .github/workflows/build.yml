@@ -180,6 +180,11 @@ jobs:
     needs: [release-android]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
+    # The repository default for GITHUB_TOKEN is read-only, so creating a release
+    # 403s. Granted here rather than flipping the repo-wide default to read/write,
+    # which would hand every workflow write access to the repository.
+    permissions:
+      contents: write
 
     steps:
       - name: Download APK artifact
