@@ -156,6 +156,18 @@ jobs:
           name: app-release-bundle
           path: the_paragliding_app/build/app/outputs/bundle/release/app-release.aab
 
+      # Play Console names manual uploads "<versionCode> (<versionName>)" but an API
+      # upload with no explicit name defaults to just the versionName, so the track
+      # history changes format partway down the list. Derived from pubspec so it
+      # cannot go stale.
+      - name: Read version from pubspec
+        id: version
+        run: |
+          cd the_paragliding_app
+          v=$(grep '^version:' pubspec.yaml | awk '{print $2}')   # e.g. 1.0.3+12
+          echo "name=${v%%+*}" >> "$GITHUB_OUTPUT"
+          echo "code=${v##*+}" >> "$GITHUB_OUTPUT"
+
       # mappingFile matters because isMinifyEnabled = true - without it Play shows
       # obfuscated stack traces for every crash.
       - name: Publish to Play internal track
@@ -166,6 +178,7 @@ jobs:
           packageName: com.theparaglidingapp
           releaseFiles: the_paragliding_app/build/app/outputs/bundle/release/app-release.aab
           mappingFile: the_paragliding_app/build/app/outputs/mapping/release/mapping.txt
+          releaseName: ${{ steps.version.outputs.code }} (${{ steps.version.outputs.name }})
           track: internal
           status: completed
 
