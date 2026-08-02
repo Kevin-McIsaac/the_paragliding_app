@@ -56,3 +56,6 @@ app.*.map.json
 .env.production
 .env.*
 !.env.example
+# API keys for local dev, passed via --dart-define-from-file
+env.json
+!env.example.json

@@ -93,8 +93,19 @@ if $profile; then
 fi
 
 cd "$APP_DIR"
+
+# API keys come from env.json (gitignored). Without it the app still runs, but
+# FFVL weather, OpenAIP overlays and Cesium 3D are all unconfigured.
+env_file_args=()
+if [[ -f env.json ]]; then
+  env_file_args+=(--dart-define-from-file=env.json)
+else
+  echo "WARNING: no env.json - API keys will be unset. Copy env.example.json and fill it in (see README_API_KEYS.md)." >&2
+fi
+
 exec flutter run -d "$device" \
   --pid-file "$PID_FILE" \
+  ${env_file_args[@]+"${env_file_args[@]}"} \
   --dart-define=SEED_IGC_DIR="$SEED_IGC_DIR" \
   ${mode_args[@]+"${mode_args[@]}"} \
   ${passthrough[@]+"${passthrough[@]}"}

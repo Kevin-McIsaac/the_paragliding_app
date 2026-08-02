@@ -76,10 +76,6 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
-        <!-- Google Maps API Key -->
-        <meta-data android:name="com.google.android.geo.API_KEY"
-                   android:value="YOUR_GOOGLE_MAPS_API_KEY_HERE"/>
-        
         <!-- Disable Google Play Services analytics and logging to prevent clearcut warnings -->
         <meta-data android:name="firebase_analytics_collection_enabled" android:value="false" />
         <meta-data android:name="firebase_messaging_auto_init_enabled" android:value="false" />

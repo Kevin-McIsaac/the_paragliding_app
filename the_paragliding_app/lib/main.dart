@@ -30,9 +30,8 @@ void main() async {
     await databaseFactory.setDatabasesPath(documents.path);
   }
 
-  // Initialize API keys from environment variables
-  await ApiKeys.initialize();
-  ApiKeys.logStatus(); // Log API key configuration status
+  // API keys are compile-time constants from --dart-define; nothing to load.
+  ApiKeys.logStatus();
 
   // OPTIMIZATION: Lazy load timezone data - only needed for IGC imports
   // TimezoneService.initialize() will be called lazily in TimezoneService

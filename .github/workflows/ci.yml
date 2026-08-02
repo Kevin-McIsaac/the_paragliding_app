@@ -29,12 +29,6 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Create .env
-        # .env is declared as an asset in pubspec.yaml, so it must exist for the
-        # bundle to build. Analyze and test never call the APIs, so placeholder
-        # values from .env.example are enough - no secrets needed.
-        run: cp .env.example .env
-
       - name: Get dependencies
         run: flutter pub get
 

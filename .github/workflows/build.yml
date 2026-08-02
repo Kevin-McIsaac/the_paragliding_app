@@ -25,13 +25,6 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
 
-      - name: Create .env
-        # .env is gitignored but declared as an asset in pubspec.yaml, so the
-        # bundle cannot build without it. Real keys come from --dart-define below.
-        run: |
-          cd the_paragliding_app
-          cp .env.example .env
-
       - name: Get dependencies
         run: |
           cd the_paragliding_app
@@ -40,14 +33,12 @@ jobs:
       - name: Build APK with API keys
         env:
           FFVL_API_KEY: ${{ secrets.FFVL_API_KEY }}
-          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
           OPENAIP_API_KEY: ${{ secrets.OPENAIP_API_KEY }}
           CESIUM_ION_TOKEN: ${{ secrets.CESIUM_ION_TOKEN }}
         run: |
           cd the_paragliding_app
           flutter build apk --release \
             --dart-define=FFVL_API_KEY=${{ secrets.FFVL_API_KEY }} \
-            --dart-define=GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }} \
             --dart-define=OPENAIP_API_KEY=${{ secrets.OPENAIP_API_KEY }} \
             --dart-define=CESIUM_ION_TOKEN=${{ secrets.CESIUM_ION_TOKEN }}
 
@@ -71,13 +62,6 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
 
-      - name: Create .env
-        # .env is gitignored but declared as an asset in pubspec.yaml, so the
-        # bundle cannot build without it. Real keys come from --dart-define below.
-        run: |
-          cd the_paragliding_app
-          cp .env.example .env
-
       - name: Get dependencies
         run: |
           cd the_paragliding_app
@@ -86,14 +70,12 @@ jobs:
       - name: Build App Bundle with API keys
         env:
           FFVL_API_KEY: ${{ secrets.FFVL_API_KEY }}
-          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
           OPENAIP_API_KEY: ${{ secrets.OPENAIP_API_KEY }}
           CESIUM_ION_TOKEN: ${{ secrets.CESIUM_ION_TOKEN }}
         run: |
           cd the_paragliding_app
           flutter build appbundle --release \
             --dart-define=FFVL_API_KEY=${{ secrets.FFVL_API_KEY }} \
-            --dart-define=GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }} \
             --dart-define=OPENAIP_API_KEY=${{ secrets.OPENAIP_API_KEY }} \
             --dart-define=CESIUM_ION_TOKEN=${{ secrets.CESIUM_ION_TOKEN }}
 
@@ -117,13 +99,6 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
 
-      - name: Create .env
-        # .env is gitignored but declared as an asset in pubspec.yaml, so the
-        # bundle cannot build without it. Real keys come from --dart-define below.
-        run: |
-          cd the_paragliding_app
-          cp .env.example .env
-
       - name: Get dependencies
         run: |
           cd the_paragliding_app
@@ -132,14 +107,12 @@ jobs:
       - name: Build iOS (no signing)
         env:
           FFVL_API_KEY: ${{ secrets.FFVL_API_KEY }}
-          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
           OPENAIP_API_KEY: ${{ secrets.OPENAIP_API_KEY }}
           CESIUM_ION_TOKEN: ${{ secrets.CESIUM_ION_TOKEN }}
         run: |
           cd the_paragliding_app
           flutter build ios --release --no-codesign \
             --dart-define=FFVL_API_KEY=${{ secrets.FFVL_API_KEY }} \
-            --dart-define=GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }} \
             --dart-define=OPENAIP_API_KEY=${{ secrets.OPENAIP_API_KEY }} \
             --dart-define=CESIUM_ION_TOKEN=${{ secrets.CESIUM_ION_TOKEN }}
 
