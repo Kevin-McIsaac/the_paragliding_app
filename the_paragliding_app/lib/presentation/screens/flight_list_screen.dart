@@ -47,8 +47,6 @@ class FlightListScreenState extends State<FlightListScreen> {
   // State variables
   List<Flight> _flights = [];
   List<Flight> _sortedFlights = [];
-  int _totalFlights = 0;
-  int _totalDuration = 0;
   bool _isLoading = false;
   String? _errorMessage;
   
@@ -112,17 +110,11 @@ class FlightListScreenState extends State<FlightListScreen> {
       final flights = await _databaseService.getAllFlights();
       final flightsDuration = DateTime.now().difference(flightsStartTime);
 
-      // Get totals from database
-      final statsStartTime = DateTime.now();
-      final stats = await _databaseService.getOverallStatistics();
-      final statsDuration = DateTime.now().difference(statsStartTime);
-
       final totalDuration = DateTime.now().difference(totalStartTime);
 
       // Log breakdown of timings
       LoggingService.structured('FLIGHT_LIST_LOAD_BREAKDOWN', {
         'flights_query_ms': flightsDuration.inMilliseconds,
-        'stats_query_ms': statsDuration.inMilliseconds,
         'total_ms': totalDuration.inMilliseconds,
         'flight_count': flights.length,
       });
@@ -132,8 +124,6 @@ class FlightListScreenState extends State<FlightListScreen> {
       if (mounted) {
         setState(() {
           _flights = flights;
-          _totalFlights = stats['totalFlights'] as int? ?? 0;
-          _totalDuration = stats['totalDuration'] as int? ?? 0;
           _sortFlights();
           _isLoading = false;
         });
@@ -435,17 +425,21 @@ class FlightListScreenState extends State<FlightListScreen> {
 
 
   Widget _buildFlightList(List<Flight> flights) {
+    // Totals describe the rows actually listed, so they follow the search and
+    // date-range filters. effectiveDuration matches what each row displays.
+    final totalDuration = flights.fold<int>(0, (sum, f) => sum + f.effectiveDuration);
+
     return Column(
       children: [
         AppStatCardGroup.flightList(
           cards: [
             AppStatCard.flightList(
               label: 'Total Flights',
-              value: _totalFlights.toString(),
+              value: flights.length.toString(),
             ),
             AppStatCard.flightList(
               label: 'Total Time',
-              value: DateTimeUtils.formatDuration(_totalDuration),
+              value: DateTimeUtils.formatDuration(totalDuration),
             ),
           ],
           backgroundColor: Theme.of(context).colorScheme.surface,
