@@ -73,11 +73,18 @@ jobs:
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          # A variable, not a secret: the alias is not sensitive, and as a secret
+          # GitHub masked the literal word "upload" everywhere in the logs -
+          # including in unrelated step names and error messages.
+          ANDROID_KEY_ALIAS: ${{ vars.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
             echo "::error::ANDROID_KEYSTORE_BASE64 is not set - the build would silently use the debug key"
+            exit 1
+          fi
+          if [ -z "$ANDROID_KEY_ALIAS" ]; then
+            echo "::error::vars.ANDROID_KEY_ALIAS is not set - signing would fail with an opaque Gradle error"
             exit 1
           fi
           keystore="$RUNNER_TEMP/upload-keystore.jks"
@@ -149,6 +156,18 @@ jobs:
           name: app-release-bundle
           path: the_paragliding_app/build/app/outputs/bundle/release/app-release.aab
 
+      # Play Console names manual uploads "<versionCode> (<versionName>)" but an API
+      # upload with no explicit name defaults to just the versionName, so the track
+      # history changes format partway down the list. Derived from pubspec so it
+      # cannot go stale.
+      - name: Read version from pubspec
+        id: version
+        run: |
+          cd the_paragliding_app
+          v=$(grep '^version:' pubspec.yaml | awk '{print $2}')   # e.g. 1.0.3+12
+          echo "name=${v%%+*}" >> "$GITHUB_OUTPUT"
+          echo "code=${v##*+}" >> "$GITHUB_OUTPUT"
+
       # mappingFile matters because isMinifyEnabled = true - without it Play shows
       # obfuscated stack traces for every crash.
       - name: Publish to Play internal track
@@ -159,41 +178,26 @@ jobs:
           packageName: com.theparaglidingapp
           releaseFiles: the_paragliding_app/build/app/outputs/bundle/release/app-release.aab
           mappingFile: the_paragliding_app/build/app/outputs/mapping/release/mapping.txt
+          releaseName: ${{ steps.version.outputs.code }} (${{ steps.version.outputs.name }})
           track: internal
           status: completed
 
-  build-ios:
-    name: Build iOS (without signing)
-    runs-on: macos-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-
-      - name: Get dependencies
-        run: |
-          cd the_paragliding_app
-          flutter pub get
-
-      - name: Build iOS (no signing)
-        run: |
-          cd the_paragliding_app
-          flutter build ios --release --no-codesign \
-            --dart-define=FFVL_API_KEY=${{ secrets.FFVL_API_KEY }} \
-            --dart-define=OPENAIP_API_KEY=${{ secrets.OPENAIP_API_KEY }} \
-            --dart-define=CESIUM_ION_TOKEN=${{ secrets.CESIUM_ION_TOKEN }}
+  # No iOS job: the app ships Android-only, ios/ is not signed or configured for
+  # distribution, and nothing consumed the unsigned artifact it produced. It was
+  # scaffold left over from `flutter create`. A build that nobody acts on is a red
+  # X people learn to ignore. Restore it (macos-latest, flutter build ios
+  # --no-codesign) when iOS distribution becomes real.
 
   create-release:
     name: Create GitHub Release
     needs: [release-android]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
+    # The repository default for GITHUB_TOKEN is read-only, so creating a release
+    # 403s. Granted here rather than flipping the repo-wide default to read/write,
+    # which would hand every workflow write access to the repository.
+    permissions:
+      contents: write
 
     steps:
       - name: Download APK artifact

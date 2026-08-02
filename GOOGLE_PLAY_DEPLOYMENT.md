@@ -8,11 +8,11 @@ track.
 
 ```bash
 # 1. bump the build number (versionCode) - Play rejects a reused one
-$EDITOR the_paragliding_app/pubspec.yaml     # version: 1.0.2+11
-git commit -am "chore: Bump build number to 1.0.2+11"
+$EDITOR the_paragliding_app/pubspec.yaml     # version: 1.0.3+12
+git commit -am "chore: Bump build number to 1.0.3+12"
 
 # 2. tag and push
-git tag v1.0.2+11 && git push origin main --tags
+git tag v1.0.3+12 && git push origin main --tags
 ```
 
 The tag must agree with `pubspec.yaml` — the `check-version` job fails fast otherwise, rather
@@ -100,8 +100,21 @@ without the keystore and vice versa.
 
 ## Version management
 
-`pubspec.yaml` is the single source of truth. `versionCode` comes from the `+N` suffix and must
-increase with every upload.
+`pubspec.yaml` is the single source of truth for all three numbers Play shows, which are easy to
+confuse:
+
+| | example | what it is |
+|---|---|---|
+| `versionCode` | `12` (the `+N` suffix) | Play's real identity for a build. Must strictly increase, can never be reused. |
+| `versionName` | `1.0.3` | The only version users ever see. Changes only when you change it. |
+| Release name | `12 (1.0.3)` | A Play Console label. Cosmetic, ordering-irrelevant, set by CI from the two above. |
+
+CI derives the release name so API uploads match the `<versionCode> (<versionName>)` format Play
+Console generates for manual uploads — without it, an API upload is labelled with just the
+versionName and the track history changes format partway down the list.
+
+Bump `versionName` when a release contains user-visible change. Builds 5 through 11 all shipped
+as `1.0.2`, which left users unable to tell a months-old build from a current one.
 
 Do **not** switch to `github.run_number` — earlier releases were built locally from pubspec, so a
 run-number scheme would desynchronise from what is already published.
