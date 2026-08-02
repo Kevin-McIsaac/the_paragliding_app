@@ -26,9 +26,12 @@ bin/dev_reload.sh R           # Hot restart (SIGUSR2) - needed for main()/initSt
 Hot reload also works with the standard `r` / `R` keys if you started it in a
 terminal; `bin/dev_reload.sh` is for when the app was started in the background.
 
-- **Test data**: drop ~10 real `.igc` files into `dev_data/igc/` (gitignored - real coordinates).
+- **Test data**: drop real `.igc` files into `dev_data/igc/` (gitignored - real coordinates).
   They import on first launch only; `--reset` starts over. Seeding is driven by
   `--dart-define=SEED_IGC_DIR=...` and handled by `lib/utils/dev_seed.dart` (never runs in release).
+  Only the **8 most recent** flights are imported, by the `YYMMDD` filename prefix - a full
+  archive is hundreds of files and takes minutes. Drop the whole archive in and raise the cap
+  when a task needs more: `SEED_IGC_LIMIT=20 bin/dev_run.sh --reset` (`0` seeds everything).
 - **App state** (database + IGC copies) lives in `dev_data/app_documents/`, redirected
   there via `XDG_DOCUMENTS_DIR`. It persists across runs — the seeder only imports when
   the flights table is empty, so relaunching keeps your data. Use `--reset` to start clean.

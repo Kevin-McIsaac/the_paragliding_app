@@ -22,6 +22,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_DIR="$REPO_ROOT/the_paragliding_app"
 DEV_DATA="$REPO_ROOT/dev_data"
 SEED_IGC_DIR="${SEED_IGC_DIR:-$DEV_DATA/igc}"
+# Only the most recent flights are seeded - a full archive takes minutes to
+# import. Override with SEED_IGC_LIMIT=20, or 0 to seed everything.
+SEED_IGC_LIMIT="${SEED_IGC_LIMIT:-8}"
 APP_DOCUMENTS="$DEV_DATA/app_documents"
 # On desktop the app stores its database alongside its documents (see main.dart)
 DB_FILE="$APP_DOCUMENTS/FlightLog.db"
@@ -78,8 +81,10 @@ igc_count=$(find "$SEED_IGC_DIR" -maxdepth 1 -iname '*.igc' | wc -l)
 if [[ "$igc_count" -eq 0 ]]; then
   echo "WARNING: no .igc files in $SEED_IGC_DIR - the app will start with an empty log." >&2
   echo "         Copy ~10 real flights there to seed the database." >&2
+elif [[ "$SEED_IGC_LIMIT" -le 0 || "$SEED_IGC_LIMIT" -ge "$igc_count" ]]; then
+  echo "Seeding from all $igc_count IGC file(s) in $SEED_IGC_DIR (skipped if flights already exist)"
 else
-  echo "Seeding from $igc_count IGC file(s) in $SEED_IGC_DIR (skipped if flights already exist)"
+  echo "Seeding the $SEED_IGC_LIMIT most recent of $igc_count IGC file(s) in $SEED_IGC_DIR (skipped if flights already exist)"
 fi
 
 # path_provider_linux resolves getApplicationDocumentsDirectory() via xdg-user-dir,
@@ -107,5 +112,6 @@ exec flutter run -d "$device" \
   --pid-file "$PID_FILE" \
   ${env_file_args[@]+"${env_file_args[@]}"} \
   --dart-define=SEED_IGC_DIR="$SEED_IGC_DIR" \
+  --dart-define=SEED_IGC_LIMIT="$SEED_IGC_LIMIT" \
   ${mode_args[@]+"${mode_args[@]}"} \
   ${passthrough[@]+"${passthrough[@]}"}
