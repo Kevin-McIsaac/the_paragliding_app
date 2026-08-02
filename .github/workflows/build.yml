@@ -162,32 +162,11 @@ jobs:
           track: internal
           status: completed
 
-  build-ios:
-    name: Build iOS (without signing)
-    runs-on: macos-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-
-      - name: Get dependencies
-        run: |
-          cd the_paragliding_app
-          flutter pub get
-
-      - name: Build iOS (no signing)
-        run: |
-          cd the_paragliding_app
-          flutter build ios --release --no-codesign \
-            --dart-define=FFVL_API_KEY=${{ secrets.FFVL_API_KEY }} \
-            --dart-define=OPENAIP_API_KEY=${{ secrets.OPENAIP_API_KEY }} \
-            --dart-define=CESIUM_ION_TOKEN=${{ secrets.CESIUM_ION_TOKEN }}
+  # No iOS job: the app ships Android-only, ios/ is not signed or configured for
+  # distribution, and nothing consumed the unsigned artifact it produced. It was
+  # scaffold left over from `flutter create`. A build that nobody acts on is a red
+  # X people learn to ignore. Restore it (macos-latest, flutter build ios
+  # --no-codesign) when iOS distribution becomes real.
 
   create-release:
     name: Create GitHub Release
