@@ -24,18 +24,6 @@ class ApiKeys {
   /// FFVL (French Free Flight Federation) Weather API Key
   static const String ffvlApiKey = String.fromEnvironment('FFVL_API_KEY');
 
-  /// Google Maps API Key (optional)
-  ///
-  /// Not currently consumed - the app uses OpenStreetMap. Kept for the case
-  /// where Google Maps tiles are adopted.
-  static const String googleMapsApiKey = String.fromEnvironment(
-    'GOOGLE_MAPS_API_KEY',
-    defaultValue: googleMapsPlaceholder,
-  );
-
-  /// Value [googleMapsApiKey] takes when no key was supplied.
-  static const String googleMapsPlaceholder = 'YOUR_GOOGLE_MAPS_API_KEY_HERE';
-
   /// OpenAIP API Key (optional, user-configurable in app settings)
   static const String openAipApiKey = String.fromEnvironment('OPENAIP_API_KEY');
 
@@ -50,7 +38,6 @@ class ApiKeys {
   static void logStatus() {
     LoggingService.structured('API_KEYS_STATUS', {
       'ffvl_configured': ffvlApiKey.isNotEmpty,
-      'google_maps_configured': googleMapsApiKey != googleMapsPlaceholder,
       'openaip_configured': openAipApiKey.isNotEmpty,
       'cesium_configured': cesiumIonToken.isNotEmpty,
       'source': ffvlApiKey.isNotEmpty ? 'dart-define' : 'none',

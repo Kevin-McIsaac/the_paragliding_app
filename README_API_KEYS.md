@@ -57,12 +57,13 @@ would call the proxy, and only the proxy would hold the key.
 - **Purpose**: 3D map visualization
 - **Get it from**: <https://ion.cesium.com/tokens>
 
-### 4. Google Maps API Key (Not currently used)
+### Not Google Maps
 
-- **Purpose**: only relevant if the app migrates from OpenStreetMap to Google Maps tiles
-- **Get it from**: <https://console.cloud.google.com/apis/credentials>
-- **Note**: `ApiKeys.googleMapsApiKey` has no callers today. Prefer deleting this key at the
-  provider over rotating it.
+The app uses `flutter_map` with OpenStreetMap. `google_maps_flutter` is not a dependency, and
+there is no Google Maps key anywhere in the project — the Dart accessor, the
+`com.google.android.geo.API_KEY` manifest entry and the iOS `GMSApiKey` entry were all dead
+placeholders and have been removed. Adopting Google Maps tiles would mean adding the SDK and
+wiring a key into the native config, not just setting an env var.
 
 ## Local Development Setup
 
@@ -86,7 +87,7 @@ flutter build appbundle --release --dart-define-from-file=env.json
 CI (`.github/workflows/build.yml`) injects each key from repository secrets. Add them under
 **Settings → Secrets and variables → Actions**:
 
-`FFVL_API_KEY`, `GOOGLE_MAPS_API_KEY`, `OPENAIP_API_KEY`, `CESIUM_ION_TOKEN`
+`FFVL_API_KEY`, `OPENAIP_API_KEY`, `CESIUM_ION_TOKEN`
 
 For a local release build, pass `--dart-define-from-file=env.json` explicitly. A release built
 without it will start and run, but FFVL weather, OpenAIP overlays and Cesium 3D will all be
@@ -97,8 +98,8 @@ unconfigured — check the startup log rather than assuming.
 The app logs key status at startup:
 
 ```
-[API_KEYS_STATUS] {ffvl_configured: true, google_maps_configured: false,
-                   openaip_configured: true, cesium_configured: true, source: dart-define}
+[API_KEYS_STATUS] {ffvl_configured: true, openaip_configured: true,
+                   cesium_configured: true, source: dart-define}
 ```
 
 `source: none` means no keys were injected.
@@ -119,7 +120,6 @@ re-requesting, and search Gmail for the confirmation message first (cheapest rec
 | `FFVL_API_KEY` | <https://data.ffvl.fr/> | Email FFVL data administration. They reply with "voici votre clé API FFVL : ..." | 32-char lowercase hex |
 | `OPENAIP_API_KEY` | <https://www.openaip.net/> | Log in → user profile → API keys → regenerate or copy existing | 32-char lowercase hex |
 | `CESIUM_ION_TOKEN` | <https://ion.cesium.com/tokens> | Log in → Access Tokens → create a new token or copy the default | JWT, starts with `eyJ...` |
-| `GOOGLE_MAPS_API_KEY` | <https://console.cloud.google.com/apis/credentials> | Not consumed by the app. Delete rather than reissue. | `AIza...` 39-char string |
 
 ### Where keys live
 
