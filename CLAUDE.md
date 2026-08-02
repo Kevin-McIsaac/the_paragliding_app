@@ -81,18 +81,35 @@ does not cross the NAT), so always use an explicit `IP:port`.
 
 ```bash
 flutter analyze                       # Check for errors (run after complex, mult-file change)
-flutter test --concurrency=1          # Run all tests (see note below - plain `flutter test` is flaky)
+flutter test                          # Run all tests
 flutter test test/specific_test.dart  # Run specific test
 flutter test --tags network --run-skipped  # Live-API tests, skipped by default
 flutter_controller_enhanced cleanup   # Clean up processes if stuck
 flutter_controller_enhanced health    # Check process/pipe/readiness status
 ```
 
-**Always pass `--concurrency=1`.** The database-heavy test files each open sqlite, seed
-249 country codes and build indexes; run in parallel they contend enough to blow the 30s
-default timeout and fail together in about a third of runs, always with
-`TimeoutException` rather than a real assertion. This cannot be set in `dart_test.yaml` -
-`flutter test` always passes its own `-j` and overrides the file. CI does it in `ci.yml`.
+**Plain `flutter test` is fine locally.** It used to fail about 1 run in 3, so this file
+told you to always pass `--concurrency=1`. Issue #280 fixed the underlying test problems;
+measured over 16 consecutive runs on an 8-core dev box, parallel is now 0/16 failures and
+the fastest of the three modes (mean 46s, vs 60s serial, vs 81s serial before the fix).
+
+Keep the tests isolated, or this comes back:
+
+- **Never write fixtures to a fixed path.** Use `TestHelpers.fixturePath('name.igc')`, which
+  gives each test process its own directory. Fixed `/tmp` paths caused a real failure -
+  two test files both wrote `/tmp/test_india.igc`, and one run read a fixture back empty
+  (`Parsed 0 track points, pilot: Unknown`).
+- **The test database is in-memory** (`TestHelpers.initializeDatabaseForTesting()` sets
+  `DatabaseHelper.databasePathOverride`). Don't reintroduce a file-backed one, and don't
+  add per-test `recreateDatabase()` unless a test actually writes - eight read-only tests
+  were rebuilding the schema and re-seeding 249 country codes nine times per run.
+
+**CI still passes `--concurrency=1`** (`.github/workflows/ci.yml`). That is deliberate and
+not stale: parallel was only verified on an 8-core dev machine, and hosted runners have
+far fewer cores. Re-measure there before changing it.
+
+`concurrency:` cannot be set in `dart_test.yaml` - `flutter test` always passes its own
+`-j` and overrides the file. It has to be on the command line.
 
 ## 📁 Key Files (Most Accessed)
 
@@ -146,7 +163,8 @@ lib/
 | Track data empty | Direct IGC parsing | Use `FlightTrackLoader.loadFlightTrack()` |
 | State not updating | Widget not rebuilding | Check `setState()` calls |
 | Database locked | Concurrent operations | Use `DatabaseService` methods |
-| Tests fail with `TimeoutException` | Parallel test files contend | Run `flutter test --concurrency=1` |
+| Tests fail with `TimeoutException` | A test file opens a file-backed database, or does needless DB lifecycle churn | Keep the test DB in-memory; don't add per-test `recreateDatabase()` (see #280) |
+| Test reads its own fixture back empty | Fixture written to a fixed `/tmp` path | Use `TestHelpers.fixturePath('name.igc')` |
 | Test hits the network | Live-API test not tagged | Tag it `network`; it is skipped by default |
 | Hot reload fails | State corruption | Use `R` (hot restart) instead of `r` |
 | App won't start | Process still running | Run `flutter_controller_enhanced cleanup` |
