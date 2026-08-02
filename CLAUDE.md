@@ -566,9 +566,24 @@ All API calls generate structured logs:
 Do feature and bugfix work in a git worktree, one per task, branched from `origin/main`.
 They live in `.claude/worktrees/` (gitignored) and are removed once the work merges.
 
-A fresh worktree has no `.dart_tool/`, no `build/`, and no `dev_data/` — run
-`flutter pub get` in `the_paragliding_app/` after creating one, and copy or re-seed
-`dev_data/igc` if the task needs the app to actually run.
+A fresh worktree has none of the gitignored files. After creating one, from
+`the_paragliding_app/`:
+
+```bash
+cp ../../../../the_paragliding_app/.env .env   # from the main checkout
+flutter pub get
+```
+
+`.env` is **not optional even for `flutter test`** — `pubspec.yaml` lists it under
+`assets:`, so without it `flutter test` and `flutter run` die with `No file or variants
+found for asset: .env` / `Failed to build asset bundle` in about 2 seconds. That looks
+like a total test failure rather than a missing file, so check for it first when a new
+worktree's suite is instantly and uniformly red. (`flutter analyze` still completes; it
+only reports the missing asset as a warning, so a clean analyze is no evidence the file
+is there.)
+
+Also absent: `.dart_tool/`, `build/`, and `dev_data/` — re-seed `dev_data/igc` only if the
+task needs the app to actually run.
 
 ### Standard Development Process
 
