@@ -443,9 +443,8 @@ setState(() {}); // In build() method - causes infinite rebuilds
 
 ## Database Development
 
-**The app is published, so schema and data changes need real migrations.** This section
-used to say "no migrations, clear app data" - that was written pre-release and is now
-wrong: a user's flight log exists nowhere else, and clearing it is unrecoverable.
+**The app is published, so schema and data changes need real migrations.** A user's flight
+log exists nowhere else; clearing it is unrecoverable.
 
 ### Schema Change Process
 

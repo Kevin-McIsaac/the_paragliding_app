@@ -92,6 +92,28 @@ void main() {
     expect(await durationOf(id), 60);
   });
 
+  test('leaves rows alone where landing is not after takeoff', () async {
+    // Should be unreachable - TakeoffLandingDetector rejects takeoff at or after
+    // landing - but the migration rewrites user data, so it must not turn a bad
+    // row into a negative duration.
+    final inverted = await insertFlight(
+      duration: 60,
+      takeoff: '2026-01-15T12:00:00.000',
+      landing: '2026-01-15T11:00:00.000',
+    );
+    final equal = await insertFlight(
+      duration: 30,
+      takeoff: '2026-01-15T12:00:00.000',
+      landing: '2026-01-15T12:00:00.000',
+    );
+
+    await DatabaseHelper.instance
+        .backfillDetectedDurations(await DatabaseHelper.instance.database);
+
+    expect(await durationOf(inverted), 60, reason: 'must not become -60');
+    expect(await durationOf(equal), 30);
+  });
+
   test('totals match the sum of the rows - the invariant that was broken',
       () async {
     await insertFlight(

@@ -385,11 +385,29 @@ class DatabaseHelper {
       CAST(round((julianday(detected_landing_time)
                 - julianday(detected_takeoff_time)) * 1440) AS INTEGER)''';
 
+    // Landing must be after takeoff, or the arithmetic yields a negative
+    // duration. TakeoffLandingDetector rejects takeoffIndex >= landingIndex so
+    // this should be unreachable, but the statement rewrites a user's flight log
+    // in place and an inherited invariant is a poor thing to bet that on. Rows
+    // failing the check keep their existing duration.
+    final skipped = Sqflite.firstIntValue(await db.rawQuery('''
+      SELECT COUNT(*) FROM flights
+       WHERE detected_takeoff_time IS NOT NULL
+         AND detected_landing_time IS NOT NULL
+         AND detected_landing_time <= detected_takeoff_time
+    ''')) ?? 0;
+    if (skipped > 0) {
+      LoggingService.warning(
+          'DatabaseHelper: $skipped flight(s) have landing at or before takeoff; '
+          'duration left unchanged');
+    }
+
     final changed = await db.rawUpdate('''
       UPDATE flights
          SET duration = $detectedMinutes
        WHERE detected_takeoff_time IS NOT NULL
          AND detected_landing_time IS NOT NULL
+         AND detected_landing_time > detected_takeoff_time
          AND duration <> $detectedMinutes
     ''');
 
