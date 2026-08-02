@@ -1,185 +1,123 @@
-# Google Play Automated Deployment
+# Google Play Deployment
 
-This guide explains how to set up automated deployment to Google Play Store using GitHub Actions.
+Releases are built and published by `.github/workflows/build.yml`. Pushing a `v*` tag builds a
+signed APK and App Bundle, verifies them, and publishes the bundle to the Play **internal**
+track.
 
-## Prerequisites
+## Releasing
 
-1. **Google Play Developer Account** ($25 one-time fee)
-2. **Published app** (at least one manual upload)
-3. **App signing by Google Play** (recommended)
-
-## Setup Steps
-
-### Step 1: Create Service Account
-
-1. Go to [Google Play Console](https://play.google.com/console)
-2. Navigate to **Setup → API access**
-3. Click **Create new service account**
-4. Follow the link to Google Cloud Console
-5. In Google Cloud Console:
-   - Click **Create Service Account**
-   - Name: `github-actions-deploy`
-   - Role: Select **Service Account User**
-   - Click **Create Key** → **JSON**
-   - Download the JSON key file (keep it secure!)
-
-### Step 2: Grant Permissions in Play Console
-
-1. Back in Play Console → **API access**
-2. Find your new service account
-3. Click **Grant access**
-4. Select permissions:
-   - **Release management** (required)
-   - **Release to production** (if deploying to production)
-   - **View app information** (required)
-5. Select your app
-6. Click **Apply**
-
-### Step 3: Set up App Signing
-
-#### Option A: Let Google manage signing (Recommended)
-1. Go to **Setup → App signing**
-2. Follow Google's app signing enrollment
-3. Upload your existing keystore (if you have one)
-4. Google will handle signing for distribution
-
-#### Option B: Self-managed signing
-1. Keep your keystore file secure
-2. You'll need to add it to GitHub Secrets
-
-### Step 4: Add GitHub Secrets
-
-Go to your GitHub repository → Settings → Secrets and add:
-
-#### Required Secrets:
-- `PLAY_STORE_SERVICE_ACCOUNT_JSON` - The entire JSON content from Step 1
-- `ANDROID_KEYSTORE` - Base64 encoded keystore (if self-signing)
-- `ANDROID_KEYSTORE_PASSWORD` - Keystore password (if self-signing)
-- `ANDROID_KEY_ALIAS` - Key alias (if self-signing)
-- `ANDROID_KEY_PASSWORD` - Key password (if self-signing)
-
-#### To encode keystore as base64:
 ```bash
-base64 -i your-keystore.jks | tr -d '\n' > keystore-base64.txt
+# 1. bump the build number (versionCode) - Play rejects a reused one
+$EDITOR the_paragliding_app/pubspec.yaml     # version: 1.0.2+11
+git commit -am "chore: Bump build number to 1.0.2+11"
+
+# 2. tag and push
+git tag v1.0.2+11 && git push origin main --tags
 ```
 
-### Step 5: Update GitHub Workflow
+The tag must agree with `pubspec.yaml` — the `check-version` job fails fast otherwise, rather
+than letting Play reject the upload after a full build.
 
-See `.github/workflows/build.yml` for the complete workflow with Play Store deployment.
+Then **approve the deployment**: the `release-android` job targets the `play-internal`
+environment, which has a required reviewer, so it waits in the Actions tab until approved. That
+is the last point at which a mistaken tag can be stopped.
 
-## Deployment Tracks
+After approval, CI:
 
-Google Play offers several deployment tracks:
+1. Restores the upload keystore and writes `android/key.properties`
+2. Builds APK + AAB with the API keys injected via `--dart-define`
+3. **Verifies** the bundle (see below) — hard failure, not a warning
+4. Publishes the AAB to the internal track with `mapping.txt`
+5. Attaches the APK to a GitHub Release
 
-- **Internal testing** - Limited to internal testers (fastest)
-- **Closed testing (Alpha)** - Limited group of testers
-- **Closed testing (Beta)** - Larger group of testers
-- **Open testing** - Public beta
-- **Production** - Full release
+Internal testing has no review delay; testers see it within minutes.
 
-## Version Management
+`workflow_dispatch` runs the same build and verification but **does not publish** — use it to
+test pipeline changes.
 
-### Version Code
-- Must increment with each upload
-- Use GitHub run number: `${{ github.run_number }}`
-- Or timestamp: `$(date +%s)`
+## What CI verifies
 
-### Version Name
-- Human-readable version (e.g., "1.2.3")
-- Extract from tag or pubspec.yaml
+Two failure modes that produce a perfectly normal-looking build, both now hard errors:
 
-## Workflow Configuration
+| check | why |
+|---|---|
+| AAB signing cert == `vars.UPLOAD_CERT_SHA256` | Without `key.properties`, `build.gradle.kts` falls back to the **debug** key and only `println`s a warning. Play rejects the upload, and before this check GitHub Releases were being published debug-signed. |
+| no `flutter_assets/.env` in the bundle | `.env` was once declared as an asset, shipping API keys in plaintext to every user (#284). This stops that regressing. |
 
-The workflow uses `r0adkll/upload-google-play@v1` action for deployment.
+The expected fingerprint is a repository **variable**, not a secret — it is a public certificate
+fingerprint:
 
-### Basic Upload
-```yaml
-- uses: r0adkll/upload-google-play@v1
-  with:
-    serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_SERVICE_ACCOUNT_JSON }}
-    packageName: com.theparaglidingapp
-    releaseFiles: app-release.aab
-    track: internal
+```
+UPLOAD_CERT_SHA256 = 1F:05:AD:55:3A:CB:78:8C:38:CB:13:7D:61:06:B6:D6:EC:3C:04:0D:90:89:AA:A8:00:14:70:6E:63:7A:7E:F2
 ```
 
-### With Release Notes
-```yaml
-- uses: r0adkll/upload-google-play@v1
-  with:
-    serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_SERVICE_ACCOUNT_JSON }}
-    packageName: com.theparaglidingapp
-    releaseFiles: app-release.aab
-    track: production
-    status: completed
-    releaseNotes: |
-      New features:
-      - Feature 1
-      - Feature 2
-      Bug fixes:
-      - Fix 1
-```
+## Configuration
 
-## Testing the Setup
+### Environment `play-internal` (already created)
 
-1. **Test with internal track first**
-   ```yaml
-   track: internal
-   status: draft
+Required reviewer: repository owner. Signing and Play credentials are scoped to this
+environment rather than the whole repository, so no other workflow can read them.
+
+**Environment secrets** (set from the local keystore):
+
+| secret | source |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | `base64 -w0 upload-keystore-new.jks` |
+| `ANDROID_KEYSTORE_PASSWORD` | `storePassword` in `android/key.properties` |
+| `ANDROID_KEY_ALIAS` | `upload` |
+| `ANDROID_KEY_PASSWORD` | `keyPassword` in `android/key.properties` |
+| `PLAY_STORE_SERVICE_ACCOUNT_JSON` | **still to be set** — see below |
+
+**Repository secrets** (shared with `ci.yml`): `FFVL_API_KEY`, `OPENAIP_API_KEY`,
+`CESIUM_ION_TOKEN`.
+
+### Remaining setup: the Play service account
+
+This cannot be scripted — it needs the Google Cloud and Play Console UIs.
+
+1. **Play Console → Setup → API access → Create new service account**, following the link into
+   Google Cloud Console
+2. In Google Cloud: create the service account, then **Create Key → JSON** and download it
+3. Back in Play Console → API access → **Grant access** to that service account, with at least
+   **Release management** and **View app information**, scoped to this app
+4. Add the JSON as an environment secret:
+   ```bash
+   gh secret set PLAY_STORE_SERVICE_ACCOUNT_JSON --env play-internal < service-account.json
+   rm service-account.json
    ```
 
-2. **Verify in Play Console**
-   - Check the internal testing track
-   - Ensure the AAB was uploaded correctly
+Permission changes in Play Console can take a few minutes to take effect.
 
-3. **Gradual rollout**
-   ```yaml
-   track: production
-   status: inProgress
-   userFraction: 0.1  # 10% rollout
-   ```
+## Why the keystore is safe to put in CI
+
+This app is enrolled in **Play App Signing**, so `upload-keystore-new.jks` is an *upload* key —
+Google holds the actual app signing key. A compromised upload key can be reset through Play
+Console. If the project were self-signing, putting the key in CI would risk permanently losing
+the ability to update the listing, and this pipeline would be a bad idea.
+
+Keep a backup of the keystore **and** `key.properties` regardless; the passwords are useless
+without the keystore and vice versa.
+
+## Version management
+
+`pubspec.yaml` is the single source of truth. `versionCode` comes from the `+N` suffix and must
+increase with every upload.
+
+Do **not** switch to `github.run_number` — earlier releases were built locally from pubspec, so a
+run-number scheme would desynchronise from what is already published.
 
 ## Troubleshooting
 
-### Error: "APK specifies a version code that has already been used"
-- Increment version code in pubspec.yaml
-- Or use dynamic version code with run number
+| Error | Cause | Fix |
+|---|---|---|
+| `Tag vX does not match pubspec version` | Tagged without bumping | Bump `pubspec.yaml`, retag |
+| `AAB is not signed with the upload key` | Keystore secret missing or wrong | Check the `play-internal` environment secrets |
+| `.env is bundled as an asset` | Someone re-added `.env` to `assets:` | Remove it; keys come from `--dart-define` (see README_API_KEYS.md) |
+| `Version code N has already been used` | `versionCode` not bumped | Bump the `+N` suffix |
+| `The caller does not have permission` | Service account lacks Play access | Re-check the grant in Play Console → API access |
+| `Invalid JWT` | Malformed service account JSON secret | Re-set it from the original file with `gh secret set ... <` |
 
-### Error: "The caller does not have permission"
-- Check service account permissions in Play Console
-- Ensure the app is selected in permissions
+## Promoting to production
 
-### Error: "Package name not found"
-- Verify package name matches Play Console
-- Ensure app is published (at least internal)
-
-### Error: "Invalid JWT"
-- Check service account JSON is correctly added to secrets
-- Ensure no extra spaces or line breaks
-
-## Security Best Practices
-
-1. **Never commit secrets to repository**
-2. **Use GitHub Secrets for all sensitive data**
-3. **Restrict workflow triggers** to protected branches
-4. **Enable branch protection** for main/production
-5. **Use environment-specific tracks** (dev→internal, main→production)
-
-## Example Release Process
-
-1. Create release branch: `release/v1.2.3`
-2. Update version in `pubspec.yaml`
-3. Create PR to main
-4. Merge PR (triggers workflow)
-5. Workflow:
-   - Builds signed AAB
-   - Uploads to internal track
-   - Creates GitHub release
-6. Test in internal track
-7. Promote to production in Play Console
-
-## Useful Resources
-
-- [Google Play Console Help](https://support.google.com/googleplay/android-developer)
-- [Fastlane Alternative](https://docs.fastlane.tools/getting-started/android/release-deployment/)
-- [GitHub Action: upload-google-play](https://github.com/r0adkll/upload-google-play)
-- [Flutter Build Documentation](https://docs.flutter.dev/deployment/android)
+Deliberately manual. Test on the internal track, then promote the release in Play Console →
+Production, ideally as a staged rollout. Nothing in CI touches the production track.
