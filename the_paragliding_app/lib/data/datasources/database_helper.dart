@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../../services/logging_service.dart';
@@ -25,7 +26,7 @@ import '../../services/logging_service.dart';
 class DatabaseHelper {
   static const _databaseName = "FlightLog.db";
   /// Current schema version - tests assert against this rather than a literal
-  static const databaseVersion = 2; // v2: Added pge_site_id foreign key for deduplication
+  static const databaseVersion = 3; // v3: duration holds detected takeoff->landing
 
   // Singleton pattern
   DatabaseHelper._privateConstructor();
@@ -65,13 +66,12 @@ class DatabaseHelper {
     }
   }
 
-  /// Initialize database with v1.0 schema
+  /// Initialize the database, creating the schema or upgrading it.
   ///
-  /// PRE-RELEASE STRATEGY: No migrations needed since app hasn't been released.
-  /// All schema changes during development require clearing app data.
-  ///
-  /// POST-RELEASE STRATEGY: Start migrations from v2 when app is released.
-  /// This ensures a clean baseline for production users.
+  /// The app is published, so every schema or data change needs a real
+  /// migration in [_onUpgrade]. "Clear app data and re-import" is a development
+  /// convenience only - for a user it destroys a flight log that exists nowhere
+  /// else. Bump [databaseVersion] and add an `if (oldVersion < N)` branch.
   Future<Database> _initDatabase() async {
     final path = await _databasePath();
     LoggingService.database('INIT', 'Opening database at: $path');
@@ -366,6 +366,42 @@ class DatabaseHelper {
   }
 
   /// Handle database upgrades with migration logic
+  /// Rewrite `duration` as detected takeoff -> landing for flights that have
+  /// detection data.
+  ///
+  /// Before v3 the column held the IGC header's figure while the UI displayed a
+  /// separately computed takeoff-to-landing value, so every total disagreed with
+  /// the rows it summarised. Making the column authoritative is what fixes the
+  /// aggregates, which all sum it in SQL.
+  ///
+  /// Safe to re-run: `detected_takeoff_time` / `detected_landing_time` are kept,
+  /// and the WHERE clause skips rows already correct. Manual flights have no
+  /// detection data and are left alone.
+  @visibleForTesting
+  Future<void> backfillDetectedDurations(Database db) async {
+    // julianday() parses the ISO8601 TEXT columns; * 1440 converts days to
+    // minutes; round() before CAST stops 59.99 truncating to 59.
+    const detectedMinutes = '''
+      CAST(round((julianday(detected_landing_time)
+                - julianday(detected_takeoff_time)) * 1440) AS INTEGER)''';
+
+    final changed = await db.rawUpdate('''
+      UPDATE flights
+         SET duration = $detectedMinutes
+       WHERE detected_takeoff_time IS NOT NULL
+         AND detected_landing_time IS NOT NULL
+         AND duration <> $detectedMinutes
+    ''');
+
+    final total = Sqflite.firstIntValue(
+            await db.rawQuery('SELECT COUNT(*) FROM flights')) ??
+        0;
+    // Logged because this silently rewrites user data - without a count there is
+    // no way to audit what the upgrade did after the fact.
+    LoggingService.database(
+        'MIGRATE', 'Updated duration on $changed of $total flights');
+  }
+
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     LoggingService.database('MIGRATE', 'Upgrading database from v$oldVersion to v$newVersion');
 
@@ -384,6 +420,13 @@ class DatabaseHelper {
 
         // Trigger data migration to match existing sites with PGE sites
         await _migrateExistingSitesToPgeMapping(db);
+      }
+
+      // Migration from v2 to v3: duration becomes detected takeoff -> landing
+      if (oldVersion < 3) {
+        LoggingService.database(
+            'MIGRATE', 'Applying migration v2 -> v3: duration = detected takeoff to landing');
+        await backfillDetectedDurations(db);
       }
 
       LoggingService.database('MIGRATE', 'Database migration completed successfully');

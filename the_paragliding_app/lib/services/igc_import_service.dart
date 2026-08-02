@@ -408,7 +408,10 @@ class IgcImportService {
       date: igcData.date,
       launchTime: _formatTime(igcData.launchTime),
       landingTime: _formatTime(igcData.landingTime),
-      duration: igcData.duration,
+      // Takeoff to landing, not the IGC header's extent. The column is what every
+      // aggregate sums, so anything else makes totals disagree with the rows they
+      // summarise - see the detected/raw split this replaced.
+      duration: _durationMinutes(detectionResult, igcData.duration),
       launchSiteId: launchSite?.id,
       launchLatitude: igcData.launchSite?.latitude,
       launchLongitude: igcData.launchSite?.longitude,
@@ -608,6 +611,21 @@ class IgcImportService {
   /// Format time for display
   String _formatTime(DateTime time) {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+
+  /// Flight duration in minutes: detected takeoff to landing where detection
+  /// succeeded, otherwise the IGC header's figure.
+  ///
+  /// The header covers the whole recording - typically including time on the
+  /// ground before launch and after landing - so it overstates the flight. Only
+  /// one of the two can be stored, because `duration` is what every aggregate
+  /// sums, and a second definition living anywhere else reintroduces the split
+  /// where per-flight rows and totals disagreed.
+  int _durationMinutes(DetectionResult detection, int headerDuration) {
+    final takeoff = detection.takeoffTime;
+    final landing = detection.landingTime;
+    if (takeoff == null || landing == null) return headerDuration;
+    return landing.difference(takeoff).inMinutes;
   }
 
   /// Get site name using paragliding site matching or fallback to coordinates

@@ -128,13 +128,10 @@ class Flight {
     return landingTime;
   }
 
-  /// Get the effective duration - uses detected times if available, otherwise original duration
-  int get effectiveDuration {
-    if (detectedTakeoffTime != null && detectedLandingTime != null) {
-      return detectedLandingTime!.difference(detectedTakeoffTime!).inMinutes;
-    }
-    return duration;
-  }
+  // No effectiveDuration getter: `duration` already holds detected takeoff to
+  // landing (written at import, backfilled by the v3 migration). Computing it
+  // here instead made it invisible to SQL, so every aggregate summed a different
+  // number from the one each row displayed.
 
   /// Whether this flight has detected takeoff/landing data
   bool get hasDetectionData => takeoffIndex != null && landingIndex != null;

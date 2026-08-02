@@ -443,20 +443,29 @@ setState(() {}); // In build() method - causes infinite rebuilds
 
 ## Database Development
 
-### Pre-Release Strategy
-
-- **No Migrations**: Clear app data for schema changes during development
-- **v1.0 Baseline**: Current schema in `database_helper.dart`
-- **Developer Workflow**: Clear data → Hot restart → Re-import test data
+**The app is published, so schema and data changes need real migrations.** This section
+used to say "no migrations, clear app data" - that was written pre-release and is now
+wrong: a user's flight log exists nowhere else, and clearing it is unrecoverable.
 
 ### Schema Change Process
 
-1. Clear app data: Settings → Apps → **Paragliding App (debug)** → Storage → Clear Data.
-   Pick the "(debug)" entry - a production install may sit next to it under
-   "The Paragliding App", and clearing that one destroys real flight data.
-   On Linux desktop use `bin/dev_run.sh --reset` instead.
-2. Hot restart app to recreate database
-3. Re-import test data
+1. Bump `databaseVersion` in `database_helper.dart`
+2. Add an `if (oldVersion < N)` branch to `_onUpgrade`, following the existing ones
+3. **Log how many rows a data migration changed.** A migration that rewrites user data
+   silently cannot be audited afterwards - see `backfillDetectedDurations`
+4. Test the upgrade path, not just the fresh-install path. `test/duration_backfill_test.dart`
+   is the pattern: annotate the migration `@visibleForTesting` and drive it directly, rather
+   than duplicating its SQL in the test where the two can drift apart
+5. Verify a fresh install still works - `_onCreate` and `_onUpgrade` must converge on the
+   same schema
+
+### Clearing data (development only)
+
+Clearing app data is fine on a dev machine and never appropriate as a user-facing fix.
+On Linux desktop use `bin/dev_run.sh --reset`. On Android: Settings → Apps →
+**Paragliding App (debug)** → Storage → Clear Data. Pick the "(debug)" entry - a production
+install may sit next to it under "The Paragliding App", and clearing that one destroys real
+flight data.
 
 ## Key Calculations & Data
 
