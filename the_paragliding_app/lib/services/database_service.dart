@@ -422,35 +422,6 @@ class DatabaseService {
     return (whereClause, whereArgs);
   }
   
-  /// Get overall flight statistics (total flights, hours, max altitude)
-  Future<Map<String, dynamic>> getOverallStatistics() async {
-    LoggingService.debug('DatabaseService: Getting overall statistics');
-    
-    Database db = await _databaseHelper.database;
-    
-    List<Map<String, dynamic>> result = await db.rawQuery('''
-      SELECT 
-        COUNT(*) as total_flights,
-        SUM(duration) as total_duration,
-        MAX(max_altitude) as highest_altitude,
-        AVG(duration) as average_duration,
-        AVG(max_altitude) as average_altitude
-      FROM flights
-    ''');
-    
-    final row = result.first;
-    final stats = {
-      'totalFlights': row['total_flights'] ?? 0,
-      'totalDuration': row['total_duration'] ?? 0,
-      'highestAltitude': row['highest_altitude'] ?? 0.0,
-      'averageDuration': row['average_duration'] ?? 0.0,
-      'averageAltitude': row['average_altitude'] ?? 0.0,
-    };
-    
-    LoggingService.info('DatabaseService: Generated overall statistics for ${stats['totalFlights']} flights');
-    return stats;
-  }
-
   /// Get flight statistics grouped by year
   Future<List<Map<String, dynamic>>> getYearlyStatistics({DateTime? startDate, DateTime? endDate}) async {
     final stopwatch = Stopwatch()..start();
