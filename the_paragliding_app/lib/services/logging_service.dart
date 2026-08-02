@@ -269,8 +269,28 @@ class LoggingService {
     final pairs = data.entries
         .map((e) => '${e.key}=${_formatValue(e.value)}')
         .join(' | ');
+
+    // Release builds are gated at Level.warning, so an info-level structured log
+    // never reaches logcat - a release install emits nothing from our own code at
+    // all. A few categories are worth keeping in production, and warning is the
+    // only level that survives. These are diagnostics rather than problems; the
+    // level is a transport, not a severity claim.
+    if (kReleaseMode && _releaseVisibleCategories.contains(category)) {
+      _logger.w('[$category] $pairs');
+      return;
+    }
     _logger.i('[$category] $pairs');
   }
+
+  /// Structured categories kept in release builds. Keep this list short - every
+  /// entry is noise in production logs, and the value is in being able to answer
+  /// one specific question about a build you cannot attach a debugger to.
+  ///
+  /// API_KEYS_STATUS answers "did this build get its --dart-define secrets?",
+  /// which is otherwise unanswerable for a Play-delivered install: the keys are
+  /// compile-time constants and a build without them fails silently, with
+  /// airspace overlays and 3D simply empty.
+  static const Set<String> _releaseVisibleCategories = {'API_KEYS_STATUS'};
 
   /// Lazy evaluation version of structured logging - only builds data if logging enabled
   static void structuredLazy(String category, Map<String, dynamic> Function() dataBuilder) {
@@ -279,8 +299,11 @@ class LoggingService {
       return;
     }
 
-    // Only build the expensive data if we're actually going to log it
-    if (Logger.level.index <= Level.info.index) {
+    // Only build the expensive data if we're actually going to log it. Release
+    // visible categories are exempt: the level check would skip them in release,
+    // which is exactly where they are wanted.
+    if (Logger.level.index <= Level.info.index ||
+        _releaseVisibleCategories.contains(category)) {
       final data = dataBuilder();
       structured(category, data);
     }
