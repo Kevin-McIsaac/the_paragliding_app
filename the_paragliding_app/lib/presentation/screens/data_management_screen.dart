@@ -19,6 +19,7 @@ import '../widgets/airspace_country_selector.dart';
 import '../../services/airspace_geojson_service.dart';
 import '../../services/airspace_country_service.dart';
 import '../../services/pge_sites_download_service.dart';
+import '../../services/app_initialization_service.dart';
 import '../../services/pge_sites_database_service.dart';
 import '../../services/pge_incremental_sync_service.dart';
 
@@ -274,8 +275,9 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
     LoggingService.action('DataManagement', 'load_pge_sites_stats');
 
     try {
-      // Initialize tables if needed
-      await PgeSitesDatabaseService.instance.initializeTables();
+      // Initialize tables if needed - cheap after the first call, and correct
+      // after a database recreate
+      await AppInitializationService.instance.ensureTables();
 
       // Get database statistics
       final stats = await PgeSitesDatabaseService.instance.getDatabaseStats();

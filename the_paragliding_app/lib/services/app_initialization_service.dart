@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:sqflite/sqflite.dart' show Database;
+import '../data/datasources/database_helper.dart';
 import 'logging_service.dart';
 import 'pge_sites_database_service.dart';
 import 'pge_sites_download_service.dart';
@@ -27,7 +29,15 @@ class AppInitializationService {
   /// directly where they need it. Production never changes it.
   static bool backgroundInitEnabled = true;
 
-  bool _isInitialized = false;
+  // Both memos below record a fact about the *contents* of a database, so they
+  // are keyed on the connection they were established against rather than a
+  // bare bool. DatabaseHelper.recreateDatabase() deletes the file and opens a
+  // new Database, which drops pge_sites and pge_sites_metadata - those are
+  // created by PgeSitesDatabaseService.initializeTables(), not by _onCreate. A
+  // memo that outlives its database reports success against tables that no
+  // longer exist. Comparing identity makes both self-heal on next use.
+  Database? _initializedFor;
+  Database? _tablesCreatedFor;
   Future<void>? _initialization;
   Future<void>? _tableCreation;
 
@@ -39,17 +49,23 @@ class AppInitializationService {
   /// rejected future here would make main.dart's "Retry" button dead: it calls
   /// straight back into this method and would keep getting the original
   /// failure, leaving a force-quit as the only way out.
-  Future<void> ensureTables() {
-    return _tableCreation ??= _createTables();
+  Future<void> ensureTables() async {
+    final db = await DatabaseHelper.instance.database;
+    if (identical(_tablesCreatedFor, db)) return;
+    return _tableCreation ??= _createTables(db);
   }
 
-  Future<void> _createTables() async {
+  Future<void> _createTables(Database db) async {
     try {
       await PgeSitesDatabaseService.instance.initializeTables();
+      _tablesCreatedFor = db;
     } catch (e) {
-      _tableCreation = null; // Allow a retry on the next request
       LoggingService.error('AppInitializationService: Table creation failed', e);
       rethrow;
+    } finally {
+      // Cleared either way: on success the connection identity is now the memo,
+      // and on failure the next caller must be free to retry.
+      _tableCreation = null;
     }
   }
 
@@ -58,17 +74,24 @@ class AppInitializationService {
   /// Deferred until something actually needs the data (the Sites map) - the
   /// import is ~11k rows and used to block app startup. Concurrent callers
   /// share one run and await the same future.
-  Future<void> initializeInBackground() {
+  Future<void> initializeInBackground() async {
     if (!backgroundInitEnabled) {
-      return Future.value();
+      return;
     }
-    if (_isInitialized) {
-      return Future.value();
+    final db = await DatabaseHelper.instance.database;
+    // Keyed on the connection, not a bool: after a recreate the tables are empty
+    // again, and a bool would report the import as already done.
+    if (identical(_initializedFor, db)) {
+      return;
     }
-    return _initialization ??= _initialize();
+    return _initialization ??= _initialize(db);
   }
 
-  Future<void> _initialize() async {
+  /// [db] is the connection this run is populating. If the database is recreated
+  /// while this is in flight the stamp below is stale, which is not reachable
+  /// today - both recreate and background init are user-initiated and
+  /// sequential - and is not worth guarding against.
+  Future<void> _initialize(Database db) async {
     try {
       LoggingService.info('AppInitializationService: Starting background initialization');
 
@@ -78,10 +101,11 @@ class AppInitializationService {
       // Check if PGE sites need incremental sync (daily auto-sync)
       await _checkAndSyncPgeSites();
 
-      _isInitialized = true;
+      _initializedFor = db;
       LoggingService.info('AppInitializationService: Background initialization complete');
     } catch (e) {
       LoggingService.error('AppInitializationService: Background initialization failed', e);
+    } finally {
       _initialization = null; // Allow a retry on the next request
     }
   }
@@ -196,7 +220,7 @@ class AppInitializationService {
     }
   }
 
-  /// Get initialization status
-  bool get isInitialized => _isInitialized;
-  bool get isInitializing => _initialization != null && !_isInitialized;
+  // isInitialized / isInitializing getters removed: nothing read them, and both
+  // reported on a bool that could not distinguish "imported" from "imported into
+  // a database that has since been deleted".
 }

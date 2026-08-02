@@ -5,6 +5,7 @@ import '../data/datasources/database_helper.dart';
 import '../data/models/site.dart';
 import '../services/logging_service.dart';
 import '../services/igc_import_service.dart';
+import '../services/app_initialization_service.dart';
 import '../services/pge_sites_database_service.dart';
 import '../services/pge_sites_download_service.dart';
 import '../services/database_service.dart';
@@ -287,8 +288,11 @@ class DatabaseResetHelper {
         // Call progress callback to inform user
         onProgress?.call('Downloading site database...', 0, 1);
 
-        // Initialize PGE sites tables
-        await PgeSitesDatabaseService.instance.initializeTables();
+        // The database was just recreated, so the PGE tables are gone.
+        // ensureTables() notices the connection changed and recreates them; it
+        // used to be a no-op here, which is why this called initializeTables()
+        // directly.
+        await AppInitializationService.instance.ensureTables();
 
         // Check if we need to download
         final hasData = await PgeSitesDatabaseService.instance.isDataAvailable();
@@ -730,122 +734,6 @@ class DatabaseResetHelper {
       return {
         'success': false,
         'message': 'Error deleting flight data: $e',
-        'database': {'success': false},
-        'igc_files': {
-          'found': 0,
-          'deleted': 0,
-          'failed': 0,
-          'size_deleted_bytes': 0,
-        },
-      };
-    }
-  }
-
-  /// Delete all flight data including database records AND all IGC files
-  /// This is a complete data wipe - removes everything flight-related
-  static Future<Map<String, dynamic>> deleteAllFlightData() async {
-    try {
-      LoggingService.info('DatabaseResetHelper: Starting complete flight data deletion...');
-      
-      // First, find all IGC files before we reset the database
-      final igcFiles = await _findAllIGCFiles();
-      final totalIGCFiles = igcFiles.length;
-      
-      LoggingService.info('DatabaseResetHelper: Found $totalIGCFiles IGC files to delete');
-      
-      // Get current database stats before deletion
-      final flightCount = await _getTableCount('flights');
-      final siteCount = await _getTableCount('sites');
-      final wingCount = await _getTableCount('wings');
-      
-      // Calculate total IGC file size
-      int totalIGCSize = 0;
-      for (final file in igcFiles) {
-        try {
-          if (await file.exists()) {
-            totalIGCSize += await file.length();
-          }
-        } catch (e) {
-          LoggingService.warning('DatabaseResetHelper: Error checking IGC file size: ${file.path}', e);
-        }
-      }
-      
-      LoggingService.info('DatabaseResetHelper: Total IGC file size: ${(totalIGCSize / 1024).toStringAsFixed(1)}KB');
-      
-      // Reset the database first
-      final resetResult = await resetDatabase();
-      if (!resetResult['success']) {
-        return {
-          'success': false,
-          'message': 'Failed to reset database: ${resetResult['message']}',
-          'database': resetResult,
-          'igc_files': {
-            'found': totalIGCFiles,
-            'deleted': 0,
-            'failed': 0,
-            'size_deleted_bytes': 0,
-          },
-        };
-      }
-      
-      LoggingService.info('DatabaseResetHelper: Database reset complete, now deleting IGC files...');
-      
-      // Delete all IGC files
-      int deletedIGCFiles = 0;
-      int failedIGCFiles = 0;
-      int deletedIGCSize = 0;
-      final igcErrors = <String>[];
-      
-      for (final file in igcFiles) {
-        try {
-          if (await file.exists()) {
-            final fileSize = await file.length();
-            await file.delete();
-            deletedIGCFiles++;
-            deletedIGCSize += fileSize;
-            LoggingService.debug('DatabaseResetHelper: Deleted IGC file: ${file.path}');
-          }
-        } catch (e) {
-          failedIGCFiles++;
-          final errorMsg = 'Failed to delete ${file.path}: $e';
-          igcErrors.add(errorMsg);
-          LoggingService.warning('DatabaseResetHelper: $errorMsg');
-        }
-      }
-      
-      LoggingService.info('DatabaseResetHelper: IGC file deletion complete - $deletedIGCFiles deleted, $failedIGCFiles failed');
-      LoggingService.info('DatabaseResetHelper: Total space freed: ${(deletedIGCSize / 1024).toStringAsFixed(1)}KB');
-      
-      final String message;
-      if (failedIGCFiles == 0) {
-        message = 'All flight data deleted successfully!\n\n'
-                 'Database: $flightCount flights, $siteCount sites, $wingCount wings\n'
-                 'IGC Files: $deletedIGCFiles files (${(deletedIGCSize / 1024).toStringAsFixed(1)}KB)';
-      } else {
-        message = 'Flight data deletion completed with warnings!\n\n'
-                 'Database: $flightCount flights, $siteCount sites, $wingCount wings deleted\n'
-                 'IGC Files: $deletedIGCFiles deleted, $failedIGCFiles failed to delete';
-      }
-      
-      return {
-        'success': true,
-        'message': message,
-        'database': resetResult,
-        'igc_files': {
-          'found': totalIGCFiles,
-          'deleted': deletedIGCFiles,
-          'failed': failedIGCFiles,
-          'size_deleted_bytes': deletedIGCSize,
-          'size_deleted_kb': (deletedIGCSize / 1024).toStringAsFixed(1),
-          'errors': igcErrors,
-        },
-      };
-      
-    } catch (e) {
-      LoggingService.error('DatabaseResetHelper: Error deleting all flight data', e);
-      return {
-        'success': false,
-        'message': 'Error deleting all flight data: $e',
         'database': {'success': false},
         'igc_files': {
           'found': 0,
