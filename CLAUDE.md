@@ -588,17 +588,30 @@ A fresh worktree has none of the gitignored files. After creating one, from
 `the_paragliding_app/`:
 
 ```bash
-cp ../../../../the_paragliding_app/.env .env   # from the main checkout
+MAIN=/home/kmcisaac/Projects/the_paragliding_app/the_paragliding_app
+cp "$MAIN/env.json" env.json                              # API keys
+cp "$MAIN/android/key.properties" android/key.properties  # release signing
 flutter pub get
 ```
 
-`.env` is **not optional even for `flutter test`** — `pubspec.yaml` lists it under
-`assets:`, so without it `flutter test` and `flutter run` die with `No file or variants
-found for asset: .env` / `Failed to build asset bundle` in about 2 seconds. That looks
-like a total test failure rather than a missing file, so check for it first when a new
-worktree's suite is instantly and uniformly red. (`flutter analyze` still completes; it
-only reports the missing asset as a warning, so a clean analyze is no evidence the file
-is there.)
+Neither omission fails loudly, and the signing one is dangerous:
+
+- **`env.json` missing** — everything builds and runs, but FFVL weather, OpenAIP overlays
+  and Cesium 3D are silently unconfigured. `bin/dev_run.sh` and
+  `bin/flutter_controller_enhanced` warn; a bare `flutter run` does not. Confirm with the
+  `[API_KEYS_STATUS]` line at startup.
+- **`android/key.properties` missing** — `flutter build appbundle --release` **succeeds**
+  and signs with the *debug* key. `android/app/build.gradle.kts` falls back deliberately
+  and only `println`s a warning, which is invisible in normal build output. Play rejects
+  the upload. Always verify before uploading:
+
+  ```bash
+  keytool -printcert -jarfile build/app/outputs/bundle/release/app-release.aab | grep -E "Owner:|SHA256:"
+  ```
+
+  Expect `Owner: CN=Kevin McIsaac, ...`. `CN=Android Debug` means the fallback fired.
+  The fingerprint must match `upload-cert-new.pem`:
+  `openssl x509 -in ../upload-cert-new.pem -noout -fingerprint -sha256`
 
 Also absent: `.dart_tool/`, `build/`, and `dev_data/` — re-seed `dev_data/igc` only if the
 task needs the app to actually run.
