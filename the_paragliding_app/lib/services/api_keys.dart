@@ -1,162 +1,64 @@
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'logging_service.dart';
 
 /// Centralized API key management service
 ///
-/// This service provides a single source of truth for all API keys used in the app.
-/// It supports two methods of key injection:
-/// 1. dart-define: For production builds via CI/CD (highest priority)
-/// 2. flutter_dotenv: For local development (.env file)
+/// Keys are compile-time constants supplied by `--dart-define`: locally via
+/// `--dart-define-from-file=env.json` (gitignored), and in CI from repository
+/// secrets. See README_API_KEYS.md.
+///
+/// They are deliberately **not** Flutter assets. `.env` used to be listed under
+/// `assets:` in pubspec.yaml, which copied the real keys verbatim into every
+/// build - an `.aab` is a zip, so anyone could read them out of a published
+/// release without reverse engineering anything.
+///
+/// dart-define is better but is still not secrecy: these values are compiled
+/// into `libapp.so` and can be recovered with `strings`. Restrict each key at
+/// the provider (package name, signing fingerprint, scope) and treat anything
+/// shipped in a client app as public.
 ///
 /// Usage:
 /// ```dart
 /// final apiKey = ApiKeys.ffvlApiKey;
 /// ```
 class ApiKeys {
-  // Flags to ensure API key source is logged only once
-  static bool _ffvlLogged = false;
-  static bool _googleMapsLogged = false;
-  static bool _cesiumLogged = false;
-
   /// FFVL (French Free Flight Federation) Weather API Key
-  static String get ffvlApiKey {
-    // Try dart-define first (production builds)
-    const fromEnv = String.fromEnvironment('FFVL_API_KEY');
-    if (fromEnv.isNotEmpty) {
-      if (!_ffvlLogged) {
-        LoggingService.info('Using FFVL API key from dart-define');
-        _ffvlLogged = true;
-      }
-      return fromEnv;
-    }
-
-    // Fall back to dotenv (development)
-    final fromDotenv = dotenv.env['FFVL_API_KEY'] ?? '';
-    if (fromDotenv.isNotEmpty) {
-      if (!_ffvlLogged) {
-        LoggingService.info('Using FFVL API key from .env file');
-        _ffvlLogged = true;
-      }
-      return fromDotenv;
-    }
-
-    // No key found
-    if (!_ffvlLogged) {
-      LoggingService.warning('No FFVL API key found. Please set FFVL_API_KEY in .env file or via --dart-define');
-      _ffvlLogged = true;
-    }
-    return '';
-  }
+  static const String ffvlApiKey = String.fromEnvironment('FFVL_API_KEY');
 
   /// Google Maps API Key (optional)
-  static String get googleMapsApiKey {
-    // Try dart-define first (production builds)
-    const fromEnv = String.fromEnvironment('GOOGLE_MAPS_API_KEY');
-    if (fromEnv.isNotEmpty) {
-      if (!_googleMapsLogged) {
-        LoggingService.info('Using Google Maps API key from dart-define');
-        _googleMapsLogged = true;
-      }
-      return fromEnv;
-    }
+  ///
+  /// Not currently consumed - the app uses OpenStreetMap. Kept for the case
+  /// where Google Maps tiles are adopted.
+  static const String googleMapsApiKey = String.fromEnvironment(
+    'GOOGLE_MAPS_API_KEY',
+    defaultValue: googleMapsPlaceholder,
+  );
 
-    // Fall back to dotenv (development)
-    final fromDotenv = dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
-    if (fromDotenv.isNotEmpty) {
-      if (!_googleMapsLogged) {
-        LoggingService.info('Using Google Maps API key from .env file');
-        _googleMapsLogged = true;
-      }
-      return fromDotenv;
-    }
+  /// Value [googleMapsApiKey] takes when no key was supplied.
+  static const String googleMapsPlaceholder = 'YOUR_GOOGLE_MAPS_API_KEY_HERE';
 
-    // Default placeholder (maps won't work but app won't crash)
-    return 'YOUR_GOOGLE_MAPS_API_KEY_HERE';
-  }
+  /// OpenAIP API Key (optional, user-configurable in app settings)
+  static const String openAipApiKey = String.fromEnvironment('OPENAIP_API_KEY');
 
-  /// OpenAIP API Key (optional, user-configurable)
-  /// This is primarily for development defaults
-  static String get openAipApiKey {
-    // Try dart-define first (production builds)
-    const fromEnv = String.fromEnvironment('OPENAIP_API_KEY');
-    if (fromEnv.isNotEmpty) {
-      return fromEnv;
-    }
+  /// Cesium Ion Access Token (optional, for 3D map visualization)
+  static const String cesiumIonToken = String.fromEnvironment('CESIUM_ION_TOKEN');
 
-    // Fall back to dotenv (development)
-    final fromDotenv = dotenv.env['OPENAIP_API_KEY'] ?? '';
-    return fromDotenv;
-  }
-
-  /// Cesium Ion Access Token (optional)
-  /// For 3D map visualization with Cesium
-  static String get cesiumIonToken {
-    // Try dart-define first (production builds)
-    const fromEnv = String.fromEnvironment('CESIUM_ION_TOKEN');
-    if (fromEnv.isNotEmpty) {
-      if (!_cesiumLogged) {
-        LoggingService.info('Using Cesium Ion token from dart-define');
-        _cesiumLogged = true;
-      }
-      return fromEnv;
-    }
-
-    // Fall back to dotenv (development)
-    final fromDotenv = dotenv.env['CESIUM_ION_TOKEN'] ?? '';
-    if (fromDotenv.isNotEmpty) {
-      if (!_cesiumLogged) {
-        LoggingService.info('Using Cesium Ion token from .env file');
-        _cesiumLogged = true;
-      }
-      return fromDotenv;
-    }
-
-    // Default empty - user can provide their own
-    return '';
-  }
-
-  /// Check if API keys are properly configured
-  static bool get isConfigured {
-    return ffvlApiKey.isNotEmpty;
-  }
-
-  /// Initialize dotenv (called from main.dart)
-  /// Returns true if .env file was loaded successfully
-  static Future<bool> initialize() async {
-    try {
-      await dotenv.load(fileName: '.env');
-      LoggingService.info('Environment variables loaded from .env file');
-      return true;
-    } catch (e) {
-      // .env file not found or error loading - this is OK in production
-      LoggingService.info('.env file not found or could not be loaded (this is normal in production)');
-      return false;
-    }
-  }
-
-  /// Log current API key status (for debugging)
+  /// Log which keys are configured, and warn about the one the app needs.
+  ///
+  /// Called once at startup. This is the quickest way to tell whether a build
+  /// picked up its keys - a release built without `--dart-define` reports every
+  /// key as unconfigured rather than failing loudly.
   static void logStatus() {
     LoggingService.structured('API_KEYS_STATUS', {
       'ffvl_configured': ffvlApiKey.isNotEmpty,
-      'google_maps_configured': googleMapsApiKey != 'YOUR_GOOGLE_MAPS_API_KEY_HERE',
+      'google_maps_configured': googleMapsApiKey != googleMapsPlaceholder,
       'openaip_configured': openAipApiKey.isNotEmpty,
       'cesium_configured': cesiumIonToken.isNotEmpty,
-      'source': _getKeySource(),
+      'source': ffvlApiKey.isNotEmpty ? 'dart-define' : 'none',
     });
-  }
 
-  static String _getKeySource() {
-    // Check if any dart-define keys are present
-    const ffvlFromEnv = String.fromEnvironment('FFVL_API_KEY');
-    if (ffvlFromEnv.isNotEmpty) {
-      return 'dart-define';
+    if (ffvlApiKey.isEmpty) {
+      LoggingService.warning(
+          'No FFVL API key. Pass --dart-define-from-file=env.json (see README_API_KEYS.md)');
     }
-
-    // Check if dotenv is loaded
-    if (dotenv.env.isNotEmpty) {
-      return 'dotenv';
-    }
-
-    return 'none';
   }
 }

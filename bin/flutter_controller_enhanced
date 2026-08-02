@@ -240,7 +240,15 @@ setup_flutter_pipe() {
     
     # Start Flutter with comprehensive logging
     {
-        tail -f "$PIPE" | flutter run -d "$device" 2>&1 | while IFS= read -r line; do
+        # API keys come from env.json (gitignored); see README_API_KEYS.md.
+        env_file_args=()
+        if [ -f env.json ]; then
+            env_file_args=(--dart-define-from-file=env.json)
+        else
+            log_message "WARNING: no env.json - API keys will be unset"
+        fi
+
+        tail -f "$PIPE" | flutter run -d "$device" ${env_file_args[@]+"${env_file_args[@]}"} 2>&1 | while IFS= read -r line; do
             # Filter out dependency resolution noise
             case "$line" in
                 "Resolving dependencies..."*|\
