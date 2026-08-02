@@ -21,5 +21,6 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
 
   await TestHelpers.initializeDatabaseForTesting();
   tearDownAll(TestHelpers.cleanupDatabaseForTesting);
+  tearDownAll(TestHelpers.cleanupFixtures);
   await testMain();
 }
