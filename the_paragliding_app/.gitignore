@@ -55,7 +55,6 @@ app.*.map.json
 .env.local
 .env.production
 .env.*
-!.env.example
-# API keys for local dev, passed via --dart-define-from-file
+# API keys for local dev, passed via --dart-define-from-file.
+# env.example.json is committed and deliberately not matched by this pattern.
 env.json
-!env.example.json
