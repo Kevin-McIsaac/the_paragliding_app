@@ -30,6 +30,9 @@ class ApiKeys {
   /// Cesium Ion Access Token (optional, for 3D map visualization)
   static const String cesiumIonToken = String.fromEnvironment('CESIUM_ION_TOKEN');
 
+  static bool get _anyKeyConfigured =>
+      ffvlApiKey.isNotEmpty || openAipApiKey.isNotEmpty || cesiumIonToken.isNotEmpty;
+
   /// Log which keys are configured, and warn about the one the app needs.
   ///
   /// Called once at startup. This is the quickest way to tell whether a build
@@ -40,7 +43,10 @@ class ApiKeys {
       'ffvl_configured': ffvlApiKey.isNotEmpty,
       'openaip_configured': openAipApiKey.isNotEmpty,
       'cesium_configured': cesiumIonToken.isNotEmpty,
-      'source': ffvlApiKey.isNotEmpty ? 'dart-define' : 'none',
+      // Any key being set proves the defines landed. Keying this off FFVL alone
+      // reported "none" for a build that had OpenAIP and Cesium but no FFVL
+      // secret - contradicting the openaip_configured: true on the same line.
+      'source': _anyKeyConfigured ? 'dart-define' : 'none',
     });
 
     if (ffvlApiKey.isEmpty) {
