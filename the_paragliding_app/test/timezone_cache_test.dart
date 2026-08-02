@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:the_paragliding_app/services/igc_parser.dart';
 import 'package:the_paragliding_app/services/timezone_service.dart';
 import 'dart:io';
+import 'helpers/test_helpers.dart';
 
 void main() {
   group('Timezone Cache Tests', () {
@@ -24,7 +25,7 @@ B1200004708710N01118478EA019780209600807000
 B1300004708710N01118478EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_cache1.igc');
+        final testFile = File(TestHelpers.fixturePath('test_cache1.igc'));
         await testFile.writeAsString(testIgc);
         
         // Get initial cache stats
@@ -59,8 +60,8 @@ B1400004708710N01118478EA019780209600807000
 B1500004708710N01118478EA019780209600807000
 ''';
 
-        final testFile1 = File('/tmp/test_cache_hit1.igc');
-        final testFile2 = File('/tmp/test_cache_hit2.igc');
+        final testFile1 = File(TestHelpers.fixturePath('test_cache_hit1.igc'));
+        final testFile2 = File(TestHelpers.fixturePath('test_cache_hit2.igc'));
         await testFile1.writeAsString(testIgc1);
         await testFile2.writeAsString(testIgc2);
         
@@ -105,9 +106,9 @@ B1200003530000N13900000EA019780209600807000
 B1300003530000N13900000EA019780209600807000
 ''';
 
-        final fileSwiss = File('/tmp/test_cache_swiss.igc');
-        final fileAussie = File('/tmp/test_cache_aussie.igc');
-        final fileJapan = File('/tmp/test_cache_japan.igc');
+        final fileSwiss = File(TestHelpers.fixturePath('test_cache_swiss.igc'));
+        final fileAussie = File(TestHelpers.fixturePath('test_cache_aussie.igc'));
+        final fileJapan = File(TestHelpers.fixturePath('test_cache_japan.igc'));
         
         await fileSwiss.writeAsString(testIgcSwitzerland);
         await fileAussie.writeAsString(testIgcAustralia);
@@ -158,7 +159,7 @@ B120000${latDeg.toString().padLeft(2, '0')}${latMin.toString().padLeft(2, '0')}0
 B130000${latDeg.toString().padLeft(2, '0')}${latMin.toString().padLeft(2, '0')}000N${lonDeg.toString().padLeft(3, '0')}${lonMin.toString().padLeft(2, '0')}000EA019780209600807000
 ''';
 
-          final testFile = File('/tmp/test_lru_$i.igc');
+          final testFile = File(TestHelpers.fixturePath('test_lru_$i.igc'));
           await testFile.writeAsString(testIgc);
           
           final result = await parser.parseFile(testFile.path);
@@ -181,7 +182,7 @@ B12000010${'00'}000N010${'00'}000EA019780209600807000
 B13000010${'00'}000N010${'00'}000EA019780209600807000
 ''';
 
-        final testFileFirst = File('/tmp/test_lru_0.igc');
+        final testFileFirst = File(TestHelpers.fixturePath('test_lru_0.igc'));
         await testFileFirst.writeAsString(testIgcFirst);
         
         await parser.parseFile(testFileFirst.path);
@@ -211,7 +212,7 @@ B120000${loc['lat']}N${loc['lon']}${loc['dir']}A019780209600807000
 B130000${loc['lat']}N${loc['lon']}${loc['dir']}A019780209600807000
 ''';
 
-          final testFile = File('/tmp/test_access_$i.igc');
+          final testFile = File(TestHelpers.fixturePath('test_access_$i.igc'));
           await testFile.writeAsString(testIgc);
           await parser.parseFile(testFile.path);
         }
@@ -227,7 +228,7 @@ B140000${locations[0]['lat']}N${locations[0]['lon']}${locations[0]['dir']}A01978
 B150000${locations[0]['lat']}N${locations[0]['lon']}${locations[0]['dir']}A019780209600807000
 ''';
 
-        final testFileReaccess = File('/tmp/test_reaccess.igc');
+        final testFileReaccess = File(TestHelpers.fixturePath('test_reaccess.igc'));
         await testFileReaccess.writeAsString(testIgcReaccess);
         await parser.parseFile(testFileReaccess.path);
         
@@ -243,7 +244,7 @@ B120000${(5000000 + i * 1000).toString().padLeft(7, '0')}N${(1000000 + i * 1000)
 B130000${(5000000 + i * 1000).toString().padLeft(7, '0')}N${(1000000 + i * 1000).toString().padLeft(8, '0')}EA019780209600807000
 ''';
 
-          final testFile = File('/tmp/test_fill_$i.igc');
+          final testFile = File(TestHelpers.fixturePath('test_fill_$i.igc'));
           await testFile.writeAsString(testIgc);
           await parser.parseFile(testFile.path);
         }
@@ -260,7 +261,7 @@ B160000${locations[0]['lat']}N${locations[0]['lon']}${locations[0]['dir']}A01978
 B170000${locations[0]['lat']}N${locations[0]['lon']}${locations[0]['dir']}A019780209600807000
 ''';
 
-        final testFile0Again = File('/tmp/test_check_0.igc');
+        final testFile0Again = File(TestHelpers.fixturePath('test_check_0.igc'));
         await testFile0Again.writeAsString(testLocation0Again);
         await parser.parseFile(testFile0Again.path);
         
@@ -282,7 +283,7 @@ B120000${(4000000 + i * 100000).toString().padLeft(7, '0')}N${(1000000 + i * 100
 B130000${(4000000 + i * 100000).toString().padLeft(7, '0')}N${(1000000 + i * 100000).toString().padLeft(8, '0')}EA019780209600807000
 ''';
 
-          final testFile = File('/tmp/test_clear_$i.igc');
+          final testFile = File(TestHelpers.fixturePath('test_clear_$i.igc'));
           await testFile.writeAsString(testIgc);
           await parser.parseFile(testFile.path);
         }
@@ -309,7 +310,7 @@ B1200004708710N01118478EA019780209600807000
 B1300004708710N01118478EA019780209600807000
 ''';
 
-        final testFile1 = File('/tmp/test_before_clear.igc');
+        final testFile1 = File(TestHelpers.fixturePath('test_before_clear.igc'));
         await testFile1.writeAsString(testIgc1);
         
         final result1 = await parser.parseFile(testFile1.path);
@@ -328,7 +329,7 @@ B1400003386880S15120930EA019780209600807000
 B1500003386880S15120930EA019780209600807000
 ''';
 
-        final testFile2 = File('/tmp/test_after_clear.igc');
+        final testFile2 = File(TestHelpers.fixturePath('test_after_clear.igc'));
         await testFile2.writeAsString(testIgc2);
         
         final result2 = await parser.parseFile(testFile2.path);
@@ -356,8 +357,8 @@ B1400004708711N01118479EA019780209600807000
 B1500004708711N01118479EA019780209600807000
 ''';
 
-        final testFile1 = File('/tmp/test_key1.igc');
-        final testFile2 = File('/tmp/test_key2.igc');
+        final testFile1 = File(TestHelpers.fixturePath('test_key1.igc'));
+        final testFile2 = File(TestHelpers.fixturePath('test_key2.igc'));
         await testFile1.writeAsString(testIgc1);
         await testFile2.writeAsString(testIgc2);
         
@@ -393,7 +394,7 @@ B120000${edge['lat']}${edge['latDir']}${edge['lon']}${edge['lonDir']}A0197802096
 B130000${edge['lat']}${edge['latDir']}${edge['lon']}${edge['lonDir']}A019780209600807000
 ''';
 
-          final testFile = File('/tmp/test_edge_$i.igc');
+          final testFile = File(TestHelpers.fixturePath('test_edge_$i.igc'));
           await testFile.writeAsString(testIgc);
           
           final result = await parser.parseFile(testFile.path);
@@ -422,7 +423,7 @@ B1500004708710N01118478EA019780209600807000
 B1600004708710N01118478EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_perf.igc');
+        final testFile = File(TestHelpers.fixturePath('test_perf.igc'));
         await testFile.writeAsString(testIgc);
         
         // First parse - cache miss
@@ -457,7 +458,7 @@ B1200004708710N01118478EA019780209600807000
 B1300004708710N01118478EA019780209600807000
 ''';
 
-          final testFile = File('/tmp/test_concurrent_$i.igc');
+          final testFile = File(TestHelpers.fixturePath('test_concurrent_$i.igc'));
           await testFile.writeAsString(testIgc);
           files.add(testFile);
         }
@@ -497,7 +498,7 @@ B120000${(4000000 + i * 100000).toString().padLeft(7, '0')}N${(1000000 + i * 100
 B130000${(4000000 + i * 100000).toString().padLeft(7, '0')}N${(1000000 + i * 100000).toString().padLeft(8, '0')}EA019780209600807000
 ''';
 
-          final testFile = File('/tmp/test_stats_$i.igc');
+          final testFile = File(TestHelpers.fixturePath('test_stats_$i.igc'));
           await testFile.writeAsString(testIgc);
           await parser.parseFile(testFile.path);
         }

@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:the_paragliding_app/services/timezone_service.dart';
 import 'package:the_paragliding_app/services/igc_parser.dart';
 import 'dart:io';
+import 'helpers/test_helpers.dart';
 
 void main() {
   group('Timezone Detection Tests', () {
@@ -73,7 +74,7 @@ B0802004708710N01118478EA019780209600807000
 ''';
 
       // Write test file
-      final testFile = File('/tmp/test_utc.igc');
+      final testFile = File(TestHelpers.fixturePath('test_utc.igc'));
       await testFile.writeAsString(testIgc);
       
       final parser = IgcParser();
@@ -103,7 +104,7 @@ B0802004708720N01118476EA019780209600807000
 ''';
 
       // Write test file
-      final testFile = File('/tmp/test_gps.igc');
+      final testFile = File(TestHelpers.fixturePath('test_gps.igc'));
       await testFile.writeAsString(testIgc);
       
       final parser = IgcParser();
@@ -131,7 +132,7 @@ B0801000000000N00000000EA019780209600807000
 ''';
 
       // Write test file
-      final testFile = File('/tmp/test_ocean.igc');
+      final testFile = File(TestHelpers.fixturePath('test_ocean.igc'));
       await testFile.writeAsString(testIgc);
       
       final parser = IgcParser();

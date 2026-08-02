@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:the_paragliding_app/services/igc_parser.dart';
 import 'package:the_paragliding_app/services/timezone_service.dart';
 import 'dart:io';
+import 'helpers/test_helpers.dart';
 
 void main() {
   group('Multi-Day Flight Tests', () {
@@ -26,7 +27,7 @@ B0130004700700N00800700EA019780209600807000
 B0200004700800N00800800EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_two_day.igc');
+        final testFile = File(TestHelpers.fixturePath('test_two_day.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -79,7 +80,7 @@ B0000004701400N00801400EA019780209600807000
 B0200004701500N00801500EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_double_midnight.igc');
+        final testFile = File(TestHelpers.fixturePath('test_double_midnight.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -132,7 +133,7 @@ B1000004701300N00801300EA019780209600807000
 B1200004701400N00801400EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_week_expedition.igc');
+        final testFile = File(TestHelpers.fixturePath('test_week_expedition.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -167,7 +168,7 @@ B1400004700800N00800800EA019780209600807000
 B1600004700900N00800900EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_overnight_stop.igc');
+        final testFile = File(TestHelpers.fixturePath('test_overnight_stop.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -209,7 +210,7 @@ B0000004700600N00800600EA019780209600807000
 B0030004700700N00800700EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_consecutive_midnight.igc');
+        final testFile = File(TestHelpers.fixturePath('test_consecutive_midnight.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -251,7 +252,7 @@ B0000008500600N04000600EA019780209600807000
 B0100008500700N04500700EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_polar_summer.igc');
+        final testFile = File(TestHelpers.fixturePath('test_polar_summer.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -300,7 +301,7 @@ B0200004701000N00801000EA019780209600807000
 B0600004701100N00801100EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_chronological_multi.igc');
+        final testFile = File(TestHelpers.fixturePath('test_chronological_multi.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -347,7 +348,7 @@ B0100004700800N00800800EA019780209600807000
 B0800004700900N00800900EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_irregular.igc');
+        final testFile = File(TestHelpers.fixturePath('test_irregular.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -390,7 +391,7 @@ B1000003300500S15100500EA019780209600807000
 B1400003300600S15100600EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_multi_tz.igc');
+        final testFile = File(TestHelpers.fixturePath('test_multi_tz.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -428,7 +429,7 @@ B0100004700300N00800300EA019780209600807000
 B0200004700400N00800400EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_new_year.igc');
+        final testFile = File(TestHelpers.fixturePath('test_new_year.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -488,7 +489,7 @@ B0200004700400N00800400EA019780209600807000
           }
         }
         
-        final testFile = File('/tmp/test_performance.igc');
+        final testFile = File(TestHelpers.fixturePath('test_performance.igc'));
         await testFile.writeAsString(buffer.toString());
         
         final stopwatch = Stopwatch()..start();

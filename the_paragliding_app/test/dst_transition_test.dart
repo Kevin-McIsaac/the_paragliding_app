@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:the_paragliding_app/services/igc_parser.dart';
 import 'package:the_paragliding_app/services/timezone_service.dart';
 import 'dart:io';
+import 'helpers/test_helpers.dart';
 
 void main() {
   group('DST Transition Tests', () {
@@ -24,7 +25,7 @@ B0800004070300N07400300WA019780209600807000
 B0830004070400N07400400WA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_spring_dst.igc');
+        final testFile = File(TestHelpers.fixturePath('test_spring_dst.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -58,7 +59,7 @@ B0730004070100N07400100WA019780209600807000
 B0800004070200N07400200WA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_dst_start.igc');
+        final testFile = File(TestHelpers.fixturePath('test_dst_start.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -89,7 +90,7 @@ B0700004070300N07400300WA019780209600807000
 B0730004070400N07400400WA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_fall_dst.igc');
+        final testFile = File(TestHelpers.fixturePath('test_fall_dst.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -130,7 +131,7 @@ B0630004070300N07400300WA019780209600807000
 B0700004070400N07400400WA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_ambiguous_hour.igc');
+        final testFile = File(TestHelpers.fixturePath('test_ambiguous_hour.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -162,7 +163,7 @@ B1630003380200S15120200EA019780209600807000
 B1700003380300S15120300EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_sydney_dst.igc');
+        final testFile = File(TestHelpers.fixturePath('test_sydney_dst.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -192,7 +193,7 @@ B1630003380200S15120200EA019780209600807000
 B1700003380300S15120300EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_sydney_dst_end.igc');
+        final testFile = File(TestHelpers.fixturePath('test_sydney_dst_end.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -224,7 +225,7 @@ B1500003300200N11200200WA019780209600807000
 B1530003300300N11200300WA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_arizona_no_dst.igc');
+        final testFile = File(TestHelpers.fixturePath('test_arizona_no_dst.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -256,7 +257,7 @@ B0100002700200S15300200EA019780209600807000
 B0130002700300S15300300EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_queensland_no_dst.igc');
+        final testFile = File(TestHelpers.fixturePath('test_queensland_no_dst.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -287,7 +288,7 @@ B0630004070000N07400000WA019780209600807000
 B0830004070400N07400400WA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_dst_duration.igc');
+        final testFile = File(TestHelpers.fixturePath('test_dst_duration.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -313,7 +314,7 @@ B0530004070000N07400000WA019780209600807000
 B0730004070400N07400400WA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_fall_duration.igc');
+        final testFile = File(TestHelpers.fixturePath('test_fall_duration.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -342,7 +343,7 @@ B0645004070100N07400100WA019780209600807000
 B0700004070200N07400200WA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_exact_dst.igc');
+        final testFile = File(TestHelpers.fixturePath('test_exact_dst.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -368,7 +369,7 @@ B0701004070300N07400300WA019780209600807000
 B0702004070400N07400400WA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_rapid_dst.igc');
+        final testFile = File(TestHelpers.fixturePath('test_rapid_dst.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();

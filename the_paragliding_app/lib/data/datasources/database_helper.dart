@@ -31,8 +31,39 @@ class DatabaseHelper {
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
 
-  static Database? _database;
-  Future<Database> get database async => _database ??= await _initDatabase();
+  /// Where the database lives. Tests set this to [inMemoryDatabasePath] so each
+  /// test process gets a private database that costs nothing to build and
+  /// leaves no temp directory behind. Production never sets it.
+  static String? databasePathOverride;
+
+  static Future<Database>? _databaseFuture;
+
+  /// The shared connection, opened on first use.
+  ///
+  /// Memoises the *future*, not the resolved value. `_database ??= await
+  /// _initDatabase()` reads as equivalent but is not: the `await` suspends
+  /// before the assignment, so two callers can both find the field null and
+  /// both open a connection. Worse, while one slow open is in flight every
+  /// further caller starts another one - under load that multiplied into
+  /// repeated schema creation and country-code seeding. Assigning the future
+  /// happens synchronously, so later callers await the same open. Same shape
+  /// as AppInitializationService.ensureTables().
+  Future<Database> get database => _databaseFuture ??= _openDatabase();
+
+  Future<String> _databasePath() async =>
+      databasePathOverride ?? join(await getDatabasesPath(), _databaseName);
+
+  /// Opens the database, clearing the memo if the open fails so a rejected
+  /// future is never cached - one transient failure must not poison every
+  /// later call.
+  Future<Database> _openDatabase() async {
+    try {
+      return await _initDatabase();
+    } catch (_) {
+      _databaseFuture = null;
+      rethrow;
+    }
+  }
 
   /// Initialize database with v1.0 schema
   ///
@@ -42,7 +73,7 @@ class DatabaseHelper {
   /// POST-RELEASE STRATEGY: Start migrations from v2 when app is released.
   /// This ensures a clean baseline for production users.
   Future<Database> _initDatabase() async {
-    String path = join(await getDatabasesPath(), _databaseName);
+    final path = await _databasePath();
     LoggingService.database('INIT', 'Opening database at: $path');
 
     final db = await openDatabase(
@@ -438,19 +469,34 @@ class DatabaseHelper {
 
   /// Force recreation of the database (use when migration fails)
   Future<void> recreateDatabase() async {
-    final path = join(await getDatabasesPath(), _databaseName);
-    
-    // Close existing connection
-    if (_database != null) {
-      await _database!.close();
-      _database = null;
+    final path = await _databasePath();
+
+    // Clear the memo before awaiting anything. While the old connection is
+    // closing and the file is being removed there is no usable database, and a
+    // concurrent caller must be made to open a fresh one rather than handed the
+    // dying handle - that produced "Bad state: This database has already been
+    // closed" on PRAGMA user_version.
+    final previous = _databaseFuture;
+    _databaseFuture = null;
+
+    if (previous != null) {
+      try {
+        await (await previous).close();
+      } catch (error, stackTrace) {
+        // An open that already failed has nothing to close, and that must not
+        // stop the recreate it was called to perform.
+        LoggingService.error(
+            'DatabaseHelper: closing the old connection failed', error, stackTrace);
+      }
     }
-    
-    // Delete the database file
-    await deleteDatabase(path);
-    
-    // Recreate the database
-    _database = await _initDatabase();
+
+    // An in-memory database has no file; closing it is what discards the data.
+    if (path != inMemoryDatabasePath) {
+      await deleteDatabase(path);
+    }
+
+    _databaseFuture = _openDatabase();
+    await _databaseFuture;
   }
 
   /// Validate database schema to ensure all expected columns exist
@@ -542,12 +588,12 @@ class DatabaseHelper {
   }
 
   Future<void> close() async {
-    final db = _database;
-    if (db == null) return;
+    final pending = _databaseFuture;
+    if (pending == null) return;
     // Clear the field before awaiting: the getter must not hand out a handle
     // that is mid-close, and leaving it set meant every later call returned a
     // closed database ("Bad state: This database has already been closed").
-    _database = null;
-    await db.close();
+    _databaseFuture = null;
+    await (await pending).close();
   }
 }

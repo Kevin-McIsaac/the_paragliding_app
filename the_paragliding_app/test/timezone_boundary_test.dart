@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:the_paragliding_app/services/igc_parser.dart';
 import 'package:the_paragliding_app/services/timezone_service.dart';
 import 'dart:io';
+import 'helpers/test_helpers.dart';
 
 void main() {
   group('Timezone Boundary Crossing Tests', () {
@@ -23,7 +24,7 @@ B1300004550000N00200000EA019780209600807000
 B1400004500000N00000000WA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_tz_crossing.igc');
+        final testFile = File(TestHelpers.fixturePath('test_tz_crossing.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -60,7 +61,7 @@ B1200004300000N00500000EA019780209600807000
 B1300004000000N00800000WA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_east_west.igc');
+        final testFile = File(TestHelpers.fixturePath('test_east_west.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -92,7 +93,7 @@ B1100005250000N01500000EA019780209600807000
 B1200005300000N02000000EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_west_east.igc');
+        final testFile = File(TestHelpers.fixturePath('test_west_east.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -129,7 +130,7 @@ B1100004550000N02500000EA019780209600807000
 B1200004500000N03000000EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_multi_zone.igc');
+        final testFile = File(TestHelpers.fixturePath('test_multi_zone.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -160,7 +161,7 @@ B1130004600000N00700000EA019780209600807000
 B1200004600000N00600000EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_zigzag.igc');
+        final testFile = File(TestHelpers.fixturePath('test_zigzag.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -194,7 +195,7 @@ B1300003250000N12100000WA019780209600807000
 B1400003200000N12200000WA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_land_ocean.igc');
+        final testFile = File(TestHelpers.fixturePath('test_land_ocean.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -226,7 +227,7 @@ B0300003360000S15300000EA019780209600807000
 B0400003380000S15300000EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_coastline.igc');
+        final testFile = File(TestHelpers.fixturePath('test_coastline.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -254,7 +255,7 @@ B1200006800000N02500000EA019780209600807000
 B1300006800000N03000000EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_arctic.igc');
+        final testFile = File(TestHelpers.fixturePath('test_arctic.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -286,7 +287,7 @@ B1200007200000S01000000EA019780209600807000
 B1300007300000S01500000EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_antarctic.igc');
+        final testFile = File(TestHelpers.fixturePath('test_antarctic.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -314,7 +315,7 @@ B0600001800000N15400000WA019780209600807000
 B0800001700000N15000000WA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_island_hop.igc');
+        final testFile = File(TestHelpers.fixturePath('test_island_hop.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -345,7 +346,7 @@ B1200001700000N06700000WA019780209600807000
 B1300001650000N06800000WA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_caribbean.igc');
+        final testFile = File(TestHelpers.fixturePath('test_caribbean.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -372,7 +373,7 @@ B0600004000000N11000000EA019780209600807000
 B0800004000000N12000000EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_china.igc');
+        final testFile = File(TestHelpers.fixturePath('test_china.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -396,7 +397,7 @@ B0400002800000N09000000EA019780209600807000
 B0600002800000N08500000EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_india.igc');
+        final testFile = File(TestHelpers.fixturePath('test_india.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();
@@ -423,7 +424,7 @@ B0100003300000N06100000EA019780209600807000
 B0200003300000N06200000EA019780209600807000
 ''';
 
-        final testFile = File('/tmp/test_iran_afghan.igc');
+        final testFile = File(TestHelpers.fixturePath('test_iran_afghan.igc'));
         await testFile.writeAsString(testIgc);
         
         final parser = IgcParser();

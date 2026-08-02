@@ -166,10 +166,13 @@ void main() {
       expect(aliasWingFk['table'], equals('wings'));
       expect(aliasWingFk['to'], equals('id'));
     });
-    
-    tearDown(() async {
-      // Clean up database for next test
-      await databaseHelper.recreateDatabase();
-    });
+
+    // No tearDown: every test above only reads schema metadata (PRAGMA
+    // table_info, PRAGMA foreign_key_list, getVersion, sqlite_master), so there
+    // is nothing to clean up between them. Recreating the database after each
+    // one rebuilt the schema and re-seeded 249 country codes nine times per
+    // run - 4.5s warm, 11.9s under load - for no benefit, and that cost was a
+    // contributor to issue #280's timeouts. Add cleanup back only if a test
+    // here starts writing.
   });
 }
