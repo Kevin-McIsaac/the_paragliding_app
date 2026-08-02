@@ -6,7 +6,7 @@ class FlightSortingUtils {
   static final Map<String, Comparable Function(Flight)> _sortExtractors = {
     'launch_site': (Flight flight) => flight.launchSiteName ?? 'ZZZ',
     'datetime': (Flight flight) => _getFlightDateTime(flight),
-    'duration': (Flight flight) => flight.effectiveDuration,
+    'duration': (Flight flight) => flight.duration,
     'track_distance': (Flight flight) => flight.distance ?? 0,
     'distance': (Flight flight) => flight.straightDistance ?? 0,
     'altitude': (Flight flight) => flight.maxAltitude ?? 0,

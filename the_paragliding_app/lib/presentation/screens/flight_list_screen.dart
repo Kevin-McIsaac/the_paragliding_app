@@ -426,8 +426,9 @@ class FlightListScreenState extends State<FlightListScreen> {
 
   Widget _buildFlightList(List<Flight> flights) {
     // Totals describe the rows actually listed, so they follow the search and
-    // date-range filters. effectiveDuration matches what each row displays.
-    final totalDuration = flights.fold<int>(0, (sum, f) => sum + f.effectiveDuration);
+    // date-range filters. Statistics uses its own range, so the two agree only
+    // for the same scope - a filtered list summing to less is expected.
+    final totalDuration = flights.fold<int>(0, (sum, f) => sum + f.duration);
 
     return Column(
       children: [
@@ -532,7 +533,7 @@ class FlightListScreenState extends State<FlightListScreen> {
                   },
                 ),
                 DataCell(
-                  Text(DateTimeUtils.formatDuration(flight.effectiveDuration)),
+                  Text(DateTimeUtils.formatDuration(flight.duration)),
                   onTap: () async {
                     final result = await Navigator.of(context).push<bool>(
                       MaterialPageRoute(

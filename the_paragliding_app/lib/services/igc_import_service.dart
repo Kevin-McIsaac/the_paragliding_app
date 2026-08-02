@@ -408,7 +408,11 @@ class IgcImportService {
       date: igcData.date,
       launchTime: _formatTime(igcData.launchTime),
       landingTime: _formatTime(igcData.landingTime),
-      duration: igcData.duration,
+      // Takeoff to landing, not the IGC header's extent - the header covers the
+      // whole recording, including time on the ground. The column is what every
+      // aggregate sums, so storing anything else makes totals disagree with the
+      // rows they summarise.
+      duration: detectionResult.detectedDurationMinutes ?? igcData.duration,
       launchSiteId: launchSite?.id,
       launchLatitude: igcData.launchSite?.latitude,
       launchLongitude: igcData.launchSite?.longitude,

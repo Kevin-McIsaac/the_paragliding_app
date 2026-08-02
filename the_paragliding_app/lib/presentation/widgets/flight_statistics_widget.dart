@@ -13,7 +13,7 @@ class FlightStatisticsWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final duration = DateTimeUtils.formatDurationCompact(flight.effectiveDuration);
+    final duration = DateTimeUtils.formatDurationCompact(flight.duration);
 
     return Container(
       padding: const EdgeInsets.all(16),
