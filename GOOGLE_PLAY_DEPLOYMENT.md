@@ -12,7 +12,7 @@ $EDITOR the_paragliding_app/pubspec.yaml     # version: 1.0.4+13
 git commit -am "chore: Bump build number to 1.0.4+13"
 
 # 2. write the release notes users will see
-$EDITOR distribution/whatsnew/whatsnew-en-US
+$EDITOR distribution/whatsnew/whatsnew-en-GB
 
 # 3. tag and push
 git tag v1.0.4+13 && git push origin main --tags
@@ -23,9 +23,9 @@ git tag v1.0.4+13 && git push origin main --tags
 `distribution/whatsnew/` holds one file per Play listing locale, named
 `whatsnew-<locale>`, and CI passes the directory to the upload step. Max 500 characters each.
 
-**The locale must exist in your Play listing or the upload is rejected** — check Play Console →
-Store presence → Main store listing. Rename the file to match (`whatsnew-en-AU`, etc.); add more
-files to cover more locales.
+**The locale must exist in your Play listing or the upload is rejected.** This app's default
+listing language is **English (United Kingdom) — `en-GB`**, hence `whatsnew-en-GB`. Add more files
+to cover more locales; check Play Console → Store presence → Main store listing if in doubt.
 
 Notes are worth writing whenever a release changes something users can see. 1.0.4 lowered every
 user's total hours by about 11% by measuring takeoff-to-landing instead of the whole recording;
