@@ -22,6 +22,19 @@ class LoggingService {
     // Profile builds are used for performance measurement, so they need the
     // same [P]/[D] output as debug - only release stays quiet
     level: kReleaseMode ? Level.warning : Level.debug,
+    // Without this the package default, DevelopmentFilter, applies - and it
+    // decides inside an assert():
+    //
+    //   var shouldLog = false;
+    //   assert(() { if (event.level >= level!) shouldLog = true; return true; }());
+    //   return shouldLog;
+    //
+    // Asserts are stripped in release, so it returns false for *every* event and
+    // the `level` above is never consulted. A release build emitted nothing at
+    // any severity - verified on 1.0.4+14, where logcat carried engine lines but
+    // not one line of ours. ProductionFilter is a plain `event.level >= level`,
+    // so the level gate does the filtering it looks like it does.
+    filter: ProductionFilter(),
     printer: ClaudeLogPrinter(), // Always use Claude-optimized format
   );
 
