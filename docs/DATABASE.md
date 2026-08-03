@@ -10,8 +10,10 @@
 ## Developer Workflow
 
 When pulling code changes that modify the database schema:
-1. Clear app data: Settings → Apps → The Paragliding App → Storage → Clear Data
-2. Or use the emulator wipe: `flutter_controller.sh clean` (if available)
+1. Desktop: `bin/dev_run.sh --reset` wipes the dev database and re-seeds
+2. Android: Settings → Apps → **Paragliding App (debug)** → Storage → Clear Data.
+   Pick the "(debug)" entry - a production install may sit next to it under "The
+   Paragliding App", and clearing that one destroys real flight data
 3. Hot restart the app to recreate the database with the new schema
 4. Re-import any test data as needed
 
