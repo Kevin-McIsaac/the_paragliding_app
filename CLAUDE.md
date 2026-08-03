@@ -247,6 +247,33 @@ genhtml coverage/lcov.info -o coverage/html/
 - Measure performance before optimizing
 - Default to emulator for testing
 
+### Verifying work: check the artifact, not the status
+
+Summaries in this project lie in both directions. Every one of these cost real time:
+
+| what it reported | what was true |
+|---|---|
+| CI run conclusion `cancelled` | its Play upload step had **succeeded** - the build was published |
+| `flutter_controller_enhanced status` → `CRASHED` / `ERROR` | app running fine; the *tooling* had disconnected, or the log merely contained an `[E]` line |
+| a passing test | passed identically against the **unfixed** code |
+| a green signing assertion | had never once been observed failing |
+
+So:
+
+- **A failing run can still have shipped.** Check the step, not the run: a cancel that
+  lands after approval stops later jobs while the publish already went through. This is how
+  version code 13 was burned.
+- **Prove a regression test fails without the fix.** Revert the fix, run it, watch it go red.
+  A test that passes either way is worse than none - it reads as coverage.
+- **Assert against the underlying state, not the service reporting it.** Query `sqlite_master`
+  rather than asking the service whether its tables exist.
+- **Drive production code paths.** Recomputing an expected value in the test proves the test
+  agrees with itself. `test/statistics_match_log_book_test.dart` calls the same
+  `getYearlyStatistics()` / `getAllFlights()` the two screens call - that is what would have
+  caught the duration bug.
+- **A guard that has only been seen passing is unverified.** Both release assertions in
+  `build.yml` were deliberately made to fail once, on a throwaway branch, to prove they work.
+
 ## ✅❌ Code Patterns & Anti-Patterns
 
 ### Logging (ALWAYS use LoggingService)
