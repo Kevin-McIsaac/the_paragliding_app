@@ -3,6 +3,7 @@
     "allow": [
       "Bash(bin/dev_run.sh:*)",
       "Bash(bin/dev_reload.sh:*)",
+      "Bash(bin/dev_logs.sh:*)",
       "Bash(flutter devices*)",
       "Bash(adb exec-out screencap*)",
       "Update",
