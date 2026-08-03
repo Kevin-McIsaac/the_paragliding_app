@@ -255,8 +255,8 @@ LoggingService.structured('CLIPPING_PERFORMANCE', {
 LoggingService.enablePerformanceLogging = true;
 
 # Look for structured logs
-flutter_controller_enhanced logs 50 | grep "CLIPPING_PERFORMANCE"
-flutter_controller_enhanced logs 50 | grep "AIRSPACE_CLIPPING"
+grep "CLIPPING_PERFORMANCE" dev_data/flutter.log
+grep "AIRSPACE_CLIPPING" dev_data/flutter.log
 ```
 
 ---

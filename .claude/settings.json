@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(flutter_controller_enhanced:*)",
+      "Bash(bin/dev_run.sh:*)",
+      "Bash(bin/dev_reload.sh:*)",
+      "Bash(flutter devices*)",
+      "Bash(adb exec-out screencap*)",
       "Update",
       "Bash(flutter test)",
       "Bash(flutter test *)",

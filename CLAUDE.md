@@ -40,23 +40,12 @@ terminal; `bin/dev_reload.sh` is for when the app was started in the background.
 
 ### Android Loop (emulator/device - required for 3D)
 
-The script lives at `bin/flutter_controller_enhanced` and is **not on `PATH`** - invoke it
-by path. It takes the Flutter project directory from the shell's cwd, so it must be run
-from `the_paragliding_app/` or it fails with `No pubspec.yaml file found`.
+The same script drives a device - pass `-d` with an id from `flutter devices`:
 
 ```bash
-# WORKING DIRECTORY: /home/kmcisaac/Projects/the_paragliding_app/the_paragliding_app
-../bin/flutter_controller_enhanced run # Start app with logging. ALWAYS run in background
-../bin/flutter_controller_enhanced r    # Hot reload with readiness check (most used)
-../bin/flutter_controller_enhanced R    # Hot restart with readiness check (for state issues)
-../bin/flutter_controller_enhanced status     # Check app status with enhanced health info
-../bin/flutter_controller_enhanced logs 50    # Recent logs (prefer over bash output)
-../bin/flutter_controller_enhanced screenshot # Take screenshot (alias: ss)
-../bin/flutter_controller_enhanced q    # Quit app
+bin/dev_run.sh -d "<device>" --background   # detached; returns once the app is up
+bin/dev_reload.sh                           # hot reload (same as desktop)
 ```
-
-Defaults to `emulator-5554`; pass `-d <device>` for anything else. Its `screenshot`
-command shells out to adb, so it only works on Android targets.
 
 Debug builds install as `com.theparaglidingapp.debug` with the launcher name
 "Paragliding App (debug)", so they sit alongside a Play Store install instead of
@@ -64,21 +53,9 @@ replacing it. Without that suffix the debug keystore clashes with the release
 signature (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`) and Flutter silently uninstalls the
 production app, taking its flight database with it.
 
-#### Wireless debugging (physical device)
-
-```bash
-# On the phone: Settings > System > Developer options > Wireless debugging
-adb pair <ip>:<pairing-port> <6-digit-code>   # "Pair device with pairing code" dialog
-adb connect <ip>:<connect-port>               # DIFFERENT port, on the main screen
-adb devices -l                                # confirm, then use -d <id>
-```
-
-The pairing port and the connect port are different - mixing them up is the usual
-failure. Pairing is permanent; re-run only `adb connect` in later sessions. A stale
-pairing dialog leaves its port listening but dead, which surfaces as
-`error: protocol fault (couldn't read status message)` - reopen the dialog for a fresh
-port and code. `adb mdns services` returns nothing from a Crostini container (multicast
-does not cross the NAT), so always use an explicit `IP:port`.
+**See the `run-app` skill** (`.claude/skills/run-app/`) for the full workflow: device ids,
+wireless adb pairing, screenshots, and the debug-vs-production package trap. It is the
+single source of truth for running the app - do not duplicate it here.
 
 ### Test & Quality Commands
 
@@ -87,8 +64,7 @@ flutter analyze                       # Check for errors (run after complex, mul
 flutter test                          # Run all tests
 flutter test test/specific_test.dart  # Run specific test
 flutter test --tags network --run-skipped  # Live-API tests, skipped by default
-flutter_controller_enhanced cleanup   # Clean up processes if stuck
-flutter_controller_enhanced health    # Check process/pipe/readiness status
+kill "$(cat dev_data/flutter.pid)"    # Stop a running app
 ```
 
 **Plain `flutter test` is fine locally.** It used to fail about 1 run in 3, so this file
@@ -170,9 +146,8 @@ lib/
 | Test reads its own fixture back empty | Fixture written to a fixed `/tmp` path | Use `TestHelpers.fixturePath('name.igc')` |
 | Test hits the network | Live-API test not tagged | Tag it `network`; it is skipped by default |
 | Hot reload fails | State corruption | Use `R` (hot restart) instead of `r` |
-| App won't start | Process still running | Run `flutter_controller_enhanced cleanup` |
-| Commands unresponsive | Pipe/readiness issues | Run `flutter_controller_enhanced health` |
-| Race conditions | Commands sent too early | Commands now auto-wait for readiness |
+| App won't start | Already running | `kill "$(cat dev_data/flutter.pid)"`, then start again |
+| Hot reload does nothing | App not actually running | `kill -0 "$(cat dev_data/flutter.pid)"` - no pid file means it exited |
 
 ## Project Overview
 
@@ -188,10 +163,11 @@ The Paragliding App is a free, Android-first, cross-platform application for log
 
 ### Log Files for Monitoring
 
-- **Output**: `/tmp/flutter_controller/flutter_output.log` (full app output)
-- **Status**: `/tmp/flutter_controller/flutter_status` (running/stopped)
-- **PID**: `/tmp/flutter_controller/flutter.pid` (process tracking)
-- **Screenshots**: `/tmp/flutter_controller/screenshots/` (also copied to `/tmp/`)
+- **Output**: `dev_data/flutter.log` (full app output, truncated on each run)
+- **PID**: `dev_data/flutter.pid` (written once the app is up, removed on exit - so its
+  presence *is* the readiness check)
+
+Both are per-checkout, so worktrees do not fight over them.
 
 ### Claude-Specific Patterns
 
@@ -254,7 +230,8 @@ Summaries in this project lie in both directions. Every one of these cost real t
 | what it reported | what was true |
 |---|---|
 | CI run conclusion `cancelled` | its Play upload step had **succeeded** - the build was published |
-| `flutter_controller_enhanced status` → `CRASHED` / `ERROR` | app running fine; the *tooling* had disconnected, or the log merely contained an `[E]` line |
+| the deleted `flutter_controller_enhanced` status → `RUNNING` / `Pipe Responsive` | `flutter run` had **already exited**; hot reloads went into a dead pipe and did nothing |
+| that same script → `CRASHED` / `ERROR` | app running fine; the *tooling* had disconnected, or the log merely contained an `[E]` line |
 | a passing test | passed identically against the **unfixed** code |
 | a green signing assertion | had never once been observed failing |
 
@@ -635,9 +612,8 @@ flutter pub get
 Neither omission fails loudly, and the signing one is dangerous:
 
 - **`env.json` missing** — everything builds and runs, but FFVL weather, OpenAIP overlays
-  and Cesium 3D are silently unconfigured. `bin/dev_run.sh` and
-  `bin/flutter_controller_enhanced` warn; a bare `flutter run` does not. Confirm with the
-  `[API_KEYS_STATUS]` line at startup.
+  and Cesium 3D are silently unconfigured. `bin/dev_run.sh` warns; a bare `flutter run`
+  does not. Confirm with the `[API_KEYS_STATUS]` line at startup.
 - **`android/key.properties` missing** — `flutter build appbundle --release` **succeeds**
   and signs with the *debug* key. `android/app/build.gradle.kts` falls back deliberately
   and only `println`s a warning, which is invisible in normal build output. Play rejects
@@ -656,10 +632,10 @@ task needs the app to actually run.
 
 ### Standard Development Process
 
-1. **Start**: `flutter_controller_enhanced run` from correct directory
+1. **Start**: `bin/dev_run.sh --background` (add `-d "<device>"` for a phone)
 2. **Code**: Follow existing patterns, use `LoggingService` for debugging
-3. **Test**: `flutter_controller_enhanced r` for hot reload
-4. **Debug**: `flutter_controller_enhanced logs 50` + screenshots
+3. **Test**: `bin/dev_reload.sh` for hot reload
+4. **Debug**: `tail -n 50 dev_data/flutter.log` + screenshots
 5. **Quality**: `flutter analyze` before committing
 6. **Commit**: Only when user explicitly requests
 
@@ -667,12 +643,10 @@ task needs the app to actually run.
 
 | Task | Commands | Notes |
 |------|----------|-------|
-| Fix hot reload issues | `health` → `cleanup` → `restart` | Enhanced diagnostics first |
-| Debug UI | `screenshot` → analyze | Visual debugging |
-| Performance check | `logs 50` → filter `[P]` | Performance logs |
+| Fix hot reload issues | `kill "$(cat dev_data/flutter.pid)"` → start again | No pid file means it already exited |
+| Debug UI | `adb exec-out screencap -p > dev_data/screenshot.png` → analyze | Unlock the phone first |
+| Performance check | `grep "\[P\]" dev_data/flutter.log` | Performance logs |
 | Schema change | Clear data → restart → reimport | Dev workflow |
-| Troubleshoot unresponsive commands | `health` → `status` | Check all health indicators |
-| Force readiness wait | `wait-ready 30` | Before critical operations |
 
 ### File Navigation for Claude
 
@@ -693,7 +667,7 @@ Use format `file_path:line_number` in logs:
 - use adb screenshots on emulator
 - Call sites in local DB "Flown Sites" and sites from PGE API "New Sites"
 - Call sites in local DB "Flown Sites" and sites from PGE API "New Sites"
-- always run flutter_controller_enhanced in background
+- always start the app with `bin/dev_run.sh --background`
 - DOnt try to contol the app
 - don't try to controll app with adb
 - Filters in Map FIlter, e.g, checkboxes, should have immediate effect in the map

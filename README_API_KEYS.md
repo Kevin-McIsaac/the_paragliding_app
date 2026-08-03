@@ -74,8 +74,8 @@ $EDITOR env.json        # paste your keys
 flutter pub get
 ```
 
-`env.json` is gitignored. `bin/dev_run.sh` and `bin/flutter_controller_enhanced` pass it
-automatically, and warn if it is missing. To run Flutter directly:
+`env.json` is gitignored. `bin/dev_run.sh` passes it automatically, and warns if it is
+missing. To run Flutter directly:
 
 ```bash
 flutter run --dart-define-from-file=env.json

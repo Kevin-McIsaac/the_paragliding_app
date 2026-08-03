@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
 #
-# Run the app on Linux desktop with dev fixtures seeded from real IGC files.
+# Run the app on Linux desktop, or on any flutter device with -d.
 #
-#   bin/dev_run.sh              # run, seeding on first launch (empty database)
-#   bin/dev_run.sh --reset      # wipe dev database + app documents, then run
-#   bin/dev_run.sh --profile    # profile build, for timing without debug overhead
-#   bin/dev_run.sh -d chrome    # any other flutter device
+#   bin/dev_run.sh                   # desktop, seeding on first launch (empty database)
+#   bin/dev_run.sh --reset           # wipe dev database + app documents, then run
+#   bin/dev_run.sh --profile         # profile build, for timing without debug overhead
+#   bin/dev_run.sh -d "<device>"     # another device - get ids from: flutter devices
+#   bin/dev_run.sh -d "<device>" -b  # detached; returns only once the app is up
 #
 # Hot reload/restart: press r / R in this terminal, or from anywhere run
 # bin/dev_reload.sh [r|R] (works even when the app was started in background).
 #
-# Fixtures live in dev_data/igc (gitignored - they contain real coordinates).
-# All app state is redirected into dev_data/app_documents via XDG_DOCUMENTS_DIR
-# so nothing lands in your home directory and --reset is safe.
+# Output always lands in dev_data/flutter.log. dev_data/flutter.pid holds the flutter
+# pid while the app is up, so `kill -0 $(cat dev_data/flutter.pid)` is the readiness
+# check - flutter writes that file only after the app starts and removes it on exit.
+#
+# Desktop only: fixtures in dev_data/igc (gitignored - real coordinates) are seeded via
+# XDG_DOCUMENTS_DIR into dev_data/app_documents. A device uses its own sandbox instead,
+# so seeding is skipped there and --reset refuses rather than pretending to work.
 #
 # Note: the 3D map needs Android/iOS - on desktop it shows a placeholder.
 
@@ -33,9 +38,13 @@ LEGACY_DB_FILE="$APP_DIR/.dart_tool/sqflite_common_ffi/databases/FlightLog.db"
 
 reset=false
 profile=false
+background=false
 device="linux"
 passthrough=()
 PID_FILE="$DEV_DATA/flutter.pid"
+LOG_FILE="$DEV_DATA/flutter.log"
+# The first Android build compiles from cold and can take minutes
+ready_timeout="${DEV_RUN_READY_TIMEOUT:-300}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -47,13 +56,17 @@ while [[ $# -gt 0 ]]; do
       profile=true
       shift
       ;;
+    -b|--background)
+      background=true
+      shift
+      ;;
     -d|--device)
       [[ -n "${2:-}" ]] || { echo "ERROR: $1 requires a device id" >&2; exit 1; }
       device="$2"
       shift 2
       ;;
     -h|--help)
-      sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
+      sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
       exit 0
       ;;
     *)
@@ -62,6 +75,26 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# Only the Linux desktop build stores its data under dev_data; on a device the app
+# uses its own sandbox, so seeding and --reset do not apply there.
+is_desktop=false
+[[ "$device" == "linux" ]] && is_desktop=true
+
+if $reset && ! $is_desktop; then
+  cat >&2 <<EOF
+ERROR: --reset only deletes host-side desktop state ($APP_DOCUMENTS).
+The database inside the app on device '$device' is untouched by it, so this
+would look like a reset without being one.
+
+To clear the DEBUG app's data on the device, run this yourself:
+  adb -s "$device" shell pm clear com.theparaglidingapp.debug
+
+NEVER clear com.theparaglidingapp (no .debug suffix) - that is the production
+install and it holds real flight data that exists nowhere else.
+EOF
+  exit 1
+fi
 
 if $reset; then
   # Guard against ever removing something outside dev_data
@@ -75,21 +108,34 @@ if $reset; then
   rm -f "$LEGACY_DB_FILE"
 fi
 
-mkdir -p "$APP_DOCUMENTS" "$SEED_IGC_DIR"
+# Seeding only makes sense on desktop: SEED_IGC_DIR is a host path, and the app on a
+# device cannot read it. Leaving the define unset also keeps DevSeed.isConfigured false,
+# so the splash does not claim "Preparing dev database" on a device.
+seed_args=()
+if $is_desktop; then
+  mkdir -p "$APP_DOCUMENTS" "$SEED_IGC_DIR"
 
-igc_count=$(find "$SEED_IGC_DIR" -maxdepth 1 -iname '*.igc' | wc -l)
-if [[ "$igc_count" -eq 0 ]]; then
-  echo "WARNING: no .igc files in $SEED_IGC_DIR - the app will start with an empty log." >&2
-  echo "         Copy ~10 real flights there to seed the database." >&2
-elif [[ "$SEED_IGC_LIMIT" -le 0 || "$SEED_IGC_LIMIT" -ge "$igc_count" ]]; then
-  echo "Seeding from all $igc_count IGC file(s) in $SEED_IGC_DIR (skipped if flights already exist)"
+  igc_count=$(find "$SEED_IGC_DIR" -maxdepth 1 -iname '*.igc' | wc -l)
+  if [[ "$igc_count" -eq 0 ]]; then
+    echo "WARNING: no .igc files in $SEED_IGC_DIR - the app will start with an empty log." >&2
+    echo "         Copy ~10 real flights there to seed the database." >&2
+  elif [[ "$SEED_IGC_LIMIT" -le 0 || "$SEED_IGC_LIMIT" -ge "$igc_count" ]]; then
+    echo "Seeding from all $igc_count IGC file(s) in $SEED_IGC_DIR (skipped if flights already exist)"
+  else
+    echo "Seeding the $SEED_IGC_LIMIT most recent of $igc_count IGC file(s) in $SEED_IGC_DIR (skipped if flights already exist)"
+  fi
+
+  # path_provider_linux resolves getApplicationDocumentsDirectory() via xdg-user-dir,
+  # which honours this variable
+  export XDG_DOCUMENTS_DIR="$APP_DOCUMENTS"
+
+  seed_args=(
+    --dart-define=SEED_IGC_DIR="$SEED_IGC_DIR"
+    --dart-define=SEED_IGC_LIMIT="$SEED_IGC_LIMIT"
+  )
 else
-  echo "Seeding the $SEED_IGC_LIMIT most recent of $igc_count IGC file(s) in $SEED_IGC_DIR (skipped if flights already exist)"
+  echo "Device '$device' is not the Linux desktop: dev seeding is off, and the app uses whatever data is already on the device."
 fi
-
-# path_provider_linux resolves getApplicationDocumentsDirectory() via xdg-user-dir,
-# which honours this variable
-export XDG_DOCUMENTS_DIR="$APP_DOCUMENTS"
 
 mode_args=()
 if $profile; then
@@ -108,10 +154,55 @@ else
   echo "WARNING: no env.json - API keys will be unset. Copy env.example.json and fill it in (see README_API_KEYS.md)." >&2
 fi
 
-exec flutter run -d "$device" \
-  --pid-file "$PID_FILE" \
-  ${env_file_args[@]+"${env_file_args[@]}"} \
-  --dart-define=SEED_IGC_DIR="$SEED_IGC_DIR" \
-  --dart-define=SEED_IGC_LIMIT="$SEED_IGC_LIMIT" \
-  ${mode_args[@]+"${mode_args[@]}"} \
+# flutter writes the pid file only once the app is actually up on the device (it is
+# written by registerSignalHandlers, which runs after appStarted) and removes it on
+# exit. So a live pid here means "running and accepting SIGUSR1" - that is the whole
+# readiness check, and unlike a scraped status string it cannot be wrong.
+if [[ -s "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+  echo "ERROR: already running (flutter pid $(cat "$PID_FILE"))." >&2
+  echo "       Stop it first: kill \$(cat $PID_FILE)" >&2
+  exit 1
+fi
+rm -f "$PID_FILE"
+
+run_args=(
+  run -d "$device"
+  --pid-file "$PID_FILE"
+  ${env_file_args[@]+"${env_file_args[@]}"}
+  ${seed_args[@]+"${seed_args[@]}"}
+  ${mode_args[@]+"${mode_args[@]}"}
   ${passthrough[@]+"${passthrough[@]}"}
+)
+
+if ! $background; then
+  # tee rather than exec, so there is always a log to read afterwards. stdin is left
+  # alone, so the interactive r / R keys still work.
+  flutter "${run_args[@]}" 2>&1 | tee "$LOG_FILE"
+  exit
+fi
+
+# setsid, not nohup: nohup only ignores SIGHUP, but a caller that kills its whole
+# process group (as agent tooling does on timeout) would still take flutter with it.
+# A separate session survives both that and the launching shell exiting.
+setsid flutter "${run_args[@]}" >"$LOG_FILE" 2>&1 </dev/null &
+launcher=$!
+
+echo "Starting on '$device' in the background; log: $LOG_FILE"
+deadline=$((SECONDS + ready_timeout))
+while :; do
+  if [[ -s "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+    echo "Ready (flutter pid $(cat "$PID_FILE")). Hot reload with: bin/dev_reload.sh [r|R]"
+    exit 0
+  fi
+  if ! kill -0 "$launcher" 2>/dev/null; then
+    echo "ERROR: flutter exited before the app was ready. Last 40 lines of $LOG_FILE:" >&2
+    tail -n 40 "$LOG_FILE" >&2
+    exit 1
+  fi
+  if (( SECONDS >= deadline )); then
+    echo "ERROR: still not ready after ${ready_timeout}s. Last 20 lines of $LOG_FILE:" >&2
+    tail -n 20 "$LOG_FILE" >&2
+    exit 1
+  fi
+  sleep 2
+done
