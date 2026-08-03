@@ -2,13 +2,19 @@
   "permissions": {
     "allow": [
       "Bash(flutter_controller_enhanced:*)",
-      "Update"
+      "Update",
+      "Bash(flutter test)",
+      "Bash(flutter test *)",
+      "Bash(flutter analyze)",
+      "Bash(flutter analyze *)",
+      "Bash(adb devices*)",
+      "Bash(unzip -l *)",
+      "Bash(gh secret list *)",
+      "Bash(gh variable list *)",
+      "Bash(keytool -printcert *)",
+      "Bash(openssl x509 *)"
     ],
     "deny": [],
     "ask": []
-  },
-  "statusLine": {
-    "type": "command",
-    "command": ".claude/statusline.sh"
   }
 }
