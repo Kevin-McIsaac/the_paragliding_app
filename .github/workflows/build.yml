@@ -170,6 +170,12 @@ jobs:
 
       # mappingFile matters because isMinifyEnabled = true - without it Play shows
       # obfuscated stack traces for every crash.
+      #
+      # whatsNewDirectory holds one file per listing locale, named
+      # whatsnew-<locale>. Without it Play releases carry no notes at all, which
+      # matters when a release changes numbers users have already seen - 1.0.4
+      # lowers everyone's total hours by ~11%, and unexplained that reads as data
+      # loss. The locale MUST exist in the Play listing or the upload is rejected.
       - name: Publish to Play internal track
         if: startsWith(github.ref, 'refs/tags/')
         uses: r0adkll/upload-google-play@v1
@@ -178,6 +184,7 @@ jobs:
           packageName: com.theparaglidingapp
           releaseFiles: the_paragliding_app/build/app/outputs/bundle/release/app-release.aab
           mappingFile: the_paragliding_app/build/app/outputs/mapping/release/mapping.txt
+          whatsNewDirectory: distribution/whatsnew
           releaseName: ${{ steps.version.outputs.code }} (${{ steps.version.outputs.name }})
           track: internal
           status: completed

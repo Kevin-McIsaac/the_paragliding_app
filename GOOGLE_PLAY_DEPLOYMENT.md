@@ -8,12 +8,28 @@ track.
 
 ```bash
 # 1. bump the build number (versionCode) - Play rejects a reused one
-$EDITOR the_paragliding_app/pubspec.yaml     # version: 1.0.3+12
-git commit -am "chore: Bump build number to 1.0.3+12"
+$EDITOR the_paragliding_app/pubspec.yaml     # version: 1.0.4+13
+git commit -am "chore: Bump build number to 1.0.4+13"
 
-# 2. tag and push
-git tag v1.0.3+12 && git push origin main --tags
+# 2. write the release notes users will see
+$EDITOR distribution/whatsnew/whatsnew-en-GB
+
+# 3. tag and push
+git tag v1.0.4+13 && git push origin main --tags
 ```
+
+### Release notes
+
+`distribution/whatsnew/` holds one file per Play listing locale, named
+`whatsnew-<locale>`, and CI passes the directory to the upload step. Max 500 characters each.
+
+**The locale must exist in your Play listing or the upload is rejected.** This app's default
+listing language is **English (United Kingdom) — `en-GB`**, hence `whatsnew-en-GB`. Add more files
+to cover more locales; check Play Console → Store presence → Main store listing if in doubt.
+
+Notes are worth writing whenever a release changes something users can see. 1.0.4 lowered every
+user's total hours by about 11% by measuring takeoff-to-landing instead of the whole recording;
+shipped without explanation, that reads as data loss rather than a correction.
 
 The tag must agree with `pubspec.yaml` — the `check-version` job fails fast otherwise, rather
 than letting Play reject the upload after a full build.

@@ -1,0 +1,4 @@
+• Flight durations now measure takeoff to landing instead of the full
+  recording, so your total hours are lower and more accurate
+• Statistics and Log Book totals now agree
+• Fixes to site data after a database reset
