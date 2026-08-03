@@ -29,7 +29,6 @@ class AppAttributionLink extends StatelessWidget {
   final String text;
   final double iconSize;
   final EdgeInsets padding;
-  final bool useExpanded;
 
   const AppAttributionLink({
     super.key,
@@ -38,7 +37,6 @@ class AppAttributionLink extends StatelessWidget {
     required this.text,
     this.iconSize = 20,
     this.padding = EdgeInsets.zero,
-    this.useExpanded = false,
   });
 
   /// Standard attribution link with larger icon (20px) for primary links.
@@ -54,7 +52,6 @@ class AppAttributionLink extends StatelessWidget {
       text: text,
       iconSize: 20,
       padding: EdgeInsets.zero,
-      useExpanded: false,
     );
   }
 
@@ -71,7 +68,6 @@ class AppAttributionLink extends StatelessWidget {
       text: text,
       iconSize: 18,
       padding: const EdgeInsets.only(bottom: 8),
-      useExpanded: true,
     );
   }
 
@@ -98,24 +94,15 @@ class AppAttributionLink extends StatelessWidget {
               color: Theme.of(context).colorScheme.primary,
             ),
             const SizedBox(width: 8),
-            if (useExpanded)
-              Expanded(
-                child: Text(
-                  text,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.primary,
-                    decoration: TextDecoration.underline,
-                  ),
-                ),
-              )
-            else
-              Text(
+            Flexible(
+              child: Text(
                 text,
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.primary,
                   decoration: TextDecoration.underline,
                 ),
               ),
+            ),
           ],
         ),
       ),
