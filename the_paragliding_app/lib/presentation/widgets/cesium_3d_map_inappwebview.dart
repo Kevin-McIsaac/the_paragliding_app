@@ -157,6 +157,10 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
           _savedChaseZoomFactor = chaseZoomFactor;
           _userToken = userToken;
           _hasValidUserToken = hasValidToken;
+          // Returning from Settings with a working token reuses this widget, so
+          // the one-shot guard has to clear or a later revocation would not
+          // self-heal for the rest of the widget's life.
+          if (hasValidToken) _userTokenRevoked = false;
         });
         
         LoggingService.debug('Cesium3D: Loaded preferences - Scene: $sceneMode, BaseMap: $baseMap, Terrain: $terrainEnabled, NavDialog: $navigationHelpDialogOpen, FlyThrough: $flyThroughMode, Trail: ${trailDuration}s, Quality: $quality, UserToken: ${userToken != null ? 'present' : 'none'}, TokenValid: $hasValidToken');
@@ -624,7 +628,14 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
             // Ion rejects every asset request once the user's token is revoked or
             // expired. Nothing re-checks a token after its first validation, so
             // without this the map stays blank on every future launch.
-            if (response.statusCode == 401 && _hasValidUserToken) {
+            //
+            // Only Cesium's own hosts count. This callback fires for every
+            // subresource the WebView loads, and a 401 from anywhere else says
+            // nothing about the user's Ion token - demoting on one would discard a
+            // perfectly good token.
+            if (response.statusCode == 401 &&
+                _hasValidUserToken &&
+                _isCesiumHost(request.url)) {
               _handleRevokedUserToken();
             }
           },
@@ -1484,6 +1495,16 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
         _errorMessage = 'No internet connection available.\nThe 3D map requires an active internet connection.';
       });
     }
+  }
+
+  /// Whether a URL belongs to Cesium, and so whether a 401 from it can be blamed
+  /// on the Ion token. Covers api.cesium.com and the assets.ion.cesium.com tile
+  /// hosts; the suffix check with a leading dot avoids matching a lookalike
+  /// domain that merely ends in the same letters.
+  static bool _isCesiumHost(WebUri? url) {
+    final host = url?.host.toLowerCase();
+    if (host == null) return false;
+    return host == 'cesium.com' || host.endsWith('.cesium.com');
   }
 
   /// Demote a user token that Ion has started rejecting, then reload on the app
