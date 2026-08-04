@@ -1204,7 +1204,7 @@ class CesiumFlightApp {
         
         // Determine if provider needs lighting based on provider name
         // Flat/cartographic imagery benefits from terrain shadows to show relief
-        const flatProviders = ['OpenStreetMap', 'Stamen Terrain', 'Google Maps 2D Roadmap'];
+        const flatProviders = ['OpenStreetMap', 'Google Maps 2D Roadmap'];
         const needsLighting = flatProviders.includes(providerName);
         
         globe.enableLighting = needsLighting;
@@ -1218,6 +1218,22 @@ class CesiumFlightApp {
         }
     }
     
+    // Pick a base map to switch to when `failedName` fails to load.
+    // The picker lists either the free providers or the premium ones, never both
+    // (see _createImageryProviders), so looking only for 'OpenStreetMap' finds
+    // nothing in premium mode and the fallback silently does nothing. Prefer
+    // OpenStreetMap when it is on offer, otherwise take whatever else is listed.
+    // Providers that have already failed are remembered, so two broken providers
+    // cannot bounce the map back and forth between each other.
+    _findFallbackProvider(failedName) {
+        if (!this._failedProviderNames) this._failedProviderNames = new Set();
+        this._failedProviderNames.add(failedName);
+
+        const providers = this.viewer?.baseLayerPicker?.viewModel?.imageryProviderViewModels || [];
+        const candidates = providers.filter(vm => !this._failedProviderNames.has(vm.name));
+        return candidates.find(vm => vm.name === 'OpenStreetMap') || candidates[0] || null;
+    }
+
     _setupInitialView(config) {
         if (!config.trackPoints?.length) {
             this.viewer.camera.setView({
@@ -1314,10 +1330,9 @@ class CesiumFlightApp {
                             this.performanceMonitor.startTileFailureMonitoring((failedProvider, failureRate) => {
                                 cesiumLog.error(`Provider "${failedProvider}" has high failure rate: ${(failureRate * 100).toFixed(1)}%`);
                                 
-                                // Try fallback to OpenStreetMap
-                                const fallbackProvider = this.viewer.baseLayerPicker.viewModel.imageryProviderViewModels
-                                    .find(vm => vm.name === 'OpenStreetMap' && vm.name !== failedProvider);
-                                
+                                // Switch to any other listed provider (OpenStreetMap when it is offered)
+                                const fallbackProvider = this._findFallbackProvider(failedProvider);
+
                                 if (fallbackProvider) {
                                     cesiumLog.info(`Automatic fallback to ${fallbackProvider.name} due to tile failures`);
                                     setTimeout(() => {
@@ -1351,12 +1366,11 @@ class CesiumFlightApp {
                         cesiumLog.error(`Failed to switch to provider "${providerViewModel.name}": ${error.message}`);
                         console.error('[Cesium] Provider switch error:', error);
                         
-                        // Fallback to OpenStreetMap if provider switch fails
-                        const fallbackProvider = this.viewer.baseLayerPicker.viewModel.imageryProviderViewModels
-                            .find(vm => vm.name === 'OpenStreetMap');
-                        
-                        if (fallbackProvider && fallbackProvider !== providerViewModel) {
-                            cesiumLog.info('Falling back to OpenStreetMap provider');
+                        // Switch to any other listed provider (OpenStreetMap when it is offered)
+                        const fallbackProvider = this._findFallbackProvider(providerViewModel.name);
+
+                        if (fallbackProvider) {
+                            cesiumLog.info(`Falling back to ${fallbackProvider.name} provider`);
                             setTimeout(() => {
                                 this.viewer.baseLayerPicker.viewModel.selectedImagery = fallbackProvider;
                                 // Apply color adjustments and lighting to fallback provider as well
