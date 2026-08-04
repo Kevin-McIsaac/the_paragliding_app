@@ -61,6 +61,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
   String? _cesiumToken;
   bool _isCesiumTokenValidated = false;
   bool _isValidatingCesium = false;
+  DateTime? _cesiumValidationDate;
 
   // Airspace refresh key to force widget recreation
   int _airspaceRefreshKey = 0;
@@ -250,17 +251,19 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
     try {
       final token = await PreferencesHelper.getCesiumUserToken();
       final validated = await PreferencesHelper.getCesiumTokenValidated() ?? false;
-      
+      final validatedOn = await PreferencesHelper.getCesiumTokenValidationDate();
+
       LoggingService.structured('CESIUM_TOKEN_STATUS', {
         'has_token': token != null,
         'is_validated': validated,
         'token_length': token?.length ?? 0,
       });
-      
+
       if (mounted) {
         setState(() {
           _cesiumToken = token;
           _isCesiumTokenValidated = validated;
+          _cesiumValidationDate = validatedOn;
         });
       }
     } catch (e, stackTrace) {
@@ -493,45 +496,119 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
   }
 
 
+  /// Syncs the card to the outcome of checking [token].
+  ///
+  /// [CesiumTokenValidator.recordValidation] owns which outcomes persist; a
+  /// null return means it wrote nothing (`unreachable`), so the card keeps
+  /// showing whatever was last actually established.
+  Future<void> _applyCesiumValidation(
+      String token, CesiumTokenStatus status) async {
+    // Validation is a network round trip and Remove Token is not blocked while
+    // it runs. A verdict on a token the user has since removed or replaced
+    // would otherwise write `cesium_token_validated` straight back over the
+    // removal that just cleared it, leaving prefs claiming a validated token
+    // that no longer exists.
+    if (_cesiumToken != token) {
+      LoggingService.structured('CESIUM_TOKEN_VALIDATION_STALE', {
+        'result': status.name,
+        'token_still_set': _cesiumToken != null,
+      });
+      return;
+    }
+
+    final isValid = await CesiumTokenValidator.recordValidation(status);
+    if (isValid == null) return;
+
+    // Checking once up front is not enough: the write above has its own awaits,
+    // so a removal can still land inside it and be overwritten. Whoever finishes
+    // last wins, and the removal has to - so re-check, and clear again if the
+    // token went away while we were writing.
+    if (_cesiumToken != token) {
+      await PreferencesHelper.removeCesiumUserToken();
+      return;
+    }
+
+    final validatedOn = await PreferencesHelper.getCesiumTokenValidationDate();
+
+    if (!mounted) return;
+    setState(() {
+      _isCesiumTokenValidated = isValid;
+      _cesiumValidationDate = validatedOn;
+    });
+  }
+
+  /// Re-checks the stored token when the user opens the card, so "Active" means
+  /// "Ion served imagery just now" rather than "Ion served imagery once, on a
+  /// date nobody recorded". Silent - no snackbar, no spinner blocking the card.
+  Future<void> _revalidateCesiumTokenOnExpand() async {
+    final token = _cesiumToken;
+    if (token == null || _isValidatingCesium) return;
+
+    setState(() => _isValidatingCesium = true);
+    try {
+      final status = await CesiumTokenValidator.validateToken(token);
+      LoggingService.structured('CESIUM_TOKEN_RECHECK', {
+        'trigger': 'card_expanded',
+        'result': status.name,
+        'was_validated': _isCesiumTokenValidated,
+      });
+      await _applyCesiumValidation(token, status);
+    } catch (e, stackTrace) {
+      LoggingService.error(
+          'DataManagementScreen: Cesium token re-check failed', e, stackTrace);
+    } finally {
+      if (mounted) setState(() => _isValidatingCesium = false);
+    }
+  }
+
   Future<void> _testCesiumToken() async {
-    if (_cesiumToken == null) return;
-    
-    LoggingService.action('DataManagement', 'test_cesium_token', {'token_length': _cesiumToken!.length});
+    final token = _cesiumToken;
+    if (token == null) return;
+
+    LoggingService.action('DataManagement', 'test_cesium_token', {'token_length': token.length});
     final stopwatch = Stopwatch()..start();
-    
+
     setState(() {
       _isValidatingCesium = true;
     });
 
     try {
-      final isValid = await CesiumTokenValidator.validateToken(_cesiumToken!);
-      
+      final status = await CesiumTokenValidator.validateToken(token);
+
       LoggingService.performance('Test Cesium token', stopwatch.elapsed, 'token validation completed');
       LoggingService.structured('CESIUM_TOKEN_TEST', {
-        'is_valid': isValid,
-        'token_length': _cesiumToken!.length,
+        'result': status.name,
+        'token_length': token.length,
         'duration_ms': stopwatch.elapsedMilliseconds,
       });
-      
+
+      await _applyCesiumValidation(token, status);
+
       if (mounted) {
-        final message = isValid 
-          ? 'Token is valid and working correctly.'
-          : 'Token validation failed. It may be expired or have insufficient permissions.';
-        
+        final (message, colour, seconds) = switch (status) {
+          CesiumTokenStatus.valid =>
+            ('Token is valid and premium maps will load.', Colors.green, 2),
+          CesiumTokenStatus.invalid => (
+              'Token cannot read Cesium Ion imagery. It may be expired, or '
+                  'scoped to other assets.',
+              Colors.red,
+              4
+            ),
+          CesiumTokenStatus.unreachable => (
+              'Could not reach Cesium Ion. Check your connection - the token '
+                  'status is unchanged.',
+              Colors.orange,
+              4
+            ),
+        };
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(message),
-            backgroundColor: isValid ? Colors.green : Colors.red,
-            duration: Duration(seconds: isValid ? 2 : 4),
+            backgroundColor: colour,
+            duration: Duration(seconds: seconds),
           ),
         );
-        
-        // Record the failure too. Only writing the success case left a revoked
-        // token reading "Active" and still being used for every map load.
-        await PreferencesHelper.setCesiumTokenValidated(isValid);
-        setState(() {
-          _isCesiumTokenValidated = isValid;
-        });
       }
     } catch (e, stackTrace) {
       LoggingService.structured('CESIUM_TOKEN_TEST_ERROR', {
@@ -646,36 +723,40 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                   setState(() {
                     _cesiumToken = token;
                     _isCesiumTokenValidated = false;
+                    _cesiumValidationDate = null;
                     _isValidatingCesium = true;
                   });
-                  
+
                   // Automatically validate the token
                   try {
-                    final isValid = await CesiumTokenValidator.validateToken(token);
-                    
+                    final status = await CesiumTokenValidator.validateToken(token);
+                    await _applyCesiumValidation(token, status);
+
                     if (mounted) {
-                      if (isValid) {
-                        await PreferencesHelper.setCesiumTokenValidated(true);
-                        setState(() {
-                          _isCesiumTokenValidated = true;
-                        });
-                        
-                        scaffoldMessenger.showSnackBar(
-                          const SnackBar(
-                            content: Text('✓ Token validated! Premium maps are now available.'),
-                            backgroundColor: Colors.green,
-                            duration: Duration(seconds: 3),
+                      final (message, colour) = switch (status) {
+                        CesiumTokenStatus.valid => (
+                            '✓ Token validated! Premium maps are now available.',
+                            Colors.green
                           ),
-                        );
-                      } else {
-                        scaffoldMessenger.showSnackBar(
-                          const SnackBar(
-                            content: Text('Invalid token. Please check and try again.'),
-                            backgroundColor: Colors.red,
-                            duration: Duration(seconds: 4),
+                        CesiumTokenStatus.invalid => (
+                            'That token cannot read Cesium Ion imagery. Check it '
+                                'allows assets:read and is not limited to other assets.',
+                            Colors.red
                           ),
-                        );
-                      }
+                        CesiumTokenStatus.unreachable => (
+                            'Token saved, but Cesium Ion could not be reached to '
+                                'check it. Use Test Connection once you are online.',
+                            Colors.orange
+                          ),
+                      };
+
+                      scaffoldMessenger.showSnackBar(
+                        SnackBar(
+                          content: Text(message),
+                          backgroundColor: colour,
+                          duration: const Duration(seconds: 4),
+                        ),
+                      );
                     }
                   } catch (e) {
                     if (mounted) {
@@ -737,23 +818,27 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
     );
   }
 
-  void _removeToken() {
+  Future<void> _removeToken() async {
     LoggingService.action('DataManagement', 'remove_cesium_token', {
       'had_token': _cesiumToken != null,
       'was_validated': _isCesiumTokenValidated,
     });
-    
+
     setState(() {
       _cesiumToken = null;
       _isCesiumTokenValidated = false;
+      _cesiumValidationDate = null;
     });
-    PreferencesHelper.removeCesiumUserToken();
-    
+    final messenger = ScaffoldMessenger.of(context);
+    // Awaited, so a validation still in flight cannot interleave its write
+    // between these removals and leave a validated flag behind a missing token.
+    await PreferencesHelper.removeCesiumUserToken();
+
     LoggingService.structured('CESIUM_TOKEN_REMOVED', {
       'success': true,
     });
-    
-    ScaffoldMessenger.of(context).showSnackBar(
+
+    messenger.showSnackBar(
       const SnackBar(
         content: Text('Cesium Ion token removed'),
         duration: Duration(seconds: 2),
@@ -1869,6 +1954,9 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                         setState(() {
                           _expansionManager.setState('premium_maps', expanded);
                         });
+                        // Opening the card is the one moment the user reads the
+                        // word "Active", so that is when it is worth proving.
+                        if (expanded) _revalidateCesiumTokenOnExpand();
                       },
                       children: [
                       const Text(
@@ -1887,6 +1975,15 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                         ),
                       ),
                       if (_cesiumToken != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          _isValidatingCesium
+                            ? 'Checking with Cesium Ion...'
+                            : _cesiumValidationDate != null
+                              ? 'Last checked: ${DateFormat('MMM d, yyyy').format(_cesiumValidationDate!)}'
+                              : 'Never checked successfully',
+                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
                         const SizedBox(height: 4),
                         Text(
                           'Token: ${CesiumTokenValidator.maskToken(_cesiumToken!)}',
