@@ -3,4 +3,4 @@
   detected and the map falls back to the standard imagery
 • Data Management re-checks your saved token when you open it, so a token
   that has stopped working no longer shows as validated
-• Fixed the map attribution link overflowing its line
+• Fixed the contact email being cut off on the About screen
