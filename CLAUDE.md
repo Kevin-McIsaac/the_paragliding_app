@@ -628,6 +628,21 @@ All API calls generate structured logs:
 Do feature and bugfix work in a git worktree, one per task, branched from `origin/main`.
 They live in `.claude/worktrees/` (gitignored) and are removed once the work merges.
 
+**Several Claude sessions often share this one checkout** - background jobs, plus whatever
+you have open interactively. Two guards keep them off each other:
+
+- `worktree.bgIsolation: "worktree"` (`.claude/settings.json`) blocks Edit/Write in the
+  shared checkout from a background session until it calls EnterWorktree.
+- `.claude/hooks/guard-shared-checkout.sh` covers what that misses. bgIsolation does not
+  gate **Bash**, and on 2026-08-04 a background job that was correctly isolated for its
+  edits still ran `git checkout`/`reset` against the shared checkout, switching the branch
+  out from under another session mid-rebase. The hook asks before a background session runs
+  a ref-moving git command outside a worktree. Interactive sessions are never gated, and
+  read-only git (`status`/`log`/`diff`/`fetch`) passes untouched.
+
+If you see that prompt, the honest question is whether the command belongs in a worktree
+instead. Approving is fine when you asked for it.
+
 A fresh worktree has none of the gitignored files. After creating one, from
 `the_paragliding_app/`:
 
