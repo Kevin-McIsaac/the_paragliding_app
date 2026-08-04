@@ -121,6 +121,9 @@ re-requesting, and search Gmail for the confirmation message first (cheapest rec
 | `OPENAIP_API_KEY` | <https://www.openaip.net/> | Log in → user profile → API keys → regenerate or copy existing | 32-char lowercase hex |
 | `CESIUM_ION_TOKEN` | <https://ion.cesium.com/tokens> | Log in → Access Tokens → create a new token or copy the default | JWT, starts with `eyJ...` |
 
+For Cesium, log in with the GitHub account and use the **"The Paragliding App Default"**
+token — not the account's original default token, which has been rotated.
+
 ### Where keys live
 
 | Location | Purpose | Tracked in git? |
