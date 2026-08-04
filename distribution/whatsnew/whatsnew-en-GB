@@ -1,4 +1,6 @@
-• Flight durations now measure takeoff to landing instead of the full
-  recording, so your total hours are lower and more accurate
-• Statistics and Log Book totals now agree
-• Fixes to site data after a database reset
+• The 3D map no longer goes blank when a Cesium Ion token stops working.
+  A revoked token, or one without access to the map imagery, is now
+  detected and the map falls back to the standard imagery
+• Data Management re-checks your saved token when you open it, so a token
+  that has stopped working no longer shows as validated
+• Fixed the contact email being cut off on the About screen
