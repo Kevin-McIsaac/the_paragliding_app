@@ -86,7 +86,9 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   
   // Saved preferences with defaults
   String _savedSceneMode = '3D';
-  String _savedBaseMap = 'OpenStreetMap';
+  // Null means "no saved choice" - cesium.js then picks the first provider of
+  // whichever list is live (free or premium), which is the only correct default.
+  String? _savedBaseMap;
   bool _savedTerrainEnabled = true;
   bool _savedNavigationHelpDialogOpen = false;
   bool _savedFlyThroughMode = false;
@@ -146,7 +148,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   Future<void> _loadPreferences() async {
     try {
       final sceneMode = await PreferencesHelper.getCesiumSceneMode() ?? '3D';
-      final baseMap = await PreferencesHelper.getCesiumBaseMap() ?? 'OpenStreetMap';
+      final baseMap = await PreferencesHelper.getCesiumBaseMap();
       final terrainEnabled = await PreferencesHelper.getCesiumTerrainEnabled() ?? true;
       final navigationHelpDialogOpen = await PreferencesHelper.getCesiumNavigationHelpDialog() ?? false;
       final flyThroughMode = await PreferencesHelper.getCesiumFlyThroughMode() ?? false;
@@ -861,7 +863,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
         .replaceAll('window.cesiumConfig = {lat:', '''window.cesiumConfig = {
             trackPoints: $trackPointsJs,
             savedSceneMode: "$_savedSceneMode",
-            savedBaseMap: "$_savedBaseMap",
+            savedBaseMap: "${_savedBaseMap ?? ''}",
             savedTerrainEnabled: $_savedTerrainEnabled,
             savedNavigationHelpDialogOpen: $_savedNavigationHelpDialogOpen,
             savedFlyThroughMode: $_savedFlyThroughMode,
