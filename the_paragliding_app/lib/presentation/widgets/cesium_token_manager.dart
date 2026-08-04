@@ -184,12 +184,11 @@ class _CesiumTokenManagerState extends State<CesiumTokenManager> {
           ),
         );
         
-        if (isValid) {
-          await PreferencesHelper.setCesiumTokenValidated(true);
-          setState(() {
-            _isTokenValidated = true;
-            });
-        }
+        // Record the failure too - see the note in DataManagementScreen.
+        await PreferencesHelper.setCesiumTokenValidated(isValid);
+        setState(() {
+          _isTokenValidated = isValid;
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -373,7 +372,7 @@ class _CesiumTokenManagerState extends State<CesiumTokenManager> {
             Text(
               _currentToken != null && _isTokenValidated 
                 ? 'You now have access to the Premium maps.'
-                : 'To access premium Bing maps for free follow these 4 steps:',
+                : 'To access premium Google maps for free follow these 4 steps:',
               style: TextStyle(
                 fontSize: 14, 
                 fontWeight: FontWeight.w500,
