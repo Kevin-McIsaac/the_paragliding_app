@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import '../data/models/weather_model.dart';
+import '../services/logging_service.dart';
 
 /// Helper class for managing app preferences using SharedPreferences
 /// Uses the stable legacy API for reliable persistence
@@ -84,17 +85,42 @@ class PreferencesHelper {
     await prefs.setString(cesiumSceneModeKey, value);
   }
   
+  /// Slugs written by the old Preferences dropdown and the old first-run default.
+  /// None was ever a Cesium provider name, so the map silently fell back to its
+  /// first provider. Dropped on read - see [getCesiumBaseMap]. Issue #302.
+  static const Set<String> _legacyCesiumBaseMaps = {
+    'openstreetmap',
+    'satellite',
+    'hybrid',
+  };
+
+  /// The Cesium imagery provider *display name* last chosen in the map's own layer
+  /// picker (e.g. 'OpenStreetMap', 'Sentinel-2', 'Google Maps 2D Satellite').
+  ///
+  /// Returns null when unset, meaning "let Cesium pick its first available
+  /// provider". Unlike its siblings this deliberately does **not** seed a default:
+  /// the provider list depends on whether the user has their own Ion token
+  /// (assets/cesium/cesium.js), so no single name is correct for both states.
   static Future<String?> getCesiumBaseMap() async {
     final prefs = await SharedPreferences.getInstance();
-    // Check if the preference has been set before
-    if (!prefs.containsKey(cesiumBaseMapKey)) {
-      // First time - set default to satellite
-      await prefs.setString(cesiumBaseMapKey, 'satellite');
-      return 'satellite';
+    final value = prefs.getString(cesiumBaseMapKey);
+
+    if (value != null && _legacyCesiumBaseMaps.contains(value)) {
+      await prefs.remove(cesiumBaseMapKey);
+      LoggingService.structured('PREFS_MIGRATION', {
+        'key': cesiumBaseMapKey,
+        'legacy_value': value,
+        'action': 'removed',
+        'issue': 302,
+      });
+      return null;
     }
-    return prefs.getString(cesiumBaseMapKey);
+
+    return value;
   }
-  
+
+  /// Stores a Cesium imagery provider display name. The map's layer picker is the
+  /// only writer - see `onImageryProviderChanged` in cesium_3d_map_inappwebview.dart.
   static Future<void> setCesiumBaseMap(String value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(cesiumBaseMapKey, value);

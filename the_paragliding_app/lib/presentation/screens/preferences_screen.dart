@@ -14,7 +14,6 @@ class PreferencesScreen extends StatefulWidget {
 class _PreferencesScreenState extends State<PreferencesScreen> {
   // 3D Visualization preferences
   String? _cesiumSceneMode;
-  String? _cesiumBaseMap;
   bool? _cesiumTerrainEnabled;
   int? _cesiumTrailDuration;
   double? _cesiumQuality;
@@ -53,7 +52,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     try {
       // Load 3D Visualization preferences
       final sceneMode = await PreferencesHelper.getCesiumSceneMode();
-      final baseMap = await PreferencesHelper.getCesiumBaseMap();
       final terrainEnabled = await PreferencesHelper.getCesiumTerrainEnabled();
       final trailDuration = await PreferencesHelper.getCesiumTrailDuration();
       final quality = await PreferencesHelper.getCesiumQuality();
@@ -71,7 +69,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       if (mounted) {
         setState(() {
           _cesiumSceneMode = sceneMode;
-          _cesiumBaseMap = baseMap ?? 'satellite';
           _cesiumTerrainEnabled = terrainEnabled;
           _cesiumTrailDuration = trailDuration;
           _cesiumQuality = quality;
@@ -105,11 +102,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
         UiUtils.showErrorMessage(context, 'Failed to load preferences: $e');
       }
     }
-  }
-
-  bool _isValidBaseMap(String? value) {
-    const validMaps = ['openstreetmap', 'satellite', 'hybrid'];
-    return value != null && validMaps.contains(value);
   }
 
   bool _isValidSceneMode(String? value) {
@@ -329,24 +321,10 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                     }
                   },
                 ),
-                _buildDropdownRow<String>(
-                  'Base Map',
-                  'The background imagery to display',
-                  _isValidBaseMap(_cesiumBaseMap) ? _cesiumBaseMap : null,
-                  [
-                    const DropdownMenuItem(value: 'openstreetmap', child: Text('OpenStreetMap')),
-                    const DropdownMenuItem(value: 'satellite', child: Text('Satellite')),
-                    const DropdownMenuItem(value: 'hybrid', child: Text('Hybrid')),
-                  ],
-                  (value) {
-                    if (value != null) {
-                      setState(() {
-                        _cesiumBaseMap = value;
-                      });
-                      _savePreference('base map', value, PreferencesHelper.setCesiumBaseMap);
-                    }
-                  },
-                ),
+                // Base map is chosen in the 3D map's own layer picker, which is the
+                // single source of truth: the available imagery providers differ
+                // depending on whether the user has their own Cesium Ion token, so a
+                // fixed dropdown here cannot be right for both. Issue #302.
                 _buildDropdownRow<int>(
                   'Trail Duration',
                   'How long the flight trail remains visible',
