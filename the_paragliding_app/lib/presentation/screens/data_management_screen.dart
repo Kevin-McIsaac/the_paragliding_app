@@ -519,6 +519,15 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
     final isValid = await CesiumTokenValidator.recordValidation(status);
     if (isValid == null) return;
 
+    // Checking once up front is not enough: the write above has its own awaits,
+    // so a removal can still land inside it and be overwritten. Whoever finishes
+    // last wins, and the removal has to - so re-check, and clear again if the
+    // token went away while we were writing.
+    if (_cesiumToken != token) {
+      await PreferencesHelper.removeCesiumUserToken();
+      return;
+    }
+
     final validatedOn = await PreferencesHelper.getCesiumTokenValidationDate();
 
     if (!mounted) return;
@@ -809,24 +818,27 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
     );
   }
 
-  void _removeToken() {
+  Future<void> _removeToken() async {
     LoggingService.action('DataManagement', 'remove_cesium_token', {
       'had_token': _cesiumToken != null,
       'was_validated': _isCesiumTokenValidated,
     });
-    
+
     setState(() {
       _cesiumToken = null;
       _isCesiumTokenValidated = false;
       _cesiumValidationDate = null;
     });
-    PreferencesHelper.removeCesiumUserToken();
-    
+    final messenger = ScaffoldMessenger.of(context);
+    // Awaited, so a validation still in flight cannot interleave its write
+    // between these removals and leave a validated flag behind a missing token.
+    await PreferencesHelper.removeCesiumUserToken();
+
     LoggingService.structured('CESIUM_TOKEN_REMOVED', {
       'success': true,
     });
-    
-    ScaffoldMessenger.of(context).showSnackBar(
+
+    messenger.showSnackBar(
       const SnackBar(
         content: Text('Cesium Ion token removed'),
         duration: Duration(seconds: 2),
