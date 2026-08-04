@@ -187,6 +187,59 @@ fi
 setsid flutter "${run_args[@]}" >"$LOG_FILE" 2>&1 </dev/null &
 launcher=$!
 
+# A log that stops silently looks exactly like a log with nothing to report - that is
+# how a dead session got read as "the app was never touched". Flutter removes the pid
+# file on exit, but that signal lives in a different file from the log being read, so
+# stamp the end into the log itself. Detached, so it outlives this script.
+#
+# On a device the app usually keeps running after flutter detaches, so the marker says
+# where the log stops, not that the app stopped - use bin/dev_logs.sh from there.
+#
+# The guards below exist for races that are awkward to hit by hand. To re-verify after
+# changing this, extract the watcher body and drive it against fake pid/log files:
+#
+#   awk "/^setsid bash -c '\$/{f=1;next} f&&/^' _ /{f=0} f" bin/dev_run.sh >/tmp/w.sh
+#   sleep 60 & echo $! >/tmp/t.pid; echo one >/tmp/t.log
+#   bash /tmp/w.sh /tmp/t.pid /tmp/t.log 10 $! &
+#
+# then kill the sleep to see the marker land; or leave a stale pid file and truncate
+# the log first to confirm it stays quiet. Strip the guard lines to watch it fail.
+setsid bash -c '
+  pid_file=$1 log_file=$2 wait_ready=$3 launcher=$4
+  deadline=$((SECONDS + wait_ready))
+  while (( SECONDS < deadline )); do
+    [[ -s "$pid_file" ]] && break
+    # Give up with the launcher, mirroring the readiness loop below. Without this a
+    # failed build left this watcher polling for the whole ready timeout; a fix-and-
+    # retry inside that window would arm it against the *new* session, running
+    # alongside the watcher that session spawned, and both would stamp the marker.
+    #
+    # No apostrophes in here - this whole block is inside a single-quoted bash -c.
+    kill -0 "$launcher" 2>/dev/null || exit 0
+    sleep 1
+  done
+  # Never became ready - the launcher reports that case itself, so stay quiet.
+  [[ -s "$pid_file" ]] || exit 0
+  pid=$(cat "$pid_file")
+  # Size at arm time, to detect a later run truncating the log out from under us.
+  armed_size=$(stat -c %s "$log_file" 2>/dev/null || echo 0)
+
+  while kill -0 "$pid" 2>/dev/null; do sleep 2; done
+
+  # A crash that skips flutter cleanup leaves a stale pid file, so a restart within
+  # the poll interval gets past the already-running guard, truncates this log and
+  # claims it. Stamping "exited" then would brand a live session dead - the same
+  # confusion this marker exists to prevent, only inverted. Two ways to spot it:
+  # the pid file now names a different process, or the log shrank.
+  now_pid=$(cat "$pid_file" 2>/dev/null || true)
+  [[ -n "$now_pid" && "$now_pid" != "$pid" ]] && exit 0
+  now_size=$(stat -c %s "$log_file" 2>/dev/null || echo 0)
+  (( now_size < armed_size )) && exit 0
+
+  printf -- "--- flutter exited %s - log ends here; the app may still be running on the device ---\n" \
+    "$(date "+%Y-%m-%d %H:%M:%S")" >>"$log_file"
+' _ "$PID_FILE" "$LOG_FILE" "$ready_timeout" "$launcher" >/dev/null 2>&1 </dev/null &
+
 echo "Starting on '$device' in the background; log: $LOG_FILE"
 deadline=$((SECONDS + ready_timeout))
 while :; do
