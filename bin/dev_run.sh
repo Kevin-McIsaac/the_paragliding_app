@@ -66,7 +66,10 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     -h|--help)
-      sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
+      # Print the header comment block - from after the shebang to the first
+      # non-comment line - rather than a fixed line range, which silently truncated
+      # or picked up code whenever a header line was added.
+      awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "${BASH_SOURCE[0]}"
       exit 0
       ;;
     *)
