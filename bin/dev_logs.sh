@@ -39,7 +39,10 @@ pattern=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -n|--lines)
-      lines="$2"
+      # ${2-} not $2: under `set -u` a bare `-n` would otherwise die with an
+      # unbound-variable trace instead of saying what was wrong.
+      lines="${2-}"
+      [[ -n "$lines" ]] || { echo "$1 needs a line count (try --help)" >&2; exit 1; }
       shift 2
       ;;
     -f|--follow)
@@ -57,7 +60,8 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     -g|--grep)
-      pattern="$2"
+      pattern="${2-}"
+      [[ -n "$pattern" ]] || { echo "$1 needs a pattern (try --help)" >&2; exit 1; }
       raw=true
       shift 2
       ;;
@@ -123,7 +127,16 @@ $raw && TAGS=()
 # tag filterspec, so `-t 400 flutter:V *:S` silently prints nothing whenever the last
 # 400 raw lines happen to hold no flutter line. Dump the filtered stream and tail it.
 if $follow; then
-  exec adb -s "$device" logcat "${TAGS[@]}"
+  if [[ -n "$pattern" ]]; then
+    # --line-buffered matters: without it grep emits in 4KB blocks, so a live follow
+    # looks frozen between bursts. Piping rather than exec'ing keeps the pattern
+    # applied - an earlier version exec'd straight into logcat here, silently
+    # dropping -g/--keys and handing back an unfiltered firehose that looked filtered.
+    adb -s "$device" logcat "${TAGS[@]}" | grep --line-buffered -a -E "$pattern"
+  else
+    adb -s "$device" logcat "${TAGS[@]}"
+  fi
+  exit
 fi
 
 out="$(adb -s "$device" logcat -d "${TAGS[@]}")"
