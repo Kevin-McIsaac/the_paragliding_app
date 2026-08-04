@@ -194,11 +194,28 @@ launcher=$!
 #
 # On a device the app usually keeps running after flutter detaches, so the marker says
 # where the log stops, not that the app stopped - use bin/dev_logs.sh from there.
+#
+# The guards below exist for races that are awkward to hit by hand. To re-verify after
+# changing this, extract the watcher body and drive it against fake pid/log files:
+#
+#   awk "/^setsid bash -c '\$/{f=1;next} f&&/^' _ /{f=0} f" bin/dev_run.sh >/tmp/w.sh
+#   sleep 60 & echo $! >/tmp/t.pid; echo one >/tmp/t.log
+#   bash /tmp/w.sh /tmp/t.pid /tmp/t.log 10 $! &
+#
+# then kill the sleep to see the marker land; or leave a stale pid file and truncate
+# the log first to confirm it stays quiet. Strip the guard lines to watch it fail.
 setsid bash -c '
-  pid_file=$1 log_file=$2 wait_ready=$3
+  pid_file=$1 log_file=$2 wait_ready=$3 launcher=$4
   deadline=$((SECONDS + wait_ready))
   while (( SECONDS < deadline )); do
     [[ -s "$pid_file" ]] && break
+    # Give up with the launcher, mirroring the readiness loop below. Without this a
+    # failed build left this watcher polling for the whole ready timeout; a fix-and-
+    # retry inside that window would arm it against the *new* session, running
+    # alongside the watcher that session spawned, and both would stamp the marker.
+    #
+    # No apostrophes in here - this whole block is inside a single-quoted bash -c.
+    kill -0 "$launcher" 2>/dev/null || exit 0
     sleep 1
   done
   # Never became ready - the launcher reports that case itself, so stay quiet.
@@ -221,7 +238,7 @@ setsid bash -c '
 
   printf -- "--- flutter exited %s - log ends here; the app may still be running on the device ---\n" \
     "$(date "+%Y-%m-%d %H:%M:%S")" >>"$log_file"
-' _ "$PID_FILE" "$LOG_FILE" "$ready_timeout" >/dev/null 2>&1 </dev/null &
+' _ "$PID_FILE" "$LOG_FILE" "$ready_timeout" "$launcher" >/dev/null 2>&1 </dev/null &
 
 echo "Starting on '$device' in the background; log: $LOG_FILE"
 deadline=$((SECONDS + ready_timeout))
