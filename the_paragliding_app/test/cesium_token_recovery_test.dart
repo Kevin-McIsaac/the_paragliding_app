@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:the_paragliding_app/presentation/widgets/cesium_3d_map_inappwebview.dart'
     show isCesiumHost;
+import 'package:the_paragliding_app/services/cesium_token_validator.dart';
 import 'package:the_paragliding_app/utils/preferences_helper.dart';
 
 /// A user's own Ion token shadows the app's build-time token. When Ion starts
@@ -58,6 +59,56 @@ void main() {
 
       expect(await PreferencesHelper.getCesiumTokenValidated(), isFalse);
       expect(await PreferencesHelper.getCesiumTokenValidationDate(), isNull);
+    });
+  });
+
+  /// The other half of #306. Validating against imagery is only half the fix:
+  /// the settings card also re-checks the token whenever it is expanded, so a
+  /// user offline in a launch paddock runs that check constantly. If a failed
+  /// request counted as a rejection, opening the card without a signal would
+  /// demote a perfectly good token and blank the 3D map until they retyped it.
+  group('recordValidation', () {
+    setUp(() => SharedPreferences.setMockInitialValues({}));
+
+    test('stores a pass', () async {
+      expect(await CesiumTokenValidator.recordValidation(CesiumTokenStatus.valid), isTrue);
+
+      expect(await PreferencesHelper.getCesiumTokenValidated(), isTrue);
+      expect(await PreferencesHelper.getCesiumTokenValidationDate(), isNotNull);
+    });
+
+    test('stores a rejection', () async {
+      await PreferencesHelper.setCesiumTokenValidated(true);
+
+      expect(await CesiumTokenValidator.recordValidation(CesiumTokenStatus.invalid), isFalse);
+
+      expect(await PreferencesHelper.getCesiumTokenValidated(), isFalse);
+    });
+
+    test('leaves a validated token alone when Ion is unreachable', () async {
+      await PreferencesHelper.setCesiumTokenValidated(true);
+      final validatedOn = await PreferencesHelper.getCesiumTokenValidationDate();
+
+      expect(await CesiumTokenValidator.recordValidation(CesiumTokenStatus.unreachable), isNull);
+
+      expect(await PreferencesHelper.getCesiumTokenValidated(), isTrue);
+      expect(await PreferencesHelper.getCesiumTokenValidationDate(), validatedOn);
+    });
+
+    test('leaves a rejected token rejected when Ion is unreachable', () async {
+      // The guard must not resurrect a token either - "we could not ask" is not
+      // evidence in favour any more than it is evidence against.
+      await PreferencesHelper.setCesiumTokenValidated(false);
+
+      expect(await CesiumTokenValidator.recordValidation(CesiumTokenStatus.unreachable), isNull);
+
+      expect(await PreferencesHelper.getCesiumTokenValidated(), isFalse);
+    });
+
+    test('writes nothing at all when no token has ever been checked', () async {
+      expect(await CesiumTokenValidator.recordValidation(CesiumTokenStatus.unreachable), isNull);
+
+      expect(await PreferencesHelper.getCesiumTokenValidated(), isNull);
     });
   });
 }

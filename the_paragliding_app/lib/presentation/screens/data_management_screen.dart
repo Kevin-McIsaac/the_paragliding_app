@@ -496,18 +496,15 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
   }
 
 
-  /// Persists a validation outcome and syncs the card's state to it.
+  /// Syncs the card to a validation outcome.
   ///
-  /// `unreachable` deliberately writes nothing: it means we could not ask Ion,
-  /// not that the token is bad, and demoting on a dropped connection would put
-  /// the card back to lying - just in the other direction.
+  /// [CesiumTokenValidator.recordValidation] owns which outcomes persist; a
+  /// null return means it wrote nothing (`unreachable`), so the card keeps
+  /// showing whatever was last actually established.
   Future<void> _applyCesiumValidation(CesiumTokenStatus status) async {
-    if (status == CesiumTokenStatus.unreachable) return;
+    final isValid = await CesiumTokenValidator.recordValidation(status);
+    if (isValid == null) return;
 
-    final isValid = status == CesiumTokenStatus.valid;
-    // Record the failure too. Only writing the success case left a revoked
-    // token reading "Active" and still being used for every map load.
-    await PreferencesHelper.setCesiumTokenValidated(isValid);
     final validatedOn = await PreferencesHelper.getCesiumTokenValidationDate();
 
     if (!mounted) return;

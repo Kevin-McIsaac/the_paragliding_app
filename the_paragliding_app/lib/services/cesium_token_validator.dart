@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../services/logging_service.dart';
+import '../utils/preferences_helper.dart';
 
 /// The outcome of a token check.
 ///
@@ -106,6 +107,23 @@ class CesiumTokenValidator {
       // Not JSON, or not shaped like an Ion error. Nothing to report.
     }
     return null;
+  }
+
+  /// Records [status] against the stored token, returning the flag now held -
+  /// or null when nothing was written.
+  ///
+  /// `unreachable` deliberately writes nothing: it means we could not ask Ion,
+  /// not that the token is bad. Demoting on a dropped connection would put the
+  /// settings card back to lying, just in the other direction (#306).
+  ///
+  /// The failure case *is* written. Only recording successes left a revoked
+  /// token reading "Active" and still being sent with every map load (#300).
+  static Future<bool?> recordValidation(CesiumTokenStatus status) async {
+    if (status == CesiumTokenStatus.unreachable) return null;
+
+    final isValid = status == CesiumTokenStatus.valid;
+    await PreferencesHelper.setCesiumTokenValidated(isValid);
+    return isValid;
   }
 
   /// Formats a token for display (shows first 8 and last 4 characters)
