@@ -187,6 +187,27 @@ fi
 setsid flutter "${run_args[@]}" >"$LOG_FILE" 2>&1 </dev/null &
 launcher=$!
 
+# A log that stops silently looks exactly like a log with nothing to report - that is
+# how a dead session got read as "the app was never touched". Flutter removes the pid
+# file on exit, but that signal lives in a different file from the log being read, so
+# stamp the end into the log itself. Detached, so it outlives this script.
+#
+# On a device the app usually keeps running after flutter detaches, so the marker says
+# where the log stops, not that the app stopped - use bin/dev_logs.sh from there.
+setsid bash -c '
+  pid_file=$1 log_file=$2 wait_ready=$3
+  for ((i = 0; i < wait_ready; i++)); do
+    [[ -s "$pid_file" ]] && break
+    sleep 1
+  done
+  # Never became ready - the launcher reports that case itself, so stay quiet.
+  [[ -s "$pid_file" ]] || exit 0
+  pid=$(cat "$pid_file")
+  while kill -0 "$pid" 2>/dev/null; do sleep 2; done
+  printf -- "--- flutter exited %s - log ends here; the app may still be running on the device ---\n" \
+    "$(date "+%Y-%m-%d %H:%M:%S")" >>"$log_file"
+' _ "$PID_FILE" "$LOG_FILE" "$ready_timeout" >/dev/null 2>&1 </dev/null &
+
 echo "Starting on '$device' in the background; log: $LOG_FILE"
 deadline=$((SECONDS + ready_timeout))
 while :; do

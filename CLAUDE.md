@@ -169,6 +169,35 @@ The Paragliding App is a free, Android-first, cross-platform application for log
 
 Both are per-checkout, so worktrees do not fight over them.
 
+`flutter.log` ends with an explicit marker when the session dies:
+
+```
+--- flutter exited 2026-08-04 10:52:42 - log ends here; the app may still be running on the device ---
+```
+
+Without it, a log that stopped because `flutter run` died is indistinguishable from one with
+nothing to report — a dropped session was once read as "the app was never touched", and the
+wrong conclusion drawn from it. **On a device the app usually keeps running after flutter
+detaches**, so the marker means the log stopped, not the app. Switch to `bin/dev_logs.sh`
+from there: logcat is written by the app itself and survives a dropped `flutter run`.
+
+### Reading logs from a device
+
+`bin/dev_logs.sh` reads logcat over adb — the only option for a Play Store install, where
+there is no `flutter run` at all. There is no logcat on Linux desktop, so `flutter.log`
+remains the only log there, and it is also the only place build and compile errors appear.
+
+```bash
+bin/dev_logs.sh --keys       # just the [API_KEYS_STATUS] line
+bin/dev_logs.sh -g cesium    # search the whole buffer
+bin/dev_logs.sh -f           # follow live
+```
+
+The phone's logcat ring buffer holds only a couple of minutes — `adbd` retries a USB bind it
+can never complete when no cable is attached, and floods it. Follow live rather than expecting
+history to be there. The phone also dozes when idle, which kills `flutter run`; Developer
+options → **"Stay awake"** avoids it.
+
 ### Claude-Specific Patterns
 
 ```dart
