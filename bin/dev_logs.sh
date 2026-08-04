@@ -10,10 +10,15 @@
 #   bin/dev_logs.sh -g cesium        # search the whole buffer, any tag (case-sensitive)
 #   bin/dev_logs.sh --raw            # unfiltered logcat (all tags)
 #   bin/dev_logs.sh -c               # clear the buffer, then exit
+#   bin/dev_logs.sh -s <id>          # pick a device when more than one is online
 #
-# Connection is handled here: an already-online device is used as-is, otherwise the
+# Connection is handled here: a single online device is used as-is, otherwise the
 # known phone IPs are tried on the fixed tcpip port. `adb tcpip 5555` resets on phone
 # reboot - if every candidate fails, re-run it over USB (see the run-app skill).
+#
+# With more than one device online the script refuses to guess and asks for -s (or
+# ANDROID_SERIAL). Reading the wrong phone's logs is the exact failure this script
+# exists to prevent - it would answer confidently about the install you did not mean.
 #
 # What a release install actually logs: LoggingService gates release builds at
 # Level.warning, so info/debug from our own code is absent by design. What survives is
@@ -26,8 +31,10 @@
 
 set -euo pipefail
 
-# Pixel 9 (tokay). .99 is the current lease, .135 was an earlier one.
-CANDIDATE_IPS=("192.168.86.99" "192.168.86.135")
+# Fallback IPs, tried only when no device is already online. Pixel 9 (tokay); .99 is
+# the current lease, .135 an earlier one. Not portable between developers - override
+# with DEV_LOGS_IPS="192.168.1.20 192.168.1.21", or just edit this line.
+read -r -a CANDIDATE_IPS <<<"${DEV_LOGS_IPS:-192.168.86.99 192.168.86.135}"
 ADB_PORT=5555
 
 lines=300
@@ -35,14 +42,17 @@ follow=false
 raw=false
 clear_first=false
 pattern=""
+requested=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -n|--lines)
       # ${2-} not $2: under `set -u` a bare `-n` would otherwise die with an
-      # unbound-variable trace instead of saying what was wrong.
+      # unbound-variable trace instead of saying what was wrong. Reject 0 along with
+      # non-numerics: `tail -n 0` prints nothing, which reads as an empty buffer.
       lines="${2-}"
-      [[ -n "$lines" ]] || { echo "$1 needs a line count (try --help)" >&2; exit 1; }
+      [[ "$lines" =~ ^[1-9][0-9]*$ ]] ||
+        { echo "$1 needs a positive line count, got '$lines' (try --help)" >&2; exit 1; }
       shift 2
       ;;
     -f|--follow)
@@ -69,8 +79,16 @@ while [[ $# -gt 0 ]]; do
       clear_first=true
       shift
       ;;
+    -s|--serial)
+      requested="${2-}"
+      [[ -n "$requested" ]] || { echo "$1 needs a device id (try --help)" >&2; exit 1; }
+      shift 2
+      ;;
     -h|--help)
-      sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      # Print the header comment block - from after the shebang to the first
+      # non-comment line - rather than a fixed line range, which silently truncated
+      # or picked up code whenever a header line was added.
+      awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "${BASH_SOURCE[0]}"
       exit 0
       ;;
     *)
@@ -81,22 +99,30 @@ while [[ $# -gt 0 ]]; do
 done
 
 # An online device is good enough however it got connected - the guid-based TLS
-# transport from `adb pair` reconnects by itself and needs no `adb connect`.
-online_device() {
-  adb devices | awk '$2 == "device" { print $1; exit }'
+# transport from `adb pair` reconnects by itself and needs no `adb connect`. Every
+# online id is listed, not just the first: picking the first silently read whichever
+# device adb happened to list first whenever a second phone or an emulator was up.
+online_devices() {
+  adb devices | awk '$2 == "device" { print $1 }'
 }
 
-device="$(online_device || true)"
-if [[ -z "$device" ]]; then
+# -s wins over ANDROID_SERIAL; adb's own env var is honoured so this behaves like adb.
+requested="${requested:-${ANDROID_SERIAL-}}"
+
+mapfile -t devices < <(online_devices || true)
+
+# Only reconnect when nothing at all is online - an explicit -s for a device that is
+# already up must not drag the candidate IPs in.
+if [[ ${#devices[@]} -eq 0 ]]; then
   for ip in "${CANDIDATE_IPS[@]}"; do
     echo "connecting to $ip:$ADB_PORT ..." >&2
     timeout 10 adb connect "$ip:$ADB_PORT" >/dev/null 2>&1 || true
-    device="$(online_device || true)"
-    [[ -n "$device" ]] && break
+    mapfile -t devices < <(online_devices || true)
+    [[ ${#devices[@]} -gt 0 ]] && break
   done
 fi
 
-if [[ -z "$device" ]]; then
+if [[ ${#devices[@]} -eq 0 ]]; then
   cat >&2 <<'EOF'
 No device. Either the phone is off the network, or `adb tcpip 5555` has not been run
 since its last reboot. Plug in over USB and:
@@ -107,6 +133,26 @@ then unplug and re-run this script. Wireless Debugging pairing (a random port, n
 re-pairing) is the fallback - see the run-app skill.
 EOF
   exit 1
+fi
+
+if [[ -n "$requested" ]]; then
+  device=""
+  for d in "${devices[@]}"; do
+    [[ "$d" == "$requested" ]] && device="$d" && break
+  done
+  if [[ -z "$device" ]]; then
+    echo "device '$requested' is not online. Online now:" >&2
+    printf '  %s\n' "${devices[@]}" >&2
+    exit 1
+  fi
+elif [[ ${#devices[@]} -gt 1 ]]; then
+  # Refusing beats guessing: these logs get read as evidence about one specific
+  # install, so the wrong device is worse than no output at all.
+  echo "more than one device online - pick one with -s <id> (or ANDROID_SERIAL):" >&2
+  printf '  %s\n' "${devices[@]}" >&2
+  exit 1
+else
+  device="${devices[0]}"
 fi
 
 echo "device: $device" >&2
