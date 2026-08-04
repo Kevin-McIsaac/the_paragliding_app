@@ -11,6 +11,22 @@ import '../../utils/preferences_helper.dart';
 import '../../config/cesium_config.dart';
 import '../screens/data_management_screen.dart';
 
+/// Whether a URL belongs to Cesium, and so whether a 401 from it can be blamed on
+/// the Ion token. Covers api.cesium.com and the assets.ion.cesium.com tile hosts.
+///
+/// The suffix check keeps the leading dot deliberately: a bare
+/// `endsWith('cesium.com')` would also accept `notcesium.com`, handing an
+/// unrelated host the power to discard the user's token.
+///
+/// Takes a plain [Uri] rather than a `WebUri` - `WebUri implements Uri`, so call
+/// sites pass `request.url` unchanged, and tests need no WebView plugin.
+@visibleForTesting
+bool isCesiumHost(Uri? url) {
+  final host = url?.host.toLowerCase();
+  if (host == null || host.isEmpty) return false;
+  return host == 'cesium.com' || host.endsWith('.cesium.com');
+}
+
 class Cesium3DMapInAppWebView extends StatefulWidget {
   /// flutter_inappwebview only ships Android and iOS implementations, so the
   /// 3D map cannot render on desktop (used for the Linux dev loop).
@@ -70,7 +86,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   
   // Saved preferences with defaults
   String _savedSceneMode = '3D';
-  String _savedBaseMap = 'Bing Maps Aerial';
+  String _savedBaseMap = 'OpenStreetMap';
   bool _savedTerrainEnabled = true;
   bool _savedNavigationHelpDialogOpen = false;
   bool _savedFlyThroughMode = false;
@@ -81,6 +97,8 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   // User token for premium maps
   String? _userToken;
   bool _hasValidUserToken = false;
+  // Set once per widget so the fallback chain's repeated 401s trigger one reload
+  bool _userTokenRevoked = false;
   
   @override
   void initState() {
@@ -128,7 +146,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
   Future<void> _loadPreferences() async {
     try {
       final sceneMode = await PreferencesHelper.getCesiumSceneMode() ?? '3D';
-      final baseMap = await PreferencesHelper.getCesiumBaseMap() ?? 'Bing Maps Aerial';
+      final baseMap = await PreferencesHelper.getCesiumBaseMap() ?? 'OpenStreetMap';
       final terrainEnabled = await PreferencesHelper.getCesiumTerrainEnabled() ?? true;
       final navigationHelpDialogOpen = await PreferencesHelper.getCesiumNavigationHelpDialog() ?? false;
       final flyThroughMode = await PreferencesHelper.getCesiumFlyThroughMode() ?? false;
@@ -155,6 +173,10 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
           _savedChaseZoomFactor = chaseZoomFactor;
           _userToken = userToken;
           _hasValidUserToken = hasValidToken;
+          // Returning from Settings with a working token reuses this widget, so
+          // the one-shot guard has to clear or a later revocation would not
+          // self-heal for the rest of the widget's life.
+          if (hasValidToken) _userTokenRevoked = false;
         });
         
         LoggingService.debug('Cesium3D: Loaded preferences - Scene: $sceneMode, BaseMap: $baseMap, Terrain: $terrainEnabled, NavDialog: $navigationHelpDialogOpen, FlyThrough: $flyThroughMode, Trail: ${trailDuration}s, Quality: $quality, UserToken: ${userToken != null ? 'present' : 'none'}, TokenValid: $hasValidToken');
@@ -616,8 +638,22 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
               return;
             }
             
-            LoggingService.error('Cesium3D InAppWebView', 
+            LoggingService.error('Cesium3D InAppWebView',
               'HTTP error: ${response.statusCode} - ${response.reasonPhrase}');
+
+            // Ion rejects every asset request once the user's token is revoked or
+            // expired. Nothing re-checks a token after its first validation, so
+            // without this the map stays blank on every future launch.
+            //
+            // Only Cesium's own hosts count. This callback fires for every
+            // subresource the WebView loads, and a 401 from anywhere else says
+            // nothing about the user's Ion token - demoting on one would discard a
+            // perfectly good token.
+            if (response.statusCode == 401 &&
+                _hasValidUserToken &&
+                isCesiumHost(request.url)) {
+              _handleRevokedUserToken();
+            }
           },
           onJsAlert: (controller, jsAlertRequest) async {
             LoggingService.debug('Cesium3D JS Alert: ${jsAlertRequest.message}');
@@ -818,7 +854,10 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
         .replaceAll('{{LON}}', lon.toString())
         .replaceAll('{{ALTITUDE}}', altitude.toString())
         .replaceAll('{{DEBUG}}', isDebugMode.toString())
-        .replaceAll('{{TOKEN}}', _userToken ?? CesiumConfig.ionAccessToken)
+        // Only a *validated* user token may shadow the app token. A stored token
+        // that failed validation used to be sent anyway, so every Ion asset 401'd
+        // and the map came up blank with no way back short of removing it by hand.
+        .replaceAll('{{TOKEN}}', (_hasValidUserToken ? _userToken : null) ?? CesiumConfig.ionAccessToken)
         .replaceAll('window.cesiumConfig = {lat:', '''window.cesiumConfig = {
             trackPoints: $trackPointsJs,
             savedSceneMode: "$_savedSceneMode",
@@ -1471,6 +1510,35 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
         _showErrorMessage = true;
         _errorMessage = 'No internet connection available.\nThe 3D map requires an active internet connection.';
       });
+    }
+  }
+
+  /// Demote a user token that Ion has started rejecting, then reload on the app
+  /// token so the free providers come back instead of a blank globe.
+  ///
+  /// The token itself is kept - only the validated flag is cleared - so the user
+  /// can see it in Settings and re-test it once they have fixed it at Ion's end.
+  Future<void> _handleRevokedUserToken() async {
+    // A failed load produces one 401 per provider in the fallback chain; only the
+    // first should trigger a reload.
+    if (_userTokenRevoked || _isDisposed) return;
+    _userTokenRevoked = true;
+
+    LoggingService.structured('CESIUM_USER_TOKEN_REVOKED', {
+      'action': 'falling back to app token',
+    });
+
+    await PreferencesHelper.setCesiumTokenValidated(false);
+    if (!mounted || _isDisposed) return;
+    setState(() => _hasValidUserToken = false);
+
+    if (webViewController != null) {
+      await webViewController!.loadData(
+        data: _buildCesiumHtml(),
+        baseUrl: WebUri("https://localhost/"),
+        mimeType: "text/html",
+        encoding: "utf-8",
+      );
     }
   }
   

@@ -526,12 +526,12 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
           ),
         );
         
-        if (isValid) {
-          await PreferencesHelper.setCesiumTokenValidated(true);
-          setState(() {
-            _isCesiumTokenValidated = true;
-          });
-        }
+        // Record the failure too. Only writing the success case left a revoked
+        // token reading "Active" and still being used for every map load.
+        await PreferencesHelper.setCesiumTokenValidated(isValid);
+        setState(() {
+          _isCesiumTokenValidated = isValid;
+        });
       }
     } catch (e, stackTrace) {
       LoggingService.structured('CESIUM_TOKEN_TEST_ERROR', {
@@ -1872,7 +1872,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                       },
                       children: [
                       const Text(
-                        'To unlock free access to premium Bing Maps you need to provide your own Cesium ION access token. '
+                        'To unlock free access to premium Google Maps imagery you need to provide your own Cesium ION access token. '
                         'Registering with Cesium is free, quick and easy.',
                         style: TextStyle(fontSize: 14, color: Colors.grey),
                       ),
@@ -1901,7 +1901,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                       Text(
                         _cesiumToken != null && _isCesiumTokenValidated
                           ? 'You now have access to the Premium maps.'
-                          : 'To access premium Bing maps for free follow these 4 steps:',
+                          : 'To access premium Google maps for free follow these 4 steps:',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w500,

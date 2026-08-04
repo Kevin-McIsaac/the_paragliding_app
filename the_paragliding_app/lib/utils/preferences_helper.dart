@@ -210,7 +210,15 @@ class PreferencesHelper {
   static Future<void> setCesiumTokenValidated(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(cesiumTokenValidatedKey, value);
-    await prefs.setString(cesiumTokenValidationDateKey, DateTime.now().toIso8601String());
+    // The date means "last validated successfully". Failures now reach this method
+    // too, and stamping the current time onto one would leave a token that just
+    // failed looking freshly validated - which is what any future re-validation
+    // logic would key off.
+    if (value) {
+      await prefs.setString(cesiumTokenValidationDateKey, DateTime.now().toIso8601String());
+    } else {
+      await prefs.remove(cesiumTokenValidationDateKey);
+    }
   }
   
   static Future<DateTime?> getCesiumTokenValidationDate() async {
