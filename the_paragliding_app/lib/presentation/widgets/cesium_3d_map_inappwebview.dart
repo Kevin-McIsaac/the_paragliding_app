@@ -11,6 +11,22 @@ import '../../utils/preferences_helper.dart';
 import '../../config/cesium_config.dart';
 import '../screens/data_management_screen.dart';
 
+/// Whether a URL belongs to Cesium, and so whether a 401 from it can be blamed on
+/// the Ion token. Covers api.cesium.com and the assets.ion.cesium.com tile hosts.
+///
+/// The suffix check keeps the leading dot deliberately: a bare
+/// `endsWith('cesium.com')` would also accept `notcesium.com`, handing an
+/// unrelated host the power to discard the user's token.
+///
+/// Takes a plain [Uri] rather than a `WebUri` - `WebUri implements Uri`, so call
+/// sites pass `request.url` unchanged, and tests need no WebView plugin.
+@visibleForTesting
+bool isCesiumHost(Uri? url) {
+  final host = url?.host.toLowerCase();
+  if (host == null || host.isEmpty) return false;
+  return host == 'cesium.com' || host.endsWith('.cesium.com');
+}
+
 class Cesium3DMapInAppWebView extends StatefulWidget {
   /// flutter_inappwebview only ships Android and iOS implementations, so the
   /// 3D map cannot render on desktop (used for the Linux dev loop).
@@ -635,7 +651,7 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
             // perfectly good token.
             if (response.statusCode == 401 &&
                 _hasValidUserToken &&
-                _isCesiumHost(request.url)) {
+                isCesiumHost(request.url)) {
               _handleRevokedUserToken();
             }
           },
@@ -1495,16 +1511,6 @@ class _Cesium3DMapInAppWebViewState extends State<Cesium3DMapInAppWebView>
         _errorMessage = 'No internet connection available.\nThe 3D map requires an active internet connection.';
       });
     }
-  }
-
-  /// Whether a URL belongs to Cesium, and so whether a 401 from it can be blamed
-  /// on the Ion token. Covers api.cesium.com and the assets.ion.cesium.com tile
-  /// hosts; the suffix check with a leading dot avoids matching a lookalike
-  /// domain that merely ends in the same letters.
-  static bool _isCesiumHost(WebUri? url) {
-    final host = url?.host.toLowerCase();
-    if (host == null) return false;
-    return host == 'cesium.com' || host.endsWith('.cesium.com');
   }
 
   /// Demote a user token that Ion has started rejecting, then reload on the app
