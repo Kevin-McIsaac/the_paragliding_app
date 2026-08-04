@@ -298,7 +298,7 @@ CREATE INDEX idx_flights_wing ON flights(wing_id);
    - WebView-based Cesium 3D globe
    - Performance monitoring and metrics
    - Automatic quality scaling (Performance/Quality/Ultra modes)
-   - Free provider fallback system (OpenStreetMap, Stamen Terrain)
+   - Free provider fallback system (OpenStreetMap, Sentinel-2)
    - Development mode quota optimization
    - JavaScript-Flutter bridge for performance data
 

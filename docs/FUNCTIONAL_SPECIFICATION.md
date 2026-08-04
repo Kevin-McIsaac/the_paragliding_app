@@ -184,7 +184,7 @@ This document defines the functional requirements for the The Paragliding App mo
 - FR-7.2: Interactive flight replay with temporal controls
 - FR-7.3: Terrain-aware flight path rendering
 - FR-7.4: Multiple quality modes (Performance/Quality/Ultra)
-- FR-7.5: Free provider system (OpenStreetMap, Stamen Terrain)
+- FR-7.5: Free provider system (OpenStreetMap, Sentinel-2)
 - FR-7.6: Development mode with quota optimization
 - FR-7.7: Performance monitoring and frame rate tracking
 - FR-7.8: Altitude-coded flight track visualization
@@ -520,7 +520,7 @@ This document defines the functional requirements for the The Paragliding App mo
   - Professional flight visualization with terrain rendering
   - WebView-based implementation with flutter_inappwebview
   - Multiple quality modes (Performance/Quality/Ultra)
-  - Free provider fallback system (OpenStreetMap, Stamen Terrain)
+  - Free provider fallback system (OpenStreetMap, Sentinel-2)
   - Development mode with quota optimization
   - Real-time performance monitoring
 

@@ -165,7 +165,7 @@ Example: Loading flights
   - Real-time 3D flight track rendering with altitude coding
   - Interactive flight replay with temporal controls
   - Multiple quality modes (Performance/Quality/Ultra)
-  - Free provider fallback system (OpenStreetMap, Stamen Terrain)
+  - Free provider fallback system (OpenStreetMap, Sentinel-2)
   - Development mode with quota optimization
   - Performance monitoring with frame rate tracking
   - JavaScript-Flutter bridge for metrics
