@@ -496,12 +496,26 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
   }
 
 
-  /// Syncs the card to a validation outcome.
+  /// Syncs the card to the outcome of checking [token].
   ///
   /// [CesiumTokenValidator.recordValidation] owns which outcomes persist; a
   /// null return means it wrote nothing (`unreachable`), so the card keeps
   /// showing whatever was last actually established.
-  Future<void> _applyCesiumValidation(CesiumTokenStatus status) async {
+  Future<void> _applyCesiumValidation(
+      String token, CesiumTokenStatus status) async {
+    // Validation is a network round trip and Remove Token is not blocked while
+    // it runs. A verdict on a token the user has since removed or replaced
+    // would otherwise write `cesium_token_validated` straight back over the
+    // removal that just cleared it, leaving prefs claiming a validated token
+    // that no longer exists.
+    if (_cesiumToken != token) {
+      LoggingService.structured('CESIUM_TOKEN_VALIDATION_STALE', {
+        'result': status.name,
+        'token_still_set': _cesiumToken != null,
+      });
+      return;
+    }
+
     final isValid = await CesiumTokenValidator.recordValidation(status);
     if (isValid == null) return;
 
@@ -529,7 +543,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
         'result': status.name,
         'was_validated': _isCesiumTokenValidated,
       });
-      await _applyCesiumValidation(status);
+      await _applyCesiumValidation(token, status);
     } catch (e, stackTrace) {
       LoggingService.error(
           'DataManagementScreen: Cesium token re-check failed', e, stackTrace);
@@ -539,9 +553,10 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
   }
 
   Future<void> _testCesiumToken() async {
-    if (_cesiumToken == null) return;
+    final token = _cesiumToken;
+    if (token == null) return;
 
-    LoggingService.action('DataManagement', 'test_cesium_token', {'token_length': _cesiumToken!.length});
+    LoggingService.action('DataManagement', 'test_cesium_token', {'token_length': token.length});
     final stopwatch = Stopwatch()..start();
 
     setState(() {
@@ -549,16 +564,16 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
     });
 
     try {
-      final status = await CesiumTokenValidator.validateToken(_cesiumToken!);
+      final status = await CesiumTokenValidator.validateToken(token);
 
       LoggingService.performance('Test Cesium token', stopwatch.elapsed, 'token validation completed');
       LoggingService.structured('CESIUM_TOKEN_TEST', {
         'result': status.name,
-        'token_length': _cesiumToken!.length,
+        'token_length': token.length,
         'duration_ms': stopwatch.elapsedMilliseconds,
       });
 
-      await _applyCesiumValidation(status);
+      await _applyCesiumValidation(token, status);
 
       if (mounted) {
         final (message, colour, seconds) = switch (status) {
@@ -706,7 +721,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                   // Automatically validate the token
                   try {
                     final status = await CesiumTokenValidator.validateToken(token);
-                    await _applyCesiumValidation(status);
+                    await _applyCesiumValidation(token, status);
 
                     if (mounted) {
                       final (message, colour) = switch (status) {

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../services/logging_service.dart';
 import '../utils/preferences_helper.dart';
@@ -33,6 +34,7 @@ class CesiumTokenValidator {
 
   /// Swapped out by tests. `package:http/testing.dart` ships `MockClient`
   /// inside the http package, so this needs no extra dependency.
+  @visibleForTesting
   static http.Client client = http.Client();
 
   /// Checks that [token] can actually fetch the imagery the 3D map loads.
