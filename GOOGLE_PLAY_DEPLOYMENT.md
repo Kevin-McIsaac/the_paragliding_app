@@ -9,14 +9,19 @@ track.
 ```bash
 # 1. bump the build number (versionCode) - Play rejects a reused one
 $EDITOR the_paragliding_app/pubspec.yaml     # version: 1.0.4+13
-git commit -am "chore: Bump build number to 1.0.4+13"
 
 # 2. write the release notes users will see
 $EDITOR distribution/whatsnew/whatsnew-en-GB
 
-# 3. tag and push
-git tag v1.0.4+13 && git push origin main --tags
+# 3. get both onto main the usual way (PR, review, merge)
+
+# 4. tag the merged commit and push the tag
+git switch main && git pull
+git tag -a v1.0.4+13 -m "Release 1.0.4+13" && git push origin v1.0.4+13
 ```
+
+Tag a commit that is already on `main` — CI refuses to release from anything else, so tagging a
+branch and pushing both at once is no longer a shortcut that works.
 
 ### Release notes
 
@@ -31,34 +36,71 @@ Notes are worth writing whenever a release changes something users can see. 1.0.
 user's total hours by about 11% by measuring takeoff-to-landing instead of the whole recording;
 shipped without explanation, that reads as data loss rather than a correction.
 
-The tag must agree with `pubspec.yaml` — the `check-version` job fails fast otherwise, rather
-than letting Play reject the upload after a full build.
+## What happens when you push the tag
 
-Then **approve the deployment**: the `release-android` job targets the `play-internal`
-environment, which has a required reviewer, so it waits in the Actions tab until approved. That
-is the last point at which a mistaken tag can be stopped.
+**There is no approval step.** The `play-internal` environment scopes the signing and Play
+credentials to this one job so no other workflow can read them, but it carries no protection
+rules — a pushed tag publishes without waiting for anyone. This file used to claim a required
+reviewer; there has never been one. Add required reviewers under Settings → Environments →
+`play-internal` if a human checkpoint is wanted. Until then the tag push *is* the decision.
 
-After approval, CI:
+Four cheap checks run first, all within seconds, so a bad tag fails long before a ~15 minute
+build:
+
+| check | fails when |
+|---|---|
+| tag matches `pubspec.yaml` | tagged without bumping |
+| `versionCode` exceeds every existing `v*` tag | the `+N` suffix was reused — Play otherwise only says so *after* the upload |
+| tagged commit is an ancestor of `main` | the tag points at an unmerged branch or an arbitrary commit |
+| `whatsnew-en-GB` exists and is ≤500 characters | notes were forgotten, or overrun Play's limit |
+
+`flutter analyze` and the full test suite run alongside them, and the build does not start
+unless they pass. That gate lives here rather than relying on `ci.yml` because nothing requires
+`ci.yml` to be green before merging or tagging — a tag on a red commit used to build and publish
+exactly like a green one.
+
+Then CI:
 
 1. Restores the upload keystore and writes `android/key.properties`
 2. Builds APK + AAB with the API keys injected via `--dart-define`
-3. **Verifies** the bundle (see below) — hard failure, not a warning
-4. Publishes the AAB to the internal track with `mapping.txt`
-5. Attaches the APK to a GitHub Release
+3. **Verifies both artifacts** (see below) — hard failure, not a warning
+4. Records a build provenance attestation for each
+5. Publishes the AAB to the internal track with `mapping.txt`
+6. Attaches the APK to a GitHub Release, carrying the same notes Play testers see
 
 Internal testing has no review delay; testers see it within minutes.
 
-`workflow_dispatch` runs the same build and verification but **does not publish** — use it to
-test pipeline changes.
+`workflow_dispatch` runs the same tests, build, verification and attestation but **does not
+publish** — use it to test pipeline changes, against a branch:
+
+```bash
+gh workflow run build.yml --ref my-branch
+```
 
 ## What CI verifies
 
-Two failure modes that produce a perfectly normal-looking build, both now hard errors:
+Two failure modes that produce a perfectly normal-looking build, both hard errors:
 
 | check | why |
 |---|---|
-| AAB signing cert == `vars.UPLOAD_CERT_SHA256` | Without `key.properties`, `build.gradle.kts` falls back to the **debug** key and only `println`s a warning. Play rejects the upload, and before this check GitHub Releases were being published debug-signed. |
-| no `flutter_assets/.env` in the bundle | `.env` was once declared as an asset, shipping API keys in plaintext to every user (#284). This stops that regressing. |
+| signing cert == `vars.UPLOAD_CERT_SHA256` | Without `key.properties`, `build.gradle.kts` falls back to the **debug** key and only `println`s a warning. Play rejects the upload, and before this check GitHub Releases were being published debug-signed. |
+| no `flutter_assets/.env` in the artifact | `.env` was once declared as an asset, shipping API keys in plaintext to every user (#284). This stops that regressing. |
+
+Both run against **the APK as well as the AAB**. They used to cover only the AAB, which is the
+artifact Play re-signs and independently validates anyway; the APK is the one attached to the
+GitHub release and sideloaded directly, so it was the copy reaching users unexamined.
+
+The two need different tools. An AAB is jar-signed, so `keytool -printcert -jarfile` reads it.
+An APK may carry only an APK Signature Scheme v2/v3 block, which `keytool` cannot see at all —
+it reports "not a signed jar file" on a perfectly good APK — so the APK is read with
+`apksigner verify --print-certs` and the two fingerprints are normalised before comparing.
+
+Beyond verification, each artifact gets a **build provenance attestation**, which lets anyone
+check that a downloaded APK came from this workflow at this commit:
+
+```bash
+gh attestation verify app-release.apk --repo Kevin-McIsaac/the_paragliding_app
+```
 
 The expected fingerprint is a repository **variable**, not a secret — it is a public certificate
 fingerprint:
@@ -71,8 +113,8 @@ UPLOAD_CERT_SHA256 = 1F:05:AD:55:3A:CB:78:8C:38:CB:13:7D:61:06:B6:D6:EC:3C:04:0D
 
 ### Environment `play-internal` (already created)
 
-Required reviewer: repository owner. Signing and Play credentials are scoped to this
-environment rather than the whole repository, so no other workflow can read them.
+No protection rules — see above. Its purpose is scoping: signing and Play credentials live here
+rather than on the whole repository, so no other workflow can read them.
 
 **Environment secrets** (set from the local keystore):
 
@@ -114,6 +156,24 @@ the ability to update the listing, and this pipeline would be a bad idea.
 Keep a backup of the keystore **and** `key.properties` regardless; the passwords are useless
 without the keystore and vice versa.
 
+## Pinned actions
+
+Every `uses:` in `build.yml` and `ci.yml` names a commit SHA with its release in a trailing
+comment, not a tag. `@v1` is a movable ref: whoever controls the action repository can repoint it
+at new code, and it would run here on the next release with nothing changing in this repo. That
+matters more than usual because `release-android` holds the upload keystore and its passwords,
+and hands the Play service account JSON to a third-party action (`r0adkll/upload-google-play`).
+
+The cost is that pins go stale silently — a pinned action is never told about its own security
+fixes. To update one:
+
+```bash
+gh api repos/actions/checkout/commits/v7 -q .sha   # resolve the tag to a commit
+```
+
+then edit the SHA **and** the version comment together, and prove it with
+`gh workflow run build.yml --ref <branch>`.
+
 ## Version management
 
 `pubspec.yaml` is the single source of truth for all three numbers Play shows, which are easy to
@@ -140,9 +200,13 @@ run-number scheme would desynchronise from what is already published.
 | Error | Cause | Fix |
 |---|---|---|
 | `Tag vX does not match pubspec version` | Tagged without bumping | Bump `pubspec.yaml`, retag |
+| `versionCode N was already released as vX` | The `+N` suffix was reused | Bump it; this is the local form of Play's `Version code N has already been used` |
+| `... is not an ancestor of main` | Tag points at an unmerged or arbitrary commit | Merge first, then tag the merge commit |
+| `whatsnew-en-GB is missing or empty` | Release notes not written | Write them; step 2 of Releasing |
 | `AAB is not signed with the upload key` | Keystore secret missing or wrong | Check the `play-internal` environment secrets |
-| `.env is bundled as an asset` | Someone re-added `.env` to `assets:` | Remove it; keys come from `--dart-define` (see README_API_KEYS.md) |
-| `Version code N has already been used` | `versionCode` not bumped | Bump the `+N` suffix |
+| `APK is not signed with the upload key` | Same cause; the APK is checked separately with `apksigner` | As above |
+| `.env is bundled in ...` | Someone re-added `.env` to `assets:` | Remove it; keys come from `--dart-define` (see README_API_KEYS.md) |
+| `Version code N has already been used` | Reached Play despite the check above — e.g. a build uploaded manually | Bump the `+N` suffix |
 | `The caller does not have permission` | Service account lacks Play access | Re-check the grant in Play Console → API access |
 | `Invalid JWT` | Malformed service account JSON secret | Re-set it from the original file with `gh secret set ... <` |
 

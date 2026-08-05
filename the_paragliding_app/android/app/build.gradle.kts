@@ -5,37 +5,30 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-import java.io.ByteArrayOutputStream
 import java.io.FileInputStream
 import java.util.Properties
 
-// Function to get git commit hash
-fun getGitCommitHash(): String {
+// Runs a command and returns its stdout, or `fallback` if it fails at all.
+//
+// providers.exec, not Project.exec: the latter is deprecated in Gradle 8 and gone
+// in Gradle 9, so this build would stop working on that upgrade. It is also the
+// configuration-cache-safe form - Project.exec at configuration time is one of the
+// things that makes a build cache-incompatible.
+fun gitOutput(vararg command: String, fallback: String): String {
     return try {
-        val stdout = ByteArrayOutputStream()
-        exec {
-            commandLine("git", "rev-parse", "--short", "HEAD")
-            standardOutput = stdout
-        }
-        stdout.toString().trim()
+        providers.exec {
+            commandLine(*command)
+        }.standardOutput.asText.get().trim()
     } catch (e: Exception) {
-        "unknown"
+        fallback
     }
 }
 
+// Function to get git commit hash
+fun getGitCommitHash(): String = gitOutput("git", "rev-parse", "--short", "HEAD", fallback = "unknown")
+
 // Function to get git branch name
-fun getGitBranchName(): String {
-    return try {
-        val stdout = ByteArrayOutputStream()
-        exec {
-            commandLine("git", "rev-parse", "--abbrev-ref", "HEAD")
-            standardOutput = stdout
-        }
-        stdout.toString().trim()
-    } catch (e: Exception) {
-        "main"
-    }
-}
+fun getGitBranchName(): String = gitOutput("git", "rev-parse", "--abbrev-ref", "HEAD", fallback = "main")
 
 // Load keystore properties from file
 fun getKeystoreProperties(): Properties? {
