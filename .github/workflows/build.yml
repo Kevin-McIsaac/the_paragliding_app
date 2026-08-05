@@ -15,9 +15,11 @@ on:
 
 # Two tags pushed close together would otherwise build and upload at the same
 # time. The loser reaches Play second and fails with "version code has already
-# been used", which reads as a versioning mistake rather than a race. Queue them.
+# been used", which reads as a versioning mistake rather than a race. So every tag
+# run shares one queue. Dry runs get a group per branch instead, or testing a
+# pipeline change would park a real release behind a ~15 minute build.
 concurrency:
-  group: ${{ github.workflow }}
+  group: ${{ github.workflow }}-${{ startsWith(github.ref, 'refs/tags/') && 'release' || github.ref }}
   cancel-in-progress: false
 
 # The repository default for GITHUB_TOKEN is already read-only, but that is a
@@ -67,7 +69,15 @@ jobs:
         run: |
           cd the_paragliding_app
           version=$(grep '^version:' pubspec.yaml | awk '{print $2}')
-          code="${version##*+}"
+          # Parsed the same way as the tags below, so a malformed pubspec version
+          # says so rather than reaching `[ -le ]` as "integer expression expected".
+          case "$version" in
+            *+*) code="${version##*+}" ;;
+            *) echo "::error::pubspec version '$version' has no +versionCode suffix"; exit 1 ;;
+          esac
+          case "$code" in
+            ''|*[!0-9]*) echo "::error::pubspec versionCode '$code' is not a number"; exit 1 ;;
+          esac
           highest=0
           highest_tag="(none)"
           for t in $(git tag -l 'v*'); do
