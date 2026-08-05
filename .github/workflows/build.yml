@@ -18,7 +18,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Play rejects a reused versionCode, but only after the whole build has run
       # and been uploaded. Catching a tag that disagrees with pubspec costs seconds.
@@ -46,7 +46,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -145,13 +145,13 @@ jobs:
           echo "OK: signed with the upload key, no .env in the bundle"
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: app-release-apk
           path: the_paragliding_app/build/app/outputs/flutter-apk/app-release.apk
 
       - name: Upload App Bundle artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: app-release-bundle
           path: the_paragliding_app/build/app/outputs/bundle/release/app-release.aab
@@ -186,7 +186,13 @@ jobs:
           mappingFile: the_paragliding_app/build/app/outputs/mapping/release/mapping.txt
           whatsNewDirectory: distribution/whatsnew
           releaseName: ${{ steps.version.outputs.code }} (${{ steps.version.outputs.name }})
-          track: internal
+          # `tracks`, not `track` - the singular form is deprecated and warns on
+          # every run. Renaming is not cosmetic: validateTracks() returns
+          # ['production'] when neither input is set, so the day the action drops
+          # `track`, this step would not fail - it would quietly publish straight
+          # to production instead of internal. Setting both is a hard error, so
+          # `track` must go rather than stay as a belt-and-braces fallback.
+          tracks: internal
           status: completed
 
   # No iOS job: the app ships Android-only, ios/ is not signed or configured for
@@ -208,14 +214,14 @@ jobs:
 
     steps:
       - name: Download APK artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: app-release-apk
 
       # Only the APK is attached now: an .aab is not installable by end users, and
       # Play is the distribution path for it.
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           files: app-release.apk
           generate_release_notes: true
