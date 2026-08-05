@@ -689,7 +689,9 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                   controller: controller,
                   decoration: const InputDecoration(
                     labelText: 'Access Token',
-                    hintText: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+                    // No sample-token hint here: a JWT-shaped placeholder reads
+                    // as a key that is already filled in. The line above the
+                    // field says what to paste.
                     border: OutlineInputBorder(),
                   ),
                   maxLines: 3,
