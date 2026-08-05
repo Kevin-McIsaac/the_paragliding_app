@@ -111,7 +111,10 @@ jobs:
             echo "::error::$notes is missing or empty - Play rejects the upload and the GitHub release would have no notes"
             exit 1
           fi
-          chars=$(wc -c < "$notes")
+          # wc -m, not -c. Play's limit is 500 characters; the bullets already in
+          # this file are U+2022, three bytes each, so a byte count reads high and
+          # would reject notes that are legitimately under the limit.
+          chars=$(LC_ALL=C.UTF-8 wc -m < "$notes")
           echo "release notes: $chars characters"
           if [ "$chars" -gt 500 ]; then
             echo "::error::$notes is $chars characters - Play's limit is 500"
@@ -134,6 +137,9 @@ jobs:
   # green one, and no ruleset required the checks to pass before merging either.
   # Repeating the suite here costs ~2 minutes against a ~15 minute build, and
   # makes the gate part of the release rather than adjacent to it.
+  #
+  # Deliberately a near-copy of analyze-and-test in ci.yml: the release must not
+  # depend on ci.yml having run. Change one and change the other.
   test:
     name: Analyze and test
     runs-on: ubuntu-latest
@@ -181,10 +187,12 @@ jobs:
     # without a human checkpoint. Add required reviewers under Settings ->
     # Environments -> play-internal if that is wanted.
     environment: play-internal
+    # Nothing beyond reading the code. Provenance is attested in its own job so
+    # that id-token/attestations write access is never held by the job carrying
+    # the upload keystore and the Play service account JSON - Actions permissions
+    # are job-scoped, not step-scoped, so separating them is the only way.
     permissions:
       contents: read
-      id-token: write # sign the provenance attestation
-      attestations: write # record it against the repository
 
     steps:
       - name: Checkout repository
@@ -341,21 +349,6 @@ jobs:
 
           echo "OK: AAB and APK are both signed with the upload key, neither contains .env"
 
-      # Lets anyone check that a downloaded APK really came from this workflow, at
-      # this commit, rather than from someone's laptop:
-      #   gh attestation verify app-release.apk --repo Kevin-McIsaac/the_paragliding_app
-      #
-      # Deliberately not gated to tags. Everything downstream of here that only
-      # runs on a tag is untestable by workflow_dispatch, and a signing step that
-      # has never executed is exactly the kind of guard this project has been
-      # bitten by. Attesting a dry-run build costs nothing and keeps it exercised.
-      - name: Attest build provenance
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
-        with:
-          subject-path: |
-            the_paragliding_app/build/app/outputs/flutter-apk/app-release.apk
-            the_paragliding_app/build/app/outputs/bundle/release/app-release.aab
-
       - name: Upload APK artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -406,6 +399,40 @@ jobs:
           # `track` must go rather than stay as a belt-and-braces fallback.
           tracks: internal
           status: completed
+
+  # Lets anyone check that a downloaded APK really came from this workflow, at this
+  # commit, rather than from someone's laptop:
+  #   gh attestation verify app-release.apk --repo Kevin-McIsaac/the_paragliding_app
+  #
+  # Its own job purely to keep these two write grants away from the job holding the
+  # signing key and the Play credentials. It re-downloads the artifacts rather than
+  # building its own, so it attests the exact bytes that get published.
+  #
+  # Deliberately not gated to tags: everything that only runs on a tag is
+  # untestable by workflow_dispatch, and a step that has never executed is exactly
+  # the kind of guard this project has been bitten by. A dry run exercises it, and
+  # exercises the download-artifact pin at the same time.
+  attest:
+    name: Attest build provenance
+    needs: [release-android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # mint the signing token
+      attestations: write # record the attestation against the repository
+
+    steps:
+      - name: Download built artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: artifacts
+
+      - name: Attest
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: |
+            artifacts/app-release-apk/app-release.apk
+            artifacts/app-release-bundle/app-release.aab
 
   # No iOS job: the app ships Android-only, ios/ is not signed or configured for
   # distribution, and nothing consumed the unsigned artifact it produced. It was

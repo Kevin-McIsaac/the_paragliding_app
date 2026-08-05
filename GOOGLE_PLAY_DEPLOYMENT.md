@@ -77,6 +77,12 @@ publish** — use it to test pipeline changes, against a branch:
 gh workflow run build.yml --ref my-branch
 ```
 
+**What the dry run does not cover.** Anything gated on a tag ref: the four checks in the table
+above, the Play upload, and the GitHub release. Those first run for real on the next tag. If you
+need to prove one of the tag checks without publishing, tag an *unmerged* commit — the
+ancestor-of-`main` check fails, so nothing is built and nothing is uploaded. Delete the throwaway
+tag afterwards, and confirm with `git ls-remote --tags origin`.
+
 ## What CI verifies
 
 Two failure modes that produce a perfectly normal-looking build, both hard errors:
