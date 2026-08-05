@@ -1,0 +1,57 @@
+# TEMPORARY - delete before merging.
+#
+# create-release is gated on `if: startsWith(github.ref, 'refs/tags/')`, so a
+# workflow_dispatch of build.yml exercises upload-artifact but never reaches
+# download-artifact or the release step. That leaves the one interaction this
+# bump actually depends on - upload@v7 handing an artifact to download@v8 -
+# unproven until a real tag, which is the worst place to discover it.
+#
+# So prove it here first, the same way the signing assertions were proved: on a
+# throwaway branch, before it matters. push-triggered rather than dispatched
+# because workflow_dispatch only works for workflows already on the default
+# branch, and this one is deliberately never going to be.
+name: TEMP artifact roundtrip
+
+on:
+  push:
+    branches: [ci/node24-and-tracks]
+
+jobs:
+  upload:
+    name: Upload with v7
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create a payload with a known digest
+        run: |
+          # Non-trivial size so this resembles the real APK path rather than a
+          # file small enough to take some special-cased route.
+          head -c 5000000 /dev/urandom > payload.bin
+          sha256sum payload.bin | tee payload.sha256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: roundtrip-payload
+          path: |
+            payload.bin
+            payload.sha256
+
+  download:
+    name: Download with v8
+    needs: [upload]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: roundtrip-payload
+
+      # v8 errors on a digest mismatch by default instead of warning. That is the
+      # behaviour change worth having, so confirm it passes on a good download
+      # rather than assuming - and check the bytes ourselves too, since a silent
+      # truncation would otherwise look identical to success.
+      - name: Verify the bytes survived the round trip
+        run: |
+          ls -l payload.bin payload.sha256
+          sha256sum -c payload.sha256
+          echo "OK: upload-artifact@v7 -> download-artifact@v8 round trip is byte-identical"
