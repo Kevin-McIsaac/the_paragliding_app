@@ -186,9 +186,12 @@ jobs:
           mappingFile: the_paragliding_app/build/app/outputs/mapping/release/mapping.txt
           whatsNewDirectory: distribution/whatsnew
           releaseName: ${{ steps.version.outputs.code }} (${{ steps.version.outputs.name }})
-          # `tracks`, not `track` - the singular form is deprecated and the action
-          # warns on every run that it will be removed. It goes last in the chain,
-          # so its removal would fail the release after a full build and signing.
+          # `tracks`, not `track` - the singular form is deprecated and warns on
+          # every run. Renaming is not cosmetic: validateTracks() returns
+          # ['production'] when neither input is set, so the day the action drops
+          # `track`, this step would not fail - it would quietly publish straight
+          # to production instead of internal. Setting both is a hard error, so
+          # `track` must go rather than stay as a belt-and-braces fallback.
           tracks: internal
           status: completed
 
