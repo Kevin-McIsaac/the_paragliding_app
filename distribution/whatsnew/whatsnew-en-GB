@@ -1,2 +1,6 @@
-• When you add a Cesium Ion access token, the box no longer shows greyed-out
-  sample text that looked like a key had already been entered
+• Airspace downloads work again. OpenAIP moved their data server in July, which
+  stopped every country download; the app now uses the new one
+• Downloaded airspace appears straight away. It could previously stay hidden
+  behind an already-ticked Airspace box until you switched the filter off and on
+• Map Tile Cache in Data Management now shows how much map data is really stored
+  on your device, and clearing it frees that space
