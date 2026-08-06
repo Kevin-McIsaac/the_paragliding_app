@@ -50,7 +50,6 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
       'has_track': widget.flight.trackLogPath != null,
     });
     _loadTrackData();
-    _loadClosingDistanceThreshold();
   }
 
   @override
@@ -75,14 +74,12 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
   }
 
 
-  Future<void> _loadClosingDistanceThreshold() async {
+  Future<double> _loadClosingDistanceThreshold() async {
     try {
-      final threshold = await PreferencesHelper.getTriangleClosingDistance();
-      setState(() {
-        _closingDistanceThreshold = threshold;
-      });
+      return await PreferencesHelper.getTriangleClosingDistance();
     } catch (e) {
       LoggingService.error('FlightTrack2DWidget: Error loading closing distance threshold', e);
+      return _closingDistanceThreshold;
     }
   }
 
@@ -98,12 +95,15 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
     }
 
     try {
-      // Load trimmed flight track data (always consistent)
-      final igcFile = await FlightTrackLoader.loadFlightTrack(
-        widget.flight,
-        logContext: 'FlightTrack2D',
-      );
-      
+      // Load track data and the closing-distance preference together so both
+      // land in a single setState instead of two rebuilds a few ms apart.
+      final results = await Future.wait([
+        FlightTrackLoader.loadFlightTrack(widget.flight, logContext: 'FlightTrack2D'),
+        _loadClosingDistanceThreshold(),
+      ]);
+      final igcFile = results[0] as IgcFile;
+      final closingDistanceThreshold = results[1] as double;
+
       if (igcFile.trackPoints.isEmpty) {
         setState(() {
           _error = 'No track points found';
@@ -137,11 +137,10 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         } else if (widget.flight.isClosed && widget.flight.closingPointIndex != null) {
           // Fallback: calculate from IGC file if no stored points
           final triangleSamplingInterval = await PreferencesHelper.getTriangleSamplingInterval();
-          final closingDistance = await PreferencesHelper.getTriangleClosingDistance();
           final trimmedIgcFile = igcFile.copyWithTrimmedPoints(0, widget.flight.closingPointIndex!);
           final faiTriangle = trimmedIgcFile.calculateFaiTriangle(
             samplingIntervalSeconds: triangleSamplingInterval,
-            closingDistanceMeters: closingDistance,
+            closingDistanceMeters: closingDistanceThreshold,
           );
           final rawTrianglePoints = faiTriangle['trianglePoints'] as List<dynamic>?;
           
@@ -156,6 +155,7 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
       setState(() {
         _trackPoints = trackData.points;
         _faiTrianglePoints = faiTrianglePoints;
+        _closingDistanceThreshold = closingDistanceThreshold;
         _isLoading = false;
       });
       
@@ -539,8 +539,6 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
 
   @override
   Widget build(BuildContext context) {
-    PerformanceMonitor.trackWidgetRebuild('FlightTrack2D');
-
     if (_isLoading) {
       return SizedBox(
         height: widget.height,
@@ -567,6 +565,12 @@ class _FlightTrack2DWidgetState extends State<FlightTrack2DWidget> {
         ),
       );
     }
+
+    // Only track rebuilds of the real content (map + charts) - the loading
+    // placeholder above is cheap and always renders once per mount, so
+    // counting it produced false "rebuilding rapidly" warnings on fast
+    // (cached) loads.
+    PerformanceMonitor.trackWidgetRebuild('FlightTrack2D');
 
     return Column(
       children: [
