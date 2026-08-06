@@ -530,6 +530,42 @@ flight data.
 
 The Paragliding App integrates with OpenAIP Core API for aviation data overlays including airspaces, airports, navigation aids, and reporting points.
 
+### Two different data paths — do not confuse them
+
+**Airspace overlays do not use the API and need no API key.** They are bulk-downloaded per
+country from OpenAIP's public daily export bucket by `AirspaceCountryService`, stored in the
+local database, and read back by bounding box. That is what makes airspace work offline,
+which matters because launch sites usually have no signal.
+
+```
+https://storage.openaip.net/openaip-system-exports/<cc>_asp.geojson   # e.g. au_asp.geojson
+```
+
+The API below is used for the *other* layers (airports, navaids, reporting points) and for
+OpenAIP tile URLs — those do need the key.
+
+This distinction cost real debugging time: airspace was failing while the base map rendered
+fine, which looked like an API-key problem and is not one. When airspace breaks, check the
+bucket, not the key.
+
+**The bucket moved in July 2026.** The old Google Cloud Storage bucket
+(`storage.googleapis.com/29f98e10-...`) was switched to *Requester Pays* on ~2026-07-23 after
+OpenAIP was billed four-figure egress costs, and now returns `HTTP 400 UserProjectMissing` to
+every anonymous request — see openAIP/openaip#468 and #469. The S3 endpoint above is the
+sanctioned replacement, rate limited to 20 req/s.
+
+Two consequences worth keeping:
+
+- **Do not fetch airspace per viewport.** A viewport query is ~250 KiB and fires on every
+  pan/zoom; that is the usage pattern that got the previous bucket locked down. One country
+  is one request.
+- The endpoint returns `content-encoding: utf-8`, which is a charset, not an encoding. Dart
+  ignores it (only gzip is auto-uncompressed) so the app is fine, but `curl --compressed`
+  fails on it — use plain `curl` when reproducing by hand.
+
+`test/airspace_country_source_test.dart` guards both the URL and, under the `network` tag,
+that the bucket still serves usable GeoJSON.
+
 ### API Endpoints & Authentication
 
 ```
