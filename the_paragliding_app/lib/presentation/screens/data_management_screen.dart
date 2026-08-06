@@ -2238,20 +2238,6 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                         style: TextStyle(color: Colors.grey, fontSize: 12),
                       ),
                       const SizedBox(height: 16),
-                      AppStatRowGroup.dataManagement(
-                        rows: [
-                          AppStatRow.dataManagement(
-                            label: 'Cached Tiles',
-                            value: (_mapCacheTileCount ?? 0).toString(),
-                          ),
-                          AppStatRow.dataManagement(
-                            label: 'Cache Size',
-                            value: CacheUtils.formatBytes(_mapCacheSizeBytes ?? 0),
-                          ),
-                        ],
-                        padding: EdgeInsets.zero,
-                      ),
-                      const SizedBox(height: 16),
                       SizedBox(
                         width: double.infinity,
                         child: OutlinedButton.icon(
