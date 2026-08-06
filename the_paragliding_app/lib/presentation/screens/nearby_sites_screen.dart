@@ -94,7 +94,10 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
 
   // Preference keys for filter states
   static const String _sitesEnabledKey = 'nearby_sites_sites_enabled';
-  static const String _airspaceEnabledKey = 'nearby_sites_airspace_enabled';
+  // No airspace key here on purpose: OpenAipService.isAirspaceEnabled() is the
+  // single source of truth for whether airspace is drawn. This screen once kept
+  // its own copy defaulting to true while the service defaulted to false, which
+  // showed a ticked box over an empty map.
   static const String _forecastEnabledKey = 'nearby_sites_forecast_enabled';
   static const String _weatherStationsEnabledKey = 'nearby_sites_weather_stations_enabled';
 
@@ -361,7 +364,10 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
     try {
       final prefs = await SharedPreferences.getInstance();
       final sitesEnabled = prefs.getBool(_sitesEnabledKey) ?? true;
-      final airspaceEnabled = prefs.getBool(_airspaceEnabledKey) ?? true;
+      // From OpenAipService, not a local key. This screen used to keep its own
+      // copy defaulting to true while the service defaulted to false, so the
+      // checkbox read "on" while the map never drew any airspace.
+      final airspaceEnabled = await _openAipService.isAirspaceEnabled();
       final forecastEnabled = prefs.getBool(_forecastEnabledKey) ?? true;
       final weatherStationsEnabled = prefs.getBool(_weatherStationsEnabledKey) ?? true;
       final metarEnabled = prefs.getBool('weather_provider_${WeatherStationSource.awcMetar.name}_enabled') ?? true;
@@ -1463,7 +1469,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       // Save the enabled states to preferences
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_sitesEnabledKey, sitesEnabled);
-      await prefs.setBool(_airspaceEnabledKey, airspaceEnabled);
+      // Airspace deliberately absent: OpenAipService owns that flag and is
+      // written below via setAirspaceEnabled(). A second copy here is exactly
+      // what let the checkbox and the map disagree.
       await prefs.setBool(_forecastEnabledKey, forecastEnabled);
       await prefs.setBool(_weatherStationsEnabledKey, weatherStationsEnabled);
       await prefs.setBool('weather_provider_${WeatherStationSource.awcMetar.name}_enabled', metarEnabled);

@@ -48,9 +48,18 @@ class OpenAipService {
   // Airspace clipping preference
   static const String _airspaceClippingEnabledKey = 'openaip_airspace_clipping_enabled';
 
+  // The Sites screen used to keep its own copy of the airspace on/off flag.
+  // Retained only so the value can be migrated across; nothing reads it now.
+  static const String _legacyNearbySitesAirspaceKey = 'nearby_sites_airspace_enabled';
+
+  // Set once the legacy key has been reconciled with _airspaceEnabledKey.
+  static const String _airspaceEnabledMigratedKey = 'openaip_airspace_enabled_migrated';
+
   // Default values
   static const double _defaultOpacity = 0.15; // 15% optimal for airspace visibility
-  static const bool _defaultAirspaceEnabled = false;
+  // On by default: airspace is safety information, and a pilot who has gone to
+  // the trouble of downloading a country expects to see it.
+  static const bool _defaultAirspaceEnabled = true;
   static const bool _defaultClippingEnabled = true; // Default to enabled for backwards compatibility
 
   // Default airspace type exclusions (false = include/show, true = exclude/hide)
@@ -134,14 +143,46 @@ class OpenAipService {
   
   // Layer Visibility Management
   
-  /// Get visibility state for airspace layer
+  /// Whether the airspace overlay should be drawn.
+  ///
+  /// The single source of truth. The Sites screen used to keep a second copy
+  /// under its own key which defaulted to true, while this one defaulted to
+  /// false - so a fresh install showed a ticked "Airspace" box over a map that
+  /// drew none, and the only escape was to un-tick and re-tick the filter.
+  ///
+  /// Deliberately does not write on read. Persisting the default the first time
+  /// anything asked is what made that bug outlive a change of default: every
+  /// install already had `false` on disk.
   Future<bool> isAirspaceEnabled() async {
     final prefs = await SharedPreferences.getInstance();
-    if (!prefs.containsKey(_airspaceEnabledKey)) {
-      await prefs.setBool(_airspaceEnabledKey, _defaultAirspaceEnabled);
-      return _defaultAirspaceEnabled;
-    }
+    await _migrateLegacyAirspaceEnabled(prefs);
     return prefs.getBool(_airspaceEnabledKey) ?? _defaultAirspaceEnabled;
+  }
+
+  /// Reconcile the Sites screen's old copy of the flag with this one, once.
+  ///
+  /// Upgrading installs cannot simply adopt the new default: the old read-time
+  /// write means they already have `false` stored, so changing the default alone
+  /// would leave every existing user exactly as broken as before.
+  ///
+  /// The legacy value is what the checkbox actually showed the pilot, so it is
+  /// the better record of intent - someone who deliberately un-ticked airspace
+  /// keeps it off. Only installs with no legacy value adopt the new default.
+  Future<void> _migrateLegacyAirspaceEnabled(SharedPreferences prefs) async {
+    if (prefs.getBool(_airspaceEnabledMigratedKey) == true) return;
+
+    final legacy = prefs.getBool(_legacyNearbySitesAirspaceKey);
+    final resolved = legacy ?? _defaultAirspaceEnabled;
+
+    await prefs.setBool(_airspaceEnabledKey, resolved);
+    await prefs.remove(_legacyNearbySitesAirspaceKey);
+    await prefs.setBool(_airspaceEnabledMigratedKey, true);
+
+    LoggingService.structured('AIRSPACE_ENABLED_MIGRATED', {
+      'legacy_value': legacy,
+      'resolved': resolved,
+      'source': legacy == null ? 'new_default' : 'legacy_checkbox',
+    });
   }
   
   /// Set visibility state for airspace layer
