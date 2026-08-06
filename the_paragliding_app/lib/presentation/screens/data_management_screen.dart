@@ -2229,6 +2229,9 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                       setState(() {
                         _expansionManager.setState('map_cache', expanded);
                       });
+                      // This tab is kept alive by IndexedStack, so stats loaded once in
+                      // initState() go stale after browsing maps on another tab.
+                      if (expanded) _loadMapCacheStats();
                     },
                     children: [
                       const Text(
