@@ -1,24 +1,52 @@
 name: Build and Release
 
+# Actions below are pinned to commit SHAs, with the release they came from in a
+# trailing comment. A tag like `v1` is a movable ref - whoever controls the action
+# repository can repoint it at new code, and it would run here on the next release
+# with no change to this file. That matters more than usual: release-android holds
+# the upload keystore and its passwords, and hands the Play service account JSON to
+# a third-party action. Bump a pin by editing the SHA and the comment together.
+
 on:
   push:
     tags:
       - 'v*' # Trigger on version tags
   workflow_dispatch: # Manual trigger - builds and verifies, does not publish
 
+# Two tags pushed close together would otherwise build and upload at the same
+# time. The loser reaches Play second and fails with "version code has already
+# been used", which reads as a versioning mistake rather than a race. So every tag
+# run shares one queue. Dry runs get a group per branch instead, or testing a
+# pipeline change would park a real release behind a ~15 minute build.
+concurrency:
+  group: ${{ github.workflow }}-${{ startsWith(github.ref, 'refs/tags/') && 'release' || github.ref }}
+  cancel-in-progress: false
+
+# The repository default for GITHUB_TOKEN is already read-only, but that is a
+# repository setting anyone can flip, silently widening every job here. Declaring
+# it means a job gaining write access has to be a visible edit to this file -
+# create-release and release-android each grant themselves only what they need.
+permissions:
+  contents: read
+
 env:
   # Must ship Dart >= 3.8.1 to satisfy the pubspec SDK constraint
   FLUTTER_VERSION: "3.41.6"
 
 jobs:
+  # Everything that can be decided in seconds, before a ~15 minute build.
   check-version:
-    name: Check tag matches pubspec
+    name: Validate tag
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Needs every v* tag for the versionCode check, and enough history to
+          # answer whether the tagged commit is on main.
+          fetch-depth: 0
 
       # Play rejects a reused versionCode, but only after the whole build has run
       # and been uploaded. Catching a tag that disagrees with pubspec costs seconds.
@@ -33,26 +61,149 @@ jobs:
             exit 1
           fi
 
-  release-android:
-    name: Build signed Android release
+      # "Version code N has already been used" is the most common way a release
+      # fails, and Play only says so after the AAB has been built and uploaded.
+      # Every code that has shipped is recorded as a v* tag, so the answer is
+      # already in the repository - ask it here instead.
+      - name: Check versionCode is higher than every released tag
+        run: |
+          cd the_paragliding_app
+          version=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          # Parsed the same way as the tags below, so a malformed pubspec version
+          # says so rather than reaching `[ -le ]` as "integer expression expected".
+          case "$version" in
+            *+*) code="${version##*+}" ;;
+            *) echo "::error::pubspec version '$version' has no +versionCode suffix"; exit 1 ;;
+          esac
+          case "$code" in
+            ''|*[!0-9]*) echo "::error::pubspec versionCode '$code' is not a number"; exit 1 ;;
+          esac
+          highest=0
+          highest_tag="(none)"
+          for t in $(git tag -l 'v*'); do
+            # The tag being released is already pushed by the time this runs.
+            if [ "$t" = "$GITHUB_REF_NAME" ]; then continue; fi
+            case "$t" in
+              *+*) c="${t##*+}" ;;
+              *) continue ;;
+            esac
+            case "$c" in
+              ''|*[!0-9]*) continue ;;
+            esac
+            if [ "$c" -gt "$highest" ]; then
+              highest="$c"
+              highest_tag="$t"
+            fi
+          done
+          echo "this versionCode=$code, highest already released=$highest ($highest_tag)"
+          if [ "$code" -le "$highest" ]; then
+            echo "::error::versionCode $code was already released as $highest_tag - Play will reject it. Bump pubspec.yaml."
+            exit 1
+          fi
+
+      # Both the Play upload and the GitHub release read this file, and neither
+      # job runs until after the build. A missing locale file fails the Play
+      # upload outright; checking it here costs nothing.
+      - name: Check release notes exist
+        run: |
+          notes=distribution/whatsnew/whatsnew-en-GB
+          if [ ! -s "$notes" ]; then
+            echo "::error::$notes is missing or empty - Play rejects the upload and the GitHub release would have no notes"
+            exit 1
+          fi
+          # wc -m, not -c. Play's limit is 500 characters; the bullets already in
+          # this file are U+2022, three bytes each, so a byte count reads high and
+          # would reject notes that are legitimately under the limit.
+          chars=$(LC_ALL=C.UTF-8 wc -m < "$notes")
+          echo "release notes: $chars characters"
+          if [ "$chars" -gt 500 ]; then
+            echo "::error::$notes is $chars characters - Play's limit is 500"
+            exit 1
+          fi
+
+      # A tag can point at any commit: an unmerged branch, a commit whose CI went
+      # red, or an arbitrary SHA. No repository ruleset prevents that, so assert
+      # it where it matters.
+      - name: Check the tagged commit is on main
+        run: |
+          git fetch --no-tags --quiet origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+            echo "::error::Tag $GITHUB_REF_NAME points at $GITHUB_SHA, which is not an ancestor of main - releases must be cut from merged code"
+            exit 1
+          fi
+
+  # ci.yml covers pushes to main and pull requests, but nothing connected it to
+  # the release path: a tag on a red commit built and published exactly like a
+  # green one, and no ruleset required the checks to pass before merging either.
+  # Repeating the suite here costs ~2 minutes against a ~15 minute build, and
+  # makes the gate part of the release rather than adjacent to it.
+  #
+  # Deliberately a near-copy of analyze-and-test in ci.yml: the release must not
+  # depend on ci.yml having run. Change one and change the other.
+  test:
+    name: Analyze and test
     runs-on: ubuntu-latest
-    needs: [check-version]
-    # check-version is skipped on workflow_dispatch; without this the whole job
-    # would be skipped with it.
-    if: always() && (needs.check-version.result == 'success' || needs.check-version.result == 'skipped')
-    # Gates on a required reviewer, and scopes the signing and Play secrets to this
-    # environment instead of the whole repository.
-    environment: play-internal
+
+    defaults:
+      run:
+        working-directory: the_paragliding_app
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      # --concurrency=1 mirrors ci.yml; see the comment there for why.
+      - name: Test
+        run: flutter test --concurrency=1
+
+      - name: Test date ranges in a DST timezone
+        env:
+          TZ: America/New_York
+        run: flutter test --concurrency=1 test/date_range_test.dart
+
+  release-android:
+    name: Build signed Android release
+    runs-on: ubuntu-latest
+    needs: [check-version, test]
+    # check-version is skipped on workflow_dispatch; without always() the whole
+    # job would be skipped with it. test runs either way, so it must have passed.
+    if: always() && needs.test.result == 'success' && (needs.check-version.result == 'success' || needs.check-version.result == 'skipped')
+    # Scopes the signing and Play secrets to this environment instead of the whole
+    # repository, so no other workflow can read them. Note that it gates nothing on
+    # its own: the environment has no protection rules, so a pushed tag publishes
+    # without a human checkpoint. Add required reviewers under Settings ->
+    # Environments -> play-internal if that is wanted.
+    environment: play-internal
+    # Nothing beyond reading the code. Provenance is attested in its own job so
+    # that id-token/attestations write access is never held by the job carrying
+    # the upload keystore and the Play service account JSON - Actions permissions
+    # are job-scoped, not step-scoped, so separating them is the only way.
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
 
       # Fail in seconds rather than after a ~15 minute build that cannot publish.
       - name: Check Play credentials are present
@@ -101,57 +252,111 @@ jobs:
           cd the_paragliding_app
           flutter pub get
 
+      # The keys go through env rather than straight into the run: block. A
+      # ${{ secrets.X }} expression is pasted into the script as literal text
+      # before bash sees it, so a key containing a quote or a backtick changes
+      # what gets executed; "$VAR" is just a value.
       - name: Build APK and App Bundle
+        env:
+          FFVL_API_KEY: ${{ secrets.FFVL_API_KEY }}
+          OPENAIP_API_KEY: ${{ secrets.OPENAIP_API_KEY }}
+          CESIUM_ION_TOKEN: ${{ secrets.CESIUM_ION_TOKEN }}
         run: |
           cd the_paragliding_app
           flutter build apk --release \
-            --dart-define=FFVL_API_KEY=${{ secrets.FFVL_API_KEY }} \
-            --dart-define=OPENAIP_API_KEY=${{ secrets.OPENAIP_API_KEY }} \
-            --dart-define=CESIUM_ION_TOKEN=${{ secrets.CESIUM_ION_TOKEN }}
+            --dart-define=FFVL_API_KEY="$FFVL_API_KEY" \
+            --dart-define=OPENAIP_API_KEY="$OPENAIP_API_KEY" \
+            --dart-define=CESIUM_ION_TOKEN="$CESIUM_ION_TOKEN"
           flutter build appbundle --release \
-            --dart-define=FFVL_API_KEY=${{ secrets.FFVL_API_KEY }} \
-            --dart-define=OPENAIP_API_KEY=${{ secrets.OPENAIP_API_KEY }} \
-            --dart-define=CESIUM_ION_TOKEN=${{ secrets.CESIUM_ION_TOKEN }}
+            --dart-define=FFVL_API_KEY="$FFVL_API_KEY" \
+            --dart-define=OPENAIP_API_KEY="$OPENAIP_API_KEY" \
+            --dart-define=CESIUM_ION_TOKEN="$CESIUM_ION_TOKEN"
 
-      # These two assertions are the point of this job. A debug-signed bundle and a
-      # bundle with .env baked in both build cleanly and look completely normal:
-      # the first is rejected by Play, the second shipped API keys in plaintext to
-      # every user (#284). Neither was detectable from build output.
+      # These assertions are the point of this job. A debug-signed artifact and one
+      # with .env baked in both build cleanly and look completely normal: the first
+      # is rejected by Play, the second shipped API keys in plaintext to every user
+      # (#284). Neither was detectable from build output.
+      #
+      # Both artifacts are checked, not just the AAB. Play re-signs and validates
+      # the AAB anyway; the APK is the one attached to the GitHub release and
+      # sideloaded directly, so it is the copy that reaches users unexamined.
+      #
+      # shell: bash rather than the default `bash -e {0}`, which has no pipefail.
+      # Every fingerprint below is read through a pipe, and without pipefail a
+      # failing keytool would leave an empty string to compare instead of failing.
       - name: Verify signing and bundle contents
+        shell: bash
         env:
           EXPECTED_SHA256: ${{ vars.UPLOAD_CERT_SHA256 }}
         run: |
           cd the_paragliding_app
           aab=build/app/outputs/bundle/release/app-release.aab
+          apk=build/app/outputs/flutter-apk/app-release.apk
 
           if [ -z "$EXPECTED_SHA256" ]; then
             echo "::error::vars.UPLOAD_CERT_SHA256 is not set - cannot prove this was signed with the upload key"
             exit 1
           fi
 
-          actual=$(keytool -printcert -jarfile "$aab" | awk '/SHA256:/{print $2; exit}')
-          echo "signing SHA256: $actual"
-          if [ "$actual" != "$EXPECTED_SHA256" ]; then
-            echo "::error::AAB is not signed with the upload key (expected $EXPECTED_SHA256)"
+          for f in "$aab" "$apk"; do
+            if [ ! -f "$f" ]; then
+              echo "::error::$f was not produced - there is nothing to verify"
+              exit 1
+            fi
+          done
+
+          # keytool prints AA:BB:.., apksigner prints unseparated lowercase hex.
+          norm() { tr -d ':' | tr '[:lower:]' '[:upper:]'; }
+          expected=$(printf '%s' "$EXPECTED_SHA256" | norm)
+
+          # The AAB is jar-signed, so keytool can read it. The APK may carry only
+          # an APK Signature Scheme v2/v3 block, which keytool cannot see at all -
+          # it would report "not a signed jar file" on a correctly signed APK.
+          aab_sha=$(keytool -printcert -jarfile "$aab" | awk '/SHA256:/{print $2; exit}' | norm)
+
+          apksigner=$(ls -1 "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1 || true)
+          if [ -z "$apksigner" ]; then
+            echo "::error::apksigner not found under $ANDROID_HOME/build-tools - cannot verify the APK signature"
+            exit 1
+          fi
+          apk_sha=$("$apksigner" verify --print-certs "$apk" | awk '/certificate SHA-256 digest:/{print $NF; exit}' | norm)
+
+          echo "expected: $expected"
+          echo "aab:      $aab_sha"
+          echo "apk:      $apk_sha"
+
+          if [ "$aab_sha" != "$expected" ]; then
+            echo "::error::AAB is not signed with the upload key"
             keytool -printcert -jarfile "$aab" | grep -E 'Owner:|SHA256:' || true
             exit 1
           fi
-
-          if unzip -l "$aab" | grep -q 'flutter_assets/\.env'; then
-            echo "::error::.env is bundled as an asset - API keys would ship in plaintext (regression of #284)"
+          if [ "$apk_sha" != "$expected" ]; then
+            echo "::error::APK is not signed with the upload key - it must not be attached to a release"
+            "$apksigner" verify --print-certs "$apk" || true
             exit 1
           fi
 
-          echo "OK: signed with the upload key, no .env in the bundle"
+          # Listed into a variable first. `unzip -l "$f" | grep -q` inside an if
+          # swallows a failing unzip: grep reads nothing, returns 1, and the check
+          # reports success on an archive it never managed to read.
+          for f in "$aab" "$apk"; do
+            listing=$(unzip -l "$f")
+            if printf '%s\n' "$listing" | grep -q 'flutter_assets/\.env'; then
+              echo "::error::.env is bundled in $f - API keys would ship in plaintext (regression of #284)"
+              exit 1
+            fi
+          done
+
+          echo "OK: AAB and APK are both signed with the upload key, neither contains .env"
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: app-release-apk
           path: the_paragliding_app/build/app/outputs/flutter-apk/app-release.apk
 
       - name: Upload App Bundle artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: app-release-bundle
           path: the_paragliding_app/build/app/outputs/bundle/release/app-release.aab
@@ -178,7 +383,7 @@ jobs:
       # loss. The locale MUST exist in the Play listing or the upload is rejected.
       - name: Publish to Play internal track
         if: startsWith(github.ref, 'refs/tags/')
-        uses: r0adkll/upload-google-play@v1
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_SERVICE_ACCOUNT_JSON }}
           packageName: com.theparaglidingapp
@@ -194,6 +399,46 @@ jobs:
           # `track` must go rather than stay as a belt-and-braces fallback.
           tracks: internal
           status: completed
+
+  # Lets anyone check that a downloaded APK really came from this workflow, at this
+  # commit, rather than from someone's laptop:
+  #   gh attestation verify app-release.apk --repo Kevin-McIsaac/the_paragliding_app
+  #
+  # Its own job purely to keep these two write grants away from the job holding the
+  # signing key and the Play credentials. It re-downloads the artifacts rather than
+  # building its own, so it attests the exact bytes that get published.
+  #
+  # Deliberately not gated to tags: everything that only runs on a tag is
+  # untestable by workflow_dispatch, and a step that has never executed is exactly
+  # the kind of guard this project has been bitten by. A dry run exercises it, and
+  # exercises the download-artifact pin at the same time.
+  attest:
+    name: Attest build provenance
+    needs: [release-android]
+    # Same shape as release-android's guard, and for the same reason. A skipped job
+    # propagates down the whole needs chain: on workflow_dispatch check-version is
+    # skipped, and without this that skip reaches here *through* release-android
+    # even though release-android ran and succeeded. Caught by a dry run reporting
+    # success with this job silently skipped.
+    if: always() && needs.release-android.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # mint the signing token
+      attestations: write # record the attestation against the repository
+
+    steps:
+      - name: Download built artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: artifacts
+
+      - name: Attest
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: |
+            artifacts/app-release-apk/app-release.apk
+            artifacts/app-release-bundle/app-release.aab
 
   # No iOS job: the app ships Android-only, ios/ is not signed or configured for
   # distribution, and nothing consumed the unsigned artifact it produced. It was
@@ -213,17 +458,27 @@ jobs:
       contents: write
 
     steps:
+      # Only for the release notes file below.
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
       - name: Download APK artifact
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: app-release-apk
 
       # Only the APK is attached now: an .aab is not installable by end users, and
       # Play is the distribution path for it.
+      #
+      # body_path is the same file Play testers see, so the two release notes stop
+      # diverging - GitHub used to show only a list of commit subjects, which is
+      # the worse summary of the two. generate_release_notes still appends the
+      # generated changelog underneath, so nothing is lost.
       - name: Create Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           files: app-release.apk
+          body_path: distribution/whatsnew/whatsnew-en-GB
           generate_release_notes: true
           draft: false
           prerelease: false

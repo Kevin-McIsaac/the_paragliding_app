@@ -1,15 +1,30 @@
 name: CI
 
+# Actions are pinned to commit SHAs, with the release they came from in a trailing
+# comment. See the note at the top of build.yml for why.
+
 on:
   push:
     branches:
       - main
   pull_request:
 
+# Superseded pushes to a PR branch have nothing left to prove; let the newest win.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Declared rather than inherited, so a job gaining write access has to be a
+# visible edit here. Nothing in this workflow writes to the repository.
+permissions:
+  contents: read
+
 env:
   FLUTTER_VERSION: "3.41.6"
 
 jobs:
+  # build.yml carries a near-copy of this job, because the release path must not
+  # depend on this workflow having run. Change one and change the other.
   analyze-and-test:
     name: Analyze and test
     runs-on: ubuntu-latest
@@ -20,10 +35,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
