@@ -1,6 +1,2 @@
-• The 3D map no longer goes blank when a Cesium Ion token stops working.
-  A revoked token, or one without access to the map imagery, is now
-  detected and the map falls back to the standard imagery
-• Data Management re-checks your saved token when you open it, so a token
-  that has stopped working no longer shows as validated
-• Fixed the contact email being cut off on the About screen
+• When you add a Cesium Ion access token, the box no longer shows greyed-out
+  sample text that looked like a key had already been entered
