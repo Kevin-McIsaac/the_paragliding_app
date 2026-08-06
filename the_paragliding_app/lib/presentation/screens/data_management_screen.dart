@@ -66,6 +66,10 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
   // Airspace refresh key to force widget recreation
   int _airspaceRefreshKey = 0;
 
+  // Map tile cache stats (disk-backed, shared by every map screen)
+  int? _mapCacheTileCount;
+  int? _mapCacheSizeBytes;
+
   // Scroll controller and keys for Premium Maps highlighting
   final ScrollController _scrollController = ScrollController();
   final GlobalKey _premiumMapsKey = GlobalKey();
@@ -115,6 +119,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
     _loadBackupDiagnostics();
     _loadCesiumToken();
     _loadPgeSitesStats();
+    _loadMapCacheStats();
     _listenToDownloadProgress();
   }
 
@@ -1091,13 +1096,22 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
   }
 
 
+  Future<void> _loadMapCacheStats() async {
+    final stats = await CacheUtils.getDiskCacheStats();
+    if (!mounted) return;
+    setState(() {
+      _mapCacheTileCount = stats.tileCount;
+      _mapCacheSizeBytes = stats.sizeBytes;
+    });
+  }
+
   Future<void> _clearMapCache() async {
-    final initialTiles = CacheUtils.getCurrentCacheCount();
-    final initialSize = CacheUtils.getCurrentCacheSize();
-    
+    final initialTiles = _mapCacheTileCount ?? 0;
+    final initialSize = _mapCacheSizeBytes ?? 0;
+
     final confirmed = await _showConfirmationDialog(
       'Clear Map Cache',
-      'This will clear all cached map tiles.\n\n'
+      'This will clear all cached map tiles for every map screen.\n\n'
       'Maps will need to re-download tiles when viewed.',
     );
 
@@ -1112,27 +1126,16 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
     });
     final stopwatch = Stopwatch()..start();
 
-    CacheUtils.clearMapCache();
+    await CacheUtils.clearDiskTileCache();
+    await _loadMapCacheStats();
 
-    // Give the system a moment to update cache stats
-    await Future.delayed(const Duration(milliseconds: 100));
-    
-    final finalTiles = CacheUtils.getCurrentCacheCount();
-    final finalSize = CacheUtils.getCurrentCacheSize();
-    final freedBytes = initialSize - finalSize;
-    
     LoggingService.performance('Clear map cache', stopwatch.elapsed, 'cache clearing completed');
     LoggingService.summary('CLEAR_MAP_CACHE', {
-      'tiles_cleared': initialTiles - finalTiles,
-      'bytes_freed': freedBytes,
+      'tiles_cleared': initialTiles - (_mapCacheTileCount ?? 0),
+      'bytes_freed': initialSize - (_mapCacheSizeBytes ?? 0),
       'initial_tiles': initialTiles,
-      'final_tiles': finalTiles,
       'duration_ms': stopwatch.elapsedMilliseconds,
     });
-    
-    if (mounted) {
-      setState(() {}); // Refresh display
-    }
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2217,7 +2220,9 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                   AppExpansionCard.dataManagement(
                     icon: Icons.map,
                     title: 'Map Tile Cache',
-                    subtitle: '${CacheUtils.getCurrentCacheCount()} tiles • ${CacheUtils.formatBytes(CacheUtils.getCurrentCacheSize())}',
+                    subtitle: _mapCacheSizeBytes == null
+                        ? 'Loading…'
+                        : '$_mapCacheTileCount tiles • ${CacheUtils.formatBytes(_mapCacheSizeBytes!)}',
                     expansionKey: 'map_cache',
                     expansionManager: _expansionManager,
                     onExpansionChanged: (expanded) {
@@ -2227,7 +2232,9 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                     },
                     children: [
                       const Text(
-                        'Map tiles are cached when first used to improve map performance. Clear the Map Cache to free up storage space.',
+                        'Map tiles are cached on-device across all map screens (sites, edit site, '
+                        'flight track) and persist between app restarts. Clear the cache to free up '
+                        'storage space or force fresh tiles.',
                         style: TextStyle(color: Colors.grey, fontSize: 12),
                       ),
                       const SizedBox(height: 16),
@@ -2235,11 +2242,11 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                         rows: [
                           AppStatRow.dataManagement(
                             label: 'Cached Tiles',
-                            value: CacheUtils.getCurrentCacheCount().toString(),
+                            value: (_mapCacheTileCount ?? 0).toString(),
                           ),
                           AppStatRow.dataManagement(
                             label: 'Cache Size',
-                            value: CacheUtils.formatBytes(CacheUtils.getCurrentCacheSize()),
+                            value: CacheUtils.formatBytes(_mapCacheSizeBytes ?? 0),
                           ),
                         ],
                         padding: EdgeInsets.zero,
@@ -2248,7 +2255,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                       SizedBox(
                         width: double.infinity,
                         child: OutlinedButton.icon(
-                          onPressed: CacheUtils.getCurrentCacheCount() > 0 ? _clearMapCache : null,
+                          onPressed: (_mapCacheTileCount ?? 0) > 0 ? _clearMapCache : null,
                           icon: const Icon(Icons.cleaning_services),
                           label: const Text('Clear Map Cache'),
                           style: OutlinedButton.styleFrom(
