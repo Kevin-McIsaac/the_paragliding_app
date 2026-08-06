@@ -415,6 +415,12 @@ jobs:
   attest:
     name: Attest build provenance
     needs: [release-android]
+    # Same shape as release-android's guard, and for the same reason. A skipped job
+    # propagates down the whole needs chain: on workflow_dispatch check-version is
+    # skipped, and without this that skip reaches here *through* release-android
+    # even though release-android ran and succeeded. Caught by a dry run reporting
+    # success with this job silently skipped.
+    if: always() && needs.release-android.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
