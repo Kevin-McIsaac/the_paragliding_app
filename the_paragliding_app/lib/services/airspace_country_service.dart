@@ -10,7 +10,8 @@ import '../data/models/airspace_country_models.dart';
 /// Service for managing country-based airspace data
 class AirspaceCountryService {
   static AirspaceCountryService? _instance;
-  static AirspaceCountryService get instance => _instance ??= AirspaceCountryService._();
+  static AirspaceCountryService get instance =>
+      _instance ??= AirspaceCountryService._();
 
   AirspaceCountryService._();
 
@@ -32,8 +33,11 @@ class AirspaceCountryService {
   // gzip, so an unknown value is passed through untouched. Verified against
   // this exact code path. Tools that trust the header - `curl --compressed` -
   // do fail on it, which is worth knowing when reproducing by hand.
-  static const String _storageBaseUrl = 'https://storage.openaip.net/openaip-system-exports';
-  static const Duration _requestTimeout = Duration(minutes: 2); // Longer timeout for large files
+  static const String _storageBaseUrl =
+      'https://storage.openaip.net/openaip-system-exports';
+  static const Duration _requestTimeout = Duration(
+    minutes: 2,
+  ); // Longer timeout for large files
 
   // Preferences keys
   static const String _selectedCountriesKey = 'airspace_selected_countries';
@@ -103,7 +107,9 @@ class AirspaceCountryService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_selectedCountriesKey, countryCodes);
 
-    LoggingService.info('Updated selected countries: ${countryCodes.join(", ")}');
+    LoggingService.info(
+      'Updated selected countries: ${countryCodes.join(", ")}',
+    );
   }
 
   /// Get metadata for all countries with real database statistics
@@ -141,7 +147,6 @@ class AirspaceCountryService {
       return {};
     }
   }
-
 
   /// Download country airspace data
   Future<DownloadResult> downloadCountryData(
@@ -224,7 +229,7 @@ class AirspaceCountryService {
       final durationSec = stopwatch.elapsedMilliseconds / 1000;
 
       LoggingService.info(
-        'Downloaded $countryName: ${features.length} airspaces (${sizeMB.toStringAsFixed(1)} MB) in ${durationSec.toStringAsFixed(1)}s'
+        'Downloaded $countryName: ${features.length} airspaces (${sizeMB.toStringAsFixed(1)} MB) in ${durationSec.toStringAsFixed(1)}s',
       );
 
       // Get etag and last-modified from response headers
@@ -243,7 +248,6 @@ class AirspaceCountryService {
         sizeMB: bytes.length / 1024 / 1024,
         durationMs: stopwatch.elapsedMilliseconds,
       );
-
     } catch (e, stack) {
       LoggingService.error('Failed to download country $countryCode', e, stack);
 
@@ -265,7 +269,9 @@ class AirspaceCountryService {
   ) async {
     final stopwatch = Stopwatch()..start();
 
-    LoggingService.debug('Storing ${features.length} features for country $countryCode');
+    LoggingService.debug(
+      'Storing ${features.length} features for country $countryCode',
+    );
 
     // Store all features for this country
     await _metadataCache.putCountryAirspaces(
@@ -289,7 +295,32 @@ class AirspaceCountryService {
 
     stopwatch.stop();
 
-    LoggingService.debug('Completed storing country $countryCode in ${stopwatch.elapsedMilliseconds}ms');
+    LoggingService.debug(
+      'Completed storing country $countryCode in ${stopwatch.elapsedMilliseconds}ms',
+    );
+  }
+
+  /// Decide whether the server's copy differs from the one already stored.
+  ///
+  /// Prefers ETag, falls back to Last-Modified, and only falls back to age when
+  /// neither side offers a comparable validator. Separated from the HTTP call
+  /// so the branches can be tested directly - it is the intricate part, and
+  /// getting it wrong either re-downloads 13 MB needlessly or leaves stale
+  /// safety data in place.
+  static bool isRemoteNewer({
+    required String? storedEtag,
+    required String? storedLastModified,
+    required String? remoteEtag,
+    required String? remoteLastModified,
+    required int ageInDays,
+  }) {
+    if (remoteEtag != null && storedEtag != null) {
+      return remoteEtag != storedEtag;
+    }
+    if (remoteLastModified != null && storedLastModified != null) {
+      return remoteLastModified != storedLastModified;
+    }
+    return ageInDays > 30;
   }
 
   /// Check if country data needs updating.
@@ -309,8 +340,9 @@ class AirspaceCountryService {
       }
 
       final stored = await _getFetchInfo(countryCode);
-      final ageInDays =
-          DateTime.now().difference(currentData.downloadTime).inDays;
+      final ageInDays = DateTime.now()
+          .difference(currentData.downloadTime)
+          .inDays;
 
       // Data downloaded before validators were recorded has nothing to compare.
       if (stored.etag == null && stored.lastModified == null) {
@@ -331,17 +363,13 @@ class AirspaceCountryService {
         return false;
       }
 
-      final remoteEtag = response.headers['etag'];
-      final remoteLastModified = response.headers['last-modified'];
-
-      final bool changed;
-      if (remoteEtag != null && stored.etag != null) {
-        changed = remoteEtag != stored.etag;
-      } else if (remoteLastModified != null && stored.lastModified != null) {
-        changed = remoteLastModified != stored.lastModified;
-      } else {
-        changed = ageInDays > 30; // No comparable validator - fall back to age
-      }
+      final changed = isRemoteNewer(
+        storedEtag: stored.etag,
+        storedLastModified: stored.lastModified,
+        remoteEtag: response.headers['etag'],
+        remoteLastModified: response.headers['last-modified'],
+        ageInDays: ageInDays,
+      );
 
       LoggingService.structured('COUNTRY_UPDATE_CHECK', {
         'country': countryCode,
