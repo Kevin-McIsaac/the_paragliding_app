@@ -12,4 +12,7 @@
 # line instead; see .github/workflows/ci.yml.
 tags:
   network:
-    skip: "Hits the live ParaglidingEarth API; run with --tags network --run-skipped"
+    # Deliberately names no single service - more than one is covered now
+    # (ParaglidingEarth, the OpenAIP export bucket), and a message naming only
+    # one reads as "this test hits ParaglidingEarth" when it does not.
+    skip: "Hits a live third-party service; run with --tags network --run-skipped"
