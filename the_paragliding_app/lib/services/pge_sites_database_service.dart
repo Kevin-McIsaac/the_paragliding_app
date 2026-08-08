@@ -149,6 +149,12 @@ class PgeSitesDatabaseService {
           -- one guide, so a site's origin is no longer implicit.
           source TEXT,
 
+          -- Why a guide says this launch is shut, verbatim. Carried rather
+          -- than the site being dropped: dropping it left the other guides'
+          -- entries for the same place on the map with nothing to say it was
+          -- closed, which is worse than either source alone.
+          closed TEXT,
+
           -- Retained only so existing installs upgrade without a rebuild;
           -- nothing reads it since the incremental sync was retired.
           last_edit TEXT
@@ -157,6 +163,7 @@ class PgeSitesDatabaseService {
 
       // Existing installs created this table before `source` existed.
       await _addColumnIfMissing(db, _pgeSitesTable, 'source', 'TEXT');
+      await _addColumnIfMissing(db, _pgeSitesTable, 'closed', 'TEXT');
 
       // Which generation of the catalogue this database holds. 1 is the
       // PGE-only export, whose ids were PGE site ids; 2 is the federated
@@ -421,6 +428,7 @@ class PgeSitesDatabaseService {
             'wind_w': siteData['wind_w'] ?? 0,
             'wind_nw': siteData['wind_nw'] ?? 0,
             'source': siteData['source'],
+            'closed': siteData['closed'],
           };
 
           batch.insert(_pgeSitesTable, dbData);
@@ -740,6 +748,7 @@ class PgeSitesDatabaseService {
       rating: null,
       country: row['country_name'] as String? ?? row['country'] as String?,  // Use full name from JOIN or fallback to code
       source: row['source'] as String?,
+      closed: row['closed'] as String?,
       region: null,
       popularity: null,
     );

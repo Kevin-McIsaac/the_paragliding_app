@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:csv/csv.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
@@ -277,50 +278,55 @@ class PgeSitesDownloadService {
       final decompressedBytes = gzip.decode(compressedBytes);
       final csvContent = utf8.decode(decompressedBytes);
 
-      // Parse CSV manually. Column order is fixed by the federation pipeline
-      // and matches the PGE-only asset this replaced field for field, with
-      // `source` where `last_edit` used to be:
-      //   id,name,lng,lat,altitude,country,N,NE,E,SE,S,SW,W,NW,source
-      // Note longitude precedes latitude. Swapping them parses cleanly and
-      // puts every site in the wrong hemisphere, so this is asserted by a
-      // coordinate test rather than a row count.
-      final lines = csvContent.trim().split('\n');
+      // Parsed by *column name*, not position.
+      //
+      // This was a hand-rolled split('\n') plus a field splitter, reading
+      // fixed indices. Two things went wrong with that. Guide prose contains
+      // hard line breaks, and a newline inside a quoted field silently tore a
+      // record in two - 43 of 11,703 rows. And every column was addressed by
+      // number, so longitude sitting before latitude was a permanent trap: a
+      // swap parses cleanly and puts every site in the wrong hemisphere.
+      //
+      // Reading by header removes both. Column order no longer matters, and a
+      // new column can be added anywhere without touching this.
+      final rows = csv.decodeWithHeaders(csvContent);
       final sites = <Map<String, dynamic>>[];
 
-      for (final line in lines) {
-        if (line.trim().isEmpty) continue;
-        // Skip header row if present
-        if (line.startsWith('id,')) continue;
-
+      for (final row in rows) {
         try {
-          // Parse CSV line (handle quoted fields)
-          final fields = _parseCsvLine(line);
-
-          if (fields.length >= 15) {
-            sites.add({
-              'id': int.tryParse(fields[0]) ?? 0,
-              'name': fields[1].replaceAll('"', ''),
-              'longitude': double.tryParse(fields[2]) ?? 0.0,
-              'latitude': double.tryParse(fields[3]) ?? 0.0,
-              'altitude': int.tryParse(fields[4]),  // altitude as INTEGER
-              'country': fields[5].replaceAll('"', ''),  // country code
-              'wind_n': int.tryParse(fields[6]) ?? 0,
-              'wind_ne': int.tryParse(fields[7]) ?? 0,
-              'wind_e': int.tryParse(fields[8]) ?? 0,
-              'wind_se': int.tryParse(fields[9]) ?? 0,
-              'wind_s': int.tryParse(fields[10]) ?? 0,
-              'wind_sw': int.tryParse(fields[11]) ?? 0,
-              'wind_w': int.tryParse(fields[12]) ?? 0,
-              'wind_nw': int.tryParse(fields[13]) ?? 0,
-              // Which guides contributed this launch, e.g.
-              // "pge:4632;siteguide_au:106-28". Also the key that remaps a
-              // flown site's old PGE link to the federated catalogue.
-              'source': fields[14].replaceAll('"', ''),
-            });
+          String field(String name) => (row[name] ?? '').toString();
+          String? optional(String name) {
+            final value = field(name);
+            return value.isEmpty ? null : value;
           }
+
+          final id = int.tryParse(field('id'));
+          if (id == null) continue; // not a data row
+
+          sites.add({
+            'id': id,
+            'name': field('name'),
+            'longitude': double.tryParse(field('longitude')) ?? 0.0,
+            'latitude': double.tryParse(field('latitude')) ?? 0.0,
+            'altitude': int.tryParse(field('altitude')),
+            'country': field('country'),
+            'wind_n': int.tryParse(field('wind_n')) ?? 0,
+            'wind_ne': int.tryParse(field('wind_ne')) ?? 0,
+            'wind_e': int.tryParse(field('wind_e')) ?? 0,
+            'wind_se': int.tryParse(field('wind_se')) ?? 0,
+            'wind_s': int.tryParse(field('wind_s')) ?? 0,
+            'wind_sw': int.tryParse(field('wind_sw')) ?? 0,
+            'wind_w': int.tryParse(field('wind_w')) ?? 0,
+            'wind_nw': int.tryParse(field('wind_nw')) ?? 0,
+            // Which guides contributed this launch, e.g.
+            // "pge:4632;siteguide_au:106-28".
+            'source': field('source'),
+            // Why a guide says the launch is shut, verbatim. Absent from an
+            // older catalogue, which reads as null rather than failing.
+            'closed': optional('closed'),
+          });
         } catch (e) {
-          LoggingService.warning('[PGE_SITES] Failed to parse CSV line: $line');
-          // Continue with other lines
+          LoggingService.warning('[PGE_SITES] Failed to parse CSV row: $row');
         }
       }
 
@@ -330,6 +336,7 @@ class PgeSitesDownloadService {
         'sites_count': sites.length,
         'compressed_size': compressedBytes.length,
         'decompressed_size': decompressedBytes.length,
+        'closed_sites': sites.where((s) => s['closed'] != null).length,
       });
 
       return sites;
@@ -338,31 +345,6 @@ class PgeSitesDownloadService {
       LoggingService.error('[PGE_SITES] Failed to parse CSV data', error, stackTrace);
       rethrow;
     }
-  }
-
-  /// Parse a single CSV line handling quoted fields
-  List<String> _parseCsvLine(String line) {
-    final fields = <String>[];
-    final buffer = StringBuffer();
-    bool inQuotes = false;
-
-    for (int i = 0; i < line.length; i++) {
-      final char = line[i];
-
-      if (char == '"') {
-        inQuotes = !inQuotes;
-      } else if (char == ',' && !inQuotes) {
-        fields.add(buffer.toString());
-        buffer.clear();
-      } else {
-        buffer.write(char);
-      }
-    }
-
-    // Add final field
-    fields.add(buffer.toString());
-
-    return fields;
   }
 
   /// Get download status and metadata

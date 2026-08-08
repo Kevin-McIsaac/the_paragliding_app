@@ -713,7 +713,8 @@ class DatabaseService {
         pge.wind_s, pge.wind_sw, pge.wind_w, pge.wind_nw,
         pge.altitude as pge_altitude,
         pge.country as pge_country,
-        pge.source as pge_source
+        pge.source as pge_source,
+        pge.closed as pge_closed
       FROM sites s
       LEFT JOIN pge_sites pge ON s.catalog_site_id = pge.id
       LEFT JOIN flights f ON f.launch_site_id = s.id
@@ -764,6 +765,7 @@ class DatabaseService {
         // this query lists its columns explicitly, so a new one has to be
         // added here as well as to the catalogue.
         source: row['pge_source'] as String?,
+        closed: row['pge_closed'] as String?,
       ));
     }
 
@@ -1050,6 +1052,7 @@ class DatabaseService {
              p.wind_n, p.wind_ne, p.wind_e, p.wind_se,
              p.wind_s, p.wind_sw, p.wind_w, p.wind_nw,
              p.source as pge_source,
+             p.closed as pge_closed,
              COUNT(f.id) as flight_count
       FROM sites s
       LEFT JOIN pge_sites p ON s.catalog_site_id = p.id

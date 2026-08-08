@@ -21,6 +21,8 @@ class ParaglidingSite {
   /// Which guides contributed this launch, e.g. "pge:4632;siteguide_au:106-28".
   /// Drives the per-source tabs in the site details dialog.
   final String? source;
+  /// Why a guide says this launch is shut, verbatim. Null when open.
+  final String? closed;
 
   const ParaglidingSite({
     this.id,
@@ -39,6 +41,7 @@ class ParaglidingSite {
     this.isFromLocalDb = false,
     this.catalogSiteId,
     this.source,
+    this.closed,
   });
 
   /// The guides behind this launch, in the order they appear, as
@@ -225,6 +228,7 @@ class ParaglidingSite {
     bool? isFromLocalDb,
     int? catalogSiteId,
     String? source,
+    String? closed,
   }) {
     return ParaglidingSite(
       id: id ?? this.id,
@@ -243,6 +247,7 @@ class ParaglidingSite {
       isFromLocalDb: isFromLocalDb ?? this.isFromLocalDb,
       catalogSiteId: catalogSiteId ?? this.catalogSiteId,
       source: source ?? this.source,
+      closed: closed ?? this.closed,
     );
   }
 }

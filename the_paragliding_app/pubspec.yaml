@@ -54,6 +54,8 @@ dependencies:
   path_provider: ^2.1.5     # App directory paths - bug fixes & stability
   timezone: ^0.10.1         # Timezone database and lookup
   xml: ^6.5.0               # XML/KML parsing for paragliding sites
+  csv: ^8.0.0               # Site catalogue parsing - guide prose contains
+                            # commas, quotes and hard line breaks
   connectivity_plus: ^7.0.0 # Network connectivity detection - WASM support & fixes
   url_launcher: ^6.3.2      # Open external URLs for OSM links
   logger: ^2.6.1            # Structured logging framework

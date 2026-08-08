@@ -110,4 +110,26 @@ void main() {
         ].any((c) => (r[c] as int) > 0));
     expect(withWind.length / guideOnly.length, greaterThan(0.8));
   });
+
+  test('parses every record despite line breaks inside guide prose', () async {
+    // The old hand-rolled parser split the file on newlines before reading
+    // fields, so a hard line break inside a closure notice tore a record in
+    // two - 42 of 11,703. Reading with a real CSV parser fixes that, and
+    // reading by column name means order no longer matters either.
+    expect(await PgeSitesDownloadService.instance.downloadSitesData(), isTrue);
+    expect(await PgeSitesDatabaseService.instance.importSitesData(), isTrue);
+
+    final db = await DatabaseHelper.instance.database;
+    final count = (await db.rawQuery('SELECT COUNT(*) c FROM pge_sites')).first['c'] as int;
+    expect(count, greaterThan(11000));
+
+    // A record whose text contains a newline must survive whole.
+    final closed = await db.rawQuery(
+      "SELECT name, closed FROM pge_sites WHERE closed IS NOT NULL AND closed != ''",
+    );
+    expect(closed.length, greaterThan(20),
+        reason: 'closed sites are carried, not dropped');
+    expect(closed.any((r) => (r['closed'] as String).contains('\n')), isTrue,
+        reason: 'a multi-line notice should keep its line break');
+  });
 }

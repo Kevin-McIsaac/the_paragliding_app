@@ -623,6 +623,60 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Closure notice, above everything else.
+                      //
+                      // A closed site used to be dropped from the catalogue
+                      // entirely, which left the other guides' entries for
+                      // the same place on the map looking like ordinary
+                      // launches - the app was less safe than either source
+                      // alone. Quinns Rocks is the case: closed pending a
+                      // council agreement, with two ParaglidingEarth entries
+                      // that do not know it.
+                      if (_effectiveSite?.closed != null) ...[
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.errorContainer,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                Icons.warning_amber_rounded,
+                                size: 20,
+                                color: Theme.of(context).colorScheme.onErrorContainer,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Site closed',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Theme.of(context).colorScheme.onErrorContainer,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      _effectiveSite!.closed!,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Theme.of(context).colorScheme.onErrorContainer,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+
                       // Header with wind rose, name, rating, and close button
                       Row(
                         children: [

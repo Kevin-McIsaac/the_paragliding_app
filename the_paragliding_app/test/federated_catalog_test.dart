@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:csv/csv.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:the_paragliding_app/data/datasources/database_helper.dart';
 import 'package:the_paragliding_app/services/pge_sites_database_service.dart';
@@ -16,44 +17,44 @@ import 'helpers/test_helpers.dart';
 ///    point flown sites at unrelated launches.
 void main() {
   group('bundled catalogue asset', () {
-    late List<List<String>> rows;
+    late List<CsvRow> rows;
 
     setUpAll(() {
+      // Parsed properly, by column name. These tests used to split on commas
+      // themselves, which is the very thing the app stopped doing - and they
+      // broke the moment guide prose with quotes and line breaks arrived.
       final bytes = File('assets/data/world_sites_extracted.csv.gz').readAsBytesSync();
-      final lines = utf8.decode(gzip.decode(bytes)).trim().split('\n');
-      rows = lines.map((l) => l.split(',')).toList();
+      rows = csv.decodeWithHeaders(utf8.decode(gzip.decode(bytes)));
     });
 
-    test('header matches the order the parser reads positionally', () {
+    String field(CsvRow row, String name) => (row[name] ?? '').toString();
+
+    test('carries every column the app reads by name', () {
       expect(
-        rows.first.join(','),
-        'id,name,longitude,latitude,altitude,country,'
-        'wind_n,wind_ne,wind_e,wind_se,wind_s,wind_sw,wind_w,wind_nw,source',
+        rows.first.headerMap.keys,
+        containsAll([
+          'id', 'name', 'longitude', 'latitude', 'altitude', 'country',
+          'wind_n', 'wind_ne', 'wind_e', 'wind_se',
+          'wind_s', 'wind_sw', 'wind_w', 'wind_nw',
+          'source', 'closed',
+        ]),
       );
     });
 
-    test('every row has the 15 fields the parser requires', () {
-      // Names are quoted when they contain commas, so count on unquoted rows.
-      final plain = rows.skip(1).where((r) => !r.any((f) => f.startsWith('"')));
-      expect(plain, isNotEmpty);
-      for (final row in plain.take(500)) {
-        expect(row.length, 15, reason: row.join(','));
-      }
-    });
-
     test('coordinates land in the right hemisphere, not merely parse', () {
-      // Longitude is field 2, latitude field 3. If those were swapped these
-      // would still be valid doubles - which is the whole danger.
+      // The app reads by name now, so a column reorder is harmless - but a
+      // producer that swapped the *values* would still emit valid doubles,
+      // which is what this catches.
       var southernAndEastern = 0;
       var northernAndWestern = 0;
 
-      for (final row in rows.skip(1)) {
-        if (row.length != 15) continue;
-        final lon = double.tryParse(row[2]);
-        final lat = double.tryParse(row[3]);
+      for (final row in rows) {
+        final lon = double.tryParse(field(row, 'longitude'));
+        final lat = double.tryParse(field(row, 'latitude'));
         if (lon == null || lat == null) continue;
 
-        expect(lat, inInclusiveRange(-90, 90), reason: 'latitude out of range: ${row[1]}');
+        expect(lat, inInclusiveRange(-90, 90),
+            reason: 'latitude out of range: ${field(row, 'name')}');
         expect(lon, inInclusiveRange(-180, 180));
 
         if (lat < -10 && lon > 100) southernAndEastern++;
@@ -67,18 +68,28 @@ void main() {
     });
 
     test('carries altitude, country and source', () {
-      final sample = rows.skip(1).where((r) => r.length == 15).take(2000);
-      expect(sample.where((r) => r[4].isNotEmpty).length, greaterThan(1000));
-      expect(sample.where((r) => r[5].isNotEmpty).length, greaterThan(1000));
-      expect(sample.where((r) => r[14].startsWith('pge:')).length, greaterThan(1000));
+      final sample = rows.take(2000);
+      expect(sample.where((r) => field(r, 'altitude').isNotEmpty).length, greaterThan(1000));
+      expect(sample.where((r) => field(r, 'country').isNotEmpty).length, greaterThan(1000));
+      expect(sample.where((r) => field(r, 'source').startsWith('pge:')).length,
+          greaterThan(1000));
+    });
+
+    test('keeps closed sites, with the reason', () {
+      // Dropping them left the other guides' entries for the same place on
+      // the map with nothing to say the site was shut.
+      final shut = rows.where((r) => field(r, 'closed').isNotEmpty);
+      expect(shut.length, greaterThan(20));
+      expect(shut.any((r) => field(r, 'closed').contains('\n')), isTrue,
+          reason: 'a multi-line notice must survive as one record');
     });
 
     test('includes launches contributed only by a national guide', () {
       // The reason the federation exists: 135 Australian launches have no PGE
       // counterpart and were invisible before.
-      final guideOnly = rows
-          .skip(1)
-          .where((r) => r.length == 15 && r[14].contains('siteguide_au') && !r[14].contains('pge:'));
+      final guideOnly = rows.where((r) =>
+          field(r, 'source').contains('siteguide_au') &&
+          !field(r, 'source').contains('pge:'));
       expect(guideOnly.length, greaterThan(50));
     });
   });
