@@ -456,8 +456,24 @@ class DatabaseHelper {
       if (oldVersion < 4) {
         LoggingService.database(
             'MIGRATE', 'Applying migration v3 -> v4: pge_site_id -> catalog_site_id');
+
+        // Rename only if the old column is still there. Unconditionally, this
+        // throws on a database where the rename has already been applied, and
+        // because _onUpgrade rethrows the whole open fails - leaving an app
+        // that cannot reach the user's flight log at all, on every launch.
+        // A released install always still has pge_site_id, so this guard is
+        // not on the user's path; it exists so that one anomalous database
+        // costs a skipped statement rather than the entire log.
+        final columns = await db.rawQuery('PRAGMA table_info(sites)');
+        final hasOldColumn = columns.any((c) => c['name'] == 'pge_site_id');
+
         await db.execute('DROP INDEX IF EXISTS idx_sites_pge_site_id');
-        await db.execute('ALTER TABLE sites RENAME COLUMN pge_site_id TO catalog_site_id');
+        if (hasOldColumn) {
+          await db.execute('ALTER TABLE sites RENAME COLUMN pge_site_id TO catalog_site_id');
+        } else {
+          LoggingService.database(
+              'MIGRATE', 'sites.pge_site_id already renamed; skipping the rename');
+        }
         await db.execute(
             'CREATE INDEX IF NOT EXISTS idx_sites_catalog_site_id ON sites(catalog_site_id)');
 
