@@ -739,6 +739,7 @@ class PgeSitesDatabaseService {
       siteType: 'launch', // PGE sites are primarily launch sites
       rating: null,
       country: row['country_name'] as String? ?? row['country'] as String?,  // Use full name from JOIN or fallback to code
+      source: row['source'] as String?,
       region: null,
       popularity: null,
     );

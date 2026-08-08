@@ -18,6 +18,9 @@ class ParaglidingSite {
   final int flightCount; // Number of flights from local database
   final bool isFromLocalDb; // True if site exists in local database
   final int? pgeSiteId; // Foreign key to PGE sites table (for local sites linked to PGE)
+  /// Which guides contributed this launch, e.g. "pge:4632;siteguide_au:106-28".
+  /// Drives the per-source tabs in the site details dialog.
+  final String? source;
 
   const ParaglidingSite({
     this.id,
@@ -35,7 +38,21 @@ class ParaglidingSite {
     this.flightCount = 0,
     this.isFromLocalDb = false,
     this.pgeSiteId,
+    this.source,
   });
+
+  /// The guides behind this launch, in the order they appear, as
+  /// (provider, id) pairs. Empty when the catalogue predates source tracking.
+  List<({String provider, String id})> get sources {
+    final raw = source;
+    if (raw == null || raw.isEmpty) return const [];
+    return raw
+        .split(';')
+        .map((token) => token.split(':'))
+        .where((parts) => parts.length >= 2)
+        .map((parts) => (provider: parts[0], id: parts.sublist(1).join(':')))
+        .toList();
+  }
 
   // Computed properties
   bool get hasFlights => flightCount > 0;
@@ -207,6 +224,7 @@ class ParaglidingSite {
     int? flightCount,
     bool? isFromLocalDb,
     int? pgeSiteId,
+    String? source,
   }) {
     return ParaglidingSite(
       id: id ?? this.id,
@@ -224,6 +242,7 @@ class ParaglidingSite {
       flightCount: flightCount ?? this.flightCount,
       isFromLocalDb: isFromLocalDb ?? this.isFromLocalDb,
       pgeSiteId: pgeSiteId ?? this.pgeSiteId,
+      source: source ?? this.source,
     );
   }
 }

@@ -60,6 +60,47 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
   // Favorites state
   bool _isFavorite = false;
 
+  /// The guides behind this launch, in catalogue order.
+  ///
+  /// Falls back to a single ParaglidingEarth tab when the catalogue predates
+  /// source tracking, so an older database still shows what it always did
+  /// rather than losing the tab entirely.
+  List<({String provider, String id})> get _sourceTabs {
+    final sources = widget.paraglidingSite?.sources ?? const [];
+    return sources.isEmpty ? const [(provider: 'pge', id: '')] : sources;
+  }
+
+  /// ParaglidingEarth's own id for this launch, from the catalogue's `source`.
+  ///
+  /// Null when no guide in this launch is PGE - an Australian launch Site
+  /// Guide carries alone has no PGE detail to fetch.
+  int? get _pgeSourceId {
+    for (final source in widget.paraglidingSite?.sources ?? const []) {
+      if (source.provider == 'pge') return int.tryParse(source.id);
+    }
+    return null;
+  }
+
+  /// Guide names as a pilot would recognise them, not their internal keys.
+  static String _sourceLabel(String provider) => switch (provider) {
+        'pge' => 'PGE',
+        'siteguide_au' => 'Site Guide',
+        _ => provider,
+      };
+
+  static String _sourceFullName(String provider) => switch (provider) {
+        'pge' => 'ParaglidingEarth',
+        'siteguide_au' => 'Australian Site Guide',
+        _ => provider,
+      };
+
+  static String? _sourceUrl(String provider, String id) => switch (provider) {
+        'pge' => 'https://www.paraglidingearth.com/?site=$id',
+        // Site Guide ids are "<siteId>-<launchId>"; the page is per site.
+        'siteguide_au' => 'https://siteguide.org.au/sites/details/${id.split('-').first}',
+        _ => null,
+      };
+
   // Forecast table constants
   static const double _dayColumnWidth = 80.0;
   static const int _startHour = 7;
@@ -69,8 +110,8 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
   @override
   void initState() {
     super.initState();
-    // Create tab controller for both local and API sites - both can have detailed data
-    _tabController = TabController(length: 2, vsync: this); // 2 tabs: Takeoff, Weather
+    // Weather, plus one tab per contributing guide.
+    _tabController = TabController(length: 1 + _sourceTabs.length, vsync: this);
     _loadSiteDetails();
     _loadWindData();
     _loadWindForecast();
@@ -243,8 +284,12 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
       // API site - use its coordinates and ID
       latitude = widget.paraglidingSite!.latitude;
       longitude = widget.paraglidingSite!.longitude;
-      // For PGE sites: use pgeSiteId if available (linked local sites), otherwise use id (pure PGE sites)
-      pgeSiteId = widget.paraglidingSite!.pgeSiteId ?? widget.paraglidingSite!.id;
+      // ParaglidingEarth disambiguates by *its own* site id. Catalogue ids are
+      // no longer PGE ids, so passing one would never match and the API would
+      // quietly return whichever takeoff came first in the bounding box - the
+      // wrong launch wherever they cluster, which is exactly where a site has
+      // more than one. The real id is recorded in `source`.
+      pgeSiteId = _pgeSourceId ?? widget.paraglidingSite!.pgeSiteId;
     } else if (widget.site != null) {
       // Local site - use its coordinates and possibly linked PGE site ID
       latitude = widget.site!.latitude;
@@ -676,9 +721,26 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
                                     labelPadding: EdgeInsets.symmetric(horizontal: 8),
                                     indicatorWeight: 1.0,
                                     indicatorPadding: EdgeInsets.zero,
-                                  tabs: const [
-                                    Tab(icon: Tooltip(message: 'Site Weather', child: Icon(Icons.air, size: 18))),
-                                    Tab(icon: Tooltip(message: 'Site Information', child: Icon(Icons.info_outline, size: 18))),
+                                  tabs: [
+                                    const Tab(
+                                      child: Text(
+                                        'Forecast',
+                                        style: TextStyle(fontSize: 12),
+                                      ),
+                                    ),
+                                    // One tab per contributing guide, named.
+                                    // The old single unlabelled ⓘ tab held
+                                    // ParaglidingEarth data without saying so,
+                                    // and a launch can now come from more than
+                                    // one guide - which disagree on names,
+                                    // ratings and sometimes position.
+                                    for (final source in _sourceTabs)
+                                      Tab(
+                                        child: Text(
+                                          _sourceLabel(source.provider),
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                      ),
                                   ],
                                   ),
                                 ),
@@ -687,7 +749,8 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
                                     controller: _tabController,
                                     children: [
                                       _buildWeatherTab(windDirections),
-                                      _buildTakeoffTab(),
+                                      for (final source in _sourceTabs)
+                                        _buildSourceTab(source),
                                     ],
                                   ),
                                 ),
@@ -839,6 +902,87 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
             ],
     ];
   }
+
+  /// One guide's view of this launch.
+  ///
+  /// ParaglidingEarth keeps the existing live detail fetch. Other guides show
+  /// what the catalogue already holds and link out: the Australian Site Guide
+  /// publishes no per-site endpoint - only a whole-country export - so the
+  /// prose worth reading (hazards, access, landowners) stays on its own site
+  /// rather than being shipped or fetched wholesale.
+  Widget _buildSourceTab(({String provider, String id}) source) {
+    if (source.provider == 'pge') return _buildTakeoffTab();
+
+    final url = _sourceUrl(source.provider, source.id);
+    final site = widget.paraglidingSite;
+    final fullName = _sourceFullName(source.provider);
+    if (site == null) return const SizedBox.shrink();
+
+    return Scrollbar(
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                fullName,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[300],
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'This launch as $fullName records it.',
+                style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+              ),
+              const SizedBox(height: 16),
+              _sourceDetailRow('Name', site.name),
+              if (site.altitude != null)
+                _sourceDetailRow('Altitude', '${site.altitude} m'),
+              if (site.windDirections.isNotEmpty)
+                _sourceDetailRow('Wind', site.windDirections.join(', ')),
+              _sourceDetailRow(
+                'Position',
+                '${site.latitude.toStringAsFixed(5)}, ${site.longitude.toStringAsFixed(5)}',
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Conditions, hazards, access and landowner notes are published '
+                'by $fullName and are not carried in the app.',
+                style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+              ),
+              const SizedBox(height: 12),
+              if (url != null)
+                OutlinedButton.icon(
+                  onPressed: () => _launchUrl(url),
+                  icon: const Icon(Icons.open_in_new, size: 16),
+                  label: Text('Open in ${_sourceLabel(source.provider)}'),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _sourceDetailRow(String label, String value) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 90,
+              child: Text(
+                label,
+                style: TextStyle(fontSize: 13, color: Colors.grey[400]),
+              ),
+            ),
+            Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
+          ],
+        ),
+      );
 
   Widget _buildTakeoffTab() {
     return Scrollbar(
