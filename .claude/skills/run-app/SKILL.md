@@ -100,7 +100,34 @@ that file **is** the readiness check. There is no status command and none is nee
 - **Missing `env.json` fails silently** — FFVL weather, OpenAIP overlays and Cesium 3D go
   unconfigured with no error. Confirm the `[API_KEYS_STATUS]` line at startup.
 - **One log per checkout**, truncated on each run. Worktrees each get their own.
-- **Do not drive the app's UI with adb taps.** Ask the user to navigate.
+
+## Driving the UI
+
+Allowed as of 2026-08-08 — it used to say "ask the user to navigate". Navigate to the
+screen under test and look at it yourself; a UI fix nobody has looked at is unverified.
+
+```bash
+DEV=adb-52110DLAQ001UT-hkZkFs._adb-tls-connect._tcp
+adb -s "$DEV" shell input tap <x> <y>              # coordinates are DEVICE px, not dp
+adb -s "$DEV" shell input swipe <x1> <y1> <x2> <y2> <ms>   # drag a sheet; ms>300 or it flings
+adb -s "$DEV" shell input text "Bakewell"          # %s for spaces
+adb -s "$DEV" shell input keyevent KEYCODE_BACK    # 4=back, 3=home, 111=escape
+adb -s "$DEV" exec-out screencap -p > dev_data/screenshot.png
+```
+
+Needs the sandbox off, like everything else that reaches the phone.
+
+- **Coordinates are device pixels.** The Pixel 9 is 1080x2424 px at dpr 2.625, so a widget
+  at 200dp from the left is at x=525. Read a screenshot to find a target — never guess from
+  Flutter layout numbers.
+- **Screenshot after every step, before the next.** Taps land on whatever is there now, and
+  a tap that misses looks identical to one that worked until you look.
+- **Let the frame settle** — `sleep 1` between a tap and its screenshot, or the capture
+  catches a half-built route mid-animation and reads as a rendering bug.
+- **Read `dev_data/flutter.log` alongside.** An overflow or exception caused by your own
+  navigation is a real finding; one caused by a mistap is noise. The log tells them apart.
+- Still true: **never `pm clear`/`pm uninstall`** anything, suffixed or not, and unlock the
+  phone first — a screenshot of a locked phone is a valid PNG of the lock screen.
 
 ## Wireless debugging (physical device)
 
@@ -117,3 +144,34 @@ leaves its port listening but dead, which surfaces as `error: protocol fault (co
 status message)` — reopen the dialog for a fresh port and code. `adb mdns services` returns
 nothing from a Crostini container (multicast does not cross the NAT), so always use an
 explicit `IP:port`.
+
+### Run `adb devices -l` before connecting anything
+
+The paired TLS transport reconnects by itself, so the phone is usually already there:
+
+```
+adb-52110DLAQ001UT-hkZkFs._adb-tls-connect._tcp  device product:tokay model:Pixel_9
+```
+
+No `adb connect` needed. Two things that look like an absent phone and are not:
+
+- **`flutter devices` listing only Linux and Chrome.** It can miss a transport `adb` sees.
+  Check both before concluding the phone is unplugged.
+- **A failing `adb connect`.** On 2026-08-08 `adb connect 192.168.86.99:5555` returned
+  `No route to host` while `adb devices -l` showed the phone online on the next line, and
+  the app deployed to it fine.
+
+### adb over the LAN needs the sandbox off
+
+Agent Bash commands run inside a **bubblewrap sandbox** whose network allowlist covers
+pub.dev, GitHub and the app's APIs — **not the phone's LAN address**. Anything that has to
+reach the phone over Wi-Fi fails there with:
+
+```
+failed to connect to '192.168.86.99:5555': Network is unreachable
+```
+
+`Network is unreachable` is the sandbox. `No route to host` is the network. Re-run with the
+sandbox disabled — that includes `bin/dev_run.sh -d "<device>"`, which talks to the phone
+right through the build-install-attach cycle, not only at connect time. `/sandbox` manages
+the allowlist if this becomes routine.

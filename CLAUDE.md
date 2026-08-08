@@ -748,7 +748,9 @@ Use format `file_path:line_number` in logs:
 - Call sites in local DB "Flown Sites" and sites from PGE API "New Sites"
 - Call sites in local DB "Flown Sites" and sites from PGE API "New Sites"
 - always start the app with `bin/dev_run.sh --background`
-- DOnt try to contol the app
-- don't try to controll app with adb
+- **Driving the app's UI with adb is allowed** (changed 2026-08-08; it was previously
+  forbidden). Navigate to the screen you need and verify the change yourself rather than
+  asking the user to tap through it — a UI fix nobody looked at is unverified. See
+  "Driving the UI" in the `run-app` skill for the commands and what to check afterwards.
 - Filters in Map FIlter, e.g, checkboxes, should have immediate effect in the map
 - When proposing a solution, look for the simple, idomatic solution suitable for a mobile app

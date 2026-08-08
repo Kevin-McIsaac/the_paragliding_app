@@ -49,9 +49,6 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
   PgeSitesDownloadProgress? _pgeSitesProgress;
   StreamSubscription<PgeSitesDownloadProgress>? _downloadProgressSubscription;
 
-  // PGE Sites sync state
-  String? _lastSyncTime;
-
   // Card expansion state manager (persistent for this screen)
   late CardExpansionManager _expansionManager;
 
@@ -321,31 +318,15 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
         'is_outdated': downloadStatus['is_outdated'],
       });
 
-      // Load last sync time
-      final lastSyncTimestamp = await PreferencesHelper.getString('pge_last_sync_time');
-      String lastSync = 'Never';
-      if (lastSyncTimestamp != null && lastSyncTimestamp.isNotEmpty) {
-        try {
-          final syncDate = DateTime.parse(lastSyncTimestamp);
-          final age = DateTime.now().difference(syncDate);
-          if (age.inDays > 0) {
-            lastSync = '${age.inDays} days ago';
-          } else if (age.inHours > 0) {
-            lastSync = '${age.inHours} hours ago';
-          } else if (age.inMinutes > 0) {
-            lastSync = '${age.inMinutes} minutes ago';
-          } else {
-            lastSync = 'Just now';
-          }
-        } catch (e) {
-          LoggingService.warning('[PGE_SYNC] Failed to parse last sync time: $e');
-        }
-      }
+      // "Last Synced" used to be read from pge_last_sync_time here. The only
+      // writer of that key went with PgeIncrementalSyncService when the
+      // catalogue moved to a bundled federated dataset, so the row could
+      // only ever say "Never" on a new install, or freeze on an upgrader's
+      // last incremental sync. "Last Downloaded" above is the live figure.
 
       if (mounted) {
         setState(() {
           _pgeSitesStats = combinedStats;
-          _lastSyncTime = lastSync;
         });
       }
     } catch (e, stackTrace) {
@@ -2256,10 +2237,6 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                             AppStatRow.dataManagement(
                               label: 'Source Size',
                               value: '${_pgeSitesStats!['source_file_size_mb'] ?? '0.0'}MB',
-                            ),
-                            AppStatRow.dataManagement(
-                              label: 'Last Synced',
-                              value: _lastSyncTime ?? 'Never',
                             ),
                             if (_pgeSitesProgress != null && _pgeSitesProgress!.status == PgeSitesDownloadStatus.downloading)
                               AppStatRow.dataManagement(

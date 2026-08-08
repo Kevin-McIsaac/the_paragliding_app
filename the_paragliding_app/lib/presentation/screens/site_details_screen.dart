@@ -20,7 +20,7 @@ import '../widgets/wind_rose_widget.dart';
 import '../widgets/site_forecast_table.dart';
 import '../widgets/forecast_attribution_bar.dart';
 
-class SiteDetailsDialog extends StatefulWidget {
+class SiteDetailsScreen extends StatefulWidget {
   final Site? site;
   final ParaglidingSite? paraglidingSite;
   final Position? userPosition;
@@ -30,7 +30,7 @@ class SiteDetailsDialog extends StatefulWidget {
   final Function(WindData)? onWindDataFetched;
   final Function()? onFavoriteToggled;
 
-  const SiteDetailsDialog({
+  const SiteDetailsScreen({
     super.key,
     this.site,
     this.paraglidingSite,
@@ -43,10 +43,10 @@ class SiteDetailsDialog extends StatefulWidget {
   });
 
   @override
-  State<SiteDetailsDialog> createState() => SiteDetailsDialogState();
+  State<SiteDetailsScreen> createState() => SiteDetailsScreenState();
 }
 
-class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerProviderStateMixin {
+class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerProviderStateMixin {
   Map<String, dynamic>? _detailedData;
   bool _isLoadingDetails = false;
   String? _loadingError;
@@ -325,6 +325,25 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
   ScrollController _scrollControllerFor(String key) =>
       _tabScrollControllers.putIfAbsent(key, ScrollController.new);
 
+  /// One tab's scrollable body.
+  ///
+  /// `thumbVisibility` is the point: at rest a Material scrollbar fades to
+  /// nothing, so a tab holding several screens of guide prose looked exactly
+  /// like one holding a paragraph. A permanent thumb is the only thing on
+  /// screen that says there is more below.
+  Widget _scrollableTab(String key, Widget child) {
+    final controller = _scrollControllerFor(key);
+    return Scrollbar(
+      controller: controller,
+      thumbVisibility: true,
+      child: SingleChildScrollView(
+        controller: controller,
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: child,
+      ),
+    );
+  }
+
   Future<void> _loadSiteDetails() async {
     // The catalogue entry is the only thing that can answer this: a flown
     // record knows its IGC takeoff point and nothing about which guides
@@ -576,337 +595,394 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
       distanceText = LocationService.formatDistance(distance);
     }
 
-    return DraggableScrollableSheet(
-      initialChildSize: 0.6,
-      minChildSize: 0.3,
-      maxChildSize: 0.95,
-      expand: false,
-      builder: (context, scrollController) {
-        return Material(
-          color: Colors.transparent,
-          child: Container(
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.3),
-                  spreadRadius: 2,
-                  blurRadius: 8,
-                  offset: const Offset(0, -4),
-                ),
-              ],
+    // Guide tabs need a controller and something for them to show.
+    final bool showTabs = _tabController != null &&
+        (_detailedData != null || widget.paraglidingSite != null);
+
+    final flyabilityLine = _buildFlyabilityLine(windDirections);
+    final characteristicsLine = _buildCharacteristicsLine();
+
+    return Scaffold(
+      appBar: AppBar(
+        // The name and the favourite live here now. In the sheet they were a
+        // headline and two icon buttons competing with the wind rose for one
+        // row; an AppBar is where a page's identity and its actions belong,
+        // and it pins them for free - which is what the sheet had to build by
+        // hand out of a non-flex sibling.
+        // Two lines, because one ellipsises exactly the part that matters:
+        // "Mount Bakewell (top lau..." is the same title as the lower launch
+        // a kilometre away, and which one you are reading decides which
+        // access notes apply.
+        title: Text(
+          name,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        toolbarHeight: 72,
+        actions: [
+          IconButton(
+            onPressed: _toggleFavorite,
+            icon: Icon(
+              _isFavorite ? Icons.favorite : Icons.favorite_border,
+              color: _isFavorite ? Colors.red : null,
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+            tooltip: _isFavorite ? 'Remove from favorites' : 'Add to favorites',
+          ),
+        ],
+      ),
+      // A Scaffold does not inset its own body, so without this the Android
+      // gesture pill is drawn over the last line of whichever tab is open -
+      // the same half of the inset problem the bottom sheet had, and just as
+      // invisible until you look at a real phone.
+      body: SafeArea(
+        top: false,
+        child: showTabs
+          ? Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Drag handle
-                Center(
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(vertical: 8),
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-
-                // Content wrapper with padding
-                Expanded(
-                  child: SingleChildScrollView(
-                    controller: scrollController,
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                    child: Column(
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                  child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Closure notice, above everything else.
-                      //
-                      // A closed site used to be dropped from the catalogue
-                      // entirely, which left the other guides' entries for
-                      // the same place on the map looking like ordinary
-                      // launches - the app was less safe than either source
-                      // alone. Quinns Rocks is the case: closed pending a
-                      // council agreement, with two ParaglidingEarth entries
-                      // that do not know it.
-                      if (_effectiveSite?.closed != null) ...[
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.errorContainer,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(
-                                Icons.warning_amber_rounded,
-                                size: 20,
-                                color: Theme.of(context).colorScheme.onErrorContainer,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Site closed',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: Theme.of(context).colorScheme.onErrorContainer,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      _effectiveSite!.closed!,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Theme.of(context).colorScheme.onErrorContainer,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-
-                      // Header with wind rose, name, rating, and close button
-                      Row(
-                        children: [
-                          // Wind rose widget (compact size for header)
-                          if (windDirections.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 12.0),
-                              child: WindRoseWidget(
-                                launchableDirections: windDirections,
-                                size: 60.0,
-                                windSpeed: _windData?.speedKmh,
-                                windDirection: _windData?.directionDegrees,
-                                centerDotColor: _getCenterDotColor(windDirections),
-                                centerDotTooltip: _getCenterDotTooltip(windDirections),
-                              ),
-                            ),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // The title is no longer a link. A launch can
-                                // come from several guides, so a single link
-                                // on the name had to pick one silently - and
-                                // it picked wrong, opening a catalogue id as
-                                // if it were a ParaglidingEarth id. Each guide
-                                // now links out from its own tab instead.
-                                Text(
-                                  name,
-                                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.blue,
-                                  ),
-                                ),
-                                // Flight characteristics directly under title
-                                if (_detailedData != null) ...[
-                                  () {
-                                    final characteristics = <String>[];
-
-                                    if (_detailedData?['paragliding']?.toString() == '1') {
-                                      characteristics.add('Paragliding');
-                                    }
-                                    if (_detailedData?['hanggliding']?.toString() == '1') {
-                                      characteristics.add('Hang Gliding');
-                                    }
-                                    if (_detailedData?['hike']?.toString() == '1') {
-                                      characteristics.add('Hike');
-                                    }
-                                    if (_detailedData?['thermals']?.toString() == '1') {
-                                      characteristics.add('Thermals');
-                                    }
-                                    if (_detailedData?['soaring']?.toString() == '1') {
-                                      characteristics.add('Soaring');
-                                    }
-                                    if (_detailedData?['xc']?.toString() == '1') {
-                                      characteristics.add('XC');
-                                    }
-                                    if (_detailedData?['flatland']?.toString() == '1') {
-                                      characteristics.add('Flatland');
-                                    }
-                                    if (_detailedData?['winch']?.toString() == '1') {
-                                      characteristics.add('Winch');
-                                    }
-
-                                    if (characteristics.isNotEmpty) {
-                                      return Padding(
-                                        padding: const EdgeInsets.only(top: 4.0),
-                                        child: Text(
-                                          characteristics.join(', '),
-                                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w300,
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                    return const SizedBox.shrink();
-                                  }(),
-                                ],
-                              ],
-                            ),
-                          ),
-                          // Favorite button with heart icon
-                          IconButton(
-                            onPressed: _toggleFavorite,
-                            icon: Icon(
-                              _isFavorite ? Icons.favorite : Icons.favorite_border,
-                              color: _isFavorite ? Colors.red : null,
-                            ),
-                            tooltip: _isFavorite ? 'Remove from favorites' : 'Add to favorites',
-                          ),
-                          IconButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            icon: const Icon(Icons.close),
-                            tooltip: 'Close',
-                          ),
-                        ],
-                      ),
-
+                      ..._buildHeaderContent(name, windDirections),
+                      // The rose anchors the header and the facts sit beside
+                      // it. They used to be stacked underneath, which left
+                      // two thirds of the rose's row empty once the name
+                      // moved to the AppBar - and the rose floating above the
+                      // facts rather than belonging to them.
+                      _buildRoseHeader(windDirections, [
+                        if (flyabilityLine != null) flyabilityLine,
+                        ..._buildOverviewContent(
+                            name,
+                            latitude,
+                            longitude,
+                            altitude,
+                            country,
+                            region,
+                            rating,
+                            siteType,
+                            windDirections,
+                            flightCount,
+                            distanceText,
+                            thermalFlag,
+                            soaringFlag,
+                            xcFlag),
+                        if (characteristicsLine != null) characteristicsLine,
+                      ]),
                       const SizedBox(height: 8),
-
-                      // Show detailed view if we have a tab controller and either ParaglidingSite or fetched API data
-                      if (_tabController != null && (_detailedData != null || widget.paraglidingSite != null)) ...[
-                        // Overview content (always visible)
-                        ..._buildOverviewContent(name, latitude, longitude, altitude, country, region, rating, siteType, windDirections, flightCount, distanceText, thermalFlag, soaringFlag, xcFlag),
-
-                        const SizedBox(height: 8),
-
-                        // Tabs for detailed information
-                        if (_tabController != null)
-                          SizedBox(
-                            height: 450, // Fixed height for tab content
-                            child: Column(
-                              children: [
-                                SizedBox(
-                                  height: 40,
-                                  child: TabBar(
-                                    controller: _tabController,
-                                    isScrollable: false,
-                                    tabAlignment: TabAlignment.fill,
-                                    labelPadding: const EdgeInsets.symmetric(horizontal: 8),
-                                    // Material 3's own indicator and divider,
-                                    // rather than the 1px hairline the previous
-                                    // overrides produced - which is why these
-                                    // did not read as tabs.
-                                    indicatorSize: TabBarIndicatorSize.tab,
-                                  tabs: [
-                                    const Tab(
-                                      child: Tooltip(
-                                        message: 'Flyability forecast by hour by day',
-                                        child: Text(
-                                          'Forecast',
-                                          style: TextStyle(fontSize: 12),
-                                        ),
-                                      ),
-                                    ),
-                                    // One tab per contributing guide, named.
-                                    // The old single unlabelled ⓘ tab held
-                                    // ParaglidingEarth data without saying so,
-                                    // and a launch can now come from more than
-                                    // one guide - which disagree on names,
-                                    // ratings and sometimes position.
-                                    for (final source in _sourceTabs)
-                                      Tab(
-                                        child: Tooltip(
-                                          message: _sourceTooltip(source.provider),
-                                          child: Text(
-                                            _sourceLabel(source.provider),
-                                            style: const TextStyle(fontSize: 12),
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                  ),
-                                ),
-                                Expanded(
-                                  child: TabBarView(
-                                    controller: _tabController,
-                                    children: [
-                                      _buildWeatherTab(windDirections),
-                                      for (final source in _sourceTabs)
-                                        _buildSourceTab(source),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                      ] else
-                        ..._buildSimpleContent(name, latitude, longitude, altitude, country, region, rating, siteType, windDirections, flightCount, distanceText, description),
                     ],
                   ),
+                ),
+                // Below the header, the tabs take the rest of the page. On a
+                // Scaffold body that is simply what Expanded means - no
+                // extents, no fixed heights, and nothing to outgrow.
+                TabBar(
+                  controller: _tabController,
+                  isScrollable: false,
+                  tabAlignment: TabAlignment.fill,
+                  labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+                  // Material 3's own indicator and divider, rather than the
+                  // 1px hairline the previous overrides produced - which is
+                  // why these did not read as tabs.
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  tabs: [
+                    const Tab(
+                      child: Tooltip(
+                        message: 'Flyability forecast by hour by day',
+                        child: Text('Forecast', style: TextStyle(fontSize: 12)),
+                      ),
+                    ),
+                    // One tab per contributing guide, named. The old single
+                    // unlabelled tab held ParaglidingEarth data without saying
+                    // so, and a launch can now come from more than one guide -
+                    // which disagree on names, ratings and sometimes position.
+                    for (final source in _sourceTabs)
+                      Tab(
+                        child: Tooltip(
+                          message: _sourceTooltip(source.provider),
+                          child: Text(
+                            _sourceLabel(source.provider),
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildWeatherTab(windDirections),
+                      for (final source in _sourceTabs) _buildSourceTab(source),
+                    ],
+                  ),
+                ),
+              ],
+            )
+          : SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ..._buildHeaderContent(name, windDirections),
+                  _buildRoseHeader(windDirections, [
+                    if (flyabilityLine != null) flyabilityLine,
+                    if (characteristicsLine != null) characteristicsLine,
+                  ]),
+                  const SizedBox(height: 8),
+                  ..._buildSimpleContent(
+                      name,
+                      latitude,
+                      longitude,
+                      altitude,
+                      country,
+                      region,
+                      rating,
+                      siteType,
+                      windDirections,
+                      flightCount,
+                      distanceText,
+                      description),
+                ],
+              ),
+            ),
+      ),
+    );
+  }
+
+  /// The closure warning, above everything else on the page.
+  ///
+  /// Shared by both layouts - the tabbed page and the plain scroll view a
+  /// site with no guide entry gets.
+  List<Widget> _buildHeaderContent(String name, List<String> windDirections) {
+    return [
+      // Closure notice, above everything else.
+      //
+      // A closed site used to be dropped from the catalogue
+      // entirely, which left the other guides' entries for
+      // the same place on the map looking like ordinary
+      // launches - the app was less safe than either source
+      // alone. Quinns Rocks is the case: closed pending a
+      // council agreement, with two ParaglidingEarth entries
+      // that do not know it.
+      if (_effectiveSite?.closed != null) ...[
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.errorContainer,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.warning_amber_rounded,
+                size: 20,
+                color: Theme.of(context).colorScheme.onErrorContainer,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Site closed',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.onErrorContainer,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _effectiveSite!.closed!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onErrorContainer,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
         ),
-        );
-      },
+        const SizedBox(height: 12),
+      ],
+    ];
+  }
+
+  /// An icon and the value it stands for, as one unbreakable unit.
+  ///
+  /// The point is the mainAxisSize.min Row: inside a Wrap these must be a
+  /// single child, or a line break can put the glyph on one line and its
+  /// value on the next - a terrain icon alone, then "150m" underneath.
+  Widget _iconFact(IconData icon, String value, {bool bold = false}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: Colors.grey),
+        const SizedBox(width: 4),
+        Text(
+          value,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontWeight: bold ? FontWeight.w500 : null,
+              ),
+        ),
+      ],
+    );
+  }
+
+  /// Wind rose on the left, whatever facts belong beside it on the right.
+  ///
+  /// Shared so the no-guides layout keeps the rose too - it is the one thing
+  /// on this page that answers "is it on right now", and it should not
+  /// disappear just because no guide has written the site up.
+  Widget _buildRoseHeader(List<String> windDirections, List<Widget> facts) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (windDirections.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(right: 12.0),
+            child: WindRoseWidget(
+              launchableDirections: windDirections,
+              size: 72.0,
+              windSpeed: _windData?.speedKmh,
+              windDirection: _windData?.directionDegrees,
+              centerDotColor: _getCenterDotColor(windDirections),
+              centerDotTooltip: _getCenterDotTooltip(windDirections),
+            ),
+          ),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: facts,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The flyability verdict, in words.
+  ///
+  /// The rose's centre dot already carries this as a colour, and the sentence
+  /// itself already existed - as the dot's tooltip, which needs a hover a
+  /// phone does not have. Same helper the forecast table uses, so the wording
+  /// cannot drift; it is just on screen now instead of behind a gesture that
+  /// never happens.
+  Widget? _buildFlyabilityLine(List<String> windDirections) {
+    final presentation = _getWindRosePresentation(windDirections);
+    final verdict = presentation?.tooltip;
+    if (verdict == null) return null;
+
+    // No coloured dot in front of it. The rose's centre dot is coloured from
+    // this same presentation a few pixels away, and the sentence now says
+    // "Unsafe" in words - a third encoding of one fact earns nothing. The
+    // argument for adding this line was that colour should not be the only
+    // carrier of the answer; that argument was for the words, not for a
+    // second dot.
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        verdict,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w500,
+            ),
+      ),
+    );
+  }
+
+  /// What can be flown here, as the guide lists it.
+  ///
+  /// Kept out of the site-type icon's tooltip deliberately: the argument for
+  /// showing the verdict applies here too - a tooltip needs a hover.
+  Widget? _buildCharacteristicsLine() {
+    if (_detailedData == null) return null;
+
+    const flags = {
+      'paragliding': 'Paragliding',
+      'hanggliding': 'Hang Gliding',
+      'hike': 'Hike',
+      'thermals': 'Thermals',
+      'soaring': 'Soaring',
+      'xc': 'XC',
+      'flatland': 'Flatland',
+      'winch': 'Winch',
+    };
+
+    final characteristics = [
+      for (final entry in flags.entries)
+        if (_detailedData?[entry.key]?.toString() == '1') entry.value,
+    ];
+    if (characteristics.isEmpty) return null;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4.0),
+      child: Text(
+        characteristics.join(', '),
+        // Capped: it is the least important line in the header and, with
+        // every flag set, the tallest - it was pushing the tabs down two
+        // lines to list what the site allows.
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontSize: 11,
+              fontWeight: FontWeight.w300,
+            ),
+      ),
     );
   }
 
   List<Widget> _buildOverviewContent(String name, double latitude, double longitude, int? altitude, String? country, String? region, int? rating, String? siteType, List<String> windDirections, int? flightCount, String? distanceText, String? thermalFlag, String? soaringFlag, String? xcFlag) {
     return [
-            // Row 2: Site Type + Altitude + Wind + Directions
-            Row(
+            // Site Type + Altitude + Wind directions + map link.
+            //
+            // A Wrap, not a Row: beside the wind rose this column is ~300dp,
+            // and a Row ellipsised the launchable directions to "SW, W, ..."
+            // - the one fact on the line a pilot is actually checking. It
+            // flows onto a second line instead.
+            //
+            // Each icon travels inside the same Wrap child as its value.
+            // Loose in the Wrap they are independent items, and a break
+            // between any two strands the terrain glyph at the end of one
+            // line with "150m" starting the next - which a long direction
+            // list or a large system font size is enough to trigger.
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 12,
+              runSpacing: 4,
               children: [
-                // Site type with characteristics tooltip on icon
-                if (siteType != null) ...[
-                  Tooltip(
-                    message: _buildSiteCharacteristicsTooltip(),
-                    child: Icon(
-                      _getSiteTypeIcon(siteType),
-                      size: 16,
-                      color: Colors.grey,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
+                // No icon before the word: "Launch" is what the glyph meant,
+                // and the tooltip it carried needed a hover a phone does not
+                // have. The icons below stand in for words - altitude, wind,
+                // map - rather than repeating one.
+                if (siteType != null)
                   Text(
-                    _formatSiteType(siteType),
+                    '${_formatSiteType(siteType)}:',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  const Text(':', style: TextStyle(color: Colors.grey)),
-                ],
                 // Show altitude (prefer takeoff_altitude from API, fallback to general altitude)
-                if (_detailedData?['takeoff_altitude'] != null || altitude != null) ...[
-                  const SizedBox(width: 12),
-                  const Icon(Icons.terrain, size: 16, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Text(
+                if (_detailedData?['takeoff_altitude'] != null || altitude != null)
+                  _iconFact(
+                    Icons.terrain,
                     '${_detailedData?['takeoff_altitude'] ?? altitude}m',
-                    style: Theme.of(context).textTheme.bodySmall,
                   ),
-                ],
                 // Wind directions (compact)
-                if (windDirections.isNotEmpty) ...[
-                  const SizedBox(width: 12),
-                  const Icon(Icons.air, size: 16, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Flexible(
-                    child: Text(
-                      windDirections.join(', '),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                if (windDirections.isNotEmpty)
+                  _iconFact(
+                    Icons.air,
+                    windDirections.join(', '),
+                    bold: true,
                   ),
-                ],
                 // Map icon - opens maps app (directly after wind directions)
-                const SizedBox(width: 12),
                 InkWell(
                   onTap: () => _launchMap(latitude, longitude),
                   child: const Icon(
@@ -921,37 +997,27 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
             // Landing information row (if available)
             if (_detailedData?['landing_altitude'] != null || _detailedData?['landing_description'] != null || _detailedData?['landing_lat'] != null) ...[
               const SizedBox(height: 6),
-              Row(
+              // Wrap for the same reason as the launch line above, which was
+              // fixed for this and left its sibling as a Row - and a Row
+              // overflows with stripes rather than flowing.
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 12,
+                runSpacing: 4,
                 children: [
-                  // Landing icon with tooltip
-                  Tooltip(
-                    message: 'Landing information',
-                    child: const Icon(
-                      Icons.flight_land,
-                      size: 16,
-                      color: Colors.grey,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
                   Text(
-                    'Landing Site',
+                    'Landing:',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  const Text(':', style: TextStyle(color: Colors.grey)),
                   // Landing altitude
-                  if (_detailedData?['landing_altitude'] != null) ...[
-                    const SizedBox(width: 12),
-                    const Icon(Icons.terrain, size: 16, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Text(
+                  if (_detailedData?['landing_altitude'] != null)
+                    _iconFact(
+                      Icons.terrain,
                       '${_detailedData!['landing_altitude']}m',
-                      style: Theme.of(context).textTheme.bodySmall,
                     ),
-                  ],
                   // Map icon for landing - uses landing coordinates if available
-                  const SizedBox(width: 12),
                   InkWell(
                     onTap: () {
                       final landingLat = double.tryParse(_detailedData?['landing_lat']?.toString() ?? '');
@@ -1005,14 +1071,11 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
     final fullName = _sourceFullName(source.provider);
     if (site == null) return const SizedBox.shrink();
 
-    final controller = _scrollControllerFor(source.provider);
-    return Scrollbar(
-      controller: controller,
-      child: SingleChildScrollView(
-        controller: controller,
-        child: Padding(
-          padding: const EdgeInsets.all(12.0),
-          child: Column(
+    return _scrollableTab(
+      source.provider,
+      Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+      child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
@@ -1052,7 +1115,6 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
                 ),
             ],
           ),
-        ),
       ),
     );
   }
@@ -1075,13 +1137,10 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
       );
 
   Widget _buildTakeoffTab() {
-    final controller = _scrollControllerFor('pge');
-    return Scrollbar(
-      controller: controller,
-      child: SingleChildScrollView(
-      controller: controller,
-      child: Padding(
-        padding: const EdgeInsets.all(8.0),
+    return _scrollableTab(
+      'pge',
+      Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1351,7 +1410,6 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
           ],
         ),
       ),
-      ),
     );
   }
 
@@ -1365,42 +1423,33 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
       return const Center(child: Text('No forecast data available'));
     }
 
-    // Column with forecast table and weather description - make scrollable to avoid overflow
+    // The table's height is fixed by its 7 rows, and FixedColumnTable handles
+    // horizontal scrolling internally, so it needs no height cap of its own -
+    // the tab scrolls it if the sheet is too short to show it whole. The
+    // ConstrainedBox(maxHeight: 390) that used to be here neither scrolled
+    // nor clipped: one extra row and it painted overflow stripes.
     return RefreshIndicator(
-      onRefresh: () async {
-        await _loadWindForecast();
-      },
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(), // Ensure pull-to-refresh works
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Forecast table - constrain max height for nested scrolling
-            // FixedColumnTable handles horizontal scrolling internally
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 390), // Increased to accommodate attribution
-              child: Padding(
-                padding: const EdgeInsets.only(left: 8.0, right: 8.0, top: 8.0),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    ForecastAttributionBar(
-                      forecast: _windForecast,
-                      onRefresh: () {
-                        _loadWindForecast();
-                      },
-                    ),
-                    _build7DayForecastTable(windDirections),
-                  ],
-                ),
+      onRefresh: _loadWindForecast,
+      child: _scrollableTab(
+        'forecast',
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ForecastAttributionBar(
+                forecast: _windForecast,
+                onRefresh: () {
+                  _loadWindForecast();
+                },
               ),
-            ),
-            const SizedBox(height: 8.0),
-            // ParaglidingEarth's prose weather description used to repeat here.
-            // It belongs to a guide, so it lives in that guide's tab now that
-            // the tabs say which guide they are.
-          ],
+              _build7DayForecastTable(windDirections),
+              // ParaglidingEarth's prose weather description used to repeat
+              // here. It belongs to a guide, so it lives in that guide's tab
+              // now that the tabs say which guide they are.
+            ],
+          ),
         ),
       ),
     );
@@ -1642,9 +1691,9 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
   String _formatSiteType(String siteType) {
     switch (siteType.toLowerCase()) {
       case 'launch':
-        return 'Launch Site';
+        return 'Launch';
       case 'landing':
-        return 'Landing Zone';
+        return 'Landing';
       case 'both':
         return 'Launch & Landing';
       default:
@@ -1652,46 +1701,10 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
     }
   }
 
-  IconData _getSiteTypeIcon(String siteType) {
-    switch (siteType.toLowerCase()) {
-      case 'launch':
-        return Icons.flight_takeoff;
-      case 'landing':
-        return Icons.flight_land;
-      case 'both':
-        return Icons.flight;
-      default:
-        return Icons.location_on;
-    }
-  }
-
-  String _buildSiteCharacteristicsTooltip() {
-    if (_detailedData == null) return 'Site information';
-    
-    List<String> characteristics = [];
-    
-    // Check all possible characteristics that can have value "1"
-    final characteristicMap = {
-      'paragliding': 'Paragliding',
-      'hanggliding': 'Hanggliding', 
-      'hike': 'Hike',
-      'thermals': 'Thermals',
-      'soaring': 'Soaring',
-      'xc': 'XC',
-      'flatland': 'Flatland',
-      'winch': 'Winch',
-    };
-    
-    characteristicMap.forEach((key, label) {
-      if (_detailedData![key]?.toString() == '1') {
-        characteristics.add(label);
-      }
-    });
-    
-    return characteristics.isNotEmpty
-        ? characteristics.join(', ')
-        : 'Site information';
-  }
+  // _getSiteTypeIcon and _buildSiteCharacteristicsTooltip went with the
+  // glyphs before "Launch" and "Landing". The tooltip listed the site's
+  // characteristics, which _buildCharacteristicsLine now shows outright -
+  // it had been computing that string for a hover no phone can perform.
 
   /// Build clickable text that turns URLs into links
   Widget _buildLinkableText(String text) {
