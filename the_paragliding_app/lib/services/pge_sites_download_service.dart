@@ -241,7 +241,13 @@ class PgeSitesDownloadService {
       final decompressedBytes = gzip.decode(compressedBytes);
       final csvContent = utf8.decode(decompressedBytes);
 
-      // Parse CSV manually (format: id,name,lng,lat,altitude,country,N,NE,E,SE,S,SW,W,NW,last_edit)
+      // Parse CSV manually. Column order is fixed by the federation pipeline
+      // and matches the PGE-only asset this replaced field for field, with
+      // `source` where `last_edit` used to be:
+      //   id,name,lng,lat,altitude,country,N,NE,E,SE,S,SW,W,NW,source
+      // Note longitude precedes latitude. Swapping them parses cleanly and
+      // puts every site in the wrong hemisphere, so this is asserted by a
+      // coordinate test rather than a row count.
       final lines = csvContent.trim().split('\n');
       final sites = <Map<String, dynamic>>[];
 
@@ -270,7 +276,10 @@ class PgeSitesDownloadService {
               'wind_sw': int.tryParse(fields[11]) ?? 0,
               'wind_w': int.tryParse(fields[12]) ?? 0,
               'wind_nw': int.tryParse(fields[13]) ?? 0,
-              'last_edit': fields[14].replaceAll('"', ''),  // last_edit date (YYYY-MM-DD)
+              // Which guides contributed this launch, e.g.
+              // "pge:4632;siteguide_au:106-28". Also the key that remaps a
+              // flown site's old PGE link to the federated catalogue.
+              'source': fields[14].replaceAll('"', ''),
             });
           }
         } catch (e) {
