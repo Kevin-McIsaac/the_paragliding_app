@@ -860,29 +860,19 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     final verdict = presentation?.tooltip;
     if (verdict == null) return null;
 
+    // No coloured dot in front of it. The rose's centre dot is coloured from
+    // this same presentation a few pixels away, and the sentence now says
+    // "Unsafe" in words - a third encoding of one fact earns nothing. The
+    // argument for adding this line was that colour should not be the only
+    // carrier of the answer; that argument was for the words, not for a
+    // second dot.
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            margin: const EdgeInsets.only(top: 5, right: 6),
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: presentation!.color,
-              shape: BoxShape.circle,
+      child: Text(
+        verdict,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w500,
             ),
-          ),
-          Expanded(
-            child: Text(
-              verdict,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
-            ),
-          ),
-        ],
       ),
     );
   }
