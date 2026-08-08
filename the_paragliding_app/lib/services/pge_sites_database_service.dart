@@ -40,7 +40,7 @@ class PgeSitesDatabaseService {
 
   /// Point flown sites and favourites at the federated catalogue, once.
   ///
-  /// `sites.pge_site_id` and `is_favorite` both reference catalogue ids. The
+  /// `sites.catalog_site_id` and `is_favorite` both reference catalogue ids. The
   /// PGE-only export used PGE's ids; the federated catalogue uses its own,
   /// and every row records where it came from in `source`. This rewrites the
   /// references through that mapping.
@@ -87,10 +87,10 @@ class PgeSitesDatabaseService {
     int relinked = 0;
     int cleared = 0;
     final linked = await txn.query('sites',
-        columns: ['id', 'pge_site_id'], where: 'pge_site_id IS NOT NULL');
+        columns: ['id', 'catalog_site_id'], where: 'catalog_site_id IS NOT NULL');
     for (final row in linked) {
-      final canonical = pgeIdToCanonical[row['pge_site_id'] as int];
-      await txn.update('sites', {'pge_site_id': canonical},
+      final canonical = pgeIdToCanonical[row['catalog_site_id'] as int];
+      await txn.update('sites', {'catalog_site_id': canonical},
           where: 'id = ?', whereArgs: [row['id']]);
       canonical == null ? cleared++ : relinked++;
     }
@@ -161,7 +161,7 @@ class PgeSitesDatabaseService {
       // Which generation of the catalogue this database holds. 1 is the
       // PGE-only export, whose ids were PGE site ids; 2 is the federated
       // catalogue, whose ids are its own. The distinction matters because
-      // sites.pge_site_id points into whichever is current, and the two id
+      // sites.catalog_site_id points into whichever is current, and the two id
       // spaces overlap - so a remap that ran twice would silently relink
       // flown sites to unrelated launches.
       await db.execute('''
@@ -822,7 +822,7 @@ class PgeSitesDatabaseService {
 
   /// A guide's own id for a catalogue entry, e.g. `pgeIdFor(9247) == 4632`.
   ///
-  /// `sites.pge_site_id` holds a *catalogue* id, not a guide's. Handing one to
+  /// `sites.catalog_site_id` holds a *catalogue* id, not a guide's. Handing one to
   /// ParaglidingEarth silently addresses a different site - canonical 9247 is
   /// Mt Borah here and "Spitzbuhel - Siusi" there - so anything leaving the
   /// app for a guide has to be translated back through `source`.

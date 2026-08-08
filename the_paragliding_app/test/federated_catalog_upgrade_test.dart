@@ -57,7 +57,7 @@ void main() {
       'name': 'Mt Borah',
       'latitude': -30.6789,
       'longitude': 150.609,
-      'pge_site_id': 4632,
+      'catalog_site_id': 4632,
       'created_at': DateTime.now().toIso8601String(),
     });
 
@@ -79,10 +79,10 @@ void main() {
     expect(borah['altitude'], isNotNull);
 
     // The flown site follows its PGE id into the new id space.
-    final site = (await db.query('sites', where: 'pge_site_id IS NOT NULL')).single;
-    expect(site['pge_site_id'], borah['id'],
+    final site = (await db.query('sites', where: 'catalog_site_id IS NOT NULL')).single;
+    expect(site['catalog_site_id'], borah['id'],
         reason: 'link should have been rewritten to the canonical id');
-    expect(site['pge_site_id'], isNot(4632),
+    expect(site['catalog_site_id'], isNot(4632),
         reason: 'the catalogue no longer uses PGE ids');
 
     // And the favourite came with it.

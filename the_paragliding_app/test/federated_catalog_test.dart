@@ -95,11 +95,11 @@ void main() {
       });
       await db.insert('sites', {
         'id': 1, 'name': 'Mt Borah', 'latitude': -30.7, 'longitude': 150.6,
-        'pge_site_id': 4632, 'created_at': DateTime.now().toIso8601String(),
+        'catalog_site_id': 4632, 'created_at': DateTime.now().toIso8601String(),
       });
       await db.insert('sites', {
         'id': 2, 'name': 'Gone Upstream', 'latitude': 1.0, 'longitude': 1.0,
-        'pge_site_id': 99999, 'created_at': DateTime.now().toIso8601String(),
+        'catalog_site_id': 99999, 'created_at': DateTime.now().toIso8601String(),
       });
     }
 
@@ -128,7 +128,7 @@ void main() {
       await PgeSitesDatabaseService.instance.importSitesData(rows: federatedRows());
 
       final site = (await db.query('sites', where: 'id = 1')).single;
-      expect(site['pge_site_id'], 17,
+      expect(site['catalog_site_id'], 17,
           reason: 'should follow pge:4632 into the federated catalogue');
     });
 
@@ -139,7 +139,7 @@ void main() {
       await PgeSitesDatabaseService.instance.importSitesData(rows: federatedRows());
 
       final site = (await db.query('sites', where: 'id = 2')).single;
-      expect(site['pge_site_id'], isNull);
+      expect(site['catalog_site_id'], isNull);
     });
 
     test('carries favourites across the id change', () async {
@@ -158,7 +158,7 @@ void main() {
       await PgeSitesDatabaseService.instance.importSitesData(rows: federatedRows());
 
       final site = (await db.query('sites', where: 'id = 1')).single;
-      expect(site['pge_site_id'], 17);
+      expect(site['catalog_site_id'], 17);
     });
 
     test('an ordinary refresh keeps favourites', () async {
@@ -169,6 +169,45 @@ void main() {
 
       final favourites = await db.query('pge_sites', where: 'is_favorite = 1');
       expect(favourites.map((r) => r['id']), [17]);
+    });
+  });
+
+  group('renaming pge_site_id to catalog_site_id', () {
+    // The column never held a ParaglidingEarth id once sites were federated;
+    // it holds a catalogue id. The old name asserted otherwise at every call
+    // site and twice caused a catalogue id to be handed to ParaglidingEarth
+    // as its own, silently addressing an unrelated site.
+    test('carries existing links across the rename', () async {
+      await TestHelpers.initializeDatabaseForTesting();
+      await DatabaseHelper.instance.recreateDatabase();
+      final db = await DatabaseHelper.instance.database;
+
+      await db.insert('sites', {
+        'name': 'Mt Borah',
+        'latitude': -30.6789,
+        'longitude': 150.609,
+        'catalog_site_id': 9247,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+
+      // A v3 database is renamed in place, so the value has to survive - the
+      // link is what gives a flown site its wind and altitude.
+      final site = (await db.query('sites', where: "name = 'Mt Borah'")).single;
+      expect(site['catalog_site_id'], 9247);
+    });
+
+    test('the old column name is gone', () async {
+      await TestHelpers.initializeDatabaseForTesting();
+      await DatabaseHelper.instance.recreateDatabase();
+      final db = await DatabaseHelper.instance.database;
+
+      final columns = (await db.rawQuery('PRAGMA table_info(sites)'))
+          .map((c) => c['name'] as String)
+          .toSet();
+
+      expect(columns, contains('catalog_site_id'));
+      expect(columns, isNot(contains('pge_site_id')),
+          reason: 'a fresh install should never create the misleading name');
     });
   });
 }

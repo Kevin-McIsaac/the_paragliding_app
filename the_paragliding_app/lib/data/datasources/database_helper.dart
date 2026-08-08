@@ -26,7 +26,7 @@ import '../../services/logging_service.dart';
 class DatabaseHelper {
   static const _databaseName = "FlightLog.db";
   /// Current schema version - tests assert against this rather than a literal
-  static const databaseVersion = 3; // v3: duration holds detected takeoff->landing
+  static const databaseVersion = 4; // v4: pge_site_id renamed to catalog_site_id
 
   // Singleton pattern
   DatabaseHelper._privateConstructor();
@@ -150,7 +150,7 @@ class DatabaseHelper {
         altitude REAL,
         country TEXT,
         custom_name INTEGER DEFAULT 0,
-        pge_site_id INTEGER,
+        catalog_site_id INTEGER,
         is_favorite INTEGER DEFAULT 0,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
@@ -230,7 +230,7 @@ class DatabaseHelper {
 
       // 7. Index for PGE site foreign key relationship
       // Critical for deduplication and site linking operations
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_sites_pge_site_id ON sites(pge_site_id)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_sites_catalog_site_id ON sites(catalog_site_id)');
 
       // 8. Index for country code lookups
       await db.execute('CREATE INDEX IF NOT EXISTS idx_country_codes_code ON country_codes(code)');
@@ -447,6 +447,25 @@ class DatabaseHelper {
         await backfillDetectedDurations(db);
       }
 
+      // Migration from v3 to v4: the column never held a ParaglidingEarth id
+      // once sites were federated - it holds a catalogue id, and the
+      // catalogue merges several guides. The old name asserted otherwise at
+      // every call site, and twice led to a catalogue id being handed to
+      // ParaglidingEarth as if it were theirs, silently addressing an
+      // unrelated site.
+      if (oldVersion < 4) {
+        LoggingService.database(
+            'MIGRATE', 'Applying migration v3 -> v4: pge_site_id -> catalog_site_id');
+        await db.execute('DROP INDEX IF EXISTS idx_sites_pge_site_id');
+        await db.execute('ALTER TABLE sites RENAME COLUMN pge_site_id TO catalog_site_id');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_sites_catalog_site_id ON sites(catalog_site_id)');
+
+        final renamed = Sqflite.firstIntValue(await db.rawQuery(
+            'SELECT COUNT(*) FROM sites WHERE catalog_site_id IS NOT NULL'));
+        LoggingService.database('MIGRATE', 'Renamed column; $renamed site(s) hold a link');
+      }
+
       LoggingService.database('MIGRATE', 'Database migration completed successfully');
     } catch (e) {
       LoggingService.error('DatabaseHelper: Database migration failed', e);
@@ -594,7 +613,7 @@ class DatabaseHelper {
       // Check sites table has all expected columns
       final siteColumns = await db.rawQuery("PRAGMA table_info(sites)");
       final expectedSiteColumns = {
-        'id', 'name', 'latitude', 'longitude', 'altitude', 'country', 'custom_name', 'pge_site_id', 'is_favorite', 'created_at'
+        'id', 'name', 'latitude', 'longitude', 'altitude', 'country', 'custom_name', 'catalog_site_id', 'is_favorite', 'created_at'
       };
       
       final actualSiteColumns = siteColumns.map((col) => col['name'] as String).toSet();

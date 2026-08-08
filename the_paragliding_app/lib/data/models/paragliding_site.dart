@@ -17,7 +17,7 @@ class ParaglidingSite {
   final double? popularity; // Calculated popularity score
   final int flightCount; // Number of flights from local database
   final bool isFromLocalDb; // True if site exists in local database
-  final int? pgeSiteId; // Foreign key to PGE sites table (for local sites linked to PGE)
+  final int? catalogSiteId; // Foreign key to PGE sites table (for local sites linked to PGE)
   /// Which guides contributed this launch, e.g. "pge:4632;siteguide_au:106-28".
   /// Drives the per-source tabs in the site details dialog.
   final String? source;
@@ -37,7 +37,7 @@ class ParaglidingSite {
     this.popularity,
     this.flightCount = 0,
     this.isFromLocalDb = false,
-    this.pgeSiteId,
+    this.catalogSiteId,
     this.source,
   });
 
@@ -223,7 +223,7 @@ class ParaglidingSite {
     double? popularity,
     int? flightCount,
     bool? isFromLocalDb,
-    int? pgeSiteId,
+    int? catalogSiteId,
     String? source,
   }) {
     return ParaglidingSite(
@@ -241,7 +241,7 @@ class ParaglidingSite {
       popularity: popularity ?? this.popularity,
       flightCount: flightCount ?? this.flightCount,
       isFromLocalDb: isFromLocalDb ?? this.isFromLocalDb,
-      pgeSiteId: pgeSiteId ?? this.pgeSiteId,
+      catalogSiteId: catalogSiteId ?? this.catalogSiteId,
       source: source ?? this.source,
     );
   }

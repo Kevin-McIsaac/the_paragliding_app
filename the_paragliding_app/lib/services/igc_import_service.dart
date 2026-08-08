@@ -288,7 +288,7 @@ class IgcImportService {
         altitude: siteAltitude,
         name: siteName,
         country: country,
-        pgeSiteId: matchedSite?.id, // Link to PGE site if matched
+        catalogSiteId: matchedSite?.id, // Link to PGE site if matched
       );
       
       // Keep the matcher's cache current so the next flight from this launch

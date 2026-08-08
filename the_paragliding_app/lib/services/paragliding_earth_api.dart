@@ -481,6 +481,31 @@ class ParaglidingEarthApi {
     );
   }
 
+  /// ParaglidingEarth's own record of a catalogue entry, or null if it has none.
+  ///
+  /// A catalogue entry is a cluster of guide records, so three things that
+  /// used to be interchangeable no longer are: its id is not PGE's id, its
+  /// position is the winning guide's rather than PGE's, and several entries
+  /// can share a position. Each of those was assumed somewhere and each
+  /// produced a wrong-site bug, so the translation lives here once instead of
+  /// at every call site.
+  ///
+  /// Null means PGE does not describe this launch - true of the Australian
+  /// ones the national guide carries alone - and callers should show nothing
+  /// rather than fall back to a neighbour.
+  Future<Map<String, dynamic>?> getDetailsForCatalogSite(ParaglidingSite site) async {
+    for (final source in site.sources) {
+      if (source.provider != 'pge') continue;
+      final pgeId = int.tryParse(source.id);
+      if (pgeId == null) continue;
+      return getSiteDetails(site.latitude, site.longitude, siteId: pgeId);
+    }
+
+    LoggingService.info(
+        'ParaglidingEarthApi: No ParaglidingEarth source for "${site.name}"');
+    return null;
+  }
+
   /// Get detailed information for a specific site
   /// Returns detailed site data for display in dialog
   Future<Map<String, dynamic>?> getSiteDetails(double latitude, double longitude, {int? siteId}) async {

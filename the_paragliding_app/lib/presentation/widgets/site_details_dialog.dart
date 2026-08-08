@@ -104,37 +104,6 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
         _ => provider,
       };
 
-  /// ParaglidingEarth's id for a catalogue entry, looked up through `source`.
-  ///
-  /// Returns null when the catalogue has no row for that id, or when the
-  /// launch is one no PGE entry exists for - the Australian ones Site Guide
-  /// carries alone. Null is correct there: it means "do not link to PGE",
-  /// which is better than linking to whatever holds that number.
-  /// Load the catalogue entry a flown site points at, and rebuild the tabs.
-  ///
-  /// The tab count depends on how many guides describe this launch, which is
-  /// only known once this returns - so the controller is replaced rather than
-  /// created once in initState.
-  Future<void> _loadCatalogSite() async {
-    final catalogId = widget.site?.pgeSiteId;
-    if (widget.paraglidingSite != null || catalogId == null) return;
-
-    final site = await PgeSitesDatabaseService.instance.getSiteById(catalogId);
-    if (site == null || !mounted) return;
-
-    setState(() {
-      _catalogSite = site;
-      _tabController?.dispose();
-      _tabController = TabController(length: 1 + _sourceTabs.length, vsync: this);
-    });
-  }
-
-  Future<int?> _resolvePgeId(int? catalogId) async {
-    if (catalogId == null) return null;
-    final id = await PgeSitesDatabaseService.instance.sourceIdFor(catalogId, 'pge');
-    return id == null ? null : int.tryParse(id);
-  }
-
   /// What a tab holds, for the tooltip. The labels are short enough to be
   /// ambiguous on their own - "PGE" means nothing until you have seen it
   /// spelled out once.
@@ -147,6 +116,25 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
         'siteguide_au' => 'https://siteguide.org.au/sites/details/${id.split('-').first}',
         _ => null,
       };
+
+  /// Load the catalogue entry a flown site points at, and rebuild the tabs.
+  ///
+  /// A flown site knows only its IGC takeoff point and name, so it cannot say
+  /// which guides describe the launch. The tab count depends on that, which
+  /// is why the controller is replaced here rather than settled in initState.
+  Future<void> _loadCatalogSite() async {
+    final catalogId = widget.site?.catalogSiteId;
+    if (widget.paraglidingSite != null || catalogId == null) return;
+
+    final site = await PgeSitesDatabaseService.instance.getSiteById(catalogId);
+    if (site == null || !mounted) return;
+
+    setState(() {
+      _catalogSite = site;
+      _tabController?.dispose();
+      _tabController = TabController(length: 1 + _sourceTabs.length, vsync: this);
+    });
+  }
 
   // Forecast table constants
   static const double _dayColumnWidth = 80.0;
@@ -170,7 +158,7 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
   /// Load favorite status for this site
   Future<void> _loadFavoriteStatus() async {
     // Determine which database and ID to use for favorites
-    // Rule: For sites with pge_site_id, always use PGE database as single source of truth
+    // Rule: For sites with catalog_site_id, always use PGE database as single source of truth
     bool isFavorite = false;
     String source = 'unknown';
     int? effectiveId;
@@ -178,9 +166,9 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
     // Check ParaglidingSite first (this is what we usually have)
     if (widget.paraglidingSite != null) {
       // Check if this is linked to a PGE site
-      if (widget.paraglidingSite!.pgeSiteId != null) {
+      if (widget.paraglidingSite!.catalogSiteId != null) {
         // Linked to PGE site - use PGE database (single source of truth)
-        effectiveId = widget.paraglidingSite!.pgeSiteId;
+        effectiveId = widget.paraglidingSite!.catalogSiteId;
         source = 'pge_via_paragliding_site';
         isFavorite = await PgeSitesDatabaseService.instance.isSiteFavorite(effectiveId!);
       } else if (widget.paraglidingSite!.isFromLocalDb) {
@@ -200,9 +188,9 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
       }
     } else if (widget.site != null) {
       // Fallback to Site object (rare case)
-      if (widget.site!.pgeSiteId != null) {
+      if (widget.site!.catalogSiteId != null) {
         // Linked to PGE site - use PGE database (single source of truth)
-        effectiveId = widget.site!.pgeSiteId;
+        effectiveId = widget.site!.catalogSiteId;
         source = 'pge_via_site';
         isFavorite = await PgeSitesDatabaseService.instance.isSiteFavorite(effectiveId!);
       } else if (widget.site!.id != null) {
@@ -221,8 +209,8 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
       'is_favorite': isFavorite,
       'pge_site_present': widget.paraglidingSite != null,
       'local_site_present': widget.site != null,
-      'paragliding_site_pge_site_id': widget.paraglidingSite?.pgeSiteId,
-      'local_pge_site_id': widget.site?.pgeSiteId,
+      'paragliding_site_catalog_site_id': widget.paraglidingSite?.catalogSiteId,
+      'local_catalog_site_id': widget.site?.catalogSiteId,
     });
 
     if (mounted) {
@@ -235,7 +223,7 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
   /// Toggle favorite status for this site
   Future<void> _toggleFavorite() async {
     // Determine which database and ID to use for favorites toggle
-    // Rule: For sites with pge_site_id, always use PGE database as single source of truth
+    // Rule: For sites with catalog_site_id, always use PGE database as single source of truth
     String? siteName;
     String source = 'unknown';
     int? effectiveId;
@@ -244,9 +232,9 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
     if (widget.paraglidingSite != null) {
       siteName = widget.paraglidingSite!.name;
       // Check if this is linked to a PGE site
-      if (widget.paraglidingSite!.pgeSiteId != null) {
+      if (widget.paraglidingSite!.catalogSiteId != null) {
         // Linked to PGE site - use PGE database (single source of truth)
-        effectiveId = widget.paraglidingSite!.pgeSiteId;
+        effectiveId = widget.paraglidingSite!.catalogSiteId;
         source = 'pge_via_paragliding_site';
         await PgeSitesDatabaseService.instance.toggleSiteFavorite(effectiveId!);
       } else if (widget.paraglidingSite!.isFromLocalDb) {
@@ -267,9 +255,9 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
     } else if (widget.site != null) {
       siteName = widget.site!.name;
       // Fallback to Site object (rare case)
-      if (widget.site!.pgeSiteId != null) {
+      if (widget.site!.catalogSiteId != null) {
         // Linked to PGE site - use PGE database (single source of truth)
-        effectiveId = widget.site!.pgeSiteId;
+        effectiveId = widget.site!.catalogSiteId;
         source = 'pge_via_site';
         await PgeSitesDatabaseService.instance.toggleSiteFavorite(effectiveId!);
       } else if (widget.site!.id != null) {
@@ -290,8 +278,8 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
       'site_name': siteName,
       'pge_site_present': widget.paraglidingSite != null,
       'local_site_present': widget.site != null,
-      'paragliding_site_pge_site_id': widget.paraglidingSite?.pgeSiteId,
-      'local_pge_site_id': widget.site?.pgeSiteId,
+      'paragliding_site_catalog_site_id': widget.paraglidingSite?.catalogSiteId,
+      'local_catalog_site_id': widget.site?.catalogSiteId,
     });
 
     // Reload favorite status to get updated value
@@ -338,34 +326,11 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
       _tabScrollControllers.putIfAbsent(key, ScrollController.new);
 
   Future<void> _loadSiteDetails() async {
-    // Load detailed data from API for both local sites and API sites
-    double latitude;
-    double longitude;
-    int? pgeSiteId;
-
-    // ParaglidingEarth addresses sites by *its own* id, and nothing the app
-    // stores is one any more: both paraglidingSite.id and sites.pge_site_id
-    // hold catalogue ids. Passing one through silently addresses a different
-    // site - catalogue 9247 is Mt Borah here and "Spitzbuhel - Siusi" on PGE -
-    // so it has to be translated back through `source` before it is used to
-    // fetch detail or to build a link out.
+    // The catalogue entry is the only thing that can answer this: a flown
+    // record knows its IGC takeoff point and nothing about which guides
+    // describe the launch.
     final catalogSite = _effectiveSite;
-    if (catalogSite != null) {
-      // The guide's own pin, not the takeoff point an IGC recorded. The
-      // detail lookup searches a ~100m box, and a flown site's coordinates
-      // can sit further from the guide's pin than that - which returned no
-      // detail at all while the link, built from the id, was correct.
-      latitude = catalogSite.latitude;
-      longitude = catalogSite.longitude;
-      pgeSiteId = _pgeSourceId;
-      pgeSiteId ??= await _resolvePgeId(catalogSite.pgeSiteId ?? catalogSite.id);
-    } else if (widget.site != null) {
-      latitude = widget.site!.latitude;
-      longitude = widget.site!.longitude;
-      pgeSiteId = await _resolvePgeId(widget.site!.pgeSiteId);
-    } else {
-      return; // No site data available
-    }
+    if (catalogSite == null) return;
 
     setState(() {
       _isLoadingDetails = true;
@@ -373,20 +338,19 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
     });
 
     try {
-      final details = await ParaglidingEarthApi.instance.getSiteDetails(
-        latitude,
-        longitude,
-        siteId: pgeSiteId,
-      );
+      final details =
+          await ParaglidingEarthApi.instance.getDetailsForCatalogSite(catalogSite);
 
       if (mounted) {
         setState(() {
           _detailedData = details ?? {};
 
-          // Generate PGE link from site ID if available
-          // This ensures the link is always available even if API call fails or doesn't include it
-          if (pgeSiteId != null) {
-            _detailedData!['pge_link'] = 'https://www.paraglidingearth.com/?site=$pgeSiteId';
+          // Keep the link available even when the fetch returned nothing,
+          // since that is when you most want to go and look. Built from
+          // ParaglidingEarth's own id, never the catalogue's.
+          final pgeId = _pgeSourceId;
+          if (pgeId != null) {
+            _detailedData!['pge_link'] = 'https://www.paraglidingearth.com/?site=$pgeId';
           }
 
           _isLoadingDetails = false;
@@ -395,11 +359,11 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
     } catch (e) {
       if (mounted) {
         setState(() {
-          // Even if API fails, create empty map and add PGE link if we have site ID
           _detailedData = {};
 
-          if (pgeSiteId != null) {
-            _detailedData!['pge_link'] = 'https://www.paraglidingearth.com/?site=$pgeSiteId';
+          final pgeId = _pgeSourceId;
+          if (pgeId != null) {
+            _detailedData!['pge_link'] = 'https://www.paraglidingearth.com/?site=$pgeId';
           }
 
           _isLoadingDetails = false;
