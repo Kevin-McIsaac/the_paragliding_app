@@ -1353,6 +1353,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      // Without this the Android gesture inset - ~24dp of it - sits on top of
+      // the sheet's last rows, and at 0.95 the status bar covers its title.
+      useSafeArea: true,
       builder: (context) => SiteDetailsDialog(
         site: null,
         paraglidingSite: paraglidingSite,
