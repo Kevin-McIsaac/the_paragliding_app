@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'dart:io';
 import 'package:sqflite/sqflite.dart';
 import '../data/models/paragliding_site.dart';
@@ -16,6 +17,104 @@ class PgeSitesDatabaseService {
   static const String _pgeSitesTable = 'pge_sites';
   static const String _pgeSitesMetadataTable = 'pge_sites_metadata';
   static const String _countryCodesTable = 'country_codes';
+  static const String _catalogStateTable = 'catalog_state';
+
+  /// The federated catalogue: ids are its own, and rows carry `source`.
+  static const int federatedCatalogGeneration = 2;
+
+  /// Add a column to an existing table if it is not already present.
+  ///
+  /// `initializeTables` uses CREATE TABLE IF NOT EXISTS, so an install that
+  /// predates a column never gains it from the schema alone.
+  static Future<void> _addColumnIfMissing(
+    Database db,
+    String table,
+    String column,
+    String type,
+  ) async {
+    final columns = await db.rawQuery('PRAGMA table_info($table)');
+    if (columns.any((c) => c['name'] == column)) return;
+    await db.execute('ALTER TABLE $table ADD COLUMN $column $type');
+    LoggingService.database('MIGRATE', 'Added $table.$column');
+  }
+
+  /// Point flown sites and favourites at the federated catalogue, once.
+  ///
+  /// `sites.catalog_site_id` and `is_favorite` both reference catalogue ids. The
+  /// PGE-only export used PGE's ids; the federated catalogue uses its own,
+  /// and every row records where it came from in `source`. This rewrites the
+  /// references through that mapping.
+  ///
+  /// It runs only when a generation-1 database meets a generation-2
+  /// catalogue. The two id spaces overlap heavily - canonical ids run 1..12k,
+  /// PGE ids up to ~23k - so running it a second time would relink flown
+  /// sites to unrelated launches. That is why the generation is stored rather
+  /// than inferred.
+  ///
+  /// A link that finds no match is cleared rather than left pointing at
+  /// whatever now holds that id. Losing the link costs wind and altitude
+  /// enrichment on that site; leaving it wrong would show the pilot another
+  /// launch's data. Flights are unaffected either way - they reference
+  /// sites(id), not this.
+  static Future<void> _relinkToFederatedCatalog(
+    Transaction txn,
+    List<Map<String, dynamic>> sitesData,
+    Set<int> favouriteIds,
+  ) async {
+    final isFederated = sitesData.any((s) => (s['source'] as String?)?.isNotEmpty ?? false);
+    final state = await txn.query(_catalogStateTable, limit: 1);
+    final generation = state.isEmpty ? 1 : state.first['generation'] as int;
+
+    if (!isFederated || generation >= federatedCatalogGeneration) {
+      // Same id space as before: favourites carry over unchanged.
+      for (final id in favouriteIds) {
+        await txn.update(_pgeSitesTable, {'is_favorite': 1},
+            where: 'id = ?', whereArgs: [id]);
+      }
+      return;
+    }
+
+    final pgeIdToCanonical = <int, int>{};
+    for (final site in sitesData) {
+      for (final token in (site['source'] as String? ?? '').split(';')) {
+        if (token.startsWith('pge:')) {
+          final pgeId = int.tryParse(token.substring(4));
+          if (pgeId != null) pgeIdToCanonical[pgeId] = site['id'] as int;
+        }
+      }
+    }
+
+    int relinked = 0;
+    int cleared = 0;
+    final linked = await txn.query('sites',
+        columns: ['id', 'catalog_site_id'], where: 'catalog_site_id IS NOT NULL');
+    for (final row in linked) {
+      final canonical = pgeIdToCanonical[row['catalog_site_id'] as int];
+      await txn.update('sites', {'catalog_site_id': canonical},
+          where: 'id = ?', whereArgs: [row['id']]);
+      canonical == null ? cleared++ : relinked++;
+    }
+
+    int favouritesKept = 0;
+    for (final oldId in favouriteIds) {
+      final canonical = pgeIdToCanonical[oldId];
+      if (canonical == null) continue;
+      await txn.update(_pgeSitesTable, {'is_favorite': 1},
+          where: 'id = ?', whereArgs: [canonical]);
+      favouritesKept++;
+    }
+
+    await txn.update(_catalogStateTable, {'generation': federatedCatalogGeneration},
+        where: 'id = 1');
+
+    LoggingService.structured('CATALOG_RELINK', {
+      'sites_relinked': relinked,
+      'sites_link_cleared': cleared,
+      'favourites_kept': favouritesKept,
+      'favourites_lost': favouriteIds.length - favouritesKept,
+      'mapped_pge_ids': pgeIdToCanonical.length,
+    });
+  }
 
   /// Initialize PGE sites tables if they don't exist
   Future<void> initializeTables() async {
@@ -45,10 +144,42 @@ class PgeSitesDatabaseService {
           wind_w INTEGER DEFAULT 0,
           wind_nw INTEGER DEFAULT 0,
 
-          -- Last edit date from PGE (YYYY-MM-DD format, for incremental sync)
+          -- Which guides contributed this launch, e.g.
+          -- "pge:4632;siteguide_au:106-28". Rows can now come from more than
+          -- one guide, so a site's origin is no longer implicit.
+          source TEXT,
+
+          -- Why a guide says this launch is shut, verbatim. Carried rather
+          -- than the site being dropped: dropping it left the other guides'
+          -- entries for the same place on the map with nothing to say it was
+          -- closed, which is worse than either source alone.
+          closed TEXT,
+
+          -- Retained only so existing installs upgrade without a rebuild;
+          -- nothing reads it since the incremental sync was retired.
           last_edit TEXT
         )
       ''');
+
+      // Existing installs created this table before `source` existed.
+      await _addColumnIfMissing(db, _pgeSitesTable, 'source', 'TEXT');
+      await _addColumnIfMissing(db, _pgeSitesTable, 'closed', 'TEXT');
+
+      // Which generation of the catalogue this database holds. 1 is the
+      // PGE-only export, whose ids were PGE site ids; 2 is the federated
+      // catalogue, whose ids are its own. The distinction matters because
+      // sites.catalog_site_id points into whichever is current, and the two id
+      // spaces overlap - so a remap that ran twice would silently relink
+      // flown sites to unrelated launches.
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS $_catalogStateTable (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          generation INTEGER NOT NULL
+        )
+      ''');
+      await db.execute(
+        'INSERT OR IGNORE INTO $_catalogStateTable (id, generation) VALUES (1, 1)',
+      );
 
       // Create spatial indexes
       await db.execute('''
@@ -238,13 +369,17 @@ class PgeSitesDatabaseService {
   }
 
   /// Import sites data from downloaded CSV
-  Future<bool> importSitesData() async {
+  ///
+  /// [rows] exists so tests can drive this exact transaction - the delete,
+  /// the favourite carry-over and the one-time relink - rather than a
+  /// reimplementation of it. Production always parses the bundled catalogue.
+  Future<bool> importSitesData({@visibleForTesting List<Map<String, dynamic>>? rows}) async {
     PerformanceMonitor.startOperation('PgeSitesImport');
     final stopwatch = Stopwatch()..start();
 
     try {
       // Parse downloaded data
-      final sitesData = await PgeSitesDownloadService.instance.parseDownloadedData();
+      final sitesData = rows ?? await PgeSitesDownloadService.instance.parseDownloadedData();
 
       if (sitesData.isEmpty) {
         LoggingService.warning('[PGE_SITES_DB] No sites data to import');
@@ -257,6 +392,17 @@ class PgeSitesDatabaseService {
 
       // Clear existing data and import in transaction
       await db.transaction((txn) async {
+        // is_favorite is the user's own data living in a table we replace
+        // wholesale, so it has to survive the delete. Before this it did not:
+        // every refresh silently cleared every favourite.
+        final favouriteIds = (await txn.query(
+          _pgeSitesTable,
+          columns: ['id'],
+          where: 'is_favorite = 1',
+        ))
+            .map((row) => row['id'] as int)
+            .toSet();
+
         // Clear existing sites
         await txn.delete(_pgeSitesTable);
         LoggingService.info('[PGE_SITES_DB] Cleared existing sites data');
@@ -281,6 +427,8 @@ class PgeSitesDatabaseService {
             'wind_sw': siteData['wind_sw'] ?? 0,
             'wind_w': siteData['wind_w'] ?? 0,
             'wind_nw': siteData['wind_nw'] ?? 0,
+            'source': siteData['source'],
+            'closed': siteData['closed'],
           };
 
           batch.insert(_pgeSitesTable, dbData);
@@ -288,6 +436,8 @@ class PgeSitesDatabaseService {
 
         // Execute batch insert
         await batch.commit(noResult: true);
+
+        await _relinkToFederatedCatalog(txn, sitesData, favouriteIds);
       });
 
       stopwatch.stop();
@@ -597,6 +747,8 @@ class PgeSitesDatabaseService {
       siteType: 'launch', // PGE sites are primarily launch sites
       rating: null,
       country: row['country_name'] as String? ?? row['country'] as String?,  // Use full name from JOIN or fallback to code
+      source: row['source'] as String?,
+      closed: row['closed'] as String?,
       region: null,
       popularity: null,
     );
@@ -657,6 +809,51 @@ class PgeSitesDatabaseService {
   }
 
   /// Get all favorite PGE sites
+  /// The catalogue entry a flown site is linked to.
+  ///
+  /// A flown site carries only what its IGC gave it - a name and the takeoff
+  /// coordinates - so on its own it knows nothing about which guides describe
+  /// the launch, and its position can be a hundred metres from the guide's
+  /// pin. Both matter to the details dialog, so it resolves the catalogue row
+  /// rather than working from the flown record.
+  Future<ParaglidingSite?> getSiteById(int id) async {
+    final db = await DatabaseHelper.instance.database;
+    final rows = await db.rawQuery('''
+      SELECT s.*, cc.country_name
+      FROM $_pgeSitesTable s
+      LEFT JOIN $_countryCodesTable cc ON UPPER(s.country) = cc.code
+      WHERE s.id = ?
+      LIMIT 1
+    ''', [id]);
+    if (rows.isEmpty) return null;
+    return _mapRowToParaglidingSite(rows.first);
+  }
+
+  /// A guide's own id for a catalogue entry, e.g. `pgeIdFor(9247) == 4632`.
+  ///
+  /// `sites.catalog_site_id` holds a *catalogue* id, not a guide's. Handing one to
+  /// ParaglidingEarth silently addresses a different site - canonical 9247 is
+  /// Mt Borah here and "Spitzbuhel - Siusi" there - so anything leaving the
+  /// app for a guide has to be translated back through `source`.
+  Future<String?> sourceIdFor(int catalogId, String provider) async {
+    final db = await DatabaseHelper.instance.database;
+    final rows = await db.query(
+      _pgeSitesTable,
+      columns: ['source'],
+      where: 'id = ?',
+      whereArgs: [catalogId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+
+    for (final token in (rows.first['source'] as String? ?? '').split(';')) {
+      if (token.startsWith('$provider:')) {
+        return token.substring(provider.length + 1);
+      }
+    }
+    return null;
+  }
+
   Future<List<ParaglidingSite>> getFavoriteSites() async {
     try {
       final db = await DatabaseHelper.instance.database;

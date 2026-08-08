@@ -4,7 +4,6 @@ import '../data/datasources/database_helper.dart';
 import 'logging_service.dart';
 import 'pge_sites_database_service.dart';
 import 'pge_sites_download_service.dart';
-import 'pge_incremental_sync_service.dart';
 import '../utils/preferences_helper.dart';
 
 /// Service responsible for initializing app data on first launch
@@ -99,7 +98,6 @@ class AppInitializationService {
       await _checkAndDownloadPgeSites();
 
       // Check if PGE sites need incremental sync (daily auto-sync)
-      await _checkAndSyncPgeSites();
 
       _initializedFor = db;
       LoggingService.info('AppInitializationService: Background initialization complete');
@@ -118,12 +116,21 @@ class AppInitializationService {
 
       // Check if data exists
       final hasData = await PgeSitesDatabaseService.instance.isDataAvailable();
+      // Having *a* catalogue is not the same as having the current one. This
+      // only checked for emptiness, so an upgrade that shipped a new
+      // catalogue never imported it: existing users kept whatever they first
+      // installed, and would never have seen the sites this release adds.
+      final catalogChanged =
+          hasData && await PgeSitesDownloadService.instance.bundledCatalogDiffersFromLocal();
 
-      if (!hasData) {
-        LoggingService.info('AppInitializationService: Empty PGE database detected, auto-importing bundled data');
+      if (!hasData || catalogChanged) {
+        LoggingService.info(
+          catalogChanged
+              ? 'AppInitializationService: Bundled catalogue changed, re-importing'
+              : 'AppInitializationService: Empty PGE database detected, auto-importing bundled data',
+        );
 
-        // On first launch or if database is empty, automatically import bundled CSV data
-        // Wait for import to complete so database is ready before sync runs
+        // Wait for import to complete so the database is ready before use
         await _downloadAndImportPgeSites();
       } else {
         LoggingService.info('AppInitializationService: PGE sites already available');
@@ -165,60 +172,7 @@ class AppInitializationService {
   }
 
   /// Check if PGE sites need incremental sync and perform it in background
-  /// Syncs on every app load to ensure data is up to date
-  Future<void> _checkAndSyncPgeSites() async {
-    try {
-      // Check if data exists first
-      final hasData = await PgeSitesDatabaseService.instance.isDataAvailable();
 
-      if (!hasData) {
-        LoggingService.info('AppInitializationService: No PGE sites data, skipping sync');
-        return;
-      }
-
-      // Always sync on app load to ensure data is up to date
-      LoggingService.info('AppInitializationService: Performing PGE database sync on app load');
-
-      // Perform sync in background without blocking
-      _syncPgeSitesAsync();
-    } catch (e) {
-      LoggingService.error('AppInitializationService: Error checking sync status', e);
-      // Non-fatal - sync can be triggered manually
-    }
-  }
-
-  /// Sync PGE sites asynchronously in background
-  Future<void> _syncPgeSitesAsync() async {
-    try {
-      LoggingService.info('AppInitializationService: Starting background PGE sites sync');
-
-      final result = await PgeIncrementalSyncService.instance.syncModifiedSites();
-
-      if (result.success) {
-        // Save last sync time
-        final now = DateTime.now().toIso8601String();
-        await PreferencesHelper.setString('pge_last_sync_time', now);
-
-        LoggingService.structured('PGE_AUTO_SYNC_COMPLETED', {
-          'sites_added': result.sitesAdded,
-          'sites_modified': result.sitesModified,
-          'total_processed': result.totalProcessed,
-          'duration_ms': result.duration.inMilliseconds,
-        });
-
-        if (result.totalProcessed > 0) {
-          LoggingService.info('AppInitializationService: Background sync completed - ${result.totalProcessed} sites updated');
-        } else {
-          LoggingService.info('AppInitializationService: Background sync completed - no updates');
-        }
-      } else {
-        LoggingService.warning('AppInitializationService: Background sync failed: ${result.errorMessage}');
-      }
-    } catch (e) {
-      LoggingService.error('AppInitializationService: Error syncing PGE sites in background', e);
-      // Non-fatal - user can manually sync later
-    }
-  }
 
   // isInitialized / isInitializing getters removed: nothing read them, and both
   // reported on a bool that could not distinguish "imported" from "imported into

@@ -17,7 +17,7 @@ class SiteUtils {
   static bool isDuplicateApiSite(ParaglidingSite apiSite, List<Site> localSites) {
     // First check if any local site has this API site linked via foreign key
     final linkedSite = localSites.where((localSite) =>
-      localSite.pgeSiteId != null && localSite.pgeSiteId == apiSite.id).firstOrNull;
+      localSite.catalogSiteId != null && localSite.catalogSiteId == apiSite.id).firstOrNull;
 
     if (linkedSite != null) {
       return true; // Found exact FK match
@@ -25,7 +25,7 @@ class SiteUtils {
 
     // Fallback to coordinate-based matching for unlinked sites
     return localSites.any((localSite) =>
-      localSite.pgeSiteId == null && // Only check unlinked sites
+      localSite.catalogSiteId == null && // Only check unlinked sites
       (localSite.latitude - apiSite.latitude).abs() < _coordinateTolerance &&
       (localSite.longitude - apiSite.longitude).abs() < _coordinateTolerance
     );
@@ -48,19 +48,19 @@ class SiteUtils {
 
   /// Find a local site that is linked to the given PGE site ID
   /// More efficient than coordinate-based matching
-  static Site? findLinkedLocalSite(int pgeSiteId, List<Site> localSites) {
-    return localSites.where((site) => site.pgeSiteId == pgeSiteId).firstOrNull;
+  static Site? findLinkedLocalSite(int catalogSiteId, List<Site> localSites) {
+    return localSites.where((site) => site.catalogSiteId == catalogSiteId).firstOrNull;
   }
 
   /// Check if a site is linked to PGE data
   static bool isSiteLinkedToPge(Site site) {
-    return site.pgeSiteId != null;
+    return site.catalogSiteId != null;
   }
 
   /// Get sites grouped by their linking status for UI purposes
   static Map<String, List<Site>> groupSitesByLinkingStatus(List<Site> sites) {
-    final linked = sites.where((site) => site.pgeSiteId != null).toList();
-    final unlinked = sites.where((site) => site.pgeSiteId == null).toList();
+    final linked = sites.where((site) => site.catalogSiteId != null).toList();
+    final unlinked = sites.where((site) => site.catalogSiteId == null).toList();
 
     return {
       'linked': linked,

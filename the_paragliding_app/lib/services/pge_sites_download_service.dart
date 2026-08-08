@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:csv/csv.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
@@ -117,6 +118,29 @@ class PgeSitesDownloadService {
     return path.join(sitesDir.path, 'world_sites_extracted.csv.gz');
   }
 
+  /// Whether the catalogue shipped in this build differs from the copy on disk.
+  ///
+  /// A release ships a new catalogue, but the import only ran when the table
+  /// was empty - so an upgrading user kept the previous one indefinitely and
+  /// never saw sites added since they installed. Size is a sufficient signal:
+  /// any real change to 11k+ rows moves it, and it costs no parsing.
+  Future<bool> bundledCatalogDiffersFromLocal() async {
+    try {
+      final localFile = File(await _getLocalFilePath());
+      if (!await localFile.exists()) return true;
+
+      final ByteData data = await rootBundle.load(PgeSitesConfig.assetPath);
+      final differs = (await localFile.stat()).size != data.lengthInBytes;
+      if (differs) {
+        LoggingService.info('[PGE_SITES] Bundled catalogue differs from local copy');
+      }
+      return differs;
+    } catch (error) {
+      LoggingService.error('[PGE_SITES] Could not compare bundled catalogue', error);
+      return false;
+    }
+  }
+
   /// Copy bundled CSV file to local storage
   Future<bool> downloadSitesData({bool forceRedownload = false}) async {
     PerformanceMonitor.startOperation('PgeSitesDownload');
@@ -125,19 +149,38 @@ class PgeSitesDownloadService {
       final localFilePath = await _getLocalFilePath();
       final localFile = File(localFilePath);
 
+      // Load bundled CSV file from assets
+      final ByteData data = await rootBundle.load(PgeSitesConfig.assetPath);
+      final List<int> bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+
+      final totalBytes = bytes.length;
+
       // Check if we need to download
       if (!forceRedownload && await localFile.exists()) {
         final stats = await localFile.stat();
         final age = DateTime.now().difference(stats.modified);
 
-        if (age < PgeSitesConfig.maxAge) {
-          LoggingService.info('[PGE_SITES] Local file is recent, skipping download');
+        // Age alone is not enough: a release ships a new catalogue, and the
+        // copy on disk can be days old and still stale. Without the size
+        // check an upgrading user kept the previous catalogue - and its site
+        // ids - for up to maxAge, so newly added launches simply did not
+        // appear for a month after installing the release that added them.
+        final sameAsBundled = stats.size == totalBytes;
+
+        if (age < PgeSitesConfig.maxAge && sameAsBundled) {
+          LoggingService.info('[PGE_SITES] Local file matches the bundled catalogue, skipping copy');
           _updateProgress(const PgeSitesDownloadProgress(
             totalBytes: 0,
             downloadedBytes: 0,
             status: PgeSitesDownloadStatus.completed,
           ));
           return true;
+        }
+
+        if (!sameAsBundled) {
+          LoggingService.info(
+            '[PGE_SITES] Bundled catalogue changed (${stats.size} -> $totalBytes bytes), refreshing',
+          );
         }
       }
 
@@ -151,12 +194,6 @@ class PgeSitesDownloadService {
       ));
 
       LoggingService.info('[PGE_SITES] Copying bundled CSV file to local storage');
-
-      // Load bundled CSV file from assets
-      final ByteData data = await rootBundle.load(PgeSitesConfig.assetPath);
-      final List<int> bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-
-      final totalBytes = bytes.length;
 
       LoggingService.structured('PGE_SITES_DOWNLOAD_STARTED', {
         'total_bytes': totalBytes,
@@ -241,41 +278,55 @@ class PgeSitesDownloadService {
       final decompressedBytes = gzip.decode(compressedBytes);
       final csvContent = utf8.decode(decompressedBytes);
 
-      // Parse CSV manually (format: id,name,lng,lat,altitude,country,N,NE,E,SE,S,SW,W,NW,last_edit)
-      final lines = csvContent.trim().split('\n');
+      // Parsed by *column name*, not position.
+      //
+      // This was a hand-rolled split('\n') plus a field splitter, reading
+      // fixed indices. Two things went wrong with that. Guide prose contains
+      // hard line breaks, and a newline inside a quoted field silently tore a
+      // record in two - 43 of 11,703 rows. And every column was addressed by
+      // number, so longitude sitting before latitude was a permanent trap: a
+      // swap parses cleanly and puts every site in the wrong hemisphere.
+      //
+      // Reading by header removes both. Column order no longer matters, and a
+      // new column can be added anywhere without touching this.
+      final rows = csv.decodeWithHeaders(csvContent);
       final sites = <Map<String, dynamic>>[];
 
-      for (final line in lines) {
-        if (line.trim().isEmpty) continue;
-        // Skip header row if present
-        if (line.startsWith('id,')) continue;
-
+      for (final row in rows) {
         try {
-          // Parse CSV line (handle quoted fields)
-          final fields = _parseCsvLine(line);
-
-          if (fields.length >= 15) {
-            sites.add({
-              'id': int.tryParse(fields[0]) ?? 0,
-              'name': fields[1].replaceAll('"', ''),
-              'longitude': double.tryParse(fields[2]) ?? 0.0,
-              'latitude': double.tryParse(fields[3]) ?? 0.0,
-              'altitude': int.tryParse(fields[4]),  // altitude as INTEGER
-              'country': fields[5].replaceAll('"', ''),  // country code
-              'wind_n': int.tryParse(fields[6]) ?? 0,
-              'wind_ne': int.tryParse(fields[7]) ?? 0,
-              'wind_e': int.tryParse(fields[8]) ?? 0,
-              'wind_se': int.tryParse(fields[9]) ?? 0,
-              'wind_s': int.tryParse(fields[10]) ?? 0,
-              'wind_sw': int.tryParse(fields[11]) ?? 0,
-              'wind_w': int.tryParse(fields[12]) ?? 0,
-              'wind_nw': int.tryParse(fields[13]) ?? 0,
-              'last_edit': fields[14].replaceAll('"', ''),  // last_edit date (YYYY-MM-DD)
-            });
+          String field(String name) => (row[name] ?? '').toString();
+          String? optional(String name) {
+            final value = field(name);
+            return value.isEmpty ? null : value;
           }
+
+          final id = int.tryParse(field('id'));
+          if (id == null) continue; // not a data row
+
+          sites.add({
+            'id': id,
+            'name': field('name'),
+            'longitude': double.tryParse(field('longitude')) ?? 0.0,
+            'latitude': double.tryParse(field('latitude')) ?? 0.0,
+            'altitude': int.tryParse(field('altitude')),
+            'country': field('country'),
+            'wind_n': int.tryParse(field('wind_n')) ?? 0,
+            'wind_ne': int.tryParse(field('wind_ne')) ?? 0,
+            'wind_e': int.tryParse(field('wind_e')) ?? 0,
+            'wind_se': int.tryParse(field('wind_se')) ?? 0,
+            'wind_s': int.tryParse(field('wind_s')) ?? 0,
+            'wind_sw': int.tryParse(field('wind_sw')) ?? 0,
+            'wind_w': int.tryParse(field('wind_w')) ?? 0,
+            'wind_nw': int.tryParse(field('wind_nw')) ?? 0,
+            // Which guides contributed this launch, e.g.
+            // "pge:4632;siteguide_au:106-28".
+            'source': field('source'),
+            // Why a guide says the launch is shut, verbatim. Absent from an
+            // older catalogue, which reads as null rather than failing.
+            'closed': optional('closed'),
+          });
         } catch (e) {
-          LoggingService.warning('[PGE_SITES] Failed to parse CSV line: $line');
-          // Continue with other lines
+          LoggingService.warning('[PGE_SITES] Failed to parse CSV row: $row');
         }
       }
 
@@ -285,6 +336,7 @@ class PgeSitesDownloadService {
         'sites_count': sites.length,
         'compressed_size': compressedBytes.length,
         'decompressed_size': decompressedBytes.length,
+        'closed_sites': sites.where((s) => s['closed'] != null).length,
       });
 
       return sites;
@@ -293,31 +345,6 @@ class PgeSitesDownloadService {
       LoggingService.error('[PGE_SITES] Failed to parse CSV data', error, stackTrace);
       rethrow;
     }
-  }
-
-  /// Parse a single CSV line handling quoted fields
-  List<String> _parseCsvLine(String line) {
-    final fields = <String>[];
-    final buffer = StringBuffer();
-    bool inQuotes = false;
-
-    for (int i = 0; i < line.length; i++) {
-      final char = line[i];
-
-      if (char == '"') {
-        inQuotes = !inQuotes;
-      } else if (char == ',' && !inQuotes) {
-        fields.add(buffer.toString());
-        buffer.clear();
-      } else {
-        buffer.write(char);
-      }
-    }
-
-    // Add final field
-    fields.add(buffer.toString());
-
-    return fields;
   }
 
   /// Get download status and metadata

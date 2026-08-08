@@ -17,7 +17,12 @@ class ParaglidingSite {
   final double? popularity; // Calculated popularity score
   final int flightCount; // Number of flights from local database
   final bool isFromLocalDb; // True if site exists in local database
-  final int? pgeSiteId; // Foreign key to PGE sites table (for local sites linked to PGE)
+  final int? catalogSiteId; // Foreign key to PGE sites table (for local sites linked to PGE)
+  /// Which guides contributed this launch, e.g. "pge:4632;siteguide_au:106-28".
+  /// Drives the per-source tabs in the site details dialog.
+  final String? source;
+  /// Why a guide says this launch is shut, verbatim. Null when open.
+  final String? closed;
 
   const ParaglidingSite({
     this.id,
@@ -34,8 +39,23 @@ class ParaglidingSite {
     this.popularity,
     this.flightCount = 0,
     this.isFromLocalDb = false,
-    this.pgeSiteId,
+    this.catalogSiteId,
+    this.source,
+    this.closed,
   });
+
+  /// The guides behind this launch, in the order they appear, as
+  /// (provider, id) pairs. Empty when the catalogue predates source tracking.
+  List<({String provider, String id})> get sources {
+    final raw = source;
+    if (raw == null || raw.isEmpty) return const [];
+    return raw
+        .split(';')
+        .map((token) => token.split(':'))
+        .where((parts) => parts.length >= 2)
+        .map((parts) => (provider: parts[0], id: parts.sublist(1).join(':')))
+        .toList();
+  }
 
   // Computed properties
   bool get hasFlights => flightCount > 0;
@@ -206,7 +226,9 @@ class ParaglidingSite {
     double? popularity,
     int? flightCount,
     bool? isFromLocalDb,
-    int? pgeSiteId,
+    int? catalogSiteId,
+    String? source,
+    String? closed,
   }) {
     return ParaglidingSite(
       id: id ?? this.id,
@@ -223,7 +245,9 @@ class ParaglidingSite {
       popularity: popularity ?? this.popularity,
       flightCount: flightCount ?? this.flightCount,
       isFromLocalDb: isFromLocalDb ?? this.isFromLocalDb,
-      pgeSiteId: pgeSiteId ?? this.pgeSiteId,
+      catalogSiteId: catalogSiteId ?? this.catalogSiteId,
+      source: source ?? this.source,
+      closed: closed ?? this.closed,
     );
   }
 }

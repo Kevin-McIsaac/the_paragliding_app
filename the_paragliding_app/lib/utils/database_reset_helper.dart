@@ -90,7 +90,7 @@ class DatabaseResetHelper {
         // consults the flight-log cache first, and that cache holds every
         // Unknown site that has a flight attached - so without this a row
         // matches itself (a no-op that still reports success and writes a
-        // flight-log id into pge_site_id), or, when the cache is stale, matches
+        // flight-log id into catalog_site_id), or, when the cache is stale, matches
         // a *different* Unknown site and merges two real launches together.
         if (_isPlaceholderSiteName(match.name)) {
           LoggingService.debug(
@@ -106,9 +106,9 @@ class DatabaseResetHelper {
         for (final candidate in knownSites) {
           if (candidate.id == siteId) continue;
           final sameName = candidate.name == match.name;
-          final samePgeId = candidate.pgeSiteId != null &&
+          final samePgeId = candidate.catalogSiteId != null &&
               match.id != null &&
-              candidate.pgeSiteId == match.id;
+              candidate.catalogSiteId == match.id;
           if (sameName || samePgeId) {
             existing = candidate;
             break;
@@ -131,7 +131,7 @@ class DatabaseResetHelper {
             // The previous raw update wrote the int straight into a REAL column.
             altitude: match.altitude?.toDouble(),
             country: match.country,
-            pgeSiteId: match.id,
+            catalogSiteId: match.id,
           );
           await databaseService.updateSite(renamed);
           final index = knownSites.indexWhere((s) => s.id == siteId);

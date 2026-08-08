@@ -8,7 +8,7 @@ class Site {
   final double? altitude;
   final String? country;
   final bool customName;
-  final int? pgeSiteId;  // Foreign key to pge_sites table
+  final int? catalogSiteId;  // Foreign key to pge_sites table
   final DateTime? createdAt;
   final int? flightCount;
 
@@ -20,7 +20,7 @@ class Site {
     this.altitude,
     this.country,
     this.customName = false,
-    this.pgeSiteId,
+    this.catalogSiteId,
     this.createdAt,
     this.flightCount,
   });
@@ -34,7 +34,7 @@ class Site {
       'altitude': altitude,
       'country': country,
       'custom_name': customName ? 1 : 0,
-      'pge_site_id': pgeSiteId,
+      'catalog_site_id': catalogSiteId,
       'created_at': createdAt?.toIso8601String(),
     };
   }
@@ -48,7 +48,7 @@ class Site {
       altitude: map['altitude']?.toDouble(),
       country: map['country'],
       customName: map['custom_name'] == 1,
-      pgeSiteId: map['pge_site_id'],
+      catalogSiteId: map['catalog_site_id'],
       createdAt: map['created_at'] != null ? DateTime.parse(map['created_at']) : null,
       flightCount: map['flight_count'],
     );
@@ -62,7 +62,7 @@ class Site {
     double? altitude,
     String? country,
     bool? customName,
-    int? pgeSiteId,
+    int? catalogSiteId,
     DateTime? createdAt,
     int? flightCount,
   }) {
@@ -74,7 +74,7 @@ class Site {
       altitude: altitude ?? this.altitude,
       country: country ?? this.country,
       customName: customName ?? this.customName,
-      pgeSiteId: pgeSiteId ?? this.pgeSiteId,
+      catalogSiteId: catalogSiteId ?? this.catalogSiteId,
       createdAt: createdAt ?? this.createdAt,
       flightCount: flightCount ?? this.flightCount,
     );

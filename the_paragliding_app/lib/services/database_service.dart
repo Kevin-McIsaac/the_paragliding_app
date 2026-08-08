@@ -712,9 +712,11 @@ class DatabaseService {
         pge.wind_n, pge.wind_ne, pge.wind_e, pge.wind_se,
         pge.wind_s, pge.wind_sw, pge.wind_w, pge.wind_nw,
         pge.altitude as pge_altitude,
-        pge.country as pge_country
+        pge.country as pge_country,
+        pge.source as pge_source,
+        pge.closed as pge_closed
       FROM sites s
-      LEFT JOIN pge_sites pge ON s.pge_site_id = pge.id
+      LEFT JOIN pge_sites pge ON s.catalog_site_id = pge.id
       LEFT JOIN flights f ON f.launch_site_id = s.id
       WHERE s.latitude >= ? AND s.latitude <= ?
       AND $longitudeCondition
@@ -757,7 +759,13 @@ class DatabaseService {
         region: null,  // Not available in local PGE DB
         flightCount: row['flight_count'] as int? ?? 0,
         isFromLocalDb: true,
-        pgeSiteId: row['pge_site_id'] as int?,  // Foreign key to PGE sites
+        catalogSiteId: row['catalog_site_id'] as int?,  // Foreign key to PGE sites
+        // Which guides describe this launch. Without it a flown site opens
+        // with a single unnamed tab, even where several guides cover it -
+        // this query lists its columns explicitly, so a new one has to be
+        // added here as well as to the catalogue.
+        source: row['pge_source'] as String?,
+        closed: row['pge_closed'] as String?,
       ));
     }
 
@@ -908,7 +916,7 @@ class DatabaseService {
     String? name,
     double? altitude,
     String? country,
-    int? pgeSiteId,
+    int? catalogSiteId,
   }) async {
     // Check if site exists at these coordinates
     Site? existingSite = await findSiteByCoordinates(latitude, longitude);
@@ -930,8 +938,8 @@ class DatabaseService {
     }
     
     // Create new site
-    // Use provided pgeSiteId or try to find a matching PGE site
-    int? finalPgeSiteId = pgeSiteId;
+    // Use provided catalogSiteId or try to find a matching PGE site
+    int? finalPgeSiteId = catalogSiteId;
     if (finalPgeSiteId == null) {
       try {
         final pgeSite = await PgeSitesDatabaseService.instance.findNearestSite(
@@ -952,7 +960,7 @@ class DatabaseService {
       name: finalName,
       altitude: altitude,
       country: country,
-      pgeSiteId: finalPgeSiteId,
+      catalogSiteId: finalPgeSiteId,
     );
 
     final id = await insertSite(newSite);
@@ -1009,19 +1017,19 @@ class DatabaseService {
 
   /// Link a local site with a PGE site using foreign key relationship
   /// This replaces the need for runtime coordinate-based matching
-  Future<bool> linkSiteWithPgeSite(int localSiteId, int pgeSiteId) async {
+  Future<bool> linkSiteWithPgeSite(int localSiteId, int catalogSiteId) async {
     try {
       Database db = await _databaseHelper.database;
 
       final result = await db.update(
         'sites',
-        {'pge_site_id': pgeSiteId},
+        {'catalog_site_id': catalogSiteId},
         where: 'id = ?',
         whereArgs: [localSiteId],
       );
 
       if (result > 0) {
-        LoggingService.info('DatabaseService: Linked site $localSiteId with PGE site $pgeSiteId');
+        LoggingService.info('DatabaseService: Linked site $localSiteId with PGE site $catalogSiteId');
         return true;
       } else {
         LoggingService.warning('DatabaseService: Failed to link site $localSiteId - site not found');
@@ -1043,9 +1051,11 @@ class DatabaseService {
              p.name as pge_name,
              p.wind_n, p.wind_ne, p.wind_e, p.wind_se,
              p.wind_s, p.wind_sw, p.wind_w, p.wind_nw,
+             p.source as pge_source,
+             p.closed as pge_closed,
              COUNT(f.id) as flight_count
       FROM sites s
-      LEFT JOIN pge_sites p ON s.pge_site_id = p.id
+      LEFT JOIN pge_sites p ON s.catalog_site_id = p.id
       LEFT JOIN flights f ON f.launch_site_id = s.id
       GROUP BY s.id
       ORDER BY s.name ASC
@@ -1403,7 +1413,7 @@ class DatabaseService {
   }
 
   /// Get all favorite local sites as ParaglidingSite objects
-  /// Only returns custom local sites (pge_site_id IS NULL)
+  /// Only returns custom local sites (catalog_site_id IS NULL)
   /// Sites linked to PGE sites should use PGE favorites table instead
   Future<List<ParaglidingSite>> getFavoriteSites() async {
     try {
@@ -1417,9 +1427,9 @@ class DatabaseService {
           pge.altitude as pge_altitude,
           pge.country as pge_country
         FROM sites s
-        LEFT JOIN pge_sites pge ON s.pge_site_id = pge.id
+        LEFT JOIN pge_sites pge ON s.catalog_site_id = pge.id
         LEFT JOIN flights f ON f.launch_site_id = s.id
-        WHERE s.is_favorite = 1 AND s.pge_site_id IS NULL
+        WHERE s.is_favorite = 1 AND s.catalog_site_id IS NULL
         GROUP BY s.id
       ''');
 
@@ -1458,7 +1468,7 @@ class DatabaseService {
           region: null,
           flightCount: row['flight_count'] as int? ?? 0,
           isFromLocalDb: true,
-          pgeSiteId: row['pge_site_id'] as int?,  // Foreign key to PGE sites
+          catalogSiteId: row['catalog_site_id'] as int?,  // Foreign key to PGE sites
         ));
       }
 
