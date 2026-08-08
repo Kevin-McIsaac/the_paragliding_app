@@ -23,7 +23,7 @@ import '../../utils/flyability_helper.dart';
 import '../../utils/ui_utils.dart';
 import '../widgets/nearby_sites_map.dart';
 import '../widgets/map_filter_dialog.dart';
-import '../widgets/site_details_dialog.dart';
+import 'site_details_screen.dart';
 import '../widgets/common/app_error_state.dart';
 import '../widgets/common/map_loading_overlay.dart';
 import '../widgets/common/app_menu_button.dart';
@@ -1204,7 +1204,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       'rating': site.rating,
       'has_flights': hasFlights,
     });
-    _showSiteDetailsDialog(paraglidingSite: site);
+    _showSiteDetails(paraglidingSite: site);
   }
 
 
@@ -1344,19 +1344,21 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
 
 
 
-  void _showSiteDetailsDialog({required ParaglidingSite paraglidingSite}) {
+  /// Open a site's details as a page.
+  ///
+  /// This was a modal bottom sheet, which is the map-marker idiom - but it
+  /// was modal, so the map behind it was dimmed by a scrim and frozen. It was
+  /// paying for map context it never delivered, while capping the guide text
+  /// at roughly two thirds of the screen. A route keeps the map alive
+  /// underneath with its camera intact, and system back returns to it.
+  void _showSiteDetails({required ParaglidingSite paraglidingSite}) {
     // Get wind data for this site
     final windKey = SiteUtils.createSiteKey(paraglidingSite.latitude, paraglidingSite.longitude);
     final windData = _siteWindData[windKey];
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      // Without this the Android gesture inset - ~24dp of it - sits on top of
-      // the sheet's last rows, and at 0.95 the status bar covers its title.
-      useSafeArea: true,
-      builder: (context) => SiteDetailsDialog(
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => SiteDetailsScreen(
         site: null,
         paraglidingSite: paraglidingSite,
         userPosition: _userPosition,
@@ -1364,7 +1366,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
         maxWindSpeed: _maxWindSpeed,
         cautionWindSpeed: _cautionWindSpeed,
         onWindDataFetched: (fetchedWindData) {
-          // Update parent's cache when dialog fetches wind data
+          // Update parent's cache when the page fetches wind data
           setState(() {
             _siteWindData[windKey] = fetchedWindData;
             _updateFlyabilityStatus(forceRecalculation: true);
@@ -1374,6 +1376,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
           // Reload favorites list when favorite is toggled
           _loadFavorites();
         },
+        ),
       ),
     );
   }
