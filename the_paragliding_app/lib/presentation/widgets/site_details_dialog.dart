@@ -60,13 +60,23 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
   // Favorites state
   bool _isFavorite = false;
 
+  /// The catalogue entry behind a flown site, once resolved.
+  ///
+  /// Null until loaded, and for dialogs opened straight from the map where
+  /// the catalogue entry was passed in already.
+  ParaglidingSite? _catalogSite;
+
+  /// Whichever record actually describes this launch: the catalogue entry
+  /// passed in, or the one a flown site is linked to.
+  ParaglidingSite? get _effectiveSite => widget.paraglidingSite ?? _catalogSite;
+
   /// The guides behind this launch, in catalogue order.
   ///
   /// Falls back to a single ParaglidingEarth tab when the catalogue predates
   /// source tracking, so an older database still shows what it always did
   /// rather than losing the tab entirely.
   List<({String provider, String id})> get _sourceTabs {
-    final sources = widget.paraglidingSite?.sources ?? const [];
+    final sources = _effectiveSite?.sources ?? const [];
     return sources.isEmpty ? const [(provider: 'pge', id: '')] : sources;
   }
 
@@ -75,7 +85,7 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
   /// Null when no guide in this launch is PGE - an Australian launch Site
   /// Guide carries alone has no PGE detail to fetch.
   int? get _pgeSourceId {
-    for (final source in widget.paraglidingSite?.sources ?? const []) {
+    for (final source in _effectiveSite?.sources ?? const []) {
       if (source.provider == 'pge') return int.tryParse(source.id);
     }
     return null;
@@ -100,6 +110,25 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
   /// launch is one no PGE entry exists for - the Australian ones Site Guide
   /// carries alone. Null is correct there: it means "do not link to PGE",
   /// which is better than linking to whatever holds that number.
+  /// Load the catalogue entry a flown site points at, and rebuild the tabs.
+  ///
+  /// The tab count depends on how many guides describe this launch, which is
+  /// only known once this returns - so the controller is replaced rather than
+  /// created once in initState.
+  Future<void> _loadCatalogSite() async {
+    final catalogId = widget.site?.pgeSiteId;
+    if (widget.paraglidingSite != null || catalogId == null) return;
+
+    final site = await PgeSitesDatabaseService.instance.getSiteById(catalogId);
+    if (site == null || !mounted) return;
+
+    setState(() {
+      _catalogSite = site;
+      _tabController?.dispose();
+      _tabController = TabController(length: 1 + _sourceTabs.length, vsync: this);
+    });
+  }
+
   Future<int?> _resolvePgeId(int? catalogId) async {
     if (catalogId == null) return null;
     final id = await PgeSitesDatabaseService.instance.sourceIdFor(catalogId, 'pge');
@@ -130,7 +159,9 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
     super.initState();
     // Weather, plus one tab per contributing guide.
     _tabController = TabController(length: 1 + _sourceTabs.length, vsync: this);
-    _loadSiteDetails();
+    // Resolve the catalogue entry first: it decides how many tabs there are,
+    // and supplies the guide's own coordinates for the detail lookup.
+    _loadCatalogSite().then((_) => _loadSiteDetails());
     _loadWindData();
     _loadWindForecast();
     _loadFavoriteStatus();
@@ -289,8 +320,22 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
   @override
   void dispose() {
     _tabController?.dispose();
+    for (final controller in _tabScrollControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
+
+  /// A Scrollbar needs a controller attached to the view it decorates.
+  ///
+  /// Sharing the PrimaryScrollController across tabs throws once more than
+  /// one tab exists: only the visible tab has a ScrollPosition, and the
+  /// others assert while their scrollbar fades. Keyed per tab so each gets
+  /// its own, and so a tab keeps its scroll offset when you come back to it.
+  final Map<String, ScrollController> _tabScrollControllers = {};
+
+  ScrollController _scrollControllerFor(String key) =>
+      _tabScrollControllers.putIfAbsent(key, ScrollController.new);
 
   Future<void> _loadSiteDetails() async {
     // Load detailed data from API for both local sites and API sites
@@ -304,13 +349,16 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
     // site - catalogue 9247 is Mt Borah here and "Spitzbuhel - Siusi" on PGE -
     // so it has to be translated back through `source` before it is used to
     // fetch detail or to build a link out.
-    if (widget.paraglidingSite != null) {
-      latitude = widget.paraglidingSite!.latitude;
-      longitude = widget.paraglidingSite!.longitude;
+    final catalogSite = _effectiveSite;
+    if (catalogSite != null) {
+      // The guide's own pin, not the takeoff point an IGC recorded. The
+      // detail lookup searches a ~100m box, and a flown site's coordinates
+      // can sit further from the guide's pin than that - which returned no
+      // detail at all while the link, built from the id, was correct.
+      latitude = catalogSite.latitude;
+      longitude = catalogSite.longitude;
       pgeSiteId = _pgeSourceId;
-      pgeSiteId ??= await _resolvePgeId(
-        widget.paraglidingSite!.pgeSiteId ?? widget.paraglidingSite!.id,
-      );
+      pgeSiteId ??= await _resolvePgeId(catalogSite.pgeSiteId ?? catalogSite.id);
     } else if (widget.site != null) {
       latitude = widget.site!.latitude;
       longitude = widget.site!.longitude;
@@ -935,12 +983,15 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
     if (source.provider == 'pge') return _buildTakeoffTab();
 
     final url = _sourceUrl(source.provider, source.id);
-    final site = widget.paraglidingSite;
+    final site = _effectiveSite;
     final fullName = _sourceFullName(source.provider);
     if (site == null) return const SizedBox.shrink();
 
+    final controller = _scrollControllerFor(source.provider);
     return Scrollbar(
+      controller: controller,
       child: SingleChildScrollView(
+        controller: controller,
         child: Padding(
           padding: const EdgeInsets.all(12.0),
           child: Column(
@@ -1006,8 +1057,11 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
       );
 
   Widget _buildTakeoffTab() {
+    final controller = _scrollControllerFor('pge');
     return Scrollbar(
+      controller: controller,
       child: SingleChildScrollView(
+      controller: controller,
       child: Padding(
         padding: const EdgeInsets.all(8.0),
         child: Column(

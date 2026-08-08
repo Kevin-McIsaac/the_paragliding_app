@@ -486,7 +486,12 @@ class ParaglidingEarthApi {
   Future<Map<String, dynamic>?> getSiteDetails(double latitude, double longitude, {int? siteId}) async {
     
     // Check cache first
-    final cacheKey = '${latitude.toStringAsFixed(4)},${longitude.toStringAsFixed(4)}';
+    // The id belongs in the key. Keyed on position alone, a request for one
+    // site served back a different site's details whenever both were asked
+    // for from the same coordinates - which is normal now, since the position
+    // used is the catalogue's and several launches can share it.
+    final cacheKey =
+        '${latitude.toStringAsFixed(4)},${longitude.toStringAsFixed(4)},${siteId ?? ''}';
     final now = DateTime.now();
     
     if (_siteDetailsCache.containsKey(cacheKey) && 
@@ -508,16 +513,27 @@ class ParaglidingEarthApi {
     }
     
     try {
-      // Use the bounding box API which works reliably for all sites
-      // Create a small bounding box (±0.001 degrees ≈ 100 meters) around the site
-      // Larger epsilon prevents precision issues with coordinate storage
-      final epsilon = 0.001; // ~100 meter box
-      final url = Uri.parse('https://www.paraglidingearth.com/api/getBoundingBoxSites.php').replace(
+      // ParaglidingEarth has no fetch-by-id query - its API offers only
+      // around-a-point, bounding box, by country, and recently-modified - so
+      // a site is found by position and then picked out by id.
+      //
+      // Around-a-point rather than a bounding box: it takes a true radius in
+      // km and orders by distance, where a degree-based box is
+      // latitude-dependent. 0.004 degrees of longitude is ~440m at the
+      // equator but ~220m in northern Europe, which would have quietly
+      // under-searched exactly where sites are densest.
+      //
+      // The radius has to exceed how far the two coordinates can differ.
+      // Sites are federated, so the position held is the national guide's
+      // where one exists, and guides disagree: entries merge at up to 250m,
+      // and PGE's pin for Mt Bakewell sits 190m from the Australian Site
+      // Guide's. At the previous ~100m the takeoff fell outside and the site
+      // had no details at all, while the link beside it worked.
+      final url = Uri.parse('https://www.paraglidingearth.com/api/getAroundLatLngSites.php').replace(
         queryParameters: {
-          'north': (latitude + epsilon).toString(),
-          'south': (latitude - epsilon).toString(),
-          'east': (longitude + epsilon).toString(),
-          'west': (longitude - epsilon).toString(),
+          'lat': latitude.toString(),
+          'lng': longitude.toString(),
+          'distance': '0.5', // km - past the 250m merge distance, with margin
           'style': 'detailled', // Get detailed data
         },
       );
@@ -535,25 +551,39 @@ class ParaglidingEarthApi {
 
         LoggingService.info('ParaglidingEarthApi: Found ${takeoffElements.length} site(s) in bounding box');
 
-        // If we have a site ID, try to find the matching site
+        // Match on the id whenever we have one. The box is wide enough to
+        // span a whole cluster of launches, so which element is "first" means
+        // nothing.
         XmlElement? takeoffElement;
-        if (siteId != null && takeoffElements.length > 1) {
-          // Multiple sites found - look for the one with matching ID
+        if (siteId != null) {
           for (final element in takeoffElements) {
-            final idElement = element.findElements('id').firstOrNull;
+            // The element is <pge_site_id>. This looked for <id>, which does
+            // not exist in ParaglidingEarth's schema, so the match never once
+            // succeeded and every lookup fell through to "use the first
+            // result" - picking by position in a bounding box, silently.
+            final idElement = element.findElements('pge_site_id').firstOrNull;
             if (idElement != null && idElement.innerText.trim() == siteId.toString()) {
               takeoffElement = element;
               LoggingService.info('ParaglidingEarthApi: Matched site by ID: $siteId');
               break;
             }
           }
+
+          if (takeoffElement == null) {
+            // Returning the nearest instead would put another launch's
+            // takeoff notes, rules and hazards under this site's name, with
+            // nothing to say they belong elsewhere. An empty tab is honest.
+            LoggingService.warning(
+                'ParaglidingEarthApi: No site matching id $siteId in ${takeoffElements.length} result(s)');
+            return null;
+          }
         }
 
-        // If no ID match or only one result, use the first one
+        // No id to match on - fall back to the only sensible candidate.
         if (takeoffElement == null && takeoffElements.isNotEmpty) {
           takeoffElement = takeoffElements.first;
           if (takeoffElements.length > 1) {
-            LoggingService.warning('ParaglidingEarthApi: Multiple sites found but using first one (no ID match)');
+            LoggingService.warning('ParaglidingEarthApi: Multiple sites found but using first one (no ID given)');
           }
         }
 

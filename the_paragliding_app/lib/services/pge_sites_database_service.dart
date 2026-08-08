@@ -800,6 +800,26 @@ class PgeSitesDatabaseService {
   }
 
   /// Get all favorite PGE sites
+  /// The catalogue entry a flown site is linked to.
+  ///
+  /// A flown site carries only what its IGC gave it - a name and the takeoff
+  /// coordinates - so on its own it knows nothing about which guides describe
+  /// the launch, and its position can be a hundred metres from the guide's
+  /// pin. Both matter to the details dialog, so it resolves the catalogue row
+  /// rather than working from the flown record.
+  Future<ParaglidingSite?> getSiteById(int id) async {
+    final db = await DatabaseHelper.instance.database;
+    final rows = await db.rawQuery('''
+      SELECT s.*, cc.country_name
+      FROM $_pgeSitesTable s
+      LEFT JOIN $_countryCodesTable cc ON UPPER(s.country) = cc.code
+      WHERE s.id = ?
+      LIMIT 1
+    ''', [id]);
+    if (rows.isEmpty) return null;
+    return _mapRowToParaglidingSite(rows.first);
+  }
+
   /// A guide's own id for a catalogue entry, e.g. `pgeIdFor(9247) == 4632`.
   ///
   /// `sites.pge_site_id` holds a *catalogue* id, not a guide's. Handing one to

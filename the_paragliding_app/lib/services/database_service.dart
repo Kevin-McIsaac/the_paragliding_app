@@ -712,7 +712,8 @@ class DatabaseService {
         pge.wind_n, pge.wind_ne, pge.wind_e, pge.wind_se,
         pge.wind_s, pge.wind_sw, pge.wind_w, pge.wind_nw,
         pge.altitude as pge_altitude,
-        pge.country as pge_country
+        pge.country as pge_country,
+        pge.source as pge_source
       FROM sites s
       LEFT JOIN pge_sites pge ON s.pge_site_id = pge.id
       LEFT JOIN flights f ON f.launch_site_id = s.id
@@ -758,6 +759,11 @@ class DatabaseService {
         flightCount: row['flight_count'] as int? ?? 0,
         isFromLocalDb: true,
         pgeSiteId: row['pge_site_id'] as int?,  // Foreign key to PGE sites
+        // Which guides describe this launch. Without it a flown site opens
+        // with a single unnamed tab, even where several guides cover it -
+        // this query lists its columns explicitly, so a new one has to be
+        // added here as well as to the catalogue.
+        source: row['pge_source'] as String?,
       ));
     }
 
@@ -1043,6 +1049,7 @@ class DatabaseService {
              p.name as pge_name,
              p.wind_n, p.wind_ne, p.wind_e, p.wind_se,
              p.wind_s, p.wind_sw, p.wind_w, p.wind_nw,
+             p.source as pge_source,
              COUNT(f.id) as flight_count
       FROM sites s
       LEFT JOIN pge_sites p ON s.pge_site_id = p.id
