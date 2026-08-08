@@ -67,12 +67,13 @@ class ParaglidingSite {
   /// one launch can move between catalogue releases. Local and catalogue rows
   /// are namespaced because they are different id spaces that overlap.
   ///
-  /// Falls back to coordinates only for a site with no id at all - an API
-  /// result that was never persisted - which is the best available identity
-  /// and matches the behaviour this replaced.
+  /// Falls back to name plus coordinates for a site with no id at all - an
+  /// API result that was never persisted, as ParaglidingEarthApi builds - so
+  /// those compare exactly as they did before identity was introduced.
   String get siteKey {
     if (id == null) {
-      return 'coord:${latitude.toStringAsFixed(6)},${longitude.toStringAsFixed(6)}';
+      return 'coord:$name@${latitude.toStringAsFixed(6)},'
+          '${longitude.toStringAsFixed(6)}';
     }
     return isFromLocalDb ? 'local:$id' : 'catalog:$id';
   }

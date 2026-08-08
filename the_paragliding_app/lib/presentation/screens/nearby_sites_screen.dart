@@ -80,7 +80,11 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
   // Sites state - using ParaglidingSite directly (no more UnifiedSite)
   List<ParaglidingSite> _allSites = [];
   List<ParaglidingSite> _displayedSites = [];
-  Map<String, bool> _siteFlightStatus = {}; // Key: "lat,lng", Value: hasFlights
+  // hasFlights is carried on ParaglidingSite itself (from the loader's flight
+  // count JOIN), so there is no separate map for it. There used to be one,
+  // keyed by coordinate; once flown sites keyed on `local:<id>` and search
+  // results came back as `catalog:<id>` rows, it could never match and every
+  // lookup silently fell through to false.
   Position? _userPosition;
 
   // Consolidated loading state
@@ -254,7 +258,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
   /// Process loaded sites - consolidates site handling logic.
   void _processSitesLoaded(dynamic result, {bool fetchWindData = false}) {
     _allSites = result.sites;
-    _siteFlightStatus = {};
 
     // Clean up stale data. Wind is cached per location - two launches on one
     // point share it - while flyability is per site, since it folds in that
@@ -265,10 +268,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
         .toSet();
     _siteFlyabilityStatus.removeWhere((key, value) => !currentSiteKeys.contains(key));
     _siteWindData.removeWhere((key, value) => !currentWindKeys.contains(key));
-
-    for (final site in result.sites) {
-      _siteFlightStatus[site.siteKey] = site.hasFlights;
-    }
 
     _updateDisplayedSites();
 
@@ -1022,7 +1021,6 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       // Initialize empty structure
       _allSites = [];
       _displayedSites = [];
-      _siteFlightStatus = {};
 
       stopwatch.stop();
 
@@ -1157,9 +1155,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
     }
 
     // Count flown vs new sites for logging
-    final flownSites = filteredSites.where((site) {
-      return _siteFlightStatus[site.siteKey] ?? false;
-    }).length;
+    final flownSites = filteredSites.where((site) => site.hasFlights).length;
     final newSites = filteredSites.length - flownSites;
 
     LoggingService.structured('NEARBY_SITES_FILTERED', {
@@ -1205,7 +1201,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
   }
 
   void _onSiteSelected(ParaglidingSite site) {
-    final hasFlights = _siteFlightStatus[site.siteKey] ?? false;
+    final hasFlights = site.hasFlights;
 
     LoggingService.action('NearbySites', hasFlights ? 'flown_site_selected' : 'new_site_selected', {
       'site_id': site.id,
