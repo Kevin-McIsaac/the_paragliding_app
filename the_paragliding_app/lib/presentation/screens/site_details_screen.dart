@@ -816,6 +816,27 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     ];
   }
 
+  /// An icon and the value it stands for, as one unbreakable unit.
+  ///
+  /// The point is the mainAxisSize.min Row: inside a Wrap these must be a
+  /// single child, or a line break can put the glyph on one line and its
+  /// value on the next - a terrain icon alone, then "150m" underneath.
+  Widget _iconFact(IconData icon, String value, {bool bold = false}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: Colors.grey),
+        const SizedBox(width: 4),
+        Text(
+          value,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontWeight: bold ? FontWeight.w500 : null,
+              ),
+        ),
+      ],
+    );
+  }
+
   /// Wind rose on the left, whatever facts belong beside it on the right.
   ///
   /// Shared so the no-guides layout keeps the rose too - it is the one thing
@@ -926,45 +947,42 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
             // and a Row ellipsised the launchable directions to "SW, W, ..."
             // - the one fact on the line a pilot is actually checking. It
             // flows onto a second line instead.
+            //
+            // Each icon travels inside the same Wrap child as its value.
+            // Loose in the Wrap they are independent items, and a break
+            // between any two strands the terrain glyph at the end of one
+            // line with "150m" starting the next - which a long direction
+            // list or a large system font size is enough to trigger.
             Wrap(
               crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 12,
               runSpacing: 4,
               children: [
                 // No icon before the word: "Launch" is what the glyph meant,
                 // and the tooltip it carried needed a hover a phone does not
                 // have. The icons below stand in for words - altitude, wind,
                 // map - rather than repeating one.
-                if (siteType != null) ...[
+                if (siteType != null)
                   Text(
-                    _formatSiteType(siteType),
+                    '${_formatSiteType(siteType)}:',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  const Text(':', style: TextStyle(color: Colors.grey)),
-                ],
                 // Show altitude (prefer takeoff_altitude from API, fallback to general altitude)
-                if (_detailedData?['takeoff_altitude'] != null || altitude != null) ...[
-                  const SizedBox(width: 12),
-                  const Icon(Icons.terrain, size: 16, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Text(
+                if (_detailedData?['takeoff_altitude'] != null || altitude != null)
+                  _iconFact(
+                    Icons.terrain,
                     '${_detailedData?['takeoff_altitude'] ?? altitude}m',
-                    style: Theme.of(context).textTheme.bodySmall,
                   ),
-                ],
                 // Wind directions (compact)
-                if (windDirections.isNotEmpty) ...[
-                  const SizedBox(width: 12),
-                  const Icon(Icons.air, size: 16, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Text(
+                if (windDirections.isNotEmpty)
+                  _iconFact(
+                    Icons.air,
                     windDirections.join(', '),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
+                    bold: true,
                   ),
-                ],
                 // Map icon - opens maps app (directly after wind directions)
-                const SizedBox(width: 12),
                 InkWell(
                   onTap: () => _launchMap(latitude, longitude),
                   child: const Icon(
@@ -979,27 +997,27 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
             // Landing information row (if available)
             if (_detailedData?['landing_altitude'] != null || _detailedData?['landing_description'] != null || _detailedData?['landing_lat'] != null) ...[
               const SizedBox(height: 6),
-              Row(
+              // Wrap for the same reason as the launch line above, which was
+              // fixed for this and left its sibling as a Row - and a Row
+              // overflows with stripes rather than flowing.
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 12,
+                runSpacing: 4,
                 children: [
                   Text(
-                    'Landing',
+                    'Landing:',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  const Text(':', style: TextStyle(color: Colors.grey)),
                   // Landing altitude
-                  if (_detailedData?['landing_altitude'] != null) ...[
-                    const SizedBox(width: 12),
-                    const Icon(Icons.terrain, size: 16, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Text(
+                  if (_detailedData?['landing_altitude'] != null)
+                    _iconFact(
+                      Icons.terrain,
                       '${_detailedData!['landing_altitude']}m',
-                      style: Theme.of(context).textTheme.bodySmall,
                     ),
-                  ],
                   // Map icon for landing - uses landing coordinates if available
-                  const SizedBox(width: 12),
                   InkWell(
                     onTap: () {
                       final landingLat = double.tryParse(_detailedData?['landing_lat']?.toString() ?? '');
