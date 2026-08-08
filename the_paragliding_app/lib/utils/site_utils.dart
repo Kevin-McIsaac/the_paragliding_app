@@ -11,6 +11,37 @@ class SiteUtils {
     return '${latitude.toStringAsFixed(6)},${longitude.toStringAsFixed(6)}';
   }
   
+  /// Which catalogue entries are already represented by a flown site.
+  ///
+  /// `catalog_site_id` is the real link and survives both a pilot moving a
+  /// site and the catalogue regenerating around it, neither of which leaves
+  /// coordinates byte-identical. A flown site with no link has only its
+  /// coordinates left to match on.
+  ///
+  /// Returns a predicate rather than testing one site, so a map full of
+  /// markers costs one pass over the flown sites instead of one per
+  /// catalogue entry.
+  static bool Function(ParaglidingSite) duplicateOfFlownSite(
+    Iterable<ParaglidingSite> flownSites,
+  ) {
+    final linkedCatalogIds = <int>{};
+    final unlinkedLocations = <String>{};
+
+    for (final site in flownSites) {
+      final catalogId = site.catalogSiteId;
+      if (catalogId != null) {
+        linkedCatalogIds.add(catalogId);
+      } else {
+        unlinkedLocations.add(createSiteKey(site.latitude, site.longitude));
+      }
+    }
+
+    return (catalogSite) =>
+        linkedCatalogIds.contains(catalogSite.id) ||
+        unlinkedLocations
+            .contains(createSiteKey(catalogSite.latitude, catalogSite.longitude));
+  }
+
   /// Check if an API site is already represented by a local site
   /// Uses foreign key relationship when available, falls back to coordinates
   /// Used to avoid showing duplicate markers on maps
@@ -30,7 +61,7 @@ class SiteUtils {
       (localSite.longitude - apiSite.longitude).abs() < _coordinateTolerance
     );
   }
-  
+
   /// Check if two coordinates are considered the same location
   /// Useful for site matching and deduplication
   static bool areCoordinatesEqual(double lat1, double lng1, double lat2, double lng2) {

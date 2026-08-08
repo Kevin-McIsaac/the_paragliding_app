@@ -1,5 +1,6 @@
 import 'package:flutter_map/flutter_map.dart';
 import '../data/models/paragliding_site.dart';
+import '../utils/site_utils.dart';
 import 'database_service.dart';
 import 'pge_sites_database_service.dart';
 import 'paragliding_earth_api.dart';
@@ -58,45 +59,23 @@ class SiteBoundsLoaderV2 {
       final localSitesWithPgeData = results[0] as List<ParaglidingSite>;
       final pgeSites = results[1] as List<ParaglidingSite>;
 
-      // Combine results: local sites (already enriched) + PGE-only sites
-      final enrichedSites = <ParaglidingSite>[];
+      // Combine results: local sites (already enriched) + PGE-only sites.
+      // Catalogue entries are only ever deduped against flown sites, never
+      // against each other, so distinct launches that happen to share
+      // coordinates (separate PG/HG takeoffs on one hill) both survive.
+      final isAlreadyFlown = SiteUtils.duplicateOfFlownSite(localSitesWithPgeData);
 
-      // catalog_site_id is the real link between a flown site and its catalog
-      // entry - it survives coordinate edits and catalog regenerations
-      // (see _relinkToFederatedCatalog), which the old coordinate-string key
-      // did not. A local site with no link falls back to the coordinate key,
-      // since that is the only signal left for it.
-      final linkedCatalogIds = <int>{};
-      final unlinkedLocationKeys = <String>{};
-
-      // Add all local sites (already have PGE data from JOIN)
-      for (final localSite in localSitesWithPgeData) {
-        final catalogId = localSite.catalogSiteId;
-        if (catalogId != null) {
-          linkedCatalogIds.add(catalogId);
-        } else {
-          unlinkedLocationKeys
-              .add(_getLocationKey(localSite.latitude, localSite.longitude));
-        }
-        enrichedSites.add(localSite);
-      }
-
-      // Add PGE sites that don't have local equivalents. Two catalog entries
-      // are never deduped against each other here - only against flown
-      // sites - so distinct launches that happen to share coordinates (e.g.
-      // separate PG/HG takeoffs on the same hill) both survive.
-      for (final pgeSite in pgeSites) {
-        if (linkedCatalogIds.contains(pgeSite.id)) continue;
-
-        final locationKey = _getLocationKey(pgeSite.latitude, pgeSite.longitude);
-        if (unlinkedLocationKeys.contains(locationKey)) continue;
-
-        // PGE-only sites have no flight counts from local DB
-        enrichedSites.add(pgeSite.copyWith(
-          flightCount: 0,
-          isFromLocalDb: false,  // PGE sites always marked as non-local
-        ));
-      }
+      final enrichedSites = <ParaglidingSite>[
+        // Local sites already have PGE data from the JOIN
+        ...localSitesWithPgeData,
+        for (final pgeSite in pgeSites)
+          if (!isAlreadyFlown(pgeSite))
+            // PGE-only sites have no flight counts from local DB
+            pgeSite.copyWith(
+              flightCount: 0,
+              isFromLocalDb: false, // PGE sites always marked as non-local
+            ),
+      ];
 
       // Create result
       final result = SiteBoundsLoadResult(
@@ -174,11 +153,6 @@ class SiteBoundsLoaderV2 {
   // Cache methods removed - no longer needed
   // _loadFlightCountsForBounds removed - now using optimized JOIN query in DatabaseService
 
-
-  /// Get location key for deduplication
-  String _getLocationKey(double latitude, double longitude) {
-    return '${latitude.toStringAsFixed(6)},${longitude.toStringAsFixed(6)}';
-  }
 
   /// Generate cache key from bounds
   String _getBoundsKey(LatLngBounds bounds) {

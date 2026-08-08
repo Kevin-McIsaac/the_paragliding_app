@@ -256,14 +256,18 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
     _allSites = result.sites;
     _siteFlightStatus = {};
 
-    // Clean up stale data
-    final currentSiteKeys = result.sites.map((site) => SiteUtils.createSiteKey(site.latitude, site.longitude)).toSet();
+    // Clean up stale data. Wind is cached per location - two launches on one
+    // point share it - while flyability is per site, since it folds in that
+    // site's own wind directions. The two maps are keyed accordingly.
+    final currentSiteKeys = result.sites.map((site) => site.siteKey).toSet();
+    final currentWindKeys = result.sites
+        .map((site) => SiteUtils.createSiteKey(site.latitude, site.longitude))
+        .toSet();
     _siteFlyabilityStatus.removeWhere((key, value) => !currentSiteKeys.contains(key));
-    _siteWindData.removeWhere((key, value) => !currentSiteKeys.contains(key));
+    _siteWindData.removeWhere((key, value) => !currentWindKeys.contains(key));
 
     for (final site in result.sites) {
-      final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
-      _siteFlightStatus[key] = site.hasFlights;
+      _siteFlightStatus[site.siteKey] = site.hasFlights;
     }
 
     _updateDisplayedSites();
@@ -442,9 +446,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       // Mark sites as unknown if they don't have wind data
       setState(() {
         for (final site in _displayedSites) {
-          final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
-          if (!_siteWindData.containsKey(key)) {
-            _siteFlyabilityStatus[key] = FlyabilityStatus.unknown;
+          final windKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
+          if (!_siteWindData.containsKey(windKey)) {
+            _siteFlyabilityStatus[site.siteKey] = FlyabilityStatus.unknown;
           }
         }
       });
@@ -461,9 +465,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
         // Don't add LoadingOperation.wind yet - wait until we know if API will be called
         // Mark all sites as loading
         for (final site in _displayedSites) {
-          final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
-          if (!_siteWindData.containsKey(key)) {
-            _siteFlyabilityStatus[key] = FlyabilityStatus.loading;
+          final windKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
+          if (!_siteWindData.containsKey(windKey)) {
+            _siteFlyabilityStatus[site.siteKey] = FlyabilityStatus.loading;
           }
         }
       });
@@ -533,9 +537,9 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
             _forecastHasError = true; // Mark as error for red cross display
             // Mark failed sites as unknown
             for (final site in _displayedSites) {
-              final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
-              if (!_siteWindData.containsKey(key)) {
-                _siteFlyabilityStatus[key] = FlyabilityStatus.unknown;
+              final windKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
+              if (!_siteWindData.containsKey(windKey)) {
+                _siteFlyabilityStatus[site.siteKey] = FlyabilityStatus.unknown;
               }
             }
           });
@@ -851,15 +855,16 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
     int total = _displayedSites.length;
 
     final hasMissing = _displayedSites.any((site) {
-      final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
+      final windKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
+      final siteKey = site.siteKey;
       if (includeUnknownStatus) {
         // Missing if: no wind data OR status is unknown/loading OR no status at all
-        final hasWindData = _siteWindData.containsKey(key);
-        final status = _siteFlyabilityStatus[key];
+        final hasWindData = _siteWindData.containsKey(windKey);
+        final status = _siteFlyabilityStatus[siteKey];
         final isMissing = !hasWindData ||
                status == FlyabilityStatus.unknown ||
                status == FlyabilityStatus.loading ||
-               !_siteFlyabilityStatus.containsKey(key);
+               !_siteFlyabilityStatus.containsKey(siteKey);
 
         // Collect statistics
         if (isMissing) {
@@ -888,7 +893,8 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
 
         return isMissing;
       }
-      return !_siteWindData.containsKey(key) && !_siteFlyabilityStatus.containsKey(key);
+      return !_siteWindData.containsKey(windKey) &&
+          !_siteFlyabilityStatus.containsKey(siteKey);
     });
 
     // Log consolidated summary
@@ -913,7 +919,13 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
     int unknown = 0;
 
     for (final site in _displayedSites) {
-      final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
+      // Wind is shared by everything at this point; the verdict is not - it
+      // folds in this site's own wind directions, so two launches sharing a
+      // point can differ (Mt Bakewell's upper launch takes E/SE/S, its lower
+      // launch only S). Storing the verdict per location let one overwrite
+      // the other.
+      final windKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
+      final key = site.siteKey;
 
       // Skip if already calculated and not forcing recalc
       if (!forceRecalculation && _siteFlyabilityStatus.containsKey(key)) {
@@ -932,7 +944,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       }
 
       calculated++;
-      final wind = _siteWindData[key];
+      final wind = _siteWindData[windKey];
 
       if (wind == null) {
         _siteFlyabilityStatus[key] = FlyabilityStatus.unknown;
@@ -1146,8 +1158,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
 
     // Count flown vs new sites for logging
     final flownSites = filteredSites.where((site) {
-      final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
-      return _siteFlightStatus[siteKey] ?? false;
+      return _siteFlightStatus[site.siteKey] ?? false;
     }).length;
     final newSites = filteredSites.length - flownSites;
 
@@ -1194,8 +1205,7 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
   }
 
   void _onSiteSelected(ParaglidingSite site) {
-    final siteKey = SiteUtils.createSiteKey(site.latitude, site.longitude);
-    final hasFlights = _siteFlightStatus[siteKey] ?? false;
+    final hasFlights = _siteFlightStatus[site.siteKey] ?? false;
 
     LoggingService.action('NearbySites', hasFlights ? 'flown_site_selected' : 'new_site_selected', {
       'site_id': site.id,

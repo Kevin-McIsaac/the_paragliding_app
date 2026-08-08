@@ -60,6 +60,23 @@ class ParaglidingSite {
   // Computed properties
   bool get hasFlights => flightCount > 0;
 
+  /// Stable identity for this launch, for keying per-site state and widgets.
+  ///
+  /// Coordinates are not identity: two distinct launches can share a point
+  /// (the catalogue has 23 such pairs, e.g. separate PG and HG takeoffs), and
+  /// one launch can move between catalogue releases. Local and catalogue rows
+  /// are namespaced because they are different id spaces that overlap.
+  ///
+  /// Falls back to coordinates only for a site with no id at all - an API
+  /// result that was never persisted - which is the best available identity
+  /// and matches the behaviour this replaced.
+  String get siteKey {
+    if (id == null) {
+      return 'coord:${latitude.toStringAsFixed(6)},${longitude.toStringAsFixed(6)}';
+    }
+    return isFromLocalDb ? 'local:$id' : 'catalog:$id';
+  }
+
   // Helper to get marker color - moved from UnifiedSite
   Color get markerColor {
     return hasFlights
@@ -198,17 +215,19 @@ class ParaglidingSite {
            'lon: ${longitude.toStringAsFixed(4)}, type: $siteType)';
   }
 
+  // Identity, not proximity. This was name plus coordinates within ~11m, which
+  // made two distinct launches sharing a point compare equal - and marker
+  // widgets are keyed `ValueKey(site)`, so Flutter would reconcile one onto
+  // the other. [siteKey] carries the coordinate fallback for sites with no id,
+  // so an unpersisted API result still compares as it used to.
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
-    return other is ParaglidingSite &&
-        other.name == name &&
-        (other.latitude - latitude).abs() < 0.0001 &&
-        (other.longitude - longitude).abs() < 0.0001;
+    return other is ParaglidingSite && other.siteKey == siteKey;
   }
 
   @override
-  int get hashCode => Object.hash(name, latitude, longitude);
+  int get hashCode => siteKey.hashCode;
 
   /// Create a copy with updated fields
   ParaglidingSite copyWith({

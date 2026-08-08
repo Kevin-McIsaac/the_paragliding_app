@@ -224,9 +224,11 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
 
   /// Get the marker presentation (color, tooltip, opacity) for a site
   SiteMarkerPresentation _getSiteMarkerPresentation(ParaglidingSite site) {
-    final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
-    final status = widget.siteFlyabilityStatus[key];
-    final windData = widget.siteWindData[key];
+    // Wind is cached per location, the flyability verdict per site - see
+    // _updateFlyabilityStatus in nearby_sites_screen.dart.
+    final status = widget.siteFlyabilityStatus[site.siteKey];
+    final windData = widget
+        .siteWindData[SiteUtils.createSiteKey(site.latitude, site.longitude)];
 
     final presentation = SiteMarkerPresentation.forFlyability(
       site: site,
@@ -297,8 +299,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     final hasFlyableSites = markers.any((marker) {
       if (marker.key is ValueKey<ParaglidingSite>) {
         final site = (marker.key as ValueKey<ParaglidingSite>).value;
-        final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
-        final status = widget.siteFlyabilityStatus[key];
+        final status = widget.siteFlyabilityStatus[site.siteKey];
         return status == FlyabilityStatus.flyable;
       }
       return false;
@@ -308,8 +309,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     final hasCautionSites = markers.any((marker) {
       if (marker.key is ValueKey<ParaglidingSite>) {
         final site = (marker.key as ValueKey<ParaglidingSite>).value;
-        final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
-        final status = widget.siteFlyabilityStatus[key];
+        final status = widget.siteFlyabilityStatus[site.siteKey];
         return status == FlyabilityStatus.caution;
       }
       return false;
@@ -319,8 +319,7 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
     final hasNotFlyableSites = markers.any((marker) {
       if (marker.key is ValueKey<ParaglidingSite>) {
         final site = (marker.key as ValueKey<ParaglidingSite>).value;
-        final key = SiteUtils.createSiteKey(site.latitude, site.longitude);
-        final status = widget.siteFlyabilityStatus[key];
+        final status = widget.siteFlyabilityStatus[site.siteKey];
         return status == FlyabilityStatus.notFlyable;
       }
       return false;

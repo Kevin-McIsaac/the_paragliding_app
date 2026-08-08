@@ -2,6 +2,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:the_paragliding_app/data/datasources/database_helper.dart';
+import 'package:the_paragliding_app/data/models/paragliding_site.dart';
 import 'package:the_paragliding_app/services/pge_sites_database_service.dart';
 import 'package:the_paragliding_app/services/site_bounds_loader_v2.dart';
 
@@ -142,6 +143,66 @@ void main() {
 
     expect(result.sites.map((s) => s.name),
         containsAll(['Mount Bakewell (lower launch)', 'Some Other Launch']));
+  });
+
+  group('site identity', () {
+    // nearby_sites_screen.dart keys _siteFlyabilityStatus and _siteFlightStatus
+    // by siteKey, and nearby_sites_map.dart keys marker widgets by
+    // ValueKey(site). Both assumed one site per coordinate - an invariant that
+    // held only because the old loader deduped every coordinate collision
+    // away. Now that two launches can legitimately share a point, they have to
+    // be distinguishable or one silently takes on the other's wind verdict.
+    ParaglidingSite siteAt({
+      int? id,
+      required String name,
+      bool isFromLocalDb = false,
+      double latitude = -31.848,
+      double longitude = 116.777,
+    }) =>
+        ParaglidingSite(
+          id: id,
+          name: name,
+          latitude: latitude,
+          longitude: longitude,
+          siteType: 'launch',
+          isFromLocalDb: isFromLocalDb,
+        );
+
+    test('distinguishes two catalog launches sharing name and point', () {
+      // Catalog ids 166 and 210: both named "Øksnanuten", both at
+      // 58.7608,5.98167. Same name and same point is what the old
+      // name-plus-coordinates equality could not tell apart - and there are
+      // 23 shared-coordinate pairs in the bundled catalog.
+      final first = siteAt(id: 166, name: 'Øksnanuten');
+      final second = siteAt(id: 210, name: 'Øksnanuten');
+
+      expect(first.siteKey, isNot(second.siteKey));
+      expect(first, isNot(equals(second)),
+          reason: 'marker widgets are keyed ValueKey(site); equal keys let '
+              'Flutter reconcile one marker onto the other');
+
+      // The concrete failure this prevents: a per-site map collapsing to one
+      // entry, so the second site read back the first site's verdict.
+      final flyability = {first.siteKey: 'S only', second.siteKey: 'E/SE/S'};
+      expect(flyability, hasLength(2),
+          reason: 'per-site state must not collapse for co-located sites');
+    });
+
+    test('separates local and catalog id spaces, which overlap', () {
+      final flown = siteAt(id: 42, name: 'Flown', isFromLocalDb: true);
+      final catalog = siteAt(id: 42, name: 'Catalog');
+
+      expect(flown.siteKey, isNot(catalog.siteKey),
+          reason: 'sites.id 42 and pge_sites.id 42 are unrelated rows');
+    });
+
+    test('falls back to coordinates when there is no id', () {
+      final unsaved = siteAt(id: null, name: 'Unsaved API result');
+
+      expect(unsaved.siteKey, 'coord:-31.848000,116.777000');
+      expect(unsaved, equals(siteAt(id: null, name: 'Different name')),
+          reason: 'without an id, coordinates are the only identity available');
+    });
   });
 
   test('falls back to coordinates for a flown site with no catalog link',
