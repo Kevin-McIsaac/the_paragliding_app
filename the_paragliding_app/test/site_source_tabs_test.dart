@@ -1,5 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:the_paragliding_app/data/datasources/database_helper.dart';
 import 'package:the_paragliding_app/data/models/paragliding_site.dart';
+import 'package:the_paragliding_app/services/pge_sites_database_service.dart';
+
+import 'helpers/test_helpers.dart';
 
 /// The site dialog's second tab used to be an unlabelled ⓘ holding
 /// ParaglidingEarth data without saying so. A launch can now come from more
@@ -76,6 +80,60 @@ void main() {
 
     test('is null when no guide here is PGE', () {
       expect(pgeIdOf(site('siteguide_au:136-21')), isNull);
+    });
+  });
+
+  group('translating a catalogue id back to a guide id', () {
+    // The bug this exists for: the dialog built
+    // paraglidingearth.com/?site=<catalogue id>. Catalogue 9247 is Mt Borah
+    // in the app and "Spitzbuhel - Siusi/Seis am Schlern" on PGE, so the
+    // title link opened an unrelated site in another country. Nothing failed;
+    // it just went somewhere wrong.
+    setUp(() async {
+      await TestHelpers.initializeDatabaseForTesting();
+      await DatabaseHelper.instance.recreateDatabase();
+      await PgeSitesDatabaseService.instance.initializeTables();
+      final db = await DatabaseHelper.instance.database;
+      await db.insert('pge_sites', {
+        'id': 9247,
+        'name': 'Manilla - Mt Borah - West launch',
+        'longitude': 150.6086,
+        'latitude': -30.6792,
+        'source': 'pge:4632;siteguide_au:136-20',
+      });
+      await db.insert('pge_sites', {
+        'id': 11526,
+        'name': 'Manilla - Mt Borah - East launch',
+        'longitude': 150.6116,
+        'latitude': -30.6793,
+        'source': 'siteguide_au:136-21',
+      });
+    });
+
+    test('returns the guide id, not the catalogue id', () async {
+      expect(
+        await PgeSitesDatabaseService.instance.sourceIdFor(9247, 'pge'),
+        '4632',
+      );
+    });
+
+    test('returns null when that guide has no entry for the launch', () async {
+      // Linking to PGE here would open whatever site 11526 happens to be.
+      expect(
+        await PgeSitesDatabaseService.instance.sourceIdFor(11526, 'pge'),
+        isNull,
+      );
+    });
+
+    test('finds a guide listed second', () async {
+      expect(
+        await PgeSitesDatabaseService.instance.sourceIdFor(9247, 'siteguide_au'),
+        '136-20',
+      );
+    });
+
+    test('returns null for a catalogue id that no longer exists', () async {
+      expect(await PgeSitesDatabaseService.instance.sourceIdFor(999999, 'pge'), isNull);
     });
   });
 }

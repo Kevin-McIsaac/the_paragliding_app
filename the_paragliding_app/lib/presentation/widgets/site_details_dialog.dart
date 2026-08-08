@@ -84,15 +84,33 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
   /// Guide names as a pilot would recognise them, not their internal keys.
   static String _sourceLabel(String provider) => switch (provider) {
         'pge' => 'PGE',
-        'siteguide_au' => 'Site Guide',
+        'siteguide_au' => 'ANSG',
         _ => provider,
       };
 
   static String _sourceFullName(String provider) => switch (provider) {
         'pge' => 'ParaglidingEarth',
-        'siteguide_au' => 'Australian Site Guide',
+        'siteguide_au' => 'Australian National Site Guide',
         _ => provider,
       };
+
+  /// ParaglidingEarth's id for a catalogue entry, looked up through `source`.
+  ///
+  /// Returns null when the catalogue has no row for that id, or when the
+  /// launch is one no PGE entry exists for - the Australian ones Site Guide
+  /// carries alone. Null is correct there: it means "do not link to PGE",
+  /// which is better than linking to whatever holds that number.
+  Future<int?> _resolvePgeId(int? catalogId) async {
+    if (catalogId == null) return null;
+    final id = await PgeSitesDatabaseService.instance.sourceIdFor(catalogId, 'pge');
+    return id == null ? null : int.tryParse(id);
+  }
+
+  /// What a tab holds, for the tooltip. The labels are short enough to be
+  /// ambiguous on their own - "PGE" means nothing until you have seen it
+  /// spelled out once.
+  static String _sourceTooltip(String provider) =>
+      '${_sourceFullName(provider)} site details';
 
   static String? _sourceUrl(String provider, String id) => switch (provider) {
         'pge' => 'https://www.paraglidingearth.com/?site=$id',
@@ -280,21 +298,23 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
     double longitude;
     int? pgeSiteId;
 
+    // ParaglidingEarth addresses sites by *its own* id, and nothing the app
+    // stores is one any more: both paraglidingSite.id and sites.pge_site_id
+    // hold catalogue ids. Passing one through silently addresses a different
+    // site - catalogue 9247 is Mt Borah here and "Spitzbuhel - Siusi" on PGE -
+    // so it has to be translated back through `source` before it is used to
+    // fetch detail or to build a link out.
     if (widget.paraglidingSite != null) {
-      // API site - use its coordinates and ID
       latitude = widget.paraglidingSite!.latitude;
       longitude = widget.paraglidingSite!.longitude;
-      // ParaglidingEarth disambiguates by *its own* site id. Catalogue ids are
-      // no longer PGE ids, so passing one would never match and the API would
-      // quietly return whichever takeoff came first in the bounding box - the
-      // wrong launch wherever they cluster, which is exactly where a site has
-      // more than one. The real id is recorded in `source`.
-      pgeSiteId = _pgeSourceId ?? widget.paraglidingSite!.pgeSiteId;
+      pgeSiteId = _pgeSourceId;
+      pgeSiteId ??= await _resolvePgeId(
+        widget.paraglidingSite!.pgeSiteId ?? widget.paraglidingSite!.id,
+      );
     } else if (widget.site != null) {
-      // Local site - use its coordinates and possibly linked PGE site ID
       latitude = widget.site!.latitude;
       longitude = widget.site!.longitude;
-      pgeSiteId = widget.site!.pgeSiteId;
+      pgeSiteId = await _resolvePgeId(widget.site!.pgeSiteId);
     } else {
       return; // No site data available
     }
@@ -611,27 +631,19 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // Make name clickable if PGE link is available
-                                if (_detailedData?['pge_link'] != null)
-                                  InkWell(
-                                    onTap: () => _launchUrl(_detailedData!['pge_link']),
-                                    child: Text(
-                                      name,
-                                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        color: Theme.of(context).colorScheme.primary,
-                                        decoration: TextDecoration.underline,
-                                      ),
-                                    ),
-                                  )
-                                else
-                                  Text(
-                                    name,
-                                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blue,
-                                    ),
+                                // The title is no longer a link. A launch can
+                                // come from several guides, so a single link
+                                // on the name had to pick one silently - and
+                                // it picked wrong, opening a catalogue id as
+                                // if it were a ParaglidingEarth id. Each guide
+                                // now links out from its own tab instead.
+                                Text(
+                                  name,
+                                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue,
                                   ),
+                                ),
                                 // Flight characteristics directly under title
                                 if (_detailedData != null) ...[
                                   () {
@@ -718,14 +730,20 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
                                     controller: _tabController,
                                     isScrollable: false,
                                     tabAlignment: TabAlignment.fill,
-                                    labelPadding: EdgeInsets.symmetric(horizontal: 8),
-                                    indicatorWeight: 1.0,
-                                    indicatorPadding: EdgeInsets.zero,
+                                    labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+                                    // Material 3's own indicator and divider,
+                                    // rather than the 1px hairline the previous
+                                    // overrides produced - which is why these
+                                    // did not read as tabs.
+                                    indicatorSize: TabBarIndicatorSize.tab,
                                   tabs: [
                                     const Tab(
-                                      child: Text(
-                                        'Forecast',
-                                        style: TextStyle(fontSize: 12),
+                                      child: Tooltip(
+                                        message: 'Flyability forecast by hour by day',
+                                        child: Text(
+                                          'Forecast',
+                                          style: TextStyle(fontSize: 12),
+                                        ),
                                       ),
                                     ),
                                     // One tab per contributing guide, named.
@@ -736,9 +754,12 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
                                     // ratings and sometimes position.
                                     for (final source in _sourceTabs)
                                       Tab(
-                                        child: Text(
-                                          _sourceLabel(source.provider),
-                                          style: const TextStyle(fontSize: 12),
+                                        child: Tooltip(
+                                          message: _sourceTooltip(source.provider),
+                                          child: Text(
+                                            _sourceLabel(source.provider),
+                                            style: const TextStyle(fontSize: 12),
+                                          ),
                                         ),
                                       ),
                                   ],
@@ -1242,6 +1263,19 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
             ],
           ] else
             const Center(child: Text('No takeoff information available')),
+
+          // Link out from the tab, matching the other guides. It sits outside
+          // the _detailedData branch so it is still there when the fetch
+          // failed or the site has no detail - which is when you most want to
+          // go and look.
+          if (_detailedData?['pge_link'] != null) ...[
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: () => _launchUrl(_detailedData!['pge_link']),
+              icon: const Icon(Icons.open_in_new, size: 16),
+              label: const Text('Open in PGE'),
+            ),
+          ],
           ],
         ),
       ),
@@ -1291,40 +1325,10 @@ class SiteDetailsDialogState extends State<SiteDetailsDialog> with SingleTickerP
               ),
             ),
             const SizedBox(height: 8.0),
-          // Weather description info box
-          if (_detailedData?['weather'] != null && _detailedData!['weather']!.toString().isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8.0),
-              child: Container(
-                padding: const EdgeInsets.all(12.0),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(8.0),
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
-                    width: 1.0,
-                  ),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      size: 18,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _detailedData!['weather']!.toString(),
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
+            // ParaglidingEarth's prose weather description used to repeat here.
+            // It belongs to a guide, so it lives in that guide's tab now that
+            // the tabs say which guide they are.
+          ],
         ),
       ),
     );

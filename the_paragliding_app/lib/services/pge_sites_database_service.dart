@@ -800,6 +800,31 @@ class PgeSitesDatabaseService {
   }
 
   /// Get all favorite PGE sites
+  /// A guide's own id for a catalogue entry, e.g. `pgeIdFor(9247) == 4632`.
+  ///
+  /// `sites.pge_site_id` holds a *catalogue* id, not a guide's. Handing one to
+  /// ParaglidingEarth silently addresses a different site - canonical 9247 is
+  /// Mt Borah here and "Spitzbuhel - Siusi" there - so anything leaving the
+  /// app for a guide has to be translated back through `source`.
+  Future<String?> sourceIdFor(int catalogId, String provider) async {
+    final db = await DatabaseHelper.instance.database;
+    final rows = await db.query(
+      _pgeSitesTable,
+      columns: ['source'],
+      where: 'id = ?',
+      whereArgs: [catalogId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+
+    for (final token in (rows.first['source'] as String? ?? '').split(';')) {
+      if (token.startsWith('$provider:')) {
+        return token.substring(provider.length + 1);
+      }
+    }
+    return null;
+  }
+
   Future<List<ParaglidingSite>> getFavoriteSites() async {
     try {
       final db = await DatabaseHelper.instance.database;
