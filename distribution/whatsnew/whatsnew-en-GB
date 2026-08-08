@@ -1,6 +1,6 @@
-• Airspace downloads work again. OpenAIP moved their data server in July, which
-  stopped every country download; the app now uses the new one
-• Downloaded airspace appears straight away. It could previously stay hidden
-  behind an already-ticked Airspace box until you switched the filter off and on
-• Map Tile Cache in Data Management now shows how much map data is really stored
-  on your device, and clearing it frees that space
+• The site guide now merges several guides into one catalogue rather than
+  listing ParaglidingEarth alone, and no longer hides sites marked closed
+• Site details opens as a full page, so the wind, forecast and guide tabs have
+  room instead of sharing a cramped sheet
+• Each guide gets its own link, and those links open the site you tapped -
+  some previously opened an unrelated one
