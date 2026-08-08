@@ -60,29 +60,42 @@ class SiteBoundsLoaderV2 {
 
       // Combine results: local sites (already enriched) + PGE-only sites
       final enrichedSites = <ParaglidingSite>[];
-      final processedLocations = <String>{};
+
+      // catalog_site_id is the real link between a flown site and its catalog
+      // entry - it survives coordinate edits and catalog regenerations
+      // (see _relinkToFederatedCatalog), which the old coordinate-string key
+      // did not. A local site with no link falls back to the coordinate key,
+      // since that is the only signal left for it.
+      final linkedCatalogIds = <int>{};
+      final unlinkedLocationKeys = <String>{};
 
       // Add all local sites (already have PGE data from JOIN)
       for (final localSite in localSitesWithPgeData) {
-        final locationKey = _getLocationKey(localSite.latitude, localSite.longitude);
-        processedLocations.add(locationKey);
+        final catalogId = localSite.catalogSiteId;
+        if (catalogId != null) {
+          linkedCatalogIds.add(catalogId);
+        } else {
+          unlinkedLocationKeys
+              .add(_getLocationKey(localSite.latitude, localSite.longitude));
+        }
         enrichedSites.add(localSite);
       }
 
-      // Add PGE sites that don't have local equivalents
+      // Add PGE sites that don't have local equivalents. Two catalog entries
+      // are never deduped against each other here - only against flown
+      // sites - so distinct launches that happen to share coordinates (e.g.
+      // separate PG/HG takeoffs on the same hill) both survive.
       for (final pgeSite in pgeSites) {
+        if (linkedCatalogIds.contains(pgeSite.id)) continue;
+
         final locationKey = _getLocationKey(pgeSite.latitude, pgeSite.longitude);
+        if (unlinkedLocationKeys.contains(locationKey)) continue;
 
-        // Skip PGE sites that have a local site at the same location
-        if (!processedLocations.contains(locationKey)) {
-          processedLocations.add(locationKey);
-
-          // PGE-only sites have no flight counts from local DB
-          enrichedSites.add(pgeSite.copyWith(
-            flightCount: 0,
-            isFromLocalDb: false,  // PGE sites always marked as non-local
-          ));
-        }
+        // PGE-only sites have no flight counts from local DB
+        enrichedSites.add(pgeSite.copyWith(
+          flightCount: 0,
+          isFromLocalDb: false,  // PGE sites always marked as non-local
+        ));
       }
 
       // Create result
