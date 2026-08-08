@@ -609,7 +609,17 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
         // row; an AppBar is where a page's identity and its actions belong,
         // and it pins them for free - which is what the sheet had to build by
         // hand out of a non-flex sibling.
-        title: Text(name, overflow: TextOverflow.ellipsis),
+        // Two lines, because one ellipsises exactly the part that matters:
+        // "Mount Bakewell (top lau..." is the same title as the lower launch
+        // a kilometre away, and which one you are reading decides which
+        // access notes apply.
+        title: Text(
+          name,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        toolbarHeight: 72,
         actions: [
           IconButton(
             onPressed: _toggleFavorite,
@@ -621,7 +631,13 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
           ),
         ],
       ),
-      body: showTabs
+      // A Scaffold does not inset its own body, so without this the Android
+      // gesture pill is drawn over the last line of whichever tab is open -
+      // the same half of the inset problem the bottom sheet had, and just as
+      // invisible until you look at a real phone.
+      body: SafeArea(
+        top: false,
+        child: showTabs
           ? Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -734,13 +750,14 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
                 ],
               ),
             ),
+      ),
     );
   }
 
-  /// The sheet's fixed identity: closure warning, wind rose, name, actions.
+  /// The closure warning, above everything else on the page.
   ///
-  /// Shared by both layouts - it is the scrolling header of the tabbed sheet,
-  /// and the top of the plain scroll view when a site has no guide tabs.
+  /// Shared by both layouts - the tabbed page and the plain scroll view a
+  /// site with no guide entry gets.
   List<Widget> _buildHeaderContent(String name, List<String> windDirections) {
     return [
       // Closure notice, above everything else.
@@ -898,6 +915,11 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
       padding: const EdgeInsets.only(top: 4.0),
       child: Text(
         characteristics.join(', '),
+        // Capped: it is the least important line in the header and, with
+        // every flag set, the tallest - it was pushing the tabs down two
+        // lines to list what the site allows.
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
               fontSize: 11,
               fontWeight: FontWeight.w300,
@@ -908,20 +930,21 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
 
   List<Widget> _buildOverviewContent(String name, double latitude, double longitude, int? altitude, String? country, String? region, int? rating, String? siteType, List<String> windDirections, int? flightCount, String? distanceText, String? thermalFlag, String? soaringFlag, String? xcFlag) {
     return [
-            // Row 2: Site Type + Altitude + Wind + Directions
-            Row(
+            // Site Type + Altitude + Wind directions + map link.
+            //
+            // A Wrap, not a Row: beside the wind rose this column is ~300dp,
+            // and a Row ellipsised the launchable directions to "SW, W, ..."
+            // - the one fact on the line a pilot is actually checking. It
+            // flows onto a second line instead.
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              runSpacing: 4,
               children: [
-                // Site type with characteristics tooltip on icon
+                // No icon before the word: "Launch" is what the glyph meant,
+                // and the tooltip it carried needed a hover a phone does not
+                // have. The icons below stand in for words - altitude, wind,
+                // map - rather than repeating one.
                 if (siteType != null) ...[
-                  Tooltip(
-                    message: _buildSiteCharacteristicsTooltip(),
-                    child: Icon(
-                      _getSiteTypeIcon(siteType),
-                      size: 16,
-                      color: Colors.grey,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
                   Text(
                     _formatSiteType(siteType),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -945,12 +968,9 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
                   const SizedBox(width: 12),
                   const Icon(Icons.air, size: 16, color: Colors.grey),
                   const SizedBox(width: 4),
-                  Flexible(
-                    child: Text(
-                      windDirections.join(', '),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                  Text(
+                    windDirections.join(', '),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
                   ),
                 ],
                 // Map icon - opens maps app (directly after wind directions)
@@ -971,18 +991,8 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
               const SizedBox(height: 6),
               Row(
                 children: [
-                  // Landing icon with tooltip
-                  Tooltip(
-                    message: 'Landing information',
-                    child: const Icon(
-                      Icons.flight_land,
-                      size: 16,
-                      color: Colors.grey,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
                   Text(
-                    'Landing Site',
+                    'Landing',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       fontWeight: FontWeight.w500,
                     ),
@@ -1673,9 +1683,9 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
   String _formatSiteType(String siteType) {
     switch (siteType.toLowerCase()) {
       case 'launch':
-        return 'Launch Site';
+        return 'Launch';
       case 'landing':
-        return 'Landing Zone';
+        return 'Landing';
       case 'both':
         return 'Launch & Landing';
       default:
@@ -1683,46 +1693,10 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     }
   }
 
-  IconData _getSiteTypeIcon(String siteType) {
-    switch (siteType.toLowerCase()) {
-      case 'launch':
-        return Icons.flight_takeoff;
-      case 'landing':
-        return Icons.flight_land;
-      case 'both':
-        return Icons.flight;
-      default:
-        return Icons.location_on;
-    }
-  }
-
-  String _buildSiteCharacteristicsTooltip() {
-    if (_detailedData == null) return 'Site information';
-    
-    List<String> characteristics = [];
-    
-    // Check all possible characteristics that can have value "1"
-    final characteristicMap = {
-      'paragliding': 'Paragliding',
-      'hanggliding': 'Hanggliding', 
-      'hike': 'Hike',
-      'thermals': 'Thermals',
-      'soaring': 'Soaring',
-      'xc': 'XC',
-      'flatland': 'Flatland',
-      'winch': 'Winch',
-    };
-    
-    characteristicMap.forEach((key, label) {
-      if (_detailedData![key]?.toString() == '1') {
-        characteristics.add(label);
-      }
-    });
-    
-    return characteristics.isNotEmpty
-        ? characteristics.join(', ')
-        : 'Site information';
-  }
+  // _getSiteTypeIcon and _buildSiteCharacteristicsTooltip went with the
+  // glyphs before "Launch" and "Landing". The tooltip listed the site's
+  // characteristics, which _buildCharacteristicsLine now shows outright -
+  // it had been computing that string for a hover no phone can perform.
 
   /// Build clickable text that turns URLs into links
   Widget _buildLinkableText(String text) {

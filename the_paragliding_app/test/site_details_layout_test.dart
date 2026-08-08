@@ -72,14 +72,14 @@ void main() {
     // The wind rose and the flyability row answer "is it on right now?".
     // Scrolling a guide must not take them off screen - the complaint that
     // sent the collapsing-header version back.
-    final rowBefore = tester.getRect(find.text('Launch Site'));
+    final rowBefore = tester.getRect(find.text('Launch'));
 
     await tester.drag(find.byType(TabBarView), const Offset(0, -300));
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 200));
     }
 
-    expect(tester.getRect(find.text('Launch Site')), rowBefore);
+    expect(tester.getRect(find.text('Launch')), rowBefore);
   });
 
   testWidgets('no hardcoded height wraps the tab body', (tester) async {
