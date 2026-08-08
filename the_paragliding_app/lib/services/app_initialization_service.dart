@@ -116,12 +116,21 @@ class AppInitializationService {
 
       // Check if data exists
       final hasData = await PgeSitesDatabaseService.instance.isDataAvailable();
+      // Having *a* catalogue is not the same as having the current one. This
+      // only checked for emptiness, so an upgrade that shipped a new
+      // catalogue never imported it: existing users kept whatever they first
+      // installed, and would never have seen the sites this release adds.
+      final catalogChanged =
+          hasData && await PgeSitesDownloadService.instance.bundledCatalogDiffersFromLocal();
 
-      if (!hasData) {
-        LoggingService.info('AppInitializationService: Empty PGE database detected, auto-importing bundled data');
+      if (!hasData || catalogChanged) {
+        LoggingService.info(
+          catalogChanged
+              ? 'AppInitializationService: Bundled catalogue changed, re-importing'
+              : 'AppInitializationService: Empty PGE database detected, auto-importing bundled data',
+        );
 
-        // On first launch or if database is empty, automatically import bundled CSV data
-        // Wait for import to complete so database is ready before sync runs
+        // Wait for import to complete so the database is ready before use
         await _downloadAndImportPgeSites();
       } else {
         LoggingService.info('AppInitializationService: PGE sites already available');

@@ -117,6 +117,29 @@ class PgeSitesDownloadService {
     return path.join(sitesDir.path, 'world_sites_extracted.csv.gz');
   }
 
+  /// Whether the catalogue shipped in this build differs from the copy on disk.
+  ///
+  /// A release ships a new catalogue, but the import only ran when the table
+  /// was empty - so an upgrading user kept the previous one indefinitely and
+  /// never saw sites added since they installed. Size is a sufficient signal:
+  /// any real change to 11k+ rows moves it, and it costs no parsing.
+  Future<bool> bundledCatalogDiffersFromLocal() async {
+    try {
+      final localFile = File(await _getLocalFilePath());
+      if (!await localFile.exists()) return true;
+
+      final ByteData data = await rootBundle.load(PgeSitesConfig.assetPath);
+      final differs = (await localFile.stat()).size != data.lengthInBytes;
+      if (differs) {
+        LoggingService.info('[PGE_SITES] Bundled catalogue differs from local copy');
+      }
+      return differs;
+    } catch (error) {
+      LoggingService.error('[PGE_SITES] Could not compare bundled catalogue', error);
+      return false;
+    }
+  }
+
   /// Copy bundled CSV file to local storage
   Future<bool> downloadSitesData({bool forceRedownload = false}) async {
     PerformanceMonitor.startOperation('PgeSitesDownload');
@@ -125,19 +148,38 @@ class PgeSitesDownloadService {
       final localFilePath = await _getLocalFilePath();
       final localFile = File(localFilePath);
 
+      // Load bundled CSV file from assets
+      final ByteData data = await rootBundle.load(PgeSitesConfig.assetPath);
+      final List<int> bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+
+      final totalBytes = bytes.length;
+
       // Check if we need to download
       if (!forceRedownload && await localFile.exists()) {
         final stats = await localFile.stat();
         final age = DateTime.now().difference(stats.modified);
 
-        if (age < PgeSitesConfig.maxAge) {
-          LoggingService.info('[PGE_SITES] Local file is recent, skipping download');
+        // Age alone is not enough: a release ships a new catalogue, and the
+        // copy on disk can be days old and still stale. Without the size
+        // check an upgrading user kept the previous catalogue - and its site
+        // ids - for up to maxAge, so newly added launches simply did not
+        // appear for a month after installing the release that added them.
+        final sameAsBundled = stats.size == totalBytes;
+
+        if (age < PgeSitesConfig.maxAge && sameAsBundled) {
+          LoggingService.info('[PGE_SITES] Local file matches the bundled catalogue, skipping copy');
           _updateProgress(const PgeSitesDownloadProgress(
             totalBytes: 0,
             downloadedBytes: 0,
             status: PgeSitesDownloadStatus.completed,
           ));
           return true;
+        }
+
+        if (!sameAsBundled) {
+          LoggingService.info(
+            '[PGE_SITES] Bundled catalogue changed (${stats.size} -> $totalBytes bytes), refreshing',
+          );
         }
       }
 
@@ -151,12 +193,6 @@ class PgeSitesDownloadService {
       ));
 
       LoggingService.info('[PGE_SITES] Copying bundled CSV file to local storage');
-
-      // Load bundled CSV file from assets
-      final ByteData data = await rootBundle.load(PgeSitesConfig.assetPath);
-      final List<int> bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-
-      final totalBytes = bytes.length;
 
       LoggingService.structured('PGE_SITES_DOWNLOAD_STARTED', {
         'total_bytes': totalBytes,
