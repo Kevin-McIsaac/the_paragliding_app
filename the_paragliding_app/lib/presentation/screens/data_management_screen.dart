@@ -946,11 +946,23 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
     final summary = StringBuffer();
     for (final entry in byDestination.entries.take(8)) {
       final count = entry.value.length;
-      final worst = entry.value.first;
+      // preview() sorts by improvement descending and Map preserves insertion
+      // order, so the first of a group is genuinely its largest move.
+      final best = entry.value.first;
+
+      // Flights arriving at one launch commonly come from several sites - that
+      // is the Mt Borah case this was written for - so naming only the first
+      // would tell the pilot their flights are somewhere they are not.
+      final sources = {for (final p in entry.value) p.fromSiteName};
+      final from = sources.length == 1
+          ? '"${sources.first}"'
+          : sources.length == 2
+              ? '"${sources.first}" and "${sources.last}"'
+              : '"${sources.first}" and ${sources.length - 1} other sites';
+
       summary.writeln('• $count flight${count == 1 ? '' : 's'} → ${entry.key}');
       summary.writeln(
-          '   now on "${worst.fromSiteName}", up to '
-          '${worst.improvementMeters.round()}m closer');
+          '   now on $from, up to ${best.improvementMeters.round()}m closer');
     }
     if (byDestination.length > 8) {
       summary.writeln('• ... and ${byDestination.length - 8} more launches');
@@ -978,6 +990,10 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
 
     if (!mounted) return;
     _showProgressDialog('Re-matching launches...', '', 0, proposals.length);
+    // Tracked so the catch below pops the progress dialog and not the screen
+    // itself: a throw after the pop at the end of the try would otherwise take
+    // Data Management with it.
+    var progressVisible = true;
 
     try {
       final result = await LaunchRematchService.instance.apply(
@@ -990,10 +1006,18 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
         },
       );
 
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        Navigator.of(context).pop();
+        progressVisible = false;
+      }
 
       LoggingService.performance('Re-match flight launches', stopwatch.elapsed,
           'launch re-match completed');
+
+      // Guard before the first setState, not after: a 182-flight apply gives
+      // the pilot plenty of time to back out of the screen, and the rest of
+      // this block touches State and context.
+      if (!mounted) return;
 
       // A failure can still have moved flights - each one is committed on its
       // own - so the count is reported either way rather than only on success.
@@ -1003,9 +1027,8 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
           _dataModified = true;
         });
         await _loadDatabaseStats();
+        if (!mounted) return;
       }
-
-      if (!mounted) return;
 
       if (result['success'] == true) {
         final emptied = result['sites_left_empty'] as List<String>? ?? [];
@@ -1019,10 +1042,10 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
         _showErrorDialog('Re-match Failed', result['message'] as String);
       }
     } catch (e, stackTrace) {
-      if (mounted) Navigator.of(context).pop();
+      if (mounted && progressVisible) Navigator.of(context).pop();
       LoggingService.error(
           'DataManagementScreen: Failed to re-match launches', e, stackTrace);
-      _showErrorDialog('Error', 'Failed to re-match launches: $e');
+      if (mounted) _showErrorDialog('Error', 'Failed to re-match launches: $e');
     }
   }
 

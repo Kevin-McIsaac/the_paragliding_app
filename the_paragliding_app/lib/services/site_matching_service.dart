@@ -124,28 +124,16 @@ class SiteMatchingService {
         );
         
         if (apiSite != null) {
-          // The catalogue owns identity for any launch it knows about. The API
-          // is PGE-only and names launches in its own convention - it calls
-          // 9254 "Stanwell Park" where the catalogue, which also carries the
-          // ANSG entry for the same hill, calls it "Stanwell Park - Bald Hill
-          // - The Point". Letting the API name win produced sites whose name
-          // disagreed with the catalogue row they were then linked to by
-          // coordinates, and which the site sheet's per-guide tabs could not
-          // explain. An API result also has no id, so it cannot link itself.
-          final catalogueEquivalent =
-              await PgeSitesDatabaseService.instance.findNearestSite(
-            latitude: apiSite.latitude,
-            longitude: apiSite.longitude,
-            maxDistanceKm: apiCatalogueReconciliationMeters / 1000.0,
-          );
-
-          if (catalogueEquivalent != null) {
-            LoggingService.info(
-                'SiteMatchingService: API returned "${apiSite.name}"; using catalogue '
-                'identity "${catalogueEquivalent.name}"');
-            return catalogueEquivalent;
-          }
-
+          // No reconciliation against the catalogue here, deliberately. The
+          // catalogue owns identity for any launch it knows about - the API is
+          // PGE-only and names launches in its own convention - but it already
+          // wins by construction: the catalogue query above searched
+          // localSiteSearchRadius (2000m) around the flight and found nothing,
+          // while an API result is bounded by maxDistance, which no caller sets
+          // above that. Anything the catalogue could have named was therefore
+          // already offered and rejected, so a second catalogue lookup around
+          // the API result can only return a launch *further* from the flight
+          // than the radius the catalogue tier deliberately enforces.
           LoggingService.info('SiteMatchingService: Found new site via API: "${apiSite.name}" at ${apiSite.latitude.toStringAsFixed(4)}, ${apiSite.longitude.toStringAsFixed(4)}');
           LoggingService.info('SiteMatchingService: API site location info - Country: "${apiSite.country ?? 'null'}"');
           return apiSite;
@@ -180,13 +168,6 @@ class SiteMatchingService {
   /// closer only because of GPS scatter. Well under the 180m separating the
   /// closest real pair of launches in the catalogue.
   static const double catalogueOverrideMarginMeters = 100;
-
-  /// How close a catalogue launch must be to an API result to be treated as
-  /// the same launch, and so to supply its identity.
-  ///
-  /// Both are describing a takeoff point rather than an area, so this is a
-  /// "these are the same pin" tolerance, not a search radius.
-  static const double apiCatalogueReconciliationMeters = 250;
 
   /// The nearer of a flown site and a catalogue launch, with the flown site
   /// preferred unless the catalogue one is materially closer.
