@@ -315,6 +315,14 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
       // is not the same as when it last downloaded one - "checked yesterday,
       // unchanged" and "not checked for a month" look identical otherwise, and
       // only one of them is a problem.
+      // Which copy is on disk, so "Last Downloaded: Recently" cannot imply new
+      // data after a Reset to Bundled - the file is freshly written, but its
+      // contents are older than what is published. Derived rather than stored:
+      // the reset clears the validators, so having none means the bundled copy.
+      final validators = await PreferencesHelper.getCatalogValidators();
+      final fromPublished =
+          validators.etag != null || validators.lastModified != null;
+
       final checkedAt = await PreferencesHelper.getCatalogCheckedDate();
       final lastChecked = checkedAt == null
           ? 'Never'
@@ -323,10 +331,11 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
       final combinedStats = {
         ...stats,
         'database_size_mb': ((stats['database_size_bytes'] ?? 0) / 1024 / 1024).toStringAsFixed(1),
-        'last_downloaded': lastDownloaded,
+        'last_downloaded': lastDownloaded == 'Never'
+            ? lastDownloaded
+            : '$lastDownloaded · ${fromPublished ? 'published' : 'bundled'}',
         'last_checked': lastChecked,
         'source_file_size_mb': ((downloadStatus['file_size_bytes'] ?? 0) / 1024 / 1024).toStringAsFixed(1),
-        'status': stats['sites_count'] > 0 ? 'Active' : 'Not downloaded',
         'is_outdated': downloadStatus['is_outdated'] ?? false,
       };
 
@@ -385,6 +394,10 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
       await _runCatalogUpdate();
     } finally {
       if (mounted) setState(() => _catalogBusy = false);
+      // Here rather than on each success path: a failed download or import still
+      // performed the check, and stamped it, so the rows have to catch up or
+      // "Last Checked" reads as though nothing happened.
+      await _loadPgeSitesStats();
     }
   }
 
@@ -2447,12 +2460,20 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
 
                   const SizedBox(height: 24),
 
-                  // PGE Sites Database
+                  // Site catalogue. Not "PGE sites": it merges ParaglidingEarth
+                  // with national guides, and 135 Australian launches have no PGE
+                  // entry at all - naming one source misrepresents the rest.
                   AppExpansionCard.dataManagement(
                     icon: Icons.public,
-                    title: 'PGE Sites Database',
+                    title: 'Site Database',
+                    // "Active" used to sit in the last slot, which only ever
+                    // meant sites_count > 0 - nothing the count beside it did not
+                    // already say. Replaced with the one thing a collapsed card
+                    // should surface: whether there is anything to do.
                     subtitle: _pgeSitesStats != null
-                        ? '${_formatNumber(_pgeSitesStats!['sites_count'] ?? 0)} sites • ${_pgeSitesStats!['database_size_mb'] ?? '0.0'}MB • ${_pgeSitesStats!['status'] ?? 'Unknown'}'
+                        ? '${_formatNumber(_pgeSitesStats!['sites_count'] ?? 0)} sites'
+                            '${(_pgeSitesStats!['sites_count'] ?? 0) == 0 ? ' • not downloaded' : ''}'
+                            '${_pgeSitesStats!['is_outdated'] == true ? ' • update available' : ''}'
                         : 'Loading...',
                     expansionKey: 'pge_sites_db',
                     expansionManager: _expansionManager,
@@ -2463,21 +2484,16 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                     },
                     children: [
                       const Text(
-                        'The location of every PGE site is stored locally to improve site map performance.',
+                        'Worldwide launch sites, merged from ParaglidingEarth and '
+                        'national site guides and stored on this device. Site '
+                        'lookups and the site map work without a connection, '
+                        'which matters where you fly.',
                         style: TextStyle(color: Colors.grey, fontSize: 12),
                       ),
                       const SizedBox(height: 16),
                       if (_pgeSitesStats != null) ...[
                         AppStatRowGroup.dataManagement(
                           rows: [
-                            AppStatRow.dataManagement(
-                              label: 'Total Sites',
-                              value: _formatNumber(_pgeSitesStats!['sites_count'] ?? 0),
-                            ),
-                            AppStatRow.dataManagement(
-                              label: 'Database Size',
-                              value: '${_pgeSitesStats!['database_size_mb'] ?? '0.0'}MB',
-                            ),
                             AppStatRow.dataManagement(
                               label: 'Last Downloaded',
                               value: _pgeSitesStats!['last_downloaded'] ?? 'Never',
@@ -2494,10 +2510,6 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                                 label: 'Status',
                                 value: 'Update available',
                               ),
-                            AppStatRow.dataManagement(
-                              label: 'Source Size',
-                              value: '${_pgeSitesStats!['source_file_size_mb'] ?? '0.0'}MB',
-                            ),
                             if (_pgeSitesProgress != null && _pgeSitesProgress!.status == PgeSitesDownloadStatus.downloading)
                               AppStatRow.dataManagement(
                                 label: 'Download Progress',
@@ -2524,13 +2536,6 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                         ),
                       ],
 
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Worldwide paragliding sites, merged from ParaglidingEarth and '
-                        'national site guides, for offline use. This enables fast site '
-                        'lookups without internet connectivity.',
-                        style: TextStyle(color: Colors.grey, fontSize: 12),
-                      ),
                       const SizedBox(height: 16),
                       Row(
                         children: [
