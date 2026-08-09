@@ -34,6 +34,7 @@ import '../../services/openaip_service.dart';
 import '../../services/database_service.dart';
 import '../../services/pge_sites_database_service.dart';
 import '../../services/app_initialization_service.dart';
+import '../widgets/common/app_search_field.dart';
 
 /// Loading states for different operations
 enum LoadingOperation {
@@ -1681,36 +1682,11 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Container(
-          height: 38,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: TextField(
-            controller: _searchController,
-            focusNode: _searchFocusNode,
-            onChanged: _onSearchChanged,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white),
-            decoration: InputDecoration(
-              isDense: true,
-              hintText: 'Search nearby sites...',
-              hintStyle: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white.withValues(alpha: 0.7)),
-              prefixIcon: const Icon(Icons.search, size: 16, color: Colors.white),
-              suffixIcon: _searchQuery.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear, size: 16, color: Colors.white),
-                      onPressed: () {
-                        _searchController.clear();
-                        _onSearchChanged('');
-                      },
-                      padding: EdgeInsets.zero,
-                    )
-                  : null,
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            ),
-          ),
+        title: AppSearchField(
+          controller: _searchController,
+          focusNode: _searchFocusNode,
+          hintText: 'Search nearby sites...',
+          onChanged: _onSearchChanged,
         ),
         actions: [
           // Favorites PopupMenuButton

@@ -11,6 +11,7 @@ import '../widgets/common/app_loading_skeleton.dart';
 import '../widgets/common/app_menu_button.dart';
 import 'igc_import_screen.dart';
 import 'flight_detail_screen.dart';
+import '../widgets/common/app_search_field.dart';
 
 /// Flight list screen displaying all logged flights in a sortable, filterable table.
 ///
@@ -341,35 +342,10 @@ class FlightListScreenState extends State<FlightListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Container(
-          height: 38,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: TextField(
-            controller: _searchController,
-            onChanged: _onSearchChanged,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white),
-            decoration: InputDecoration(
-              isDense: true,
-              hintText: 'Search site name...',
-              hintStyle: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white.withValues(alpha: 0.7)),
-              prefixIcon: const Icon(Icons.search, size: 16, color: Colors.white),
-              suffixIcon: _searchQuery.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear, size: 16, color: Colors.white),
-                      onPressed: () {
-                        _searchController.clear();
-                        _onSearchChanged('');
-                      },
-                      padding: EdgeInsets.zero,
-                    )
-                  : null,
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            ),
-          ),
+        title: AppSearchField(
+          controller: _searchController,
+          hintText: 'Search site name...',
+          onChanged: _onSearchChanged,
         ),
         actions: [
           // Date filter dropdown button
