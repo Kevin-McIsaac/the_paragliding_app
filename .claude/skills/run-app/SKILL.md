@@ -1,6 +1,6 @@
 ---
 name: run-app
-description: Run, hot-reload, screenshot and read logs for this Flutter app, on Linux desktop or on an Android phone/emulator. Use when asked to run, launch, start, restart or hot-reload the app, to screenshot it, to check its runtime logs, or to verify a change in the running app rather than in tests. Covers bin/dev_run.sh, bin/dev_reload.sh, bin/dev_screenshot.sh, wireless adb device ids, and the debug-vs-production package trap.
+description: Run, hot-reload, screenshot and read logs for this Flutter app, on Linux desktop or on an Android phone/emulator. Use when asked to run, launch, start, restart or hot-reload the app, to screenshot it, to check its runtime logs, or to verify a change in the running app rather than in tests. Also use when asked to tap, scroll, drag or otherwise drive the app's UI to reach a screen. Covers bin/dev_run.sh, bin/dev_reload.sh, bin/dev_screenshot.sh, bin/dev_input.sh, wireless adb device ids, and the debug-vs-production package trap.
 ---
 
 # Running this app
@@ -168,12 +168,56 @@ that file **is** the readiness check. There is no status command and none is nee
 Allowed as of 2026-08-08 — it used to say "ask the user to navigate". Navigate to the
 screen under test and look at it yourself; a UI fix nobody has looked at is unverified.
 
-**Android only.** Input injection has no desktop equivalent here: `xdotool` cannot reach
-native-Wayland windows, and sommelier exposes neither the virtual-keyboard nor the
-virtual-pointer protocol, so `wtype` and `ydotool` are out too. On desktop you can *see*
-any screen (`bin/dev_screenshot.sh`) but only reach the ones the app opens on its own —
-for anything needing taps, use the phone, or ask the person at the keyboard to navigate
-and then screenshot.
+Works on both targets now, by completely different routes. Desktop was Android-only until
+2026-08-10.
+
+### Desktop: `bin/dev_input.sh`
+
+```bash
+bin/dev_input.sh tap 598 1004              # tap the Log Book nav item
+bin/dev_input.sh scroll 478 500 900        # wheel down 900px at that point
+bin/dev_input.sh scroll 478 500 -900       # ... and back up
+bin/dev_input.sh drag 478 800 478 300 400  # drag up over 400ms
+```
+
+**Coordinates are screenshot pixels**, straight off `bin/dev_screenshot.sh` — the script
+divides by `devicePixelRatio` itself. That ratio is 1.0 on this desktop, so a missing
+conversion would look correct here and break on any HiDPI box; it is done in one place
+rather than left to the caller.
+
+Nothing was added to the app to make this work, and nothing needs to be. It evaluates Dart
+in the running isolate over the VM service — `GestureBinding.handlePointerEvent`, the same
+entry point the widget-test framework drives, which does its own hit test. No compositor
+involved, which is the whole point: `xdotool` cannot reach native-Wayland windows, and
+sommelier exposes neither the virtual-keyboard nor the virtual-pointer protocol, so
+`wtype` and `ydotool` are out. Same reasoning as `dev_screenshot.sh` going to the engine
+rather than to `grim`.
+
+Four things about it are worth knowing before you debug it:
+
+- **It dies with `flutter run`, not with the app.** Expression evaluation needs the
+  `compileExpression` service that `flutter run` registers, so it goes away the moment
+  flutter detaches even if the app is still on screen. `dev_run.sh` removes the pid file
+  then, and the script refuses on that — same readiness check as `dev_screenshot.sh`.
+- **No text entry.** Tapping a field moves the caret, but the engine owns the keyboard
+  channel and there is nothing to type on. Use the phone for anything involving typing.
+- **Platform views are not driven** (and not captured) — free on Linux, where the 3D map
+  is a placeholder anyway.
+- **A throw lands in `flutter.log`, not in the exit code**, because events are queued onto
+  the app's event loop instead of run inline. The script greps its own slice of the log for
+  `[DEV_INPUT] ERROR` and exits 1, so a failed injection cannot look like a success. That
+  check was verified by making it fail on purpose.
+
+The queueing is load-bearing, not incidental. The VM runs an evaluation at the next
+safepoint, which can be *inside* `drawFrame`; dispatching a pointer event from there
+reenters the framework mid-build and the scroll handler throws `setState() called during
+build`. It only bites once something is animating — a tap on an idle app looks perfect and
+a drag fails on its second move. Related trap: an evaluated closure shows up in a stack
+trace as a bare `Eval ()` frame with no file or line, which fails an assertion inside
+`StackFrame.fromStackTraceLine`, so a real exception surfaces as a confusing regex-match
+assertion. If you see one of those, look for the underlying error, not for a Flutter bug.
+
+### Android: `adb shell input`
 
 ```bash
 DEV=adb-52110DLAQ001UT-hkZkFs._adb-tls-connect._tcp
@@ -186,17 +230,21 @@ adb -s "$DEV" exec-out screencap -p > dev_data/screenshot.png
 
 Needs the sandbox off, like everything else that reaches the phone.
 
-- **Coordinates are device pixels.** The Pixel 9 is 1080x2424 px at dpr 2.625, so a widget
-  at 200dp from the left is at x=525. Read a screenshot to find a target — never guess from
-  Flutter layout numbers.
+- **Coordinates are device pixels, and adb will not convert them for you** — unlike
+  `dev_input.sh`. The Pixel 9 is 1080x2424 px at dpr 2.625, so a widget at 200dp from the
+  left is at x=525. Read a screenshot to find a target — never guess from Flutter layout
+  numbers.
+
+### Both targets
+
 - **Screenshot after every step, before the next.** Taps land on whatever is there now, and
   a tap that misses looks identical to one that worked until you look.
 - **Let the frame settle** — `sleep 1` between a tap and its screenshot, or the capture
   catches a half-built route mid-animation and reads as a rendering bug.
 - **Read `dev_data/flutter.log` alongside.** An overflow or exception caused by your own
   navigation is a real finding; one caused by a mistap is noise. The log tells them apart.
-- Still true: **never `pm clear`/`pm uninstall`** anything, suffixed or not, and unlock the
-  phone first — a screenshot of a locked phone is a valid PNG of the lock screen.
+- Still true on Android: **never `pm clear`/`pm uninstall`** anything, suffixed or not, and
+  unlock the phone first — a screenshot of a locked phone is a valid PNG of the lock screen.
 
 ## Wireless debugging (physical device)
 

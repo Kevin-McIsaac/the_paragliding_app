@@ -23,6 +23,7 @@ bin/dev_reload.sh             # Hot reload  (SIGUSR1 via dev_data/flutter.pid)
 bin/dev_reload.sh R           # Hot restart (SIGUSR2) - needed for main()/initState changes
 
 bin/dev_screenshot.sh         # Screenshot the desktop app -> dev_data/screenshot.png
+bin/dev_input.sh tap 598 1004 # Tap/scroll/drag the desktop app (screenshot pixels)
 ```
 
 Hot reload also works with the standard `r` / `R` keys if you started it in a
@@ -726,7 +727,7 @@ task needs the app to actually run.
 | Task | Commands | Notes |
 |------|----------|-------|
 | Fix hot reload issues | `kill "$(cat dev_data/flutter.pid)"` → start again | No pid file means it already exited |
-| Debug UI (desktop) | `bin/dev_screenshot.sh` → Read the PNG | Via the VM service, not the compositor - no screenshot tool works under Crostini |
+| Debug UI (desktop) | `bin/dev_screenshot.sh` → Read the PNG; `bin/dev_input.sh` to tap/scroll | Both go via the VM service, not the compositor - no screenshot or input tool works under Crostini |
 | Debug UI (Android) | `adb exec-out screencap -p > dev_data/screenshot.png` → analyze | Unlock the phone first |
 | Performance check | `grep "\[P\]" dev_data/flutter.log` | Performance logs |
 | Schema change | Clear data → restart → reimport | Dev workflow |
@@ -752,9 +753,11 @@ Use format `file_path:line_number` in logs:
 - Call sites in local DB "Flown Sites" and sites from PGE API "New Sites"
 - Call sites in local DB "Flown Sites" and sites from PGE API "New Sites"
 - always start the app with `bin/dev_run.sh --background`
-- **Driving the app's UI with adb is allowed** (changed 2026-08-08; it was previously
-  forbidden). Navigate to the screen you need and verify the change yourself rather than
-  asking the user to tap through it — a UI fix nobody looked at is unverified. See
-  "Driving the UI" in the `run-app` skill for the commands and what to check afterwards.
+- **Driving the app's UI yourself is allowed** (adb since 2026-08-08, Linux desktop since
+  2026-08-10; both were previously forbidden). Navigate to the screen you need and verify
+  the change yourself rather than asking the user to tap through it — a UI fix nobody
+  looked at is unverified. `bin/dev_input.sh` on desktop, `adb shell input` on a phone.
+  See "Driving the UI" in the `run-app` skill for the commands, the coordinate rules and
+  what to check afterwards.
 - Filters in Map FIlter, e.g, checkboxes, should have immediate effect in the map
 - When proposing a solution, look for the simple, idomatic solution suitable for a mobile app
