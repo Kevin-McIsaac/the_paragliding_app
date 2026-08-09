@@ -281,11 +281,20 @@ class PgeSitesDownloadService {
       await tempFile.writeAsBytes(gzip.encode(utf8.encode(body)));
       await tempFile.rename(localFilePath);
 
-      await PreferencesHelper.setCatalogValidators(
-        etag: response.headers['etag'],
-        lastModified: response.headers['last-modified'],
-      );
-      await PreferencesHelper.setPgeSitesDownloaded(true);
+      // The file is in place, so the download has succeeded whatever happens
+      // next. Recording the validators is bookkeeping: losing it costs one
+      // redundant refresh, whereas reporting "Download Failed - sites unchanged"
+      // after the sites did change tells the pilot the opposite of the truth.
+      try {
+        await PreferencesHelper.setCatalogValidators(
+          etag: response.headers['etag'],
+          lastModified: response.headers['last-modified'],
+        );
+        await PreferencesHelper.setPgeSitesDownloaded(true);
+      } catch (error) {
+        LoggingService.error(
+            '[PGE_SITES] Catalogue saved but its validators were not', error);
+      }
 
       stopwatch.stop();
       LoggingService.performance('Catalogue download', stopwatch.elapsed,

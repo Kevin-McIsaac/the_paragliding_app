@@ -134,6 +134,38 @@ void main() {
     expect(rows.single['name'], 'Mt Borah (favourited copy)');
   });
 
+  test('survives a catalogue table that predates the source column', () async {
+    // Found in review, and it is the worst kind of bug: fillCatalogRefs ran
+    // `SELECT id, source FROM pge_sites` guarded only by whether the *table*
+    // existed. `source` is added by initializeTables, which runs *after*
+    // _onUpgrade - and pge_sites_database_service says in as many words that
+    // installs exist which created the table before that column. On one of
+    // those, the migration threw, _onUpgrade rethrew, openDatabase failed, and
+    // the pilot could not reach their flight log at all. The same end state as
+    // the Pixel 9 incident that catalog_site_id_migration_test.dart exists for.
+    await db.execute('DROP TABLE pge_sites');
+    await db.execute('''
+      CREATE TABLE pge_sites (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        longitude REAL NOT NULL,
+        latitude REAL NOT NULL
+      )
+    ''');
+    await db.insert('pge_sites', {
+      'id': 4632, 'name': 'Manilla, Mt Borah',
+      'longitude': 150.6, 'latitude': -30.7,
+    });
+    await insertSite(1, 'Mt Borah', 4632);
+
+    // Must not throw, and a table with no source is a pre-federation one, so its
+    // ids really are PGE ids.
+    expect(await DatabaseHelper.fillCatalogRefs(db), 1);
+
+    final site = (await db.query('sites', where: 'id = 1')).single;
+    expect(site['catalog_ref'], 'pge:4632');
+  });
+
   test('a fresh install has the new column and the new index', () async {
     // Asserted against sqlite_master rather than by asking the service, so a
     // convergence failure between _onCreate and _onUpgrade shows up here.

@@ -166,6 +166,17 @@ void main() {
       expect(CatalogRef.fromSource(''), isNull);
     });
 
+    test('rejects a token missing either half', () {
+      // `pge:` names no launch, and keying rows on it would collide every id-less
+      // token from that guide onto one row. Not reachable against today's
+      // catalogue - but the point of this change is to stop assuming that.
+      expect(CatalogRef.tokensOf('pge:'), isEmpty);
+      expect(CatalogRef.tokensOf(':4632'), isEmpty);
+      expect(CatalogRef.tokensOf('pge'), isEmpty);
+      expect(CatalogRef.fromSource('pge:;ansg:136-40'), 'ansg:136-40',
+          reason: 'a malformed token must not shadow a usable one');
+    });
+
     test('normalises a provider the producer has since renamed', () {
       // The shipped catalogue still says siteguide_au; the prefix is now the
       // guide's own acronym, ansg (Australian National Site Guide). Normalising on read means the

@@ -79,7 +79,14 @@ class CatalogRef {
     return source
         .split(';')
         .map((token) => token.trim())
-        .where((token) => token.contains(':') && !token.startsWith(':'))
+        // Both halves have to be present. `pge:` names no launch, and keying a
+        // row on it would collide with every other id-less token from that
+        // guide - so it is dropped rather than trusted. Not reachable against
+        // today's catalogue; this whole change is about not assuming that holds.
+        .where((token) {
+          final separator = token.indexOf(':');
+          return separator > 0 && separator < token.length - 1;
+        })
         .map(_normalise)
         .toList();
   }
@@ -102,9 +109,9 @@ class CatalogRef {
   /// The ref for a launch known only by a ParaglidingEarth id.
   ///
   /// Used by the v4 -> v5 migration for a database that predates federation,
-  /// where the stored link genuinely is a PGE id. It must not be used to guess
-  /// a ref for a federated id: those are positional, they overlap PGE's id
-  /// space, and inventing `pge:<n>` from one would point the site at an
-  /// unrelated launch - the exact failure this key exists to end.
+  /// where the stored link genuinely is a PGE id. It must not be used to guess a
+  /// ref for a *federated* id: those come from the catalogue's own registry and
+  /// overlap PGE's id space, so inventing `pge:<n>` from one would point the site
+  /// at an unrelated launch - the exact failure this key exists to end.
   static String forPgeId(Object pgeId) => 'pge:$pgeId';
 }

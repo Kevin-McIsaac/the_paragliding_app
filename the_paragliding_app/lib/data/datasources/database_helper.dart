@@ -152,10 +152,11 @@ class DatabaseHelper {
         country TEXT,
         custom_name INTEGER DEFAULT 0,
         -- Which catalogue entry describes this launch, as the contributing
-        -- guide's own key: 'pge:4632', 'ansg:106-28'. Text, and stable
-        -- across a catalogue rebuild, because the catalogue's row order is not:
-        -- its integer ids are positional and every upstream insertion shifts
-        -- them, which silently repointed flown sites at unrelated launches.
+        -- guide's own key: 'pge:4632', 'ansg:106-28'. Text, and stable across a
+        -- catalogue rebuild without depending on anything the app controls - the
+        -- catalogue's own id is assigned by a registry in the producer's
+        -- repository, and when it moved, flown sites silently rendered another
+        -- launch's altitude, wind and guide tabs.
         catalog_ref TEXT,
         is_favorite INTEGER DEFAULT 0,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -519,6 +520,11 @@ class DatabaseHelper {
             ? await fillCatalogRefs(db)
             : 0;
 
+        // Relic of the relink this change removes: it recorded which generation
+        // of the catalogue a database held, to keep a one-shot remap from running
+        // twice. A stable key needs no generation, and nothing reads it now.
+        await db.execute('DROP TABLE IF EXISTS catalog_state');
+
         LoggingService.database(
             'MIGRATE', 'Converted $converted site link(s) to a stable catalogue ref');
       }
@@ -552,10 +558,23 @@ class DatabaseHelper {
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'pge_sites'",
     )).isNotEmpty;
 
+    // The column has to be checked, not just the table. `source` is added by
+    // PgeSitesDatabaseService.initializeTables, which runs *after* this - and its
+    // own comment records that installs exist whose pge_sites predates that
+    // column. Selecting it blindly threw on one of those, _onUpgrade rethrew, and
+    // openDatabase failed: the pilot could not reach their flight log at all.
+    // A table with no `source` is a pre-federation one, so falling back to no
+    // source is not a degraded guess - its ids really are PGE ids.
+    final hasSource = catalogueExists &&
+        (await db.rawQuery('PRAGMA table_info(pge_sites)'))
+            .any((column) => column['name'] == 'source');
+
     final sourceById = <int, String?>{};
     if (catalogueExists) {
-      for (final row in await db.rawQuery('SELECT id, source FROM pge_sites')) {
-        sourceById[row['id'] as int] = row['source'] as String?;
+      final rows = await db.rawQuery(
+          hasSource ? 'SELECT id, source FROM pge_sites' : 'SELECT id FROM pge_sites');
+      for (final row in rows) {
+        sourceById[row['id'] as int] = hasSource ? row['source'] as String? : null;
       }
     }
 

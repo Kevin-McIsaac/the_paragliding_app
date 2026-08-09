@@ -70,6 +70,13 @@ class PgeSitesDatabaseService {
     var collided = 0;
     var favouritesDropped = 0;
 
+    // Batched, not a write per row. On an upgrading install this is the whole
+    // catalogue - ~11,700 rows - and it is awaited from
+    // AppInitializationService.ensureTables(), which is on the launch path and
+    // documented as cheap DDL. One round trip per row would make that promise
+    // false and could visibly stall startup on a slow device.
+    final batch = db.batch();
+
     for (final row in ordered) {
       final id = row['id'] as int;
       // forPgeId cannot return null, so every row gets a key. There is no
@@ -81,7 +88,7 @@ class PgeSitesDatabaseService {
       final kept = keptFor[ref];
       if (kept != null) {
         if (favourite(row) == 1) favouritesDropped++;
-        await db.delete(_pgeSitesTable, where: 'id = ?', whereArgs: [id]);
+        batch.delete(_pgeSitesTable, where: 'id = ?', whereArgs: [id]);
         collided++;
         LoggingService.database('MIGRATE',
             'Dropped duplicate catalogue row $id for $ref, keeping $kept');
@@ -89,7 +96,7 @@ class PgeSitesDatabaseService {
       }
 
       keptFor[ref] = id;
-      await db.update(
+      batch.update(
         _pgeSitesTable,
         {'ref': ref, 'provider': CatalogRef.providerOf(ref)},
         where: 'id = ?',
@@ -97,6 +104,8 @@ class PgeSitesDatabaseService {
       );
       keyed++;
     }
+
+    await batch.commit(noResult: true);
 
     LoggingService.structured('CATALOG_REF_BACKFILL', {
       'rows_keyed': keyed,
