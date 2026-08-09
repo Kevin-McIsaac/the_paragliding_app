@@ -67,12 +67,37 @@ class LaunchRematchService {
   static final LaunchRematchService instance = LaunchRematchService._();
   LaunchRematchService._();
 
-  /// Find flights the matcher would now put on a different launch.
+  /// How much closer the proposed launch must be before a flight is moved.
   ///
-  /// Reads only. Ordered by how wrong the current assignment is, so a caller
-  /// showing a truncated list shows the worst offenders first.
+  /// The matcher returning something different is not on its own a reason to
+  /// rewrite the log: its two local tiers search different radii (500m for the
+  /// flight log, 2km for the catalogue), so a flight sitting correctly on a
+  /// site 600m from its takeoff can match a catalogue pin further away still.
+  /// Only a real improvement is worth a write.
+  static const double minimumImprovementMeters = 100;
+
+  /// Find flights the matcher would now put on a materially closer launch.
+  ///
+  /// Reads only, and offline: the matcher's network tier is disabled for the
+  /// duration, or a preview over a few hundred flights would fire one HTTP
+  /// request per flight the catalogue does not cover, and could trip the API
+  /// into offline mode for everything that follows.
+  ///
+  /// Ordered by how wrong the current assignment is, so a caller showing a
+  /// truncated list shows the worst offenders first.
   Future<List<LaunchRematch>> preview() async {
     final databaseService = DatabaseService.instance;
+    final matcher = SiteMatchingService.instance;
+
+    // Nothing initialises the matcher at app start - only the import path
+    // does, lazily. Without this the flight-log tier returns null at its
+    // uninitialised guard for every flight, so the flown-versus-catalogue
+    // comparison this service depends on never happens and every flight looks
+    // like it belongs somewhere else.
+    if (!matcher.isReady) {
+      await matcher.initialize();
+    }
+
     final flights = await databaseService.getAllFlights();
     final sites = {
       for (final site in await databaseService.getAllSites())
@@ -83,58 +108,70 @@ class LaunchRematchService {
     int skippedNoFix = 0;
     int skippedCustom = 0;
 
-    for (final flight in flights) {
-      final flightId = flight.id;
-      final siteId = flight.launchSiteId;
-      final latitude = flight.launchLatitude;
-      final longitude = flight.launchLongitude;
+    final apiWasEnabled = matcher.isApiEnabled;
+    matcher.setApiEnabled(false);
+    try {
+      for (final flight in flights) {
+        final flightId = flight.id;
+        final siteId = flight.launchSiteId;
+        final latitude = flight.launchLatitude;
+        final longitude = flight.launchLongitude;
 
-      if (flightId == null || siteId == null) continue;
-      if (latitude == null || longitude == null) continue;
+        if (flightId == null || siteId == null) continue;
+        if (latitude == null || longitude == null) continue;
 
-      // Null Island: the launch fix was never valid, so no candidate is
-      // meaningful. Same guard as rematchUnknownSites.
-      if (latitude == 0 && longitude == 0) {
-        skippedNoFix++;
-        continue;
+        // Null Island: the launch fix was never valid, so no candidate is
+        // meaningful. Same guard as rematchUnknownSites.
+        if (latitude == 0 && longitude == 0) {
+          skippedNoFix++;
+          continue;
+        }
+
+        final currentSite = sites[siteId];
+        if (currentSite == null) continue;
+
+        // A site the pilot named themselves is a deliberate choice; moving its
+        // flights to a catalogue launch would silently overrule them.
+        if (currentSite.customName) {
+          skippedCustom++;
+          continue;
+        }
+
+        final match = await matcher.findNearestSite(
+          latitude,
+          longitude,
+          preferredType: 'launch',
+        );
+
+        if (match == null || match.id == null) continue;
+
+        // Already on the launch the matcher would choose. The matcher returns
+        // catalogue rows and flown sites alike, and the two id spaces overlap,
+        // so compare on whichever actually identifies this flight's site.
+        final matchIsCurrentSite = match.isFromLocalDb
+            ? match.id == currentSite.id
+            : match.id == currentSite.catalogSiteId;
+        if (matchIsCurrentSite) continue;
+
+        final fromDistance = _distanceMeters(
+            latitude, longitude, currentSite.latitude, currentSite.longitude);
+        final toDistance = match.distanceTo(latitude, longitude);
+
+        // A different match is not enough - it has to be a better one.
+        if (fromDistance - toDistance < minimumImprovementMeters) continue;
+
+        proposals.add(LaunchRematch(
+          flightId: flightId,
+          flightDate: flight.date,
+          fromSiteId: siteId,
+          fromSiteName: currentSite.name,
+          fromDistanceMeters: fromDistance,
+          toSite: match,
+          toDistanceMeters: toDistance,
+        ));
       }
-
-      final currentSite = sites[siteId];
-      if (currentSite == null) continue;
-
-      // A site the pilot named themselves is a deliberate choice; moving its
-      // flights to a catalogue launch would silently overrule them.
-      if (currentSite.customName) {
-        skippedCustom++;
-        continue;
-      }
-
-      final match = await SiteMatchingService.instance.findNearestSite(
-        latitude,
-        longitude,
-        preferredType: 'launch',
-      );
-
-      if (match == null || match.id == null) continue;
-
-      // Already on the launch the matcher would choose. The matcher returns
-      // catalogue rows and flown sites alike, so compare on whichever
-      // identifies this flight's current site.
-      final matchIsCurrentSite = match.isFromLocalDb
-          ? match.id == currentSite.id
-          : match.id == currentSite.catalogSiteId;
-      if (matchIsCurrentSite) continue;
-
-      proposals.add(LaunchRematch(
-        flightId: flightId,
-        flightDate: flight.date,
-        fromSiteId: siteId,
-        fromSiteName: currentSite.name,
-        fromDistanceMeters: _distanceMeters(
-            latitude, longitude, currentSite.latitude, currentSite.longitude),
-        toSite: match,
-        toDistanceMeters: match.distanceTo(latitude, longitude),
-      ));
+    } finally {
+      matcher.setApiEnabled(apiWasEnabled);
     }
 
     proposals.sort((a, b) => b.improvementMeters.compareTo(a.improvementMeters));
@@ -171,49 +208,37 @@ class LaunchRematchService {
 
     final databaseService = DatabaseService.instance;
 
+    int moved = 0;
+    int created = 0;
+    final touchedSiteIds = <int>{};
+
     try {
-      final allSites = await databaseService.getAllSites();
-
-      // Keyed by the catalogue row each site represents, so a run that moves
-      // twelve flights to one launch creates that site once.
-      final byCatalogId = <int, Site>{
-        for (final site in allSites)
-          if (site.catalogSiteId != null && site.id != null)
-            site.catalogSiteId!: site,
-      };
-      final byId = {
-        for (final site in allSites)
-          if (site.id != null) site.id!: site,
-      };
-
-      int moved = 0;
-      int created = 0;
-      final touchedSiteIds = <int>{};
+      final sitesBefore = (await databaseService.getAllSites()).length;
 
       for (var i = 0; i < proposals.length; i++) {
         onProgress?.call(i + 1, proposals.length);
         final proposal = proposals[i];
         final match = proposal.toSite;
-        final matchId = match.id!;
 
-        // The matcher may return a site already in the log book, or a
-        // catalogue row that needs one creating.
-        Site? target = match.isFromLocalDb ? byId[matchId] : byCatalogId[matchId];
+        // The catalogue id behind the match, whichever source it came from. A
+        // flight-log match carries the local sites.id in `id`; the id spaces
+        // overlap, so passing that as a catalogue id links the site to an
+        // unrelated launch.
+        final catalogId =
+            match.isFromLocalDb ? match.catalogSiteId : match.id;
 
-        if (target == null) {
-          final id = await databaseService.insertSite(Site(
-            name: match.name,
-            latitude: match.latitude,
-            longitude: match.longitude,
-            altitude: match.altitude?.toDouble(),
-            country: match.country,
-            catalogSiteId: match.isFromLocalDb ? null : matchId,
-          ));
-          target = (await databaseService.getSite(id))!;
-          byCatalogId[matchId] = target;
-          byId[id] = target;
-          created++;
-        }
+        // findOrCreateSite resolves by catalogue id first and falls back to
+        // the nearest site within its radius, so an unlinked row the pilot
+        // already has for this launch is reused rather than duplicated. Doing
+        // that here by hand is what produced twin site rows.
+        final target = await databaseService.findOrCreateSite(
+          latitude: match.latitude,
+          longitude: match.longitude,
+          name: match.name,
+          altitude: match.altitude?.toDouble(),
+          country: match.country,
+          catalogSiteId: catalogId,
+        );
 
         if (target.id == proposal.fromSiteId) continue;
 
@@ -225,6 +250,8 @@ class LaunchRematchService {
         touchedSiteIds.add(proposal.fromSiteId);
         moved++;
       }
+
+      created = (await databaseService.getAllSites()).length - sitesBefore;
 
       // Sites the moves may have emptied, reported for the caller to surface.
       final emptied = <String>[];
@@ -256,11 +283,22 @@ class LaunchRematchService {
     } catch (error, stackTrace) {
       LoggingService.error(
           'LaunchRematchService: Failed to apply re-match', error, stackTrace);
+
+      // The real counts, not zero. Each move is committed on its own - there
+      // is no transaction around the loop - so a failure partway through
+      // leaves everything before it already written. Reporting 0 told the
+      // pilot nothing had changed when their log had been rewritten.
+      LoggingService.structured('LAUNCH_REMATCH_FAILED', {
+        'flights_moved': moved,
+        'proposals': proposals.length,
+      });
       return {
         'success': false,
-        'message': 'Error re-matching flights: $error',
-        'flights_moved': 0,
-        'sites_created': 0,
+        'message': moved == 0
+            ? 'Error re-matching flights: $error'
+            : 'Error after moving $moved of ${proposals.length} flights: $error',
+        'flights_moved': moved,
+        'sites_created': created,
         'sites_left_empty': <String>[],
       };
     }

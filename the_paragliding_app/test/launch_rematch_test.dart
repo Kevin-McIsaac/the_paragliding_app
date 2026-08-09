@@ -3,6 +3,7 @@ import 'package:the_paragliding_app/data/datasources/database_helper.dart';
 import 'package:the_paragliding_app/services/database_service.dart';
 import 'package:the_paragliding_app/services/launch_rematch_service.dart';
 import 'package:the_paragliding_app/services/pge_sites_database_service.dart';
+import 'package:the_paragliding_app/services/site_matching_service.dart';
 
 import 'helpers/test_helpers.dart';
 
@@ -28,6 +29,13 @@ void main() {
     await DatabaseHelper.instance.close();
     await DatabaseHelper.instance.database;
     await PgeSitesDatabaseService.instance.initializeTables();
+
+    // The matcher is a singleton holding a cached site list, and apply()
+    // reloads it. Without resetting it here a test inherits a cache built from
+    // the *previous* test's now-discarded in-memory database, which made these
+    // results order-dependent: one test passed only because a stale local
+    // match pointed at a site id that no longer existed.
+    await SiteMatchingService.instance.reload();
   });
 
   tearDown(() async {
@@ -70,7 +78,7 @@ void main() {
     required double longitude,
   }) async {
     final db = await DatabaseHelper.instance.database;
-    return db.insert('flights', {
+    final id = await db.insert('flights', {
       'date': '2026-08-08',
       'launch_time': '10:00',
       'landing_time': '11:00',
@@ -79,6 +87,14 @@ void main() {
       'launch_latitude': latitude,
       'launch_longitude': longitude,
     });
+
+    // The matcher's flight-log tier caches getSitesUsedInFlights(), so a site
+    // only enters it once a flight references it. Without this reload the
+    // whole preview runs catalogue-only and would pass with
+    // _findNearestSiteLocal deleted - it would not be testing the comparison
+    // these tests are named for.
+    await SiteMatchingService.instance.reload();
+    return id;
   }
 
   Future<void> insertAllBorahLaunches() async {
