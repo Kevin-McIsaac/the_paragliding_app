@@ -109,6 +109,13 @@ extension SiteToParaglidingSite on Site {
     }
 
     return ParaglidingSite(
+      // Identity, so a caller can tell a flight-log match from a catalogue one
+      // and resolve it back to the row it came from. Without these the two are
+      // indistinguishable: id is null, isFromLocalDb reads false, and
+      // ParaglidingSite.siteKey falls back to name-and-coordinates.
+      id: id,
+      isFromLocalDb: true,
+      catalogSiteId: catalogSiteId,
       name: name,
       latitude: latitude,
       longitude: longitude,
