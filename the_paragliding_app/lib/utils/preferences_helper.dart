@@ -520,6 +520,54 @@ class PreferencesHelper {
     }
   }
 
+  // The published catalogue the local copy came from. Stored so a refresh can
+  // ask the server whether anything changed instead of re-downloading on a
+  // timer - see PgeSitesDownloadService.checkForUpdate.
+  static const String catalogEtagKey = 'catalog_etag';
+  static const String catalogLastModifiedKey = 'catalog_last_modified';
+  static const String catalogCheckedDateKey = 'catalog_checked_date';
+
+  /// The HTTP validators of the catalogue currently on disk.
+  static Future<({String? etag, String? lastModified})>
+      getCatalogValidators() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (
+      etag: prefs.getString(catalogEtagKey),
+      lastModified: prefs.getString(catalogLastModifiedKey),
+    );
+  }
+
+  static Future<void> setCatalogValidators({
+    String? etag,
+    String? lastModified,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    // Removed rather than left stale: a validator kept from a previous download
+    // would be compared against the new file and report "unchanged" forever.
+    etag == null
+        ? await prefs.remove(catalogEtagKey)
+        : await prefs.setString(catalogEtagKey, etag);
+    lastModified == null
+        ? await prefs.remove(catalogLastModifiedKey)
+        : await prefs.setString(catalogLastModifiedKey, lastModified);
+  }
+
+  /// When the app last *asked* whether a new catalogue exists, as opposed to
+  /// when it last downloaded one. Both are shown in Data Management, because
+  /// "checked yesterday, unchanged" and "not checked for a month" look
+  /// identical otherwise.
+  static Future<DateTime?> getCatalogCheckedDate() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getString(catalogCheckedDateKey);
+    return value == null ? null : DateTime.tryParse(value);
+  }
+
+  static Future<void> setCatalogCheckedNow() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+        catalogCheckedDateKey, DateTime.now().toIso8601String());
+  }
+
   /// Get the date when PGE sites were last downloaded
   static Future<DateTime?> getPgeSitesDownloadDate() async {
     final prefs = await SharedPreferences.getInstance();

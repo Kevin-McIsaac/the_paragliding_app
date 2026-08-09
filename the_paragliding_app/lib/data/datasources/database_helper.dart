@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../../services/logging_service.dart';
+import '../../utils/catalog_ref.dart';
 
 /// FlightLog.db - Main application database
 ///
@@ -26,7 +27,7 @@ import '../../services/logging_service.dart';
 class DatabaseHelper {
   static const _databaseName = "FlightLog.db";
   /// Current schema version - tests assert against this rather than a literal
-  static const databaseVersion = 4; // v4: pge_site_id renamed to catalog_site_id
+  static const databaseVersion = 5; // v5: catalog_site_id -> catalog_ref (stable text key)
 
   // Singleton pattern
   DatabaseHelper._privateConstructor();
@@ -150,7 +151,13 @@ class DatabaseHelper {
         altitude REAL,
         country TEXT,
         custom_name INTEGER DEFAULT 0,
-        catalog_site_id INTEGER,
+        -- Which catalogue entry describes this launch, as the contributing
+        -- guide's own key: 'pge:4632', 'ansg:106-28'. Text, and stable across a
+        -- catalogue rebuild without depending on anything the app controls - the
+        -- catalogue's own id is assigned by a registry in the producer's
+        -- repository, and when it moved, flown sites silently rendered another
+        -- launch's altitude, wind and guide tabs.
+        catalog_ref TEXT,
         is_favorite INTEGER DEFAULT 0,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
@@ -230,7 +237,7 @@ class DatabaseHelper {
 
       // 7. Index for PGE site foreign key relationship
       // Critical for deduplication and site linking operations
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_sites_catalog_site_id ON sites(catalog_site_id)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_sites_catalog_ref ON sites(catalog_ref)');
 
       // 8. Index for country code lookups
       await db.execute('CREATE INDEX IF NOT EXISTS idx_country_codes_code ON country_codes(code)');
@@ -482,11 +489,129 @@ class DatabaseHelper {
         LoggingService.database('MIGRATE', 'Renamed column; $renamed site(s) hold a link');
       }
 
+      // Migration from v4 to v5: the link stops being the catalogue's integer
+      // id and becomes the contributing guide's own key, e.g. 'pge:4632'.
+      //
+      // The catalogue's ids are a dense row number that tracks its producer's
+      // file order, so any upstream insertion shifts every id after it. The
+      // relink that fixed this ran once, on the federated changeover, and then
+      // early-returned forever after - so a later rebuild left every flown
+      // site pointing at whatever now held its old number. Measured: a Mt Borah
+      // site kept id 17 and rendered a launch 800km away, wind and altitude
+      // included. A guide's own id does not move, so nothing has to be
+      // rewritten on later rebuilds.
+      if (oldVersion < 5) {
+        LoggingService.database(
+            'MIGRATE', 'Applying migration v4 -> v5: catalog_site_id -> catalog_ref');
+
+        final columns = await db.rawQuery('PRAGMA table_info(sites)');
+        if (!columns.any((c) => c['name'] == 'catalog_ref')) {
+          await db.execute('ALTER TABLE sites ADD COLUMN catalog_ref TEXT');
+        }
+        await db.execute('DROP INDEX IF EXISTS idx_sites_catalog_site_id');
+        await db
+            .execute('CREATE INDEX IF NOT EXISTS idx_sites_catalog_ref ON sites(catalog_ref)');
+
+        // catalog_site_id is deliberately left in place rather than dropped:
+        // DROP COLUMN needs SQLite 3.35, which Android below 12 does not have,
+        // and rebuilding `sites` to be rid of one dead column would put the
+        // user's whole flight log on the line. It is unread from here on.
+        final converted = columns.any((c) => c['name'] == 'catalog_site_id')
+            ? await fillCatalogRefs(db)
+            : 0;
+
+        // Relic of the relink this change removes: it recorded which generation
+        // of the catalogue a database held, to keep a one-shot remap from running
+        // twice. A stable key needs no generation, and nothing reads it now.
+        await db.execute('DROP TABLE IF EXISTS catalog_state');
+
+        LoggingService.database(
+            'MIGRATE', 'Converted $converted site link(s) to a stable catalogue ref');
+      }
+
       LoggingService.database('MIGRATE', 'Database migration completed successfully');
     } catch (e) {
       LoggingService.error('DatabaseHelper: Database migration failed', e);
       rethrow;
     }
+  }
+
+  /// Convert `sites.catalog_site_id` integers into `sites.catalog_ref` strings,
+  /// resolving each through the catalogue row it currently points at.
+  ///
+  /// Driven directly by `test/catalog_ref_migration_test.dart` rather than
+  /// having its SQL restated there, so the test cannot drift from the migration.
+  ///
+  /// Three cases, and the third is the one that matters:
+  ///
+  ///  * the catalogue row has a `source` - take its highest-precedence token;
+  ///  * it has none, so this database predates federation and the stored id
+  ///    really is a ParaglidingEarth id - synthesise `pge:<id>`;
+  ///  * there is no catalogue row for that id at all - leave the ref null.
+  ///    A federated id is positional and overlaps PGE's id space, so guessing
+  ///    would silently attach the site to an unrelated launch. The link was
+  ///    already yielding no enrichment through the LEFT JOIN, so nothing is
+  ///    lost by declining to guess.
+  @visibleForTesting
+  static Future<int> fillCatalogRefs(DatabaseExecutor db) async {
+    final catalogueExists = (await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'pge_sites'",
+    )).isNotEmpty;
+
+    // The column has to be checked, not just the table. `source` is added by
+    // PgeSitesDatabaseService.initializeTables, which runs *after* this - and its
+    // own comment records that installs exist whose pge_sites predates that
+    // column. Selecting it blindly threw on one of those, _onUpgrade rethrew, and
+    // openDatabase failed: the pilot could not reach their flight log at all.
+    // A table with no `source` is a pre-federation one, so falling back to no
+    // source is not a degraded guess - its ids really are PGE ids.
+    final hasSource = catalogueExists &&
+        (await db.rawQuery('PRAGMA table_info(pge_sites)'))
+            .any((column) => column['name'] == 'source');
+
+    final sourceById = <int, String?>{};
+    if (catalogueExists) {
+      final rows = await db.rawQuery(
+          hasSource ? 'SELECT id, source FROM pge_sites' : 'SELECT id FROM pge_sites');
+      for (final row in rows) {
+        sourceById[row['id'] as int] = hasSource ? row['source'] as String? : null;
+      }
+    }
+
+    final linked = await db.rawQuery(
+      'SELECT id, catalog_site_id FROM sites '
+      'WHERE catalog_site_id IS NOT NULL AND catalog_ref IS NULL',
+    );
+
+    var converted = 0;
+    var unresolved = 0;
+    for (final row in linked) {
+      final catalogId = row['catalog_site_id'] as int;
+      final String? ref;
+      if (!sourceById.containsKey(catalogId)) {
+        ref = null;
+      } else {
+        ref = CatalogRef.fromSource(sourceById[catalogId]) ??
+            CatalogRef.forPgeId(catalogId);
+      }
+
+      if (ref == null) {
+        unresolved++;
+        continue;
+      }
+      await db.update('sites', {'catalog_ref': ref},
+          where: 'id = ?', whereArgs: [row['id']]);
+      converted++;
+    }
+
+    LoggingService.structured('CATALOG_REF_MIGRATION', {
+      'sites_linked': linked.length,
+      'refs_written': converted,
+      'unresolved_links_left_null': unresolved,
+      'catalogue_rows_available': sourceById.length,
+    });
+
+    return converted;
   }
 
   /// Migrate existing sites to match with PGE sites using coordinate-based lookup
@@ -629,7 +754,7 @@ class DatabaseHelper {
       // Check sites table has all expected columns
       final siteColumns = await db.rawQuery("PRAGMA table_info(sites)");
       final expectedSiteColumns = {
-        'id', 'name', 'latitude', 'longitude', 'altitude', 'country', 'custom_name', 'catalog_site_id', 'is_favorite', 'created_at'
+        'id', 'name', 'latitude', 'longitude', 'altitude', 'country', 'custom_name', 'catalog_ref', 'is_favorite', 'created_at'
       };
       
       final actualSiteColumns = siteColumns.map((col) => col['name'] as String).toSet();

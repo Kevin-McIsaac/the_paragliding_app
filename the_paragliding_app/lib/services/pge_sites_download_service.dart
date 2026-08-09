@@ -7,12 +7,28 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import '../services/logging_service.dart';
+import '../utils/http_freshness.dart' as freshness;
 import '../utils/performance_monitor.dart';
+import '../utils/preferences_helper.dart';
 
 /// Configuration constants for PGE sites download
 class PgeSitesConfig {
   /// Asset path for bundled CSV file
   static const String assetPath = 'assets/data/world_sites_extracted.csv.gz';
+
+  /// The published catalogue, from the federation pipeline that builds it.
+  ///
+  /// `main` rather than a release asset because that branch only moves when a
+  /// human merges the pipeline's weekly PR - so what the app follows is a
+  /// catalogue someone has reviewed, and rolling back a bad one is a revert.
+  ///
+  /// Served uncompressed (~880 KB), though GitHub gzips it in transit and Dart
+  /// decodes that transparently. Public so a network-tagged test can assert the
+  /// URL still serves usable data, the way countryDataUrl() is in
+  /// AirspaceCountryService.
+  static const String catalogUrl =
+      'https://raw.githubusercontent.com/Kevin-McIsaac/'
+      'paragliding_site_federation/main/app/sites.csv';
 
   /// Maximum age before auto-refresh
   static const Duration maxAge = Duration(days: 30);
@@ -141,6 +157,156 @@ class PgeSitesDownloadService {
     }
   }
 
+  /// Whether the published catalogue differs from the copy on disk.
+  ///
+  /// Mostly the shared [isRemoteNewer] - that logic was a verbatim copy of the
+  /// airspace service's, so a fix to it had to be made twice or be wrong in one
+  /// place. One rule is added on top: **an unvalidated local copy is refreshed.**
+  ///
+  /// If nothing is stored, the local file cannot be shown to match what is
+  /// published, and the age of the file says nothing about that - a "Reset to
+  /// Bundled" leaves an older snapshot with a brand-new mtime, which is exactly
+  /// the case where an age fallback answers "up to date" about stale data.
+  ///
+  /// The airspace exports keep the age fallback instead, deliberately: they are
+  /// 13 MB each and pulling one on a hunch is expensive. The catalogue is 350 KB,
+  /// so fetching when unsure is the cheaper mistake.
+  static bool isRemoteNewer({
+    required String? storedEtag,
+    required String? storedLastModified,
+    required String? remoteEtag,
+    required String? remoteLastModified,
+    required int ageInDays,
+  }) {
+    final haveNoValidators = storedEtag == null && storedLastModified == null;
+    final serverOffersOne = remoteEtag != null || remoteLastModified != null;
+    if (haveNoValidators && serverOffersOne) return true;
+
+    return freshness.isRemoteNewer(
+      storedEtag: storedEtag,
+      storedLastModified: storedLastModified,
+      remoteEtag: remoteEtag,
+      remoteLastModified: remoteLastModified,
+      ageInDays: ageInDays,
+      maxAgeInDays: PgeSitesConfig.maxAge.inDays,
+    );
+  }
+
+  /// Ask the server whether a newer catalogue exists.
+  ///
+  /// A HEAD request, so the answer costs a few hundred bytes rather than the
+  /// whole file. Returns false whenever it cannot tell - an error or a non-200
+  /// must not push a download that may be pointless, and the pilot can still
+  /// refresh by hand from Data Management.
+  Future<bool> checkForUpdate() async {
+    try {
+      final stored = await PreferencesHelper.getCatalogValidators();
+      final downloadedAt = await PreferencesHelper.getPgeSitesDownloadDate();
+      final ageInDays =
+          DateTime.now().difference(downloadedAt ?? DateTime(2000)).inDays;
+
+      final response = await httpClient
+          .head(Uri.parse(PgeSitesConfig.catalogUrl))
+          .timeout(const Duration(seconds: 30));
+
+      if (response.statusCode != 200) {
+        LoggingService.structured('CATALOG_UPDATE_CHECK_FAILED', {
+          'status': response.statusCode,
+        });
+        return false;
+      }
+
+      // Stamped only now, on a definitive answer. Stamping before the request
+      // meant a check that failed because the pilot had no signal - at a launch
+      // site, the normal case - counted as "checked", and the automatic check is
+      // throttled on this timestamp, so one failure blocked the next attempt for
+      // a month.
+      await PreferencesHelper.setCatalogCheckedNow();
+
+      final available = isRemoteNewer(
+        storedEtag: stored.etag,
+        storedLastModified: stored.lastModified,
+        remoteEtag: response.headers['etag'],
+        remoteLastModified: response.headers['last-modified'],
+        ageInDays: ageInDays,
+      );
+
+      LoggingService.structured('CATALOG_UPDATE_CHECK', {
+        'update_available': available,
+        'age_days': ageInDays,
+        'had_validators': stored.etag != null || stored.lastModified != null,
+      });
+
+      return available;
+    } catch (error) {
+      LoggingService.error('[PGE_SITES] Catalogue update check failed', error);
+      return false;
+    }
+  }
+
+  /// Fetch the published catalogue and put it where the parser expects it.
+  ///
+  /// Written gzipped so there is one local format and [parseDownloadedData]
+  /// needs no branch, and validated by parsing before it replaces anything: a
+  /// truncated or HTML-error response must leave the working catalogue alone
+  /// rather than empty the map. Temp file plus atomic rename, as the bundled
+  /// copy already does.
+  Future<bool> downloadFromRemote() async {
+    final stopwatch = Stopwatch()..start();
+    try {
+      final response = await httpClient
+          .get(Uri.parse(PgeSitesConfig.catalogUrl))
+          .timeout(PgeSitesConfig.downloadTimeout);
+
+      if (response.statusCode != 200) {
+        LoggingService.structured('CATALOG_DOWNLOAD_FAILED', {
+          'status': response.statusCode,
+        });
+        return false;
+      }
+
+      // Cheap sanity check before anything is written: the real file is ~880 KB
+      // of CSV whose first line is the header.
+      final body = response.body;
+      if (!body.startsWith('id,name,') || body.length < 100000) {
+        LoggingService.structured('CATALOG_DOWNLOAD_REJECTED', {
+          'bytes': body.length,
+          'starts_with': body.substring(0, body.length.clamp(0, 40)),
+        });
+        return false;
+      }
+
+      final localFilePath = await _getLocalFilePath();
+      final tempFile = File('$localFilePath.tmp');
+      await tempFile.writeAsBytes(gzip.encode(utf8.encode(body)));
+      await tempFile.rename(localFilePath);
+
+      // The file is in place, so the download has succeeded whatever happens
+      // next. Recording the validators is bookkeeping: losing it costs one
+      // redundant refresh, whereas reporting "Download Failed - sites unchanged"
+      // after the sites did change tells the pilot the opposite of the truth.
+      try {
+        await PreferencesHelper.setCatalogValidators(
+          etag: response.headers['etag'],
+          lastModified: response.headers['last-modified'],
+        );
+        await PreferencesHelper.setPgeSitesDownloaded(true);
+      } catch (error) {
+        LoggingService.error(
+            '[PGE_SITES] Catalogue saved but its validators were not', error);
+      }
+
+      stopwatch.stop();
+      LoggingService.performance('Catalogue download', stopwatch.elapsed,
+          '${body.length} bytes from the published catalogue');
+      return true;
+    } catch (error, stackTrace) {
+      LoggingService.error(
+          '[PGE_SITES] Catalogue download failed', error, stackTrace);
+      return false;
+    }
+  }
+
   /// Copy bundled CSV file to local storage
   Future<bool> downloadSitesData({bool forceRedownload = false}) async {
     PerformanceMonitor.startOperation('PgeSitesDownload');
@@ -212,6 +378,23 @@ class PgeSitesDownloadService {
 
       // Move to final location atomically
       await tempFile.rename(localFilePath);
+
+      // The local copy is now the bundled one, so the validators describing the
+      // *published* file no longer describe it. Left in place, a later check
+      // would compare the unchanged remote ETag against them and report "up to
+      // date" while the pilot sits on the older shipped snapshot - the opposite
+      // of what both buttons are for.
+      //
+      // Its own try: the file is already in place by now, so a preferences
+      // failure is not a failed download and must not be reported as one. The
+      // cost of losing this write is one redundant refresh, not stale data.
+      try {
+        await PreferencesHelper.setCatalogValidators(
+            etag: null, lastModified: null);
+      } catch (error) {
+        LoggingService.error(
+            '[PGE_SITES] Could not clear catalogue validators', error);
+      }
 
       final completedTime = DateTime.now();
       final duration = completedTime.difference(startTime);
@@ -319,7 +502,7 @@ class PgeSitesDownloadService {
             'wind_w': int.tryParse(field('wind_w')) ?? 0,
             'wind_nw': int.tryParse(field('wind_nw')) ?? 0,
             // Which guides contributed this launch, e.g.
-            // "pge:4632;siteguide_au:106-28".
+            // "pge:4632;ansg:106-28".
             'source': field('source'),
             // Why a guide says the launch is shut, verbatim. Absent from an
             // older catalogue, which reads as null rather than failing.

@@ -8,7 +8,9 @@ class Site {
   final double? altitude;
   final String? country;
   final bool customName;
-  final int? catalogSiteId;  // Foreign key to pge_sites table
+  /// The catalogue entry describing this launch, as the guide’s own key
+  /// (`pge:4632`). Stable across a catalogue rebuild, unlike its row number.
+  final String? catalogRef;
   final DateTime? createdAt;
   final int? flightCount;
 
@@ -20,7 +22,7 @@ class Site {
     this.altitude,
     this.country,
     this.customName = false,
-    this.catalogSiteId,
+    this.catalogRef,
     this.createdAt,
     this.flightCount,
   });
@@ -34,7 +36,7 @@ class Site {
       'altitude': altitude,
       'country': country,
       'custom_name': customName ? 1 : 0,
-      'catalog_site_id': catalogSiteId,
+      'catalog_ref': catalogRef,
       'created_at': createdAt?.toIso8601String(),
     };
   }
@@ -48,7 +50,7 @@ class Site {
       altitude: map['altitude']?.toDouble(),
       country: map['country'],
       customName: map['custom_name'] == 1,
-      catalogSiteId: map['catalog_site_id'],
+      catalogRef: map['catalog_ref'],
       createdAt: map['created_at'] != null ? DateTime.parse(map['created_at']) : null,
       flightCount: map['flight_count'],
     );
@@ -62,7 +64,7 @@ class Site {
     double? altitude,
     String? country,
     bool? customName,
-    int? catalogSiteId,
+    String? catalogRef,
     DateTime? createdAt,
     int? flightCount,
   }) {
@@ -74,7 +76,7 @@ class Site {
       altitude: altitude ?? this.altitude,
       country: country ?? this.country,
       customName: customName ?? this.customName,
-      catalogSiteId: catalogSiteId ?? this.catalogSiteId,
+      catalogRef: catalogRef ?? this.catalogRef,
       createdAt: createdAt ?? this.createdAt,
       flightCount: flightCount ?? this.flightCount,
     );
@@ -115,7 +117,7 @@ extension SiteToParaglidingSite on Site {
       // ParaglidingSite.siteKey falls back to name-and-coordinates.
       id: id,
       isFromLocalDb: true,
-      catalogSiteId: catalogSiteId,
+      catalogRef: catalogRef,
       name: name,
       latitude: latitude,
       longitude: longitude,

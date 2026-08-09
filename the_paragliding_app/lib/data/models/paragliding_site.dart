@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../../utils/catalog_ref.dart';
 import '../../utils/site_marker_utils.dart';
 
 class ParaglidingSite {
@@ -17,8 +18,13 @@ class ParaglidingSite {
   final double? popularity; // Calculated popularity score
   final int flightCount; // Number of flights from local database
   final bool isFromLocalDb; // True if site exists in local database
-  final int? catalogSiteId; // Foreign key to PGE sites table (for local sites linked to PGE)
-  /// Which guides contributed this launch, e.g. "pge:4632;siteguide_au:106-28".
+  /// The catalogue entry for this launch, as the guide’s own key (`pge:4632`).
+  ///
+  /// On a flown site this is the link into the catalogue; on a catalogue site it
+  /// is that row’s own ref. Comparing the two is how a catalogue pin is matched
+  /// to a site the pilot has flown - see SiteUtils.duplicateOfFlownSite.
+  final String? catalogRef;
+  /// Which guides contributed this launch, e.g. "pge:4632;ansg:106-28".
   /// Drives the per-source tabs in the site details dialog.
   final String? source;
   /// Why a guide says this launch is shut, verbatim. Null when open.
@@ -39,23 +45,25 @@ class ParaglidingSite {
     this.popularity,
     this.flightCount = 0,
     this.isFromLocalDb = false,
-    this.catalogSiteId,
+    this.catalogRef,
     this.source,
     this.closed,
   });
 
   /// The guides behind this launch, in the order they appear, as
   /// (provider, id) pairs. Empty when the catalogue predates source tracking.
-  List<({String provider, String id})> get sources {
-    final raw = source;
-    if (raw == null || raw.isEmpty) return const [];
-    return raw
-        .split(';')
-        .map((token) => token.split(':'))
-        .where((parts) => parts.length >= 2)
-        .map((parts) => (provider: parts[0], id: parts.sublist(1).join(':')))
-        .toList();
-  }
+  ///
+  /// Tokenised by [CatalogRef] rather than here, so a provider the producer has
+  /// since renamed reaches the tabs under its current prefix. Splitting the
+  /// string in two places is how the tabs and the key would drift apart.
+  List<({String provider, String id})> get sources =>
+      CatalogRef.tokensOf(source).map((token) {
+        final separator = token.indexOf(':');
+        return (
+          provider: token.substring(0, separator),
+          id: token.substring(separator + 1),
+        );
+      }).toList();
 
   // Computed properties
   bool get hasFlights => flightCount > 0;
@@ -71,11 +79,15 @@ class ParaglidingSite {
   /// API result that was never persisted, as ParaglidingEarthApi builds - so
   /// those compare exactly as they did before identity was introduced.
   String get siteKey {
-    if (id == null) {
-      return 'coord:$name@${latitude.toStringAsFixed(6)},'
-          '${longitude.toStringAsFixed(6)}';
-    }
-    return isFromLocalDb ? 'local:$id' : 'catalog:$id';
+    // A flown site is identified by its row in the pilot's own table; a
+    // catalogue entry by its ref. The ref is checked first because a flown site
+    // carries both, and `local:` is the stronger statement about which row this
+    // object came from.
+    if (isFromLocalDb && id != null) return 'local:$id';
+    if (catalogRef != null) return 'catalog:$catalogRef';
+
+    return 'coord:$name@${latitude.toStringAsFixed(6)},'
+        '${longitude.toStringAsFixed(6)}';
   }
 
   // Helper to get marker color - moved from UnifiedSite
@@ -246,7 +258,7 @@ class ParaglidingSite {
     double? popularity,
     int? flightCount,
     bool? isFromLocalDb,
-    int? catalogSiteId,
+    String? catalogRef,
     String? source,
     String? closed,
   }) {
@@ -265,7 +277,7 @@ class ParaglidingSite {
       popularity: popularity ?? this.popularity,
       flightCount: flightCount ?? this.flightCount,
       isFromLocalDb: isFromLocalDb ?? this.isFromLocalDb,
-      catalogSiteId: catalogSiteId ?? this.catalogSiteId,
+      catalogRef: catalogRef ?? this.catalogRef,
       source: source ?? this.source,
       closed: closed ?? this.closed,
     );

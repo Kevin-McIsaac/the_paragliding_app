@@ -46,7 +46,10 @@ void main() {
       ({int id, String name, double lat, double lon}) site) async {
     final db = await DatabaseHelper.instance.database;
     await db.insert('pge_sites', {
-      'id': site.id,
+      // Keyed on the guide's own id, as an import writes it. Inserting a bare
+      // rowid leaves the row with no ref, and the matcher's catalogue tier has
+      // nothing to identify it by.
+      'ref': 'pge:${site.id}',
       'name': site.name,
       'latitude': site.lat,
       'longitude': site.lon,
@@ -55,7 +58,7 @@ void main() {
     });
   }
 
-  /// A flown site, as an import would have left it: linked to [catalogSiteId]
+  /// A flown site, as an import would have left it: linked to [catalogRef]
   /// and sitting on that catalogue row's coordinates.
   Future<int> insertFlownSite(
     ({int id, String name, double lat, double lon}) site, {
@@ -66,7 +69,7 @@ void main() {
       'name': site.name,
       'latitude': site.lat,
       'longitude': site.lon,
-      'catalog_site_id': site.id,
+      'catalog_ref': 'pge:${site.id}',
       'custom_name': customName ? 1 : 0,
       'created_at': DateTime.now().toIso8601String(),
     });
@@ -119,7 +122,7 @@ void main() {
       expect(proposals, hasLength(1));
       final proposal = proposals.single;
       expect(proposal.flightId, flightId);
-      expect(proposal.toSite.id, northeast.id);
+      expect(proposal.toSite.catalogRef, 'pge:${northeast.id}');
       expect(proposal.toDistanceMeters, lessThan(50));
       expect(proposal.fromDistanceMeters, greaterThan(900));
       expect(proposal.improvementMeters, greaterThan(900));
@@ -149,7 +152,7 @@ void main() {
       final proposals = await LaunchRematchService.instance.preview();
 
       expect(proposals, hasLength(1));
-      expect(proposals.single.toSite.id, east.id);
+      expect(proposals.single.toSite.catalogRef, 'pge:${east.id}');
     });
 
     test('ignores a site the pilot named themselves', () async {
@@ -202,7 +205,8 @@ void main() {
 
       // Assert against the database, not the returned summary.
       final db = await DatabaseHelper.instance.database;
-      final sites = await db.query('sites', where: 'catalog_site_id = ?', whereArgs: [northeast.id]);
+      final sites = await db.query('sites',
+          where: 'catalog_ref = ?', whereArgs: ['pge:${northeast.id}']);
       expect(sites, hasLength(1));
       expect(sites.single['name'], northeast.name);
 

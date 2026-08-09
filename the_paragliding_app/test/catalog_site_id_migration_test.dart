@@ -1,3 +1,14 @@
+// Longer than the 30s default because this is the one suite that must use a
+// file-backed database - it closes one and opens it again to see whether the
+// version was recorded, which an in-memory database cannot do. Under a parallel
+// run the open is slow enough to be starved: the first test here timed out at
+// 30s in every full `flutter test`, while passing alone, in pairs, and across
+// the whole suite under --concurrency=1 (what CI uses). Moving the rest of the
+// suite in-memory for issue #280 reduced this class of failure; this file is the
+// deliberate exception, so it gets the headroom instead.
+@Timeout(Duration(seconds: 90))
+library;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:the_paragliding_app/data/datasources/database_helper.dart';

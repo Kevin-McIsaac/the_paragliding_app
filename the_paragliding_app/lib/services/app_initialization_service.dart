@@ -132,6 +132,15 @@ class AppInitializationService {
 
         // Wait for import to complete so the database is ready before use
         await _downloadAndImportPgeSites();
+      } else if (await _publishedCatalogIsNewer()) {
+        // The bundled copy is only ever as new as the release. Launches added
+        // since then reach the pilot from here, without waiting for a Play
+        // update - the whole reason the catalogue is published separately.
+        LoggingService.info(
+            'AppInitializationService: Newer catalogue published, refreshing');
+        if (await PgeSitesDownloadService.instance.downloadFromRemote()) {
+          await PgeSitesDatabaseService.instance.importSitesData();
+        }
       } else {
         LoggingService.info('AppInitializationService: PGE sites already available');
       }
@@ -139,6 +148,23 @@ class AppInitializationService {
       LoggingService.error('AppInitializationService: Error checking PGE sites', e);
       // Non-fatal - app can work without PGE sites
     }
+  }
+
+  /// Whether to ask the server for a newer catalogue, and its answer.
+  ///
+  /// Throttled to [PgeSitesConfig.maxAge] since the last check, not the last
+  /// download: the pipeline runs weekly and usually changes nothing, so an
+  /// unthrottled check would be a HEAD request on every cold start for an
+  /// answer that is almost always "no". A launch site often has no signal, so
+  /// this must never be on anything the pilot waits for - it is not: the whole
+  /// method runs on the deferred path, and every failure is swallowed.
+  Future<bool> _publishedCatalogIsNewer() async {
+    final lastChecked = await PreferencesHelper.getCatalogCheckedDate();
+    if (lastChecked != null &&
+        DateTime.now().difference(lastChecked) < PgeSitesConfig.maxAge) {
+      return false;
+    }
+    return PgeSitesDownloadService.instance.checkForUpdate();
   }
 
   /// Download and import PGE sites from bundled CSV in background

@@ -90,7 +90,7 @@ class DatabaseResetHelper {
         // consults the flight-log cache first, and that cache holds every
         // Unknown site that has a flight attached - so without this a row
         // matches itself (a no-op that still reports success and writes a
-        // flight-log id into catalog_site_id), or, when the cache is stale, matches
+        // flight-log id into catalog_ref), or, when the cache is stale, matches
         // a *different* Unknown site and merges two real launches together.
         if (_isPlaceholderSiteName(match.name)) {
           LoggingService.debug(
@@ -102,23 +102,21 @@ class DatabaseResetHelper {
         // Deliberately not findOrCreateSite: it matches on coordinates with a
         // ~1.1km tolerance, so it would find this very Unknown row and report
         // success while changing nothing. Match on identity (name / PGE id).
-        // The catalogue id behind the match, whichever source it came from.
-        // A flight-log match carries the local sites.id in `id`, and the two
-        // id spaces overlap at small values - comparing catalog_site_id
-        // against a local id merges unrelated launches. That comparison was
-        // dead while flight-log matches had a null id; populating it in
-        // toParaglidingSite made it live.
-        final matchCatalogId =
-            match.isFromLocalDb ? match.catalogSiteId : match.id;
+        // The catalogue entry behind the match, whichever source it came from.
+        // This used to branch on isFromLocalDb because a catalogue match kept
+        // its identity in `id` while a flight-log match kept the local sites.id
+        // there, and the two integer spaces overlapped at small values - so the
+        // comparison below could merge unrelated launches. A ref is unambiguous.
+        final matchCatalogRef = match.catalogRef;
 
         Site? existing;
         for (final candidate in knownSites) {
           if (candidate.id == siteId) continue;
           final sameName = candidate.name == match.name;
-          final samePgeId = candidate.catalogSiteId != null &&
-              matchCatalogId != null &&
-              candidate.catalogSiteId == matchCatalogId;
-          if (sameName || samePgeId) {
+          final sameCatalogueEntry = candidate.catalogRef != null &&
+              matchCatalogRef != null &&
+              candidate.catalogRef == matchCatalogRef;
+          if (sameName || sameCatalogueEntry) {
             existing = candidate;
             break;
           }
@@ -140,7 +138,7 @@ class DatabaseResetHelper {
             // The previous raw update wrote the int straight into a REAL column.
             altitude: match.altitude?.toDouble(),
             country: match.country,
-            catalogSiteId: matchCatalogId,
+            catalogRef: matchCatalogRef,
           );
           await databaseService.updateSite(renamed);
           final index = knownSites.indexWhere((s) => s.id == siteId);

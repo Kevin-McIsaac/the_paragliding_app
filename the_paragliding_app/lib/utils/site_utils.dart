@@ -13,7 +13,7 @@ class SiteUtils {
   
   /// Which catalogue entries are already represented by a flown site.
   ///
-  /// `catalog_site_id` is the real link and survives both a pilot moving a
+  /// `catalog_ref` is the real link and survives both a pilot moving a
   /// site and the catalogue regenerating around it, neither of which leaves
   /// coordinates byte-identical. A flown site with no link has only its
   /// coordinates left to match on.
@@ -24,20 +24,25 @@ class SiteUtils {
   static bool Function(ParaglidingSite) duplicateOfFlownSite(
     Iterable<ParaglidingSite> flownSites,
   ) {
-    final linkedCatalogIds = <int>{};
+    final linkedRefs = <String>{};
     final unlinkedLocations = <String>{};
 
     for (final site in flownSites) {
-      final catalogId = site.catalogSiteId;
-      if (catalogId != null) {
-        linkedCatalogIds.add(catalogId);
+      final ref = site.catalogRef;
+      if (ref != null) {
+        linkedRefs.add(ref);
       } else {
         unlinkedLocations.add(createSiteKey(site.latitude, site.longitude));
       }
     }
 
+    // Both sides carry catalogRef now: on a flown site it is the link, on a
+    // catalogue entry it is that row's own ref. Comparing them is exact, and
+    // unlike the row number it was compared on before, it still means the same
+    // launch after the catalogue is rebuilt.
     return (catalogSite) =>
-        linkedCatalogIds.contains(catalogSite.id) ||
+        (catalogSite.catalogRef != null &&
+            linkedRefs.contains(catalogSite.catalogRef)) ||
         unlinkedLocations
             .contains(createSiteKey(catalogSite.latitude, catalogSite.longitude));
   }
@@ -46,9 +51,13 @@ class SiteUtils {
   /// Uses foreign key relationship when available, falls back to coordinates
   /// Used to avoid showing duplicate markers on maps
   static bool isDuplicateApiSite(ParaglidingSite apiSite, List<Site> localSites) {
-    // First check if any local site has this API site linked via foreign key
+    // First check if any local site is linked to this catalogue entry.
+    // Compared on `catalogRef` both sides: this read `apiSite.id` before, which
+    // now holds nothing for a catalogue row - and being an int against a String
+    // the comparison was quietly always false rather than a type error.
     final linkedSite = localSites.where((localSite) =>
-      localSite.catalogSiteId != null && localSite.catalogSiteId == apiSite.id).firstOrNull;
+      localSite.catalogRef != null &&
+      localSite.catalogRef == apiSite.catalogRef).firstOrNull;
 
     if (linkedSite != null) {
       return true; // Found exact FK match
@@ -56,7 +65,7 @@ class SiteUtils {
 
     // Fallback to coordinate-based matching for unlinked sites
     return localSites.any((localSite) =>
-      localSite.catalogSiteId == null && // Only check unlinked sites
+      localSite.catalogRef == null && // Only check unlinked sites
       (localSite.latitude - apiSite.latitude).abs() < _coordinateTolerance &&
       (localSite.longitude - apiSite.longitude).abs() < _coordinateTolerance
     );
@@ -79,19 +88,19 @@ class SiteUtils {
 
   /// Find a local site that is linked to the given PGE site ID
   /// More efficient than coordinate-based matching
-  static Site? findLinkedLocalSite(int catalogSiteId, List<Site> localSites) {
-    return localSites.where((site) => site.catalogSiteId == catalogSiteId).firstOrNull;
+  static Site? findLinkedLocalSite(String catalogRef, List<Site> localSites) {
+    return localSites.where((site) => site.catalogRef == catalogRef).firstOrNull;
   }
 
   /// Check if a site is linked to PGE data
   static bool isSiteLinkedToPge(Site site) {
-    return site.catalogSiteId != null;
+    return site.catalogRef != null;
   }
 
   /// Get sites grouped by their linking status for UI purposes
   static Map<String, List<Site>> groupSitesByLinkingStatus(List<Site> sites) {
-    final linked = sites.where((site) => site.catalogSiteId != null).toList();
-    final unlinked = sites.where((site) => site.catalogSiteId == null).toList();
+    final linked = sites.where((site) => site.catalogRef != null).toList();
+    final unlinked = sites.where((site) => site.catalogRef == null).toList();
 
     return {
       'linked': linked,

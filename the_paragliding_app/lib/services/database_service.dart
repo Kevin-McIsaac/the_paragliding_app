@@ -718,7 +718,7 @@ class DatabaseService {
         pge.source as pge_source,
         pge.closed as pge_closed
       FROM sites s
-      LEFT JOIN pge_sites pge ON s.catalog_site_id = pge.id
+      LEFT JOIN pge_sites pge ON s.catalog_ref = pge.ref
       LEFT JOIN flights f ON f.launch_site_id = s.id
       WHERE s.latitude >= ? AND s.latitude <= ?
       AND $longitudeCondition
@@ -761,7 +761,7 @@ class DatabaseService {
         region: null,  // Not available in local PGE DB
         flightCount: row['flight_count'] as int? ?? 0,
         isFromLocalDb: true,
-        catalogSiteId: row['catalog_site_id'] as int?,  // Foreign key to PGE sites
+        catalogRef: row['catalog_ref'] as String?,  // Foreign key to PGE sites
         // Which guides describe this launch. Without it a flown site opens
         // with a single unnamed tab, even where several guides cover it -
         // this query lists its columns explicitly, so a new one has to be
@@ -933,16 +933,16 @@ class DatabaseService {
     return nearest;
   }
 
-  /// The flown site linked to [catalogSiteId], or null.
+  /// The flown site linked to [catalogRef], or null.
   ///
   /// A catalogue id names one launch exactly, where coordinates can only
   /// approximate it.
-  Future<Site?> findSiteByCatalogId(int catalogSiteId) async {
+  Future<Site?> findSiteByCatalogId(String catalogRef) async {
     Database db = await _databaseHelper.database;
     final maps = await db.query(
       'sites',
-      where: 'catalog_site_id = ?',
-      whereArgs: [catalogSiteId],
+      where: 'catalog_ref = ?',
+      whereArgs: [catalogRef],
       limit: 1,
     );
     return maps.isEmpty ? null : Site.fromMap(maps.first);
@@ -987,13 +987,13 @@ class DatabaseService {
     String? name,
     double? altitude,
     String? country,
-    int? catalogSiteId,
+    String? catalogRef,
   }) async {
     // Identity before proximity. A catalogue id names one launch exactly; the
     // coordinate fallback below can only approximate it, and gets the answer
     // wrong wherever two launches share a hill.
-    if (catalogSiteId != null) {
-      final linkedSite = await findSiteByCatalogId(catalogSiteId);
+    if (catalogRef != null) {
+      final linkedSite = await findSiteByCatalogId(catalogRef);
       if (linkedSite != null) {
         return linkedSite;
       }
@@ -1021,16 +1021,16 @@ class DatabaseService {
     }
     
     // Create new site
-    // Use provided catalogSiteId or try to find a matching PGE site
-    int? finalPgeSiteId = catalogSiteId;
-    if (finalPgeSiteId == null) {
+    // Use provided catalogRef or try to find a matching PGE site
+    String? finalCatalogRef = catalogRef;
+    if (finalCatalogRef == null) {
       try {
         final pgeSite = await PgeSitesDatabaseService.instance.findNearestSite(
           latitude: latitude,
           longitude: longitude,
           maxDistanceKm: 0.1, // 100m tolerance for automatic linking
         );
-        finalPgeSiteId = pgeSite?.id;
+        finalCatalogRef = pgeSite?.catalogRef;
       } catch (e) {
         LoggingService.debug('Failed to find matching PGE site: $e');
         // Continue without PGE link
@@ -1043,14 +1043,14 @@ class DatabaseService {
       name: finalName,
       altitude: altitude,
       country: country,
-      catalogSiteId: finalPgeSiteId,
+      catalogRef: finalCatalogRef,
     );
 
     final id = await insertSite(newSite);
     final createdSite = newSite.copyWith(id: id);
 
-    if (finalPgeSiteId != null) {
-      LoggingService.info('DatabaseService: Created site "$finalName" linked to PGE site ID: $finalPgeSiteId');
+    if (finalCatalogRef != null) {
+      LoggingService.info('DatabaseService: Created site "$finalName" linked to catalogue entry: $finalCatalogRef');
     }
 
     return createdSite;
@@ -1100,19 +1100,19 @@ class DatabaseService {
 
   /// Link a local site with a PGE site using foreign key relationship
   /// This replaces the need for runtime coordinate-based matching
-  Future<bool> linkSiteWithPgeSite(int localSiteId, int catalogSiteId) async {
+  Future<bool> linkSiteWithPgeSite(int localSiteId, String catalogRef) async {
     try {
       Database db = await _databaseHelper.database;
 
       final result = await db.update(
         'sites',
-        {'catalog_site_id': catalogSiteId},
+        {'catalog_ref': catalogRef},
         where: 'id = ?',
         whereArgs: [localSiteId],
       );
 
       if (result > 0) {
-        LoggingService.info('DatabaseService: Linked site $localSiteId with PGE site $catalogSiteId');
+        LoggingService.info('DatabaseService: Linked site $localSiteId with PGE site $catalogRef');
         return true;
       } else {
         LoggingService.warning('DatabaseService: Failed to link site $localSiteId - site not found');
@@ -1138,7 +1138,7 @@ class DatabaseService {
              p.closed as pge_closed,
              COUNT(f.id) as flight_count
       FROM sites s
-      LEFT JOIN pge_sites p ON s.catalog_site_id = p.id
+      LEFT JOIN pge_sites p ON s.catalog_ref = p.ref
       LEFT JOIN flights f ON f.launch_site_id = s.id
       GROUP BY s.id
       ORDER BY s.name ASC
@@ -1496,7 +1496,7 @@ class DatabaseService {
   }
 
   /// Get all favorite local sites as ParaglidingSite objects
-  /// Only returns custom local sites (catalog_site_id IS NULL)
+  /// Only returns custom local sites (catalog_ref IS NULL)
   /// Sites linked to PGE sites should use PGE favorites table instead
   Future<List<ParaglidingSite>> getFavoriteSites() async {
     try {
@@ -1510,9 +1510,9 @@ class DatabaseService {
           pge.altitude as pge_altitude,
           pge.country as pge_country
         FROM sites s
-        LEFT JOIN pge_sites pge ON s.catalog_site_id = pge.id
+        LEFT JOIN pge_sites pge ON s.catalog_ref = pge.ref
         LEFT JOIN flights f ON f.launch_site_id = s.id
-        WHERE s.is_favorite = 1 AND s.catalog_site_id IS NULL
+        WHERE s.is_favorite = 1 AND s.catalog_ref IS NULL
         GROUP BY s.id
       ''');
 
@@ -1551,7 +1551,7 @@ class DatabaseService {
           region: null,
           flightCount: row['flight_count'] as int? ?? 0,
           isFromLocalDb: true,
-          catalogSiteId: row['catalog_site_id'] as int?,  // Foreign key to PGE sites
+          catalogRef: row['catalog_ref'] as String?,  // Foreign key to PGE sites
         ));
       }
 

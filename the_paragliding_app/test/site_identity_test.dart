@@ -16,6 +16,7 @@ import 'package:the_paragliding_app/data/models/paragliding_site.dart';
 void main() {
   ParaglidingSite siteAt({
     int? id,
+    String? catalogRef,
     required String name,
     bool isFromLocalDb = false,
     double latitude = -31.848,
@@ -23,6 +24,7 @@ void main() {
   }) =>
       ParaglidingSite(
         id: id,
+        catalogRef: catalogRef,
         name: name,
         latitude: latitude,
         longitude: longitude,
@@ -31,12 +33,12 @@ void main() {
       );
 
   test('distinguishes two catalog launches sharing name and point', () {
-    // Catalogue ids 166 and 210: both named "Øksnanuten", both at
+    // pge:10201 and pge:10249: both named "Øksnanuten", both at
     // 58.7608,5.98167. Same name at the same point is exactly what the old
     // name-plus-coordinates equality could not tell apart - and the bundled
     // catalogue has 23 shared-coordinate groups.
-    final first = siteAt(id: 166, name: 'Øksnanuten');
-    final second = siteAt(id: 210, name: 'Øksnanuten');
+    final first = siteAt(catalogRef: 'pge:10201', name: 'Øksnanuten');
+    final second = siteAt(catalogRef: 'pge:10249', name: 'Øksnanuten');
 
     expect(first.siteKey, isNot(second.siteKey));
     expect(first, isNot(equals(second)),
@@ -50,12 +52,16 @@ void main() {
         reason: 'per-site state must not collapse for co-located sites');
   });
 
-  test('separates local and catalog id spaces, which overlap', () {
-    final flown = siteAt(id: 42, name: 'Flown', isFromLocalDb: true);
-    final catalog = siteAt(id: 42, name: 'Catalog');
+  test('separates a flown site from the catalogue entry it links to', () {
+    // A flown site carries both its own row id and the ref it links to, so the
+    // two must still key apart - the map draws a marker for each.
+    final flown = siteAt(
+        id: 42, catalogRef: 'pge:4632', name: 'Flown', isFromLocalDb: true);
+    final catalog = siteAt(catalogRef: 'pge:4632', name: 'Catalog');
 
-    expect(flown.siteKey, isNot(catalog.siteKey),
-        reason: 'sites.id 42 and pge_sites.id 42 are unrelated rows');
+    expect(flown.siteKey, 'local:42');
+    expect(catalog.siteKey, 'catalog:pge:4632');
+    expect(flown.siteKey, isNot(catalog.siteKey));
   });
 
   group('sites with no id', () {

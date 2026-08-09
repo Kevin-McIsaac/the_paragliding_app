@@ -14,7 +14,7 @@ import 'helpers/test_helpers.dart';
 /// (~11cm). That only holds while a flown site's position is a byte-exact
 /// copy of the catalog's - the moment a pilot repositions a site (supported
 /// by edit_site_screen.dart) or the catalog regenerates around it, the two
-/// markers split. `sites.catalog_site_id` is the real link and does not
+/// markers split. `sites.catalog_ref` is the real link and does not
 /// depend on coordinates staying in sync, so the loader now dedups by that
 /// FK instead, falling back to coordinates only for a local site with no
 /// link at all.
@@ -35,35 +35,35 @@ void main() {
     await DatabaseHelper.instance.close();
   });
 
-  Future<int> insertCatalogSite({
-    required int id,
+  Future<String> insertCatalogSite({
+    required String ref,
     required String name,
     required double latitude,
     required double longitude,
   }) async {
     final db = await DatabaseHelper.instance.database;
     await db.insert('pge_sites', {
-      'id': id,
+      'ref': ref,
       'name': name,
       'latitude': latitude,
       'longitude': longitude,
       'country': 'au',
     });
-    return id;
+    return ref;
   }
 
   Future<int> insertFlownSite({
     required String name,
     required double latitude,
     required double longitude,
-    int? catalogSiteId,
+    String? catalogRef,
   }) async {
     final db = await DatabaseHelper.instance.database;
     final siteId = await db.insert('sites', {
       'name': name,
       'latitude': latitude,
       'longitude': longitude,
-      'catalog_site_id': catalogSiteId,
+      'catalog_ref': catalogRef,
       'created_at': DateTime.now().toIso8601String(),
     });
 
@@ -99,8 +99,8 @@ void main() {
     const catalogLat = -31.853, catalogLon = 116.761; // federated catalog
     const flownLat = -31.8528, flownLon = 116.763; // old PGE coordinates
 
-    final catalogId = await insertCatalogSite(
-      id: 9643,
+    final catalogRef = await insertCatalogSite(
+      ref: 'pge:9643',
       name: 'Mount Bakewell (top launches)',
       latitude: catalogLat,
       longitude: catalogLon,
@@ -109,7 +109,7 @@ void main() {
       name: 'Mt Bakewell',
       latitude: flownLat,
       longitude: flownLon,
-      catalogSiteId: catalogId,
+      catalogRef: catalogRef,
     );
 
     final result = await SiteBoundsLoaderV2.instance
@@ -133,9 +133,15 @@ void main() {
     // launches sharing a lat/lon collapsed into one marker.
     const lat = -31.848, lon = 116.777;
     await insertCatalogSite(
-        id: 11657, name: 'Mount Bakewell (lower launch)', latitude: lat, longitude: lon);
+        ref: 'pge:11657',
+        name: 'Mount Bakewell (lower launch)',
+        latitude: lat,
+        longitude: lon);
     await insertCatalogSite(
-        id: 99999, name: 'Some Other Launch', latitude: lat, longitude: lon);
+        ref: 'ansg:136-99',
+        name: 'Some Other Launch',
+        latitude: lat,
+        longitude: lon);
 
     final result =
         await SiteBoundsLoaderV2.instance.loadSitesForBounds(boundsAround(lat, lon));
@@ -149,15 +155,15 @@ void main() {
 
   test('falls back to coordinates for a flown site with no catalog link',
       () async {
-    // A local site whose catalog_site_id is null (no match at import, or
+    // A local site whose catalog_ref is null (no match at import, or
     // cleared by _relinkToFederatedCatalog) has no FK to dedup by. The old
     // coordinate rule is the only signal left for this case, and must still
     // suppress the catalog entry it was originally copied from.
     const lat = -31.86, lon = 116.75;
     await insertCatalogSite(
-        id: 42, name: 'Unlinked Hill (catalog)', latitude: lat, longitude: lon);
+        ref: 'pge:42', name: 'Unlinked Hill (catalog)', latitude: lat, longitude: lon);
     await insertFlownSite(
-        name: 'Unlinked Hill', latitude: lat, longitude: lon, catalogSiteId: null);
+        name: 'Unlinked Hill', latitude: lat, longitude: lon, catalogRef: null);
 
     final result =
         await SiteBoundsLoaderV2.instance.loadSitesForBounds(boundsAround(lat, lon));

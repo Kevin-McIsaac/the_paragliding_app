@@ -757,12 +757,12 @@ class NearbySitesScreenState extends State<NearbySitesScreen> with WidgetsBindin
       final localFavorites = await DatabaseService.instance.getFavoriteSites();
       final pgeFavorites = await PgeSitesDatabaseService.instance.getFavoriteSites();
 
-      // Deduplicate: Remove local favorites that have catalog_site_id matching a PGE favorite
+      // Deduplicate: Remove local favorites that have catalog_ref matching a PGE favorite
       // This ensures we don't show duplicate sites when one exists in both databases
       final deduplicatedLocalFavorites = localFavorites.where((localSite) {
-        // Keep custom local sites (no catalog_site_id) always
-        // Only exclude if this local site's catalog_site_id matches a PGE favorite
-        // NOTE: We can't directly access catalog_site_id from ParaglidingSite, but we can
+        // Keep custom local sites (no catalog_ref) always
+        // Only exclude if this local site's catalog_ref matches a PGE favorite
+        // NOTE: We can't directly access catalog_ref from ParaglidingSite, but we can
         // infer from the Site object if we had it. For now, we'll keep all local favorites
         // since they represent flown sites and should appear in the list.
         // TODO: May need to refine this logic based on actual usage patterns

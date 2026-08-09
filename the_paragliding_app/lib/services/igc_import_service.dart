@@ -288,15 +288,13 @@ class IgcImportService {
         altitude: siteAltitude,
         name: siteName,
         country: country,
-        // The catalogue id, whichever source the match came from. A flight-log
-        // match carries the local sites.id in `id` and the catalogue id in
-        // `catalogSiteId`; the two id spaces overlap, so passing `id` blindly
-        // would link this site to an unrelated catalogue row.
-        catalogSiteId: matchedSite == null
-            ? null
-            : (matchedSite.isFromLocalDb
-                ? matchedSite.catalogSiteId
-                : matchedSite.id),
+        // The catalogue entry, whichever source the match came from. This used
+        // to branch on isFromLocalDb because a catalogue match carried its
+        // identity in `id` while a flight-log match carried the local sites.id
+        // there - two overlapping integer spaces in one field, which is how a
+        // site once got linked to an unrelated catalogue row. Both carry
+        // `catalogRef` now.
+        catalogRef: matchedSite?.catalogRef,
       );
       
       // Keep the matcher's cache current so the next flight from this launch

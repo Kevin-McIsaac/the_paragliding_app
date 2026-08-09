@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:the_paragliding_app/data/datasources/database_helper.dart';
-import 'package:the_paragliding_app/services/pge_sites_database_service.dart';
+import 'package:the_paragliding_app/utils/catalog_ref.dart';
 
 import 'helpers/test_helpers.dart';
 
@@ -87,138 +87,122 @@ void main() {
     test('includes launches contributed only by a national guide', () {
       // The reason the federation exists: 135 Australian launches have no PGE
       // counterpart and were invisible before.
+      //
+      // Matched on the raw prefix the producer currently writes, not the app's
+      // normalised one - this reads the asset, so it must say what the file says.
+      // When the pipeline switches to `ansg:` this needs both.
       final guideOnly = rows.where((r) =>
-          field(r, 'source').contains('siteguide_au') &&
+          (field(r, 'source').contains('siteguide_au:') ||
+              field(r, 'source').contains('ansg:')) &&
           !field(r, 'source').contains('pge:'));
       expect(guideOnly.length, greaterThan(50));
     });
   });
 
-  group('relinking flown sites to the federated catalogue', () {
-    late dynamic db;
+  // The 'relinking flown sites' group that used to sit here is gone with the
+  // machinery it covered. The catalogue is keyed on the contributing guide's own
+  // id now, so there is no id space to remap and no generation to track: a
+  // rebuild leaves every link valid by construction. Its coverage moved, and
+  // grew, rather than being dropped:
+  //
+  //  * test/catalog_ref_migration_test.dart - the one-time v4 -> v5 conversion
+  //    of the old integer links, including refusing to guess a ref for a row
+  //    that is no longer in the catalogue;
+  //  * test/catalog_ref_stability_test.dart - a regenerated catalogue with every
+  //    positional id shifted, favourites across a refresh, and a withdrawn entry
+  //    re-linking itself when the guide restores it.
 
-    Future<void> seedGenerationOne() async {
-      // A pre-federation database: catalogue ids are PGE ids, and a flown
-      // site points at one of them.
-      await db.insert('pge_sites', {
-        'id': 4632, 'name': 'Manilla, Mt Borah', 'longitude': 150.6, 'latitude': -30.7,
-        'is_favorite': 1,
-      });
-      await db.insert('sites', {
-        'id': 1, 'name': 'Mt Borah', 'latitude': -30.7, 'longitude': 150.6,
-        'catalog_site_id': 4632, 'created_at': DateTime.now().toIso8601String(),
-      });
-      await db.insert('sites', {
-        'id': 2, 'name': 'Gone Upstream', 'latitude': 1.0, 'longitude': 1.0,
-        'catalog_site_id': 99999, 'created_at': DateTime.now().toIso8601String(),
-      });
-    }
-
-    List<Map<String, dynamic>> federatedRows() => [
-          {
-            'id': 17, 'name': 'Manilla - Mt Borah - West launch',
-            'longitude': 150.6086, 'latitude': -30.6792, 'altitude': 800,
-            'country': 'au', 'source': 'pge:4632;siteguide_au:136-40',
-          },
-          {
-            'id': 4632, 'name': 'A different launch that happens to hold this id',
-            'longitude': 6.7, 'latitude': 45.9, 'altitude': 1200,
-            'country': 'fr', 'source': 'pge:20001',
-          },
-        ];
-
+  group('the catalogue key', () {
     setUp(() async {
       await TestHelpers.initializeDatabaseForTesting();
       await DatabaseHelper.instance.recreateDatabase();
-      db = await DatabaseHelper.instance.database;
-      await PgeSitesDatabaseService.instance.initializeTables();
-      await seedGenerationOne();
     });
 
-    test('rewrites a flown site link into the new id space', () async {
-      await PgeSitesDatabaseService.instance.importSitesData(rows: federatedRows());
-
-      final site = (await db.query('sites', where: 'id = 1')).single;
-      expect(site['catalog_site_id'], 17,
-          reason: 'should follow pge:4632 into the federated catalogue');
-    });
-
-    test('clears a link whose source disappeared rather than leaving it wrong', () async {
-      // Site 2 pointed at PGE 99999, which no longer exists. Id 99999 could
-      // later belong to something unrelated; showing that launch's wind and
-      // altitude would be worse than showing none.
-      await PgeSitesDatabaseService.instance.importSitesData(rows: federatedRows());
-
-      final site = (await db.query('sites', where: 'id = 2')).single;
-      expect(site['catalog_site_id'], isNull);
-    });
-
-    test('carries favourites across the id change', () async {
-      await PgeSitesDatabaseService.instance.importSitesData(rows: federatedRows());
-
-      final favourites = await db.query('pge_sites', where: 'is_favorite = 1');
-      expect(favourites.map((r) => r['id']), [17]);
-    });
-
-    test('does not relink a second time, when ids no longer mean the same thing',
-        () async {
-      await PgeSitesDatabaseService.instance.importSitesData(rows: federatedRows());
-      // A weekly refresh of the same catalogue. Site 1 now holds canonical id
-      // 17; re-running the mapping would look 17 up as a PGE id and could
-      // relink it to something unrelated.
-      await PgeSitesDatabaseService.instance.importSitesData(rows: federatedRows());
-
-      final site = (await db.query('sites', where: 'id = 1')).single;
-      expect(site['catalog_site_id'], 17);
-    });
-
-    test('an ordinary refresh keeps favourites', () async {
-      // Regression: the import deleted the table and re-inserted, silently
-      // clearing every favourite on each refresh.
-      await PgeSitesDatabaseService.instance.importSitesData(rows: federatedRows());
-      await PgeSitesDatabaseService.instance.importSitesData(rows: federatedRows());
-
-      final favourites = await db.query('pge_sites', where: 'is_favorite = 1');
-      expect(favourites.map((r) => r['id']), [17]);
-    });
-  });
-
-  group('renaming pge_site_id to catalog_site_id', () {
-    // The column never held a ParaglidingEarth id once sites were federated;
-    // it holds a catalogue id. The old name asserted otherwise at every call
-    // site and twice caused a catalogue id to be handed to ParaglidingEarth
-    // as its own, silently addressing an unrelated site.
-    test('carries existing links across the rename', () async {
-      await TestHelpers.initializeDatabaseForTesting();
-      await DatabaseHelper.instance.recreateDatabase();
+    test('a fresh install links on a ref, not a row number', () async {
       final db = await DatabaseHelper.instance.database;
-
-      await db.insert('sites', {
-        'name': 'Mt Borah',
-        'latitude': -30.6789,
-        'longitude': 150.609,
-        'catalog_site_id': 9247,
-        'created_at': DateTime.now().toIso8601String(),
-      });
-
-      // A v3 database is renamed in place, so the value has to survive - the
-      // link is what gives a flown site its wind and altitude.
-      final site = (await db.query('sites', where: "name = 'Mt Borah'")).single;
-      expect(site['catalog_site_id'], 9247);
-    });
-
-    test('the old column name is gone', () async {
-      await TestHelpers.initializeDatabaseForTesting();
-      await DatabaseHelper.instance.recreateDatabase();
-      final db = await DatabaseHelper.instance.database;
-
       final columns = (await db.rawQuery('PRAGMA table_info(sites)'))
           .map((c) => c['name'] as String)
           .toSet();
 
-      expect(columns, contains('catalog_site_id'));
+      expect(columns, contains('catalog_ref'));
       expect(columns, isNot(contains('pge_site_id')),
           reason: 'a fresh install should never create the misleading name');
+      expect(columns, isNot(contains('catalog_site_id')),
+          reason: 'the positional-id column is a v4 relic; only the v4 -> v5 '
+              'migration should ever see it');
+    });
+
+    test('holds the guide token it was given', () async {
+      final db = await DatabaseHelper.instance.database;
+      await db.insert('sites', {
+        'name': 'Mt Borah',
+        'latitude': -30.6789,
+        'longitude': 150.609,
+        'catalog_ref': 'pge:4632',
+        'created_at': DateTime.now().toIso8601String(),
+      });
+
+      final site = (await db.query('sites', where: "name = 'Mt Borah'")).single;
+      expect(site['catalog_ref'], 'pge:4632');
+    });
+
+    test('every row of the shipped catalogue yields a ref', () async {
+      // If a row could not be keyed the import would silently skip it, so the
+      // pilot would lose a launch. Checked against the real asset because the
+      // producer is not in this repo and cannot be tested directly.
+      final bytes =
+          File('assets/data/world_sites_extracted.csv.gz').readAsBytesSync();
+      final rows = csv.decodeWithHeaders(utf8.decode(gzip.decode(bytes)));
+
+      final unkeyable = rows
+          .where((row) => CatalogRef.fromSource((row['source'] ?? '').toString()) == null)
+          .length;
+      expect(unkeyable, 0);
+    });
+
+    test('prefers pge when a launch is described by two guides', () {
+      expect(CatalogRef.fromSource('ansg:136-40;pge:4632'), 'pge:4632');
+      expect(CatalogRef.fromSource('ansg:136-40'), 'ansg:136-40');
+      expect(CatalogRef.fromSource(''), isNull);
+    });
+
+    test('rejects a token missing either half', () {
+      // `pge:` names no launch, and keying rows on it would collide every id-less
+      // token from that guide onto one row. Not reachable against today's
+      // catalogue - but the point of this change is to stop assuming that.
+      expect(CatalogRef.tokensOf('pge:'), isEmpty);
+      expect(CatalogRef.tokensOf(':4632'), isEmpty);
+      expect(CatalogRef.tokensOf('pge'), isEmpty);
+      expect(CatalogRef.fromSource('pge:;ansg:136-40'), 'ansg:136-40',
+          reason: 'a malformed token must not shadow a usable one');
+    });
+
+    test('normalises a provider the producer has since renamed', () {
+      // The shipped catalogue still says siteguide_au; the prefix is now the
+      // guide's own acronym, ansg (Australian National Site Guide). Normalising on read means the
+      // app works against either, and only ever stores the current form - so
+      // there is one prefix in the database however old the catalogue is.
+      expect(CatalogRef.fromSource('siteguide_au:136-40'), 'ansg:136-40');
+      expect(CatalogRef.tokensOf('pge:4632;siteguide_au:136-40'),
+          ['pge:4632', 'ansg:136-40']);
+      expect(CatalogRef.providerOf('ansg:136-40'), 'ansg');
+    });
+
+    test('a provider prefix survives a round trip through source', () {
+      // Length is a matter of taste - pge is three, ansg four, ffvl will be four
+      // - so this asserts the part that is not: a prefix containing either
+      // delimiter would be torn apart when `source` is parsed back, and the ref
+      // stored against it would never match again.
+      for (final provider in CatalogRef.providerPrecedence) {
+        expect(provider, provider.toLowerCase(),
+            reason: 'refs are compared exactly, so case cannot vary');
+        expect(provider, isNot(contains(':')));
+        expect(provider, isNot(contains(';')));
+
+        expect(CatalogRef.fromSource('$provider:123'), '$provider:123');
+        expect(CatalogRef.tokensOf('$provider:123;other:9').first,
+            '$provider:123');
+      }
     });
   });
 }

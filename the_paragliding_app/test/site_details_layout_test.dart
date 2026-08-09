@@ -20,7 +20,7 @@ void main() {
     longitude: 150.6086,
     siteType: 'launch',
     windDirections: const ['W', 'NW'],
-    source: 'pge:4632;siteguide_au:136-20',
+    source: 'pge:4632;ansg:136-20',
   );
 
   setUp(() async {

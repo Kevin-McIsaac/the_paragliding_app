@@ -143,14 +143,19 @@ class LaunchRematchService {
           preferredType: 'launch',
         );
 
-        if (match == null || match.id == null) continue;
+        // A match has to be identifiable to be actionable: a flown site by its
+        // row id, a catalogue entry by its ref. A catalogue row carries no `id`
+        // at all now, so testing that alone would discard every catalogue match.
+        if (match == null) continue;
+        if (match.id == null && match.catalogRef == null) continue;
 
         // Already on the launch the matcher would choose. The matcher returns
-        // catalogue rows and flown sites alike, and the two id spaces overlap,
-        // so compare on whichever actually identifies this flight's site.
+        // catalogue rows and flown sites alike, so compare on whichever
+        // actually identifies this flight's site.
         final matchIsCurrentSite = match.isFromLocalDb
             ? match.id == currentSite.id
-            : match.id == currentSite.catalogSiteId;
+            : match.catalogRef != null &&
+                match.catalogRef == currentSite.catalogRef;
         if (matchIsCurrentSite) continue;
 
         final fromDistance = _distanceMeters(
@@ -220,12 +225,12 @@ class LaunchRematchService {
         final proposal = proposals[i];
         final match = proposal.toSite;
 
-        // The catalogue id behind the match, whichever source it came from. A
-        // flight-log match carries the local sites.id in `id`; the id spaces
-        // overlap, so passing that as a catalogue id links the site to an
-        // unrelated launch.
-        final catalogId =
-            match.isFromLocalDb ? match.catalogSiteId : match.id;
+        // The catalogue entry behind the match, whichever source it came from.
+        // This used to need a branch on isFromLocalDb, because a catalogue
+        // match carried its identity in `id` while a flight-log match carried
+        // the local sites.id there - two overlapping integer spaces in one
+        // field. Both now carry `catalogRef`, so there is nothing to choose.
+        final catalogRef = match.catalogRef;
 
         // findOrCreateSite resolves by catalogue id first and falls back to
         // the nearest site within its radius, so an unlinked row the pilot
@@ -237,7 +242,7 @@ class LaunchRematchService {
           name: match.name,
           altitude: match.altitude?.toDouble(),
           country: match.country,
-          catalogSiteId: catalogId,
+          catalogRef: catalogRef,
         );
 
         if (target.id == proposal.fromSiteId) continue;

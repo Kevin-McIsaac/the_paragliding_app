@@ -419,9 +419,20 @@ class SiteMatchingService {
 
   /// Reload sites from flight log (useful when new flights are added)
   Future<void> reload() async {
+    invalidate();
+    await initialize();
+  }
+
+  /// Drop the cached flight-log sites without rebuilding them.
+  ///
+  /// For callers that run *inside* initialisation - a catalogue import reached
+  /// from `AppInitializationService.initializeInBackground()` is the case that
+  /// matters. [reload] would await `initialize()`, which awaits that same
+  /// memoised future, so it would deadlock on itself. The next match rebuilds
+  /// the cache lazily.
+  void invalidate() {
     _isInitialized = false;
     _sites = null;
-    await initialize();
   }
 
   /// Refresh site list after new flights are imported
