@@ -53,6 +53,29 @@ void main() {
         },
       ];
 
+  /// A launch only the Australian guide describes, alongside the two above so
+  /// the fixtures in setUp are not disturbed.
+  List<Map<String, dynamic>> catalogueAnsgOnly() => [
+        ...catalogueA(),
+        {
+          'id': 19, 'name': 'Corryong - Mt Elliot', 'longitude': 147.9,
+          'latitude': -36.19, 'altitude': 500, 'country': 'au',
+          'source': 'ansg:106-28', 'wind_n': 2,
+        },
+      ];
+
+  /// The same launch after ParaglidingEarth starts describing it too. The
+  /// producer emits a second, higher-precedence token; nothing about the launch
+  /// itself has changed.
+  List<Map<String, dynamic>> catalogueAnsgPlusPge() => [
+        ...catalogueA(),
+        {
+          'id': 19, 'name': 'Corryong - Mt Elliot', 'longitude': 147.9,
+          'latitude': -36.19, 'altitude': 500, 'country': 'au',
+          'source': 'ansg:106-28;pge:7001', 'wind_n': 2,
+        },
+      ];
+
   setUp(() async {
     await TestHelpers.initializeDatabaseForTesting();
     await DatabaseHelper.instance.recreateDatabase();
@@ -146,5 +169,93 @@ void main() {
       north: -30.0, south: -31.0, east: 151.0, west: 150.0,
     );
     expect(sites.firstWhere((s) => s.name == 'Mt Borah').altitude, 800);
+  });
+
+  test('a launch that gains a higher-precedence guide keeps its key', () async {
+    // CatalogRef.fromSource returns the *highest-precedence* token, so deriving
+    // the key afresh on every import renamed a row the day a second guide began
+    // describing it - ansg:106-28 becoming pge:7001. A rename is a delete plus
+    // an insert: the favourite went with the deleted row, and the flown site's
+    // link pointed at a key the producer will never emit again, so unlike a
+    // withdrawal it could not self-heal. Drop the `held` lookup in
+    // importSitesData and this goes red.
+    await PgeSitesDatabaseService.instance.importSitesData(
+        rows: catalogueAnsgOnly());
+    await db.update('pge_sites', {'is_favorite': 1},
+        where: 'ref = ?', whereArgs: ['ansg:106-28']);
+    await db.insert('sites', {
+      'id': 2, 'name': 'Corryong', 'latitude': -36.19, 'longitude': 147.9,
+      'catalog_ref': 'ansg:106-28',
+      'created_at': DateTime.now().toIso8601String(),
+    });
+
+    await PgeSitesDatabaseService.instance.importSitesData(
+        rows: catalogueAnsgPlusPge());
+
+    final site = (await db.query('sites', where: 'id = 2')).single;
+    expect(site['catalog_ref'], 'ansg:106-28',
+        reason: 'a row already keyed is not re-keyed by precedence');
+
+    final kept = (await db.query('pge_sites',
+            where: 'ref = ?', whereArgs: ['ansg:106-28']))
+        .single;
+    expect(kept['is_favorite'], 1, reason: 'the favourite must survive');
+    expect(
+        await db.query('pge_sites', where: 'ref = ?', whereArgs: ['pge:7001']),
+        isEmpty,
+        reason: 'the row was updated in place, not replaced under a new key');
+  });
+
+  test('two entries merging into one carry the favourite and the link',
+      () async {
+    // The residual case: both keys are already in the database, so one of them
+    // genuinely has to go. It is still not a withdrawal - the surviving row
+    // names the old key in its own `source` - so the favourite and the flown
+    // site follow it across rather than being dropped.
+    await PgeSitesDatabaseService.instance.importSitesData(rows: [
+      ...catalogueAnsgOnly(),
+      {
+        'id': 20, 'name': 'Corryong (PGE)', 'longitude': 147.9,
+        'latitude': -36.19, 'altitude': 500, 'country': 'au',
+        'source': 'pge:7001', 'wind_n': 2,
+      },
+    ]);
+    await db.update('pge_sites', {'is_favorite': 1},
+        where: 'ref = ?', whereArgs: ['pge:7001']);
+    await db.insert('sites', {
+      'id': 2, 'name': 'Corryong', 'latitude': -36.19, 'longitude': 147.9,
+      'catalog_ref': 'pge:7001',
+      'created_at': DateTime.now().toIso8601String(),
+    });
+
+    // The producer works out they are one launch and emits a single row.
+    await PgeSitesDatabaseService.instance.importSitesData(
+        rows: catalogueAnsgPlusPge());
+
+    final site = (await db.query('sites', where: 'id = 2')).single;
+    expect(site['catalog_ref'], 'ansg:106-28',
+        reason: 'the link follows the launch onto the surviving key');
+
+    final survivor = (await db.query('pge_sites',
+            where: 'ref = ?', whereArgs: ['ansg:106-28']))
+        .single;
+    expect(survivor['is_favorite'], 1,
+        reason: 'the favourite was on the absorbed row and must not be lost');
+  });
+
+  test('the catalogue tab can read the row a flown site is linked to', () async {
+    // getSiteByRef selected `cc.country_name`, which country_codes does not have
+    // - its columns are (code, name), and every sibling query in that file uses
+    // COALESCE(cc.name, s.country). So it threw `no such column` for every flown
+    // site carrying a catalog_ref, and site_details_screen calls it with no
+    // catchError, so the wind/altitude/guide tab silently never populated.
+    await PgeSitesDatabaseService.instance.importSitesData(rows: catalogueA());
+
+    final site =
+        await PgeSitesDatabaseService.instance.getSiteByRef('pge:4632');
+
+    expect(site, isNotNull, reason: 'the query must not throw');
+    expect(site!.name, 'Manilla - Mt Borah - West launch');
+    expect(site.altitude, 800);
   });
 }

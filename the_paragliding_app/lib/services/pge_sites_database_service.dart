@@ -411,6 +411,7 @@ class PgeSitesDatabaseService {
       var updated = 0;
       var unkeyable = 0;
       var deleted = 0;
+      var superseded = 0;
 
       await db.transaction((txn) async {
         // Key anything still unkeyed before matching on refs. initializeTables
@@ -424,18 +425,42 @@ class PgeSitesDatabaseService {
             .map((row) => row['ref'] as String?)
             .whereType<String>()
             .toSet();
+        // Frozen before the loop. `existingRefs` grows as the snapshot is keyed
+        // below, and a ref this import has just introduced is not evidence that
+        // the database already held the row.
+        final priorRefs = Set<String>.of(existingRefs);
         final snapshotRefs = <String>{};
+        // Tokens a surviving row names but is not keyed on, so the delete step
+        // can tell a merge apart from a withdrawal.
+        final supersededBy = <String, String>{};
 
         final batch = txn.batch();
         for (final siteData in sitesData) {
           // The CSV's own `id` is not imported: it is a row number that moves
           // whenever the producer's output does.
-          final ref = CatalogRef.fromSource(siteData['source'] as String?);
+          //
+          // A row the database already holds keeps the key it is stored under,
+          // instead of being re-derived from precedence every import. A launch
+          // first described only by `ansg:106-28` gains `pge:4632` the day PGE
+          // picks it up - routine as federation grows - and precedence alone
+          // would rename the row. A rename here is a delete plus an insert: the
+          // favourite goes with the deleted row, and every `sites.catalog_ref`
+          // pointing at it dangles for good, because the old key is never
+          // emitted again. Precedence therefore only keys rows that are new.
+          final tokens = CatalogRef.tokensOf(siteData['source'] as String?);
+          final held = tokens.where(priorRefs.contains);
+          final ref = held.isNotEmpty
+              ? held.first
+              : CatalogRef.fromSource(siteData['source'] as String?);
           if (ref == null) {
             unkeyable++;
             continue;
           }
           snapshotRefs.add(ref);
+          // Every other token on this row names the same launch.
+          for (final token in tokens) {
+            if (token != ref) supersededBy[token] = ref;
+          }
           // add() reports whether the ref is new to this batch, so a ref
           // appearing twice in one snapshot counts as one insert and one update
           // rather than two inserts - the upsert is what actually happens, and
@@ -483,7 +508,24 @@ class PgeSitesDatabaseService {
         }
         await batch.commit(noResult: true);
 
-        for (final gone in existingRefs.difference(snapshotRefs)) {
+        for (final gone in priorRefs.difference(snapshotRefs)) {
+          final successor = supersededBy[gone];
+          if (successor != null) {
+            // Two guides' entries merged into one catalogue row. The launch did
+            // not go away, so neither should the favourite nor the flown site's
+            // link. Unlike the positional relink this change removed, the two
+            // keys are known to name one launch, because the surviving row
+            // still lists the old key in its own `source`.
+            await txn.rawUpdate(
+              'UPDATE $_pgeSitesTable SET is_favorite = 1 WHERE ref = ? AND '
+              'EXISTS (SELECT 1 FROM $_pgeSitesTable WHERE ref = ? '
+              'AND is_favorite = 1)',
+              [successor, gone],
+            );
+            await txn.update('sites', {'catalog_ref': successor},
+                where: 'catalog_ref = ?', whereArgs: [gone]);
+            superseded++;
+          }
           deleted += await txn
               .delete(_pgeSitesTable, where: 'ref = ?', whereArgs: [gone]);
         }
@@ -503,6 +545,7 @@ class PgeSitesDatabaseService {
         'rows_inserted': inserted,
         'rows_updated': updated,
         'rows_deleted': deleted,
+        'rows_superseded_by_merge': superseded,
         'rows_unkeyable_skipped': unkeyable,
         'favourites_held': favourites ?? 0,
         'site_links_dangling': dangling ?? 0,
@@ -902,7 +945,7 @@ class PgeSitesDatabaseService {
   Future<ParaglidingSite?> getSiteByRef(String ref) async {
     final db = await DatabaseHelper.instance.database;
     final rows = await db.rawQuery('''
-      SELECT s.*, cc.country_name
+      SELECT s.*, COALESCE(cc.name, s.country) as country_name
       FROM $_pgeSitesTable s
       LEFT JOIN $_countryCodesTable cc ON UPPER(s.country) = cc.code
       WHERE s.ref = ?
