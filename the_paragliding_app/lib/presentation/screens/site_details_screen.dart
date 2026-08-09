@@ -94,13 +94,13 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
   /// Guide names as a pilot would recognise them, not their internal keys.
   static String _sourceLabel(String provider) => switch (provider) {
         'pge' => 'PGE',
-        'siteguide_au' => 'ANSG',
+        'ansg' => 'ANSG',
         _ => provider,
       };
 
   static String _sourceFullName(String provider) => switch (provider) {
         'pge' => 'ParaglidingEarth',
-        'siteguide_au' => 'Australian National Site Guide',
+        'ansg' => 'Australian National Site Guide',
         _ => provider,
       };
 
@@ -113,7 +113,7 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
   static String? _sourceUrl(String provider, String id) => switch (provider) {
         'pge' => 'https://www.paraglidingearth.com/?site=$id',
         // Site Guide ids are "<siteId>-<launchId>"; the page is per site.
-        'siteguide_au' => 'https://siteguide.org.au/sites/details/${id.split('-').first}',
+        'ansg' => 'https://siteguide.org.au/sites/details/${id.split('-').first}',
         _ => null,
       };
 

@@ -87,8 +87,13 @@ void main() {
     test('includes launches contributed only by a national guide', () {
       // The reason the federation exists: 135 Australian launches have no PGE
       // counterpart and were invisible before.
+      //
+      // Matched on the raw prefix the producer currently writes, not the app's
+      // normalised one - this reads the asset, so it must say what the file says.
+      // When the pipeline switches to `ansg:` this needs both.
       final guideOnly = rows.where((r) =>
-          field(r, 'source').contains('siteguide_au') &&
+          (field(r, 'source').contains('siteguide_au:') ||
+              field(r, 'source').contains('ansg:')) &&
           !field(r, 'source').contains('pge:'));
       expect(guideOnly.length, greaterThan(50));
     });
@@ -156,9 +161,33 @@ void main() {
     });
 
     test('prefers pge when a launch is described by two guides', () {
-      expect(CatalogRef.fromSource('siteguide_au:136-40;pge:4632'), 'pge:4632');
-      expect(CatalogRef.fromSource('siteguide_au:136-40'), 'siteguide_au:136-40');
+      expect(CatalogRef.fromSource('ansg:136-40;pge:4632'), 'pge:4632');
+      expect(CatalogRef.fromSource('ansg:136-40'), 'ansg:136-40');
       expect(CatalogRef.fromSource(''), isNull);
+    });
+
+    test('normalises a provider the producer has since renamed', () {
+      // The shipped catalogue still says siteguide_au; the prefix is now the
+      // guide's own abbreviation, ansg (Australian National Site Guide). Normalising on read means the
+      // app works against either, and only ever stores the current form - so
+      // there is one prefix in the database however old the catalogue is.
+      expect(CatalogRef.fromSource('siteguide_au:136-40'), 'ansg:136-40');
+      expect(CatalogRef.tokensOf('pge:4632;siteguide_au:136-40'),
+          ['pge:4632', 'ansg:136-40']);
+      expect(CatalogRef.providerOf('ansg:136-40'), 'ansg');
+    });
+
+    test('provider prefixes stay short and lowercase', () {
+      // The prefix is carried in every stored ref, so a verbose one is a cost
+      // paid on every row forever. New guides should take a three-letter
+      // abbreviation; `ansg` is four because that is what the guide is called.
+      // This fails when one is added under a long name, which is the moment to
+      // choose an abbreviation rather than after it is in everyone's database.
+      for (final provider in CatalogRef.providerPrecedence) {
+        expect(provider.length, lessThanOrEqualTo(4),
+            reason: '"$provider" wants a short abbreviation');
+        expect(provider, provider.toLowerCase());
+      }
     });
   });
 }

@@ -43,7 +43,7 @@ void main() {
   test('resolves a federated link through the guide token', () async {
     await db.insert('pge_sites', {
       'id': 17, 'name': 'Mt Borah West', 'longitude': 150.6086,
-      'latitude': -30.6792, 'source': 'pge:4632;siteguide_au:136-40',
+      'latitude': -30.6792, 'source': 'pge:4632;ansg:136-40',
     });
     await insertSite(1, 'Mt Borah', 17);
 
@@ -82,14 +82,14 @@ void main() {
   test('keys a launch no guide but the national one describes', () async {
     await db.insert('pge_sites', {
       'id': 21, 'name': 'An Australian launch', 'longitude': 150.0,
-      'latitude': -30.0, 'source': 'siteguide_au:136-21',
+      'latitude': -30.0, 'source': 'ansg:136-21',
     });
     await insertSite(1, 'Local hill', 21);
 
     expect(await DatabaseHelper.fillCatalogRefs(db), 1);
 
     final site = (await db.query('sites', where: 'id = 1')).single;
-    expect(site['catalog_ref'], 'siteguide_au:136-21');
+    expect(site['catalog_ref'], 'ansg:136-21');
   });
 
   test('is idempotent, so a re-run cannot rewrite a converted link', () async {

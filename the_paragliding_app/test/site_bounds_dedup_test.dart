@@ -138,7 +138,7 @@ void main() {
         latitude: lat,
         longitude: lon);
     await insertCatalogSite(
-        ref: 'siteguide_au:136-99',
+        ref: 'ansg:136-99',
         name: 'Some Other Launch',
         latitude: lat,
         longitude: lon);

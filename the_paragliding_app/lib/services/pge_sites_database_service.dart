@@ -121,7 +121,7 @@ class PgeSitesDatabaseService {
           wind_nw INTEGER DEFAULT 0,
 
           -- Which guides contributed this launch, e.g.
-          -- "pge:4632;siteguide_au:106-28". Rows can now come from more than
+          -- "pge:4632;ansg:106-28". Rows can now come from more than
           -- one guide, so a site's origin is no longer implicit.
           source TEXT,
 
@@ -884,7 +884,7 @@ class PgeSitesDatabaseService {
   }
 
   /// A guide's own id for a catalogue entry, e.g. `sourceIdFor('pge:4632',
-  /// 'siteguide_au')`.
+  /// 'ansg')`.
   ///
   /// A ref names one guide, so a request destined for a *different* guide still
   /// has to be translated through `source`. Handing the wrong guide an id it
@@ -900,7 +900,11 @@ class PgeSitesDatabaseService {
     );
     if (rows.isEmpty) return null;
 
-    for (final token in (rows.first['source'] as String? ?? '').split(';')) {
+    // Tokenised by CatalogRef, not split here: `source` is stored verbatim as
+    // the producer wrote it, so a provider it has since renamed still appears
+    // under the old prefix. Comparing the raw string against the current name
+    // would quietly find nothing.
+    for (final token in CatalogRef.tokensOf(rows.first['source'] as String?)) {
       if (token.startsWith('$provider:')) {
         return token.substring(provider.length + 1);
       }

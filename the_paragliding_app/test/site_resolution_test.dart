@@ -16,7 +16,7 @@ import 'helpers/test_helpers.dart';
 /// Coordinates are the bundled catalogue's real values.
 void main() {
   const west = (ref: 'pge:4632', name: 'Manilla - Mt Borah - West launch', lat: -30.6792, lon: 150.6086);
-  const east = (ref: 'siteguide_au:136-21', name: 'Manilla - Mt Borah - East launch', lat: -30.6793, lon: 150.6116);
+  const east = (ref: 'ansg:136-21', name: 'Manilla - Mt Borah - East launch', lat: -30.6793, lon: 150.6116);
 
   setUpAll(() async {
     await TestHelpers.initializeDatabaseForTesting();

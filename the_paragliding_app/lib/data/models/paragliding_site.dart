@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../../utils/catalog_ref.dart';
 import '../../utils/site_marker_utils.dart';
 
 class ParaglidingSite {
@@ -23,7 +24,7 @@ class ParaglidingSite {
   /// is that row’s own ref. Comparing the two is how a catalogue pin is matched
   /// to a site the pilot has flown - see SiteUtils.duplicateOfFlownSite.
   final String? catalogRef;
-  /// Which guides contributed this launch, e.g. "pge:4632;siteguide_au:106-28".
+  /// Which guides contributed this launch, e.g. "pge:4632;ansg:106-28".
   /// Drives the per-source tabs in the site details dialog.
   final String? source;
   /// Why a guide says this launch is shut, verbatim. Null when open.
@@ -51,16 +52,18 @@ class ParaglidingSite {
 
   /// The guides behind this launch, in the order they appear, as
   /// (provider, id) pairs. Empty when the catalogue predates source tracking.
-  List<({String provider, String id})> get sources {
-    final raw = source;
-    if (raw == null || raw.isEmpty) return const [];
-    return raw
-        .split(';')
-        .map((token) => token.split(':'))
-        .where((parts) => parts.length >= 2)
-        .map((parts) => (provider: parts[0], id: parts.sublist(1).join(':')))
-        .toList();
-  }
+  ///
+  /// Tokenised by [CatalogRef] rather than here, so a provider the producer has
+  /// since renamed reaches the tabs under its current prefix. Splitting the
+  /// string in two places is how the tabs and the key would drift apart.
+  List<({String provider, String id})> get sources =>
+      CatalogRef.tokensOf(source).map((token) {
+        final separator = token.indexOf(':');
+        return (
+          provider: token.substring(0, separator),
+          id: token.substring(separator + 1),
+        );
+      }).toList();
 
   // Computed properties
   bool get hasFlights => flightCount > 0;

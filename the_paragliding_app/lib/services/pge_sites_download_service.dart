@@ -459,7 +459,7 @@ class PgeSitesDownloadService {
             'wind_w': int.tryParse(field('wind_w')) ?? 0,
             'wind_nw': int.tryParse(field('wind_nw')) ?? 0,
             // Which guides contributed this launch, e.g.
-            // "pge:4632;siteguide_au:106-28".
+            // "pge:4632;ansg:106-28".
             'source': field('source'),
             // Why a guide says the launch is shut, verbatim. Absent from an
             // older catalogue, which reads as null rather than failing.

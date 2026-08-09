@@ -21,8 +21,8 @@ void main() {
   group('parsing the source column', () {
     test('a merged launch yields one entry per guide, in order', () {
       expect(
-        site('pge:4632;siteguide_au:136-20').sources,
-        [(provider: 'pge', id: '4632'), (provider: 'siteguide_au', id: '136-20')],
+        site('pge:4632;ansg:136-20').sources,
+        [(provider: 'pge', id: '4632'), (provider: 'ansg', id: '136-20')],
       );
     });
 
@@ -32,8 +32,8 @@ void main() {
 
     test('a guide-only launch does not claim a PGE source', () {
       // The 135 Australian launches PGE has never had.
-      final sources = site('siteguide_au:136-21').sources;
-      expect(sources, [(provider: 'siteguide_au', id: '136-21')]);
+      final sources = site('ansg:136-21').sources;
+      expect(sources, [(provider: 'ansg', id: '136-21')]);
       expect(sources.any((s) => s.provider == 'pge'), isFalse);
     });
 
@@ -44,7 +44,7 @@ void main() {
     });
 
     test('a malformed token is skipped rather than throwing', () {
-      expect(site('pge:4632;garbage;siteguide_au:1-2').sources.length, 2);
+      expect(site('pge:4632;garbage;ansg:1-2').sources.length, 2);
     });
 
     test('an id containing a colon survives', () {
@@ -71,7 +71,7 @@ void main() {
         longitude: 150.6086,
         siteType: 'launch',
         id: 9247, // canonical
-        source: 'pge:4632;siteguide_au:136-20',
+        source: 'pge:4632;ansg:136-20',
       );
 
       expect(pgeIdOf(merged), 4632);
@@ -79,7 +79,7 @@ void main() {
     });
 
     test('is null when no guide here is PGE', () {
-      expect(pgeIdOf(site('siteguide_au:136-21')), isNull);
+      expect(pgeIdOf(site('ansg:136-21')), isNull);
     });
   });
 
@@ -99,14 +99,14 @@ void main() {
         'name': 'Manilla - Mt Borah - West launch',
         'longitude': 150.6086,
         'latitude': -30.6792,
-        'source': 'pge:4632;siteguide_au:136-20',
+        'source': 'pge:4632;ansg:136-20',
       });
       await db.insert('pge_sites', {
-        'ref': 'siteguide_au:136-21',
+        'ref': 'ansg:136-21',
         'name': 'Manilla - Mt Borah - East launch',
         'longitude': 150.6116,
         'latitude': -30.6793,
-        'source': 'siteguide_au:136-21',
+        'source': 'ansg:136-21',
       });
     });
 
@@ -123,7 +123,7 @@ void main() {
       // PGE happens to hold at that number.
       expect(
         await PgeSitesDatabaseService.instance
-            .sourceIdFor('siteguide_au:136-21', 'pge'),
+            .sourceIdFor('ansg:136-21', 'pge'),
         isNull,
       );
     });
@@ -131,7 +131,7 @@ void main() {
     test('finds a guide listed second', () async {
       expect(
         await PgeSitesDatabaseService.instance
-            .sourceIdFor('pge:4632', 'siteguide_au'),
+            .sourceIdFor('pge:4632', 'ansg'),
         '136-20',
       );
     });

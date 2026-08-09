@@ -26,7 +26,7 @@ void main() {
         {
           'id': 17, 'name': 'Manilla - Mt Borah - West launch',
           'longitude': 150.6086, 'latitude': -30.6792, 'altitude': 800,
-          'country': 'au', 'source': 'pge:4632;siteguide_au:136-40',
+          'country': 'au', 'source': 'pge:4632;ansg:136-40',
           'wind_w': 2,
         },
         {
@@ -48,7 +48,7 @@ void main() {
         {
           'id': 18, 'name': 'Manilla - Mt Borah - West launch',
           'longitude': 150.6086, 'latitude': -30.6792, 'altitude': 800,
-          'country': 'au', 'source': 'pge:4632;siteguide_au:136-40',
+          'country': 'au', 'source': 'pge:4632;ansg:136-40',
           'wind_w': 2,
         },
       ];
@@ -103,7 +103,7 @@ void main() {
 
     expect(borah.altitude, 800, reason: 'Mt Borah is at 800m, Mystic at 380m');
     expect(borah.windDirections, ['W'], reason: 'Borah west launch faces W');
-    expect(borah.sources.map((s) => s.provider), contains('siteguide_au'),
+    expect(borah.sources.map((s) => s.provider), contains('ansg'),
         reason: 'both guides describing this launch should still be listed');
   });
 

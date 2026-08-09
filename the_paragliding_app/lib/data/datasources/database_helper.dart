@@ -152,7 +152,7 @@ class DatabaseHelper {
         country TEXT,
         custom_name INTEGER DEFAULT 0,
         -- Which catalogue entry describes this launch, as the contributing
-        -- guide's own key: 'pge:4632', 'siteguide_au:106-28'. Text, and stable
+        -- guide's own key: 'pge:4632', 'ansg:106-28'. Text, and stable
         -- across a catalogue rebuild, because the catalogue's row order is not:
         -- its integer ids are positional and every upstream insertion shifts
         -- them, which silently repointed flown sites at unrelated launches.

@@ -1,11 +1,17 @@
 /// The catalogue's key: one contributing guide's own identifier for a launch,
-/// as `provider:id` - `pge:4632`, `siteguide_au:106-28`.
+/// as `provider:id` - `pge:4632`, `ansg:106-28`.
 ///
-/// Why not the catalogue's own row id: it is a dense row number that tracks the
-/// producer's file order, so a single upstream insertion shifts every id after
-/// it. Nothing persistent may reference it. A guide's id is assigned and
-/// maintained upstream and does not move, which is what lets a flown site keep
-/// its link across a catalogue rebuild.
+/// Why not the catalogue's own `id`: it is assigned by a registry that lives in
+/// the producer's repository, not here. That registry is committed and its tests
+/// assert stability across runs, so the ids are *intended* to hold - but the
+/// guarantee is a file in another project, invisible from this side, and the app
+/// had no defence if it ever lapsed. Driven with the ids shifted by one, a flown
+/// Mt Borah site rendered a launch 800km away: 380m for 800m, wind N for W, and
+/// the pilot's favourite moved with it.
+///
+/// A guide's own id needs no such guarantee - upstream assigns and maintains it,
+/// and it is already in the row. Keying on it means a renumbered catalogue is
+/// inert rather than dangerous, and the producer needs no promise from us.
 ///
 /// Why not coordinates or a plus code: measured against the shipped catalogue,
 /// 23 cells of ~14m hold more than one launch (the paraglider and hang-glider
@@ -23,7 +29,22 @@ class CatalogRef {
   /// be a fixed rule rather than a property of column order - otherwise the key
   /// moves when the producer's output does. `pge` leads because it supplies
   /// 11,508 of the catalogue's 11,792 tokens; only 89 rows carry two at all.
-  static const List<String> providerPrecedence = ['pge', 'siteguide_au'];
+  ///
+  /// Providers are three-letter abbreviations of the guide: `pge` is
+  /// ParaglidingEarth, `ansg` the Australian National Site Guide. Keep new ones
+  /// to three letters - the prefix appears in every stored ref, so a verbose one
+  /// is a cost paid on every row forever.
+  static const List<String> providerPrecedence = ['pge', 'ansg'];
+
+  /// Prefixes an older producer emitted, mapped to the current name.
+  ///
+  /// Normalised on read so the app works against a catalogue emitting either,
+  /// and stores only the current form. Nothing in the wild needs migrating:
+  /// `sites.catalog_ref` has never shipped - released installs still hold the
+  /// integer `catalog_site_id` - so no device holds a legacy ref.
+  static const Map<String, String> _renamedProviders = {
+    'siteguide_au': 'ansg',
+  };
 
   /// The ref for a catalogue row, from its `source` column.
   ///
@@ -45,14 +66,24 @@ class CatalogRef {
     return tokens.first;
   }
 
-  /// Every `provider:id` token in a `source` value, in the order given.
+  /// Every `provider:id` token in a `source` value, in the order given, with any
+  /// renamed provider normalised to its current prefix.
   static List<String> tokensOf(String? source) {
     if (source == null || source.isEmpty) return const [];
     return source
         .split(';')
         .map((token) => token.trim())
         .where((token) => token.contains(':') && !token.startsWith(':'))
+        .map(_normalise)
         .toList();
+  }
+
+  static String _normalise(String token) {
+    final provider = providerOf(token);
+    final current = _renamedProviders[provider];
+    return current == null
+        ? token
+        : '$current${token.substring(provider!.length)}';
   }
 
   /// The provider half of a ref, or null if it is not a ref at all.
