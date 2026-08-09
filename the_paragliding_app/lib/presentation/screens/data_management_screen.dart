@@ -275,6 +275,14 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
     }
   }
 
+  /// "3 days ago" / "5 hours ago" / "Recently", shared by the downloaded and
+  /// checked rows so the two cannot drift into different wording.
+  static String _relativeAge(Duration age) {
+    if (age.inDays > 0) return '${age.inDays} days ago';
+    if (age.inHours > 0) return '${age.inHours} hours ago';
+    return 'Recently';
+  }
+
   Future<void> _loadPgeSitesStats() async {
     LoggingService.action('DataManagement', 'load_pge_sites_stats');
 
@@ -290,23 +298,25 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
       final downloadStatus = await PgeSitesDownloadService.instance.getDownloadStatus();
 
       // Format last downloaded date
-      String lastDownloaded = 'Never';
-      if (downloadStatus['downloaded_at'] != null) {
-        final downloadDate = DateTime.parse(downloadStatus['downloaded_at']);
-        final age = DateTime.now().difference(downloadDate);
-        if (age.inDays > 0) {
-          lastDownloaded = '${age.inDays} days ago';
-        } else if (age.inHours > 0) {
-          lastDownloaded = '${age.inHours} hours ago';
-        } else {
-          lastDownloaded = 'Recently';
-        }
-      }
+      final lastDownloaded = downloadStatus['downloaded_at'] == null
+          ? 'Never'
+          : _relativeAge(DateTime.now()
+              .difference(DateTime.parse(downloadStatus['downloaded_at'])));
+
+      // When the app last *asked* whether a newer catalogue is published, which
+      // is not the same as when it last downloaded one - "checked yesterday,
+      // unchanged" and "not checked for a month" look identical otherwise, and
+      // only one of them is a problem.
+      final checkedAt = await PreferencesHelper.getCatalogCheckedDate();
+      final lastChecked = checkedAt == null
+          ? 'Never'
+          : _relativeAge(DateTime.now().difference(checkedAt));
 
       final combinedStats = {
         ...stats,
         'database_size_mb': ((stats['database_size_bytes'] ?? 0) / 1024 / 1024).toStringAsFixed(1),
         'last_downloaded': lastDownloaded,
+        'last_checked': lastChecked,
         'source_file_size_mb': ((downloadStatus['file_size_bytes'] ?? 0) / 1024 / 1024).toStringAsFixed(1),
         'status': stats['sites_count'] > 0 ? 'Active' : 'Not downloaded',
         'is_outdated': downloadStatus['is_outdated'] ?? false,
@@ -351,6 +361,54 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
         });
       }
     });
+  }
+
+  /// Ask whether a newer catalogue is published, and take it if so.
+  ///
+  /// Separate from [_downloadPgeSites], which resets to the copy bundled in this
+  /// release: that is the repair path, and after a refresh it is a step
+  /// backwards. This is the one a pilot wants - launches added upstream since
+  /// the release, without waiting for a Play update.
+  Future<void> _checkForCatalogUpdate() async {
+    LoggingService.action('DataManagement', 'check_catalog_update');
+
+    _showLoadingDialog('Checking for a newer catalogue...');
+    final available = await PgeSitesDownloadService.instance.checkForUpdate();
+
+    if (!available) {
+      if (mounted) Navigator.of(context).pop();
+      await _loadPgeSitesStats(); // The check itself updates "Last Checked".
+      _showSuccessDialog('Up To Date',
+          'No newer catalogue has been published since the last download.');
+      return;
+    }
+
+    final downloaded =
+        await PgeSitesDownloadService.instance.downloadFromRemote();
+    if (!downloaded) {
+      if (mounted) Navigator.of(context).pop();
+      _showErrorDialog('Download Failed',
+          'A newer catalogue is available but could not be downloaded. The '
+              'sites you have are unchanged.');
+      return;
+    }
+
+    final imported = await PgeSitesDatabaseService.instance.importSitesData();
+    if (mounted) Navigator.of(context).pop();
+
+    if (!imported) {
+      _showErrorDialog('Import Failed',
+          'The new catalogue was downloaded but could not be imported.');
+      return;
+    }
+
+    setState(() => _dataModified = true);
+    if (widget.onRefreshAllTabs != null) await widget.onRefreshAllTabs!();
+    _showSuccessDialog('Catalogue Updated',
+        'Imported the latest published catalogue. Flights already logged keep '
+            'their launches; use "Re-match Flight Launches" if new launches '
+            'cover sites you have flown.');
+    await _loadPgeSitesStats();
   }
 
   Future<void> _downloadPgeSites() async {
@@ -2397,6 +2455,18 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                               value: _pgeSitesStats!['last_downloaded'] ?? 'Never',
                             ),
                             AppStatRow.dataManagement(
+                              label: 'Last Checked',
+                              value: _pgeSitesStats!['last_checked'] ?? 'Never',
+                            ),
+                            // Computed since the catalogue was first bundled and
+                            // never shown until now, so a stale catalogue was
+                            // invisible to the one person who could refresh it.
+                            if (_pgeSitesStats!['is_outdated'] == true)
+                              AppStatRow.dataManagement(
+                                label: 'Status',
+                                value: 'Update available',
+                              ),
+                            AppStatRow.dataManagement(
                               label: 'Source Size',
                               value: '${_pgeSitesStats!['source_file_size_mb'] ?? '0.0'}MB',
                             ),
@@ -2440,11 +2510,24 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                             child: OutlinedButton.icon(
                               onPressed: _pgeSitesProgress?.status == PgeSitesDownloadStatus.downloading
                                   ? null
+                                  : _checkForCatalogUpdate,
+                              icon: const Icon(Icons.cloud_download),
+                              label: const Text('Check for Updates'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.blue,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _pgeSitesProgress?.status == PgeSitesDownloadStatus.downloading
+                                  ? null
                                   : _downloadPgeSites,
-                              icon: const Icon(Icons.download),
+                              icon: const Icon(Icons.restore),
                               label: Text(
                                 (_pgeSitesStats?['sites_count'] ?? 0) > 0
-                                  ? 'Re-download All'
+                                  ? 'Reset to Bundled'
                                   : 'Download Sites'
                               ),
                               style: OutlinedButton.styleFrom(

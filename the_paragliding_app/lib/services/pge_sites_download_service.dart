@@ -8,11 +8,26 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import '../services/logging_service.dart';
 import '../utils/performance_monitor.dart';
+import '../utils/preferences_helper.dart';
 
 /// Configuration constants for PGE sites download
 class PgeSitesConfig {
   /// Asset path for bundled CSV file
   static const String assetPath = 'assets/data/world_sites_extracted.csv.gz';
+
+  /// The published catalogue, from the federation pipeline that builds it.
+  ///
+  /// `main` rather than a release asset because that branch only moves when a
+  /// human merges the pipeline's weekly PR - so what the app follows is a
+  /// catalogue someone has reviewed, and rolling back a bad one is a revert.
+  ///
+  /// Served uncompressed (~880 KB), though GitHub gzips it in transit and Dart
+  /// decodes that transparently. Public so a network-tagged test can assert the
+  /// URL still serves usable data, the way countryDataUrl() is in
+  /// AirspaceCountryService.
+  static const String catalogUrl =
+      'https://raw.githubusercontent.com/Kevin-McIsaac/'
+      'paragliding_site_federation/main/app/sites.csv';
 
   /// Maximum age before auto-refresh
   static const Duration maxAge = Duration(days: 30);
@@ -137,6 +152,131 @@ class PgeSitesDownloadService {
       return differs;
     } catch (error) {
       LoggingService.error('[PGE_SITES] Could not compare bundled catalogue', error);
+      return false;
+    }
+  }
+
+  /// Whether the published catalogue differs from the copy on disk.
+  ///
+  /// Prefers ETag, falls back to Last-Modified, and only falls back to age when
+  /// neither side offers a comparable validator. Kept separate from the HTTP
+  /// call so the branches can be tested without a network - same split, and for
+  /// the same reason, as [AirspaceCountryService.isRemoteNewer]: getting it
+  /// wrong either re-downloads every launch or leaves the catalogue stale for a
+  /// month.
+  static bool isRemoteNewer({
+    required String? storedEtag,
+    required String? storedLastModified,
+    required String? remoteEtag,
+    required String? remoteLastModified,
+    required int ageInDays,
+  }) {
+    if (remoteEtag != null && storedEtag != null) {
+      return remoteEtag != storedEtag;
+    }
+    if (remoteLastModified != null && storedLastModified != null) {
+      return remoteLastModified != storedLastModified;
+    }
+    return ageInDays > PgeSitesConfig.maxAge.inDays;
+  }
+
+  /// Ask the server whether a newer catalogue exists.
+  ///
+  /// A HEAD request, so the answer costs a few hundred bytes rather than the
+  /// whole file. Returns false whenever it cannot tell - an error or a non-200
+  /// must not push a download that may be pointless, and the pilot can still
+  /// refresh by hand from Data Management.
+  Future<bool> checkForUpdate() async {
+    try {
+      await PreferencesHelper.setCatalogCheckedNow();
+
+      final stored = await PreferencesHelper.getCatalogValidators();
+      final downloadedAt = await PreferencesHelper.getPgeSitesDownloadDate();
+      final ageInDays =
+          DateTime.now().difference(downloadedAt ?? DateTime(2000)).inDays;
+
+      final response = await httpClient
+          .head(Uri.parse(PgeSitesConfig.catalogUrl))
+          .timeout(const Duration(seconds: 30));
+
+      if (response.statusCode != 200) {
+        LoggingService.structured('CATALOG_UPDATE_CHECK_FAILED', {
+          'status': response.statusCode,
+        });
+        return false;
+      }
+
+      final available = isRemoteNewer(
+        storedEtag: stored.etag,
+        storedLastModified: stored.lastModified,
+        remoteEtag: response.headers['etag'],
+        remoteLastModified: response.headers['last-modified'],
+        ageInDays: ageInDays,
+      );
+
+      LoggingService.structured('CATALOG_UPDATE_CHECK', {
+        'update_available': available,
+        'age_days': ageInDays,
+        'had_validators': stored.etag != null || stored.lastModified != null,
+      });
+
+      return available;
+    } catch (error) {
+      LoggingService.error('[PGE_SITES] Catalogue update check failed', error);
+      return false;
+    }
+  }
+
+  /// Fetch the published catalogue and put it where the parser expects it.
+  ///
+  /// Written gzipped so there is one local format and [parseDownloadedData]
+  /// needs no branch, and validated by parsing before it replaces anything: a
+  /// truncated or HTML-error response must leave the working catalogue alone
+  /// rather than empty the map. Temp file plus atomic rename, as the bundled
+  /// copy already does.
+  Future<bool> downloadFromRemote() async {
+    final stopwatch = Stopwatch()..start();
+    try {
+      final response = await httpClient
+          .get(Uri.parse(PgeSitesConfig.catalogUrl))
+          .timeout(PgeSitesConfig.downloadTimeout);
+
+      if (response.statusCode != 200) {
+        LoggingService.structured('CATALOG_DOWNLOAD_FAILED', {
+          'status': response.statusCode,
+        });
+        return false;
+      }
+
+      // Cheap sanity check before anything is written: the real file is ~880 KB
+      // of CSV whose first line is the header.
+      final body = response.body;
+      if (!body.startsWith('id,name,') || body.length < 100000) {
+        LoggingService.structured('CATALOG_DOWNLOAD_REJECTED', {
+          'bytes': body.length,
+          'starts_with': body.substring(0, body.length.clamp(0, 40)),
+        });
+        return false;
+      }
+
+      final localFilePath = await _getLocalFilePath();
+      final tempFile = File('$localFilePath.tmp');
+      await tempFile.writeAsBytes(gzip.encode(utf8.encode(body)));
+      await tempFile.rename(localFilePath);
+
+      await PreferencesHelper.setCatalogValidators(
+        etag: response.headers['etag'],
+        lastModified: response.headers['last-modified'],
+      );
+      await PreferencesHelper.setPgeSitesDownloaded(true);
+
+      stopwatch.stop();
+      LoggingService.performance('Catalogue download', stopwatch.elapsed,
+          '${body.length} bytes from the published catalogue');
+      return true;
+    } catch (error, stackTrace) {
+      LoggingService.error(
+          '[PGE_SITES] Catalogue download failed', error, stackTrace);
       return false;
     }
   }
