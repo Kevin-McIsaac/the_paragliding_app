@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:sqflite/sqflite.dart';
 import '../data/datasources/database_helper.dart';
 import '../data/models/flight.dart';
@@ -877,17 +879,86 @@ class DatabaseService {
     return result.first['count'] as int? ?? 0;
   }
 
-  Future<Site?> findSiteByCoordinates(double latitude, double longitude, {double tolerance = 0.01}) async {
+  /// How close an existing site must be to count as the same launch.
+  ///
+  /// This was 0.01 degrees - about 1.1km - and returned whichever row SQLite
+  /// happened to list first. That is far wider than the spacing between real
+  /// launches: Mt Borah's four sit 180m to 1km apart. So an import that had
+  /// correctly matched the east launch handed those coordinates to
+  /// [findOrCreateSite], got the *west* site row back, and filed the flight
+  /// there - which is how 17 flights across four launches ended up on one.
+  ///
+  /// 100m is tight enough to tell neighbouring launches apart and still
+  /// forgiving of the gap between a pilot's own pin and a given takeoff fix.
+  static const double siteMatchRadiusMeters = 100;
+
+  /// The nearest flown site within [radiusMeters], or null.
+  ///
+  /// Nearest rather than first-found: with a tight radius a first-found match
+  /// is arbitrary whenever two sites are both in range.
+  Future<Site?> findSiteByCoordinates(double latitude, double longitude,
+      {double radiusMeters = siteMatchRadiusMeters}) async {
     Database db = await _databaseHelper.database;
+
+    // Bounding box first so SQLite can use the lat/lon index, then exact
+    // distance on the few rows that survive. A degree of longitude shrinks
+    // towards the poles, so the box is widened by latitude.
+    final latDelta = radiusMeters / 111320.0;
+    final cosLat = cos(latitude * pi / 180).abs();
+    final lonDelta =
+        cosLat < 0.000001 ? 180.0 : radiusMeters / (111320.0 * cosLat);
+
     List<Map<String, dynamic>> maps = await db.query(
       'sites',
-      where: 'ABS(latitude - ?) < ? AND ABS(longitude - ?) < ?',
-      whereArgs: [latitude, tolerance, longitude, tolerance],
+      where: 'latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?',
+      whereArgs: [
+        latitude - latDelta,
+        latitude + latDelta,
+        longitude - lonDelta,
+        longitude + lonDelta,
+      ],
     );
-    if (maps.isNotEmpty) {
-      return Site.fromMap(maps.first);
+
+    Site? nearest;
+    double nearestDistance = double.infinity;
+    for (final map in maps) {
+      final site = Site.fromMap(map);
+      final distance =
+          _distanceMeters(latitude, longitude, site.latitude, site.longitude);
+      if (distance <= radiusMeters && distance < nearestDistance) {
+        nearestDistance = distance;
+        nearest = site;
+      }
     }
-    return null;
+    return nearest;
+  }
+
+  /// The flown site linked to [catalogSiteId], or null.
+  ///
+  /// A catalogue id names one launch exactly, where coordinates can only
+  /// approximate it.
+  Future<Site?> findSiteByCatalogId(int catalogSiteId) async {
+    Database db = await _databaseHelper.database;
+    final maps = await db.query(
+      'sites',
+      where: 'catalog_site_id = ?',
+      whereArgs: [catalogSiteId],
+      limit: 1,
+    );
+    return maps.isEmpty ? null : Site.fromMap(maps.first);
+  }
+
+  /// Great-circle distance in metres.
+  double _distanceMeters(double lat1, double lon1, double lat2, double lon2) {
+    const earthRadius = 6371000.0;
+    final dLat = (lat2 - lat1) * pi / 180;
+    final dLon = (lon2 - lon1) * pi / 180;
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(lat1 * pi / 180) *
+            cos(lat2 * pi / 180) *
+            sin(dLon / 2) *
+            sin(dLon / 2);
+    return 2 * earthRadius * asin(sqrt(a));
   }
 
   Future<List<Site>> searchSites(String query) async {
@@ -918,12 +989,24 @@ class DatabaseService {
     String? country,
     int? catalogSiteId,
   }) async {
-    // Check if site exists at these coordinates
+    // Identity before proximity. A catalogue id names one launch exactly; the
+    // coordinate fallback below can only approximate it, and gets the answer
+    // wrong wherever two launches share a hill.
+    if (catalogSiteId != null) {
+      final linkedSite = await findSiteByCatalogId(catalogSiteId);
+      if (linkedSite != null) {
+        return linkedSite;
+      }
+    }
+
+    // No link to go on: the nearest site within siteMatchRadiusMeters. This is
+    // what catches a launch the pilot already flies but whose row predates
+    // catalogue linking.
     Site? existingSite = await findSiteByCoordinates(latitude, longitude);
     if (existingSite != null) {
       return existingSite;
     }
-    
+
     // If name is "Unknown", make it unique
     String finalName = name ?? 'Site at ${latitude.toStringAsFixed(4)}, ${longitude.toStringAsFixed(4)}';
     if (finalName == 'Unknown') {

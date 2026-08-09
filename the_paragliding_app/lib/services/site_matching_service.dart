@@ -87,20 +87,18 @@ class SiteMatchingService {
     double maxDistance = 500, // 500m default - typical launch site search radius
     String? preferredType, // 'launch' or null for any
   }) async {
-    // Try local flight log first (much faster for known sites)
-    final localSite = _findNearestSiteLocal(latitude, longitude, maxDistance: maxDistance, preferredType: preferredType);
-    
-    if (localSite != null) {
-      // Found in local database - use it regardless of country info
-      if (localSite.country == null || localSite.country!.isEmpty) {
-        LoggingService.info('SiteMatchingService: Found site in flight log: "${localSite.name}" (no country info, skipping API enhancement)');
-      } else {
-        LoggingService.info('SiteMatchingService: Found site in flight log: "${localSite.name}" with country: ${localSite.country}');
-      }
-      return localSite;
-    }
+    // Both local sources are consulted and the genuinely nearest launch wins.
+    //
+    // The flight log used to short-circuit: any flown site within maxDistance
+    // returned immediately, without the catalogue ever being asked. That was
+    // safe while the catalogue held one pin per hill, but the federated
+    // catalogue resolves individual launches - Mt Borah's four sit 180m to 1km
+    // apart, well inside the 500m default - so a flown site would capture
+    // takeoffs from its neighbours. Seventeen flights across four Borah
+    // launches all ended up on the west one that way.
+    final localSite = _findNearestSiteLocal(latitude, longitude,
+        maxDistance: maxDistance, preferredType: preferredType);
 
-    // Then the bundled PGE database - offline, and covers ~11k sites.
     // localSiteSearchRadius rather than maxDistance on purpose; see the doc above.
     final pgeSite = await PgeSitesDatabaseService.instance.findNearestSite(
       latitude: latitude,
@@ -108,10 +106,11 @@ class SiteMatchingService {
       maxDistanceKm: localSiteSearchRadius / 1000.0,
     );
 
-    if (pgeSite != null) {
+    final best = _closerOf(localSite, pgeSite, latitude, longitude);
+    if (best != null) {
       LoggingService.info(
-          'SiteMatchingService: Found site in local PGE database: "${pgeSite.name}"');
-      return pgeSite;
+          'SiteMatchingService: Matched "${best.name}" (${best.distanceTo(latitude, longitude).round()}m)');
+      return best;
     }
 
     // No local site found, try API for new sites
@@ -148,6 +147,35 @@ class SiteMatchingService {
       'local_radius_m': localSiteSearchRadius,
     });
     return null;
+  }
+
+  /// How much closer a catalogue launch must be to beat an already-flown site.
+  ///
+  /// A flown site usually *is* a catalogue launch the pilot has flown, so the
+  /// two sit on the same point and tie. Preferring the flown row on a tie, and
+  /// on anything short of a real difference, keeps a pilot's own site (and the
+  /// name they gave it) from flipping to a catalogue row that is a few metres
+  /// closer only because of GPS scatter. Well under the 180m separating the
+  /// closest real pair of launches in the catalogue.
+  static const double catalogueOverrideMarginMeters = 100;
+
+  /// The nearer of a flown site and a catalogue launch, with the flown site
+  /// preferred unless the catalogue one is materially closer.
+  ParaglidingSite? _closerOf(
+    ParaglidingSite? flownSite,
+    ParaglidingSite? catalogueSite,
+    double latitude,
+    double longitude,
+  ) {
+    if (flownSite == null) return catalogueSite;
+    if (catalogueSite == null) return flownSite;
+
+    final flownDistance = flownSite.distanceTo(latitude, longitude);
+    final catalogueDistance = catalogueSite.distanceTo(latitude, longitude);
+
+    return flownDistance - catalogueDistance > catalogueOverrideMarginMeters
+        ? catalogueSite
+        : flownSite;
   }
 
   /// Find the nearest site using local database only

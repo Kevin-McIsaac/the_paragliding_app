@@ -288,7 +288,15 @@ class IgcImportService {
         altitude: siteAltitude,
         name: siteName,
         country: country,
-        catalogSiteId: matchedSite?.id, // Link to PGE site if matched
+        // The catalogue id, whichever source the match came from. A flight-log
+        // match carries the local sites.id in `id` and the catalogue id in
+        // `catalogSiteId`; the two id spaces overlap, so passing `id` blindly
+        // would link this site to an unrelated catalogue row.
+        catalogSiteId: matchedSite == null
+            ? null
+            : (matchedSite.isFromLocalDb
+                ? matchedSite.catalogSiteId
+                : matchedSite.id),
       );
       
       // Keep the matcher's cache current so the next flight from this launch

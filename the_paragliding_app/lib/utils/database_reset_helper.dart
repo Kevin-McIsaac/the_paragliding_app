@@ -102,13 +102,22 @@ class DatabaseResetHelper {
         // Deliberately not findOrCreateSite: it matches on coordinates with a
         // ~1.1km tolerance, so it would find this very Unknown row and report
         // success while changing nothing. Match on identity (name / PGE id).
+        // The catalogue id behind the match, whichever source it came from.
+        // A flight-log match carries the local sites.id in `id`, and the two
+        // id spaces overlap at small values - comparing catalog_site_id
+        // against a local id merges unrelated launches. That comparison was
+        // dead while flight-log matches had a null id; populating it in
+        // toParaglidingSite made it live.
+        final matchCatalogId =
+            match.isFromLocalDb ? match.catalogSiteId : match.id;
+
         Site? existing;
         for (final candidate in knownSites) {
           if (candidate.id == siteId) continue;
           final sameName = candidate.name == match.name;
           final samePgeId = candidate.catalogSiteId != null &&
-              match.id != null &&
-              candidate.catalogSiteId == match.id;
+              matchCatalogId != null &&
+              candidate.catalogSiteId == matchCatalogId;
           if (sameName || samePgeId) {
             existing = candidate;
             break;
@@ -131,7 +140,7 @@ class DatabaseResetHelper {
             // The previous raw update wrote the int straight into a REAL column.
             altitude: match.altitude?.toDouble(),
             country: match.country,
-            catalogSiteId: match.id,
+            catalogSiteId: matchCatalogId,
           );
           await databaseService.updateSite(renamed);
           final index = knownSites.indexWhere((s) => s.id == siteId);
