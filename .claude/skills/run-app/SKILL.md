@@ -1,6 +1,6 @@
 ---
 name: run-app
-description: Run, hot-reload, screenshot and read logs for this Flutter app, on Linux desktop or on an Android phone/emulator. Use when asked to run, launch, start, restart or hot-reload the app, to screenshot it, to check its runtime logs, or to verify a change in the running app rather than in tests. Covers bin/dev_run.sh, bin/dev_reload.sh, wireless adb device ids, and the debug-vs-production package trap.
+description: Run, hot-reload, screenshot and read logs for this Flutter app, on Linux desktop or on an Android phone/emulator. Use when asked to run, launch, start, restart or hot-reload the app, to screenshot it, to check its runtime logs, or to verify a change in the running app rather than in tests. Covers bin/dev_run.sh, bin/dev_reload.sh, bin/dev_screenshot.sh, wireless adb device ids, and the debug-vs-production package trap.
 ---
 
 # Running this app
@@ -22,13 +22,19 @@ implementation, so 3D screens show a "3D Map Not Available" placeholder on deskt
 > sandbox reaches neither the X11 socket nor the phone's LAN address, and in both cases
 > the failure reads as a missing display or a missing phone rather than as a permissions
 > problem, so it gets misdiagnosed every time. Same for `bin/dev_reload.sh`,
-> `bin/dev_logs.sh`, `scrot`, and any `adb` command.
+> `bin/dev_logs.sh`, `bin/dev_screenshot.sh`, and any `adb` command.
 >
 > | you see | it is | do |
 > |---|---|---|
 > | `cannot open display: :0` | the sandbox, hiding X11 | re-run with the sandbox off |
 > | `Network is unreachable` | the sandbox, hiding the LAN | re-run with the sandbox off |
+> | `flutter pid N is not visible` | the sandbox's own PID namespace | re-run with the sandbox off |
 > | `No route to host` | genuinely the network | phone asleep or off Wi-Fi — see below |
+>
+> The sandbox runs in its own PID namespace, so a healthy app's pid is invisible inside
+> it and `kill -0` fails exactly as it would for a dead one. Nothing distinguishes the
+> two from in there — which is why `bin/dev_screenshot.sh` names both possibilities
+> instead of declaring the app dead.
 >
 > There **is** a display. Do not conclude the environment is headless and go looking for
 > `xvfb` — that has burned a whole verification cycle more than once.
@@ -78,19 +84,38 @@ assume; a reload that goes nowhere looks exactly like one that worked.
 ```bash
 tail -n 50 dev_data/flutter.log                  # recent output
 grep -E "\[[IWEDP]\]\[\+" dev_data/flutter.log   # just this app's LoggingService lines
-adb -s "$DEV" exec-out screencap -p > dev_data/screenshot.png   # then Read the PNG
+bin/dev_screenshot.sh                            # desktop  -> dev_data/screenshot.png
+adb -s "$DEV" exec-out screencap -p > dev_data/screenshot.png   # Android; then Read the PNG
 ```
 
-Use `exec-out`, not `shell` — `shell` mangles the binary. Pass `-s "$DEV"`; there is
-usually more than one thing attached.
+For adb use `exec-out`, not `shell` — `shell` mangles the binary. Pass `-s "$DEV"`; there
+is usually more than one thing attached.
 
-**`screencap` is Android-only.** On Linux desktop the equivalent is `scrot -o
-dev_data/desktop.png` (sandbox off), but it grabs the whole X root window — on a
-multi-monitor desktop that is a 3665x1080 image which can come back **entirely black**
-while the app is running perfectly well. A black PNG is not evidence the app failed. For
-desktop, verify from `dev_data/flutter.log` and by querying
-`dev_data/app_documents/FlightLog.db` directly, or ask the person at the keyboard what
-they see.
+**On desktop, screenshot with `bin/dev_screenshot.sh` — never a screenshot tool.** No
+Wayland capture tool can work in this container, so do not go looking for one: this is
+Crostini, `WAYLAND_DISPLAY` is sommelier's socket, and the real compositor is ChromeOS's,
+on the host side of the VM. `grim` gets `compositor doesn't support
+wlr-screencopy-unstable-v1` and always will — a guest is not allowed to read the host
+framebuffer. `scrot` sees only the Xwayland root, which a native-Wayland Flutter window
+is not in; that, not multi-monitor, is why it used to return an all-black PNG.
+
+`dev_screenshot.sh` sidesteps the compositor entirely: it asks the Flutter engine for its
+last rasterized frame over the VM service `flutter run` already exposes. So it needs no
+focus, is unbothered by an obscured or backgrounded window, comes out at full resolution
+with no chrome to crop, and **nothing about how the app is launched changes** — desktop
+stays native Wayland. It validates the PNG before writing, so a short or non-PNG payload
+fails loudly rather than leaving a plausible-looking file. What it returns is the *last
+rasterized frame*, so let the UI settle after a hot reload before shooting, or you
+capture the frame mid-rebuild and read it as a rendering bug.
+
+It captures the Flutter scene only — no platform views. That costs nothing on Linux (the
+3D map is a placeholder there anyway), but on Android prefer `adb exec-out screencap`,
+which also gets the Cesium webview and the system UI. The script does work against a
+device target, since `flutter run` forwards the VM service to localhost; treat that as
+the fallback for when adb is being difficult.
+
+Still worth doing alongside: `dev_data/flutter.log`, and querying
+`dev_data/app_documents/FlightLog.db` directly.
 
 To be told about problems as they happen instead of grepping after the fact, watch the
 log with the `Monitor` tool rather than polling it:
@@ -142,6 +167,13 @@ that file **is** the readiness check. There is no status command and none is nee
 
 Allowed as of 2026-08-08 — it used to say "ask the user to navigate". Navigate to the
 screen under test and look at it yourself; a UI fix nobody has looked at is unverified.
+
+**Android only.** Input injection has no desktop equivalent here: `xdotool` cannot reach
+native-Wayland windows, and sommelier exposes neither the virtual-keyboard nor the
+virtual-pointer protocol, so `wtype` and `ydotool` are out too. On desktop you can *see*
+any screen (`bin/dev_screenshot.sh`) but only reach the ones the app opens on its own —
+for anything needing taps, use the phone, or ask the person at the keyboard to navigate
+and then screenshot.
 
 ```bash
 DEV=adb-52110DLAQ001UT-hkZkFs._adb-tls-connect._tcp

@@ -21,6 +21,8 @@ bin/dev_run.sh -d chrome      # Same, on another device
 
 bin/dev_reload.sh             # Hot reload  (SIGUSR1 via dev_data/flutter.pid)
 bin/dev_reload.sh R           # Hot restart (SIGUSR2) - needed for main()/initState changes
+
+bin/dev_screenshot.sh         # Screenshot the desktop app -> dev_data/screenshot.png
 ```
 
 Hot reload also works with the standard `r` / `R` keys if you started it in a
@@ -724,7 +726,8 @@ task needs the app to actually run.
 | Task | Commands | Notes |
 |------|----------|-------|
 | Fix hot reload issues | `kill "$(cat dev_data/flutter.pid)"` → start again | No pid file means it already exited |
-| Debug UI | `adb exec-out screencap -p > dev_data/screenshot.png` → analyze | Unlock the phone first |
+| Debug UI (desktop) | `bin/dev_screenshot.sh` → Read the PNG | Via the VM service, not the compositor - no screenshot tool works under Crostini |
+| Debug UI (Android) | `adb exec-out screencap -p > dev_data/screenshot.png` → analyze | Unlock the phone first |
 | Performance check | `grep "\[P\]" dev_data/flutter.log` | Performance logs |
 | Schema change | Clear data → restart → reimport | Dev workflow |
 
@@ -744,7 +747,8 @@ Use format `file_path:line_number` in logs:
 - [Database Schema](docs/DATABASE.md) - Complete table definitions
 - [Timestamp Processing](docs/TIMESTAMPS.md) - UTC/local conversion
 - at the end of complex set of changes use flutter analyze to find errors
-- use adb screenshots on emulator
+- use adb screenshots on emulator; on Linux desktop use `bin/dev_screenshot.sh` (see the
+  `run-app` skill - Wayland capture tools cannot work in this container)
 - Call sites in local DB "Flown Sites" and sites from PGE API "New Sites"
 - Call sites in local DB "Flown Sites" and sites from PGE API "New Sites"
 - always start the app with `bin/dev_run.sh --background`
