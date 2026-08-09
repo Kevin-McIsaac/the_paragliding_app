@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../utils/database_reset_helper.dart';
+import '../../services/launch_rematch_service.dart';
 import '../../services/site_matching_service.dart';
 import '../../services/cesium_token_validator.dart';
 import '../../utils/cache_utils.dart';
@@ -902,6 +903,129 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
     }
   }
 
+  /// Move flights onto the launch they actually left from.
+  ///
+  /// Unlike the Unknown-site repair above, this shows what it intends to do
+  /// before doing any of it. It rewrites which launch a flight is filed under
+  /// - a log that exists nowhere else - and the pilot is the only one who can
+  /// say whether a proposed move is right, so the preview is the point rather
+  /// than a courtesy.
+  Future<void> _rematchFlightLaunches() async {
+    LoggingService.action('DataManagement', 'launch_rematch_preview_started');
+
+    _showProgressDialog('Checking launches...', '', 0, 0);
+
+    List<LaunchRematch> proposals;
+    try {
+      proposals = await LaunchRematchService.instance.preview();
+      if (mounted) Navigator.of(context).pop();
+    } catch (e, stackTrace) {
+      if (mounted) Navigator.of(context).pop();
+      LoggingService.error(
+          'DataManagementScreen: Failed to preview launch re-match', e, stackTrace);
+      _showErrorDialog('Error', 'Failed to check launches: $e');
+      return;
+    }
+
+    if (!mounted) return;
+
+    if (proposals.isEmpty) {
+      _showSuccessDialog('Launches Look Right',
+          'Every flight is already on the closest known launch.');
+      return;
+    }
+
+    // Name the launches rather than counting flights: "3 flights move to Mt
+    // Borah - Northeast launch" is something a pilot can agree or disagree
+    // with, where "3 flights will be moved" is not.
+    final byDestination = <String, List<LaunchRematch>>{};
+    for (final proposal in proposals) {
+      byDestination.putIfAbsent(proposal.toSite.name, () => []).add(proposal);
+    }
+
+    final summary = StringBuffer();
+    for (final entry in byDestination.entries.take(8)) {
+      final count = entry.value.length;
+      final worst = entry.value.first;
+      summary.writeln('• $count flight${count == 1 ? '' : 's'} → ${entry.key}');
+      summary.writeln(
+          '   now on "${worst.fromSiteName}", up to '
+          '${worst.improvementMeters.round()}m closer');
+    }
+    if (byDestination.length > 8) {
+      summary.writeln('• ... and ${byDestination.length - 8} more launches');
+    }
+
+    final confirmed = await _showConfirmationDialog(
+      'Re-match Flight Launches',
+      '${proposals.length} flight${proposals.length == 1 ? '' : 's'} '
+          'appear${proposals.length == 1 ? 's' : ''} to have launched from a '
+          'closer launch than the one recorded:\n\n'
+          '$summary\n'
+          'Your flights and IGC files are not modified - only which launch '
+          'they are linked to. Sites left with no flights are kept.\n\n'
+          'Apply these changes?',
+      confirmButtonText: 'Re-match',
+    );
+
+    if (!confirmed) {
+      LoggingService.action('DataManagement', 'launch_rematch_cancelled');
+      return;
+    }
+
+    LoggingService.action('DataManagement', 'launch_rematch_confirmed');
+    final stopwatch = Stopwatch()..start();
+
+    if (!mounted) return;
+    _showProgressDialog('Re-matching launches...', '', 0, proposals.length);
+
+    try {
+      final result = await LaunchRematchService.instance.apply(
+        proposals,
+        onProgress: (current, total) {
+          if (mounted) {
+            Navigator.of(context).pop();
+            _showProgressDialog('Re-matching launches...', '', current, total);
+          }
+        },
+      );
+
+      if (mounted) Navigator.of(context).pop();
+
+      LoggingService.performance('Re-match flight launches', stopwatch.elapsed,
+          'launch re-match completed');
+
+      // A failure can still have moved flights - each one is committed on its
+      // own - so the count is reported either way rather than only on success.
+      final moved = result['flights_moved'] as int? ?? 0;
+      if (moved > 0) {
+        setState(() {
+          _dataModified = true;
+        });
+        await _loadDatabaseStats();
+      }
+
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        final emptied = result['sites_left_empty'] as List<String>? ?? [];
+        String message = result['message'] as String;
+        if (emptied.isNotEmpty) {
+          message += '\n\nNo flights remain on: ${emptied.join(', ')}. '
+              'These sites were kept, not deleted.';
+        }
+        _showSuccessDialog('Re-match Complete', message);
+      } else {
+        _showErrorDialog('Re-match Failed', result['message'] as String);
+      }
+    } catch (e, stackTrace) {
+      if (mounted) Navigator.of(context).pop();
+      LoggingService.error(
+          'DataManagementScreen: Failed to re-match launches', e, stackTrace);
+      _showErrorDialog('Error', 'Failed to re-match launches: $e');
+    }
+  }
+
   Future<void> _recreateDatabaseFromIGC() async {
     // Show confirmation dialog
     final confirmed = await _showConfirmationDialog(
@@ -1764,6 +1888,21 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                                   onPressed: _rematchUnknownSites,
                                   icon: const Icon(Icons.place),
                                   label: const Text('Re-match Unknown Sites'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.blue,
+                                  ),
+                                ),
+                              ),
+
+                              const SizedBox(height: 8),
+
+                              // Re-match flight launches button
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: _rematchFlightLaunches,
+                                  icon: const Icon(Icons.wrong_location),
+                                  label: const Text('Re-match Flight Launches'),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: Colors.blue,
                                   ),

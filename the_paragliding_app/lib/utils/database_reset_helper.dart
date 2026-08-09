@@ -217,11 +217,21 @@ class DatabaseResetHelper {
       await _databaseHelper.recreateDatabase();
       await _databaseHelper.database;
       
+      // The matcher caches the flight log in memory, and deleting the database
+      // file does not touch it. Left stale it keeps answering with sites that
+      // no longer exist, and the flight-log tier is consulted first - so a
+      // recreate-from-IGC run names its sites after the database it just
+      // deleted. Observed: the first flight of a fresh import matched
+      // "Stanwell Park" at 10m, a name only the old database had, while the
+      // catalogue query beside it returned the two rows actually there
+      // ("... - The Point" and "... - East Launch").
+      await SiteMatchingService.instance.reload();
+
       // Verify the new database is empty
       final newFlightCount = await _getTableCount('flights');
       final newSiteCount = await _getTableCount('sites');
       final newWingCount = await _getTableCount('wings');
-      
+
       LoggingService.info('DatabaseResetHelper: Database reset complete!');
       LoggingService.info('DatabaseResetHelper: New database: $newFlightCount flights, $newSiteCount sites, $newWingCount wings');
       
@@ -655,6 +665,10 @@ class DatabaseResetHelper {
         await db.delete('flights');
         await db.delete('sites');  // User's flown sites
         await db.delete('wings');
+
+        // Same stale-cache trap as resetDatabase: the sites are gone from the
+        // database but not from the matcher's in-memory copy of them.
+        await SiteMatchingService.instance.reload();
 
         LoggingService.info('DatabaseResetHelper: Deleted $flightCount flights, $siteCount sites, $wingCount wings');
         LoggingService.info('DatabaseResetHelper: Preserved $pgeSiteCount PGE sites');
