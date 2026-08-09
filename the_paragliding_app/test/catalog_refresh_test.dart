@@ -70,6 +70,25 @@ void main() {
       expect(byAge(31), isTrue);
     });
 
+    test('a reset to the bundled copy must not report "up to date"', () {
+      // Code review caught this: "Reset to Bundled" reverts the local file to the
+      // older shipped snapshot, but the stored validators still described the
+      // published one. A later check compared the unchanged remote ETag against
+      // them, said "no update", and left the pilot on stale data with no signal.
+      // The reset now clears them, which is this state - nothing stored, so the
+      // remote ETag has nothing to match and the download goes ahead.
+      expect(
+        PgeSitesDownloadService.isRemoteNewer(
+          storedEtag: null,
+          storedLastModified: null,
+          remoteEtag: '"unchanged-since-the-last-download"',
+          remoteLastModified: null,
+          ageInDays: 0,
+        ),
+        isTrue,
+      );
+    });
+
     test('a first run, with nothing stored, downloads', () {
       // getPgeSitesDownloadDate() is null before any download, which the caller
       // turns into a very large age. Without this the app would never make its

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/http_freshness.dart' as freshness;
 import '../services/logging_service.dart';
 import '../services/airspace_metadata_cache.dart';
 import '../services/airspace_geometry_cache.dart';
@@ -313,15 +314,14 @@ class AirspaceCountryService {
     required String? remoteEtag,
     required String? remoteLastModified,
     required int ageInDays,
-  }) {
-    if (remoteEtag != null && storedEtag != null) {
-      return remoteEtag != storedEtag;
-    }
-    if (remoteLastModified != null && storedLastModified != null) {
-      return remoteLastModified != storedLastModified;
-    }
-    return ageInDays > 30;
-  }
+  }) =>
+      freshness.isRemoteNewer(
+        storedEtag: storedEtag,
+        storedLastModified: storedLastModified,
+        remoteEtag: remoteEtag,
+        remoteLastModified: remoteLastModified,
+        ageInDays: ageInDays,
+      );
 
   /// Check if country data needs updating.
   ///

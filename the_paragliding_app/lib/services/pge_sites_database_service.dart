@@ -42,32 +42,53 @@ class PgeSitesDatabaseService {
   /// A row whose `source` is empty comes from the PGE-only export, where the id
   /// genuinely was a PGE id, so `pge:<id>` is correct rather than a guess.
   ///
-  /// Rows that cannot be keyed, or that collide on a key, are deleted: the
-  /// catalogue is derived data and the next import restores them, whereas a
-  /// duplicate would make the unique index - and so the upsert - impossible to
-  /// create. Both counts are logged because deleting a row drops any favourite
-  /// on it, and that is a silent loss of the user's own data if unrecorded.
+  /// Rows that collide on a key are deleted down to one, because a duplicate
+  /// makes the unique index - and so the upsert - impossible to create. The
+  /// survivor is chosen favourite-first: a pre-federation install could hold one
+  /// row per guide for a single physical launch, and picking arbitrarily would
+  /// drop the pilot's favourite with only an aggregate count to show for it. A
+  /// deleted catalogue row returns on the next import; a favourite does not.
   static Future<void> _backfillRefs(DatabaseExecutor db) async {
     final rows = await db.query(_pgeSitesTable,
-        columns: ['id', 'source', 'ref'], where: 'ref IS NULL');
+        columns: ['id', 'source', 'is_favorite'], where: 'ref IS NULL');
     if (rows.isEmpty) return;
 
-    final seen = <String>{};
+    int favourite(Map<String, Object?> row) => (row['is_favorite'] as int?) ?? 0;
+
+    // Favourites first, so a collision keeps the row the pilot marked. Ties fall
+    // back to the lowest id, which makes the outcome order-independent.
+    final ordered = rows.toList()
+      ..sort((a, b) {
+        final byFavourite = favourite(b).compareTo(favourite(a));
+        return byFavourite != 0
+            ? byFavourite
+            : (a['id'] as int).compareTo(b['id'] as int);
+      });
+
+    final keptFor = <String, int>{};
     var keyed = 0;
-    var unkeyable = 0;
     var collided = 0;
+    var favouritesDropped = 0;
 
-    for (final row in rows) {
-      final id = row['id'];
+    for (final row in ordered) {
+      final id = row['id'] as int;
+      // forPgeId cannot return null, so every row gets a key. There is no
+      // "unkeyable" case to count here - reporting one would mislead anyone
+      // reading this log while chasing a lost favourite.
       final ref = CatalogRef.fromSource(row['source'] as String?) ??
-          CatalogRef.forPgeId(id as Object);
+          CatalogRef.forPgeId(id);
 
-      if (!seen.add(ref)) {
+      final kept = keptFor[ref];
+      if (kept != null) {
+        if (favourite(row) == 1) favouritesDropped++;
         await db.delete(_pgeSitesTable, where: 'id = ?', whereArgs: [id]);
         collided++;
+        LoggingService.database('MIGRATE',
+            'Dropped duplicate catalogue row $id for $ref, keeping $kept');
         continue;
       }
 
+      keptFor[ref] = id;
       await db.update(
         _pgeSitesTable,
         {'ref': ref, 'provider': CatalogRef.providerOf(ref)},
@@ -77,18 +98,13 @@ class PgeSitesDatabaseService {
       keyed++;
     }
 
-    // Any pre-existing duplicate of a ref written above.
-    collided += await db.rawDelete('''
-      DELETE FROM $_pgeSitesTable
-      WHERE ref IS NOT NULL AND id NOT IN (
-        SELECT MAX(id) FROM $_pgeSitesTable WHERE ref IS NOT NULL GROUP BY ref
-      )
-    ''');
-
     LoggingService.structured('CATALOG_REF_BACKFILL', {
       'rows_keyed': keyed,
-      'rows_unkeyable_deleted': unkeyable,
       'rows_collided_deleted': collided,
+      // Non-zero only if an install held two favourited rows for one launch.
+      // Called out rather than folded into the count above, because this is the
+      // pilot's own data going missing.
+      'favourites_dropped_in_collision': favouritesDropped,
     });
   }
 
@@ -411,7 +427,11 @@ class PgeSitesDatabaseService {
             continue;
           }
           snapshotRefs.add(ref);
-          existingRefs.contains(ref) ? updated++ : inserted++;
+          // add() reports whether the ref is new to this batch, so a ref
+          // appearing twice in one snapshot counts as one insert and one update
+          // rather than two inserts - the upsert is what actually happens, and
+          // the audit log should say so.
+          existingRefs.add(ref) ? inserted++ : updated++;
 
           batch.rawInsert('''
             INSERT INTO $_pgeSitesTable

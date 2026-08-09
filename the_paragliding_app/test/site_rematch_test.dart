@@ -125,7 +125,7 @@ void main() {
         'name': 'Neustift - Elfer',
         'latitude': pinLat,
         'longitude': pinLon,
-        'catalog_ref': 9001,
+        'catalog_ref': 'pge:9001',
       });
       final unknownId = await insertUnknownSiteWithFlight();
 

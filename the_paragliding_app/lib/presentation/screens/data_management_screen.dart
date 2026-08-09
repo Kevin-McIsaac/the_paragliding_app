@@ -45,6 +45,14 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
   bool _isLoading = true;
   bool _dataModified = false; // Track if any data was modified
 
+  /// True while a catalogue check or import is in flight.
+  ///
+  /// The download progress stream only reports the bundled-copy path, so it says
+  /// nothing about a remote check - without this, a second tap (or a tap during a
+  /// "Reset to Bundled" import) starts an overlapping import and a second modal,
+  /// and the first Navigator.pop closes the wrong one, leaving a stuck spinner.
+  bool _catalogBusy = false;
+
   // PGE Sites state
   Map<String, dynamic>? _pgeSitesStats;
   PgeSitesDownloadProgress? _pgeSitesProgress;
@@ -370,7 +378,17 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
   /// backwards. This is the one a pilot wants - launches added upstream since
   /// the release, without waiting for a Play update.
   Future<void> _checkForCatalogUpdate() async {
+    if (_catalogBusy) return;
     LoggingService.action('DataManagement', 'check_catalog_update');
+    setState(() => _catalogBusy = true);
+    try {
+      await _runCatalogUpdate();
+    } finally {
+      if (mounted) setState(() => _catalogBusy = false);
+    }
+  }
+
+  Future<void> _runCatalogUpdate() async {
 
     _showLoadingDialog('Checking for a newer catalogue...');
     final available = await PgeSitesDownloadService.instance.checkForUpdate();
@@ -412,7 +430,17 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
   }
 
   Future<void> _downloadPgeSites() async {
+    if (_catalogBusy) return;
     LoggingService.action('DataManagement', 'download_pge_sites');
+    setState(() => _catalogBusy = true);
+    try {
+      await _runBundledDownload();
+    } finally {
+      if (mounted) setState(() => _catalogBusy = false);
+    }
+  }
+
+  Future<void> _runBundledDownload() async {
 
     try {
       // First delete any corrupted local file to ensure fresh download
@@ -2508,7 +2536,9 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                         children: [
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: _pgeSitesProgress?.status == PgeSitesDownloadStatus.downloading
+                              onPressed: _catalogBusy ||
+                                      _pgeSitesProgress?.status ==
+                                          PgeSitesDownloadStatus.downloading
                                   ? null
                                   : _checkForCatalogUpdate,
                               icon: const Icon(Icons.cloud_download),
@@ -2521,7 +2551,9 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                           const SizedBox(width: 8),
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: _pgeSitesProgress?.status == PgeSitesDownloadStatus.downloading
+                              onPressed: _catalogBusy ||
+                                      _pgeSitesProgress?.status ==
+                                          PgeSitesDownloadStatus.downloading
                                   ? null
                                   : _downloadPgeSites,
                               icon: const Icon(Icons.restore),

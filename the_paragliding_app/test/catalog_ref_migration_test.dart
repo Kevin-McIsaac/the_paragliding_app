@@ -108,6 +108,32 @@ void main() {
     expect(site['catalog_ref'], 'pge:4632');
   });
 
+  test('a ref collision keeps the favourited row, not an arbitrary one',
+      () async {
+    // Code review caught this. A pre-federation install could hold one row per
+    // guide for a single physical launch; both resolve to the same ref, so one
+    // has to go before the unique index can exist. Choosing by id would have
+    // taken the pilot's favourite with it, recorded only as an aggregate count.
+    await db.insert('pge_sites', {
+      'id': 10, 'name': 'Mt Borah (PGE copy)', 'longitude': 150.6086,
+      'latitude': -30.6792, 'source': 'pge:4632', 'is_favorite': 0,
+    });
+    await db.insert('pge_sites', {
+      'id': 11, 'name': 'Mt Borah (favourited copy)', 'longitude': 150.6086,
+      'latitude': -30.6792, 'source': 'pge:4632', 'is_favorite': 1,
+    });
+
+    // initializeTables runs the backfill, which is where the collision is
+    // resolved - and it must leave a table the unique index can be built on.
+    await PgeSitesDatabaseService.instance.initializeTables();
+
+    final rows = await db.query('pge_sites', where: "ref = 'pge:4632'");
+    expect(rows, hasLength(1), reason: 'a duplicate ref blocks the unique index');
+    expect(rows.single['is_favorite'], 1,
+        reason: "the survivor must be the row the pilot marked");
+    expect(rows.single['name'], 'Mt Borah (favourited copy)');
+  });
+
   test('a fresh install has the new column and the new index', () async {
     // Asserted against sqlite_master rather than by asking the service, so a
     // convergence failure between _onCreate and _onUpgrade shows up here.

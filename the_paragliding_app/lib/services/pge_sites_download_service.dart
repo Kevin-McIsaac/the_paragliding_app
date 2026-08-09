@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import '../services/logging_service.dart';
+import '../utils/http_freshness.dart' as freshness;
 import '../utils/performance_monitor.dart';
 import '../utils/preferences_helper.dart';
 
@@ -158,12 +159,18 @@ class PgeSitesDownloadService {
 
   /// Whether the published catalogue differs from the copy on disk.
   ///
-  /// Prefers ETag, falls back to Last-Modified, and only falls back to age when
-  /// neither side offers a comparable validator. Kept separate from the HTTP
-  /// call so the branches can be tested without a network - same split, and for
-  /// the same reason, as [AirspaceCountryService.isRemoteNewer]: getting it
-  /// wrong either re-downloads every launch or leaves the catalogue stale for a
-  /// month.
+  /// Mostly the shared [isRemoteNewer] - that logic was a verbatim copy of the
+  /// airspace service's, so a fix to it had to be made twice or be wrong in one
+  /// place. One rule is added on top: **an unvalidated local copy is refreshed.**
+  ///
+  /// If nothing is stored, the local file cannot be shown to match what is
+  /// published, and the age of the file says nothing about that - a "Reset to
+  /// Bundled" leaves an older snapshot with a brand-new mtime, which is exactly
+  /// the case where an age fallback answers "up to date" about stale data.
+  ///
+  /// The airspace exports keep the age fallback instead, deliberately: they are
+  /// 13 MB each and pulling one on a hunch is expensive. The catalogue is 350 KB,
+  /// so fetching when unsure is the cheaper mistake.
   static bool isRemoteNewer({
     required String? storedEtag,
     required String? storedLastModified,
@@ -171,13 +178,18 @@ class PgeSitesDownloadService {
     required String? remoteLastModified,
     required int ageInDays,
   }) {
-    if (remoteEtag != null && storedEtag != null) {
-      return remoteEtag != storedEtag;
-    }
-    if (remoteLastModified != null && storedLastModified != null) {
-      return remoteLastModified != storedLastModified;
-    }
-    return ageInDays > PgeSitesConfig.maxAge.inDays;
+    final haveNoValidators = storedEtag == null && storedLastModified == null;
+    final serverOffersOne = remoteEtag != null || remoteLastModified != null;
+    if (haveNoValidators && serverOffersOne) return true;
+
+    return freshness.isRemoteNewer(
+      storedEtag: storedEtag,
+      storedLastModified: storedLastModified,
+      remoteEtag: remoteEtag,
+      remoteLastModified: remoteLastModified,
+      ageInDays: ageInDays,
+      maxAgeInDays: PgeSitesConfig.maxAge.inDays,
+    );
   }
 
   /// Ask the server whether a newer catalogue exists.
@@ -188,8 +200,6 @@ class PgeSitesDownloadService {
   /// refresh by hand from Data Management.
   Future<bool> checkForUpdate() async {
     try {
-      await PreferencesHelper.setCatalogCheckedNow();
-
       final stored = await PreferencesHelper.getCatalogValidators();
       final downloadedAt = await PreferencesHelper.getPgeSitesDownloadDate();
       final ageInDays =
@@ -205,6 +215,13 @@ class PgeSitesDownloadService {
         });
         return false;
       }
+
+      // Stamped only now, on a definitive answer. Stamping before the request
+      // meant a check that failed because the pilot had no signal - at a launch
+      // site, the normal case - counted as "checked", and the automatic check is
+      // throttled on this timestamp, so one failure blocked the next attempt for
+      // a month.
+      await PreferencesHelper.setCatalogCheckedNow();
 
       final available = isRemoteNewer(
         storedEtag: stored.etag,
@@ -352,6 +369,23 @@ class PgeSitesDownloadService {
 
       // Move to final location atomically
       await tempFile.rename(localFilePath);
+
+      // The local copy is now the bundled one, so the validators describing the
+      // *published* file no longer describe it. Left in place, a later check
+      // would compare the unchanged remote ETag against them and report "up to
+      // date" while the pilot sits on the older shipped snapshot - the opposite
+      // of what both buttons are for.
+      //
+      // Its own try: the file is already in place by now, so a preferences
+      // failure is not a failed download and must not be reported as one. The
+      // cost of losing this write is one redundant refresh, not stale data.
+      try {
+        await PreferencesHelper.setCatalogValidators(
+            etag: null, lastModified: null);
+      } catch (error) {
+        LoggingService.error(
+            '[PGE_SITES] Could not clear catalogue validators', error);
+      }
 
       final completedTime = DateTime.now();
       final duration = completedTime.difference(startTime);
