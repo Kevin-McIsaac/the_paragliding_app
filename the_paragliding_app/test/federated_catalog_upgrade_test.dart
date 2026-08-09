@@ -43,9 +43,10 @@ void main() {
       () async {
     final db = await DatabaseHelper.instance.database;
 
-    // A pre-federation install: the catalogue held PGE ids, a flown site
-    // pointed at one, and it was a favourite. 4632 is Manilla - Mt Borah,
-    // which the federated catalogue carries as a merged launch.
+    // An install carrying the previous catalogue: a flown site linked to
+    // Manilla - Mt Borah, and favourited. The catalogue row is seeded without a
+    // ref, as a pre-federation export left it, so initializeTables' backfill has
+    // to key it from its id before any of this can resolve.
     await db.insert('pge_sites', {
       'id': 4632,
       'name': 'Manilla, Mt Borah (NSW)',
@@ -57,7 +58,7 @@ void main() {
       'name': 'Mt Borah',
       'latitude': -30.6789,
       'longitude': 150.609,
-      'catalog_site_id': 4632,
+      'catalog_ref': 'pge:4632',
       'created_at': DateTime.now().toIso8601String(),
     });
 
@@ -78,16 +79,18 @@ void main() {
     expect(borah['country'], 'au');
     expect(borah['altitude'], isNotNull);
 
-    // The flown site follows its PGE id into the new id space.
-    final site = (await db.query('sites', where: 'catalog_site_id IS NOT NULL')).single;
-    expect(site['catalog_site_id'], borah['id'],
-        reason: 'link should have been rewritten to the canonical id');
-    expect(site['catalog_site_id'], isNot(4632),
-        reason: 'the catalogue no longer uses PGE ids');
+    // The link is untouched, and still resolves - the whole point of keying on
+    // the guide's id. Importing 11,703 rows over the top rewrites nothing the
+    // pilot owns.
+    final site = (await db.query('sites', where: 'catalog_ref IS NOT NULL')).single;
+    expect(site['catalog_ref'], 'pge:4632');
+    expect(borah['ref'], 'pge:4632',
+        reason: 'the imported row carries the same key the flown site holds');
 
-    // And the favourite came with it.
+    // And the favourite stayed on that launch, through a backfill and a full
+    // catalogue import.
     final favourites = await db.query('pge_sites', where: 'is_favorite = 1');
-    expect(favourites.map((r) => r['id']), [borah['id']]);
+    expect(favourites.map((r) => r['ref']), ['pge:4632']);
   });
 
   test('a launch no source but Site Guide has is present and flyable', () async {

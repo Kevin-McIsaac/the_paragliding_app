@@ -123,10 +123,10 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
   /// which guides describe the launch. The tab count depends on that, which
   /// is why the controller is replaced here rather than settled in initState.
   Future<void> _loadCatalogSite() async {
-    final catalogId = widget.site?.catalogSiteId;
-    if (widget.paraglidingSite != null || catalogId == null) return;
+    final ref = widget.site?.catalogRef;
+    if (widget.paraglidingSite != null || ref == null) return;
 
-    final site = await PgeSitesDatabaseService.instance.getSiteById(catalogId);
+    final site = await PgeSitesDatabaseService.instance.getSiteByRef(ref);
     if (site == null || !mounted) return;
 
     setState(() {
@@ -155,62 +155,56 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     _loadFavoriteStatus();
   }
 
-  /// Load favorite status for this site
-  Future<void> _loadFavoriteStatus() async {
-    // Determine which database and ID to use for favorites
-    // Rule: For sites with catalog_site_id, always use PGE database as single source of truth
-    bool isFavorite = false;
-    String source = 'unknown';
-    int? effectiveId;
-
-    // Check ParaglidingSite first (this is what we usually have)
-    if (widget.paraglidingSite != null) {
-      // Check if this is linked to a PGE site
-      if (widget.paraglidingSite!.catalogSiteId != null) {
-        // Linked to PGE site - use PGE database (single source of truth)
-        effectiveId = widget.paraglidingSite!.catalogSiteId;
-        source = 'pge_via_paragliding_site';
-        isFavorite = await PgeSitesDatabaseService.instance.isSiteFavorite(effectiveId!);
-      } else if (widget.paraglidingSite!.isFromLocalDb) {
-        // Custom local site - use local database
-        effectiveId = widget.paraglidingSite!.id;
-        if (effectiveId != null) {
-          source = 'local';
-          isFavorite = await DatabaseService.instance.isSiteFavorite(effectiveId);
-        }
-      } else {
-        // Pure PGE site (not in local DB) - use PGE database
-        effectiveId = widget.paraglidingSite!.id;
-        if (effectiveId != null) {
-          source = 'pge';
-          isFavorite = await PgeSitesDatabaseService.instance.isSiteFavorite(effectiveId);
-        }
+  /// Where this screen's favourite lives: the catalogue, keyed by ref, or the
+  /// pilot's own sites table, keyed by row id.
+  ///
+  /// A site linked to the catalogue always uses the catalogue, so one launch has
+  /// one favourite however the pilot reached it. This used to be five branches
+  /// duplicated across load and toggle, three of which existed only to pick
+  /// between two meanings of `id`; a catalogue row carries `catalogRef` now
+  /// whether or not it is also a flown site, so those collapse.
+  ({String? catalogRef, int? localSiteId}) get _favouriteTarget {
+    final catalogueSite = widget.paraglidingSite;
+    if (catalogueSite != null) {
+      if (catalogueSite.catalogRef != null) {
+        return (catalogRef: catalogueSite.catalogRef, localSiteId: null);
       }
-    } else if (widget.site != null) {
-      // Fallback to Site object (rare case)
-      if (widget.site!.catalogSiteId != null) {
-        // Linked to PGE site - use PGE database (single source of truth)
-        effectiveId = widget.site!.catalogSiteId;
-        source = 'pge_via_site';
-        isFavorite = await PgeSitesDatabaseService.instance.isSiteFavorite(effectiveId!);
-      } else if (widget.site!.id != null) {
-        // Custom local site - use local database
-        effectiveId = widget.site!.id;
-        source = 'local_via_site';
-        isFavorite = await DatabaseService.instance.isSiteFavorite(effectiveId!);
-      }
+      // Unlinked flown site; an API-only result has no id and no favourite.
+      return (
+        catalogRef: null,
+        localSiteId: catalogueSite.isFromLocalDb ? catalogueSite.id : null,
+      );
     }
 
-    final siteName = widget.paraglidingSite?.name ?? widget.site?.name ?? 'unknown';
+    final flownSite = widget.site;
+    if (flownSite != null) {
+      if (flownSite.catalogRef != null) {
+        return (catalogRef: flownSite.catalogRef, localSiteId: null);
+      }
+      return (catalogRef: null, localSiteId: flownSite.id);
+    }
+
+    return (catalogRef: null, localSiteId: null);
+  }
+
+  /// Load favorite status for this site
+  Future<void> _loadFavoriteStatus() async {
+    final target = _favouriteTarget;
+    final ref = target.catalogRef;
+    final localSiteId = target.localSiteId;
+
+    bool isFavorite = false;
+    if (ref != null) {
+      isFavorite = await PgeSitesDatabaseService.instance.isSiteFavorite(ref);
+    } else if (localSiteId != null) {
+      isFavorite = await DatabaseService.instance.isSiteFavorite(localSiteId);
+    }
+
     LoggingService.structured('FAVORITES_LOAD', {
-      'source': source,
-      'effective_id': effectiveId,
-      'site_name': siteName,
+      'catalog_ref': ref,
+      'local_site_id': localSiteId,
+      'site_name': widget.paraglidingSite?.name ?? widget.site?.name ?? 'unknown',
       'is_favorite': isFavorite,
-      'pge_site_present': widget.paraglidingSite != null,
-      'local_site_present': widget.site != null,
-      'paragliding_site_catalog_site_id': widget.paraglidingSite?.catalogSiteId,
-      'local_catalog_site_id': widget.site?.catalogSiteId,
     });
 
     if (mounted) {
@@ -222,64 +216,24 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
 
   /// Toggle favorite status for this site
   Future<void> _toggleFavorite() async {
-    // Determine which database and ID to use for favorites toggle
-    // Rule: For sites with catalog_site_id, always use PGE database as single source of truth
-    String? siteName;
-    String source = 'unknown';
-    int? effectiveId;
+    final target = _favouriteTarget;
+    final ref = target.catalogRef;
+    final localSiteId = target.localSiteId;
 
-    // Check ParaglidingSite first (this is what we usually have)
-    if (widget.paraglidingSite != null) {
-      siteName = widget.paraglidingSite!.name;
-      // Check if this is linked to a PGE site
-      if (widget.paraglidingSite!.catalogSiteId != null) {
-        // Linked to PGE site - use PGE database (single source of truth)
-        effectiveId = widget.paraglidingSite!.catalogSiteId;
-        source = 'pge_via_paragliding_site';
-        await PgeSitesDatabaseService.instance.toggleSiteFavorite(effectiveId!);
-      } else if (widget.paraglidingSite!.isFromLocalDb) {
-        // Custom local site - use local database
-        effectiveId = widget.paraglidingSite!.id;
-        if (effectiveId != null) {
-          source = 'local';
-          await DatabaseService.instance.toggleSiteFavorite(effectiveId);
-        }
-      } else {
-        // Pure PGE site (not in local DB) - use PGE database
-        effectiveId = widget.paraglidingSite!.id;
-        if (effectiveId != null) {
-          source = 'pge';
-          await PgeSitesDatabaseService.instance.toggleSiteFavorite(effectiveId);
-        }
-      }
-    } else if (widget.site != null) {
-      siteName = widget.site!.name;
-      // Fallback to Site object (rare case)
-      if (widget.site!.catalogSiteId != null) {
-        // Linked to PGE site - use PGE database (single source of truth)
-        effectiveId = widget.site!.catalogSiteId;
-        source = 'pge_via_site';
-        await PgeSitesDatabaseService.instance.toggleSiteFavorite(effectiveId!);
-      } else if (widget.site!.id != null) {
-        // Custom local site - use local database
-        effectiveId = widget.site!.id;
-        source = 'local_via_site';
-        await DatabaseService.instance.toggleSiteFavorite(effectiveId!);
-      }
+    if (ref != null) {
+      await PgeSitesDatabaseService.instance.toggleSiteFavorite(ref);
+    } else if (localSiteId != null) {
+      await DatabaseService.instance.toggleSiteFavorite(localSiteId);
+    } else {
+      return; // Nothing persisted to favourite.
     }
 
-    if (effectiveId == null) {
-      return; // No valid site ID
-    }
+    final siteName = widget.paraglidingSite?.name ?? widget.site?.name;
 
     LoggingService.structured('FAVORITES_TOGGLE', {
-      'source': source,
-      'effective_id': effectiveId,
+      'catalog_ref': ref,
+      'local_site_id': localSiteId,
       'site_name': siteName,
-      'pge_site_present': widget.paraglidingSite != null,
-      'local_site_present': widget.site != null,
-      'paragliding_site_catalog_site_id': widget.paraglidingSite?.catalogSiteId,
-      'local_catalog_site_id': widget.site?.catalogSiteId,
     });
 
     // Reload favorite status to get updated value

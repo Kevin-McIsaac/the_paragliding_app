@@ -1451,7 +1451,7 @@ class _EditSiteScreenState extends State<EditSiteScreen> {
           longitude: apiSite.longitude,
           altitude: apiSite.altitude?.toDouble() ?? sourceSite.altitude,  // Preserve source altitude if API lacks it
           country: apiSite.country ?? sourceSite.country,  // Preserve source country if API lacks it
-          catalogSiteId: apiSite.id,  // Link to PGE site ID for wind directions and other data
+          catalogRef: apiSite.catalogRef,  // Link to the catalogue entry for wind, altitude and guide tabs
           customName: false, // Mark as not custom since from API
         );
         

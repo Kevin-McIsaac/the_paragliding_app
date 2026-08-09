@@ -15,8 +15,8 @@ import 'helpers/test_helpers.dart';
 ///
 /// Coordinates are the bundled catalogue's real values.
 void main() {
-  const west = (id: 9247, name: 'Manilla - Mt Borah - West launch', lat: -30.6792, lon: 150.6086);
-  const east = (id: 11526, name: 'Manilla - Mt Borah - East launch', lat: -30.6793, lon: 150.6116);
+  const west = (ref: 'pge:4632', name: 'Manilla - Mt Borah - West launch', lat: -30.6792, lon: 150.6086);
+  const east = (ref: 'siteguide_au:136-21', name: 'Manilla - Mt Borah - East launch', lat: -30.6793, lon: 150.6116);
 
   setUpAll(() async {
     await TestHelpers.initializeDatabaseForTesting();
@@ -32,14 +32,14 @@ void main() {
   });
 
   Future<int> insertSite(
-    ({int id, String name, double lat, double lon}) site, {
-    int? catalogSiteId,
+    ({String ref, String name, double lat, double lon}) site, {
+    String? catalogRef,
   }) {
     return DatabaseService.instance.insertSite(Site(
       name: site.name,
       latitude: site.lat,
       longitude: site.lon,
-      catalogSiteId: catalogSiteId ?? site.id,
+      catalogRef: catalogRef ?? site.ref,
     ));
   }
 
@@ -53,12 +53,12 @@ void main() {
       latitude: east.lat,
       longitude: east.lon,
       name: east.name,
-      catalogSiteId: east.id,
+      catalogRef: east.ref,
     );
 
     expect(resolved.id, isNot(westSiteId));
     expect(resolved.name, east.name);
-    expect(resolved.catalogSiteId, east.id);
+    expect(resolved.catalogRef, east.ref);
   });
 
   test('reuses the site already linked to that catalogue launch', () async {
@@ -70,7 +70,7 @@ void main() {
       latitude: west.lat + 0.0005,
       longitude: west.lon,
       name: west.name,
-      catalogSiteId: west.id,
+      catalogRef: west.ref,
     );
 
     expect(resolved.id, westSiteId);
@@ -91,14 +91,14 @@ void main() {
       latitude: west.lat,
       longitude: west.lon,
       name: west.name,
-      catalogSiteId: west.id,
+      catalogRef: west.ref,
     );
 
     expect(resolved.id, unlinkedId);
     final db = await DatabaseHelper.instance.database;
     expect(await db.query('sites'), hasLength(1),
         reason: 'a second row here would show as a duplicate map pin, since '
-            'marker dedup keys on catalog_site_id');
+            'marker dedup keys on catalog_ref');
   });
 
   test('picks the nearest when two sites are inside the radius', () async {
@@ -121,7 +121,7 @@ void main() {
       latitude: -31.853,
       longitude: 116.761,
       name: 'Mount Bakewell (top launches)',
-      catalogSiteId: 9643,
+      catalogRef: 'pge:9643',
     );
 
     expect(resolved.name, 'Mount Bakewell (top launches)');

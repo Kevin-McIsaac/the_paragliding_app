@@ -62,7 +62,7 @@ void main() {
       name: site.name,
       latitude: site.lat,
       longitude: site.lon,
-      catalogSiteId: site.id,
+      catalogRef: 'pge:${site.id}',
     ));
 
     final db = await DatabaseHelper.instance.database;

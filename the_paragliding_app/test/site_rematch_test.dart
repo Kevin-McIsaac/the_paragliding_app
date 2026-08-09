@@ -125,7 +125,7 @@ void main() {
         'name': 'Neustift - Elfer',
         'latitude': pinLat,
         'longitude': pinLon,
-        'catalog_site_id': 9001,
+        'catalog_ref': 9001,
       });
       final unknownId = await insertUnknownSiteWithFlight();
 
@@ -188,7 +188,7 @@ void main() {
       final db = await DatabaseHelper.instance.database;
       final site = (await db.query('sites', where: 'id = ?', whereArgs: [siteId])).single;
       expect(site['name'], 'Unknown 1');
-      expect(site['catalog_site_id'], isNull,
+      expect(site['catalog_ref'], isNull,
           reason: 'a flight-log row id must never be written as a PGE site id');
     });
 
