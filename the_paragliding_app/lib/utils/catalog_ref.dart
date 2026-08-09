@@ -30,10 +30,16 @@ class CatalogRef {
   /// moves when the producer's output does. `pge` leads because it supplies
   /// 11,508 of the catalogue's 11,792 tokens; only 89 rows carry two at all.
   ///
-  /// Providers are three-letter abbreviations of the guide: `pge` is
-  /// ParaglidingEarth, `ansg` the Australian National Site Guide. Keep new ones
-  /// to three letters - the prefix appears in every stored ref, so a verbose one
-  /// is a cost paid on every row forever.
+  /// A provider is the guide's own abbreviation, lowercased - `pge` for
+  /// ParaglidingEarth, `ansg` for the Australian National Site Guide, `ffvl` for
+  /// the Fédération Française de Vol Libre when it arrives. Whatever the guide
+  /// is actually called, rather than a fixed width: the prefix is carried in
+  /// every stored ref, so it wants to be short, but a recognisable acronym beats
+  /// a letter saved.
+  ///
+  /// The only hard rule is that it cannot contain `:` or `;` - those separate the
+  /// id and the tokens, so a prefix holding either would not survive a round
+  /// trip through `source`.
   static const List<String> providerPrecedence = ['pge', 'ansg'];
 
   /// Prefixes an older producer emitted, mapped to the current name.

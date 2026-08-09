@@ -168,7 +168,7 @@ void main() {
 
     test('normalises a provider the producer has since renamed', () {
       // The shipped catalogue still says siteguide_au; the prefix is now the
-      // guide's own abbreviation, ansg (Australian National Site Guide). Normalising on read means the
+      // guide's own acronym, ansg (Australian National Site Guide). Normalising on read means the
       // app works against either, and only ever stores the current form - so
       // there is one prefix in the database however old the catalogue is.
       expect(CatalogRef.fromSource('siteguide_au:136-40'), 'ansg:136-40');
@@ -177,16 +177,20 @@ void main() {
       expect(CatalogRef.providerOf('ansg:136-40'), 'ansg');
     });
 
-    test('provider prefixes stay short and lowercase', () {
-      // The prefix is carried in every stored ref, so a verbose one is a cost
-      // paid on every row forever. New guides should take a three-letter
-      // abbreviation; `ansg` is four because that is what the guide is called.
-      // This fails when one is added under a long name, which is the moment to
-      // choose an abbreviation rather than after it is in everyone's database.
+    test('a provider prefix survives a round trip through source', () {
+      // Length is a matter of taste - pge is three, ansg four, ffvl will be four
+      // - so this asserts the part that is not: a prefix containing either
+      // delimiter would be torn apart when `source` is parsed back, and the ref
+      // stored against it would never match again.
       for (final provider in CatalogRef.providerPrecedence) {
-        expect(provider.length, lessThanOrEqualTo(4),
-            reason: '"$provider" wants a short abbreviation');
-        expect(provider, provider.toLowerCase());
+        expect(provider, provider.toLowerCase(),
+            reason: 'refs are compared exactly, so case cannot vary');
+        expect(provider, isNot(contains(':')));
+        expect(provider, isNot(contains(';')));
+
+        expect(CatalogRef.fromSource('$provider:123'), '$provider:123');
+        expect(CatalogRef.tokensOf('$provider:123;other:9').first,
+            '$provider:123');
       }
     });
   });
