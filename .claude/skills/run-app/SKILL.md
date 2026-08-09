@@ -17,6 +17,22 @@ implementation, so 3D screens show a "3D Map Not Available" placeholder on deskt
 
 ## 2. Start it
 
+> **Run every `bin/dev_run.sh` with the sandbox disabled** (`dangerouslyDisableSandbox:
+> true`). This is not an adb-only rule — it applies to the plain desktop run too. The
+> sandbox reaches neither the X11 socket nor the phone's LAN address, and in both cases
+> the failure reads as a missing display or a missing phone rather than as a permissions
+> problem, so it gets misdiagnosed every time. Same for `bin/dev_reload.sh`,
+> `bin/dev_logs.sh`, `scrot`, and any `adb` command.
+>
+> | you see | it is | do |
+> |---|---|---|
+> | `cannot open display: :0` | the sandbox, hiding X11 | re-run with the sandbox off |
+> | `Network is unreachable` | the sandbox, hiding the LAN | re-run with the sandbox off |
+> | `No route to host` | genuinely the network | phone asleep or off Wi-Fi — see below |
+>
+> There **is** a display. Do not conclude the environment is headless and go looking for
+> `xvfb` — that has burned a whole verification cycle more than once.
+
 ```bash
 bin/dev_run.sh --background                 # desktop
 bin/dev_run.sh -d "<device>" --background   # Android
@@ -25,6 +41,19 @@ bin/dev_run.sh -d "<device>" --background   # Android
 `--background` detaches the app and returns **only once it is actually up** — or fails
 fast with the real error and the tail of the log. Agents should always use it; without it
 the command blocks until you quit the app.
+
+**In a fresh worktree, `mkdir -p dev_data` first.** `dev_data/` is gitignored, so a new
+worktree has none and `dev_run.sh` dies on its own log redirect with `dev_data/flutter.log:
+No such file or directory` — which reads like a build failure. For real data to work with,
+copy the main checkout's database in rather than re-seeding from IGC:
+
+```bash
+mkdir -p dev_data
+cp -r /home/kmcisaac/Projects/the_paragliding_app/dev_data/app_documents dev_data/
+```
+
+That database may be an **older schema version**, which is a feature: it exercises the real
+upgrade path on launch. Check `[DB:MIGRATE]` and `[CATALOG_RELINK]` in the log afterwards.
 
 Get `<device>` from `flutter devices` (not `adb devices` — Flutter wants its own id). The
 wireless Pixel 9 looks like `adb-52110DLAQ001UT-hkZkFs._adb-tls-connect._tcp`. **Always
@@ -54,6 +83,14 @@ adb -s "$DEV" exec-out screencap -p > dev_data/screenshot.png   # then Read the 
 
 Use `exec-out`, not `shell` — `shell` mangles the binary. Pass `-s "$DEV"`; there is
 usually more than one thing attached.
+
+**`screencap` is Android-only.** On Linux desktop the equivalent is `scrot -o
+dev_data/desktop.png` (sandbox off), but it grabs the whole X root window — on a
+multi-monitor desktop that is a 3665x1080 image which can come back **entirely black**
+while the app is running perfectly well. A black PNG is not evidence the app failed. For
+desktop, verify from `dev_data/flutter.log` and by querying
+`dev_data/app_documents/FlightLog.db` directly, or ask the person at the keyboard what
+they see.
 
 To be told about problems as they happen instead of grepping after the fact, watch the
 log with the `Monitor` tool rather than polling it:

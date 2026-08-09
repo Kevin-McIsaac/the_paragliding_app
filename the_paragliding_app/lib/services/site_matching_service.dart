@@ -124,6 +124,16 @@ class SiteMatchingService {
         );
         
         if (apiSite != null) {
+          // No reconciliation against the catalogue here, deliberately. The
+          // catalogue owns identity for any launch it knows about - the API is
+          // PGE-only and names launches in its own convention - but it already
+          // wins by construction: the catalogue query above searched
+          // localSiteSearchRadius (2000m) around the flight and found nothing,
+          // while an API result is bounded by maxDistance, which no caller sets
+          // above that. Anything the catalogue could have named was therefore
+          // already offered and rejected, so a second catalogue lookup around
+          // the API result can only return a launch *further* from the flight
+          // than the radius the catalogue tier deliberately enforces.
           LoggingService.info('SiteMatchingService: Found new site via API: "${apiSite.name}" at ${apiSite.latitude.toStringAsFixed(4)}, ${apiSite.longitude.toStringAsFixed(4)}');
           LoggingService.info('SiteMatchingService: API site location info - Country: "${apiSite.country ?? 'null'}"');
           return apiSite;
