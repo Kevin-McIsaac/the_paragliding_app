@@ -151,6 +151,7 @@ lib/
 | Hot reload fails | State corruption | Use `R` (hot restart) instead of `r` |
 | App won't start | Already running | `kill "$(cat dev_data/flutter.pid)"`, then start again |
 | Hot reload does nothing | App not actually running | `kill -0 "$(cat dev_data/flutter.pid)"` - no pid file means it exited |
+| `Unable to create '.git/index.lock': File exists` | An index-writing git command was killed and left its lock | Check it is stale - `stat -c %y .git/index.lock` and `pgrep -a git` - then `rm -f .git/index.lock`. Never delete one while a git process is alive |
 
 ## Project Overview
 
@@ -712,6 +713,21 @@ Neither omission fails loudly, and the signing one is dangerous:
 
 Also absent: `.dart_tool/`, `build/`, and `dev_data/` — re-seed `dev_data/igc` only if the
 task needs the app to actually run.
+
+**Merging from a worktree: `gh pr merge <n> --squash`, without `-d`.** The repo has
+*Automatically delete head branches* enabled, so GitHub removes the branch server-side and
+gh runs no local git at all. Passing `-d` asks gh to delete the **local** branch too, which
+makes it run `git checkout main` - and that fails from a worktree, because `main` is checked
+out in the shared checkout. It fails *after* the API merge has already gone through, so the
+PR is merged while the command exits 1: check `gh pr view <n> --json state` before assuming
+it did not land. Clean up locally instead:
+
+```bash
+git worktree remove .claude/worktrees/<name>
+git branch -d <name>
+git fetch --prune origin
+git merge --ff-only origin/main    # from the shared checkout
+```
 
 ### Standard Development Process
 
