@@ -30,7 +30,12 @@ class PgeSitesConfig {
       'https://raw.githubusercontent.com/Kevin-McIsaac/'
       'paragliding_site_federation/main/app/sites.csv';
 
-  /// Maximum age before auto-refresh
+  /// How stale a local copy may be before its age alone justifies a refresh.
+  ///
+  /// The last-resort signal in [PgeSitesDownloadService.isRemoteNewer], for a
+  /// server offering neither an ETag nor a Last-Modified. Not the same thing as
+  /// [checkInterval], which is how often the app *asks*: this is a fallback
+  /// answer, that is a cadence.
   static const Duration maxAge = Duration(days: 30);
 
   /// How often the app asks whether a newer catalogue has been published.
@@ -562,7 +567,7 @@ class PgeSitesDownloadService {
           // can be keyed at all is the import's call, not this one, so that it
           // stays in one place and stays counted.
           'ref': optional('ref'),
-            'name': name,
+          'name': name,
           'longitude': longitude,
           'latitude': latitude,
           'altitude': int.tryParse(field('altitude')),

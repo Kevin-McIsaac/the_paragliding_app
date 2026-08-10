@@ -233,14 +233,37 @@ void main() {
       }
     });
 
-    test('the published catalogue is checked at the cadence it is published',
-        () {
-      // The pipeline publishes weekly. Throttling the check to maxAge meant a
-      // launch added on Tuesday could take a month to reach a pilot, which
-      // gives away most of the point of publishing separately from the release.
-      expect(PgeSitesConfig.checkInterval,
-          lessThanOrEqualTo(const Duration(days: 7)));
-      expect(PgeSitesConfig.checkInterval, lessThan(PgeSitesConfig.maxAge));
+  });
+
+  group('deciding whether to ask the server again', () {
+    final now = DateTime(2026, 8, 11, 9);
+
+    test('a catalogue never checked is checked', () {
+      expect(AppInitializationService.checkIsDue(null, now: now), isTrue);
+    });
+
+    test('a check a week old is due again', () {
+      // The pipeline publishes weekly, so this is the cadence that matches it.
+      // Throttling on maxAge instead left a launch added on Tuesday up to a
+      // month from the pilot it was added for.
+      expect(
+        AppInitializationService.checkIsDue(
+            now.subtract(const Duration(days: 8)),
+            now: now),
+        isTrue,
+      );
+    });
+
+    test('a check from yesterday is not repeated', () {
+      // The other direction: a launch site usually has no signal, and asking on
+      // every cold start spends the pilot's battery on an answer that is almost
+      // always "no".
+      expect(
+        AppInitializationService.checkIsDue(
+            now.subtract(const Duration(days: 1)),
+            now: now),
+        isFalse,
+      );
     });
   });
 

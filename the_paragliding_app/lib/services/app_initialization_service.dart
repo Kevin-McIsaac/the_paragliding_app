@@ -142,7 +142,7 @@ class AppInitializationService {
 
       if (importBundled) {
         LoggingService.info(
-          hasData
+          bundledDiffers
               ? 'AppInitializationService: Bundled catalogue changed, re-importing'
               : 'AppInitializationService: Empty PGE database detected, auto-importing bundled data',
         );
@@ -199,18 +199,30 @@ class AppInitializationService {
     return bundledDiffersFromLocal;
   }
 
-  /// Whether to ask the server for a newer catalogue, and its answer.
+  /// Whether enough time has passed to ask the server again.
   ///
-  /// Throttled to [PgeSitesConfig.checkInterval] since the last check, not the last
-  /// download: the pipeline runs weekly and usually changes nothing, so an
-  /// unthrottled check would be a HEAD request on every cold start for an
-  /// answer that is almost always "no". A launch site often has no signal, so
-  /// this must never be on anything the pilot waits for - it is not: the whole
-  /// method runs on the deferred path, and every failure is swallowed.
+  /// Throttled on the last *check*, not the last download: the pipeline runs
+  /// weekly and usually changes nothing, so an unthrottled check would be a HEAD
+  /// request on every cold start for an answer that is almost always "no". A
+  /// launch site often has no signal, so this must never be on anything the
+  /// pilot waits for - it is not: the whole method runs on the deferred path,
+  /// and every failure is swallowed.
+  ///
+  /// Split out and pure so the interval itself is tested by behaviour. Asserting
+  /// the constant only said it equalled itself; this goes red both if the
+  /// throttle drifts back towards a month, which is what left a launch published
+  /// on Tuesday a month from its pilot, and if it drops to something that would
+  /// ask on every start.
+  @visibleForTesting
+  static bool checkIsDue(DateTime? lastChecked, {DateTime? now}) {
+    if (lastChecked == null) return true;
+    return (now ?? DateTime.now()).difference(lastChecked) >=
+        PgeSitesConfig.checkInterval;
+  }
+
+  /// Whether to ask the server for a newer catalogue, and its answer.
   Future<bool> _publishedCatalogIsNewer() async {
-    final lastChecked = await PreferencesHelper.getCatalogCheckedDate();
-    if (lastChecked != null &&
-        DateTime.now().difference(lastChecked) < PgeSitesConfig.checkInterval) {
+    if (!checkIsDue(await PreferencesHelper.getCatalogCheckedDate())) {
       return false;
     }
     return PgeSitesDownloadService.instance.checkForUpdate();
