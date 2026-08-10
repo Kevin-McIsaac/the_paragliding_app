@@ -488,6 +488,10 @@ class PgeSitesDownloadService {
 
           sites.add({
             'id': id,
+            // The key this launch is stored under, chosen by the producer. Null
+            // for a catalogue published before the column existed, which the
+            // import falls back to deriving - see importSitesData.
+            'ref': optional('ref'),
             'name': field('name'),
             'longitude': double.tryParse(field('longitude')) ?? 0.0,
             'latitude': double.tryParse(field('latitude')) ?? 0.0,

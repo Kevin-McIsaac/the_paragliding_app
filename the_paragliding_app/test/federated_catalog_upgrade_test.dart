@@ -101,7 +101,10 @@ void main() {
 
     final db = await DatabaseHelper.instance.database;
     final guideOnly = await db.rawQuery(
-      "SELECT * FROM pge_sites WHERE source LIKE 'siteguide_au:%' AND source NOT LIKE '%pge:%'",
+      // `ansg:` since the producer emits the guide's own acronym natively. This
+      // read the old prefix while the rewrite existed to translate it; with the
+      // rewrite gone, the asset and this query have to agree.
+      "SELECT * FROM pge_sites WHERE source LIKE 'ansg:%' AND source NOT LIKE '%pge:%'",
     );
 
     expect(guideOnly.length, greaterThan(50));
