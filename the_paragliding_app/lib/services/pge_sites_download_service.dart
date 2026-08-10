@@ -30,8 +30,23 @@ class PgeSitesConfig {
       'https://raw.githubusercontent.com/Kevin-McIsaac/'
       'paragliding_site_federation/main/app/sites.csv';
 
-  /// Maximum age before auto-refresh
+  /// How stale a local copy may be before its age alone justifies a refresh.
+  ///
+  /// The last-resort signal in [PgeSitesDownloadService.isRemoteNewer], for a
+  /// server offering neither an ETag nor a Last-Modified. Not the same thing as
+  /// [checkInterval], which is how often the app *asks*: this is a fallback
+  /// answer, that is a cadence.
   static const Duration maxAge = Duration(days: 30);
+
+  /// How often the app asks whether a newer catalogue has been published.
+  ///
+  /// The pipeline publishes weekly, so this is the cadence that matches it.
+  /// Throttling on [maxAge] instead meant a launch added on Tuesday could take
+  /// a month to reach a pilot, which gives away most of the point of publishing
+  /// the catalogue separately from the release. The check itself is a HEAD
+  /// request of a few hundred bytes, off the startup path and swallowing every
+  /// failure, so asking four times as often costs the pilot nothing.
+  static const Duration checkInterval = Duration(days: 7);
 
   /// Maximum sites per query
   static const int maxSitesPerQuery = 100;
@@ -41,6 +56,23 @@ class PgeSitesConfig {
 
   /// Download timeout
   static const Duration downloadTimeout = Duration(minutes: 5);
+}
+
+/// A parsed catalogue snapshot: the rows, and how many were unusable.
+///
+/// The count travels with the rows because the import cannot tell a row this
+/// parser dropped from one the producer withdrew, and it deletes withdrawals -
+/// taking the pilot's favourite on that launch with them. A snapshot that lost
+/// rows on the way in is not evidence that anything was withdrawn.
+class CatalogSnapshot {
+  final List<Map<String, dynamic>> rows;
+  final int skipped;
+
+  const CatalogSnapshot({required this.rows, this.skipped = 0});
+
+  /// Whether every row the producer published survived parsing, and so whether
+  /// "absent from this snapshot" can be read as "withdrawn upstream".
+  bool get isComplete => skipped == 0;
 }
 
 /// Download status for PGE sites data
@@ -132,6 +164,54 @@ class PgeSitesDownloadService {
     }
 
     return path.join(sitesDir.path, 'world_sites_extracted.csv.gz');
+  }
+
+  /// Validators for a published catalogue that has landed on disk but whose
+  /// rows are not in the database yet. See [commitDownloadValidators].
+  ({String? etag, String? lastModified})? _pendingValidators;
+
+  /// Whether the copy on disk came from the published feed, not the asset.
+  ///
+  /// The stored validators describe the published file and are written only once
+  /// its rows are imported, so this reads as "the published catalogue is what the
+  /// pilot is actually running" - which is the question every caller has.
+  /// Answers false if the preferences cannot be read at all, rather than
+  /// throwing: this is consulted *before* a copy or a download, and an
+  /// unreadable preference store must not turn into a failed refresh. Unknown
+  /// provenance is treated as the bundled copy, which is the conservative
+  /// reading - it can cost a re-import, where the opposite could strand the
+  /// pilot on a catalogue the app has decided it may not touch.
+  Future<bool> localCopyIsPublished() async {
+    try {
+      final validators = await PreferencesHelper.getCatalogValidators();
+      return validators.etag != null || validators.lastModified != null;
+    } catch (error) {
+      LoggingService.error(
+          '[PGE_SITES] Could not tell which catalogue is on disk', error);
+      return false;
+    }
+  }
+
+  /// Record that the catalogue just downloaded is the one now in the database.
+  ///
+  /// Split from the download so the two cannot disagree. Written at download
+  /// time, the validators claimed the published snapshot was in the database
+  /// before it was: a download that landed and then failed to import left the
+  /// app believing it was current, and every later check compared the unchanged
+  /// remote ETag against them and answered "up to date" - permanently, since
+  /// nothing else would move. Uncommitted validators cost one repeat download.
+  Future<void> commitDownloadValidators() async {
+    final pending = _pendingValidators;
+    if (pending == null) return;
+
+    try {
+      await PreferencesHelper.setCatalogValidators(
+          etag: pending.etag, lastModified: pending.lastModified);
+      _pendingValidators = null;
+    } catch (error) {
+      LoggingService.error(
+          '[PGE_SITES] Catalogue imported but its validators were not', error);
+    }
   }
 
   /// Whether the catalogue shipped in this build differs from the copy on disk.
@@ -293,19 +373,21 @@ class PgeSitesDownloadService {
       await tempFile.writeAsBytes(gzip.encode(utf8.encode(body)));
       await tempFile.rename(localFilePath);
 
+      // Held, not written: they are committed once the rows are in the database.
+      // See [commitDownloadValidators].
+      _pendingValidators = (
+        etag: response.headers['etag'],
+        lastModified: response.headers['last-modified'],
+      );
+
       // The file is in place, so the download has succeeded whatever happens
-      // next. Recording the validators is bookkeeping: losing it costs one
-      // redundant refresh, whereas reporting "Download Failed - sites unchanged"
-      // after the sites did change tells the pilot the opposite of the truth.
+      // next - reporting "Download Failed - sites unchanged" after the sites did
+      // change tells the pilot the opposite of the truth.
       try {
-        await PreferencesHelper.setCatalogValidators(
-          etag: response.headers['etag'],
-          lastModified: response.headers['last-modified'],
-        );
         await PreferencesHelper.setPgeSitesDownloaded(true);
       } catch (error) {
         LoggingService.error(
-            '[PGE_SITES] Catalogue saved but its validators were not', error);
+            '[PGE_SITES] Catalogue saved but its download flag was not', error);
       }
 
       stopwatch.stop();
@@ -335,6 +417,26 @@ class PgeSitesDownloadService {
 
       // Check if we need to download
       if (!forceRedownload && await localFile.exists()) {
+        // A published copy is never replaced by the asset - the same rule as
+        // AppInitializationService.shouldImportBundled, and it has to hold here
+        // too, because the database reset path calls this method directly. A
+        // pilot who resets their database would otherwise drop silently back to
+        // the release snapshot, losing every launch published since it, and wait
+        // out the check interval before getting them back.
+        //
+        // "Reset to Bundled" is the deliberate version of that and still works:
+        // it deletes the local file and forces this, and clears the validators.
+        if (await localCopyIsPublished()) {
+          LoggingService.info(
+              '[PGE_SITES] Keeping the published catalogue already on disk');
+          _updateProgress(const PgeSitesDownloadProgress(
+            totalBytes: 0,
+            downloadedBytes: 0,
+            status: PgeSitesDownloadStatus.completed,
+          ));
+          return true;
+        }
+
         final stats = await localFile.stat();
         final age = DateTime.now().difference(stats.modified);
 
@@ -456,8 +558,13 @@ class PgeSitesDownloadService {
     }
   }
 
-  /// Parse downloaded CSV data
-  Future<List<Map<String, dynamic>>> parseDownloadedData() async {
+  /// Parse downloaded CSV data.
+  ///
+  /// Returns the rows *and* how many were unusable, because the import needs
+  /// both: a row missing from a snapshot is otherwise indistinguishable from one
+  /// the producer withdrew, and withdrawal deletes the catalogue row along with
+  /// any favourite on it.
+  Future<CatalogSnapshot> parseDownloadedData() async {
     final localFilePath = await _getLocalFilePath();
     final localFile = File(localFilePath);
 
@@ -473,77 +580,124 @@ class PgeSitesDownloadService {
       final decompressedBytes = gzip.decode(compressedBytes);
       final csvContent = utf8.decode(decompressedBytes);
 
-      // Parsed by *column name*, not position.
-      //
-      // This was a hand-rolled split('\n') plus a field splitter, reading
-      // fixed indices. Two things went wrong with that. Guide prose contains
-      // hard line breaks, and a newline inside a quoted field silently tore a
-      // record in two - 43 of 11,703 rows. And every column was addressed by
-      // number, so longitude sitting before latitude was a permanent trap: a
-      // swap parses cleanly and puts every site in the wrong hemisphere.
-      //
-      // Reading by header removes both. Column order no longer matters, and a
-      // new column can be added anywhere without touching this.
-      final rows = csv.decodeWithHeaders(csvContent);
-      final sites = <Map<String, dynamic>>[];
-
-      for (final row in rows) {
-        try {
-          String field(String name) => (row[name] ?? '').toString();
-          String? optional(String name) {
-            final value = field(name);
-            return value.isEmpty ? null : value;
-          }
-
-          final id = int.tryParse(field('id'));
-          if (id == null) continue; // not a data row
-
-          sites.add({
-            'id': id,
-            // The key this launch is stored under, chosen by the producer. Null
-            // for a catalogue published before the column existed, which the
-            // import falls back to deriving - see importSitesData.
-            'ref': optional('ref'),
-            'name': field('name'),
-            'longitude': double.tryParse(field('longitude')) ?? 0.0,
-            'latitude': double.tryParse(field('latitude')) ?? 0.0,
-            'altitude': int.tryParse(field('altitude')),
-            'country': field('country'),
-            'wind_n': int.tryParse(field('wind_n')) ?? 0,
-            'wind_ne': int.tryParse(field('wind_ne')) ?? 0,
-            'wind_e': int.tryParse(field('wind_e')) ?? 0,
-            'wind_se': int.tryParse(field('wind_se')) ?? 0,
-            'wind_s': int.tryParse(field('wind_s')) ?? 0,
-            'wind_sw': int.tryParse(field('wind_sw')) ?? 0,
-            'wind_w': int.tryParse(field('wind_w')) ?? 0,
-            'wind_nw': int.tryParse(field('wind_nw')) ?? 0,
-            // Which guides contributed this launch, e.g.
-            // "pge:4632;ansg:106-28".
-            'source': field('source'),
-            // Why a guide says the launch is shut, verbatim. Absent from an
-            // older catalogue, which reads as null rather than failing.
-            'closed': optional('closed'),
-          });
-        } catch (e) {
-          LoggingService.warning('[PGE_SITES] Failed to parse CSV row: $row');
-        }
-      }
+      final snapshot = parseCsvContent(csvContent);
+      final sites = snapshot.rows;
 
       LoggingService.info('[PGE_SITES] Parsed ${sites.length} sites from CSV');
 
       LoggingService.structured('PGE_SITES_PARSED', {
         'sites_count': sites.length,
+        'rows_skipped': snapshot.skipped,
         'compressed_size': compressedBytes.length,
         'decompressed_size': decompressedBytes.length,
         'closed_sites': sites.where((s) => s['closed'] != null).length,
       });
 
-      return sites;
+      return snapshot;
 
     } catch (error, stackTrace) {
       LoggingService.error('[PGE_SITES] Failed to parse CSV data', error, stackTrace);
       rethrow;
     }
+  }
+
+  /// Turn catalogue CSV text into the rows [PgeSitesDatabaseService] imports.
+  ///
+  /// Separate from the file handling above so it can be driven directly: what a
+  /// snapshot is allowed to contain is the part with rules in it, and every
+  /// other test feeds the import parsed rows and never comes through here -
+  /// which is how a download guard that rejected the real catalogue shipped.
+  ///
+  /// Parsed by *column name*, not position.
+  ///
+  /// This was a hand-rolled split('\n') plus a field splitter, reading fixed
+  /// indices. Two things went wrong with that. Guide prose contains hard line
+  /// breaks, and a newline inside a quoted field silently tore a record in two
+  /// - 43 of 11,703 rows. And every column was addressed by number, so
+  /// longitude sitting before latitude was a permanent trap: a swap parses
+  /// cleanly and puts every site in the wrong hemisphere.
+  ///
+  /// Reading by header removes both. Column order no longer matters, and a new
+  /// column can be added anywhere without touching this.
+  static CatalogSnapshot parseCsvContent(String csvContent) {
+    final rows = csv.decodeWithHeaders(csvContent);
+    final sites = <Map<String, dynamic>>[];
+    var skipped = 0;
+
+    for (final row in rows) {
+      try {
+        String field(String name) => (row[name] ?? '').toString();
+        String? optional(String name) {
+          final value = field(name);
+          return value.isEmpty ? null : value;
+        }
+
+        // A data row is one that names a launch and says where it is.
+        //
+        // The `id` column used to decide this - parse it as an int, skip the
+        // row if that fails - which made a column the app never stores into a
+        // hard dependency. The producer emits a row number there today, but if
+        // it ever emitted its own canonical id ("PSF-000048") every row would
+        // be skipped, the import would find nothing to do, and the catalogue
+        // would freeze on the last good copy with a single warning in the log.
+        // `id` is not read at all now, which is what the key being `ref` is
+        // supposed to mean.
+        //
+        // Coordinates must parse rather than falling back to 0.0: a launch
+        // silently placed at null island is worse than one the pilot can see is
+        // missing, and it would match nothing anyway.
+        final name = field('name');
+        final longitude = double.tryParse(field('longitude'));
+        final latitude = double.tryParse(field('latitude'));
+        if (name.isEmpty || longitude == null || latitude == null) {
+          skipped++;
+          continue;
+        }
+
+        sites.add({
+          // The key this launch is stored under, chosen by the producer. Null
+          // for a catalogue published before the column existed, which the
+          // import falls back to deriving - see importSitesData. Whether a row
+          // can be keyed at all is the import's call, not this one, so that it
+          // stays in one place and stays counted.
+          'ref': optional('ref'),
+          'name': name,
+          'longitude': longitude,
+          'latitude': latitude,
+          'altitude': int.tryParse(field('altitude')),
+          'country': field('country'),
+          'wind_n': int.tryParse(field('wind_n')) ?? 0,
+          'wind_ne': int.tryParse(field('wind_ne')) ?? 0,
+          'wind_e': int.tryParse(field('wind_e')) ?? 0,
+          'wind_se': int.tryParse(field('wind_se')) ?? 0,
+          'wind_s': int.tryParse(field('wind_s')) ?? 0,
+          'wind_sw': int.tryParse(field('wind_sw')) ?? 0,
+          'wind_w': int.tryParse(field('wind_w')) ?? 0,
+          'wind_nw': int.tryParse(field('wind_nw')) ?? 0,
+          // Which guides contributed this launch, e.g.
+          // "pge:4632;ansg:106-28".
+          'source': field('source'),
+          // Why a guide says the launch is shut, verbatim. Absent from an
+          // older catalogue, which reads as null rather than failing.
+          'closed': optional('closed'),
+        });
+      } catch (e) {
+        skipped++;
+        LoggingService.warning('[PGE_SITES] Failed to parse CSV row: $row');
+      }
+    }
+
+    // Counted rather than passed over in silence: rows the pilot paid for in
+    // launches are the one thing a parser must not lose quietly - and the
+    // import reads this count to decide whether it may delete anything.
+    if (skipped > 0) {
+      LoggingService.structured('PGE_SITES_PARSE_SKIPPED', {
+        'rows_skipped': skipped,
+        'rows_parsed': sites.length,
+      });
+    }
+
+    return CatalogSnapshot(rows: sites, skipped: skipped);
   }
 
   /// Get download status and metadata

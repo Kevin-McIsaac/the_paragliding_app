@@ -4,8 +4,11 @@ import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:the_paragliding_app/services/app_initialization_service.dart';
 import 'package:the_paragliding_app/services/pge_sites_download_service.dart';
 import 'package:the_paragliding_app/utils/catalog_ref.dart';
+import 'package:the_paragliding_app/utils/preferences_helper.dart';
 
 /// Covers refreshing the catalogue from the published pipeline output.
 ///
@@ -173,5 +176,184 @@ void main() {
       expect(published.first.headerMap.keys,
           containsAll(bundled.first.headerMap.keys));
     }, tags: 'network');
+  });
+
+  group('deciding whether to import the bundled snapshot', () {
+    test('a published copy is never replaced by the bundled asset', () {
+      // The bug this exists for. `bundledCatalogDiffersFromLocal` compares byte
+      // sizes, and a published catalogue is re-gzipped on its way to disk, so
+      // it differs from the asset even holding identical rows - measured at
+      // 382,518 against 385,320 bytes for the same 11,690 launches. Reading
+      // that as "the release shipped a new catalogue" copied the asset back
+      // over every refresh on the next cold start: a launch published since the
+      // release lasted one session, and a favourite on one went with its row.
+      expect(
+        AppInitializationService.shouldImportBundled(
+          hasData: true,
+          localCopyIsPublished: true,
+          bundledDiffersFromLocal: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('a release shipping a new catalogue is imported', () {
+      // The case the size check was added for, and which still has to work: the
+      // pilot is on the bundled copy and the release brought a newer one.
+      expect(
+        AppInitializationService.shouldImportBundled(
+          hasData: true,
+          localCopyIsPublished: false,
+          bundledDiffersFromLocal: true,
+        ),
+        isTrue,
+      );
+    });
+
+    test('an unchanged bundled copy is left alone', () {
+      expect(
+        AppInitializationService.shouldImportBundled(
+          hasData: true,
+          localCopyIsPublished: false,
+          bundledDiffersFromLocal: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('an empty database imports whatever is bundled', () {
+      // Offline first launch: the asset is the only catalogue there is.
+      for (final published in [true, false]) {
+        expect(
+          AppInitializationService.shouldImportBundled(
+            hasData: false,
+            localCopyIsPublished: published,
+            bundledDiffersFromLocal: false,
+          ),
+          isTrue,
+        );
+      }
+    });
+
+  });
+
+  group('deciding whether to ask the server again', () {
+    final now = DateTime(2026, 8, 11, 9);
+
+    test('a catalogue never checked is checked', () {
+      expect(AppInitializationService.checkIsDue(null, now: now), isTrue);
+    });
+
+    test('a check a week old is due again', () {
+      // The pipeline publishes weekly, so this is the cadence that matches it.
+      // Throttling on maxAge instead left a launch added on Tuesday up to a
+      // month from the pilot it was added for.
+      expect(
+        AppInitializationService.checkIsDue(
+            now.subtract(const Duration(days: 8)),
+            now: now),
+        isTrue,
+      );
+    });
+
+    test('a check from yesterday is not repeated', () {
+      // The other direction: a launch site usually has no signal, and asking on
+      // every cold start spends the pilot's battery on an answer that is almost
+      // always "no".
+      expect(
+        AppInitializationService.checkIsDue(
+            now.subtract(const Duration(days: 1)),
+            now: now),
+        isFalse,
+      );
+    });
+  });
+
+  group('which catalogue the pilot is running', () {
+    setUp(() => SharedPreferences.setMockInitialValues({}));
+
+    test('validators are what say the copy on disk is the published one', () async {
+      expect(await PgeSitesDownloadService.instance.localCopyIsPublished(),
+          isFalse);
+
+      await PreferencesHelper.setCatalogValidators(
+          etag: '"abc"', lastModified: null);
+
+      expect(await PgeSitesDownloadService.instance.localCopyIsPublished(),
+          isTrue);
+    });
+
+    test('a download that never imported does not count as published', () async {
+      // The hole this closes: validators written when the file landed claimed
+      // the published snapshot was in the database before it was, so an import
+      // that then failed left every later check comparing the unchanged remote
+      // ETag against them and answering "up to date" - permanently, because
+      // nothing else would ever move.
+      await PreferencesHelper.setCatalogValidators(
+          etag: null, lastModified: null);
+
+      // Nothing committed, because nothing was imported.
+      await PgeSitesDownloadService.instance.commitDownloadValidators();
+
+      expect(await PgeSitesDownloadService.instance.localCopyIsPublished(),
+          isFalse);
+    });
+  });
+
+  group('parsing a snapshot', () {
+    const header = 'id,ref,name,longitude,latitude,altitude,country,'
+        'wind_n,wind_ne,wind_e,wind_se,wind_s,wind_sw,wind_w,wind_nw,'
+        'source,closed';
+
+    List<Map<String, dynamic>> parse(String rows) =>
+        PgeSitesDownloadService.parseCsvContent('$header\n$rows\n').rows;
+
+    test('a row is kept whatever the producer puts in its id column', () {
+      // `id` used to be the test of whether a line was a data row at all -
+      // int.tryParse, skip if null - which made a column the app never stores
+      // into a hard dependency. The producer emits a row number today; the day
+      // it emitted its own canonical id every row would have been skipped, the
+      // import would have found nothing to do, and the catalogue would have
+      // frozen on the last good copy with one warning in the log.
+      final sites = parse(
+          'PSF-000048,pge:10060,Lanyon,149.10754,-35.48388,900,au,'
+          '0,0,0,0,0,0,1,0,ansg:106-28;pge:10060,');
+
+      expect(sites, hasLength(1));
+      expect(sites.single['name'], 'Lanyon');
+      expect(sites.single['ref'], 'pge:10060');
+      expect(sites.single['latitude'], -35.48388);
+    });
+
+    test('a launch with unusable coordinates is skipped, not put at 0,0', () {
+      // These defaulted to 0.0, which placed the launch in the Atlantic off
+      // Ghana. A site the pilot can see is missing beats one that is silently
+      // somewhere else, and null island matches nothing anyway.
+      final sites = parse(
+          '1,pge:1,Nowhere,,-35.48388,900,au,0,0,0,0,0,0,0,0,pge:1,\n'
+          '2,pge:2,Also nowhere,not-a-number,-35.5,900,au,'
+          '0,0,0,0,0,0,0,0,pge:2,');
+
+      expect(sites, isEmpty);
+    });
+
+    test('a nameless row is skipped', () {
+      final sites =
+          parse('1,pge:1,,149.1,-35.4,900,au,0,0,0,0,0,0,0,0,pge:1,');
+
+      expect(sites, isEmpty);
+    });
+
+    test('whether a row can be keyed is left to the import', () {
+      // Deliberately not filtered here: importSitesData counts unkeyable rows
+      // in CATALOG_IMPORT, and silently dropping them earlier would empty that
+      // number while the rows went missing just the same.
+      final sites =
+          parse('1,,Unkeyable,149.1,-35.4,900,au,0,0,0,0,0,0,0,0,,');
+
+      expect(sites, hasLength(1));
+      expect(sites.single['ref'], isNull);
+      expect(sites.single['source'], isEmpty);
+    });
   });
 }

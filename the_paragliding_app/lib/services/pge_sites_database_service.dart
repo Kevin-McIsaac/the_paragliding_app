@@ -375,13 +375,26 @@ class PgeSitesDatabaseService {
   /// [rows] exists so tests can drive this exact transaction - the delete,
   /// the favourite carry-over and the one-time relink - rather than a
   /// reimplementation of it. Production always parses the bundled catalogue.
-  Future<bool> importSitesData({@visibleForTesting List<Map<String, dynamic>>? rows}) async {
+  ///
+  /// [snapshotIsComplete] is false when the parser dropped rows on the way in.
+  /// Absence then means "this snapshot lost it", not "the producer withdrew it",
+  /// and the two must not be confused: withdrawal deletes the catalogue row and
+  /// the favourite sitting on it. A stale row that lingers until the next clean
+  /// snapshot costs the pilot nothing; a deleted favourite is theirs and gone.
+  Future<bool> importSitesData({
+    @visibleForTesting List<Map<String, dynamic>>? rows,
+    @visibleForTesting bool snapshotIsComplete = true,
+  }) async {
     PerformanceMonitor.startOperation('PgeSitesImport');
     final stopwatch = Stopwatch()..start();
 
     try {
       // Parse downloaded data
-      final sitesData = rows ?? await PgeSitesDownloadService.instance.parseDownloadedData();
+      final snapshot = rows != null
+          ? CatalogSnapshot(rows: rows, skipped: snapshotIsComplete ? 0 : 1)
+          : await PgeSitesDownloadService.instance.parseDownloadedData();
+      final sitesData = snapshot.rows;
+      final mayDelete = snapshot.isComplete;
 
       if (sitesData.isEmpty) {
         LoggingService.warning('[PGE_SITES_DB] No sites data to import');
@@ -521,7 +534,7 @@ class PgeSitesDatabaseService {
         }
         await batch.commit(noResult: true);
 
-        for (final gone in priorRefs.difference(snapshotRefs)) {
+        for (final gone in mayDelete ? priorRefs.difference(snapshotRefs) : <String>{}) {
           final successor = supersededBy[gone];
           if (successor != null) {
             // Two guides' entries merged into one catalogue row. The launch did
@@ -560,6 +573,9 @@ class PgeSitesDatabaseService {
         'rows_deleted': deleted,
         'rows_superseded_by_merge': superseded,
         'rows_unkeyable_skipped': unkeyable,
+        // Absent rows were left alone because the snapshot arrived incomplete.
+        // Called out so a catalogue that quietly stops shrinking is traceable.
+        'deletions_suppressed': !mayDelete,
         'favourites_held': favourites ?? 0,
         'site_links_dangling': dangling ?? 0,
       });

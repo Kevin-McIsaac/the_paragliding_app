@@ -429,6 +429,11 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
     }
 
     final imported = await PgeSitesDatabaseService.instance.importSitesData();
+    if (imported) {
+      // The validators describe a snapshot the database now holds; committing
+      // them before the import would have made a failed import look current.
+      await PgeSitesDownloadService.instance.commitDownloadValidators();
+    }
     if (mounted) Navigator.of(context).pop();
 
     if (!imported) {
