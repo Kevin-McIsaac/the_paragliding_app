@@ -106,6 +106,25 @@ void main() {
     });
   });
 
+  group('the download sanity check', () {
+    // Found by driving the UI, not by this suite: the guard required the body to
+    // start with `id,name,` and so rejected the real catalogue the day the
+    // producer added its `ref` column. Every test imports parsed rows and never
+    // reaches the download, which is why a broken refresh looked green.
+    test('accepts the published header, whatever columns precede the ones we read',
+        () async {
+      final published = utf8.decode(gzip.decode(
+          File('assets/data/world_sites_extracted.csv.gz').readAsBytesSync()));
+      final header = published.split('\n').first.split(',').toSet();
+
+      expect(header, containsAll(['name', 'longitude', 'latitude', 'source']),
+          reason: 'these are the columns the parser actually reads');
+      expect(header.first, isNot('name'),
+          reason: 'a column precedes them today, which is what broke the old '
+              'prefix check - if that stops being true this test is toothless');
+    });
+  });
+
   group('the published catalogue', () {
     test('is the URL the app is built to read', () {
       // Pinned deliberately: the app follows `main`, which only moves when the

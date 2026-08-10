@@ -286,8 +286,12 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
   /// "3 days ago" / "5 hours ago" / "Recently", shared by the downloaded and
   /// checked rows so the two cannot drift into different wording.
   static String _relativeAge(Duration age) {
-    if (age.inDays > 0) return '${age.inDays} days ago';
-    if (age.inHours > 0) return '${age.inHours} hours ago';
+    if (age.inDays > 0) {
+      return age.inDays == 1 ? 'Yesterday' : '${age.inDays} days ago';
+    }
+    if (age.inHours > 0) {
+      return age.inHours == 1 ? 'An hour ago' : '${age.inHours} hours ago';
+    }
     return 'Recently';
   }
 
@@ -2573,6 +2577,34 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
                             ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 12),
+                      // Under the pair rather than beside each button: two
+                      // narrow columns of prose wrap to nothing on a phone.
+                      const Text.rich(
+                        TextSpan(children: [
+                          TextSpan(
+                            text: 'Check for Updates',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          TextSpan(
+                            text: ' fetches launches added since this version of '
+                                'the app was released, so you do not have to wait '
+                                'for an app update. Your flights, sites and '
+                                'favourites are untouched.\n',
+                          ),
+                          TextSpan(
+                            text: 'Reset to Bundled',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          TextSpan(
+                            text: ' restores the sites that shipped with this '
+                                'version. Use it only if the site data looks '
+                                'wrong - it goes back to older data until you '
+                                'check for updates again.',
+                          ),
+                        ]),
+                        style: TextStyle(color: Colors.grey, fontSize: 12),
                       ),
                     ],
                   ),
