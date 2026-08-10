@@ -265,13 +265,25 @@ class PgeSitesDownloadService {
         return false;
       }
 
-      // Cheap sanity check before anything is written: the real file is ~880 KB
-      // of CSV whose first line is the header.
+      // Sanity check before anything is written, so a truncated body or an HTML
+      // error page cannot replace a working catalogue.
+      //
+      // Checked by column *name*, not by a literal header prefix. This used to
+      // require `id,name,` and rejected the real file the day the producer added
+      // its `ref` column - the guard failed the thing it exists to protect, and
+      // no test saw it because they all import parsed rows and never come
+      // through here. The app reads by name, so the honest question is whether
+      // the columns it reads are present.
       final body = response.body;
-      if (!body.startsWith('id,name,') || body.length < 100000) {
+      final header = body.split('\n').first.split(',').map((c) => c.trim()).toSet();
+      const required = {'name', 'longitude', 'latitude', 'source'};
+      final missing = required.difference(header);
+
+      if (missing.isNotEmpty || body.length < 100000) {
         LoggingService.structured('CATALOG_DOWNLOAD_REJECTED', {
           'bytes': body.length,
-          'starts_with': body.substring(0, body.length.clamp(0, 40)),
+          'missing_columns': missing.join(','),
+          'header': header.take(6).join(','),
         });
         return false;
       }
@@ -488,6 +500,10 @@ class PgeSitesDownloadService {
 
           sites.add({
             'id': id,
+            // The key this launch is stored under, chosen by the producer. Null
+            // for a catalogue published before the column existed, which the
+            // import falls back to deriving - see importSitesData.
+            'ref': optional('ref'),
             'name': field('name'),
             'longitude': double.tryParse(field('longitude')) ?? 0.0,
             'latitude': double.tryParse(field('latitude')) ?? 0.0,

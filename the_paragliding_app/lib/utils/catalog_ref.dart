@@ -25,10 +25,19 @@ class CatalogRef {
   /// Guides in the order they are preferred when a launch is described by more
   /// than one, most authoritative first.
   ///
-  /// A merged row's ref is its highest-precedence token, so the choice has to
-  /// be a fixed rule rather than a property of column order - otherwise the key
-  /// moves when the producer's output does. `pge` leads because it supplies
-  /// 11,508 of the catalogue's 11,792 tokens; only 89 rows carry two at all.
+  /// **The producer decides this now** - it emits a `ref` column, and the import
+  /// keys on that. This list survives as the fallback for a catalogue published
+  /// before the column, which is the bundled asset of an older release, and it is
+  /// still what the v4 -> v5 migration and the backfill use, since those read a
+  /// local row's `source` where no emitted ref exists.
+  ///
+  /// It must not drift from the producer's `KEY_PRECEDENCE`: a launch keyed
+  /// `pge:` there and `ansg:` here would leave a fresh install and an upgraded
+  /// one disagreeing about the same site. The producer asserts the two agree over
+  /// its whole catalogue, in tests/test_ref_matches_the_app.py.
+  ///
+  /// `pge` leads because it supplies almost all of the catalogue's tokens; only
+  /// 89 rows carry two at all.
   ///
   /// A provider is the guide's own abbreviation, lowercased - `pge` for
   /// ParaglidingEarth, `ansg` for the Australian National Site Guide, `ffvl` for
@@ -41,16 +50,6 @@ class CatalogRef {
   /// id and the tokens, so a prefix holding either would not survive a round
   /// trip through `source`.
   static const List<String> providerPrecedence = ['pge', 'ansg'];
-
-  /// Prefixes an older producer emitted, mapped to the current name.
-  ///
-  /// Normalised on read so the app works against a catalogue emitting either,
-  /// and stores only the current form. Nothing in the wild needs migrating:
-  /// `sites.catalog_ref` has never shipped - released installs still hold the
-  /// integer `catalog_site_id` - so no device holds a legacy ref.
-  static const Map<String, String> _renamedProviders = {
-    'siteguide_au': 'ansg',
-  };
 
   /// The ref for a catalogue row, from its `source` column.
   ///
@@ -72,8 +71,7 @@ class CatalogRef {
     return tokens.first;
   }
 
-  /// Every `provider:id` token in a `source` value, in the order given, with any
-  /// renamed provider normalised to its current prefix.
+  /// Every `provider:id` token in a `source` value, in the order given.
   static List<String> tokensOf(String? source) {
     if (source == null || source.isEmpty) return const [];
     return source
@@ -87,16 +85,7 @@ class CatalogRef {
           final separator = token.indexOf(':');
           return separator > 0 && separator < token.length - 1;
         })
-        .map(_normalise)
         .toList();
-  }
-
-  static String _normalise(String token) {
-    final provider = providerOf(token);
-    final current = _renamedProviders[provider];
-    return current == null
-        ? token
-        : '$current${token.substring(provider!.length)}';
   }
 
   /// The provider half of a ref, or null if it is not a ref at all.

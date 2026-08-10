@@ -88,12 +88,8 @@ void main() {
       // The reason the federation exists: 135 Australian launches have no PGE
       // counterpart and were invisible before.
       //
-      // Matched on the raw prefix the producer currently writes, not the app's
-      // normalised one - this reads the asset, so it must say what the file says.
-      // When the pipeline switches to `ansg:` this needs both.
       final guideOnly = rows.where((r) =>
-          (field(r, 'source').contains('siteguide_au:') ||
-              field(r, 'source').contains('ansg:')) &&
+          field(r, 'source').contains('ansg:') &&
           !field(r, 'source').contains('pge:'));
       expect(guideOnly.length, greaterThan(50));
     });
@@ -177,15 +173,40 @@ void main() {
           reason: 'a malformed token must not shadow a usable one');
     });
 
-    test('normalises a provider the producer has since renamed', () {
-      // The shipped catalogue still says siteguide_au; the prefix is now the
-      // guide's own acronym, ansg (Australian National Site Guide). Normalising on read means the
-      // app works against either, and only ever stores the current form - so
-      // there is one prefix in the database however old the catalogue is.
-      expect(CatalogRef.fromSource('siteguide_au:136-40'), 'ansg:136-40');
-      expect(CatalogRef.tokensOf('pge:4632;siteguide_au:136-40'),
-          ['pge:4632', 'ansg:136-40']);
-      expect(CatalogRef.providerOf('ansg:136-40'), 'ansg');
+    test('the producer emits the key, and it agrees with the fallback', () {
+      // The import keys on the `ref` column now; this list is only the fallback
+      // for a catalogue published before it existed. The two must not disagree,
+      // or a fresh install and an upgraded one key the same launch differently -
+      // the producer asserts the same equivalence from its side, over its whole
+      // catalogue, in tests/test_ref_matches_the_app.py.
+      final rows = csv.decodeWithHeaders(utf8.decode(gzip.decode(
+          File('assets/data/world_sites_extracted.csv.gz').readAsBytesSync())));
+
+      expect(rows.first.headerMap.keys, contains('ref'),
+          reason: 'the bundled asset should carry the producer-chosen key');
+
+      var checked = 0;
+      for (final row in rows) {
+        final emitted = (row['ref'] ?? '').toString();
+        if (emitted.isEmpty) continue;
+        expect(emitted, CatalogRef.fromSource((row['source'] ?? '').toString()),
+            reason: 'emitted ref must match what the fallback would derive');
+        checked++;
+      }
+      expect(checked, greaterThan(11000),
+          reason: 'a sweep over nothing reads as coverage');
+    });
+
+    test('the shipped catalogue uses the guide\'s current prefix', () {
+      // The rewrite that used to map siteguide_au -> ansg on read is gone, so
+      // the asset itself has to be native. If it is not, every Australian-only
+      // launch keys on a token nothing matches and silently loses its wind and
+      // altitude.
+      final text = utf8.decode(gzip.decode(
+          File('assets/data/world_sites_extracted.csv.gz').readAsBytesSync()));
+
+      expect(text.contains('siteguide_au'), isFalse);
+      expect(text.contains('ansg:'), isTrue);
     });
 
     test('a provider prefix survives a round trip through source', () {

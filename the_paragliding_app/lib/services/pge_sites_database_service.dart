@@ -447,11 +447,24 @@ class PgeSitesDatabaseService {
           // favourite goes with the deleted row, and every `sites.catalog_ref`
           // pointing at it dangles for good, because the old key is never
           // emitted again. Precedence therefore only keys rows that are new.
+          // Three rules, in this order, and the order is the point:
+          //
+          //  1. a row this database already holds keeps the key it is stored
+          //     under, whatever the catalogue now says. Re-keying is a delete
+          //     plus an insert, which takes the favourite with it and dangles
+          //     every sites.catalog_ref for good;
+          //  2. otherwise the key the producer emitted. It decides, so that one
+          //     side owns the policy - and it derives it from the same
+          //     precedence this app used to apply itself;
+          //  3. otherwise derive it, for a catalogue published before the column
+          //     existed. That is the bundled asset of an older release, so it is
+          //     the offline path rather than a hypothetical.
           final tokens = CatalogRef.tokensOf(siteData['source'] as String?);
           final held = tokens.where(priorRefs.contains);
           final ref = held.isNotEmpty
               ? held.first
-              : CatalogRef.fromSource(siteData['source'] as String?);
+              : (siteData['ref'] as String?) ??
+                  CatalogRef.fromSource(siteData['source'] as String?);
           if (ref == null) {
             unkeyable++;
             continue;
