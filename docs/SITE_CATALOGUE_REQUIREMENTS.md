@@ -107,14 +107,16 @@ catalogue.
 
 ## Tier 3 — freshness and control
 
-**R11. The bundled snapshot works forever with no network,** and a new app
-release actually imports the snapshot it ships. A non-empty table is not
-evidence the catalogue is current.
+**R11. The newer of the two snapshots wins, and the bundled one works forever
+with no network.** A release imports the snapshot it ships when the pilot is on
+the bundled copy; a published copy is never replaced by it, because the
+published feed only ever moves ahead of the asset. A non-empty table is not
+evidence the catalogue is current, and neither is a file of the expected size.
 
 **R12. Update checks never cost the pilot anything at a launch site.**
 Cheap (HEAD), off the startup path, throttled on *last check* rather than last
-download, every failure swallowed. Note the cadence mismatch: the pipeline
-publishes weekly, the throttle is 30 days.
+download, every failure swallowed. The throttle matches the cadence the
+catalogue is published at — weekly — not the staleness threshold.
 
 **R13. The pilot can see and force the state.** Last checked, last downloaded,
 whether the copy on disk is the published or the bundled one, and a manual

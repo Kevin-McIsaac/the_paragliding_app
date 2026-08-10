@@ -58,6 +58,23 @@ class PgeSitesConfig {
   static const Duration downloadTimeout = Duration(minutes: 5);
 }
 
+/// A parsed catalogue snapshot: the rows, and how many were unusable.
+///
+/// The count travels with the rows because the import cannot tell a row this
+/// parser dropped from one the producer withdrew, and it deletes withdrawals -
+/// taking the pilot's favourite on that launch with them. A snapshot that lost
+/// rows on the way in is not evidence that anything was withdrawn.
+class CatalogSnapshot {
+  final List<Map<String, dynamic>> rows;
+  final int skipped;
+
+  const CatalogSnapshot({required this.rows, this.skipped = 0});
+
+  /// Whether every row the producer published survived parsing, and so whether
+  /// "absent from this snapshot" can be read as "withdrawn upstream".
+  bool get isComplete => skipped == 0;
+}
+
 /// Download status for PGE sites data
 enum PgeSitesDownloadStatus {
   notDownloaded,
@@ -147,6 +164,54 @@ class PgeSitesDownloadService {
     }
 
     return path.join(sitesDir.path, 'world_sites_extracted.csv.gz');
+  }
+
+  /// Validators for a published catalogue that has landed on disk but whose
+  /// rows are not in the database yet. See [commitDownloadValidators].
+  ({String? etag, String? lastModified})? _pendingValidators;
+
+  /// Whether the copy on disk came from the published feed, not the asset.
+  ///
+  /// The stored validators describe the published file and are written only once
+  /// its rows are imported, so this reads as "the published catalogue is what the
+  /// pilot is actually running" - which is the question every caller has.
+  /// Answers false if the preferences cannot be read at all, rather than
+  /// throwing: this is consulted *before* a copy or a download, and an
+  /// unreadable preference store must not turn into a failed refresh. Unknown
+  /// provenance is treated as the bundled copy, which is the conservative
+  /// reading - it can cost a re-import, where the opposite could strand the
+  /// pilot on a catalogue the app has decided it may not touch.
+  Future<bool> localCopyIsPublished() async {
+    try {
+      final validators = await PreferencesHelper.getCatalogValidators();
+      return validators.etag != null || validators.lastModified != null;
+    } catch (error) {
+      LoggingService.error(
+          '[PGE_SITES] Could not tell which catalogue is on disk', error);
+      return false;
+    }
+  }
+
+  /// Record that the catalogue just downloaded is the one now in the database.
+  ///
+  /// Split from the download so the two cannot disagree. Written at download
+  /// time, the validators claimed the published snapshot was in the database
+  /// before it was: a download that landed and then failed to import left the
+  /// app believing it was current, and every later check compared the unchanged
+  /// remote ETag against them and answered "up to date" - permanently, since
+  /// nothing else would move. Uncommitted validators cost one repeat download.
+  Future<void> commitDownloadValidators() async {
+    final pending = _pendingValidators;
+    if (pending == null) return;
+
+    try {
+      await PreferencesHelper.setCatalogValidators(
+          etag: pending.etag, lastModified: pending.lastModified);
+      _pendingValidators = null;
+    } catch (error) {
+      LoggingService.error(
+          '[PGE_SITES] Catalogue imported but its validators were not', error);
+    }
   }
 
   /// Whether the catalogue shipped in this build differs from the copy on disk.
@@ -308,19 +373,21 @@ class PgeSitesDownloadService {
       await tempFile.writeAsBytes(gzip.encode(utf8.encode(body)));
       await tempFile.rename(localFilePath);
 
+      // Held, not written: they are committed once the rows are in the database.
+      // See [commitDownloadValidators].
+      _pendingValidators = (
+        etag: response.headers['etag'],
+        lastModified: response.headers['last-modified'],
+      );
+
       // The file is in place, so the download has succeeded whatever happens
-      // next. Recording the validators is bookkeeping: losing it costs one
-      // redundant refresh, whereas reporting "Download Failed - sites unchanged"
-      // after the sites did change tells the pilot the opposite of the truth.
+      // next - reporting "Download Failed - sites unchanged" after the sites did
+      // change tells the pilot the opposite of the truth.
       try {
-        await PreferencesHelper.setCatalogValidators(
-          etag: response.headers['etag'],
-          lastModified: response.headers['last-modified'],
-        );
         await PreferencesHelper.setPgeSitesDownloaded(true);
       } catch (error) {
         LoggingService.error(
-            '[PGE_SITES] Catalogue saved but its validators were not', error);
+            '[PGE_SITES] Catalogue saved but its download flag was not', error);
       }
 
       stopwatch.stop();
@@ -350,6 +417,26 @@ class PgeSitesDownloadService {
 
       // Check if we need to download
       if (!forceRedownload && await localFile.exists()) {
+        // A published copy is never replaced by the asset - the same rule as
+        // AppInitializationService.shouldImportBundled, and it has to hold here
+        // too, because the database reset path calls this method directly. A
+        // pilot who resets their database would otherwise drop silently back to
+        // the release snapshot, losing every launch published since it, and wait
+        // out the check interval before getting them back.
+        //
+        // "Reset to Bundled" is the deliberate version of that and still works:
+        // it deletes the local file and forces this, and clears the validators.
+        if (await localCopyIsPublished()) {
+          LoggingService.info(
+              '[PGE_SITES] Keeping the published catalogue already on disk');
+          _updateProgress(const PgeSitesDownloadProgress(
+            totalBytes: 0,
+            downloadedBytes: 0,
+            status: PgeSitesDownloadStatus.completed,
+          ));
+          return true;
+        }
+
         final stats = await localFile.stat();
         final age = DateTime.now().difference(stats.modified);
 
@@ -471,8 +558,13 @@ class PgeSitesDownloadService {
     }
   }
 
-  /// Parse downloaded CSV data
-  Future<List<Map<String, dynamic>>> parseDownloadedData() async {
+  /// Parse downloaded CSV data.
+  ///
+  /// Returns the rows *and* how many were unusable, because the import needs
+  /// both: a row missing from a snapshot is otherwise indistinguishable from one
+  /// the producer withdrew, and withdrawal deletes the catalogue row along with
+  /// any favourite on it.
+  Future<CatalogSnapshot> parseDownloadedData() async {
     final localFilePath = await _getLocalFilePath();
     final localFile = File(localFilePath);
 
@@ -488,18 +580,20 @@ class PgeSitesDownloadService {
       final decompressedBytes = gzip.decode(compressedBytes);
       final csvContent = utf8.decode(decompressedBytes);
 
-      final sites = parseCsvContent(csvContent);
+      final snapshot = parseCsvContent(csvContent);
+      final sites = snapshot.rows;
 
       LoggingService.info('[PGE_SITES] Parsed ${sites.length} sites from CSV');
 
       LoggingService.structured('PGE_SITES_PARSED', {
         'sites_count': sites.length,
+        'rows_skipped': snapshot.skipped,
         'compressed_size': compressedBytes.length,
         'decompressed_size': decompressedBytes.length,
         'closed_sites': sites.where((s) => s['closed'] != null).length,
       });
 
-      return sites;
+      return snapshot;
 
     } catch (error, stackTrace) {
       LoggingService.error('[PGE_SITES] Failed to parse CSV data', error, stackTrace);
@@ -525,7 +619,7 @@ class PgeSitesDownloadService {
   ///
   /// Reading by header removes both. Column order no longer matters, and a new
   /// column can be added anywhere without touching this.
-  static List<Map<String, dynamic>> parseCsvContent(String csvContent) {
+  static CatalogSnapshot parseCsvContent(String csvContent) {
     final rows = csv.decodeWithHeaders(csvContent);
     final sites = <Map<String, dynamic>>[];
     var skipped = 0;
@@ -594,7 +688,8 @@ class PgeSitesDownloadService {
     }
 
     // Counted rather than passed over in silence: rows the pilot paid for in
-    // launches are the one thing a parser must not lose quietly.
+    // launches are the one thing a parser must not lose quietly - and the
+    // import reads this count to decide whether it may delete anything.
     if (skipped > 0) {
       LoggingService.structured('PGE_SITES_PARSE_SKIPPED', {
         'rows_skipped': skipped,
@@ -602,7 +697,7 @@ class PgeSitesDownloadService {
       });
     }
 
-    return sites;
+    return CatalogSnapshot(rows: sites, skipped: skipped);
   }
 
   /// Get download status and metadata

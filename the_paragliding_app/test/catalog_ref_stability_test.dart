@@ -259,6 +259,41 @@ void main() {
     expect(site.altitude, 800);
   });
 
+  test('a snapshot that lost rows on the way in withdraws nothing', () async {
+    // A row the parser could not use - an empty coordinate from the producer,
+    // the class of upstream regression this file exists to absorb - is missing
+    // from the snapshot for the same reason a withdrawn launch is. They must not
+    // be treated alike: withdrawal deletes the catalogue row, and the pilot's
+    // favourite is on it.
+    await PgeSitesDatabaseService.instance.importSitesData(rows: catalogueA());
+    await db.update('pge_sites', {'is_favorite': 1},
+        where: 'ref = ?', whereArgs: ['pge:5000']);
+
+    await PgeSitesDatabaseService.instance.importSitesData(
+      rows: [catalogueA().first],
+      snapshotIsComplete: false,
+    );
+
+    final mystic =
+        await db.query('pge_sites', where: 'ref = ?', whereArgs: ['pge:5000']);
+    expect(mystic, hasLength(1),
+        reason: 'the launch was dropped by the parser, not by the producer');
+    expect(mystic.single['is_favorite'], 1);
+  });
+
+  test('a complete snapshot still withdraws what the producer dropped',
+      () async {
+    // The other direction, or the guard above would just be a way of never
+    // deleting anything.
+    await PgeSitesDatabaseService.instance.importSitesData(rows: catalogueA());
+
+    await PgeSitesDatabaseService.instance
+        .importSitesData(rows: [catalogueA().first]);
+
+    expect(await db.query('pge_sites', where: 'ref = ?', whereArgs: ['pge:5000']),
+        isEmpty);
+  });
+
   test('importing the same snapshot twice changes nothing at all', () async {
     // The pipeline publishes weekly and usually changes nothing, so re-importing
     // an identical snapshot is the ordinary case rather than an edge one. Rows

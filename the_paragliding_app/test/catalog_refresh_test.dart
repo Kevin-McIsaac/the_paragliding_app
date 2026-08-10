@@ -4,9 +4,11 @@ import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:the_paragliding_app/services/app_initialization_service.dart';
 import 'package:the_paragliding_app/services/pge_sites_download_service.dart';
 import 'package:the_paragliding_app/utils/catalog_ref.dart';
+import 'package:the_paragliding_app/utils/preferences_helper.dart';
 
 /// Covers refreshing the catalogue from the published pipeline output.
 ///
@@ -267,13 +269,44 @@ void main() {
     });
   });
 
+  group('which catalogue the pilot is running', () {
+    setUp(() => SharedPreferences.setMockInitialValues({}));
+
+    test('validators are what say the copy on disk is the published one', () async {
+      expect(await PgeSitesDownloadService.instance.localCopyIsPublished(),
+          isFalse);
+
+      await PreferencesHelper.setCatalogValidators(
+          etag: '"abc"', lastModified: null);
+
+      expect(await PgeSitesDownloadService.instance.localCopyIsPublished(),
+          isTrue);
+    });
+
+    test('a download that never imported does not count as published', () async {
+      // The hole this closes: validators written when the file landed claimed
+      // the published snapshot was in the database before it was, so an import
+      // that then failed left every later check comparing the unchanged remote
+      // ETag against them and answering "up to date" - permanently, because
+      // nothing else would ever move.
+      await PreferencesHelper.setCatalogValidators(
+          etag: null, lastModified: null);
+
+      // Nothing committed, because nothing was imported.
+      await PgeSitesDownloadService.instance.commitDownloadValidators();
+
+      expect(await PgeSitesDownloadService.instance.localCopyIsPublished(),
+          isFalse);
+    });
+  });
+
   group('parsing a snapshot', () {
     const header = 'id,ref,name,longitude,latitude,altitude,country,'
         'wind_n,wind_ne,wind_e,wind_se,wind_s,wind_sw,wind_w,wind_nw,'
         'source,closed';
 
     List<Map<String, dynamic>> parse(String rows) =>
-        PgeSitesDownloadService.parseCsvContent('$header\n$rows\n');
+        PgeSitesDownloadService.parseCsvContent('$header\n$rows\n').rows;
 
     test('a row is kept whatever the producer puts in its id column', () {
       // `id` used to be the test of whether a line was a data row at all -

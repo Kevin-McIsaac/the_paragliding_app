@@ -122,9 +122,8 @@ class AppInitializationService {
       // file, so holding them is what makes the local copy the published one -
       // the same signal Data Management reads to label it "published" or
       // "bundled".
-      final validators = await PreferencesHelper.getCatalogValidators();
       final localCopyIsPublished =
-          validators.etag != null || validators.lastModified != null;
+          await PgeSitesDownloadService.instance.localCopyIsPublished();
 
       // Having *a* catalogue is not the same as having the current one. This
       // only checked for emptiness, so an upgrade that shipped a new
@@ -155,8 +154,11 @@ class AppInitializationService {
         // update - the whole reason the catalogue is published separately.
         LoggingService.info(
             'AppInitializationService: Newer catalogue published, refreshing');
-        if (await PgeSitesDownloadService.instance.downloadFromRemote()) {
-          await PgeSitesDatabaseService.instance.importSitesData();
+        if (await PgeSitesDownloadService.instance.downloadFromRemote() &&
+            await PgeSitesDatabaseService.instance.importSitesData()) {
+          // Only now is the published snapshot the one in the database, which
+          // is what the validators are read as meaning.
+          await PgeSitesDownloadService.instance.commitDownloadValidators();
         }
       } else {
         LoggingService.info('AppInitializationService: PGE sites already available');
