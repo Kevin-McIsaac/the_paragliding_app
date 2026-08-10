@@ -724,10 +724,15 @@ it did not land. Clean up locally instead:
 
 ```bash
 git worktree remove .claude/worktrees/<name>
-git branch -d <name>
+git branch -D <name>               # -D, not -d: see below
 git fetch --prune origin
 git merge --ff-only origin/main    # from the shared checkout
 ```
+
+`-D` is not carelessness. A squash merge rewrites the work into a single new commit, so
+the branch's own commits are never ancestors of `main` and `git branch -d` refuses it as
+"not fully merged" - which is true of the commits and false of the content. Confirm the
+content landed by checking the PR is `MERGED`, not by whether `-d` is willing.
 
 ### Standard Development Process
 
