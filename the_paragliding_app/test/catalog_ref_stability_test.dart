@@ -258,4 +258,21 @@ void main() {
     expect(site!.name, 'Manilla - Mt Borah - West launch');
     expect(site.altitude, 800);
   });
+
+  test('importing the same snapshot twice changes nothing at all', () async {
+    // The pipeline publishes weekly and usually changes nothing, so re-importing
+    // an identical snapshot is the ordinary case rather than an edge one. Rows
+    // are compared whole, which includes the rowid `id`: a row deleted and
+    // re-inserted comes back under a new one, and that churn is exactly what
+    // favourites and `sites.catalog_ref` used to be lost to.
+    await PgeSitesDatabaseService.instance.importSitesData(rows: catalogueA());
+
+    final catalogueBefore = await db.query('pge_sites', orderBy: 'ref');
+    final sitesBefore = await db.query('sites', orderBy: 'id');
+
+    await PgeSitesDatabaseService.instance.importSitesData(rows: catalogueA());
+
+    expect(await db.query('pge_sites', orderBy: 'ref'), catalogueBefore);
+    expect(await db.query('sites', orderBy: 'id'), sitesBefore);
+  });
 }

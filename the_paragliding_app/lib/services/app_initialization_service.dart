@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:sqflite/sqflite.dart' show Database;
 import '../data/datasources/database_helper.dart';
 import 'logging_service.dart';
@@ -116,16 +117,32 @@ class AppInitializationService {
 
       // Check if data exists
       final hasData = await PgeSitesDatabaseService.instance.isDataAvailable();
+
+      // Which snapshot is on disk. The validators describe the *published*
+      // file, so holding them is what makes the local copy the published one -
+      // the same signal Data Management reads to label it "published" or
+      // "bundled".
+      final validators = await PreferencesHelper.getCatalogValidators();
+      final localCopyIsPublished =
+          validators.etag != null || validators.lastModified != null;
+
       // Having *a* catalogue is not the same as having the current one. This
       // only checked for emptiness, so an upgrade that shipped a new
       // catalogue never imported it: existing users kept whatever they first
       // installed, and would never have seen the sites this release adds.
-      final catalogChanged =
-          hasData && await PgeSitesDownloadService.instance.bundledCatalogDiffersFromLocal();
+      final bundledDiffers = hasData && !localCopyIsPublished
+          ? await PgeSitesDownloadService.instance.bundledCatalogDiffersFromLocal()
+          : false;
 
-      if (!hasData || catalogChanged) {
+      final importBundled = shouldImportBundled(
+        hasData: hasData,
+        localCopyIsPublished: localCopyIsPublished,
+        bundledDiffersFromLocal: bundledDiffers,
+      );
+
+      if (importBundled) {
         LoggingService.info(
-          catalogChanged
+          hasData
               ? 'AppInitializationService: Bundled catalogue changed, re-importing'
               : 'AppInitializationService: Empty PGE database detected, auto-importing bundled data',
         );
@@ -150,9 +167,41 @@ class AppInitializationService {
     }
   }
 
+  /// Whether the bundled snapshot should be imported over what is on disk.
+  ///
+  /// Pure, and driven directly by `test/catalog_refresh_test.dart`: the file
+  /// handling around it needs an asset bundle and a documents directory, and
+  /// the decision is the part that has ever been wrong.
+  ///
+  /// **A published copy is never replaced by the bundled one.**
+  /// [PgeSitesDownloadService.bundledCatalogDiffersFromLocal] compares byte
+  /// sizes, and a published catalogue is re-gzipped on its way to disk, so it
+  /// differs from the asset even when the two hold identical rows - 382,518
+  /// against 385,320 bytes for the same 11,690 launches, measured. Reading that
+  /// as "the release shipped a new catalogue" copied the asset back over every
+  /// refresh on the next cold start: launches published since the release
+  /// survived one session, a favourite on one of them was deleted with its row,
+  /// and the pilot's manual "Check for update" was undone by the next restart.
+  ///
+  /// Nothing is lost by keeping the published copy. The published file only
+  /// ever moves ahead of the asset - the asset is a snapshot of it taken at
+  /// release - so there is nothing in the bundled catalogue that a published
+  /// one is missing. A pilot who is offline across an app upgrade keeps a copy
+  /// that is newer than the release they just installed, until the next check.
+  @visibleForTesting
+  static bool shouldImportBundled({
+    required bool hasData,
+    required bool localCopyIsPublished,
+    required bool bundledDiffersFromLocal,
+  }) {
+    if (!hasData) return true;
+    if (localCopyIsPublished) return false;
+    return bundledDiffersFromLocal;
+  }
+
   /// Whether to ask the server for a newer catalogue, and its answer.
   ///
-  /// Throttled to [PgeSitesConfig.maxAge] since the last check, not the last
+  /// Throttled to [PgeSitesConfig.checkInterval] since the last check, not the last
   /// download: the pipeline runs weekly and usually changes nothing, so an
   /// unthrottled check would be a HEAD request on every cold start for an
   /// answer that is almost always "no". A launch site often has no signal, so
@@ -161,7 +210,7 @@ class AppInitializationService {
   Future<bool> _publishedCatalogIsNewer() async {
     final lastChecked = await PreferencesHelper.getCatalogCheckedDate();
     if (lastChecked != null &&
-        DateTime.now().difference(lastChecked) < PgeSitesConfig.maxAge) {
+        DateTime.now().difference(lastChecked) < PgeSitesConfig.checkInterval) {
       return false;
     }
     return PgeSitesDownloadService.instance.checkForUpdate();

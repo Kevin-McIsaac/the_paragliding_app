@@ -33,6 +33,16 @@ class PgeSitesConfig {
   /// Maximum age before auto-refresh
   static const Duration maxAge = Duration(days: 30);
 
+  /// How often the app asks whether a newer catalogue has been published.
+  ///
+  /// The pipeline publishes weekly, so this is the cadence that matches it.
+  /// Throttling on [maxAge] instead meant a launch added on Tuesday could take
+  /// a month to reach a pilot, which gives away most of the point of publishing
+  /// the catalogue separately from the release. The check itself is a HEAD
+  /// request of a few hundred bytes, off the startup path and swallowing every
+  /// failure, so asking four times as often costs the pilot nothing.
+  static const Duration checkInterval = Duration(days: 7);
+
   /// Maximum sites per query
   static const int maxSitesPerQuery = 100;
 
@@ -473,61 +483,7 @@ class PgeSitesDownloadService {
       final decompressedBytes = gzip.decode(compressedBytes);
       final csvContent = utf8.decode(decompressedBytes);
 
-      // Parsed by *column name*, not position.
-      //
-      // This was a hand-rolled split('\n') plus a field splitter, reading
-      // fixed indices. Two things went wrong with that. Guide prose contains
-      // hard line breaks, and a newline inside a quoted field silently tore a
-      // record in two - 43 of 11,703 rows. And every column was addressed by
-      // number, so longitude sitting before latitude was a permanent trap: a
-      // swap parses cleanly and puts every site in the wrong hemisphere.
-      //
-      // Reading by header removes both. Column order no longer matters, and a
-      // new column can be added anywhere without touching this.
-      final rows = csv.decodeWithHeaders(csvContent);
-      final sites = <Map<String, dynamic>>[];
-
-      for (final row in rows) {
-        try {
-          String field(String name) => (row[name] ?? '').toString();
-          String? optional(String name) {
-            final value = field(name);
-            return value.isEmpty ? null : value;
-          }
-
-          final id = int.tryParse(field('id'));
-          if (id == null) continue; // not a data row
-
-          sites.add({
-            'id': id,
-            // The key this launch is stored under, chosen by the producer. Null
-            // for a catalogue published before the column existed, which the
-            // import falls back to deriving - see importSitesData.
-            'ref': optional('ref'),
-            'name': field('name'),
-            'longitude': double.tryParse(field('longitude')) ?? 0.0,
-            'latitude': double.tryParse(field('latitude')) ?? 0.0,
-            'altitude': int.tryParse(field('altitude')),
-            'country': field('country'),
-            'wind_n': int.tryParse(field('wind_n')) ?? 0,
-            'wind_ne': int.tryParse(field('wind_ne')) ?? 0,
-            'wind_e': int.tryParse(field('wind_e')) ?? 0,
-            'wind_se': int.tryParse(field('wind_se')) ?? 0,
-            'wind_s': int.tryParse(field('wind_s')) ?? 0,
-            'wind_sw': int.tryParse(field('wind_sw')) ?? 0,
-            'wind_w': int.tryParse(field('wind_w')) ?? 0,
-            'wind_nw': int.tryParse(field('wind_nw')) ?? 0,
-            // Which guides contributed this launch, e.g.
-            // "pge:4632;ansg:106-28".
-            'source': field('source'),
-            // Why a guide says the launch is shut, verbatim. Absent from an
-            // older catalogue, which reads as null rather than failing.
-            'closed': optional('closed'),
-          });
-        } catch (e) {
-          LoggingService.warning('[PGE_SITES] Failed to parse CSV row: $row');
-        }
-      }
+      final sites = parseCsvContent(csvContent);
 
       LoggingService.info('[PGE_SITES] Parsed ${sites.length} sites from CSV');
 
@@ -544,6 +500,104 @@ class PgeSitesDownloadService {
       LoggingService.error('[PGE_SITES] Failed to parse CSV data', error, stackTrace);
       rethrow;
     }
+  }
+
+  /// Turn catalogue CSV text into the rows [PgeSitesDatabaseService] imports.
+  ///
+  /// Separate from the file handling above so it can be driven directly: what a
+  /// snapshot is allowed to contain is the part with rules in it, and every
+  /// other test feeds the import parsed rows and never comes through here -
+  /// which is how a download guard that rejected the real catalogue shipped.
+  ///
+  /// Parsed by *column name*, not position.
+  ///
+  /// This was a hand-rolled split('\n') plus a field splitter, reading fixed
+  /// indices. Two things went wrong with that. Guide prose contains hard line
+  /// breaks, and a newline inside a quoted field silently tore a record in two
+  /// - 43 of 11,703 rows. And every column was addressed by number, so
+  /// longitude sitting before latitude was a permanent trap: a swap parses
+  /// cleanly and puts every site in the wrong hemisphere.
+  ///
+  /// Reading by header removes both. Column order no longer matters, and a new
+  /// column can be added anywhere without touching this.
+  static List<Map<String, dynamic>> parseCsvContent(String csvContent) {
+    final rows = csv.decodeWithHeaders(csvContent);
+    final sites = <Map<String, dynamic>>[];
+    var skipped = 0;
+
+    for (final row in rows) {
+      try {
+        String field(String name) => (row[name] ?? '').toString();
+        String? optional(String name) {
+          final value = field(name);
+          return value.isEmpty ? null : value;
+        }
+
+        // A data row is one that names a launch and says where it is.
+        //
+        // The `id` column used to decide this - parse it as an int, skip the
+        // row if that fails - which made a column the app never stores into a
+        // hard dependency. The producer emits a row number there today, but if
+        // it ever emitted its own canonical id ("PSF-000048") every row would
+        // be skipped, the import would find nothing to do, and the catalogue
+        // would freeze on the last good copy with a single warning in the log.
+        // `id` is not read at all now, which is what the key being `ref` is
+        // supposed to mean.
+        //
+        // Coordinates must parse rather than falling back to 0.0: a launch
+        // silently placed at null island is worse than one the pilot can see is
+        // missing, and it would match nothing anyway.
+        final name = field('name');
+        final longitude = double.tryParse(field('longitude'));
+        final latitude = double.tryParse(field('latitude'));
+        if (name.isEmpty || longitude == null || latitude == null) {
+          skipped++;
+          continue;
+        }
+
+        sites.add({
+          // The key this launch is stored under, chosen by the producer. Null
+          // for a catalogue published before the column existed, which the
+          // import falls back to deriving - see importSitesData. Whether a row
+          // can be keyed at all is the import's call, not this one, so that it
+          // stays in one place and stays counted.
+          'ref': optional('ref'),
+            'name': name,
+          'longitude': longitude,
+          'latitude': latitude,
+          'altitude': int.tryParse(field('altitude')),
+          'country': field('country'),
+          'wind_n': int.tryParse(field('wind_n')) ?? 0,
+          'wind_ne': int.tryParse(field('wind_ne')) ?? 0,
+          'wind_e': int.tryParse(field('wind_e')) ?? 0,
+          'wind_se': int.tryParse(field('wind_se')) ?? 0,
+          'wind_s': int.tryParse(field('wind_s')) ?? 0,
+          'wind_sw': int.tryParse(field('wind_sw')) ?? 0,
+          'wind_w': int.tryParse(field('wind_w')) ?? 0,
+          'wind_nw': int.tryParse(field('wind_nw')) ?? 0,
+          // Which guides contributed this launch, e.g.
+          // "pge:4632;ansg:106-28".
+          'source': field('source'),
+          // Why a guide says the launch is shut, verbatim. Absent from an
+          // older catalogue, which reads as null rather than failing.
+          'closed': optional('closed'),
+        });
+      } catch (e) {
+        skipped++;
+        LoggingService.warning('[PGE_SITES] Failed to parse CSV row: $row');
+      }
+    }
+
+    // Counted rather than passed over in silence: rows the pilot paid for in
+    // launches are the one thing a parser must not lose quietly.
+    if (skipped > 0) {
+      LoggingService.structured('PGE_SITES_PARSE_SKIPPED', {
+        'rows_skipped': skipped,
+        'rows_parsed': sites.length,
+      });
+    }
+
+    return sites;
   }
 
   /// Get download status and metadata
