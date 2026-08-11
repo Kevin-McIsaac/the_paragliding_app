@@ -76,6 +76,9 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
 
   // Scroll controller and keys for Premium Maps highlighting
   final ScrollController _scrollController = ScrollController();
+  // Separate from _scrollController, which is attached to the screen itself.
+  // Only one confirmation dialog is ever open at a time, so one is enough.
+  final ScrollController _dialogScrollController = ScrollController();
   final GlobalKey _premiumMapsKey = GlobalKey();
   late AnimationController _highlightController;
   late Animation<double> _highlightAnimation;
@@ -131,6 +134,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
   void dispose() {
     _downloadProgressSubscription?.cancel();
     _scrollController.dispose();
+    _dialogScrollController.dispose();
     _highlightController.dispose();
     // Save expansion states if the manager supports it
     super.dispose();
@@ -1315,7 +1319,17 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
       context: context,
       builder: (context) => AlertDialog(
         title: Text(title),
-        content: Text(message),
+        // AlertDialog caps its content height and clips the overflow, so a
+        // long message (the re-match summary names up to 8 launches) lost its
+        // last paragraph mid-sentence with nothing to say more was there.
+        content: Scrollbar(
+          controller: _dialogScrollController,
+          thumbVisibility: true,
+          child: SingleChildScrollView(
+            controller: _dialogScrollController,
+            child: Text(message),
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
