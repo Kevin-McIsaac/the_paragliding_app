@@ -468,6 +468,37 @@ class AirspaceGeoJsonService {
   ) async {
     final pipelineMetrics = AirspacePipelineMetrics();
     pipelineMetrics.startPipeline();
+
+    // Nothing is downloaded until the user picks a country, so the common case is an
+    // empty cache - and finding that out cost ~2s per viewport change, almost all of it
+    // opening a database with no rows in it (see issue #347).
+    //
+    // The selected-country list is the free way to know: it is SharedPreferences, already
+    // in memory on this path (airspace_overlay_manager.dart reads four other settings
+    // before this call). Deliberately re-read rather than cached - it costs nothing, and
+    // that means a country downloaded mid-session takes effect on the next viewport with
+    // no invalidation to get wrong.
+    //
+    // This relies on prefs and the database being emptied together: clearAllData() and
+    // the per-country delete in airspace_country_selector.dart both do so. Keep that true.
+    pipelineMetrics.startStage('country_check');
+    final selectedCountries =
+        await AirspaceCountryService.instance.getSelectedCountries();
+    if (selectedCountries.isEmpty) {
+      pipelineMetrics.endPipeline(
+        airspaceCount: 0,
+        bounds: '${bounds.west},${bounds.south},${bounds.east},${bounds.north}',
+        additionalData: {'skipped': 'no_countries_selected'},
+      );
+      return [];
+    }
+
+    // Opening the cache database is its own cost - a platform channel, a version probe
+    // and a second open - and it used to be billed to database_query, which is why the
+    // issue reported a 1974ms "query" that spent 612ms querying. Time it separately.
+    pipelineMetrics.startStage('database_open');
+    await AirspaceDiskCache.instance.database;
+
     pipelineMetrics.startStage('database_query');
 
     // Convert excluded types to integer codes for SQL filtering

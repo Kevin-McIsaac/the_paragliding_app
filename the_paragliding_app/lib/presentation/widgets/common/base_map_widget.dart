@@ -6,6 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../data/models/paragliding_site.dart';
 import '../../../services/map_bounds_manager.dart';
 import '../../../services/logging_service.dart';
+import '../../../services/airspace_country_service.dart';
+import '../../../services/airspace_disk_cache.dart';
 import '../../../services/airspace_interaction_service.dart';
 import '../../../utils/airspace_overlay_manager.dart';
 import '../../../utils/map_provider.dart';
@@ -128,6 +130,32 @@ abstract class BaseMapState<T extends BaseMapWidget> extends State<T> {
     _mapController = widget.mapController ?? MapController();
     _loadMapProviderPreference();
     _loadLegendState();
+    _warmAirspaceCache();
+  }
+
+  /// Open the airspace cache database off the critical path.
+  ///
+  /// The open costs ~1.3s on a cold start and used to land inside the first viewport's
+  /// airspace query (#347). Unawaited, so it overlaps tile fetching and site loading
+  /// instead of delaying the first frame.
+  ///
+  /// Deliberately not warmed in main(): that would put the cost on the splash screen for
+  /// every user, including the majority who have downloaded no airspace at all. Gated on
+  /// the same selected-country check the query path uses, so an empty cache stays free.
+  void _warmAirspaceCache() {
+    if (!enableAirspace) return;
+    unawaited(() async {
+      try {
+        final countries =
+            await AirspaceCountryService.instance.getSelectedCountries();
+        if (countries.isEmpty) return;
+        await AirspaceDiskCache.instance.database;
+      } catch (e) {
+        // Warming is an optimisation; the query path opens the database itself if this
+        // fails, so a failure here must not surface to the user.
+        LoggingService.debug('Airspace cache warm-up skipped: $e');
+      }
+    }());
   }
 
   @override
