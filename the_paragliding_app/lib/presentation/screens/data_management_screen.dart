@@ -76,9 +76,6 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
 
   // Scroll controller and keys for Premium Maps highlighting
   final ScrollController _scrollController = ScrollController();
-  // Separate from _scrollController, which is attached to the screen itself.
-  // Only one confirmation dialog is ever open at a time, so one is enough.
-  final ScrollController _dialogScrollController = ScrollController();
   final GlobalKey _premiumMapsKey = GlobalKey();
   late AnimationController _highlightController;
   late Animation<double> _highlightAnimation;
@@ -134,7 +131,6 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
   void dispose() {
     _downloadProgressSubscription?.cancel();
     _scrollController.dispose();
-    _dialogScrollController.dispose();
     _highlightController.dispose();
     // Save expansion states if the manager supports it
     super.dispose();
@@ -1319,17 +1315,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
       context: context,
       builder: (context) => AlertDialog(
         title: Text(title),
-        // AlertDialog caps its content height and clips the overflow, so a
-        // long message (the re-match summary names up to 8 launches) lost its
-        // last paragraph mid-sentence with nothing to say more was there.
-        content: Scrollbar(
-          controller: _dialogScrollController,
-          thumbVisibility: true,
-          child: SingleChildScrollView(
-            controller: _dialogScrollController,
-            child: Text(message),
-          ),
-        ),
+        content: _ScrollableDialogContent(child: Text(message)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -1414,7 +1400,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
       context: context,
       builder: (context) => AlertDialog(
         title: Text(title),
-        content: Text(message),
+        content: _ScrollableDialogContent(child: Text(message)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
@@ -1430,7 +1416,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
       context: context,
       builder: (context) => AlertDialog(
         title: Text(title),
-        content: Text(message),
+        content: _ScrollableDialogContent(child: Text(message)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
@@ -1446,7 +1432,7 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
       context: context,
       builder: (context) => AlertDialog(
         title: Text(title),
-        content: SingleChildScrollView(
+        content: _ScrollableDialogContent(
           child: Text(
             message,
             style: const TextStyle(fontFamily: 'monospace'),
@@ -2636,4 +2622,53 @@ class _DataManagementScreenState extends State<DataManagementScreen> with Single
     );
   }
 
+}
+
+/// Dialog body that scrolls instead of clipping.
+///
+/// AlertDialog caps its content height and silently clips whatever does not
+/// fit, so a long message loses its last paragraph mid-sentence with nothing
+/// to say more was there. Several messages on this screen are long enough to
+/// hit that: the launch re-match names up to eight destination launches before
+/// its "your IGC files are not modified" reassurance, and reports every site
+/// left empty afterwards.
+///
+/// Owning the controller here rather than on the screen is what makes the
+/// widget safe to use twice at once - a single shared controller attached to
+/// two live Scrollables throws, and "only one dialog is open at a time" is an
+/// invariant nothing enforces.
+class _ScrollableDialogContent extends StatefulWidget {
+  const _ScrollableDialogContent({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_ScrollableDialogContent> createState() =>
+      _ScrollableDialogContentState();
+}
+
+class _ScrollableDialogContentState extends State<_ScrollableDialogContent> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // A dialog that scrolls without saying so is only marginally better than
+    // one that clips, hence the always-visible thumb. It needs the explicit
+    // controller: there is no PrimaryScrollController inside a dialog route
+    // for the Scrollbar to find on its own.
+    return Scrollbar(
+      controller: _controller,
+      thumbVisibility: true,
+      child: SingleChildScrollView(
+        controller: _controller,
+        child: widget.child,
+      ),
+    );
+  }
 }
