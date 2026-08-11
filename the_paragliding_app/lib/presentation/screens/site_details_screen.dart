@@ -1407,6 +1407,32 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
           ] else
             const Center(child: Text('No takeoff information available')),
 
+          // ParaglidingEarth publishes its database under CC BY-SA 3.0, which
+          // permits this use on condition the source is credited wherever the
+          // content is shown. Outside the _detailedData branch for the same
+          // reason as the link below: the tab is ParaglidingEarth's either way.
+          const SizedBox(height: 16),
+          Text.rich(
+            TextSpan(
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey,
+                  ),
+              children: [
+                const TextSpan(text: 'Site data © ParaglidingEarth, licensed '),
+                TextSpan(
+                  text: 'CC BY-SA 3.0',
+                  style: const TextStyle(
+                    color: Colors.blue,
+                    decoration: TextDecoration.underline,
+                  ),
+                  recognizer: TapGestureRecognizer()
+                    ..onTap = () => _launchUrl(
+                        'https://creativecommons.org/licenses/by-sa/3.0/'),
+                ),
+              ],
+            ),
+          ),
+
           // Link out from the tab, matching the other guides. It sits outside
           // the _detailedData branch so it is still there when the fetch
           // failed or the site has no detail - which is when you most want to

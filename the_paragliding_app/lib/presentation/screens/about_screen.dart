@@ -251,6 +251,23 @@ class _AboutScreenState extends State<AboutScreen> {
                       icon: Icons.web,
                       text: 'ParaglidingEarth.com',
                     ),
+                    // ParaglidingEarth states its licence; the Australian
+                    // National Site Guide publishes none, so it is credited
+                    // without one rather than being given a licence it has
+                    // never claimed.
+                    Padding(
+                      padding: const EdgeInsets.only(left: 28, top: 4),
+                      child: AppAttributionLink.compact(
+                        url: 'https://creativecommons.org/licenses/by-sa/3.0/',
+                        icon: Icons.copyright,
+                        text: 'Database licensed CC BY-SA 3.0',
+                      ),
+                    ),
+                    AppAttributionLink.standard(
+                      url: 'https://siteguide.org.au',
+                      icon: Icons.web,
+                      text: 'Australian National Site Guide',
+                    ),
                   ],
                 ),
               ),
