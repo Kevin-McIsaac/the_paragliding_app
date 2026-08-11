@@ -19,6 +19,10 @@
 # XDG_DOCUMENTS_DIR into dev_data/app_documents. A device uses its own sandbox instead,
 # so seeding is skipped there and --reset refuses rather than pretending to work.
 #
+# Android only: the phone's logcat ring is quietened and resized first, or the app's own
+# startup lines age out of it within ~30 seconds (see tune_device_logging below).
+# DEV_RUN_SKIP_LOG_TUNING=1 leaves the device's logging config untouched.
+#
 # Note: the 3D map needs Android/iOS - on desktop it shows a placeholder.
 
 set -euo pipefail
@@ -84,6 +88,46 @@ done
 is_desktop=false
 [[ "$device" == "linux" ]] && is_desktop=true
 
+# Make the phone's logcat usable before flutter starts writing to it.
+#
+# The Pixel thermal HAL logs one `I pixel-thermal:` line per sensor per poll: measured
+# at 84.5 lines/s, 79% of the main buffer, leaving ~30s of retention in the 256 KiB
+# default. That is short enough that the app's own startup lines are gone before you can
+# read them - and it was long misread as adbd flooding the buffer. Silencing it and
+# raising the ring measured 9.5 lines/s and ~65 min.
+#
+# None of this needs root, and it is all reversible (`setprop <name> ""`, or a reboot for
+# the size). Set DEV_RUN_SKIP_LOG_TUNING=1 to leave the device alone - worth it if you
+# are actually debugging thermal or USB behaviour, which is what these tags are for.
+tune_device_logging() {
+  local dev="$1"
+
+  command -v adb >/dev/null 2>&1 || return 0
+
+  # Only Android has logcat. `is_desktop` is false for `-d chrome` too, so testing for
+  # a real adb transport is what keeps this from firing at the web build.
+  adb devices | awk '$2 == "device" { print $1 }' | grep -qxF "$dev" || return 0
+
+  # Both forms: persist.* survives reboot, the bare one is what an already-running HAL
+  # picks up now. Never fail the run over log tuning - warn and carry on.
+  local tag
+  for tag in pixel-thermal libPixelUsbOverheat; do
+    adb -s "$dev" shell setprop "persist.log.tag.$tag" S 2>/dev/null || true
+    adb -s "$dev" shell setprop "log.tag.$tag" S 2>/dev/null || true
+  done
+
+  # -G resets on reboot, so this runs every launch. Raise only from a KiB-sized ring:
+  # matching on the unit rather than parsing a number keeps a buffer someone deliberately
+  # set larger from being shrunk back to 4 MiB.
+  local size
+  size="$(adb -s "$dev" shell logcat -g 2>/dev/null | grep '^main:' || true)"
+  if [[ "$size" != *MiB* ]]; then
+    adb -s "$dev" shell logcat -G 4M 2>/dev/null || true
+  fi
+
+  echo "Quietened pixel-thermal/libPixelUsbOverheat and sized the logcat ring for '$dev' (DEV_RUN_SKIP_LOG_TUNING=1 to skip)."
+}
+
 if $reset && ! $is_desktop; then
   cat >&2 <<EOF
 ERROR: --reset only deletes host-side desktop state ($APP_DOCUMENTS).
@@ -138,6 +182,8 @@ if $is_desktop; then
   )
 else
   echo "Device '$device' is not the Linux desktop: dev seeding is off, and the app uses whatever data is already on the device."
+  # Before flutter starts, so the app's own startup lines land in a ring that keeps them.
+  [[ -n "${DEV_RUN_SKIP_LOG_TUNING:-}" ]] || tune_device_logging "$device"
 fi
 
 mode_args=()
