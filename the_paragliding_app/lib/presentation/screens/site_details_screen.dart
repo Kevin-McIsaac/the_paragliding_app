@@ -20,6 +20,28 @@ import '../widgets/wind_rose_widget.dart';
 import '../widgets/site_forecast_table.dart';
 import '../widgets/forecast_attribution_bar.dart';
 
+/// How far a launch stands above its landing area, in whole metres.
+///
+/// Neither guide publishes this. ParaglidingEarth carries a takeoff and a
+/// landing altitude and no drop between them; the Australian Site Guide has no
+/// landing altitude at all, only prose. So it is the subtraction, and it means
+/// something only when both figures are real and the landing is below.
+///
+/// Returns null rather than a negative number when it is not. A landing above
+/// its launch is a winch or flatland site, or an altitude nobody filled in -
+/// and "-401 m" printed beside a launch reads as a bug in the app rather than
+/// as the gap in the data that it is.
+///
+/// Takes [Object?] because these arrive as XML element text, not numbers.
+int? heightAboveLanding(Object? takeoffAltitude, Object? landingAltitude) {
+  final takeoff = double.tryParse(takeoffAltitude?.toString() ?? '');
+  final landing = double.tryParse(landingAltitude?.toString() ?? '');
+  if (takeoff == null || landing == null) return null;
+
+  final drop = takeoff - landing;
+  return drop > 0 ? drop.round() : null;
+}
+
 class SiteDetailsScreen extends StatefulWidget {
   final Site? site;
   final ParaglidingSite? paraglidingSite;
@@ -775,8 +797,13 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
   /// The point is the mainAxisSize.min Row: inside a Wrap these must be a
   /// single child, or a line break can put the glyph on one line and its
   /// value on the next - a terrain icon alone, then "150m" underneath.
-  Widget _iconFact(IconData icon, String value, {bool bold = false}) {
-    return Row(
+  ///
+  /// A [tooltip] wraps the pair rather than either half, for the same reason.
+  /// It only ever elaborates on what the text already says - nothing on this
+  /// row may depend on a hover, which a phone does not have.
+  Widget _iconFact(IconData icon, String value,
+      {bool bold = false, String? tooltip}) {
+    final fact = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, size: 16, color: Colors.grey),
@@ -789,6 +816,8 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
         ),
       ],
     );
+
+    return tooltip == null ? fact : Tooltip(message: tooltip, child: fact);
   }
 
   /// Wind rose on the left, whatever facts belong beside it on the right.
@@ -894,6 +923,16 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
   }
 
   List<Widget> _buildOverviewContent(String name, double latitude, double longitude, int? altitude, String? country, String? region, int? rating, String? siteType, List<String> windDirections, int? flightCount, String? distanceText, String? thermalFlag, String? soaringFlag, String? xcFlag) {
+    // Both altitudes have to come from ParaglidingEarth. The catalogue's own
+    // figure is the fallback for the launch line below, but subtracting a PGE
+    // landing from it would mix two guides' numbers - and until the producer
+    // stops publishing Site Guide's above-ground heights, sometimes two
+    // different datums. A drop is only worth showing when it is one guide's.
+    final drop = heightAboveLanding(
+      _detailedData?['takeoff_altitude'],
+      _detailedData?['landing_altitude'],
+    );
+
     return [
             // Site Type + Altitude + Wind directions + map link.
             //
@@ -923,11 +962,29 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                // Show altitude (prefer takeoff_altitude from API, fallback to general altitude)
+                // Altitude, above mean sea level and said so. AGL at a launch
+                // is zero by definition, so an unlabelled figure invites the
+                // reading it cannot have - and the guides do publish both:
+                // Site Guide's height for Mt Bakewell is 255m above the
+                // valley where PGE's is 436m AMSL. The unit is written out
+                // rather than left to the tooltip, which a phone cannot hover.
+                //
+                // Prefer takeoff_altitude from the API, fall back to the
+                // catalogue.
                 if (_detailedData?['takeoff_altitude'] != null || altitude != null)
                   _iconFact(
                     Icons.terrain,
-                    '${_detailedData?['takeoff_altitude'] ?? altitude}m',
+                    '${_detailedData?['takeoff_altitude'] ?? altitude} m AMSL',
+                    tooltip: 'Altitude above mean sea level',
+                  ),
+                // How far the launch stands above its landing - the number a
+                // pilot sizes up a site with, and the one neither guide
+                // publishes. See heightAboveLanding.
+                if (drop != null)
+                  _iconFact(
+                    Icons.height,
+                    '$drop m',
+                    tooltip: 'Height above the landing area',
                   ),
                 // Wind directions (compact)
                 if (windDirections.isNotEmpty)
@@ -965,11 +1022,12 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  // Landing altitude
+                  // Landing altitude, same datum and same label as the launch
                   if (_detailedData?['landing_altitude'] != null)
                     _iconFact(
                       Icons.terrain,
-                      '${_detailedData!['landing_altitude']}m',
+                      '${_detailedData!['landing_altitude']} m AMSL',
+                      tooltip: 'Altitude above mean sea level',
                     ),
                   // Map icon for landing - uses landing coordinates if available
                   InkWell(
