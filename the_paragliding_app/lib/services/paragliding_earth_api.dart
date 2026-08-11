@@ -570,108 +570,14 @@ class ParaglidingEarthApi {
       _requestCount++;
 
       if (response.statusCode == 200) {
-        // Parse XML response
-        final document = XmlDocument.parse(response.body);
-        final takeoffElements = document.findAllElements('takeoff').toList();
+        final properties = parseSiteDetails(response.body, siteId: siteId);
+        if (properties == null) return null;
 
-        LoggingService.info('ParaglidingEarthApi: Found ${takeoffElements.length} site(s) in bounding box');
+        // Store in cache for future use
+        _siteDetailsCache[cacheKey] = properties;
+        _siteDetailsCacheExpiry[cacheKey] = now.add(_cacheTimeout);
 
-        // Match on the id whenever we have one. The box is wide enough to
-        // span a whole cluster of launches, so which element is "first" means
-        // nothing.
-        XmlElement? takeoffElement;
-        if (siteId != null) {
-          for (final element in takeoffElements) {
-            // The element is <pge_site_id>. This looked for <id>, which does
-            // not exist in ParaglidingEarth's schema, so the match never once
-            // succeeded and every lookup fell through to "use the first
-            // result" - picking by position in a bounding box, silently.
-            final idElement = element.findElements('pge_site_id').firstOrNull;
-            if (idElement != null && idElement.innerText.trim() == siteId.toString()) {
-              takeoffElement = element;
-              LoggingService.info('ParaglidingEarthApi: Matched site by ID: $siteId');
-              break;
-            }
-          }
-
-          if (takeoffElement == null) {
-            // Returning the nearest instead would put another launch's
-            // takeoff notes, rules and hazards under this site's name, with
-            // nothing to say they belong elsewhere. An empty tab is honest.
-            LoggingService.warning(
-                'ParaglidingEarthApi: No site matching id $siteId in ${takeoffElements.length} result(s)');
-            return null;
-          }
-        }
-
-        // No id to match on - fall back to the only sensible candidate.
-        if (takeoffElement == null && takeoffElements.isNotEmpty) {
-          takeoffElement = takeoffElements.first;
-          if (takeoffElements.length > 1) {
-            LoggingService.warning('ParaglidingEarthApi: Multiple sites found but using first one (no ID given)');
-          }
-        }
-
-        if (takeoffElement != null) {
-          final Map<String, dynamic> properties = {};
-          
-          // Extract all child elements
-          for (final element in takeoffElement.children.whereType<XmlElement>()) {
-            final text = element.innerText.trim();
-            if (text.isNotEmpty) {
-              properties[element.name.local] = text;
-            }
-          }
-          
-          // Also extract orientations
-          final orientationsElement = takeoffElement.findElements('orientations').firstOrNull;
-          if (orientationsElement != null) {
-            final Map<String, dynamic> orientations = {};
-            for (final element in orientationsElement.children.whereType<XmlElement>()) {
-              orientations[element.name.local] = element.innerText;
-            }
-            properties['orientations'] = orientations;
-          }
-
-          // Extract landing information (landing is a sibling of takeoff in the XML structure)
-          final landingElement = document.findAllElements('landing').firstOrNull;
-          if (landingElement != null) {
-            final Map<String, dynamic> landing = {};
-            for (final element in landingElement.children.whereType<XmlElement>()) {
-              final text = element.innerText.trim();
-              if (text.isNotEmpty) {
-                landing[element.name.local] = text;
-              }
-            }
-            properties['landing'] = landing;
-
-            // Also flatten landing info for easy access
-            if (landing['landing_altitude'] != null) {
-              properties['landing_altitude'] = landing['landing_altitude'];
-            }
-            if (landing['landing_description'] != null) {
-              properties['landing_description'] = landing['landing_description'];
-            }
-            if (landing['landing_lat'] != null) {
-              properties['landing_lat'] = landing['landing_lat'];
-            }
-            if (landing['landing_lng'] != null) {
-              properties['landing_lng'] = landing['landing_lng'];
-            }
-          }
-          
-          LoggingService.info('ParaglidingEarthApi: Found detailed data for site');
-          LoggingService.info('ParaglidingEarthApi: Parsed fields: ${properties.keys.toList()}');
-          
-          // Store in cache for future use
-          _siteDetailsCache[cacheKey] = properties;
-          _siteDetailsCacheExpiry[cacheKey] = now.add(_cacheTimeout);
-          
-          return properties;
-        }
-        
-        LoggingService.warning('ParaglidingEarthApi: No detailed data found for site');
-        return null;
+        return properties;
       } else {
         LoggingService.warning('ParaglidingEarthApi: HTTP ${response.statusCode} for site details');
         return null;
@@ -680,6 +586,144 @@ class ParaglidingEarthApi {
       LoggingService.error('ParaglidingEarthApi: Error getting site details', e);
       return null;
     }
+  }
+
+  /// The `<takeoff>` for [siteId], with its own `<landing>`, as a flat map.
+  ///
+  /// Split out from the fetch so a fixture can drive it. The only other test of
+  /// this path is network-tagged, and a live query usually returns one site -
+  /// which is exactly the case where picking the wrong landing cannot show up.
+  @visibleForTesting
+  static Map<String, dynamic>? parseSiteDetails(String xml, {int? siteId}) {
+    final document = XmlDocument.parse(xml);
+    final takeoffElements = document.findAllElements('takeoff').toList();
+
+    LoggingService.info('ParaglidingEarthApi: Found ${takeoffElements.length} site(s) in bounding box');
+
+    // Match on the id whenever we have one. The box is wide enough to
+    // span a whole cluster of launches, so which element is "first" means
+    // nothing.
+    XmlElement? takeoffElement;
+    if (siteId != null) {
+      for (final element in takeoffElements) {
+        // The element is <pge_site_id>. This looked for <id>, which does
+        // not exist in ParaglidingEarth's schema, so the match never once
+        // succeeded and every lookup fell through to "use the first
+        // result" - picking by position in a bounding box, silently.
+        final idElement = element.findElements('pge_site_id').firstOrNull;
+        if (idElement != null && idElement.innerText.trim() == siteId.toString()) {
+          takeoffElement = element;
+          LoggingService.info('ParaglidingEarthApi: Matched site by ID: $siteId');
+          break;
+        }
+      }
+
+      if (takeoffElement == null) {
+        // Returning the nearest instead would put another launch's
+        // takeoff notes, rules and hazards under this site's name, with
+        // nothing to say they belong elsewhere. An empty tab is honest.
+        LoggingService.warning(
+            'ParaglidingEarthApi: No site matching id $siteId in ${takeoffElements.length} result(s)');
+        return null;
+      }
+    }
+
+    // No id to match on - fall back to the only sensible candidate.
+    if (takeoffElement == null && takeoffElements.isNotEmpty) {
+      takeoffElement = takeoffElements.first;
+      if (takeoffElements.length > 1) {
+        LoggingService.warning('ParaglidingEarthApi: Multiple sites found but using first one (no ID given)');
+      }
+    }
+
+    if (takeoffElement == null) {
+      LoggingService.warning('ParaglidingEarthApi: No detailed data found for site');
+      return null;
+    }
+
+    final Map<String, dynamic> properties = {};
+
+    // Extract all child elements
+    for (final element in takeoffElement.children.whereType<XmlElement>()) {
+      final text = element.innerText.trim();
+      if (text.isNotEmpty) {
+        properties[element.name.local] = text;
+      }
+    }
+
+    // Also extract orientations
+    final orientationsElement = takeoffElement.findElements('orientations').firstOrNull;
+    if (orientationsElement != null) {
+      final Map<String, dynamic> orientations = {};
+      for (final element in orientationsElement.children.whereType<XmlElement>()) {
+        orientations[element.name.local] = element.innerText;
+      }
+      properties['orientations'] = orientations;
+    }
+
+    // The landing has to be this takeoff's, not whichever came back first.
+    //
+    // <takeoff> and <landing> are flat siblings under <search>, and only
+    // <landing_pge_site_id> ties one to the other. Taking the document's first
+    // landing answered a lookup for Montmin (3046, landing 467m) with Annecy -
+    // Planfait's 555m, and put Planfait's coordinates behind the map button: a
+    // 12km query there returns nine takeoffs and two landings. The 0.5km search
+    // radius makes that rarer, not impossible - several launches inside 500m is
+    // the normal case this catalogue is built around.
+    final takeoffId = properties['pge_site_id']?.toString();
+    final landingElement = (takeoffId == null || takeoffId.isEmpty)
+        ? null
+        : document.findAllElements('landing').where((element) {
+            final id = element.findElements('landing_pge_site_id').firstOrNull;
+            return id != null && id.innerText.trim() == takeoffId;
+          }).firstOrNull;
+
+    if (landingElement != null) {
+      final Map<String, dynamic> landing = {};
+      for (final element in landingElement.children.whereType<XmlElement>()) {
+        final text = element.innerText.trim();
+        if (text.isNotEmpty) {
+          landing[element.name.local] = text;
+        }
+      }
+      properties['landing'] = landing;
+
+      // Also flatten landing info for easy access
+      if (landing['landing_altitude'] != null) {
+        properties['landing_altitude'] = landing['landing_altitude'];
+      }
+      if (landing['landing_description'] != null) {
+        properties['landing_description'] = landing['landing_description'];
+      }
+      if (landing['landing_lat'] != null) {
+        properties['landing_lat'] = landing['landing_lat'];
+      }
+      if (landing['landing_lng'] != null) {
+        properties['landing_lng'] = landing['landing_lng'];
+      }
+    }
+
+    // PGE writes a negative altitude where it has none - mostly -1, sometimes
+    // -2 - and the screen rendered that as "-1m". France alone carries 8 in
+    // 1081 sites. Dropping the key lets the caller fall back to the catalogue
+    // the same way a missing element already does.
+    //
+    // Zero is left alone. It is a plausible altitude for the coastal launches
+    // this app is used at, and the catalogue holds 89 of them; treating it as a
+    // sentinel would hide real sites to catch a few unfilled ones.
+    for (final key in const ['takeoff_altitude', 'landing_altitude']) {
+      final metres = double.tryParse(properties[key]?.toString() ?? '');
+      if (metres != null && metres < 0) {
+        properties.remove(key);
+        LoggingService.info(
+            'ParaglidingEarthApi: Dropped $key "$metres" - no altitude recorded');
+      }
+    }
+
+    LoggingService.info('ParaglidingEarthApi: Found detailed data for site');
+    LoggingService.info('ParaglidingEarthApi: Parsed fields: ${properties.keys.toList()}');
+
+    return properties;
   }
 
   /// Convert ISO country code to full country name
@@ -821,8 +865,21 @@ class ParaglidingEarthApi {
   /// Check if API is currently in offline mode
   static bool get isOfflineMode => _isOfflineMode;
 
-  /// Drive the breaker directly - the HTTP client is not injectable, so this is
-  /// how the cooldown behaviour is covered without a network call.
+  /// Swap in a stub client; pass null to go back to the real one.
+  ///
+  /// The site details path is otherwise only reachable over the network, which
+  /// is why the one test that covers it end to end is network-tagged. A stub
+  /// lets the screen be driven against a known response instead - the landing
+  /// row and the drop beside the launch altitude are rendered from a shape a
+  /// live query rarely returns.
+  @visibleForTesting
+  static set debugHttpClient(http.Client? client) {
+    _httpClient = client;
+    _requestCount = 0;
+    _clientCreatedAt = client == null ? null : DateTime.now();
+  }
+
+  /// Drive the breaker directly, without waiting on a real request to fail.
   @visibleForTesting
   static void debugSetOfflineMode({required bool offline, DateTime? enteredAt}) {
     _isOfflineMode = offline;

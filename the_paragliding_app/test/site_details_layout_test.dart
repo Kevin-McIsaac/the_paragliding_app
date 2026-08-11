@@ -134,4 +134,28 @@ void main() {
     expect(find.text('PGE'), findsOneWidget);
     expect(find.text('ANSG'), findsOneWidget);
   });
+
+  testWidgets('the launch altitude says which datum it is', (tester) async {
+    // Above ground level at a launch is zero by definition, so an unlabelled
+    // figure invites the one reading it cannot have - and the guides really do
+    // publish both. Site Guide's height for Mt Bakewell is 255m above the
+    // valley; PGE's is 436m AMSL. The unit is in the text rather than only in
+    // the tooltip because this row must not depend on a hover.
+    await pumpPage(
+      tester,
+      which: ParaglidingSite(
+        id: 9247,
+        name: 'Manilla - Mt Borah - West launch',
+        latitude: -30.6792,
+        longitude: 150.6086,
+        altitude: 847,
+        siteType: 'launch',
+        windDirections: const ['W', 'NW'],
+        source: 'pge:4632;ansg:136-20',
+      ),
+    );
+
+    expect(find.text('847 m AMSL'), findsOneWidget);
+    expect(find.byTooltip('Altitude above mean sea level'), findsOneWidget);
+  });
 }
