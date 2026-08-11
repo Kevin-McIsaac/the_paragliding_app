@@ -6,11 +6,30 @@
 #   bin/dev_logs.sh                  # last 300 lines of app-relevant logcat
 #   bin/dev_logs.sh -n 1000          # more scrollback
 #   bin/dev_logs.sh -f               # follow live
+#   bin/dev_logs.sh --tee            # follow live, appending to dev_data/logcat.log
+#   bin/dev_logs.sh --tee out.log    # ... to a path of your choosing
 #   bin/dev_logs.sh --keys           # just the [API_KEYS_STATUS] line
 #   bin/dev_logs.sh -g cesium        # search the whole buffer, any tag (case-sensitive)
 #   bin/dev_logs.sh --raw            # unfiltered logcat (all tags)
 #   bin/dev_logs.sh -c               # clear the buffer, then exit
 #   bin/dev_logs.sh -s <id>          # pick a device when more than one is online
+#
+# --tee exists because the ring buffer is too small to be read after the fact. On the
+# Pixel 9 the `main` buffer is the 256 KiB default and `android.hardware.thermal-service.pixel`
+# writes one `I pixel-thermal:` line per sensor per poll - measured at 84.5 lines/s, which
+# is 79% of the buffer and leaves about 30 seconds of retention. Two unprivileged setprops
+# fix the source (they need no root, and the persist ones survive reboot):
+#
+#     adb shell setprop persist.log.tag.pixel-thermal S
+#     adb shell setprop persist.log.tag.libPixelUsbOverheat S
+#     adb shell logcat -G 4M        # re-apply each boot; persist.logd.size needs root
+#
+# That measured 84.5 -> 9.5 lines/s and ~30 s -> ~65 min of retention. Even so, 65 minutes
+# is still a ring: `--tee` copies the filtered stream to a file on the host, where nothing
+# ages out and the buffer size stops mattering at all. It appends rather than truncating,
+# and brackets each run with a marker, so a stream that died with the adb connection cannot
+# be mistaken for one that had nothing to report - the same reasoning as flutter.log's
+# exit marker.
 #
 # Connection is handled here: a single online device is used as-is, otherwise the
 # known phone IPs are tried on the fixed tcpip port. `adb tcpip 5555` resets on phone
@@ -43,6 +62,8 @@ raw=false
 clear_first=false
 pattern=""
 requested=""
+tee_file=""
+TEE_DEFAULT="dev_data/logcat.log"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -56,6 +77,18 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     -f|--follow)
+      follow=true
+      shift
+      ;;
+    --tee)
+      # The path is optional. Consume the next argument only when it is not itself a
+      # flag, so `--tee -g cesium` keeps the default file instead of swallowing the -g
+      # and then failing on a stray pattern.
+      tee_file="$TEE_DEFAULT"
+      if [[ -n "${2-}" && "${2-}" != -* ]]; then
+        tee_file="$2"
+        shift
+      fi
       follow=true
       shift
       ;;
@@ -172,15 +205,46 @@ $raw && TAGS=()
 # `-t N` is deliberately not used: logcat applies it to the raw buffer *before* the
 # tag filterspec, so `-t 400 flutter:V *:S` silently prints nothing whenever the last
 # 400 raw lines happen to hold no flutter line. Dump the filtered stream and tail it.
+# Copy the stream to the tee file as well as stdout, so a --tee run stays readable live
+# (and greppable by the Monitor tool) instead of going silently into a file.
+sink() {
+  if [[ -n "$tee_file" ]]; then
+    tee -a "$tee_file"
+  else
+    cat
+  fi
+}
+
+if [[ -n "$tee_file" ]]; then
+  mkdir -p "$(dirname "$tee_file")"
+  printf -- '--- tee started %s - device %s ---\n' "$(date '+%F %T')" "$device" >>"$tee_file"
+  # Without an end marker a file that stopped because adb dropped the connection is
+  # indistinguishable from one where the app simply went quiet - the mistake flutter.log
+  # already learned to prevent.
+  trap 'printf -- "--- tee ended %s - stream stopped; the app may still be running ---\n" \
+    "$(date "+%F %T")" >>"$tee_file"' EXIT
+  echo "teeing to $tee_file" >&2
+fi
+
 if $follow; then
+  # -T 1 starts at the end of the buffer, and only in --tee mode: a tee restarted after
+  # a dropped connection must not re-append the whole ring it already captured. A plain
+  # -f still dumps history first, which is what you want reading interactively.
+  #
+  # Note this is not the `-t N` trap described above: -t caps the output at N raw lines,
+  # so the tag filterspec can leave nothing at all, whereas -T 1 only sets the start
+  # point and then follows forever.
+  start=()
+  [[ -n "$tee_file" ]] && start=(-T 1)
   if [[ -n "$pattern" ]]; then
     # --line-buffered matters: without it grep emits in 4KB blocks, so a live follow
     # looks frozen between bursts. Piping rather than exec'ing keeps the pattern
     # applied - an earlier version exec'd straight into logcat here, silently
     # dropping -g/--keys and handing back an unfiltered firehose that looked filtered.
-    adb -s "$device" logcat "${TAGS[@]}" | grep --line-buffered -a -E "$pattern"
+    adb -s "$device" logcat "${start[@]}" "${TAGS[@]}" \
+      | grep --line-buffered -a -E "$pattern" | sink
   else
-    adb -s "$device" logcat "${TAGS[@]}"
+    adb -s "$device" logcat "${start[@]}" "${TAGS[@]}" | sink
   fi
   exit
 fi

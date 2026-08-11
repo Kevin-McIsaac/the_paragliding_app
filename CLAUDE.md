@@ -195,12 +195,32 @@ remains the only log there, and it is also the only place build and compile erro
 bin/dev_logs.sh --keys       # just the [API_KEYS_STATUS] line
 bin/dev_logs.sh -g cesium    # search the whole buffer
 bin/dev_logs.sh -f           # follow live
+bin/dev_logs.sh --tee        # follow live, appending to dev_data/logcat.log
 ```
 
-The phone's logcat ring buffer holds only a couple of minutes — `adbd` retries a USB bind it
-can never complete when no cable is attached, and floods it. Follow live rather than expecting
-history to be there. The phone also dozes when idle, which kills `flutter run`; Developer
-options → **"Stay awake"** avoids it.
+**The logcat ring buffer is too small to read after the fact, and it is not `adbd`'s fault.**
+This file blamed `adbd` retrying a USB bind for years; measuring it on 2026-08-11 found the
+real source is `android.hardware.thermal-service.pixel`, which logs one `I pixel-thermal:`
+line per sensor per poll — 84.5 lines/s, 79% of the buffer, leaving **~30 seconds** of
+retention in the 256 KiB default. The wrong attribution sent a debugging session looking at
+USB and adb, so prefer the numbers over the story:
+
+```bash
+adb shell setprop persist.log.tag.pixel-thermal S        # survives reboot, needs no root
+adb shell setprop persist.log.tag.libPixelUsbOverheat S  # the second-largest source
+adb shell logcat -G 4M     # re-apply each boot - persist.logd.size is refused without root
+```
+
+Measured after: **9.5 lines/s and ~65 min** of retention. `trusty` looks like the biggest
+flooder in a plain `logcat -d` histogram and is a red herring — it is in the **kernel**
+buffer, a separate 256 KiB ring that costs the app's log nothing.
+
+Even 65 minutes is still a ring, so for anything you intend to read later use
+`bin/dev_logs.sh --tee`: it copies the filtered stream to a host file where nothing ages
+out. It appends and brackets each run with a marker, for the same reason `flutter.log` has
+an exit marker — a capture that died with the adb connection must not read as an app with
+nothing to say. The phone also dozes when idle, which kills `flutter run` (and with it
+`dev_input.sh`, though not the app); Developer options → **"Stay awake"** avoids it.
 
 ### Claude-Specific Patterns
 
