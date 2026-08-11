@@ -743,6 +743,14 @@ content landed by checking the PR is `MERGED`, not by whether `-d` is willing.
 5. **Quality**: `flutter analyze` before committing
 6. **Commit**: Only when user explicitly requests
 
+### Releasing
+
+**See the `release` skill** (`.claude/skills/release/`) for cutting a release: choosing the
+version numbers, writing the user-facing notes, tagging, and checking the run actually
+published. It is the single source of truth for the sequence, and defers to
+`GOOGLE_PLAY_DEPLOYMENT.md` for the reference detail (CI structure, secrets, signing,
+troubleshooting). Do not duplicate either one here.
+
 ### Common Task Patterns
 
 | Task | Commands | Notes |
