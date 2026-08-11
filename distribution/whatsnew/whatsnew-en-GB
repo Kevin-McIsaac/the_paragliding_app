@@ -1,6 +1,7 @@
-• The site guide now merges several guides into one catalogue rather than
-  listing ParaglidingEarth alone, and no longer hides sites marked closed
-• Site details opens as a full page, so the wind, forecast and guide tabs have
-  room instead of sharing a cramped sheet
-• Each guide gets its own link, and those links open the site you tapped -
-  some previously opened an unrelated one
+• Flights now match the nearest launch rather than the first one found, and
+  Data Management can re-run that match across your whole log
+• Site altitudes say they are above sea level, the landing comes from the
+  site you opened, and duplicate markers on the map are gone
+• The site guide updates without an app update, and credits ParaglidingEarth's
+  licence and the Australian National Site Guide
+• Search fields in the top bar are readable again in the light theme
