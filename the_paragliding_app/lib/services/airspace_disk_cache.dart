@@ -71,6 +71,11 @@ class AirspaceDiskCache {
   }
 
   Future<Database> _initDatabase() async {
+    // Timed in three phases because this open was billed to "database_query" and hid
+    // ~1.3s of the 2s in #347. Which phase dominates decides whether the version probe
+    // below is worth removing - measure it rather than guessing.
+    final phaseStopwatch = Stopwatch()..start();
+
     final documentsDirectory = await getApplicationDocumentsDirectory();
     final path = join(documentsDirectory.path, _databaseName);
     _databasePath = path;
@@ -84,8 +89,15 @@ class AirspaceDiskCache {
       LoggingService.error('Failed to create documents directory', e, null);
     }
 
+    LoggingService.performance(
+      '[AIRSPACE_DB_INIT] documents_dir',
+      phaseStopwatch.elapsed,
+      'platform channel + directory create',
+    );
+
     // PRE-RELEASE ONLY: Force recreation for schema changes
     // Remove this after v1.0 release and implement proper migrations
+    final probeStopwatch = Stopwatch()..start();
     try {
       final file = File(path);
       if (await file.exists()) {
@@ -106,13 +118,29 @@ class AirspaceDiskCache {
       LoggingService.info('Cannot access existing database (${e.toString()}), will create new one');
     }
 
+    // This phase opens the database read-only purely to read its version, then closes it,
+    // so the real open below is the second. If this number is material, collapse the two
+    // by letting sqflite do version detection (onUpgrade/onDatabaseDowngradeDelete).
+    LoggingService.performance(
+      '[AIRSPACE_DB_INIT] version_probe',
+      probeStopwatch.elapsed,
+      'read-only open + getVersion + close',
+    );
+
+    final openStopwatch = Stopwatch()..start();
     try {
-      return await openDatabase(
+      final db = await openDatabase(
         path,
         version: _databaseVersion,
         onCreate: _onCreate,
         onOpen: _onOpen,
       );
+      LoggingService.performance(
+        '[AIRSPACE_DB_INIT] open',
+        openStopwatch.elapsed,
+        'openDatabase + onCreate/onOpen pragmas',
+      );
+      return db;
     } catch (e, stackTrace) {
       LoggingService.error('Failed to initialize airspace cache database', e, stackTrace);
 
@@ -782,9 +810,9 @@ class AirspaceDiskCache {
 
       LoggingService.info('[SPATIAL_INDEX_QUERY] Found ${results.length} geometries in bounds | query_ms=${queryStopwatch.elapsedMilliseconds}');
 
-      if (results.isEmpty) {
-        return [];
-      }
+      // No early return on an empty result: it skipped [SPATIAL_QUERY_COMPLETE] below,
+      // so the zero-airspace case - the one that needed diagnosing in #347 - was the one
+      // case that logged no breakdown. Decoding an empty list costs nothing.
 
       // Decode geometries
       decodeStopwatch.start();
