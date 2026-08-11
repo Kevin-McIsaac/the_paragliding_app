@@ -94,22 +94,34 @@ class AirspaceCountryService {
     'MX': CountryInfo(code: 'MX', name: 'Mexico', estimatedSizeMB: 12),
   };
 
-  /// Get list of selected countries
+  /// Get list of selected countries, without duplicates.
+  ///
+  /// Deduplicated on the way out as well as the way in, because installs already carry
+  /// duplicates from before the write-side fix - one real prefs file held
+  /// ['AU','AT','AT','BE','AU']. Healing on read means those installs behave correctly
+  /// immediately, with no migration; storage tidies itself the next time a selection
+  /// changes.
   Future<List<String>> getSelectedCountries() async {
     final prefs = await SharedPreferences.getInstance();
     final countries = prefs.getStringList(_selectedCountriesKey) ?? [];
 
     // Only log when countries list changes, not on every call
-    return countries;
+    return countries.toSet().toList();
   }
 
-  /// Set selected countries
+  /// Set selected countries, storing each at most once.
+  ///
+  /// Duplicates are not merely untidy: the callers remove a country with `List.remove`,
+  /// which drops only the *first* occurrence. A country selected twice therefore survived
+  /// being removed - it stayed in the list, kept the airspace query on its slow path
+  /// instead of the empty-cache skip, and reappeared as selected in the UI.
   Future<void> setSelectedCountries(List<String> countryCodes) async {
+    final unique = countryCodes.toSet().toList();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_selectedCountriesKey, countryCodes);
+    await prefs.setStringList(_selectedCountriesKey, unique);
 
     LoggingService.info(
-      'Updated selected countries: ${countryCodes.join(", ")}',
+      'Updated selected countries: ${unique.join(", ")}',
     );
   }
 
