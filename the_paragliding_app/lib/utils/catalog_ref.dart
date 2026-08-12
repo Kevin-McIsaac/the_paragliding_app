@@ -40,8 +40,9 @@ class CatalogRef {
   /// 89 rows carry two at all.
   ///
   /// A provider is the guide's own abbreviation, lowercased - `pge` for
-  /// ParaglidingEarth, `ansg` for the Australian National Site Guide, `ffvl` for
-  /// the Fédération Française de Vol Libre when it arrives. Whatever the guide
+  /// ParaglidingEarth, `ansg` for the Australian National Site Guide, `dhv` for
+  /// the DHV Geländedatenbank, `ffvl` for the Fédération Française de Vol Libre
+  /// when it arrives. Whatever the guide
   /// is actually called, rather than a fixed width: the prefix is carried in
   /// every stored ref, so it wants to be short, but a recognisable acronym beats
   /// a letter saved.
@@ -49,7 +50,7 @@ class CatalogRef {
   /// The only hard rule is that it cannot contain `:` or `;` - those separate the
   /// id and the tokens, so a prefix holding either would not survive a round
   /// trip through `source`.
-  static const List<String> providerPrecedence = ['pge', 'ansg'];
+  static const List<String> providerPrecedence = ['pge', 'ansg', 'dhv'];
 
   /// The ref for a catalogue row, from its `source` column.
   ///

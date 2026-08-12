@@ -133,12 +133,14 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
   static String _sourceLabel(String provider) => switch (provider) {
         'pge' => 'PGE',
         'ansg' => 'ANSG',
+        'dhv' => 'DHV',
         _ => provider,
       };
 
   static String _sourceFullName(String provider) => switch (provider) {
         'pge' => 'ParaglidingEarth',
         'ansg' => 'Australian National Site Guide',
+        'dhv' => 'DHV Geländedatenbank',
         _ => provider,
       };
 
@@ -152,6 +154,11 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
         'pge' => 'https://www.paraglidingearth.com/?site=$id',
         // Site Guide ids are "<siteId>-<launchId>"; the page is per site.
         'ansg' => 'https://siteguide.org.au/sites/details/${id.split('-').first}',
+        // DHV ids are "<Gelände>-<slug of the launch name>". DHV has no page
+        // per launch - every takeoff and landing on a hill shares one - so
+        // the Gelände half is the whole address.
+        'dhv' =>
+          'https://service.dhv.de/db2/details.php?qi=glp_details&item=${id.split('-').first}',
         _ => null,
       };
 
