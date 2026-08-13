@@ -37,6 +37,16 @@ void main() {
       expect(sources.any((s) => s.provider == 'pge'), isFalse);
     });
 
+    test('a DHV id keeps the hyphens inside it', () {
+      // DHV refs are "<Gelände>-<slug of the launch name>", so the id half is
+      // full of hyphens and the site page is addressed by the Gelände alone.
+      // Splitting on the wrong separator would point five Loser takeoffs at
+      // one page, or at none.
+      final sources = site('dhv:1416-loser-startplatz-3').sources;
+      expect(sources, [(provider: 'dhv', id: '1416-loser-startplatz-3')]);
+      expect(sources.first.id.split('-').first, '1416');
+    });
+
     test('a catalogue predating source tracking yields nothing', () {
       // The dialog falls back to a single PGE tab rather than none.
       expect(site(null).sources, isEmpty);

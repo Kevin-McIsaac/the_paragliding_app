@@ -29,6 +29,33 @@ void main() {
 
     String field(CsvRow row, String name) => (row[name] ?? '').toString();
 
+    test('names no guide this app cannot key on', () {
+      // `providerPrecedence` is one of three hand-written copies of the same
+      // list - the others are KEY_PRECEDENCE and APP_PRECEDENCE, both in the
+      // producer's repo, in Python. The producer asserts two of the three
+      // agree; nothing here noticed if the app's copy fell behind.
+      //
+      // It matters because an unranked provider falls through to
+      // `tokens.first`, so the app and the producer can key the same launch
+      // differently - a fresh install and an upgraded one then disagree about
+      // which site the pilot's flight is on.
+      final providers = <String>{};
+      for (final row in rows) {
+        for (final token in CatalogRef.tokensOf(field(row, 'source'))) {
+          final provider = CatalogRef.providerOf(token);
+          if (provider != null) providers.add(provider);
+        }
+      }
+
+      expect(providers, isNotEmpty, reason: 'a sweep over nothing is not coverage');
+      expect(
+        providers.difference(CatalogRef.providerPrecedence.toSet()),
+        isEmpty,
+        reason: 'add the guide to CatalogRef.providerPrecedence, in lockstep '
+            'with KEY_PRECEDENCE in the producer',
+      );
+    });
+
     test('carries every column the app reads by name', () {
       expect(
         rows.first.headerMap.keys,

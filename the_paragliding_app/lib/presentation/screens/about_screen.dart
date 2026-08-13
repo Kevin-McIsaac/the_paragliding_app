@@ -268,6 +268,11 @@ class _AboutScreenState extends State<AboutScreen> {
                       icon: Icons.web,
                       text: 'Australian National Site Guide',
                     ),
+                    AppAttributionLink.standard(
+                      url: 'https://service.dhv.de/db3/gelaende',
+                      icon: Icons.web,
+                      text: 'DHV Geländedatenbank',
+                    ),
                   ],
                 ),
               ),
