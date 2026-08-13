@@ -816,6 +816,49 @@ class PgeSitesDatabaseService {
   }
 
   /// Find nearest site to coordinates
+  /// The landings that serve a launch, nearest first.
+  ///
+  /// Joined on the group the guides publish, never on distance. A landing sits
+  /// a median 1.7km from its launch and only 9% fall within 250m, so proximity
+  /// would attach almost none of them and would attach the wrong ones - a
+  /// neighbouring hill's field is often closer than your own.
+  ///
+  /// One landing commonly serves several launches (28.5% of DHV's do), and one
+  /// launch can have several: the tokens are a set intersection, not a key.
+  Future<List<ParaglidingSite>> getLandingsForSite(ParaglidingSite site) async {
+    final tokens = CatalogRef.tokensOf(site.siteGroup);
+    if (tokens.isEmpty) return const [];
+
+    try {
+      final db = await DatabaseHelper.instance.database;
+      // `;a;b;` LIKE `%;token;%` - the delimiters are added on both sides so a
+      // token cannot match a longer one it is a prefix of (`pge:463` against
+      // `pge:4632`).
+      final clause = List.filled(
+        tokens.length,
+        "(';' || s.site_group || ';') LIKE ?",
+      ).join(' OR ');
+
+      final results = await db.rawQuery('''
+        SELECT s.*, COALESCE(cc.name, s.country) as country_name
+        FROM $_pgeSitesTable s
+        LEFT JOIN $_countryCodesTable cc ON UPPER(s.country) = cc.code
+        WHERE COALESCE(s.site_type, 'launch') = 'landing' AND ($clause)
+      ''', [for (final token in tokens) '%;$token;%']);
+
+      final landings =
+          results.map((row) => _mapRowToParaglidingSite(row)).toList()
+            ..sort((a, b) => a
+                .distanceTo(site.latitude, site.longitude)
+                .compareTo(b.distanceTo(site.latitude, site.longitude)));
+      return landings;
+    } catch (error, stackTrace) {
+      LoggingService.error(
+          '[PGE_SITES_DB] Landings query failed', error, stackTrace);
+      return const [];
+    }
+  }
+
   /// Find nearest site to coordinates.
   ///
   /// Launches only unless asked otherwise, and that default is load-bearing:
@@ -982,6 +1025,7 @@ class PgeSitesDatabaseService {
       rating: null,
       country: row['country_name'] as String? ?? row['country'] as String?,  // Use full name from JOIN or fallback to code
       source: row['source'] as String?,
+      siteGroup: row['site_group'] as String?,
       closed: row['closed'] as String?,
       region: null,
       popularity: null,

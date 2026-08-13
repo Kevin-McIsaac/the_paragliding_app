@@ -71,8 +71,11 @@ void main() {
 
     // Coordinates, not row counts. Longitude precedes latitude in the file,
     // so an off-by-one would still parse and still count 11,672 rows.
+    // Launches only: the catalogue also holds this takeoff's landing, keyed
+    // `pge:4632-lz`, which the LIKE matches as happily as the launch.
     final borah = (await db.rawQuery(
-      "SELECT * FROM pge_sites WHERE source LIKE '%pge:4632%'",
+      "SELECT * FROM pge_sites WHERE source LIKE '%pge:4632%'"
+      " AND COALESCE(site_type, 'launch') = 'launch'",
     )).single;
     expect(borah['latitude'] as double, closeTo(-30.68, 0.05));
     expect(borah['longitude'] as double, closeTo(150.61, 0.05));
@@ -104,7 +107,11 @@ void main() {
       // `ansg:` since the producer emits the guide's own acronym natively. This
       // read the old prefix while the rewrite existed to translate it; with the
       // rewrite gone, the asset and this query have to agree.
-      "SELECT * FROM pge_sites WHERE source LIKE 'ansg:%' AND source NOT LIKE '%pge:%'",
+      // Launches only. The catalogue now carries landings too, and a landing
+      // has no wind by design - counted here they dragged this ratio from 90%
+      // to 61% and failed a test that was measuring the prose parser.
+      "SELECT * FROM pge_sites WHERE source LIKE 'ansg:%' AND source NOT LIKE '%pge:%'"
+      " AND COALESCE(site_type, 'launch') = 'launch'",
     );
 
     expect(guideOnly.length, greaterThan(50));
