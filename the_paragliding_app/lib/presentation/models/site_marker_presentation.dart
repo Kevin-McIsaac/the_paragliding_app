@@ -56,6 +56,19 @@ class SiteMarkerPresentation {
     required bool forecastEnabled,
     WindForecast? forecast, // Optional forecast for daylight times
   }) {
+    // Landings answer a different question, so they never enter the
+    // flyability switch below. Left to fall through, one would be coloured by
+    // whatever wind data happened to be cached for its position - blue at best,
+    // and green if a guide ever attaches wind to a landing, which reads as
+    // "you can fly from here".
+    if (site.siteType == 'landing') {
+      return SiteMarkerPresentation(
+        color: SiteMarkerUtils.landingSiteColor,
+        tooltip: 'Landing site',
+        opacity: 1.0,
+      );
+    }
+
     // Determine flyability status if not provided
     final effectiveStatus = status ?? FlyabilityStatus.unknown;
 

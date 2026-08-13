@@ -46,11 +46,16 @@ class SiteBoundsLoaderV2 {
 
       // 2. Always load PGE sites from local database
       // The database will return empty list if no sites exist
+      //
+      // The one place that asks for landings. Everything else - matching,
+      // flyability ranking, search, favourites - takes the launches-only
+      // default, so a landing can be drawn without being mistaken for a hill.
       futures.add(PgeSitesDatabaseService.instance.getSitesInBounds(
         north: bounds.north,
         south: bounds.south,
         east: bounds.east,
         west: bounds.west,
+        siteTypes: PgeSitesDatabaseService.launchesAndLandings,
       ));
 
       final results = await Future.wait(futures);

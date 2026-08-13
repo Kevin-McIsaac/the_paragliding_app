@@ -27,6 +27,12 @@ class ParaglidingSite {
   /// Which guides contributed this launch, e.g. "pge:4632;ansg:106-28".
   /// Drives the per-source tabs in the site details dialog.
   final String? source;
+
+  /// Which site this row belongs to, as `provider:parentId` tokens in the same
+  /// `;`-separated form as [source]. A landing shares a token with every launch
+  /// it serves, and that is the only way to relate them: measured over DHV, the
+  /// median gap from a landing to its launch is 1.7km.
+  final String? siteGroup;
   /// Why a guide says this launch is shut, verbatim. Null when open.
   final String? closed;
 
@@ -47,6 +53,7 @@ class ParaglidingSite {
     this.isFromLocalDb = false,
     this.catalogRef,
     this.source,
+    this.siteGroup,
     this.closed,
   });
 
@@ -260,6 +267,7 @@ class ParaglidingSite {
     bool? isFromLocalDb,
     String? catalogRef,
     String? source,
+    String? siteGroup,
     String? closed,
   }) {
     return ParaglidingSite(
@@ -279,6 +287,7 @@ class ParaglidingSite {
       isFromLocalDb: isFromLocalDb ?? this.isFromLocalDb,
       catalogRef: catalogRef ?? this.catalogRef,
       source: source ?? this.source,
+      siteGroup: siteGroup ?? this.siteGroup,
       closed: closed ?? this.closed,
     );
   }

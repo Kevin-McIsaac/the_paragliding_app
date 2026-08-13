@@ -274,9 +274,13 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
                 message: presentation.tooltip ?? '',
                 child: Opacity(
                   opacity: presentation.opacity,
-                  child: SiteMarkerUtils.buildSiteMarkerIcon(
-                    color: presentation.color,
-                  ),
+                  child: site.siteType == 'landing'
+                      ? SiteMarkerUtils.buildLandingSiteMarkerIcon(
+                          color: presentation.color,
+                        )
+                      : SiteMarkerUtils.buildSiteMarkerIcon(
+                          color: presentation.color,
+                        ),
                 ),
               ),
               SiteMarkerUtils.buildSiteLabel(
@@ -325,11 +329,15 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
       return false;
     });
 
-    // Check if any sites have no wind directions defined
+    // Check if any sites have no wind directions defined.
+    //
+    // Landings never have any, and are a third of the catalogue - counted here
+    // they would fade almost every cluster on the map, turning a signal that
+    // means "this cluster hides a site we know nothing about" into background.
     final hasNoWindDirectionsSites = markers.any((marker) {
       if (marker.key is ValueKey<ParaglidingSite>) {
         final site = (marker.key as ValueKey<ParaglidingSite>).value;
-        return site.windDirections.isEmpty;
+        return site.siteType != 'landing' && site.windDirections.isEmpty;
       }
       return false;
     });
@@ -477,6 +485,15 @@ class _NearbySitesMapState extends BaseMapState<NearbySitesMap> {
         Icons.location_on,
         SiteMarkerUtils.unknownFlyabilitySiteColor,
         'Unknown',
+      ),
+      const SizedBox(height: 4),
+      // Last, and with a different icon: the four above are one scale - can I
+      // fly here now - and a landing is not a point on it.
+      SiteMarkerUtils.buildLegendItem(
+        context,
+        Icons.flag,
+        SiteMarkerUtils.landingSiteColor,
+        'Landing',
       ),
     ];
   }

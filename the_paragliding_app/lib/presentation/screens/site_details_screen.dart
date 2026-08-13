@@ -88,6 +88,13 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
   /// the catalogue entry was passed in already.
   ParaglidingSite? _catalogSite;
 
+  /// The landings that serve this launch, from the catalogue.
+  ///
+  /// Held rather than derived at build time because the join is a query. Empty
+  /// for a landing's own page, and for a catalogue published before the
+  /// producer emitted the grouping.
+  List<ParaglidingSite> _landings = const [];
+
   /// Whichever record actually describes this launch: the catalogue entry
   /// passed in, or the one a flown site is linked to.
   ParaglidingSite? get _effectiveSite => widget.paraglidingSite ?? _catalogSite;
@@ -97,6 +104,15 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
   /// Falls back to a single ParaglidingEarth tab when the catalogue predates
   /// source tracking, so an older database still shows what it always did
   /// rather than losing the tab entirely.
+  /// A landing is reference information, not a site to assess.
+  ///
+  /// It has no wind directions, so the forecast table, the wind rose and the
+  /// flyability verdict have nothing to work from - shown anyway they would
+  /// read as "we checked and it is unflyable" rather than "this question does
+  /// not apply". What is left is what a pilot actually wants: where it is, how
+  /// high, and what the guide says about it.
+  bool get _isLanding => _effectiveSite?.siteType == 'landing';
+
   List<({String provider, String id})> get _sourceTabs {
     final sources = _effectiveSite?.sources ?? const [];
     return sources.isEmpty ? const [(provider: 'pge', id: '')] : sources;
@@ -154,7 +170,7 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     setState(() {
       _catalogSite = site;
       _tabController?.dispose();
-      _tabController = TabController(length: 1 + _sourceTabs.length, vsync: this);
+      _tabController = TabController(length: (_isLanding ? 0 : 1) + _sourceTabs.length, vsync: this);
     });
   }
 
@@ -168,10 +184,13 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
   void initState() {
     super.initState();
     // Weather, plus one tab per contributing guide.
-    _tabController = TabController(length: 1 + _sourceTabs.length, vsync: this);
+    _tabController = TabController(length: (_isLanding ? 0 : 1) + _sourceTabs.length, vsync: this);
     // Resolve the catalogue entry first: it decides how many tabs there are,
     // and supplies the guide's own coordinates for the detail lookup.
-    _loadCatalogSite().then((_) => _loadSiteDetails());
+    _loadCatalogSite().then((_) {
+      _loadLandings();
+      return _loadSiteDetails();
+    });
     _loadWindData();
     _loadWindForecast();
     _loadFavoriteStatus();
@@ -319,6 +338,75 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
       ),
     );
   }
+
+  /// The landings serving this launch, from the catalogue.
+  ///
+  /// Cheap and local, so it runs alongside the network fetch rather than after
+  /// it - a pilot at a launch site with no signal still gets this.
+  Future<void> _loadLandings() async {
+    final site = _effectiveSite;
+    if (site == null || site.siteType == 'landing') return;
+
+    final landings =
+        await PgeSitesDatabaseService.instance.getLandingsForSite(site);
+    if (mounted && landings.isNotEmpty) {
+      setState(() => _landings = landings);
+    }
+  }
+
+  /// The landings serving this launch, listed nearest first.
+  ///
+  /// Distance and bearing are shown because the landing is not in sight of the
+  /// launch - the median gap is 1.7km - so "where is it" is the first question
+  /// and a name alone does not answer it.
+  Widget _buildLandingsSection(double latitude, double longitude) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final landing in _landings)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 12,
+              runSpacing: 4,
+              children: [
+                Text(
+                  _landings.length > 1 ? 'Landing:' : 'Landing:',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                ),
+                Text(
+                  landing.name,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                if (landing.altitude != null)
+                  _iconFact(
+                    Icons.terrain,
+                    '${landing.altitude} m AMSL',
+                    tooltip: 'Altitude above mean sea level',
+                  ),
+                _iconFact(
+                  Icons.straighten,
+                  _formatDistance(
+                      landing.distanceTo(latitude, longitude)),
+                  tooltip: 'Distance from the launch',
+                ),
+                InkWell(
+                  onTap: () => _launchMap(landing.latitude, landing.longitude),
+                  child: const Icon(Icons.map, size: 16, color: Colors.blue),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  static String _formatDistance(double metres) => metres < 1000
+      ? '${metres.round()} m'
+      : '${(metres / 1000).toStringAsFixed(1)} km';
 
   Future<void> _loadSiteDetails() async {
     // The catalogue entry is the only thing that can answer this: a flown
@@ -575,7 +663,8 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     final bool showTabs = _tabController != null &&
         (_detailedData != null || widget.paraglidingSite != null);
 
-    final flyabilityLine = _buildFlyabilityLine(windDirections);
+    final flyabilityLine =
+        _isLanding ? null : _buildFlyabilityLine(windDirections);
     final characteristicsLine = _buildCharacteristicsLine();
 
     return Scaffold(
@@ -665,12 +754,13 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
                   // why these did not read as tabs.
                   indicatorSize: TabBarIndicatorSize.tab,
                   tabs: [
-                    const Tab(
-                      child: Tooltip(
-                        message: 'Flyability forecast by hour by day',
-                        child: Text('Forecast', style: TextStyle(fontSize: 12)),
+                    if (!_isLanding)
+                      const Tab(
+                        child: Tooltip(
+                          message: 'Flyability forecast by hour by day',
+                          child: Text('Forecast', style: TextStyle(fontSize: 12)),
+                        ),
                       ),
-                    ),
                     // One tab per contributing guide, named. The old single
                     // unlabelled tab held ParaglidingEarth data without saying
                     // so, and a launch can now come from more than one guide -
@@ -691,7 +781,7 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
                   child: TabBarView(
                     controller: _tabController,
                     children: [
-                      _buildWeatherTab(windDirections),
+                      if (!_isLanding) _buildWeatherTab(windDirections),
                       for (final source in _sourceTabs) _buildSourceTab(source),
                     ],
                   ),
@@ -1005,8 +1095,19 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
               ],
             ),
 
+            // Landing information, from the catalogue.
+            //
+            // This works offline and for launches PGE has never described - the
+            // block below it can only speak for a launch with a `pge:` token,
+            // which is why a DHV-only or ANSG-only site showed no landing at
+            // all before. Shown in place of that block, never beside it, so one
+            // field is not listed twice at two different altitudes.
+            if (_landings.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              _buildLandingsSection(latitude, longitude),
+            ]
             // Landing information row (if available)
-            if (_detailedData?['landing_altitude'] != null || _detailedData?['landing_description'] != null || _detailedData?['landing_lat'] != null) ...[
+            else if (_detailedData?['landing_altitude'] != null || _detailedData?['landing_description'] != null || _detailedData?['landing_lat'] != null) ...[
               const SizedBox(height: 6),
               // Wrap for the same reason as the launch line above, which was
               // fixed for this and left its sibling as a Row - and a Row
@@ -1099,7 +1200,7 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
               ),
               const SizedBox(height: 4),
               Text(
-                'This launch as $fullName records it.',
+                'This ${_isLanding ? 'landing' : 'launch'} as $fullName records it.',
                 style: TextStyle(fontSize: 12, color: Colors.grey[400]),
               ),
               const SizedBox(height: 16),

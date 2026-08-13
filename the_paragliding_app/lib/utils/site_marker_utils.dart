@@ -20,7 +20,15 @@ class SiteMarkerUtils {
   static const Color notFlyableSiteColor = Colors.red;   // Not flyable with current wind
   static const Color unknownFlyabilitySiteColor = Colors.blue; // No wind directions or wind data not available - same as new sites
 
-  // Launch/landing colors
+  // Landing sites in the catalogue.
+  //
+  // Slate rather than a colour from the flyability palette above: green,
+  // orange, red and blue all mean "can I fly here today", and a landing has no
+  // wind directions to answer that with. It is told apart by *shape* - a flag
+  // rather than a pin - so its colour is free to say nothing at all.
+  static const Color landingSiteColor = Color(0xFF455A64);
+
+  // Launch/landing colors (flight track endpoints, not catalogue rows)
   static const Color launchColor = Colors.green;
   static const Color landingColor = Colors.red;
   static const Color selectedPointColor = Colors.amber;
@@ -147,6 +155,24 @@ class SiteMarkerUtils {
     );
   }
   
+  /// A catalogue landing site, as drawn on the sites map.
+  ///
+  /// A flag, so it reads as somewhere to put down rather than another hill to
+  /// launch from. Landings are a third of the catalogue and sit a median 1.7km
+  /// from their launch, so at any useful zoom they are mixed in with launches
+  /// and have to be distinguishable at a glance.
+  static Widget buildLandingSiteMarkerIcon({
+    Color color = landingSiteColor,
+  }) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        const Icon(Icons.flag, color: Colors.white, size: siteMarkerSize),
+        Icon(Icons.flag, color: color, size: siteMarkerIconSize - 6),
+      ],
+    );
+  }
+
   /// Create a launch marker with consistent styling
   static Widget buildLaunchMarkerIcon({
     Color color = launchColor,
@@ -333,6 +359,8 @@ class SiteMarkerUtils {
               buildLegendItem(context, Icons.location_on, flownSiteColor, 'Flown Sites'),
               const SizedBox(height: 4),
               buildLegendItem(context, Icons.location_on, newSiteColor, 'New Sites'),
+              const SizedBox(height: 4),
+              buildLegendItem(context, Icons.flag, landingSiteColor, 'Landings'),
             ],
             // Add additional legend items if provided
             if (additionalLegendItems != null && additionalLegendItems.isNotEmpty) ...[
