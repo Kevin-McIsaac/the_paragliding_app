@@ -680,6 +680,16 @@ class PgeSitesDownloadService {
           // Why a guide says the launch is shut, verbatim. Absent from an
           // older catalogue, which reads as null rather than failing.
           'closed': optional('closed'),
+          // 'launch' or 'landing'. Absent from a catalogue published before the
+          // producer emitted it; left null rather than defaulted here, so the
+          // database keeps one answer for "this predates the column" and the
+          // reads apply it in one place.
+          'site_type': optional('site_type'),
+          // A launch you are winched or towed from.
+          'tow': int.tryParse(field('tow')) ?? 0,
+          // Which site this row belongs to, as `provider:parentId` tokens in
+          // the same form as `source`. A landing shares one with its launch.
+          'site_group': optional('site_group'),
         });
       } catch (e) {
         skipped++;

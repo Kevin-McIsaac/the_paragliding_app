@@ -117,6 +117,30 @@ class PgeSitesDatabaseService {
     });
   }
 
+  /// What a query is allowed to return.
+  ///
+  /// The catalogue holds landings as well as launches, and almost nothing that
+  /// asks it a question wants a landing: matching a logged flight to a hill,
+  /// ranking where to fly today, searching by name, listing favourites. So the
+  /// default is launches, everywhere, and a caller that wants landings says so.
+  ///
+  /// The direction matters. Defaulting the other way would mean every one of
+  /// those callers had to remember to exclude landings, and the cost of
+  /// forgetting is a flight permanently attached to the wrong site. This way
+  /// the cost of forgetting is a landing missing from a screen.
+  static const List<String> launchesOnly = ['launch'];
+  static const List<String> launchesAndLandings = ['launch', 'landing'];
+
+  /// SQL for [siteTypes], tolerating rows that predate the column.
+  ///
+  /// `site_type` is null on every row imported before the producer emitted it,
+  /// and on any catalogue published before it did. Those rows are all launches,
+  /// so a plain `site_type IN (...)` would hide the entire catalogue from an
+  /// app that had not refreshed yet.
+  static String _siteTypeClause(String alias, List<String> siteTypes) =>
+      "COALESCE(${alias}site_type, 'launch') IN "
+      "(${List.filled(siteTypes.length, '?').join(', ')})";
+
   /// Initialize PGE sites tables if they don't exist
   Future<void> initializeTables() async {
     final db = await DatabaseHelper.instance.database;
@@ -166,6 +190,23 @@ class PgeSitesDatabaseService {
       await _addColumnIfMissing(db, _pgeSitesTable, 'source', 'TEXT');
       await _addColumnIfMissing(db, _pgeSitesTable, 'closed', 'TEXT');
 
+      // 'launch' or 'landing'. Null on every row imported before the producer
+      // emitted the column, and those are all launches - so every read goes
+      // through COALESCE rather than trusting the column to be populated.
+      await _addColumnIfMissing(db, _pgeSitesTable, 'site_type', 'TEXT');
+      // A launch you are winched or towed from. A flag rather than a third
+      // site_type, so that every "is this a launch" test stays a comparison
+      // against one value and cannot silently omit tow sites.
+      await _addColumnIfMissing(db, _pgeSitesTable, 'tow', 'INTEGER DEFAULT 0');
+      // Which site a row belongs to, as `provider:parentId` tokens in the same
+      // `;`-separated form as `source` - so CatalogRef parses both. A landing
+      // is tied to its launch by sharing a token, never by distance: measured
+      // over DHV, the median launch-to-landing gap is 1.7km and only 9% are
+      // within the 250m the producer merges at.
+      //
+      // Named site_group because `group` is a SQL keyword.
+      await _addColumnIfMissing(db, _pgeSitesTable, 'site_group', 'TEXT');
+
       // The catalogue's real key: the contributing guide's own identifier, e.g.
       // 'pge:4632'. See [CatalogRef]. The integer `id` column is retained only
       // because it is this table's rowid; nothing reads it, and the CSV's `id`
@@ -187,6 +228,12 @@ class PgeSitesDatabaseService {
       await db.execute('''
         CREATE INDEX IF NOT EXISTS idx_pge_sites_spatial
         ON $_pgeSitesTable(latitude, longitude)
+      ''');
+
+      // Every read filters on type, and landings are a third of the rows.
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_pge_sites_type
+        ON $_pgeSitesTable(site_type)
       ''');
 
       // Removed country and capabilities indexes as those columns no longer exist
@@ -497,8 +544,8 @@ class PgeSitesDatabaseService {
             INSERT INTO $_pgeSitesTable
               (ref, provider, name, longitude, latitude, altitude, country,
                wind_n, wind_ne, wind_e, wind_se, wind_s, wind_sw, wind_w, wind_nw,
-               source, closed)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               source, closed, site_type, tow, site_group)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(ref) DO UPDATE SET
               provider = excluded.provider,
               name = excluded.name,
@@ -511,7 +558,10 @@ class PgeSitesDatabaseService {
               wind_s = excluded.wind_s, wind_sw = excluded.wind_sw,
               wind_w = excluded.wind_w, wind_nw = excluded.wind_nw,
               source = excluded.source,
-              closed = excluded.closed
+              closed = excluded.closed,
+              site_type = excluded.site_type,
+              tow = excluded.tow,
+              site_group = excluded.site_group
           ''', [
             ref,
             CatalogRef.providerOf(ref),
@@ -530,6 +580,9 @@ class PgeSitesDatabaseService {
             siteData['wind_nw'] ?? 0,
             siteData['source'],
             siteData['closed'],
+            siteData['site_type'],
+            siteData['tow'] ?? 0,
+            siteData['site_group'],
           ]);
         }
         await batch.commit(noResult: true);
@@ -633,6 +686,7 @@ class PgeSitesDatabaseService {
     required double south,
     required double east,
     required double west,
+    List<String> siteTypes = launchesOnly,
   }) async {
     PerformanceMonitor.startOperation('PgeSitesQuery_Bounds');
     final stopwatch = Stopwatch()..start();
@@ -651,7 +705,8 @@ class PgeSitesDatabaseService {
       whereConditions.add('longitude BETWEEN ? AND ?');
       whereArgs.addAll([west, east]);
 
-      // All sites are paragliding sites now (column removed)
+      whereConditions.add(_siteTypeClause('s.', siteTypes));
+      whereArgs.addAll(siteTypes);
 
       final whereClause = whereConditions.join(' AND ');
 
@@ -695,6 +750,7 @@ class PgeSitesDatabaseService {
     double? centerLatitude,
     double? centerLongitude,
     int limit = 20,
+    List<String> siteTypes = launchesOnly,
   }) async {
     PerformanceMonitor.startOperation('PgeSitesQuery_Search');
 
@@ -708,7 +764,8 @@ class PgeSitesDatabaseService {
       whereConditions.add('s.name LIKE ?');
       whereArgs.add('%$query%');
 
-      // All sites are paragliding sites now (column removed)
+      whereConditions.add(_siteTypeClause('s.', siteTypes));
+      whereArgs.addAll(siteTypes);
 
       final whereClause = whereConditions.join(' AND ');
 
@@ -759,10 +816,19 @@ class PgeSitesDatabaseService {
   }
 
   /// Find nearest site to coordinates
+  /// Find nearest site to coordinates.
+  ///
+  /// Launches only unless asked otherwise, and that default is load-bearing:
+  /// this is what attaches a logged flight to a hill. A landing sits a median
+  /// 1.7km from its launch, well inside the 2km this is called with, and the
+  /// caller compares the result against the pilot's own flown site - so a
+  /// landing returned here does not merely show the wrong name, it can capture
+  /// the flight and write itself into `sites.catalog_ref` permanently.
   Future<ParaglidingSite?> findNearestSite({
     required double latitude,
     required double longitude,
     double maxDistanceKm = 0.5,
+    List<String> siteTypes = launchesOnly,
   }) async {
     try {
       final tolerance = maxDistanceKm / 111.0; // Approximate degrees per km
@@ -772,6 +838,7 @@ class PgeSitesDatabaseService {
         south: latitude - tolerance,
         east: longitude + tolerance,
         west: longitude - tolerance,
+        siteTypes: siteTypes,
       );
 
       if (sites.isEmpty) return null;
@@ -806,9 +873,17 @@ class PgeSitesDatabaseService {
     try {
       final db = await DatabaseHelper.instance.database;
 
-      // Get sites count
-      final countResult = await db.rawQuery('SELECT COUNT(*) as count FROM $_pgeSitesTable');
-      final sitesCount = countResult.first['count'] as int;
+      // Get sites count, split by type: "19,400 sites" would otherwise mean
+      // something different from one release to the next, since a third of the
+      // rows became landings.
+      final countResult = await db.rawQuery('''
+        SELECT COALESCE(site_type, 'launch') AS type, COUNT(*) AS count
+        FROM $_pgeSitesTable GROUP BY COALESCE(site_type, 'launch')
+      ''');
+      final byType = {
+        for (final row in countResult) row['type'] as String: row['count'] as int
+      };
+      final sitesCount = byType.values.fold<int>(0, (sum, n) => sum + n);
 
       // Get database file size
       final dbPath = db.path;
@@ -826,6 +901,8 @@ class PgeSitesDatabaseService {
 
       return {
         'sites_count': sitesCount,
+        'launch_count': byType['launch'] ?? 0,
+        'landing_count': byType['landing'] ?? 0,
         'database_size_bytes': dbSize,
         'last_imported_at': metadata?['downloaded_at'],
         'import_status': metadata?['status'] ?? 'not_imported',
@@ -899,7 +976,9 @@ class PgeSitesDatabaseService {
       altitude: row['altitude'] as int?,  // Now stored in database
       description: '', // Not available from PGE API
       windDirections: windDirections,
-      siteType: 'launch', // PGE sites are primarily launch sites
+      // Null on rows imported before the producer emitted the column, and
+      // those are launches - the catalogue held nothing else.
+      siteType: (row['site_type'] as String?) ?? 'launch',
       rating: null,
       country: row['country_name'] as String? ?? row['country'] as String?,  // Use full name from JOIN or fallback to code
       source: row['source'] as String?,
@@ -1013,15 +1092,20 @@ class PgeSitesDatabaseService {
     return null;
   }
 
-  Future<List<ParaglidingSite>> getFavoriteSites() async {
+  Future<List<ParaglidingSite>> getFavoriteSites({
+    List<String> siteTypes = launchesOnly,
+  }) async {
     try {
       final db = await DatabaseHelper.instance.database;
+      // Favourites feed the multi-site flyability screen, which ranks where to
+      // fly - a landing has no wind directions, so it would either sit there as
+      // "unknown" or, worse, inherit its launch's and read as flyable.
       final results = await db.rawQuery('''
         SELECT s.*, COALESCE(cc.name, s.country) as country_name
         FROM $_pgeSitesTable s
         LEFT JOIN $_countryCodesTable cc ON UPPER(s.country) = cc.code
-        WHERE s.is_favorite = 1
-      ''');
+        WHERE s.is_favorite = 1 AND ${_siteTypeClause('s.', siteTypes)}
+      ''', siteTypes);
 
       final sites = results.map((row) => _mapRowToParaglidingSite(row)).toList();
 

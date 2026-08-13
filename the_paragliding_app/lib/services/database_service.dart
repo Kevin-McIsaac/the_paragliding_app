@@ -712,7 +712,7 @@ class DatabaseService {
         COUNT(f.id) as flight_count,
         pge.name as pge_name,
         pge.wind_n, pge.wind_ne, pge.wind_e, pge.wind_se,
-        pge.wind_s, pge.wind_sw, pge.wind_w, pge.wind_nw,
+        pge.wind_s, pge.wind_sw, pge.wind_w, pge.wind_nw, pge.site_type,
         pge.altitude as pge_altitude,
         pge.country as pge_country,
         pge.source as pge_source,
@@ -754,7 +754,9 @@ class DatabaseService {
         longitude: (row['longitude'] as num).toDouble(),
         altitude: (row['altitude'] as num?)?.toInt() ?? (row['pge_altitude'] as num?)?.toInt(),
         country: (row['country'] ?? row['pge_country']) as String?,
-        siteType: 'launch',  // Default since PGE DB doesn't have this
+        // Null for a flown site with no catalogue row, and for rows that
+        // predate the column - both are launches.
+        siteType: (row['site_type'] as String?) ?? 'launch',
         windDirections: windDirections,
         description: null,  // Not available in local PGE DB
         rating: null,  // Not available in local PGE DB
@@ -1025,6 +1027,10 @@ class DatabaseService {
     String? finalCatalogRef = catalogRef;
     if (finalCatalogRef == null) {
       try {
+        // Launches only, by the default on findNearestSite. This writes
+        // `sites.catalog_ref`, which is durable and never re-derived: a landing
+        // linked here would give that site the wrong wind rose and altitude for
+        // good, and the pilot has no way to see why.
         final pgeSite = await PgeSitesDatabaseService.instance.findNearestSite(
           latitude: latitude,
           longitude: longitude,
@@ -1506,7 +1512,7 @@ class DatabaseService {
           s.*,
           COUNT(f.id) as flight_count,
           pge.wind_n, pge.wind_ne, pge.wind_e, pge.wind_se,
-          pge.wind_s, pge.wind_sw, pge.wind_w, pge.wind_nw,
+          pge.wind_s, pge.wind_sw, pge.wind_w, pge.wind_nw, pge.site_type,
           pge.altitude as pge_altitude,
           pge.country as pge_country
         FROM sites s
@@ -1544,7 +1550,7 @@ class DatabaseService {
           longitude: (row['longitude'] as num).toDouble(),
           altitude: (row['altitude'] as num?)?.toInt() ?? (row['pge_altitude'] as num?)?.toInt(),
           country: (row['country'] ?? row['pge_country']) as String?,
-          siteType: 'launch',
+          siteType: (row['site_type'] as String?) ?? 'launch',
           windDirections: windDirections,
           description: null,
           rating: null,

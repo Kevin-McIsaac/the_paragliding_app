@@ -106,6 +106,46 @@ void main() {
     await insertCatalogSite(east);
   }
 
+  /// The catalogue holds landings as well as launches. This one sits 200m from
+  /// the west launch - far closer than a real landing, which runs a median
+  /// 1.7km downhill - so it would win on distance if anything let it compete.
+  Future<void> insertCatalogLanding() async {
+    final db = await DatabaseHelper.instance.database;
+    await db.insert('pge_sites', {
+      'ref': 'pge:9247-lz',
+      'name': 'Manilla - Mt Borah Landing',
+      'latitude': west.lat + 0.0018,
+      'longitude': west.lon,
+      'altitude': 380,
+      'country': 'au',
+      'site_type': 'landing',
+    });
+  }
+
+  group('landings', () {
+    test('a landing is never proposed as a launch', () async {
+      // The highest-blast-radius path in the app: apply() rewrites
+      // flights.launch_site_id, and a flown site's catalog_ref is durable and
+      // never re-derived. A landing accepted here is not a cosmetic error.
+      await insertAllBorahLaunches();
+      await insertCatalogLanding();
+      final siteId = await insertFlownSite(west);
+      await insertFlight(
+        siteId: siteId,
+        latitude: west.lat + 0.0016,
+        longitude: west.lon,
+      );
+
+      final proposals = await LaunchRematchService.instance.preview();
+
+      expect(
+        proposals.where((p) => p.toSite.name.contains('Landing')),
+        isEmpty,
+        reason: 'preview must not offer to move a flight onto a landing',
+      );
+    });
+  });
+
   group('preview', () {
     test('proposes moving a flight that launched from a different launch',
         () async {

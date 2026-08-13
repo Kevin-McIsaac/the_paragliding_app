@@ -156,4 +156,65 @@ void main() {
     expect(match, isNotNull);
     expect(match!.name, west.name);
   });
+
+  /// A landing 300m from the launch, which is closer than any real landing
+  /// gets: measured over DHV the median launch-to-landing gap is 1.7km, so
+  /// this is a deliberately hostile case, well inside the 2km the catalogue
+  /// tier searches.
+  Future<void> insertCatalogLanding(
+      ({int id, String name, double lat, double lon}) at) async {
+    final db = await DatabaseHelper.instance.database;
+    await db.insert('pge_sites', {
+      'id': at.id,
+      'ref': 'pge:${at.id}-lz',
+      'name': '${at.name} Landing',
+      'latitude': at.lat,
+      'longitude': at.lon,
+      'altitude': 300,
+      'country': 'au',
+      'site_type': 'landing',
+    });
+  }
+
+  group('landings never capture a launch', () {
+    test('the nearest row wins only among launches', () async {
+      await insertCatalogSite(west);
+      // 300m north of the west launch - nearer to the takeoff fix below than
+      // the launch itself.
+      await insertCatalogLanding((
+        id: 99001,
+        name: 'Manilla - Mt Borah',
+        lat: west.lat + 0.0027,
+        lon: west.lon,
+      ));
+
+      final match = await SiteMatchingService.instance.findNearestSite(
+        west.lat + 0.0025,
+        west.lon,
+        maxDistance: 2000,
+        preferredType: 'launch',
+      );
+
+      expect(match, isNotNull);
+      expect(match!.name, west.name,
+          reason: 'a landing must never be offered as a launch, however close');
+    });
+
+    test('a catalogue with no site_type column still matches', () async {
+      // Rows imported before the producer emitted site_type read as null, and
+      // they are all launches. Filtering on the column alone would hide the
+      // entire catalogue from an app that had not refreshed yet.
+      await insertCatalogSite(west);
+
+      final match = await SiteMatchingService.instance.findNearestSite(
+        west.lat,
+        west.lon,
+        maxDistance: 500,
+        preferredType: 'launch',
+      );
+
+      expect(match?.name, west.name);
+    });
+  });
 }
+
