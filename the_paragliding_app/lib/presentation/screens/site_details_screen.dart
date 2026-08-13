@@ -1039,15 +1039,23 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
   }
 
   List<Widget> _buildOverviewContent(String name, double latitude, double longitude, int? altitude, String? country, String? region, int? rating, String? siteType, List<String> windDirections, int? flightCount, String? distanceText, String? thermalFlag, String? soaringFlag, String? xcFlag) {
-    // Both altitudes have to come from ParaglidingEarth. The catalogue's own
-    // figure is the fallback for the launch line below, but subtracting a PGE
-    // landing from it would mix two guides' numbers - and until the producer
-    // stops publishing Site Guide's above-ground heights, sometimes two
-    // different datums. A drop is only worth showing when it is one guide's.
-    final drop = heightAboveLanding(
-      _detailedData?['takeoff_altitude'],
-      _detailedData?['landing_altitude'],
-    );
+    // The two figures this screen actually shows, so the drop between them
+    // cannot contradict either.
+    //
+    // Both used to come from ParaglidingEarth, because the catalogue had no
+    // landing to subtract and mixing a PGE landing into a national guide's
+    // launch would have meant two guides' numbers - sometimes two datums. It
+    // now carries landings, so both come from one dataset that the producer
+    // reconciled, which is a better answer than one guide's on its own.
+    //
+    // The remaining datum risk is upstream's and stays upstream's: Site Guide
+    // publishes some above-ground heights as though they were AMSL, which is
+    // an open issue in the pipeline and not something to paper over here.
+    final launchAltitude = altitude ?? _detailedData?['takeoff_altitude'];
+    final landingAltitude = _landings.isNotEmpty
+        ? _landings.first.altitude
+        : _detailedData?['landing_altitude'];
+    final drop = heightAboveLanding(launchAltitude, landingAltitude);
 
     return [
             // Site Type + Altitude + Wind directions + map link.
@@ -1085,12 +1093,18 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
                 // valley where PGE's is 436m AMSL. The unit is written out
                 // rather than left to the tooltip, which a phone cannot hover.
                 //
-                // Prefer takeoff_altitude from the API, fall back to the
-                // catalogue.
-                if (_detailedData?['takeoff_altitude'] != null || altitude != null)
+                // The catalogue first, the live lookup only as a fallback.
+                //
+                // This was the other way round, which quietly overruled the
+                // producer on every merged launch: it decides which guide wins
+                // a field, and for Abendberg that is DHV's 1823m, while PGE's
+                // record says 1830m and was what showed. The app is not
+                // supposed to second-guess that - and the fallback still
+                // matters, for a flown site with no catalogue row at all.
+                if (launchAltitude != null)
                   _iconFact(
                     Icons.terrain,
-                    '${_detailedData?['takeoff_altitude'] ?? altitude} m AMSL',
+                    '$launchAltitude m AMSL',
                     tooltip: 'Altitude above mean sea level',
                   ),
                 // How far the launch stands above its landing - the number a
