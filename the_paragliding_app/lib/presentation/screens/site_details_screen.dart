@@ -377,10 +377,29 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
                         fontWeight: FontWeight.w500,
                       ),
                 ),
-                Text(
-                  landing.name,
-                  style: Theme.of(context).textTheme.bodySmall,
+                // Tappable, because the rules live on the landing's own page
+                // and a name alone does not say there is more to read.
+                InkWell(
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => SiteDetailsScreen(
+                        site: null,
+                        paraglidingSite: landing,
+                        maxWindSpeed: widget.maxWindSpeed,
+                        cautionWindSpeed: widget.cautionWindSpeed,
+                      ),
+                    ),
+                  ),
+                  child: Text(
+                    landing.name,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.blue,
+                          decoration: TextDecoration.underline,
+                        ),
+                  ),
                 ),
+                if ((landing.description ?? '').isNotEmpty)
+                  const Icon(Icons.notes, size: 14, color: Colors.blue),
                 if (landing.altitude != null)
                   _iconFact(
                     Icons.terrain,
@@ -1094,6 +1113,18 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
                 ),
               ],
             ),
+
+            // What the guide says about this landing. Shown in the header
+            // rather than behind a tab: it is the reason the page exists, and
+            // "only land on the leased paddock" is not something to make a
+            // pilot go looking for.
+            if (_isLanding && (_effectiveSite?.description ?? '').isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                _effectiveSite!.description ?? '',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
 
             // Landing information, from the catalogue.
             //
