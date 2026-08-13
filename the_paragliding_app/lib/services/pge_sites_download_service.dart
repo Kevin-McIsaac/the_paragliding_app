@@ -690,6 +690,8 @@ class PgeSitesDownloadService {
           // Which site this row belongs to, as `provider:parentId` tokens in
           // the same form as `source`. A landing shares one with its launch.
           'site_group': optional('site_group'),
+          // What a guide says about a landing, verbatim.
+          'notes': optional('notes'),
         });
       } catch (e) {
         skipped++;

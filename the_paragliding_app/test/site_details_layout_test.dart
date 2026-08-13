@@ -158,4 +158,36 @@ void main() {
     expect(find.text('847 m AMSL'), findsOneWidget);
     expect(find.byTooltip('Altitude above mean sea level'), findsOneWidget);
   });
+
+  group('a landing', () {
+    final landing = ParaglidingSite(
+      name: 'Rofan Feldererfeld Landeplatz',
+      latitude: 47.423078,
+      longitude: 11.74615,
+      siteType: 'landing',
+      altitude: 560,
+      source: 'dhv:1234-rofan-feldererfeld-landeplatz',
+      description:
+          'LZ at the lake is reserved for SIV seminars! Use only official LZ.',
+    );
+
+    testWidgets('shows what the guide says about it', (tester) async {
+      // The reason the page exists. A landing point answers "where"; this
+      // answers "and what am I allowed to do there", which a visiting pilot
+      // cannot infer and which keeps them out of trouble with a landowner.
+      await pumpPage(tester, which: landing);
+
+      expect(find.textContaining('reserved for SIV seminars'), findsOneWidget);
+    });
+
+    testWidgets('offers no forecast, because it has no wind', (tester) async {
+      // Shown anyway, a forecast built from no wind directions does not read
+      // as "this question does not apply" - it reads as "we checked, and it
+      // is unflyable".
+      await pumpPage(tester, which: landing);
+
+      expect(find.text('Forecast'), findsNothing);
+    });
+  });
 }
+

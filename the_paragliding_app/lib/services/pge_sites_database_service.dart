@@ -206,6 +206,10 @@ class PgeSitesDatabaseService {
       //
       // Named site_group because `group` is a SQL keyword.
       await _addColumnIfMissing(db, _pgeSitesTable, 'site_group', 'TEXT');
+      // What a guide says about a landing, verbatim - the rules a visiting
+      // pilot cannot infer. Populated for landings only; a launch's prose is
+      // long and is still looked up live when the site is opened.
+      await _addColumnIfMissing(db, _pgeSitesTable, 'notes', 'TEXT');
 
       // The catalogue's real key: the contributing guide's own identifier, e.g.
       // 'pge:4632'. See [CatalogRef]. The integer `id` column is retained only
@@ -544,8 +548,8 @@ class PgeSitesDatabaseService {
             INSERT INTO $_pgeSitesTable
               (ref, provider, name, longitude, latitude, altitude, country,
                wind_n, wind_ne, wind_e, wind_se, wind_s, wind_sw, wind_w, wind_nw,
-               source, closed, site_type, tow, site_group)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               source, closed, site_type, tow, site_group, notes)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(ref) DO UPDATE SET
               provider = excluded.provider,
               name = excluded.name,
@@ -561,7 +565,8 @@ class PgeSitesDatabaseService {
               closed = excluded.closed,
               site_type = excluded.site_type,
               tow = excluded.tow,
-              site_group = excluded.site_group
+              site_group = excluded.site_group,
+              notes = excluded.notes
           ''', [
             ref,
             CatalogRef.providerOf(ref),
@@ -583,6 +588,7 @@ class PgeSitesDatabaseService {
             siteData['site_type'],
             siteData['tow'] ?? 0,
             siteData['site_group'],
+            siteData['notes'],
           ]);
         }
         await batch.commit(noResult: true);
@@ -1017,7 +1023,9 @@ class PgeSitesDatabaseService {
       latitude: (row['latitude'] as num?)?.toDouble() ?? 0.0,
       longitude: (row['longitude'] as num?)?.toDouble() ?? 0.0,
       altitude: row['altitude'] as int?,  // Now stored in database
-      description: '', // Not available from PGE API
+      // What the guide says about this place. Populated for landings; a
+      // launch's prose still comes from the live lookup when one is opened.
+      description: row['notes'] as String? ?? '',
       windDirections: windDirections,
       // Null on rows imported before the producer emitted the column, and
       // those are launches - the catalogue held nothing else.
