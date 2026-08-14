@@ -1251,8 +1251,16 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
                     ),
               ),
               const SizedBox(height: 4),
+              // Not "as $fullName records it", which the app cannot back. The
+              // catalogue keeps one name, one altitude and one wind set per
+              // site, chosen by the producer among the guides that describe it,
+              // and does not publish which guide won - so the rows below are the
+              // catalogue's figures, not demonstrably this guide's. They happen
+              // to be the non-PGE guide's on all 998 merged rows today, and
+              // nothing here would notice that changing.
               Text(
-                'This ${_isLanding ? 'landing' : 'launch'} as $fullName records it.',
+                'One of the guides behind this '
+                '${_isLanding ? 'landing' : 'launch'}.',
                 style: TextStyle(fontSize: 12, color: Colors.grey[400]),
               ),
               const SizedBox(height: 16),
@@ -1265,7 +1273,14 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
                 'Position',
                 '${site.latitude.toStringAsFixed(5)}, ${site.longitude.toStringAsFixed(5)}',
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
+              Text(
+                'The catalogue keeps one set of details per site, chosen from '
+                'the guides that describe it, so these need not be the figures '
+                '${_sourceLabel(source.provider)} publishes.',
+                style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+              ),
+              const SizedBox(height: 12),
               Text(
                 'Conditions, hazards, access and landowner notes are published '
                 'by $fullName and are not carried in the app.',
