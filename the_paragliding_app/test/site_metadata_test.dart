@@ -88,6 +88,16 @@ void main() {
     expect(imported, isTrue);
   }
 
+  /// The baseline, read at declaration time.
+  ///
+  /// Synchronous and outside any setUp so the tests below can be *declared*
+  /// from it - which is how a launch whose primary guide has no provenance line
+  /// gets no test at all, rather than a test that returns early and reports
+  /// itself green.
+  final baseline = (jsonDecode(
+    File('test/fixtures/site_metadata_baseline.json').readAsStringSync(),
+  ) as Map<String, dynamic>)['launches'] as Map<String, dynamic>;
+
   setUpAll(TestHelpers.initializeDatabaseForTesting);
 
   // ===========================================================================
@@ -298,13 +308,7 @@ void main() {
   // The baseline, on rows the producer actually published.
   // ===========================================================================
   group('the baseline', () {
-    late Map<String, dynamic> baseline;
-
     setUpAll(() async {
-      baseline = (jsonDecode(
-        File('test/fixtures/site_metadata_baseline.json').readAsStringSync(),
-      ) as Map<String, dynamic>)['launches'] as Map<String, dynamic>;
-
       await importCatalogue(
         File('test/fixtures/site_metadata_catalogue.csv').readAsStringSync(),
       );
@@ -342,6 +346,11 @@ void main() {
         expect(site.altitude, expected['altitude_m']);
         expect(site.windDirections, expected['wind']);
         expect(site.catalogRef, ref);
+        // Which guide the name and wind just checked actually came from. Every
+        // merged launch here is keyed under one guide and named by another -
+        // Stauf is `pge:10043` with DHV's name - so a row that lost this would
+        // still look entirely plausible.
+        expect(site.primarySource, expected['primary']);
         expect(
           [for (final s in site.sources) '${s.provider}:${s.id}'],
           [
@@ -369,17 +378,12 @@ void main() {
   // What the pilot actually reads.
   // ===========================================================================
   group('the site page', () {
-    late Map<String, dynamic> baseline;
     // Resolved before any widget test runs. A `testWidgets` body executes in
     // fake async, so awaiting a real database read inside one deadlocks the
     // guarded pump machinery rather than returning a site.
     final sites = <String, ParaglidingSite>{};
 
     setUpAll(() async {
-      baseline = (jsonDecode(
-        File('test/fixtures/site_metadata_baseline.json').readAsStringSync(),
-      ) as Map<String, dynamic>)['launches'] as Map<String, dynamic>;
-
       await importCatalogue(
         File('test/fixtures/site_metadata_catalogue.csv').readAsStringSync(),
       );
@@ -448,6 +452,41 @@ void main() {
           findsWidgets,
         );
       });
+
+      // Declared only where there is something to assert. The ParaglidingEarth
+      // tab is the live lookup rather than a guide summary and carries no
+      // provenance line, so a PGE-primary launch gets no test here instead of
+      // one that returns early and reports itself green.
+      final primary = (baseline[ref] as Map<String, dynamic>)['primary'];
+      if (primary != null && primary != 'pge') {
+        final label = switch (primary as String) {
+          'ansg' => 'ANSG',
+          'dhv' => 'DHV',
+          final other => other,
+        };
+        final fullName = switch (primary) {
+          'ansg' => 'Australian National Site Guide',
+          'dhv' => 'DHV Geländedatenbank',
+          final other => other,
+        };
+
+        testWidgets('$ref attributes its figures to $label', (tester) async {
+          // The real thing, on published rows: the synthetic tests below cover
+          // the three wordings, this checks the app picks the right one from a
+          // catalogue nobody wrote for the test. Every merged launch in the
+          // baseline is keyed under PGE and named by its national guide.
+          await pumpSite(tester, sites[ref]!);
+          await tester.tap(find.widgetWithText(Tab, label));
+          for (var i = 0; i < 6; i++) {
+            await tester.pump(const Duration(milliseconds: 200));
+          }
+
+          expect(
+            find.textContaining('as $fullName records this'),
+            findsOneWidget,
+          );
+        });
+      }
 
       testWidgets('$ref names every guide behind it', (tester) async {
         final expected = baseline[ref] as Map<String, dynamic>;
@@ -606,6 +645,12 @@ void main() {
         }
         if (wind.join(',') != (expected['wind'] as List).join(',')) {
           moved.add('$ref: wind ${expected['wind']} -> $wind');
+        }
+        // A launch changing hands between guides is exactly the kind of quiet
+        // move worth reviewing: the name and wind on the page change with it.
+        if (row['primary'] != expected['primary']) {
+          moved.add(
+              '$ref: primary ${expected['primary']} -> ${row['primary']}');
         }
       });
 

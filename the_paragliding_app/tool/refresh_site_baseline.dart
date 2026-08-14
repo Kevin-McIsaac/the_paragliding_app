@@ -175,6 +175,12 @@ void main(List<String> args) async {
       'name': _field(launch, 'name'),
       'altitude_m': launchAltitude,
       'wind': _winds(launch),
+      // Which guide supplied the name, wind and position above - not the
+      // altitude, which gap-fills from a losing guide when the winner had none.
+      // Null only for a catalogue published before the producer emitted it.
+      'primary': _field(launch, 'primary').isEmpty
+          ? null
+          : _field(launch, 'primary'),
       // Nearest first, which is the order the launch's landings are listed in
       // and therefore which one the height is measured against.
       'landings': [

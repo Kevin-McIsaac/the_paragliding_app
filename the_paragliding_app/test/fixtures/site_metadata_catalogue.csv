@@ -1,23 +1,23 @@
-id,ref,name,longitude,latitude,altitude,country,wind_n,wind_ne,wind_e,wind_se,wind_s,wind_sw,wind_w,wind_nw,source,closed,site_type,tow,site_group,notes
-4,pge:10004,Cerro Mariposa (Ma. Luisa),-72.592900,-38.716500,282,cl,0,0,0,0,0,2,2,2,pge:10004,,launch,0,pge:10004,
-14340,pge:10004-lz,Cerro Mariposa (Ma. Luisa) Landing,-72.600200,-38.717700,118,cl,0,0,0,0,0,0,0,0,pge:10004-lz,,landing,0,pge:10004,top landing allowed
-11709,dhv:1009-neuwied-rodenbach-startplatz,Neuwied-Rodenbach Startplatz,7.438388,50.460646,170,de,0,0,0,1,1,1,0,0,dhv:1009-neuwied-rodenbach-startplatz,,launch,0,dhv:1009,
-13028,dhv:1009-neuwied-rodenbach-landeplatz,Neuwied-Rodenbach Landeplatz,7.440667,50.460778,130,de,0,0,0,0,0,0,0,0,dhv:1009-neuwied-rodenbach-landeplatz,,landing,0,dhv:1009,
-11532,ansg:138-251,Mt Blackheath - North ramp,150.246030,-33.641930,1040,au,1,1,0,0,0,0,0,0,ansg:138-251,,launch,0,ansg:138,
+id,ref,name,longitude,latitude,altitude,country,wind_n,wind_ne,wind_e,wind_se,wind_s,wind_sw,wind_w,wind_nw,source,closed,site_type,tow,site_group,notes,primary
+4,pge:10004,Cerro Mariposa (Ma. Luisa),-72.592900,-38.716500,282,cl,0,0,0,0,0,2,2,2,pge:10004,,launch,0,pge:10004,,pge
+14340,pge:10004-lz,Cerro Mariposa (Ma. Luisa) Landing,-72.600200,-38.717700,118,cl,0,0,0,0,0,0,0,0,pge:10004-lz,,landing,0,pge:10004,top landing allowed,pge
+11709,dhv:1009-neuwied-rodenbach-startplatz,Neuwied-Rodenbach Startplatz,7.438388,50.460646,170,de,0,0,0,1,1,1,0,0,dhv:1009-neuwied-rodenbach-startplatz,,launch,0,dhv:1009,,dhv
+13028,dhv:1009-neuwied-rodenbach-landeplatz,Neuwied-Rodenbach Landeplatz,7.440667,50.460778,130,de,0,0,0,0,0,0,0,0,dhv:1009-neuwied-rodenbach-landeplatz,,landing,0,dhv:1009,,dhv
+11532,ansg:138-251,Mt Blackheath - North ramp,150.246030,-33.641930,1040,au,1,1,0,0,0,0,0,0,ansg:138-251,,launch,0,ansg:138,,ansg
 12955,pge:11487-lz,Mount Blackheath Primary LZ,150.253996,-33.632477,700,au,0,0,0,0,0,0,0,0,ansg:lz-248;pge:11487-lz,,landing,0,ansg:138;pge:11487,"Primary: Kanimbla Valley. S 33.63226, E 150.25574. This is a large square paddock. Private property. Horses and cattle sometimes present.
 
 Alternate: Emergency only to North of Potters Cottage. Land away from horses and riders.
 
 Top: Yes, on astro turf only for PG. No for HG.
 
-X-C: Good potential to West and North"
-36,pge:10043,Stauf Startplatz Südost,8.027519,49.549490,260,de,0,0,1,0,1,1,0,0,dhv:146-stauf-startplatz-suedost;pge:10043,,launch,0,dhv:146;pge:10043,
-13330,dhv:146-stauf-landeplatz-suedost,Stauf Landeplatz Südost,8.030180,49.548178,190,de,0,0,0,0,0,0,0,0,dhv:146-stauf-landeplatz-suedost,,landing,0,dhv:146,
-13331,dhv:146-stauf-landeplatz-west,Stauf Landeplatz West,8.022250,49.549361,190,de,0,0,0,0,0,0,0,0,dhv:146-stauf-landeplatz-west,,landing,0,dhv:146,
-14371,pge:10043-lz,Stauf Landing,8.032970,49.549700,242,de,0,0,0,0,0,0,0,0,pge:10043-lz,,landing,0,pge:10043,Big Landing zone. Avoid the sheeps!
-143,pge:10170,Virgen Startplatz 1,12.426444,47.024700,2098,at,0,0,1,1,1,0,0,0,dhv:1511-virgen-startplatz-1;pge:10170,,launch,0,dhv:1511;pge:10170,
-13381,pge:10170-lz,Virgen Landeplatz,12.431489,46.998758,1110,at,0,0,0,0,0,0,0,0,dhv:1511-virgen-landeplatz;pge:10170-lz,,landing,0,dhv:1511;pge:10170,beside the river isel
-1242,pge:11480,Middle brother - SE,152.678611,-31.701944,548,au,0,0,0,1,0,1,0,0,ansg:122-229;pge:11480,,launch,0,ansg:122;pge:11480,
+X-C: Good potential to West and North",ansg
+36,pge:10043,Stauf Startplatz Südost,8.027519,49.549490,260,de,0,0,1,0,1,1,0,0,dhv:146-stauf-startplatz-suedost;pge:10043,,launch,0,dhv:146;pge:10043,,dhv
+13330,dhv:146-stauf-landeplatz-suedost,Stauf Landeplatz Südost,8.030180,49.548178,190,de,0,0,0,0,0,0,0,0,dhv:146-stauf-landeplatz-suedost,,landing,0,dhv:146,,dhv
+13331,dhv:146-stauf-landeplatz-west,Stauf Landeplatz West,8.022250,49.549361,190,de,0,0,0,0,0,0,0,0,dhv:146-stauf-landeplatz-west,,landing,0,dhv:146,,dhv
+14371,pge:10043-lz,Stauf Landing,8.032970,49.549700,242,de,0,0,0,0,0,0,0,0,pge:10043-lz,,landing,0,pge:10043,Big Landing zone. Avoid the sheeps!,pge
+143,pge:10170,Virgen Startplatz 1,12.426444,47.024700,2098,at,0,0,1,1,1,0,0,0,dhv:1511-virgen-startplatz-1;pge:10170,,launch,0,dhv:1511;pge:10170,,dhv
+13381,pge:10170-lz,Virgen Landeplatz,12.431489,46.998758,1110,at,0,0,0,0,0,0,0,0,dhv:1511-virgen-landeplatz;pge:10170-lz,,landing,0,dhv:1511;pge:10170,beside the river isel,dhv
+1242,pge:11480,Middle brother - SE,152.678611,-31.701944,548,au,0,0,0,1,0,1,0,0,ansg:122-229;pge:11480,,launch,0,ansg:122;pge:11480,,ansg
 15274,pge:11480-lz,S.E Middle Brother Landing,152.697000,-31.720400,7,au,0,0,0,0,0,0,0,0,pge:11480-lz,,landing,0,pge:11480,"Landing paddock to the east of launch and close to the road. (2 paddocks North of the Concrete works.
 
-DO NOT land in any of the feilds to the South and West of Launch."
+DO NOT land in any of the feilds to the South and West of Launch.",pge

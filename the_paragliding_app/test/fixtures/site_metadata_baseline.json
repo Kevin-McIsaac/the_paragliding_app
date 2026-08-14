@@ -16,6 +16,7 @@
         "W",
         "NW"
       ],
+      "primary": "pge",
       "landings": [
         {
           "ref": "pge:10004-lz",
@@ -41,6 +42,7 @@
         "S",
         "SW"
       ],
+      "primary": "dhv",
       "landings": [
         {
           "ref": "dhv:1009-neuwied-rodenbach-landeplatz",
@@ -65,6 +67,7 @@
         "N",
         "NE"
       ],
+      "primary": "ansg",
       "landings": [
         {
           "ref": "pge:11487-lz",
@@ -94,6 +97,7 @@
         "S",
         "SW"
       ],
+      "primary": "dhv",
       "landings": [
         {
           "ref": "dhv:146-stauf-landeplatz-suedost",
@@ -135,6 +139,7 @@
         "SE",
         "S"
       ],
+      "primary": "dhv",
       "landings": [
         {
           "ref": "pge:10170-lz",
@@ -163,6 +168,7 @@
         "SE",
         "SW"
       ],
+      "primary": "ansg",
       "landings": [
         {
           "ref": "pge:11480-lz",
