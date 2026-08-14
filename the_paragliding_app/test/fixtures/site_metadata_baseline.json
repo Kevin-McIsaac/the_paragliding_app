@@ -1,0 +1,183 @@
+{
+  "generated_from": "https://raw.githubusercontent.com/Kevin-McIsaac/paragliding_site_federation/main/app/sites.csv",
+  "launches": {
+    "pge:10004": {
+      "why": "ParaglidingEarth alone, with its own landing",
+      "sources": [
+        {
+          "provider": "pge",
+          "id": "10004"
+        }
+      ],
+      "name": "Cerro Mariposa (Ma. Luisa)",
+      "altitude_m": 282,
+      "wind": [
+        "SW",
+        "W",
+        "NW"
+      ],
+      "primary": "pge",
+      "landings": [
+        {
+          "ref": "pge:10004-lz",
+          "name": "Cerro Mariposa (Ma. Luisa) Landing",
+          "altitude_m": 118,
+          "distance_m": 647
+        }
+      ],
+      "height_above_landing_m": 164
+    },
+    "dhv:1009-neuwied-rodenbach-startplatz": {
+      "why": "DHV alone, launch and landing",
+      "sources": [
+        {
+          "provider": "dhv",
+          "id": "1009-neuwied-rodenbach-startplatz"
+        }
+      ],
+      "name": "Neuwied-Rodenbach Startplatz",
+      "altitude_m": 170,
+      "wind": [
+        "SE",
+        "S",
+        "SW"
+      ],
+      "primary": "dhv",
+      "landings": [
+        {
+          "ref": "dhv:1009-neuwied-rodenbach-landeplatz",
+          "name": "Neuwied-Rodenbach Landeplatz",
+          "altitude_m": 130,
+          "distance_m": 162
+        }
+      ],
+      "height_above_landing_m": 40
+    },
+    "ansg:138-251": {
+      "why": "Site Guide alone, landing shared with ParaglidingEarth",
+      "sources": [
+        {
+          "provider": "ansg",
+          "id": "138-251"
+        }
+      ],
+      "name": "Mt Blackheath - North ramp",
+      "altitude_m": 1040,
+      "wind": [
+        "N",
+        "NE"
+      ],
+      "primary": "ansg",
+      "landings": [
+        {
+          "ref": "pge:11487-lz",
+          "name": "Mount Blackheath Primary LZ",
+          "altitude_m": 700,
+          "distance_m": 1284
+        }
+      ],
+      "height_above_landing_m": 340
+    },
+    "pge:10043": {
+      "why": "DHV and PGE merged, three landings, non-ASCII name",
+      "sources": [
+        {
+          "provider": "dhv",
+          "id": "146-stauf-startplatz-suedost"
+        },
+        {
+          "provider": "pge",
+          "id": "10043"
+        }
+      ],
+      "name": "Stauf Startplatz Südost",
+      "altitude_m": 260,
+      "wind": [
+        "E",
+        "S",
+        "SW"
+      ],
+      "primary": "dhv",
+      "landings": [
+        {
+          "ref": "dhv:146-stauf-landeplatz-suedost",
+          "name": "Stauf Landeplatz Südost",
+          "altitude_m": 190,
+          "distance_m": 241
+        },
+        {
+          "ref": "dhv:146-stauf-landeplatz-west",
+          "name": "Stauf Landeplatz West",
+          "altitude_m": 190,
+          "distance_m": 380
+        },
+        {
+          "ref": "pge:10043-lz",
+          "name": "Stauf Landing",
+          "altitude_m": 242,
+          "distance_m": 394
+        }
+      ],
+      "height_above_landing_m": 70
+    },
+    "pge:10170": {
+      "why": "DHV and PGE merged, landing merged as well",
+      "sources": [
+        {
+          "provider": "dhv",
+          "id": "1511-virgen-startplatz-1"
+        },
+        {
+          "provider": "pge",
+          "id": "10170"
+        }
+      ],
+      "name": "Virgen Startplatz 1",
+      "altitude_m": 2098,
+      "wind": [
+        "E",
+        "SE",
+        "S"
+      ],
+      "primary": "dhv",
+      "landings": [
+        {
+          "ref": "pge:10170-lz",
+          "name": "Virgen Landeplatz",
+          "altitude_m": 1110,
+          "distance_m": 2910
+        }
+      ],
+      "height_above_landing_m": 988
+    },
+    "pge:11480": {
+      "why": "Site Guide and PGE merged",
+      "sources": [
+        {
+          "provider": "ansg",
+          "id": "122-229"
+        },
+        {
+          "provider": "pge",
+          "id": "11480"
+        }
+      ],
+      "name": "Middle brother - SE",
+      "altitude_m": 548,
+      "wind": [
+        "SE",
+        "SW"
+      ],
+      "primary": "ansg",
+      "landings": [
+        {
+          "ref": "pge:11480-lz",
+          "name": "S.E Middle Brother Landing",
+          "altitude_m": 7,
+          "distance_m": 2690
+        }
+      ],
+      "height_above_landing_m": 541
+    }
+  }
+}

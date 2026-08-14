@@ -210,6 +210,22 @@ class PgeSitesDatabaseService {
       // pilot cannot infer. Populated for landings only; a launch's prose is
       // long and is still looked up live when the site is opened.
       await _addColumnIfMissing(db, _pgeSitesTable, 'notes', 'TEXT');
+      // Which guide's record supplied this row's name, wind and position.
+      //
+      // `source` says which guides describe a launch; this says which one the
+      // producer picked. Without it the site page could name the guides behind
+      // a launch but not say whose figures it was showing - it claimed "as DHV
+      // records it" for values that need not be DHV's.
+      //
+      // Name, wind and position only. The producer gap-fills altitude and notes
+      // from a losing guide when the winner published none, so this is not a
+      // statement about the whole row.
+      //
+      // Named primary_source because `primary` is a SQL keyword, for the same
+      // reason site_group is not called `group`. Null on rows imported before
+      // the producer emitted it, which the site page reads as "unknown" rather
+      // than guessing.
+      await _addColumnIfMissing(db, _pgeSitesTable, 'primary_source', 'TEXT');
 
       // The catalogue's real key: the contributing guide's own identifier, e.g.
       // 'pge:4632'. See [CatalogRef]. The integer `id` column is retained only
@@ -548,8 +564,8 @@ class PgeSitesDatabaseService {
             INSERT INTO $_pgeSitesTable
               (ref, provider, name, longitude, latitude, altitude, country,
                wind_n, wind_ne, wind_e, wind_se, wind_s, wind_sw, wind_w, wind_nw,
-               source, closed, site_type, tow, site_group, notes)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               source, closed, site_type, tow, site_group, notes, primary_source)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(ref) DO UPDATE SET
               provider = excluded.provider,
               name = excluded.name,
@@ -566,7 +582,8 @@ class PgeSitesDatabaseService {
               site_type = excluded.site_type,
               tow = excluded.tow,
               site_group = excluded.site_group,
-              notes = excluded.notes
+              notes = excluded.notes,
+              primary_source = excluded.primary_source
           ''', [
             ref,
             CatalogRef.providerOf(ref),
@@ -589,6 +606,7 @@ class PgeSitesDatabaseService {
             siteData['tow'] ?? 0,
             siteData['site_group'],
             siteData['notes'],
+            siteData['primary'],
           ]);
         }
         await batch.commit(noResult: true);
@@ -1034,6 +1052,7 @@ class PgeSitesDatabaseService {
       country: row['country_name'] as String? ?? row['country'] as String?,  // Use full name from JOIN or fallback to code
       source: row['source'] as String?,
       siteGroup: row['site_group'] as String?,
+      primarySource: row['primary_source'] as String?,
       closed: row['closed'] as String?,
       region: null,
       popularity: null,

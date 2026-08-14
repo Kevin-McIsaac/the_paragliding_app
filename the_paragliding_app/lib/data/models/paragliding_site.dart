@@ -36,6 +36,21 @@ class ParaglidingSite {
   /// Why a guide says this launch is shut, verbatim. Null when open.
   final String? closed;
 
+  /// Which guide supplied this row's name, wind and position, e.g. `dhv`.
+  ///
+  /// [source] says which guides describe the launch; this says which one the
+  /// producer picked. The two are different questions with different answers -
+  /// a launch keyed `pge:10043` can be named by DHV - and without this the site
+  /// page could list the contributing guides but not say whose figures it was
+  /// showing.
+  ///
+  /// Name, wind and position only. Altitude and notes gap-fill from a losing
+  /// guide when the winner published none, so this is not a claim about every
+  /// field on the row.
+  ///
+  /// Null on a catalogue published before the producer emitted it.
+  final String? primarySource;
+
   const ParaglidingSite({
     this.id,
     required this.name,
@@ -55,6 +70,7 @@ class ParaglidingSite {
     this.source,
     this.siteGroup,
     this.closed,
+    this.primarySource,
   });
 
   /// The guides behind this launch, in the order they appear, as

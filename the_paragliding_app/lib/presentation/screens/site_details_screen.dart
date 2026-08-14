@@ -1251,8 +1251,13 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
                     ),
               ),
               const SizedBox(height: 4),
+              // Whose figures these are, said only as far as the catalogue can
+              // back it. This used to read "as $fullName records it" on every
+              // tab, which was unbackable: the catalogue keeps one set of
+              // details per site and, until the producer emitted `primary`, did
+              // not publish which guide it took them from.
               Text(
-                'This ${_isLanding ? 'landing' : 'launch'} as $fullName records it.',
+                _provenanceLine(source.provider),
                 style: TextStyle(fontSize: 12, color: Colors.grey[400]),
               ),
               const SizedBox(height: 16),
@@ -1265,7 +1270,7 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
                 'Position',
                 '${site.latitude.toStringAsFixed(5)}, ${site.longitude.toStringAsFixed(5)}',
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
               Text(
                 'Conditions, hazards, access and landowner notes are published '
                 'by $fullName and are not carried in the app.',
@@ -1282,6 +1287,40 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
           ),
       ),
     );
+  }
+
+  /// What this tab can honestly say about the figures it is showing.
+  ///
+  /// Three cases, because the catalogue supports exactly three answers:
+  ///
+  ///  * this guide won - the name, wind and position below are its own;
+  ///  * another guide won - they are that guide's, and this tab exists because
+  ///    this guide also describes the place. Saying so is the point: a pilot
+  ///    reading the DHV tab on a launch PGE named should be told, not left to
+  ///    assume;
+  ///  * nobody said - a catalogue published before the producer emitted
+  ///    `primary`, where the only truthful answer is that these are the
+  ///    catalogue's figures and it does not record whose.
+  ///
+  /// Deliberately limited to name, wind and position. The producer gap-fills
+  /// altitude and notes from a losing guide when the winner published none, so
+  /// a broader claim would overstate what `primary` means - and the test that
+  /// pins that distinction lives in the producer's repository.
+  String _provenanceLine(String provider) {
+    final thing = _isLanding ? 'landing' : 'launch';
+    final primary = _effectiveSite?.primarySource;
+
+    if (primary == null) {
+      return 'One of the guides behind this $thing. The catalogue does not say '
+          'which of them its name, wind and position came from.';
+    }
+    if (primary == provider) {
+      return 'The name, wind and position below are as '
+          '${_sourceFullName(provider)} records this $thing.';
+    }
+    return 'Also describes this $thing. The name, wind and position below are '
+        'as ${_sourceFullName(primary)} records it - open '
+        '${_sourceLabel(provider)} for its own.';
   }
 
   Widget _sourceDetailRow(String label, String value) => Padding(
