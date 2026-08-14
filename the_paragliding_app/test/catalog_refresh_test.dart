@@ -175,6 +175,31 @@ void main() {
 
       expect(published.first.headerMap.keys,
           containsAll(bundled.first.headerMap.keys));
+
+      // And the other direction, which is the half that was missing. Asserting
+      // only that the published file has everything the bundled one does is
+      // satisfied by a bundled asset that has fallen arbitrarily far behind -
+      // which is exactly what happened: it sat at 11,690 rows with no DHV and
+      // no site_type, site_group or notes while the app had learned to read all
+      // three, and this test stayed green throughout.
+      expect(
+        bundled.first.headerMap.keys,
+        containsAll(published.first.headerMap.keys),
+        reason: 'the bundled asset is missing columns the producer publishes - '
+            'run: dart run tool/refresh_bundled_catalogue.dart',
+      );
+
+      // A fresh install shows this until it has downloaded anything, so "the
+      // same shape" is not enough on its own - it also has to be roughly the
+      // same catalogue. Loose on purpose: the published file grows between
+      // releases and should not redden this every week.
+      expect(
+        bundled.length,
+        greaterThan((published.length * 0.9).round()),
+        reason: 'the bundled asset has ${bundled.length} rows against '
+            '${published.length} published - run: '
+            'dart run tool/refresh_bundled_catalogue.dart',
+      );
     }, tags: 'network');
   });
 

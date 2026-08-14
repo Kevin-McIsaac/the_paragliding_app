@@ -692,6 +692,13 @@ class PgeSitesDownloadService {
           'site_group': optional('site_group'),
           // What a guide says about a landing, verbatim.
           'notes': optional('notes'),
+          // Which guide's record this row's name, wind and position came from.
+          //
+          // Not every field: the producer gap-fills altitude and notes from a
+          // losing guide when the winner published none, so this must never be
+          // read as "everything here is DHV's". Null on a catalogue published
+          // before the column, which is what the site page falls back on.
+          'primary': optional('primary'),
         });
       } catch (e) {
         skipped++;

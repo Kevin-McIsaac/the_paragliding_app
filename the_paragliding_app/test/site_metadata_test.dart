@@ -48,6 +48,7 @@ void main() {
     int? altitude,
     Map<String, int> wind = const {},
     String siteGroup = '',
+    String primary = '',
   }) {
     final cells = [
       '1',
@@ -64,13 +65,14 @@ void main() {
       '0', // tow
       siteGroup,
       '', // notes
+      primary,
     ];
     return cells.join(',');
   }
 
   const header = 'id,ref,name,longitude,latitude,altitude,country,'
       'wind_n,wind_ne,wind_e,wind_se,wind_s,wind_sw,wind_w,wind_nw,'
-      'source,closed,site_type,tow,site_group,notes';
+      'source,closed,site_type,tow,site_group,notes,primary';
 
   String csvOf(List<String> rows) => '$header\n${rows.join('\n')}\n';
 
@@ -136,6 +138,47 @@ void main() {
       expect([pge.name, dhv.name, merged.name],
           ['PGE alone', 'DHV alone', 'Merged']);
       expect([pge.altitude, dhv.altitude, merged.altitude], [900, 800, 700]);
+    });
+
+    test('the guide whose record won survives the import', () async {
+      // `source` says which guides describe a launch; `primary` says which one
+      // supplied its name, wind and position. The site page can only attribute
+      // the figures it shows if this reaches it.
+      await importCatalogue(csvOf([
+        csvRow(
+          ref: 'pge:3',
+          name: 'Named by DHV',
+          source: 'dhv:4-startplatz;pge:3',
+          primary: 'dhv',
+        ),
+        csvRow(ref: 'pge:5', name: 'PGE alone', source: 'pge:5', primary: 'pge'),
+      ]));
+
+      final merged = await PgeSitesDatabaseService.instance.getSiteByRef('pge:3');
+      final alone = await PgeSitesDatabaseService.instance.getSiteByRef('pge:5');
+
+      expect(merged!.primarySource, 'dhv');
+      expect(alone!.primarySource, 'pge');
+      expect(merged.catalogRef, 'pge:3',
+          reason: 'the key is still the ref, which primary does not move');
+    });
+
+    test('a catalogue without the column leaves it unknown, not guessed',
+        () async {
+      // Every install until the producer's column reaches it. Defaulting to the
+      // first source here would have the page attribute a launch to a guide
+      // nobody said it came from - worse than saying nothing.
+      final parsed = PgeSitesDownloadService.parseCsvContent(
+        'ref,name,longitude,latitude,altitude,source,site_type\n'
+        'pge:7,Older catalogue,8.0,47.0,900,dhv:8-x;pge:7,launch\n',
+      );
+      expect(parsed.skipped, 0);
+      await PgeSitesDatabaseService.instance.initializeTables();
+      await PgeSitesDatabaseService.instance.importSitesData(rows: parsed.rows);
+
+      final site = await PgeSitesDatabaseService.instance.getSiteByRef('pge:7');
+      expect(site!.primarySource, isNull);
+      expect(site.sources, hasLength(2), reason: 'the guides are still known');
     });
 
     test('a wind cell is a rating, not a flag', () async {
@@ -423,14 +466,7 @@ void main() {
       });
     }
 
-    testWidgets('a guide tab shows the catalogue figures, and says so',
-        (tester) async {
-      // The tab used to introduce these as "This launch as DHV records it",
-      // which the app cannot back: the catalogue keeps one set of details per
-      // launch, chosen by the producer among the guides, and does not publish
-      // which guide won. It happens to be the non-PGE guide on all 998 merged
-      // rows today - but nothing in the app knows that, so nothing would
-      // notice it changing.
+    testWidgets('a guide tab shows the catalogue figures', (tester) async {
       await pumpSite(tester, sites['pge:10043']!);
 
       await tester.tap(find.widgetWithText(Tab, 'DHV'));
@@ -444,10 +480,75 @@ void main() {
       expect(find.text('Stauf Startplatz Südost'), findsWidgets);
       expect(find.text('260 m'), findsOneWidget);
       expect(find.text('E, S, SW'), findsWidgets);
+    });
+
+    /// Open [ref]'s tab for [provider] and return the provenance line under the
+    /// guide's name.
+    Future<String> provenanceOn(
+      WidgetTester tester,
+      ParaglidingSite site,
+      String label,
+    ) async {
+      await pumpSite(tester, site);
+      await tester.tap(find.widgetWithText(Tab, label));
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+
+      // The line sits directly under the guide's full name in the tab body.
+      final texts = tester
+          .widgetList<Text>(find.byType(Text))
+          .map((t) => t.data)
+          .whereType<String>();
+      return texts.firstWhere(
+        (t) => t.contains('records this') || t.contains('the guides behind') ||
+            t.contains('Also describes'),
+        orElse: () => '<no provenance line>',
+      );
+    }
+
+    ParaglidingSite merged({String? primary}) => ParaglidingSite(
+          name: 'Stauf Startplatz Südost',
+          latitude: 49.54949,
+          longitude: 8.027519,
+          altitude: 260,
+          siteType: 'launch',
+          windDirections: const ['E', 'S', 'SW'],
+          source: 'dhv:146-stauf-startplatz-suedost;pge:10043',
+          catalogRef: 'pge:10043',
+          primarySource: primary,
+        );
+
+    testWidgets('the guide whose record won says so', (tester) async {
+      // The whole point of the producer emitting `primary`. Before it, this tab
+      // introduced the catalogue's figures as "this launch as DHV records it"
+      // on every guide, backed by nothing.
       expect(
-        find.textContaining('need not be the figures DHV publishes'),
-        findsOneWidget,
-        reason: 'the tab must not claim provenance the catalogue does not carry',
+        await provenanceOn(tester, merged(primary: 'dhv'), 'DHV'),
+        'The name, wind and position below are as DHV Geländedatenbank records '
+        'this launch.',
+      );
+    });
+
+    testWidgets('a guide that did not win points at the one that did',
+        (tester) async {
+      // A pilot reading the DHV tab on a launch ParaglidingEarth named has to
+      // be told, or the tab reads as DHV's own record of the place.
+      expect(
+        await provenanceOn(tester, merged(primary: 'pge'), 'DHV'),
+        'Also describes this launch. The name, wind and position below are as '
+        'ParaglidingEarth records it - open DHV for its own.',
+      );
+    });
+
+    testWidgets('a catalogue that never said claims nothing', (tester) async {
+      // Every install until the producer's column reaches it, and every row of
+      // an older bundled asset. Saying "we do not know" is the only honest
+      // answer, and is what this shipped as before `primary` existed.
+      expect(
+        await provenanceOn(tester, merged(), 'DHV'),
+        'One of the guides behind this launch. The catalogue does not say '
+        'which of them its name, wind and position came from.',
       );
     });
   });
