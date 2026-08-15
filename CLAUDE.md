@@ -790,6 +790,25 @@ the branch's own commits are never ancestors of `main` and `git branch -d` refus
 "not fully merged" - which is true of the commits and false of the content. Confirm the
 content landed by checking the PR is `MERGED`, not by whether `-d` is willing.
 
+**The EnterWorktree/ExitWorktree tooling asks that same question**, and refuses to remove a
+merged worktree - "Removing will discard this work permanently" - until told
+`discard_changes: true`. It is the same false negative rather than a second problem; it
+fired on 2026-08-15 for the already-merged `network.yml` branch. Answer it the same way, and
+prove the content landed by comparing trees instead of trusting either tool:
+
+```bash
+gh pr view <n> --json state                       # MERGED is the authority
+git diff --stat <branch> origin/main -- <paths>   # empty output means nothing is lost
+```
+
+Changing merge strategy does not avoid this, and **rebase merge especially does not** -
+GitHub re-parents each commit onto `main`, so the SHAs change and ancestry breaks exactly as
+it does under squash. Only a real merge commit preserves it, at the cost of the squash body,
+which is where the PR description on most of these commits comes from. Running
+`git reset --hard origin/main` in the worktree first silences both prompts, but it discards
+the local commit for real - on a branch that did *not* merge that destroys the work, which
+is precisely the case the prompt exists to catch. Confirm the prompt instead.
+
 ### Standard Development Process
 
 1. **Start**: `bin/dev_run.sh --background` (add `-d "<device>"` for a phone)
