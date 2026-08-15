@@ -22,54 +22,33 @@
 class CatalogRef {
   const CatalogRef._();
 
-  /// Guides in the order they are preferred when a launch is described by more
-  /// than one, most authoritative first.
+  /// The ref for a row stored before the producer emitted one, from its
+  /// `source` column.
   ///
-  /// **The producer decides this now** - it emits a `ref` column, and the import
-  /// keys on that. This list survives as the fallback for a catalogue published
-  /// before the column, which is the bundled asset of an older release, and it is
-  /// still what the v4 -> v5 migration and the backfill use, since those read a
-  /// local row's `source` where no emitted ref exists.
+  /// **This does not choose between guides, and must not start to.** Which
+  /// guide's id keys a launch is the producer's decision, published in the
+  /// `ref` column; an import without that column is now rejected outright
+  /// rather than keyed by guesswork, because guessing differently from the
+  /// producer re-keys a launch, and a re-key is a delete plus an insert - the
+  /// pilot's favourite goes with the deleted row and every `catalog_ref` to it
+  /// dangles permanently, since the old key is never emitted again.
   ///
-  /// It must not drift from the producer's `KEY_PRECEDENCE`: a launch keyed
-  /// `pge:` there and `ansg:` here would leave a fresh install and an upgraded
-  /// one disagreeing about the same site. The producer asserts the two agree over
-  /// its whole catalogue, in tests/test_ref_matches_the_app.py.
+  /// This used to hold a `providerPrecedence` list hand-copied from the
+  /// producer's `KEY_PRECEDENCE`, with a comment on each side saying the two
+  /// "must not drift" - which is a hope with a test either side of it, not a
+  /// guarantee. Requiring the emitted key removes the second opinion entirely.
   ///
-  /// `pge` leads because it supplies almost all of the catalogue's tokens; only
-  /// 89 rows carry two at all.
-  ///
-  /// A provider is the guide's own abbreviation, lowercased - `pge` for
-  /// ParaglidingEarth, `ansg` for the Australian National Site Guide, `dhv` for
-  /// the DHV Geländedatenbank, `ffvl` for the Fédération Française de Vol Libre
-  /// when it arrives. Whatever the guide
-  /// is actually called, rather than a fixed width: the prefix is carried in
-  /// every stored ref, so it wants to be short, but a recognisable acronym beats
-  /// a letter saved.
-  ///
-  /// The only hard rule is that it cannot contain `:` or `;` - those separate the
-  /// id and the tokens, so a prefix holding either would not survive a round
-  /// trip through `source`.
-  static const List<String> providerPrecedence = ['pge', 'ansg', 'dhv'];
-
-  /// The ref for a catalogue row, from its `source` column.
+  /// What is left are the two backfills for rows already on disk: `_backfillRefs`
+  /// and the v4 -> v5 migration. Those rows predate federation, so their `source`
+  /// holds a single token and there is nothing to rank - first valid token is
+  /// the whole rule. Callers that could see a federated multi-token `source`
+  /// should use the producer's `ref` instead.
   ///
   /// Returns null when there is nothing to key on, so a caller can decide
-  /// whether that is a skip or a fallback rather than inventing a ref.
+  /// whether that is a skip rather than inventing a ref.
   static String? fromSource(String? source) {
     final tokens = tokensOf(source);
-    if (tokens.isEmpty) return null;
-
-    for (final provider in providerPrecedence) {
-      for (final token in tokens) {
-        if (providerOf(token) == provider) return token;
-      }
-    }
-
-    // A guide nobody has assigned a precedence to yet. Keying on it is better
-    // than dropping the row; the producer is where an unknown provider should
-    // be a hard failure, because that is where the decision can be made.
-    return tokens.first;
+    return tokens.isEmpty ? null : tokens.first;
   }
 
   /// Every `provider:id` token in a `source` value, in the order given.

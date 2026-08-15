@@ -1,0 +1,26 @@
+{
+  "ansg": {
+    "label": "ANSG",
+    "full_name": "Australian National Site Guide",
+    "homepage": "https://siteguide.org.au",
+    "site_url_template": "https://siteguide.org.au/sites/details/{id}",
+    "licence": "",
+    "licence_url": ""
+  },
+  "dhv": {
+    "label": "DHV",
+    "full_name": "DHV Geländedatenbank",
+    "homepage": "https://service.dhv.de/db3/gelaende",
+    "site_url_template": "https://service.dhv.de/db2/details.php?qi=glp_details&item={id}",
+    "licence": "",
+    "licence_url": ""
+  },
+  "pge": {
+    "label": "PGE",
+    "full_name": "ParaglidingEarth",
+    "homepage": "https://www.paraglidingearth.com",
+    "site_url_template": "https://www.paraglidingearth.com/?site={id}",
+    "licence": "CC BY-SA 3.0",
+    "licence_url": "https://creativecommons.org/licenses/by-sa/3.0/"
+  }
+}

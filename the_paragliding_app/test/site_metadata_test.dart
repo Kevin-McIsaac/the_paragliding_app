@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:the_paragliding_app/data/models/guide.dart';
 import 'package:the_paragliding_app/data/models/paragliding_site.dart';
 import 'package:the_paragliding_app/presentation/screens/site_details_screen.dart';
 import 'package:the_paragliding_app/services/pge_sites_database_service.dart';
@@ -98,7 +99,14 @@ void main() {
     File('test/fixtures/site_metadata_baseline.json').readAsStringSync(),
   ) as Map<String, dynamic>)['launches'] as Map<String, dynamic>;
 
-  setUpAll(TestHelpers.initializeDatabaseForTesting);
+  setUpAll(() async {
+    await TestHelpers.initializeDatabaseForTesting();
+    // Guide labels, links and attribution come from the bundled registry the
+    // producer publishes, so a page rendered without it shows raw `source`
+    // prefixes - `dhv` where a pilot should read `DHV`. The app loads this at
+    // startup; a test that renders the page has to do the same.
+    await Guides.load();
+  });
 
   // ===========================================================================
   // The mechanics, on rows written to make each step visible.

@@ -26,13 +26,14 @@ void main() {
         {
           'id': 17, 'name': 'Manilla - Mt Borah - West launch',
           'longitude': 150.6086, 'latitude': -30.6792, 'altitude': 800,
-          'country': 'au', 'source': 'pge:4632;ansg:136-40',
+          'country': 'au', 'ref': 'pge:4632',
+          'source': 'pge:4632;ansg:136-40',
           'wind_w': 2,
         },
         {
           'id': 18, 'name': 'Bright - Mystic', 'longitude': 146.97,
           'latitude': -36.72, 'altitude': 380, 'country': 'au',
-          'source': 'pge:5000', 'wind_n': 2,
+          'ref': 'pge:5000', 'source': 'pge:5000', 'wind_n': 2,
         },
       ];
 
@@ -43,12 +44,13 @@ void main() {
         {
           'id': 17, 'name': 'Bright - Mystic', 'longitude': 146.97,
           'latitude': -36.72, 'altitude': 380, 'country': 'au',
-          'source': 'pge:5000', 'wind_n': 2,
+          'ref': 'pge:5000', 'source': 'pge:5000', 'wind_n': 2,
         },
         {
           'id': 18, 'name': 'Manilla - Mt Borah - West launch',
           'longitude': 150.6086, 'latitude': -30.6792, 'altitude': 800,
-          'country': 'au', 'source': 'pge:4632;ansg:136-40',
+          'country': 'au', 'ref': 'pge:4632',
+          'source': 'pge:4632;ansg:136-40',
           'wind_w': 2,
         },
       ];
@@ -60,7 +62,7 @@ void main() {
         {
           'id': 19, 'name': 'Corryong - Mt Elliot', 'longitude': 147.9,
           'latitude': -36.19, 'altitude': 500, 'country': 'au',
-          'source': 'ansg:106-28', 'wind_n': 2,
+          'ref': 'ansg:106-28', 'source': 'ansg:106-28', 'wind_n': 2,
         },
       ];
 
@@ -72,6 +74,9 @@ void main() {
         {
           'id': 19, 'name': 'Corryong - Mt Elliot', 'longitude': 147.9,
           'latitude': -36.19, 'altitude': 500, 'country': 'au',
+          // The producer re-keys this to pge, which outranks ansg. The app must
+          // not follow: rule 1 keeps the key this database already holds.
+          'ref': 'pge:7001',
           'source': 'ansg:106-28;pge:7001', 'wind_n': 2,
         },
       ];
@@ -217,7 +222,7 @@ void main() {
       {
         'id': 20, 'name': 'Corryong (PGE)', 'longitude': 147.9,
         'latitude': -36.19, 'altitude': 500, 'country': 'au',
-        'source': 'pge:7001', 'wind_n': 2,
+        'ref': 'pge:7001', 'source': 'pge:7001', 'wind_n': 2,
       },
     ]);
     await db.update('pge_sites', {'is_favorite': 1},

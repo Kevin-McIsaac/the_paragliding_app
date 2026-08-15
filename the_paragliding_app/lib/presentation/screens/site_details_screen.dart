@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../data/models/site.dart';
+import '../../data/models/guide.dart';
 import '../../data/models/paragliding_site.dart';
 import '../../data/models/wind_data.dart';
 import '../../data/models/wind_forecast.dart';
@@ -117,49 +118,63 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     return sources.isEmpty ? const [(provider: 'pge', id: '')] : sources;
   }
 
-  /// ParaglidingEarth's own id for this launch, from the catalogue's `source`.
-  ///
-  /// Null when no guide in this launch is PGE - an Australian launch Site
-  /// Guide carries alone has no PGE detail to fetch.
-  int? get _pgeSourceId {
-    for (final source in _effectiveSite?.sources ?? const []) {
-      if (source.provider == 'pge') return int.tryParse(source.id);
-    }
-    return null;
-  }
-
-  /// Guide names as a pilot would recognise them, not their internal keys.
-  static String _sourceLabel(String provider) => switch (provider) {
-        'pge' => 'PGE',
-        'ansg' => 'ANSG',
-        'dhv' => 'DHV',
-        _ => provider,
-      };
-
-  static String _sourceFullName(String provider) => switch (provider) {
-        'pge' => 'ParaglidingEarth',
-        'ansg' => 'Australian National Site Guide',
-        'dhv' => 'DHV Geländedatenbank',
-        _ => provider,
-      };
+  // _pgeSourceId went with the synthesised `pge_link`. It parsed the PGE
+  // source id as an int, which is null for a landing - whose id is its
+  // takeoff's with `-lz` appended - so it could not have addressed those pages
+  // anyway. The live lookup finds its record through
+  // ParaglidingEarthApi.getDetailsForCatalogSite, and the link out is built
+  // from the published registry.
 
   /// What a tab holds, for the tooltip. The labels are short enough to be
   /// ambiguous on their own - "PGE" means nothing until you have seen it
   /// spelled out once.
+  ///
+  /// The names themselves used to be three `switch` expressions here, and the
+  /// site-page URLs a fourth. They are the producer's now - it publishes the
+  /// guide list it federates from, so a guide added there is named here without
+  /// an app release. See [Guides].
   static String _sourceTooltip(String provider) =>
-      '${_sourceFullName(provider)} site details';
+      '${Guides.fullNameOf(provider)} site details';
 
-  static String? _sourceUrl(String provider, String id) => switch (provider) {
-        'pge' => 'https://www.paraglidingearth.com/?site=$id',
-        // Site Guide ids are "<siteId>-<launchId>"; the page is per site.
-        'ansg' => 'https://siteguide.org.au/sites/details/${id.split('-').first}',
-        // DHV ids are "<Gelände>-<slug of the launch name>". DHV has no page
-        // per launch - every takeoff and landing on a hill shares one - so
-        // the Gelände half is the whole address.
-        'dhv' =>
-          'https://service.dhv.de/db2/details.php?qi=glp_details&item=${id.split('-').first}',
-        _ => null,
-      };
+  /// Credit for a guide's data, where the guide states a licence.
+  ///
+  /// Empty for one that does not - DHV publishes no terms with its export, and
+  /// crediting it under someone else's licence would be a claim nobody made.
+  List<Widget> _guideAttribution(String provider) {
+    final guide = Guides.of(provider);
+    if (guide == null || !guide.hasLicence) return const [];
+
+    return [
+      const SizedBox(height: 16),
+      Text.rich(
+        TextSpan(
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Colors.grey,
+              ),
+          children: [
+            TextSpan(text: 'Site data © ${guide.fullName}, licensed '),
+            TextSpan(
+              text: guide.licence,
+              style: const TextStyle(
+                color: Colors.blue,
+                decoration: TextDecoration.underline,
+              ),
+              recognizer: TapGestureRecognizer()
+                ..onTap = () => _launchUrl(guide.licenceUrl),
+            ),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  /// This guide's page for the launch on screen.
+  ///
+  /// Takes the site rather than a `source` id, because the id that addresses a
+  /// guide's page lives in `site_group` - see [Guide.siteUrl], and the 4,828
+  /// links that were wrong while this derived one from `source`.
+  String? _sourceUrl(String provider) =>
+      Guides.of(provider)?.siteUrl(_effectiveSite?.siteGroup);
 
   /// Load the catalogue entry a flown site points at, and rebuild the tabs.
   ///
@@ -453,14 +468,10 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
         setState(() {
           _detailedData = details ?? {};
 
-          // Keep the link available even when the fetch returned nothing,
-          // since that is when you most want to go and look. Built from
-          // ParaglidingEarth's own id, never the catalogue's.
-          final pgeId = _pgeSourceId;
-          if (pgeId != null) {
-            _detailedData!['pge_link'] = 'https://www.paraglidingearth.com/?site=$pgeId';
-          }
-
+          // No `pge_link` synthesised here any more. It existed so the tab kept
+          // a link when the fetch returned nothing; the link is now built from
+          // the catalogue row and the published registry, which needs no fetch
+          // at all - so it is there whether this succeeded or not.
           _isLoadingDetails = false;
         });
       }
@@ -468,12 +479,6 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
       if (mounted) {
         setState(() {
           _detailedData = {};
-
-          final pgeId = _pgeSourceId;
-          if (pgeId != null) {
-            _detailedData!['pge_link'] = 'https://www.paraglidingearth.com/?site=$pgeId';
-          }
-
           _isLoadingDetails = false;
           _loadingError = 'Failed to load detailed information';
         });
@@ -778,7 +783,7 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
                     child: Tooltip(
                       message: _sourceTooltip(source.provider),
                       child: Text(
-                        _sourceLabel(source.provider),
+                        Guides.labelOf(source.provider),
                         style: const TextStyle(fontSize: 12),
                       ),
                     ),
@@ -1155,9 +1160,9 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
   Widget _buildSourceTab(({String provider, String id}) source) {
     if (source.provider == 'pge') return _buildTakeoffTab();
 
-    final url = _sourceUrl(source.provider, source.id);
+    final url = _sourceUrl(source.provider);
     final site = _effectiveSite;
-    final fullName = _sourceFullName(source.provider);
+    final fullName = Guides.fullNameOf(source.provider);
     if (site == null) return const SizedBox.shrink();
 
     return _scrollableTab(
@@ -1205,7 +1210,7 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
                 OutlinedButton.icon(
                   onPressed: () => _launchUrl(url),
                   icon: const Icon(Icons.open_in_new, size: 16),
-                  label: Text('Open in ${_sourceLabel(source.provider)}'),
+                  label: Text('Open in ${Guides.labelOf(source.provider)}'),
                 ),
             ],
           ),
@@ -1240,11 +1245,11 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
     }
     if (primary == provider) {
       return 'The name, wind and position below are as '
-          '${_sourceFullName(provider)} records this $thing.';
+          '${Guides.fullNameOf(provider)} records this $thing.';
     }
     return 'Also describes this $thing. The name, wind and position below are '
-        'as ${_sourceFullName(primary)} records it - open '
-        '${_sourceLabel(provider)} for its own.';
+        'as ${Guides.fullNameOf(primary)} records it - open '
+        '${Guides.labelOf(provider)} for its own.';
   }
 
   Widget _sourceDetailRow(String label, String value) => Padding(
@@ -1533,38 +1538,30 @@ class SiteDetailsScreenState extends State<SiteDetailsScreen> with SingleTickerP
           // permits this use on condition the source is credited wherever the
           // content is shown. Outside the _detailedData branch for the same
           // reason as the link below: the tab is ParaglidingEarth's either way.
-          const SizedBox(height: 16),
-          Text.rich(
-            TextSpan(
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.grey,
-                  ),
-              children: [
-                const TextSpan(text: 'Site data © ParaglidingEarth, licensed '),
-                TextSpan(
-                  text: 'CC BY-SA 3.0',
-                  style: const TextStyle(
-                    color: Colors.blue,
-                    decoration: TextDecoration.underline,
-                  ),
-                  recognizer: TapGestureRecognizer()
-                    ..onTap = () => _launchUrl(
-                        'https://creativecommons.org/licenses/by-sa/3.0/'),
-                ),
-              ],
-            ),
-          ),
+          //
+          // Both the guide and its licence come from the published registry.
+          // They were written out here, which meant the app asserting a
+          // licence on a guide's behalf - fine while it was right, and one
+          // release from being wrong. A guide that publishes no terms shows
+          // none rather than borrowing this one.
+          ..._guideAttribution('pge'),
 
-          // Link out from the tab, matching the other guides. It sits outside
-          // the _detailedData branch so it is still there when the fetch
-          // failed or the site has no detail - which is when you most want to
-          // go and look.
-          if (_detailedData?['pge_link'] != null) ...[
+          // Link out from the tab, built the same way as every other guide's.
+          // Outside the _detailedData branch so it survives a failed fetch,
+          // which is when you most want to go and look.
+          //
+          // This used to use `_detailedData['pge_link']`, synthesised from
+          // `int.tryParse` of the PGE source id. That parse fails on a landing,
+          // whose id is its takeoff's with `-lz` appended - so the button
+          // simply disappeared from every PGE landing page rather than pointing
+          // anywhere. The registry addresses a page by `site_group`, which
+          // holds the takeoff's id, so those pages get a working link.
+          if (_sourceUrl('pge') != null) ...[
             const SizedBox(height: 16),
             OutlinedButton.icon(
-              onPressed: () => _launchUrl(_detailedData!['pge_link']),
+              onPressed: () => _launchUrl(_sourceUrl('pge')!),
               icon: const Icon(Icons.open_in_new, size: 16),
-              label: const Text('Open in PGE'),
+              label: Text('Open in ${Guides.labelOf('pge')}'),
             ),
           ],
           ],

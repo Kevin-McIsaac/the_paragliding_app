@@ -729,24 +729,7 @@ class DatabaseService {
     // Convert results to ParaglidingSite objects
     final sites = <ParaglidingSite>[];
     for (final row in results) {
-      // Build wind directions from PGE data
-      final windDirections = <String>[];
-      final windMap = {
-        'N': row['wind_n'],
-        'NE': row['wind_ne'],
-        'E': row['wind_e'],
-        'SE': row['wind_se'],
-        'S': row['wind_s'],
-        'SW': row['wind_sw'],
-        'W': row['wind_w'],
-        'NW': row['wind_nw'],
-      };
-
-      windMap.forEach((direction, value) {
-        if (value != null && (value as int) >= 1) {
-          windDirections.add(direction);
-        }
-      });
+      final windDirections = ParaglidingSite.windDirectionsFrom(row);
 
       sites.add(ParaglidingSite(
         id: row['id'] as int?,
@@ -1534,24 +1517,7 @@ class DatabaseService {
 
       final sites = <ParaglidingSite>[];
       for (final row in results) {
-        // Build wind directions from PGE data
-        final windDirections = <String>[];
-        final windMap = {
-          'N': row['wind_n'],
-          'NE': row['wind_ne'],
-          'E': row['wind_e'],
-          'SE': row['wind_se'],
-          'S': row['wind_s'],
-          'SW': row['wind_sw'],
-          'W': row['wind_w'],
-          'NW': row['wind_nw'],
-        };
-
-        windMap.forEach((direction, value) {
-          if (value != null && (value as int) >= 1) {
-            windDirections.add(direction);
-          }
-        });
+        final windDirections = ParaglidingSite.windDirectionsFrom(row);
 
         sites.add(ParaglidingSite(
           id: row['id'] as int?,

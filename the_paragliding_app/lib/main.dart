@@ -8,6 +8,7 @@ import 'presentation/screens/igc_import_screen.dart';
 import 'utils/file_sharing_handler.dart';
 import 'utils/performance_monitor.dart';
 import 'data/datasources/database_helper.dart';
+import 'data/models/guide.dart';
 import 'utils/dev_seed.dart';
 import 'services/logging_service.dart';
 import 'services/api_keys.dart';
@@ -146,6 +147,13 @@ class _AppInitializerState extends State<AppInitializer> {
       await db.database;
       LoggingService.performance(
           'Startup: database', startupTimer.elapsed, 'connection ready');
+
+      // Who each `source` prefix is - one small bundled file, read before any
+      // site page can ask for a guide's name. Reads of it are synchronous
+      // because they happen in build(); loading it late would flash raw
+      // provider keys on the tabs. A failure is logged and survived: every
+      // caller falls back to the bare key.
+      await Guides.load();
 
       final tablesTimer = Stopwatch()..start();
 

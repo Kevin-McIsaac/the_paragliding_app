@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:the_paragliding_app/data/datasources/database_helper.dart';
+import 'package:the_paragliding_app/data/models/guide.dart';
 import 'package:the_paragliding_app/utils/catalog_ref.dart';
 
 import 'helpers/test_helpers.dart';
@@ -19,26 +20,37 @@ void main() {
   group('bundled catalogue asset', () {
     late List<CsvRow> rows;
 
-    setUpAll(() {
+    setUpAll(() async {
       // Parsed properly, by column name. These tests used to split on commas
       // themselves, which is the very thing the app stopped doing - and they
       // broke the moment guide prose with quotes and line breaks arrived.
       final bytes = File('assets/data/world_sites_extracted.csv.gz').readAsBytesSync();
       rows = csv.decodeWithHeaders(utf8.decode(gzip.decode(bytes)));
+
+      // The bundled registry, read the way the app reads it. Both halves of the
+      // pair are assets here on purpose: these tests exist to catch the two
+      // drifting from each other.
+      TestWidgetsFlutterBinding.ensureInitialized();
+      await Guides.load();
     });
 
     String field(CsvRow row, String name) => (row[name] ?? '').toString();
 
-    test('names no guide this app cannot key on', () {
-      // `providerPrecedence` is one of three hand-written copies of the same
-      // list - the others are KEY_PRECEDENCE and APP_PRECEDENCE, both in the
-      // producer's repo, in Python. The producer asserts two of the three
-      // agree; nothing here noticed if the app's copy fell behind.
+    test('names no guide this app cannot describe', () {
+      // The same alarm this has always been, moved to the thing it now guards.
       //
-      // It matters because an unranked provider falls through to
-      // `tokens.first`, so the app and the producer can key the same launch
-      // differently - a fresh install and an upgraded one then disagree about
-      // which site the pilot's flight is on.
+      // It used to assert every provider was in `CatalogRef.providerPrecedence`
+      // - one of three hand-written copies of one list, the others being
+      // KEY_PRECEDENCE and APP_PRECEDENCE in the producer's Python. That copy
+      // is gone: the app requires the producer's `ref` and no longer chooses a
+      // key, so there is no ranking here to fall behind.
+      //
+      // What can still fall behind is the guide's *identity*. A provider the
+      // registry has never heard of degrades to its bare key - a tab reading
+      // `ffvl`, no link out, no attribution - which is survivable but not
+      // something to ship unnoticed. `guides.json` comes from the producer, so
+      // this fires when the bundled catalogue has a guide the bundled registry
+      // does not.
       final providers = <String>{};
       for (final row in rows) {
         for (final token in CatalogRef.tokensOf(field(row, 'source'))) {
@@ -49,11 +61,57 @@ void main() {
 
       expect(providers, isNotEmpty, reason: 'a sweep over nothing is not coverage');
       expect(
-        providers.difference(CatalogRef.providerPrecedence.toSet()),
+        providers.where((p) => Guides.of(p) == null),
         isEmpty,
-        reason: 'add the guide to CatalogRef.providerPrecedence, in lockstep '
-            'with KEY_PRECEDENCE in the producer',
+        reason: 'the bundled guides.json does not describe every guide the '
+            'bundled catalogue names - run: dart run tool/refresh_bundled_catalogue.dart',
       );
+    });
+
+    test('every guide has an id in site_group to build its link from', () {
+      // What makes one URL template per guide sufficient, and the property that
+      // replaced chopping a `source` id at its first hyphen. A guide named in
+      // `source` with no token in `site_group` would leave the app with no id
+      // to address that guide's page with - see Guide.siteUrl.
+      final orphaned = <String>[];
+      for (final row in rows) {
+        final groups = {
+          for (final token in CatalogRef.tokensOf(field(row, 'site_group')))
+            CatalogRef.providerOf(token),
+        };
+        for (final token in CatalogRef.tokensOf(field(row, 'source'))) {
+          if (!groups.contains(CatalogRef.providerOf(token))) {
+            orphaned.add('${field(row, 'ref')}: $token');
+          }
+        }
+      }
+
+      expect(orphaned, isEmpty);
+    });
+
+    test('a guide page is addressed by site, not by launch', () {
+      // The bug this replaced: `id.split('-').first` on a `source` id, which
+      // sent every PGE landing to `?site=<takeoff>-lz` and every Australian one
+      // to `/sites/details/lz`. 4,828 of 19,759 links.
+      //
+      // Swept over the real asset rather than a fixture, because the shapes
+      // that broke it are landing rows the producer synthesises - exactly what
+      // a hand-built fixture would forget to include.
+      final suspect = <String>[];
+      for (final row in rows) {
+        for (final token in CatalogRef.tokensOf(field(row, 'source'))) {
+          final provider = CatalogRef.providerOf(token);
+          final url = Guides.of(provider!)?.siteUrl(field(row, 'site_group'));
+          if (url == null) continue;
+          if (url.endsWith('-lz') || url.endsWith('/lz') || url.contains('=lz')) {
+            suspect.add('${field(row, 'ref')} -> $url');
+          }
+        }
+      }
+
+      expect(suspect, isEmpty,
+          reason: 'a launch suffix reached the URL; the id must come from '
+              'site_group, not source');
     });
 
     test('carries every column the app reads by name', () {
@@ -183,9 +241,19 @@ void main() {
       expect(unkeyable, 0);
     });
 
-    test('prefers pge when a launch is described by two guides', () {
-      expect(CatalogRef.fromSource('ansg:136-40;pge:4632'), 'pge:4632');
+    test('does not choose between guides', () {
+      // This used to assert `ansg:136-40;pge:4632` keyed on pge, from a
+      // precedence list hand-copied from the producer's. Choosing is the
+      // producer's job and its answer is in the `ref` column; a second opinion
+      // here could only ever agree or re-key a launch, and a re-key takes the
+      // pilot's favourite with it.
+      //
+      // What is left is for two backfills over rows stored before federation,
+      // whose `source` holds one token. First valid token, no ranking.
       expect(CatalogRef.fromSource('ansg:136-40'), 'ansg:136-40');
+      expect(CatalogRef.fromSource('pge:4632'), 'pge:4632');
+      expect(CatalogRef.fromSource('ansg:136-40;pge:4632'), 'ansg:136-40',
+          reason: 'first token, in the order given - not a preference');
       expect(CatalogRef.fromSource(''), isNull);
     });
 
@@ -200,26 +268,35 @@ void main() {
           reason: 'a malformed token must not shadow a usable one');
     });
 
-    test('the producer emits the key, and it agrees with the fallback', () {
-      // The import keys on the `ref` column now; this list is only the fallback
-      // for a catalogue published before it existed. The two must not disagree,
-      // or a fresh install and an upgraded one key the same launch differently -
-      // the producer asserts the same equivalence from its side, over its whole
-      // catalogue, in tests/test_ref_matches_the_app.py.
+    test('the producer emits a key on every row, naming one of its guides', () {
+      // This used to assert the emitted ref equalled what the app's own
+      // precedence would derive - two statements of one rule, asserted equal.
+      // The app no longer has the second statement, so what matters now is that
+      // the one authority answers on every row, and that its answer names a
+      // guide the row actually lists: the key and the guide tabs both come from
+      // this row, and a ref pointing outside `source` would key a launch to a
+      // guide the page never shows.
       final rows = csv.decodeWithHeaders(utf8.decode(gzip.decode(
           File('assets/data/world_sites_extracted.csv.gz').readAsBytesSync())));
 
       expect(rows.first.headerMap.keys, contains('ref'),
-          reason: 'the bundled asset should carry the producer-chosen key');
+          reason: 'the app requires this column and rejects a snapshot without it');
 
       var checked = 0;
+      final orphaned = <String>[];
       for (final row in rows) {
         final emitted = (row['ref'] ?? '').toString();
-        if (emitted.isEmpty) continue;
-        expect(emitted, CatalogRef.fromSource((row['source'] ?? '').toString()),
-            reason: 'emitted ref must match what the fallback would derive');
+        expect(emitted, isNotEmpty,
+            reason: 'an unkeyed row is a launch the pilot silently loses');
+        if (!CatalogRef.tokensOf((row['source'] ?? '').toString())
+            .contains(emitted)) {
+          orphaned.add(emitted);
+        }
         checked++;
       }
+
+      expect(orphaned, isEmpty,
+          reason: 'ref must name a guide listed in the same row\'s source');
       expect(checked, greaterThan(11000),
           reason: 'a sweep over nothing reads as coverage');
     });
@@ -241,7 +318,7 @@ void main() {
       // - so this asserts the part that is not: a prefix containing either
       // delimiter would be torn apart when `source` is parsed back, and the ref
       // stored against it would never match again.
-      for (final provider in CatalogRef.providerPrecedence) {
+      for (final provider in Guides.all.map((g) => g.key)) {
         expect(provider, provider.toLowerCase(),
             reason: 'refs are compared exactly, so case cannot vary');
         expect(provider, isNot(contains(':')));

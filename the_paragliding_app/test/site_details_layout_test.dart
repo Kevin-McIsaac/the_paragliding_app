@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:the_paragliding_app/data/models/guide.dart';
 import 'package:the_paragliding_app/data/models/paragliding_site.dart';
 import 'package:the_paragliding_app/presentation/screens/site_details_screen.dart';
 import 'package:the_paragliding_app/services/pge_sites_database_service.dart';
@@ -26,6 +27,9 @@ void main() {
   setUp(() async {
     // The page reads favourites out of the catalogue table on open.
     await PgeSitesDatabaseService.instance.initializeTables();
+    // Tab names come from the registry the producer publishes, so without it
+    // the tabs read `pge` and `ansg` rather than `PGE` and `ANSG`.
+    await Guides.load();
   });
 
   /// Pump the page on a phone-shaped screen and let its loads fail.

@@ -527,24 +527,25 @@ class PgeSitesDatabaseService {
           // favourite goes with the deleted row, and every `sites.catalog_ref`
           // pointing at it dangles for good, because the old key is never
           // emitted again. Precedence therefore only keys rows that are new.
-          // Three rules, in this order, and the order is the point:
+          // Two rules, in this order, and the order is the point:
           //
           //  1. a row this database already holds keeps the key it is stored
           //     under, whatever the catalogue now says. Re-keying is a delete
           //     plus an insert, which takes the favourite with it and dangles
           //     every sites.catalog_ref for good;
-          //  2. otherwise the key the producer emitted. It decides, so that one
-          //     side owns the policy - and it derives it from the same
-          //     precedence this app used to apply itself;
-          //  3. otherwise derive it, for a catalogue published before the column
-          //     existed. That is the bundled asset of an older release, so it is
-          //     the offline path rather than a hypothetical.
+          //  2. otherwise the key the producer emitted. It decides, and there is
+          //     no third rule: this used to fall back to deriving one from
+          //     `source` with a precedence list hand-copied from the producer's,
+          //     for a catalogue published before the column existed. Two lists
+          //     that must agree is not a guarantee, and disagreeing re-keys a
+          //     launch - rule 1's failure, arriving by another road. A snapshot
+          //     with no `ref` is rejected at download instead, so a row reaching
+          //     here without one is a bug, counted as unkeyable rather than
+          //     guessed at.
           final tokens = CatalogRef.tokensOf(siteData['source'] as String?);
           final held = tokens.where(priorRefs.contains);
-          final ref = held.isNotEmpty
-              ? held.first
-              : (siteData['ref'] as String?) ??
-                  CatalogRef.fromSource(siteData['source'] as String?);
+          final ref =
+              held.isNotEmpty ? held.first : (siteData['ref'] as String?);
           if (ref == null) {
             unkeyable++;
             continue;
@@ -1012,24 +1013,7 @@ class PgeSitesDatabaseService {
 
   /// Convert database row to ParaglidingSite model
   ParaglidingSite _mapRowToParaglidingSite(Map<String, dynamic> row) {
-    // Build wind directions list
-    final windDirections = <String>[];
-    final windMap = {
-      'N': row['wind_n'] ?? 0,
-      'NE': row['wind_ne'] ?? 0,
-      'E': row['wind_e'] ?? 0,
-      'SE': row['wind_se'] ?? 0,
-      'S': row['wind_s'] ?? 0,
-      'SW': row['wind_sw'] ?? 0,
-      'W': row['wind_w'] ?? 0,
-      'NW': row['wind_nw'] ?? 0,
-    };
-
-    windMap.forEach((direction, value) {
-      if (value != null && value >= 1) {
-        windDirections.add(direction);
-      }
-    });
+    final windDirections = ParaglidingSite.windDirectionsFrom(row);
 
     return ParaglidingSite(
       // The catalogue row's identity is its ref, not its rowid: the rowid comes

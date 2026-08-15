@@ -354,9 +354,17 @@ class PgeSitesDownloadService {
       // no test saw it because they all import parsed rows and never come
       // through here. The app reads by name, so the honest question is whether
       // the columns it reads are present.
+      //
+      // `ref` is required, not optional. It is the producer's decision about
+      // which guide's id keys each launch, and the app no longer has a second
+      // opinion to fall back on - deriving one risked keying a launch
+      // differently from the producer, which is a delete plus an insert that
+      // takes the pilot's favourite with it. A snapshot without the column is
+      // refused whole, leaving the working catalogue untouched, which is the
+      // same answer this guard already gives a truncated body.
       final body = response.body;
       final header = body.split('\n').first.split(',').map((c) => c.trim()).toSet();
-      const required = {'name', 'longitude', 'latitude', 'source'};
+      const required = {'ref', 'name', 'longitude', 'latitude', 'source'};
       final missing = required.difference(header);
 
       if (missing.isNotEmpty || body.length < 100000) {

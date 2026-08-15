@@ -217,6 +217,42 @@ class ParaglidingSite {
 
   static double _toRadians(double degrees) => degrees * pi / 180;
 
+  /// The directions a catalogue row is launchable in, from its eight `wind_*`
+  /// columns.
+  ///
+  /// **The grading is dropped on purpose, and re-adding it would be a
+  /// regression.** The producer publishes 0 none / 1 good / 2 excellent, but a 2
+  /// only ever originates from ParaglidingEarth: measured over the published
+  /// catalogue, DHV carries one on **none** of its 1,831 launches and the
+  /// Australian guide on 1 of 268, because neither publishes a severity at all -
+  /// DHV gives an arc and Site Guide gives prose, and the producer stamps both
+  /// as "in range" (its `selection.py` documents this as an accepted loss).
+  ///
+  /// So rendering the tiers would not tell a pilot which hill is better. It
+  /// would tell them which *guide* described it, marking every DHV launch as
+  /// merely good beside a PGE neighbour that may be no better - ranking the
+  /// sources while looking like it ranks the sites.
+  ///
+  /// One helper because this was three copies of `value >= 1`, in two services,
+  /// none of them saying why.
+  static List<String> windDirectionsFrom(Map<String, Object?> row) {
+    const columns = {
+      'N': 'wind_n',
+      'NE': 'wind_ne',
+      'E': 'wind_e',
+      'SE': 'wind_se',
+      'S': 'wind_s',
+      'SW': 'wind_sw',
+      'W': 'wind_w',
+      'NW': 'wind_nw',
+    };
+
+    return [
+      for (final entry in columns.entries)
+        if ((row[entry.value] as int? ?? 0) >= 1) entry.key,
+    ];
+  }
+
   /// Check if this site is suitable for given wind direction
   bool isSuitableForWind(String windDirection) {
     if (windDirections.isEmpty) return true; // No restrictions
