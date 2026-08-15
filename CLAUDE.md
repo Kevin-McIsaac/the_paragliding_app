@@ -70,6 +70,15 @@ flutter test --tags network --run-skipped  # Live-API tests, skipped by default
 kill "$(cat dev_data/flutter.pid)"    # Stop a running app
 ```
 
+**The `network` tests run weekly in CI**, on their own schedule
+(`.github/workflows/network.yml`, Tuesdays), not on pushes or pull requests. They are the
+only checks on things that move without anyone touching this repository - the bundled
+catalogue falling behind what the producer publishes, the OpenAIP export bucket being locked
+down, a launch changing its name, altitude, wind or guide under the baseline that pins them.
+A red run there means the world moved, not that your branch is broken; the log is kept as an
+artifact, and a timeout or 5xx just wants re-running. Run it on demand from the Actions tab
+before cutting a release.
+
 **Plain `flutter test` is fine locally.** It used to fail about 1 run in 3, so this file
 told you to always pass `--concurrency=1`. Issue #280 fixed the underlying test problems;
 measured over 16 consecutive runs on an 8-core dev box, parallel is now 0/16 failures and

@@ -1,0 +1,114 @@
+name: Live services
+
+# The tests that call a live third-party service, on a schedule.
+#
+# They are tagged `network` and skipped by default (see dart_test.yaml), so
+# `flutter test` in ci.yml never runs them - deliberately, because a stalled
+# network test holds a concurrency slot long enough to push unrelated files past
+# the 30s timeout, and a PR should not go red because someone else's server is
+# down.
+#
+# The cost of that is a set of guards nothing fires. They are the only checks on
+# things that change without anyone here touching the repository:
+#
+#   * the bundled catalogue drifting behind what the producer publishes - it sat
+#     at 11,690 rows against 18,761 for long enough to lose every DHV launch and
+#     every landing, and the test that should have caught it stayed green;
+#   * the OpenAIP export bucket being locked down again, as it was in July 2026;
+#   * the published catalogue changing a launch's name, altitude, wind or which
+#     guide it is named by, under a baseline that pins all four.
+#
+# None of those is a pull request. A schedule is what notices them.
+#
+# Separate from ci.yml on purpose. A failure here means the world moved, not that
+# the branch is broken, and adding a `schedule` trigger to ci.yml would re-run the
+# whole analyze-and-test job weekly to reach four tests.
+
+# Actions are pinned to commit SHAs, with the release they came from in a trailing
+# comment. See the note at the top of build.yml for why.
+
+on:
+  schedule:
+    # Tuesday, a day after the producer's own weekly run (Monday 02:00 UTC in
+    # paragliding_site_federation/.github/workflows/sync.yml), which opens a pull
+    # request a human then merges. A day's margin usually covers that; when it
+    # does not, the drift is caught the following week, which is soon enough for
+    # a file that only needs to be current at release time.
+    #
+    # 04:23 rather than the top of an hour: GitHub queues scheduled jobs and
+    # drops the ones it cannot run, and round times on the hour are the most
+    # contended.
+    - cron: "23 4 * * 2"
+  # So it can be run on demand - before cutting a release, or to prove it still
+  # works. A scheduled job nobody has ever watched run is the thing this
+  # workflow exists to argue against.
+  workflow_dispatch: {}
+
+# Superseded runs have nothing left to prove.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+# Declared rather than inherited, so a job gaining write access has to be a
+# visible edit here. Nothing in this workflow writes to the repository.
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: "3.41.6"
+
+jobs:
+  live-services:
+    name: Test against live services
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: the_paragliding_app
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Test against live services
+        # No secrets. Every service these reach is public - the OpenAIP export
+        # bucket, the published catalogue on raw.githubusercontent.com - so this
+        # needs no env.json and would not benefit from one.
+        #
+        # The "No tests ran" check is not belt and braces. `flutter test` exits
+        # **0** when a tag selector matches nothing, printing only "No tests
+        # ran.", so if the `network` tag were renamed or dropped this workflow
+        # would go on reporting success weekly while testing nothing at all -
+        # which is the same shape of failure it was added to catch.
+        run: |
+          set -o pipefail
+          flutter test --concurrency=1 --tags network --run-skipped 2>&1 \
+            | tee live-services.log
+          if grep -q "No tests ran" live-services.log; then
+            echo "::error::No network-tagged tests ran. The tag has been renamed or dropped - this job has been testing nothing."
+            exit 1
+          fi
+
+      # A failure above is one of two things and they are not equally urgent, so
+      # the log is kept rather than left to scrollback.
+      #
+      #   * an assertion failed - something upstream moved, and the message says
+      #     what and names the tool that fixes it;
+      #   * a request timed out or returned 5xx - a service is down. Re-run it.
+      - name: Keep the log
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: live-services-log
+          path: the_paragliding_app/live-services.log
+          retention-days: 30
